@@ -61,25 +61,14 @@ public class AccountController {
             throws ExecutionException, InterruptedException, TimeoutException {
         if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         String uid = principal.getUid();
-        User user = userRepository.findByUid(uid).orElseGet(() -> {
-            // Plan C T12 fix: lazy-create on first /api/account/me hit (per
-            // FirebaseAuthFilter:110 "Plan C will create it" contract).
+        // Atomic get-or-create via Firestore transaction (cubic R4 P2): two
+        // concurrent first-time /me callers can no longer both observe
+        // "absent" and both blindly upsert. The loser's createdAt /
+        // lifecycle fields used to be silently clobbered.
+        User user = userRepository.getOrCreate(uid, () -> {
             User fresh = new User(uid, principal.getEmail(), null, "user");
             fresh.setStatusEnum(UserStatus.PENDING_PROFILE);
-            try {
-                return userRepository.save(fresh);
-            } catch (TimeoutException e) {
-                // Preserve the typed exception so the right HTTP status is
-                // returned: a generic RuntimeException would fall through to
-                // GlobalExceptionHandler.handleGenericException → 500 instead
-                // of the more accurate 504 Gateway Timeout.
-                throw new LazyCreateTimeoutException(uid, e);
-            } catch (ExecutionException e) {
-                throw new LazyCreateExecutionException(uid, e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new LazyCreateInterruptedException(uid, e);
-            }
+            return fresh;
         });
         return ResponseEntity.ok(AccountMeResponse.from(user));
     }

@@ -13,6 +13,8 @@ data class SyncResponseDto(
 data class SyncPageDto<T>(
     val items: List<T>,
     val nextCursor: Long? = null,
+    /** Compound-cursor tiebreaker — last row's docId (cubic R3/R4 P1). */
+    val nextCursorId: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

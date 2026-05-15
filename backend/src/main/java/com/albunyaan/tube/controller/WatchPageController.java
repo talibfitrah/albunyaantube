@@ -137,14 +137,19 @@ public class WatchPageController {
             return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).build();
         }
         AtomicInteger counter = shareMetadataRateLimit.get(deviceId, k -> new AtomicInteger(0));
-        // Check-then-increment so blocked callers don't keep growing the counter
-        // unbounded for the remaining TTL window. Acceptable race: two near-
-        // simultaneous reads can each pass the check before the increment;
-        // for an N=30/min bucket that's at most 31 admitted under contention.
-        if (counter.get() >= SHARE_METADATA_RATE_LIMIT_PER_MINUTE) {
+        // Atomic check-and-increment via getAndUpdate: the lambda increments
+        // only when prev < limit, else leaves the counter unchanged. Returns
+        // the value BEFORE the update, so the decision is unambiguous —
+        // prev < limit means admitted, prev >= limit means refused. Two
+        // concurrent threads entering at prev = limit - 1 can no longer both
+        // be admitted: the CAS retry inside getAndUpdate serialises them so
+        // exactly one sees prev = limit - 1 and increments, the other sees
+        // prev = limit and is refused. Refused callers don't grow the counter.
+        int prev = counter.getAndUpdate(p ->
+                p >= SHARE_METADATA_RATE_LIMIT_PER_MINUTE ? p : p + 1);
+        if (prev >= SHARE_METADATA_RATE_LIMIT_PER_MINUTE) {
             return ResponseEntity.status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS).build();
         }
-        counter.incrementAndGet();
 
         // Image URL: only YouTube hosts on the closed allow-list survive. Anything
         // else is silently dropped (coerced to empty) so the title/description can

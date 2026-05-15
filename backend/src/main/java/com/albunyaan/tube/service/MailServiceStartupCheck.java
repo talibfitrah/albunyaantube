@@ -10,6 +10,9 @@ import org.springframework.stereotype.Component;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -39,7 +42,12 @@ public class MailServiceStartupCheck implements ApplicationRunner {
      * Bound the Graph reachability probe so a hung DNS lookup or a degraded Graph
      * endpoint can't pin application startup forever. The Graph SDK does not
      * expose a client-side per-call timeout we can set declaratively, so we run
-     * the probe on a CompletableFuture and time it out at the JVM level.
+     * the probe on a dedicated single-thread executor and time it out at the JVM
+     * level. The executor is shut down (with shutdownNow + interrupt) after the
+     * check so a hung blocking call doesn't leak the worker — using
+     * ForkJoinPool.commonPool() (the CompletableFuture default) would abandon
+     * the blocked thread on commonPool without ever cancelling the underlying
+     * call.
      */
     static final int STARTUP_CHECK_TIMEOUT_SECONDS = 30;
 
@@ -49,10 +57,14 @@ public class MailServiceStartupCheck implements ApplicationRunner {
             log.info("mail.startup-check.skipped (mail.enabled=false)");
             return;
         }
+        ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "mail-startup-check");
+            t.setDaemon(true);
+            return t;
+        });
         try {
-            CompletableFuture
-                    .runAsync(mailService::verifyFromMailboxReachable)
-                    .get(STARTUP_CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            Future<?> future = executor.submit(mailService::verifyFromMailboxReachable);
+            future.get(STARTUP_CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             log.info("mail.startup-check.ok from={}", mail.getFromAddress());
         } catch (TimeoutException e) {
             log.error("mail.startup-check.timeout from={} after={}s",
@@ -77,6 +89,12 @@ public class MailServiceStartupCheck implements ApplicationRunner {
                 throw new IllegalStateException(
                         "Mail startup check interrupted for " + mail.getFromAddress(), e);
             }
+        } finally {
+            // shutdownNow interrupts the worker; if the Graph SDK respects
+            // interrupts the blocked call returns immediately. If it doesn't
+            // (uninterruptible socket read), the daemon thread dies with the
+            // JVM and doesn't pin the rest of startup.
+            executor.shutdownNow();
         }
     }
 }

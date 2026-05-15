@@ -294,6 +294,36 @@ public class UserRepository {
                 .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
+    /**
+     * Atomically read-then-create the user doc for {@code uid}: if the doc
+     * already exists, return it; otherwise persist {@code factory.get()} as a
+     * fresh doc inside a Firestore transaction so concurrent first-time
+     * /api/account/me callers cannot race and clobber each other's
+     * {@code createdAt}/lifecycle fields (cubic R4 P2). Uses
+     * {@code firestore.runTransaction} so the read + conditional write commit
+     * atomically; Firestore's optimistic concurrency aborts and retries
+     * losers.
+     *
+     * <p>The cache eviction matches {@link #save(User)} so the next
+     * {@code findByUid} call returns the freshly-written user rather than the
+     * pre-create empty Optional.
+     */
+    @CacheEvict(value = "userStatus", key = "#uid")
+    public User getOrCreate(String uid, java.util.function.Supplier<User> factory)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        com.google.cloud.firestore.DocumentReference ref = getCollection().document(uid);
+        return firestore.runTransaction(tx -> {
+            com.google.cloud.firestore.DocumentSnapshot snap = tx.get(ref).get();
+            if (snap.exists()) {
+                return snap.toObject(User.class);
+            }
+            User fresh = factory.get();
+            fresh.touch();
+            tx.set(ref, fresh);
+            return fresh;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
+
     public void deleteByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(uid).delete();
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);

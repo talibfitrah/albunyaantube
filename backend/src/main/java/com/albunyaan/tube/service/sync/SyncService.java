@@ -26,28 +26,36 @@ public class SyncService {
     public SyncResponseDto pull(String uid, SyncCursors cursors)
             throws ExecutionException, InterruptedException, TimeoutException {
         SyncPageDto<SubscriptionSyncDto> subs = pullPage(
-                uid, SyncRepository.SUBS_COLL, cursors.getSubscriptions(),
+                uid, SyncRepository.SUBS_COLL,
+                cursors.getSubscriptions(), cursors.getSubscriptionsId(),
                 projector::projectSubscription, SyncService::toSubscriptionDto);
         SyncPageDto<PlaylistSyncDto> pls = pullPage(
-                uid, SyncRepository.PLAYLISTS_COLL, cursors.getPlaylists(),
+                uid, SyncRepository.PLAYLISTS_COLL,
+                cursors.getPlaylists(), cursors.getPlaylistsId(),
                 projector::projectPlaylist, SyncService::toPlaylistDto);
         SyncPageDto<FavoriteSyncDto> favs = pullPage(
-                uid, SyncRepository.FAVORITES_COLL, cursors.getFavorites(),
+                uid, SyncRepository.FAVORITES_COLL,
+                cursors.getFavorites(), cursors.getFavoritesId(),
                 projector::projectFavorite, SyncService::toFavoriteDto);
         return new SyncResponseDto(subs, pls, favs);
     }
 
     private <T extends SyncRowDto> SyncPageDto<T> pullPage(
-            String uid, String coll, long since,
+            String uid, String coll, long since, String lastDocId,
             Function<RawRow, RawRow> project,
             Function<RawRow, T> toDto)
             throws ExecutionException, InterruptedException, TimeoutException {
-        List<RawRow> raw = repo.pull(uid, coll, since, SyncRepository.SYNC_PAGE_SIZE);
+        List<RawRow> raw = repo.pull(uid, coll, since, lastDocId, SyncRepository.SYNC_PAGE_SIZE);
         List<T> items = new ArrayList<>(raw.size());
         for (RawRow r : raw) items.add(toDto.apply(project.apply(r)));
-        Long nextCursor = raw.size() == SyncRepository.SYNC_PAGE_SIZE
-                ? raw.get(raw.size() - 1).updatedAt() : null;
-        return new SyncPageDto<>(items, nextCursor);
+        Long nextCursor = null;
+        String nextCursorId = null;
+        if (raw.size() == SyncRepository.SYNC_PAGE_SIZE) {
+            RawRow last = raw.get(raw.size() - 1);
+            nextCursor = last.updatedAt();
+            nextCursorId = last.id();
+        }
+        return new SyncPageDto<>(items, nextCursor, nextCursorId);
     }
 
     // ── Row → DTO converters ─────────────────────────────────────────────

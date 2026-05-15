@@ -178,7 +178,11 @@ class AccountControllerTest {
 
     @Test
     void getMeReturnsCallerProfile() throws Exception {
-        when(userRepository.findByUid(TEST_UID)).thenReturn(Optional.of(activeUser()));
+        // GET /me is now backed by userRepository.getOrCreate(uid, factory)
+        // for transactional lazy-create (cubic R4 P2). The mock returns the
+        // existing user without invoking the factory.
+        when(userRepository.getOrCreate(eq(TEST_UID), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(activeUser());
 
         mockMvc.perform(get("/api/account/me"))
                 .andExpect(status().isOk())
@@ -191,21 +195,26 @@ class AccountControllerTest {
 
     @Test
     void getMeLazyCreatesIfMissing() throws Exception {
-        when(userRepository.findByUid(TEST_UID)).thenReturn(Optional.empty());
-        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
-            User u = inv.getArgument(0);
-            // Assert the fresh user has PENDING_PROFILE status before we return it
-            org.junit.jupiter.api.Assertions.assertEquals(
-                UserStatus.PENDING_PROFILE, u.getStatusEnum());
-            return u;
-        });
+        // Simulate the absent-doc branch: invoke the factory to build the fresh
+        // user, assert it has PENDING_PROFILE status, return it as the persisted
+        // result. Mirrors the transactional getOrCreate contract.
+        when(userRepository.getOrCreate(eq(TEST_UID), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> {
+                    @SuppressWarnings("unchecked")
+                    java.util.function.Supplier<User> factory =
+                            (java.util.function.Supplier<User>) inv.getArgument(1);
+                    User fresh = factory.get();
+                    org.junit.jupiter.api.Assertions.assertEquals(
+                        UserStatus.PENDING_PROFILE, fresh.getStatusEnum());
+                    return fresh;
+                });
 
         mockMvc.perform(get("/api/account/me"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("pending_profile"))
                 .andExpect(jsonPath("$.uid").value(TEST_UID));
 
-        verify(userRepository).save(any(User.class));
+        verify(userRepository).getOrCreate(eq(TEST_UID), org.mockito.ArgumentMatchers.any());
     }
 
     // ── Test 8: POST /profile AgeIneligibleAborted → 500 ──────────────────

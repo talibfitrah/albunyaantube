@@ -42,20 +42,34 @@ public class SyncRepository {
     // -------------------------------------------------------------------------
 
     /**
-     * Return up to {@code limit} rows in {@code type} whose {@code updatedAt} is strictly
-     * greater than {@code since} (epoch millis), ordered ascending so the caller can advance
-     * its cursor by taking the last row's {@code updatedAt}.
+     * Return up to {@code limit} rows in {@code type} ordered ascending by
+     * {@code (updatedAt, __name__)} so the caller can advance its compound
+     * cursor by taking the last row's {@code (updatedAt, docId)} pair.
+     *
+     * <p>When {@code lastDocId} is provided the query uses
+     * {@code startAfter(sinceTs, lastDocId)}, which correctly skips past the
+     * specific tied row even when multiple rows share the same {@code updatedAt}
+     * millisecond — previously the legacy {@code whereGreaterThan("updatedAt", since)}
+     * dropped every same-ms row on page boundaries (cubic R3/R4 P1 data-loss
+     * surface). Legacy callers that pass only {@code since} still fall through
+     * to the strict-greater-than path until they migrate.
      */
-    public List<RawRow> pull(String uid, String type, long since, int limit)
+    public List<RawRow> pull(String uid, String type, long since, String lastDocId, int limit)
             throws ExecutionException, InterruptedException, TimeoutException {
-        Timestamp sinceTs = Timestamp.ofTimeSecondsAndNanos(
-                since / 1_000L,
-                (int) ((since % 1_000L) * 1_000_000L));
         Query q = coll(uid, type)
-                .whereGreaterThan("updatedAt", sinceTs)
                 .orderBy("updatedAt", Query.Direction.ASCENDING)
-                .limit(limit);
-        QuerySnapshot snap = q.get().get(timeouts.getBulkQuery(), TimeUnit.SECONDS);
+                .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
+        if (since > 0L) {
+            Timestamp sinceTs = Timestamp.ofTimeSecondsAndNanos(
+                    since / 1_000L,
+                    (int) ((since % 1_000L) * 1_000_000L));
+            if (lastDocId != null && !lastDocId.isBlank()) {
+                q = q.startAfter(sinceTs, lastDocId);
+            } else {
+                q = q.whereGreaterThan("updatedAt", sinceTs);
+            }
+        }
+        QuerySnapshot snap = q.limit(limit).get().get(timeouts.getBulkQuery(), TimeUnit.SECONDS);
         List<RawRow> out = new ArrayList<>(snap.size());
         for (QueryDocumentSnapshot d : snap.getDocuments()) {
             Timestamp ts = d.getTimestamp("updatedAt");
@@ -63,6 +77,12 @@ public class SyncRepository {
             out.add(new RawRow(d.getId(), d.getData(), updatedAtMillis));
         }
         return out;
+    }
+
+    /** Legacy overload that drops same-ms ties; kept for any caller mid-migration. */
+    public List<RawRow> pull(String uid, String type, long since, int limit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        return pull(uid, type, since, null, limit);
     }
 
     // -------------------------------------------------------------------------

@@ -95,10 +95,29 @@ class SyncManager @Inject constructor(
             "playlists"     to (syncState.cursorFor(uid, "playlists")     ?: 0L),
             "favorites"     to (syncState.cursorFor(uid, "favorites")     ?: 0L),
         )
+        // Compound-cursor tiebreakers (cubic R3/R4 P1) — only persisted for
+        // the duration of the pullAll loop. After process death the first
+        // pull falls back to the legacy whereGreaterThan(ts) behaviour
+        // (which can drop rows tied on the same millisecond at the previous
+        // page boundary). Persisting across process death would need a Room
+        // migration on sync_state; deferred until that DAO is touched
+        // anyway.
+        val lastIds = mutableMapOf<String, String?>(
+            "subscriptions" to null,
+            "playlists"     to null,
+            "favorites"     to null,
+        )
 
         var more: Boolean
         do {
-            val resp = api.pull(cursors["subscriptions"]!!, cursors["playlists"]!!, cursors["favorites"]!!)
+            val resp = api.pull(
+                cursors["subscriptions"]!!,
+                cursors["playlists"]!!,
+                cursors["favorites"]!!,
+                lastIds["subscriptions"],
+                lastIds["playlists"],
+                lastIds["favorites"],
+            )
             if (!resp.isSuccessful) return@withLock
             val body = resp.body() ?: return@withLock
 
@@ -127,6 +146,9 @@ class SyncManager @Inject constructor(
                     syncState.upsert(SyncStateEntity("favorites", uid, it.updatedAt, System.currentTimeMillis()))
                     cursors["favorites"] = it.updatedAt
                 }
+                lastIds["subscriptions"] = body.subscriptions.nextCursorId
+                lastIds["playlists"]     = body.playlists.nextCursorId
+                lastIds["favorites"]     = body.favorites.nextCursorId
             }
             more = (body.subscriptions.nextCursor != null) ||
                    (body.playlists.nextCursor     != null) ||

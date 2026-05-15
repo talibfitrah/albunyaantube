@@ -43,10 +43,17 @@ public class SyncController {
             @AuthenticationPrincipal FirebaseUserDetails principal,
             @RequestParam(name = "subs", required = false, defaultValue = "0") long subs,
             @RequestParam(name = "playlists", required = false, defaultValue = "0") long playlists,
-            @RequestParam(name = "favorites", required = false, defaultValue = "0") long favorites)
+            @RequestParam(name = "favorites", required = false, defaultValue = "0") long favorites,
+            // Compound-cursor tiebreakers — clients running the post-R4 build
+            // send the previous page's last docId here. Legacy clients (no
+            // _id params) get the old whereGreaterThan(ts) behaviour with the
+            // known same-ms drop risk; new clients get exact pagination.
+            @RequestParam(name = "subs_id", required = false) String subsId,
+            @RequestParam(name = "playlists_id", required = false) String playlistsId,
+            @RequestParam(name = "favorites_id", required = false) String favoritesId)
             throws ExecutionException, InterruptedException, TimeoutException {
         if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        SyncCursors cursors = new SyncCursors(subs, playlists, favorites);
+        SyncCursors cursors = new SyncCursors(subs, subsId, playlists, playlistsId, favorites, favoritesId);
         return ResponseEntity.ok(sync.pull(principal.getUid(), cursors));
     }
 

@@ -101,10 +101,25 @@ public class BulkUserService {
     private static String classify(String msg) {
         if (msg == null) return "invalid_state";
         String m = msg.toLowerCase();
-        if (m.contains("already blocked")) return "already_blocked";
-        if (m.contains("not blocked"))     return "not_blocked";
-        if (m.contains("already deleted")) return "already_deleted";
-        if (m.contains("not deleted"))     return "not_deleted";
+        // Patterns must match the actual exception messages AuthService throws
+        // (not aspirational "already blocked"/"not blocked" strings that the
+        // earlier impl matched against). Cross-state rejections were silently
+        // falling through to invalid_state because the predicates never hit.
+        // Sources (AuthService):
+        //   - "User is already blocked"                  → already_blocked
+        //   - "User is not in BLOCKED status: ..."       → not_blocked
+        //   - "User is already deleted"                  → already_deleted
+        //   - "User is not in DELETED status: ..."       → not_deleted
+        //   - "Unblock before soft-deleting: ..."        → blocked_cannot_delete
+        //   - "Cannot block a deleted user. Recover ..." → deleted_cannot_block
+        //   - "Cannot change role of a deleted ..."      → deleted_cannot_role_change
+        if (m.contains("already blocked"))                 return "already_blocked";
+        if (m.contains("not in blocked status"))           return "not_blocked";
+        if (m.contains("already deleted"))                 return "already_deleted";
+        if (m.contains("not in deleted status"))           return "not_deleted";
+        if (m.contains("unblock before soft-deleting"))    return "blocked_cannot_delete";
+        if (m.contains("cannot block a deleted user"))     return "deleted_cannot_block";
+        if (m.contains("cannot change role of a deleted")) return "deleted_cannot_role_change";
         return "invalid_state";
     }
 }

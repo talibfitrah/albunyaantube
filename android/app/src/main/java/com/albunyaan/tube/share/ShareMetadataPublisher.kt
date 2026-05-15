@@ -2,6 +2,7 @@ package com.albunyaan.tube.share
 
 import android.net.Uri
 import com.albunyaan.tube.BuildConfig
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -37,6 +38,13 @@ object ShareMetadataPublisher {
     ) {
         val shareBaseUrl = BuildConfig.SHARE_BASE_URL.trimEnd('/')
         if (shareBaseUrl.isBlank() || id.isBlank()) return
+
+        // Skip silently when the user is not signed in. POST /api/share-metadata
+        // requires a Firebase ID token (Plan F+ hardening); without it the
+        // backend returns 401 and the publisher would log a warn on every
+        // anonymous share. The GET fallback still renders a registry-backed
+        // card from the share URL — no functional regression.
+        if (FirebaseAuth.getInstance().currentUser == null) return
 
         withTimeoutOrNull(PUBLISH_TIMEOUT_MS) {
             withContext(Dispatchers.IO) {

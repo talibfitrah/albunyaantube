@@ -88,8 +88,15 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                     if (userOpt.isPresent()) {
                         User u = userOpt.get();
                         if (u.isDeleted()) {
-                            writeError(response, HttpServletResponse.SC_UNAUTHORIZED,
-                                "ACCOUNT_NOT_FOUND", "Your account has been deleted.");
+                            // Emit 403 + ACCOUNT_DELETED so the Android
+                            // AccountStatusInterceptor (Plan B T3) triggers
+                            // signOut + terminal-dialog. The earlier 401 +
+                            // ACCOUNT_NOT_FOUND shape was never consumed by
+                            // the client — soft-deleted users would see
+                            // opaque 401s for up to the access-token TTL
+                            // (~1h) and lose the terminal-dialog UX.
+                            writeError(response, HttpServletResponse.SC_FORBIDDEN,
+                                "ACCOUNT_DELETED", "Your account has been deleted.");
                             return;
                         }
                         if (u.isBlocked()) {

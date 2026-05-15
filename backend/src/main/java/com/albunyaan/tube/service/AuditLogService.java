@@ -199,10 +199,11 @@ public class AuditLogService {
                 // than 400 — a long-lived admin tab shouldn't hard-fail when a
                 // referenced audit row disappears; the next page query without
                 // cursor returns the freshest rows. Log so operators can spot
-                // unexpected gaps in the audit log retention policy.
+                // unexpected gaps in the audit log retention policy. The
+                // returned page mints its own nextCursor from the last row so
+                // pagination continues rather than appearing to end.
                 logger.warn("Audit cursor references missing doc {}; resetting to first page", c.docId());
-                return new com.albunyaan.tube.dto.PaginatedAuditLog(
-                        findFirstPage(actorUid, action, effLimit), null);
+                return findFirstPageWithCursor(actorUid, action, effLimit);
             }
             // F8 sanity check: encoded ts should match the stored timestamp on the
             // referenced doc. Drift here means either the doc was rewritten or the
@@ -252,11 +253,13 @@ public class AuditLogService {
 
     /**
      * Stale-cursor fallback for {@link #findPaginated}: re-runs the same query
-     * without any startAfter, returning at most {@code effLimit} rows. Used when
-     * the cursor's referenced doc no longer exists so admin UIs degrade
-     * gracefully into a first-page view instead of a 400.
+     * without any startAfter, returning at most {@code effLimit} rows plus a
+     * fresh {@code nextCursor} computed from the last row so pagination
+     * continues. Used when the cursor's referenced doc no longer exists so
+     * admin UIs degrade gracefully into a first-page view instead of a 400
+     * but still expose subsequent pages.
      */
-    private java.util.List<com.albunyaan.tube.model.AuditLog> findFirstPage(
+    private com.albunyaan.tube.dto.PaginatedAuditLog findFirstPageWithCursor(
             String actorUid, String action, int effLimit)
             throws ExecutionException, InterruptedException, TimeoutException {
         com.google.cloud.firestore.Query q = firestore.collection("audit_logs")
@@ -265,13 +268,24 @@ public class AuditLogService {
                         com.google.cloud.firestore.Query.Direction.DESCENDING);
         if (actorUid != null && !actorUid.isBlank()) q = q.whereEqualTo("actorUid", actorUid);
         if (action != null && !action.isBlank())     q = q.whereEqualTo("action", action);
-        return q.limit(effLimit)
+        com.google.cloud.firestore.QuerySnapshot snap = q.limit(effLimit + 1)
                 .get()
-                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS)
-                .getDocuments()
-                .stream()
+                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        var docs = snap.getDocuments();
+        java.util.List<com.albunyaan.tube.model.AuditLog> rows = docs.stream()
+                .limit(effLimit)
                 .map(d -> d.toObject(com.albunyaan.tube.model.AuditLog.class))
                 .toList();
+        String nextCursor = null;
+        if (docs.size() > effLimit) {
+            var lastDoc = docs.get(effLimit - 1);
+            com.albunyaan.tube.model.AuditLog last = lastDoc.toObject(com.albunyaan.tube.model.AuditLog.class);
+            java.time.Instant ts = last.getTimestamp() != null
+                    ? last.getTimestamp().toDate().toInstant()
+                    : java.time.Instant.now();
+            nextCursor = com.albunyaan.tube.util.AuditCursor.encode(ts, lastDoc.getId());
+        }
+        return new com.albunyaan.tube.dto.PaginatedAuditLog(rows, nextCursor);
     }
 }
 

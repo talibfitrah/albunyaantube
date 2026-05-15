@@ -8,9 +8,15 @@ interface SyncApi {
 
     @GET("api/account/sync")
     suspend fun pull(
-        @Query("subs")      subs: Long = 0L,
-        @Query("playlists") playlists: Long = 0L,
-        @Query("favorites") favorites: Long = 0L,
+        @Query("subs")          subs: Long = 0L,
+        @Query("playlists")     playlists: Long = 0L,
+        @Query("favorites")     favorites: Long = 0L,
+        // Compound-cursor tiebreakers (cubic R3/R4 P1) — the previous page's
+        // last docId, sent so the backend uses startAfter(ts, id) and rows
+        // tied on the same millisecond don't drop on page boundaries.
+        @Query("subs_id")       subsId: String? = null,
+        @Query("playlists_id")  playlistsId: String? = null,
+        @Query("favorites_id")  favoritesId: String? = null,
     ): Response<SyncResponseDto>
 
     // Subscriptions
