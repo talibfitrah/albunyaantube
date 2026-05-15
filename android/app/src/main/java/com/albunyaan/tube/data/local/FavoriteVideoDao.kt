@@ -92,7 +92,7 @@ interface FavoriteVideoDao {
      */
     @Transaction
     suspend fun toggleFavorite(video: FavoriteVideo): Boolean {
-        val existing = getById(video.user_id, video.videoId)
+        val existing = getByIdAny(video.user_id, video.videoId)
         if (existing != null && !existing.deleted) {
             softDelete(video.user_id, video.videoId)
             return false
@@ -102,6 +102,21 @@ interface FavoriteVideoDao {
             upsertFavorite(video)
             return true
         }
+    }
+
+    /**
+     * Cubic R-final2 P1 — single transactional resurrect-and-upsert for
+     * FavoritesRepository.addFavorite. Pre-fix the repository called
+     * clearSoftDelete + upsertFavorite as two separate DAO ops; a process
+     * kill between them left the row at deleted=0/dirty=1 with stale
+     * metadata, which pushDirty would then ship to the server, silently
+     * losing the fresher payload the user just supplied. Wrapping in
+     * @Transaction makes the pair atomic at the SQLite level.
+     */
+    @Transaction
+    suspend fun resurrectAndUpsert(video: FavoriteVideo) {
+        clearSoftDelete(video.user_id, video.videoId)
+        upsertFavorite(video)
     }
 
     @Query("SELECT COUNT(*) FROM favorite_videos WHERE user_id = :uid AND deleted = 0")

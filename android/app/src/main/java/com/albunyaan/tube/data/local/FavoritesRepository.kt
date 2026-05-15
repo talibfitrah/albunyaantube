@@ -130,11 +130,16 @@ class FavoritesRepositoryImpl @Inject constructor(
         // deleted=1 rows, so the upsert path took the addFavorite branch with
         // OnConflictStrategy.IGNORE — which silently no-op'd against the
         // existing tombstone. The favorite never made it back to the list.
-        // clearSoftDelete flips the tombstone back live so the upsert sees the
-        // row, takes the updateMetadata branch, refreshes title/channel/
+        // clearSoftDelete flips the tombstone back live so the upsert sees
+        // the row, takes the updateMetadata branch, refreshes title/channel/
         // thumbnail, and stamps dirty=1 for sync push.
-        favoriteVideoDao.clearSoftDelete(uid = uid, videoId = videoId)
-        favoriteVideoDao.upsertFavorite(favorite)
+        //
+        // Cubic R-final2 P1 — bundled into a single @Transaction DAO method.
+        // Pre-fix the pair was non-atomic; a process kill between
+        // clearSoftDelete and upsertFavorite would leave the row at
+        // deleted=0/dirty=1 with stale metadata, and pushDirty would ship
+        // the stale payload to the server (losing the fresher user input).
+        favoriteVideoDao.resurrectAndUpsert(favorite)
         syncManager.pushDirtyAsync(uid)
     }
 

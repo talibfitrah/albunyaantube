@@ -158,7 +158,17 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                     // But admin endpoints write or expose privileged data;
                     // there a blocked admin slipping through is far worse
                     // than 503ing them until the mapper is fixed.
-                    boolean statusSensitive = requestURI.startsWith("/api/admin/")
+                    // Cubic R-final2 P1 — extend fail-closed to ALL
+                    // authenticated writes (POST/PUT/PATCH/DELETE). The
+                    // explicit URI list missed /api/share-metadata/** and
+                    // any future authenticated write surface; a blocked user
+                    // could still poison server state during a mapper hiccup.
+                    // Method-based gating is robust to new routes.
+                    String method = request.getMethod();
+                    boolean isWrite = "POST".equals(method) || "PUT".equals(method)
+                            || "PATCH".equals(method) || "DELETE".equals(method);
+                    boolean statusSensitive = isWrite
+                            || requestURI.startsWith("/api/admin/")
                             || requestURI.startsWith("/api/account/")
                             || requestURI.equals("/api/v1/me")
                             || requestURI.startsWith("/api/v1/me/");
