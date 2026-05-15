@@ -55,13 +55,19 @@ service cloud.firestore {
       // change, the same rule would have allowed self-elevation. Now the
       // status transition is bounded to {pending_profile → pending_profile,
       // pending_profile → active}, and the role field is explicitly pinned.
+      // Cubic R-final P2 — pin the post-write status to pending_profile.
+      // Pre-fix the whitelist permitted ['pending_profile', 'active']; a
+      // malicious or compromised client could write status='active' via the
+      // Firestore SDK without going through AccountProfileService.completeProfile
+      // where the ≥13 age check lives. Now self-update is bound to
+      // pending_profile→pending_profile only; the activation transition is
+      // server-mediated and unforgeable from the client.
       allow update: if isSelf(userId) &&
                        resource.data.status == 'pending_profile' &&
                        request.resource.data.diff(resource.data)
                          .affectedKeys()
-                         .hasOnly(['displayName', 'dateOfBirth', 'updatedAt',
-                                  'profileCompletedAt', 'status']) &&
-                       request.resource.data.status in ['pending_profile', 'active'] &&
+                         .hasOnly(['displayName', 'dateOfBirth', 'updatedAt']) &&
+                       request.resource.data.status == 'pending_profile' &&
                        request.resource.data.role == resource.data.role;
     }
 

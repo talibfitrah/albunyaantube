@@ -180,8 +180,9 @@ class SyncManager @Inject constructor(
                         subs.applyTombstone(uid, row.entityId, row.updatedAt)
                     } else {
                         val local = subs.getByIdAny(uid, row.entityId)
-                        if (local != null && local.dirty && local.updated_at > row.updatedAt) {
-                            // Local edit is newer + unsynced; defer to push.
+                        // Cubic R-final P2: dirty=1 alone is the conflict signal.
+                        if (local != null && local.dirty) {
+                            // Local edit unsynced; defer to push.
                             continue
                         }
                         subs.upsertFromServer(rowToSub(uid, row))
@@ -192,7 +193,13 @@ class SyncManager @Inject constructor(
                         playlists.applyTombstone(uid, row.entityId, row.updatedAt)
                     } else {
                         val local = playlists.getByIdAny(uid, row.entityId)
-                        if (local != null && local.dirty && local.updated_at > row.updatedAt) continue
+                        // Cubic R-final P2: drop the `local.updated_at > row.updatedAt` clause.
+                        // Local writes never bumped updated_at (the column is
+                        // server-stamped on push success via clearDirty), so the
+                        // timestamp comparison was vacuous. The `dirty=1` flag is
+                        // sufficient: it already means "local has an unsynced
+                        // edit"; the upcoming push will resolve the conflict.
+                        if (local != null && local.dirty) continue
                         playlists.upsertFromServer(rowToPlaylist(uid, row))
                     }
                 }
@@ -200,8 +207,14 @@ class SyncManager @Inject constructor(
                     if (row.deleted) {
                         favorites.applyTombstone(uid, row.entityId, row.updatedAt)
                     } else {
-                        val local = favorites.getById(uid, row.entityId)
-                        if (local != null && local.dirty && local.updated_at > row.updatedAt) continue
+                        val local = favorites.getByIdAny(uid, row.entityId)
+                        // Cubic R-final P2: drop the `local.updated_at > row.updatedAt` clause.
+                        // Local writes never bumped updated_at (the column is
+                        // server-stamped on push success via clearDirty), so the
+                        // timestamp comparison was vacuous. The `dirty=1` flag is
+                        // sufficient: it already means "local has an unsynced
+                        // edit"; the upcoming push will resolve the conflict.
+                        if (local != null && local.dirty) continue
                         favorites.upsertFromServer(rowToFavorite(uid, row))
                     }
                 }
@@ -245,6 +258,14 @@ class SyncManager @Inject constructor(
                 lastIds["playlists"]     = body.playlists.nextCursorId
                 lastIds["favorites"]     = body.favorites.nextCursorId
             }
+            // Cubic R-final P3 — known bounded waste: when one type is
+            // exhausted (returned null) but another still has more pages,
+            // each subsequent iteration re-sends the exhausted type's
+            // cursor and the server returns zero rows for that type. The
+            // cost is at most PAGE_SIZE wasted Firestore reads per type
+            // per pull cycle, deemed acceptable for the simpler client
+            // loop. Per-type exhaustion tracking would require restructuring
+            // the request DTO (per-type "stop sending this" flag).
             more = (body.subscriptions.nextCursor != null) ||
                    (body.playlists.nextCursor     != null) ||
                    (body.favorites.nextCursor     != null)

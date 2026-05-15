@@ -20,10 +20,15 @@ class AccountRepositoryImpl(
     private val backoffMs: Long = 1_000L,
     /**
      * AUTH-INTERCEPT-DECOUPLE-01 — optional AuthRepository observer that, when
-     * supplied, clears the AccountState on terminal AccountStatusEvent (Blocked
-     * / Deleted / Unauthenticated). Replaces the Provider<AccountRepository>
-     * hack that AccountStatusInterceptor previously used to call signOut()
-     * imperatively. Null for the lightweight test-default constructor.
+     * supplied, clears the AccountState on terminal AccountStatusEvent
+     * (currently {@link AccountStatusEvent.Blocked} and
+     * {@link AccountStatusEvent.Deleted}). Replaces the
+     * Provider<AccountRepository> hack that AccountStatusInterceptor
+     * previously used to call signOut() imperatively. Null for the
+     * lightweight test-default constructor. If a future PR extends the
+     * sealed AccountStatusEvent type, update the `when` block below
+     * accordingly — Kotlin will not flag it as non-exhaustive because the
+     * `when` is a statement, not an expression.
      */
     authStatusEvents: kotlinx.coroutines.flow.SharedFlow<AccountStatusEvent>? = null,
     observerScope: kotlinx.coroutines.CoroutineScope? = null,

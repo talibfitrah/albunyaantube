@@ -59,9 +59,17 @@ interface FavoriteVideoDao {
     @Query("UPDATE favorite_videos SET deleted = 1, dirty = 1 WHERE videoId = :videoId AND user_id = :uid")
     suspend fun softDelete(uid: String, videoId: String)
 
-    /** Returns the row regardless of [deleted] flag — used by [toggleFavorite] re-add path. */
-    @Query("SELECT * FROM favorite_videos WHERE videoId = :videoId AND user_id = :uid LIMIT 1")
+    // Cubic R-final P2 — match SubscribedChannelDao + SavedPlaylistDao
+    // semantics: `getById` filters deleted=0, `getByIdAny` is the
+    // deleted-agnostic lookup. Pre-fix FavoriteVideoDao.getById was the
+    // odd-one-out; future callers reaching for it expecting the filtered
+    // variant could ship UI bugs returning soft-deleted rows.
+    @Query("SELECT * FROM favorite_videos WHERE videoId = :videoId AND user_id = :uid AND deleted = 0 LIMIT 1")
     suspend fun getById(uid: String, videoId: String): FavoriteVideo?
+
+    /** Deleted-agnostic lookup — used by [toggleFavorite] re-add path + SyncManager. */
+    @Query("SELECT * FROM favorite_videos WHERE videoId = :videoId AND user_id = :uid LIMIT 1")
+    suspend fun getByIdAny(uid: String, videoId: String): FavoriteVideo?
 
     /**
      * Resurrects a soft-deleted row in place (deleted=0, dirty=1).

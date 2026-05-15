@@ -82,7 +82,13 @@ public class MigrationController {
         }
 
         if (!backfillEnabled) {
-            return ResponseEntity.status(503).body(Map.of(
+            // Cubic R-final P3 — 404 instead of 503. The endpoint being
+            // disabled by config is a deliberate admin choice, not a
+            // transient service-unavailability state; 503 would imply
+            // "retry later" which is wrong. 404 (Not Found — endpoint
+            // not enabled in this profile) conveys the deterministic
+            // semantics correctly.
+            return ResponseEntity.status(404).body(Map.of(
                 "code", "MIGRATION_DISABLED",
                 "hint", "Set app.migrations.user-backfill.enabled=true in the active profile."));
         }
