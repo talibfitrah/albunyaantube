@@ -51,12 +51,51 @@ class SyncServiceTest {
         when(repo.pull(eq("u1"), eq("subscriptions"), eq(0L), isNull(), eq(500))).thenReturn(rows);
         when(repo.pull(eq("u1"), eq("playlists"),     eq(0L), isNull(), eq(500))).thenReturn(List.of());
         when(repo.pull(eq("u1"), eq("favorites"),     eq(0L), isNull(), eq(500))).thenReturn(List.of());
-        for (RawRow r : rows) when(projector.projectSubscription(r)).thenReturn(r);
+        // SYNC-TAIL-01 + R7 P2 ArchiveProjector-batch fix: prod code calls
+        // projector.projectSubscriptions(List<RawRow>) (batch), not the
+        // per-row projectSubscription. Stub the batch method to passthrough.
+        when(projector.projectSubscriptions(rows)).thenReturn(rows);
 
         SyncResponseDto resp = service.pull("u1", new SyncCursors(0L, 0L, 0L));
 
         assertEquals(500, resp.getSubscriptions().getItems().size());
         assertEquals(Long.valueOf(1000L + 499), resp.getSubscriptions().getNextCursor());
+    }
+
+    @Test
+    void pullPartialPage_mintsCursorFromLastRow() throws Exception {
+        // SYNC-TAIL-01 — partial-tail page (3 rows < PAGE_SIZE=500) must
+        // still return a non-null cursor pointing past the last row.
+        // Pre-fix this returned null and the client stalled on the tail.
+        List<RawRow> rows = List.of(
+                new RawRow("ch1", Map.of("deleted", false, "channelUrl","u","name","n","subscribedAt",1L), 100L),
+                new RawRow("ch2", Map.of("deleted", false, "channelUrl","u","name","n","subscribedAt",1L), 200L),
+                new RawRow("ch3", Map.of("deleted", false, "channelUrl","u","name","n","subscribedAt",1L), 300L));
+        when(repo.pull(eq("u1"), eq("subscriptions"), eq(0L), isNull(), eq(500))).thenReturn(rows);
+        when(repo.pull(eq("u1"), eq("playlists"),     eq(0L), isNull(), eq(500))).thenReturn(List.of());
+        when(repo.pull(eq("u1"), eq("favorites"),     eq(0L), isNull(), eq(500))).thenReturn(List.of());
+        when(projector.projectSubscriptions(rows)).thenReturn(rows);
+
+        SyncResponseDto resp = service.pull("u1", new SyncCursors(0L, 0L, 0L));
+
+        assertEquals(3, resp.getSubscriptions().getItems().size());
+        assertEquals(Long.valueOf(300L), resp.getSubscriptions().getNextCursor());
+        assertEquals("ch3", resp.getSubscriptions().getNextCursorId());
+    }
+
+    @Test
+    void pullEmptyPage_returnsNullCursor() throws Exception {
+        // SYNC-TAIL-01 — only truly empty pages return null. Confirms the
+        // "items.isEmpty() && nextCursor == null" contract clients use to
+        // detect end-of-iteration.
+        when(repo.pull(eq("u1"), eq("subscriptions"), eq(0L), isNull(), eq(500))).thenReturn(List.of());
+        when(repo.pull(eq("u1"), eq("playlists"),     eq(0L), isNull(), eq(500))).thenReturn(List.of());
+        when(repo.pull(eq("u1"), eq("favorites"),     eq(0L), isNull(), eq(500))).thenReturn(List.of());
+
+        SyncResponseDto resp = service.pull("u1", new SyncCursors(0L, 0L, 0L));
+
+        assertEquals(0, resp.getSubscriptions().getItems().size());
+        org.junit.jupiter.api.Assertions.assertNull(resp.getSubscriptions().getNextCursor());
     }
 
     @Test
@@ -67,15 +106,16 @@ class SyncServiceTest {
         when(repo.pull(eq("u1"), eq("subscriptions"), eq(0L), isNull(), eq(500))).thenReturn(List.of(s));
         when(repo.pull(eq("u1"), eq("playlists"),     eq(0L), isNull(), eq(500))).thenReturn(List.of(p));
         when(repo.pull(eq("u1"), eq("favorites"),     eq(0L), isNull(), eq(500))).thenReturn(List.of(v));
-        when(projector.projectSubscription(s)).thenReturn(s);
-        when(projector.projectPlaylist(p)).thenReturn(p);
-        when(projector.projectFavorite(v)).thenReturn(v);
+        // Prod uses batch projection (Cubic R7 P2 ArchiveProjector immutability + N+1 fix).
+        when(projector.projectSubscriptions(List.of(s))).thenReturn(List.of(s));
+        when(projector.projectPlaylists(List.of(p))).thenReturn(List.of(p));
+        when(projector.projectFavorites(List.of(v))).thenReturn(List.of(v));
 
         service.pull("u1", new SyncCursors(0L, 0L, 0L));
 
-        Mockito.verify(projector).projectSubscription(s);
-        Mockito.verify(projector).projectPlaylist(p);
-        Mockito.verify(projector).projectFavorite(v);
+        Mockito.verify(projector).projectSubscriptions(List.of(s));
+        Mockito.verify(projector).projectPlaylists(List.of(p));
+        Mockito.verify(projector).projectFavorites(List.of(v));
         Mockito.verifyNoMoreInteractions(projector);
     }
 

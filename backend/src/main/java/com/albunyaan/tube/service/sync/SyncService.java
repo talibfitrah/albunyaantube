@@ -57,12 +57,19 @@ public class SyncService {
         List<RawRow> projected = projectBatch.apply(raw);
         List<T> items = new ArrayList<>(projected.size());
         for (RawRow r : projected) items.add(toDto.apply(r));
+        // SYNC-TAIL-01 (Cubic R7 P1) — mint a cursor for every non-empty
+        // page, full or partial. Pre-fix only full pages (size == PAGE_SIZE)
+        // got a cursor; combined with R5 P0 client-side cursor change, a
+        // partial-tail page returned null → client never advanced past it
+        // → under continuous writes the cursor stalled. `nextCursor == null`
+        // now means "iterator empty" only.
+        //
+        // Cursor advancement still uses the underlying raw row's
+        // (updatedAt, id), not the projected (virtual-tombstone) row, so
+        // virtual-tombstone stamping never pulls the cursor backwards.
         Long nextCursor = null;
         String nextCursorId = null;
-        if (raw.size() == SyncRepository.SYNC_PAGE_SIZE) {
-            // Cursor advancement uses the underlying raw row's (updatedAt, id),
-            // not the projected (virtual-tombstone) row, so that virtual-tombstone
-            // stamping never pulls the cursor backwards.
+        if (!raw.isEmpty()) {
             RawRow last = raw.get(raw.size() - 1);
             nextCursor = last.updatedAt();
             nextCursorId = last.id();

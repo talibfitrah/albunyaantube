@@ -4,7 +4,14 @@ import java.util.List;
 
 public class SyncPageDto<T extends SyncRowDto> {
     private List<T> items;
-    private Long nextCursor;   // null when no further pages
+    /**
+     * Cursor pointing past the last row in {@link #items}, or null iff the
+     * underlying iterator returned zero rows for this query. After SYNC-TAIL-01
+     * (Cubic R7 P1) the server mints a cursor for every non-empty page —
+     * partial tails included — so clients must keep pulling until they
+     * observe a page with {@code items.isEmpty() && nextCursor == null}.
+     */
+    private Long nextCursor;
     /**
      * Compound-cursor tiebreaker: the docId of the last returned row, paired
      * with {@link #nextCursor}. Lets the next pull use
