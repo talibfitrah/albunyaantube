@@ -22,10 +22,23 @@ class AccountRepositoryImpl(
     private val _state = MutableStateFlow<AccountState>(AccountState.NotSignedIn)
     override val accountState: StateFlow<AccountState> = _state.asStateFlow()
 
-    override suspend fun fetchMe(): Result<AccountState.Loaded> {
+    override suspend fun fetchMe(): Result<AccountState.Loaded> = fetchMe(MAX_ATTEMPTS)
+
+    /**
+     * Cubic R7 P1 — splash-aware retry budget.
+     *
+     * Pre-fix every fetchMe() ran the full MAX_ATTEMPTS=3 retry budget,
+     * blocking the splash screen up to ~2–3 s on a flaky network with no
+     * progress signal. SplashFragment now calls fetchMe(maxAttempts=1) so the
+     * splash route decision happens fast; if the single attempt fails, the
+     * downstream screen (sign-in or main shell, per SplashRouter) handles
+     * retry with the full budget.
+     */
+    override suspend fun fetchMe(maxAttempts: Int): Result<AccountState.Loaded> {
+        val budget = maxAttempts.coerceAtLeast(1)
         _state.value = AccountState.Loading
         var lastError: Throwable? = null
-        repeat(MAX_ATTEMPTS) { attempt ->
+        repeat(budget) { attempt ->
             try {
                 val dto = service.getMe()
                 val loaded = dto.toLoaded()
@@ -33,15 +46,29 @@ class AccountRepositoryImpl(
                 return Result.success(loaded)
             } catch (e: IOException) {
                 lastError = e
-                if (attempt < MAX_ATTEMPTS - 1) delay(backoffMs)
+                if (attempt < budget - 1) delay(backoffMs)
             } catch (e: HttpException) {
                 // 4xx/5xx — don't retry, bubble up.
-                _state.value = AccountState.Failed(e)
+                // Cubic R7 P1 — discard the HttpException body/Response and
+                // store only the code + message. The original exception is
+                // returned via Result.failure for the caller (eg. SplashFragment)
+                // but is no longer pinned in StateFlow.
+                _state.value = AccountState.Failed(
+                    httpCode = e.code(),
+                    message = e.message(),
+                    cause = null,
+                )
                 return Result.failure(e)
             }
         }
         val cause = lastError ?: IOException("unknown fetch failure")
-        _state.value = AccountState.Failed(cause)
+        // Cubic R7 P1 — IOException path retains the cause (no Response/Body
+        // attached, lightweight), so debugging gets the original stack.
+        _state.value = AccountState.Failed(
+            httpCode = null,
+            message = cause.message,
+            cause = cause,
+        )
         return Result.failure(cause)
     }
 

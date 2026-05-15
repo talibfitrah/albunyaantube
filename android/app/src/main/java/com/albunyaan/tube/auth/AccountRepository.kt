@@ -20,6 +20,19 @@ interface AccountRepository {
     suspend fun fetchMe(): Result<AccountState.Loaded>
 
     /**
+     * Cubic R7 P1 — bounded-retry variant.
+     *
+     * Cap the retry budget for callers (typically [SplashFragment]) that must
+     * fast-fail rather than stall on a flaky network. Downstream screens
+     * still call the default [fetchMe] with the full retry budget.
+     *
+     * Default-implemented in terms of [fetchMe] so existing test fakes don't
+     * need to override; the production impl in [AccountRepositoryImpl]
+     * overrides to actually honour the cap.
+     */
+    suspend fun fetchMe(maxAttempts: Int): Result<AccountState.Loaded> = fetchMe()
+
+    /**
      * Submit `/api/account/profile`. On 422 AGE_INELIGIBLE returns
      * `Result.failure(AgeIneligibleError)`; on other failures returns the
      * underlying exception.

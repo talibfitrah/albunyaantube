@@ -62,7 +62,11 @@ class AccountRepositoryImplTest {
         assertTrue(result.isFailure)
         verify(service, times(3)).getMe()
         val state = repository.accountState.first() as AccountState.Failed
+        // Cubic R7 P1 — Failed state now carries an optional cause (IOException
+        // retry exhaustion preserves the original, HttpException paths
+        // discard it to avoid pinning OkHttp Response/ResponseBody).
         assertTrue(state.cause is IOException)
+        assertEquals(null, state.httpCode)
     }
 
     @Test fun `fetchMe succeeds on second attempt after one failure`() = runTest(dispatcher) {

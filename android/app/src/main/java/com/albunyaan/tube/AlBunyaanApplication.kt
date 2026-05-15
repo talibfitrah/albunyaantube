@@ -145,8 +145,18 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
      */
     override fun onResume(owner: LifecycleOwner) {
         appScope.launch {
-            val resolved = accountRepository.accountState
-                .first { it !is AccountState.Loading }
+            // Cubic R7 P1 — bound the suspend.
+            //
+            // Pre-fix a hung /me (Firestore latency spike, AccountRepository
+            // stuck in Loading) accumulated one suspended waiter in appScope
+            // per foreground transition. The waiters never freed; appScope
+            // memory + structured-concurrency pressure grew unboundedly.
+            // 10s is generous — any healthy /me settles in <1s — and on
+            // timeout we simply skip sync for this foreground; the periodic
+            // refresh worker still services the user on a coarser cadence.
+            val resolved = kotlinx.coroutines.withTimeoutOrNull(10_000L) {
+                accountRepository.accountState.first { it !is AccountState.Loading }
+            } ?: return@launch
             val uid = (resolved as? AccountState.Loaded)?.uid ?: return@launch
             if (uid.isEmpty()) return@launch
             syncManager.pullAll(uid)

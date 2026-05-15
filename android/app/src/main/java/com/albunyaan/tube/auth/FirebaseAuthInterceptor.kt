@@ -75,12 +75,19 @@ class FirebaseAuthInterceptor @Inject constructor(
                 null
             }
             if (refreshed == null) {
-                // Token refresh failed (network blip, account just disabled, etc.). Re-issuing
-                // the same already-rejected signed request would just yield another 401 and
-                // waste a round-trip; replay the request unsigned so the backend can emit a
-                // fresh 401 with an accurate WWW-Authenticate envelope and upstream callers
-                // can distinguish "token refresh failed" from "first 401 from server".
-                return chain.proceed(chain.request())
+                // Cubic R7 P1 — return the original 401 instead of replaying
+                // unsigned.
+                //
+                // Pre-fix the interceptor stripped Authorization and replayed
+                // the request. Public endpoints (those mounted at /api/v1/*
+                // without status enforcement) silently accepted the
+                // unauthenticated request and returned 200, masking the auth
+                // failure to upstream callers. The 401 envelope is the truth:
+                // the user's token is stale or revoked and the UI must route
+                // to sign-in. Re-execute the signed request — it will 401
+                // again — to surface the failure clean rather than fake a
+                // success.
+                return chain.proceed(signed)
             }
             return chain.proceed(signed.withBearer(refreshed))
         }

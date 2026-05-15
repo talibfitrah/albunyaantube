@@ -120,8 +120,25 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
     }
 
     private fun openDatePicker() {
+        // Cubic R7 P1 — constrain DOB to past dates within a plausible
+        // human-lifetime window.
+        //
+        // Pre-fix MaterialDatePicker.Builder.datePicker() accepted any date
+        // including the future. A user picking DOB="2099-01-01" hit a server
+        // 422 from validateDateOfBirth, but ate a round-trip the picker
+        // could have refused locally. CalendarConstraints.before(today)
+        // disables future days in the UI; the 120-year lower bound rejects
+        // obviously-bogus 1800s dates that no live user could legitimately
+        // claim.
+        val nowUtcMs = System.currentTimeMillis()
+        val constraints = com.google.android.material.datepicker.CalendarConstraints.Builder()
+            .setEnd(nowUtcMs)
+            .setStart(nowUtcMs - 120L * 365 * 24 * 60 * 60 * 1000)
+            .setValidator(com.google.android.material.datepicker.DateValidatorPointBackward.before(nowUtcMs))
+            .build()
         val picker = MaterialDatePicker.Builder.datePicker()
             .setTitleText(getString(R.string.bootstrap_dob_label))
+            .setCalendarConstraints(constraints)
             .build()
         picker.addOnPositiveButtonClickListener { utcMillis ->
             val date = Instant.ofEpochMilli(utcMillis).atOffset(ZoneOffset.UTC).toLocalDate()

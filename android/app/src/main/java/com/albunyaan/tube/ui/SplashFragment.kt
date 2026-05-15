@@ -105,7 +105,11 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             val accountStatusDeferred: Deferred<AccountStatus?> = async {
                 if (firebaseAuth.currentUser == null) null
                 else {
-                    val loaded = accountRepository.fetchMe().getOrNull()
+                    // Cubic R7 P1 — splash uses a 1-attempt budget so it
+                    // doesn't stall on the full retry window. If this one
+                    // attempt fails, SplashRouter routes per the null status
+                    // and the downstream screen retries with the full budget.
+                    val loaded = accountRepository.fetchMe(maxAttempts = 1).getOrNull()
                     if (loaded != null) {
                         // Fire bind in a separate coroutine — don't block routing.
                         launch { syncManager.bind(loaded.uid) }
