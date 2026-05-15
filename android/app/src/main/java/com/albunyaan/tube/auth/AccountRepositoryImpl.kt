@@ -117,10 +117,22 @@ class AccountRepositoryImpl(
      * optional whitespace) instead.
      */
     private fun bodyHasCode(e: HttpException, code: String): Boolean {
-        val body = e.response()?.errorBody()?.string() ?: return false
+        // Cubic R7 P2 — bound the error-body read. A misbehaving server
+        // returning a multi-MB error body would OOM the app on
+        // errorBody().string(). The code envelope is two short fields;
+        // 4 KiB is comfortably larger than any legitimate payload.
+        val errorBody = e.response()?.errorBody() ?: return false
+        val source = errorBody.source()
+        source.request(MAX_ERROR_BODY_BYTES)
+        val peeked = source.buffer.snapshot(
+            minOf(source.buffer.size, MAX_ERROR_BODY_BYTES).toInt()
+        ).utf8()
         val pattern = Regex("\"code\"\\s*:\\s*\"" + Regex.escape(code) + "\"")
-        return pattern.containsMatchIn(body)
+        return pattern.containsMatchIn(peeked)
     }
 
-    companion object { private const val MAX_ATTEMPTS = 3 }
+    companion object {
+        private const val MAX_ATTEMPTS = 3
+        private const val MAX_ERROR_BODY_BYTES = 4_096L
+    }
 }

@@ -34,7 +34,7 @@
                 android:layout_gravity="bottom"
                 android:layout_marginStart="@dimen/spacing_md"
                 android:layout_marginEnd="@dimen/spacing_md"
-                android:layout_marginBottom="@dimen/bottom_nav_height"
+                android:layout_marginBottom="@dimen/me_card_bottom_clearance"
                 android:visibility="gone"
                 app:cardElevation="4dp"
                 app:cardCornerRadius="12dp">

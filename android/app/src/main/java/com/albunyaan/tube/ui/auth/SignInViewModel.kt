@@ -76,6 +76,25 @@ class SignInViewModel @Inject constructor(
     fun submit() {
         val snapshot = _ui.value
         if (snapshot.isLoading) return  // de-dupe rapid double-taps
+
+        // Cubic R7 P2 — client-side shape validation before the network call.
+        //
+        // Pre-fix every malformed-email / blank-password attempt round-tripped
+        // to Firebase Auth and consumed throttle quota; legit users on flaky
+        // networks then hit the IP-based throttle window. These predicates
+        // mirror Firebase's own minimum requirements (RFC-5322-shaped email,
+        // 6-char minimum password) so we never reject something Firebase
+        // would have accepted — only the cases where Firebase would have
+        // immediately rejected too.
+        if (!isEmailShape(snapshot.email)) {
+            _ui.update { it.copy(error = AuthErrorCode.INVALID_EMAIL) }
+            return
+        }
+        if (snapshot.password.length < MIN_PASSWORD_LENGTH) {
+            _ui.update { it.copy(error = AuthErrorCode.WEAK_PASSWORD) }
+            return
+        }
+
         _ui.update { it.copy(isLoading = true, error = null, passwordResetSent = false) }
         viewModelScope.launch {
             val result = when (snapshot.mode) {
@@ -89,6 +108,19 @@ class SignInViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    private fun isEmailShape(s: String): Boolean {
+        // Single @, non-empty local and domain, domain has a dot.
+        val at = s.indexOf('@')
+        if (at <= 0 || at != s.lastIndexOf('@')) return false
+        if (at == s.length - 1) return false
+        val domain = s.substring(at + 1)
+        return domain.contains('.') && !domain.startsWith('.') && !domain.endsWith('.')
+    }
+
+    companion object {
+        private const val MIN_PASSWORD_LENGTH = 6
     }
 
     fun onCredential(credential: AuthCredential, fallbackError: AuthErrorCode) {

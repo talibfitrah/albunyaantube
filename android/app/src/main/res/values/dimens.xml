@@ -25,6 +25,15 @@
     <!-- Bottom Navigation (Design Spec: 72dp) -->
     <dimen name="bottom_nav_height">72dp</dimen>
     <dimen name="bottom_nav_active_indicator">12dp</dimen>
+    <!--
+      Cubic R7 P2 — phone-equivalent overlay clearance + a safe margin on
+      tablet/TV. The marginBottom on Me-tab content cards previously
+      referenced bottom_nav_height directly, which was 72dp on phone but
+      0dp on sw600dp/sw720dp — the last card sat flush against the screen
+      edge on large screens. This dedicated dimen falls back to spacing_lg
+      (24dp) on tablet/TV so cards always have breathing room.
+    -->
+    <dimen name="me_card_bottom_clearance">72dp</dimen>
 
     <!-- Shorts action rail bottom offset: clears bottom nav (72dp) AND the
          channel+title overlay (~104dp) so the share icon never overlaps the

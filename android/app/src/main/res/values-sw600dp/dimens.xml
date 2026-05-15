@@ -4,6 +4,8 @@
 
     <!-- Navigation -->
     <dimen name="bottom_nav_height">0dp</dimen>  <!-- Use NavigationRail instead -->
+    <!-- Cubic R7 P2 — safe bottom padding for Me-tab cards on tablet. See values/dimens.xml. -->
+    <dimen name="me_card_bottom_clearance">24dp</dimen>
     <dimen name="navigation_rail_width">80dp</dimen>
     <dimen name="navigation_rail_icon_size">28dp</dimen>  <!-- Slightly larger than phone -->
 
