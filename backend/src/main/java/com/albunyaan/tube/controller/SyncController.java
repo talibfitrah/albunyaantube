@@ -53,8 +53,26 @@ public class SyncController {
             @RequestParam(name = "favorites_id", required = false) String favoritesId)
             throws ExecutionException, InterruptedException, TimeoutException {
         if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        // Validate cursor ids: Firestore docIds are <= 1500 bytes; reject anything
+        // with slashes/control chars or larger than that so a malicious client
+        // can't bloat the startAfter query (cubic R5 P2).
+        if (!isValidCursorId(subsId) || !isValidCursorId(playlistsId) || !isValidCursorId(favoritesId)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
         SyncCursors cursors = new SyncCursors(subs, subsId, playlists, playlistsId, favorites, favoritesId);
         return ResponseEntity.ok(sync.pull(principal.getUid(), cursors));
+    }
+
+    private static final int MAX_CURSOR_ID_BYTES = 1500;
+
+    private static boolean isValidCursorId(String id) {
+        if (id == null || id.isEmpty()) return true;
+        if (id.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_CURSOR_ID_BYTES) return false;
+        for (int i = 0; i < id.length(); i++) {
+            char c = id.charAt(i);
+            if (c == '/' || c < 0x20 || c == 0x7f) return false;
+        }
+        return true;
     }
 
     // ── Subscriptions ───────────────────────────────────────────────────────

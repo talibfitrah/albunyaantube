@@ -104,7 +104,12 @@ public class WatchPageController {
      */
     private final Cache<String, AtomicInteger> shareMetadataRateLimit = Caffeine.newBuilder()
             .maximumSize(50_000)
-            .expireAfterWrite(SHARE_METADATA_RATE_LIMIT_TTL_MILLIS, TimeUnit.MILLISECONDS)
+            // expireAfterAccess gives a true sliding-window TTL: every successful
+            // getAndUpdate refreshes the entry's expiry, so an active caller can't
+            // get a fresh bucket the instant their previous bucket's first-write
+            // age hits the limit (cubic R5 P2 was on expireAfterWrite — wrote then
+            // never refreshed even when reads happened repeatedly).
+            .expireAfterAccess(SHARE_METADATA_RATE_LIMIT_TTL_MILLIS, TimeUnit.MILLISECONDS)
             .build();
 
     public WatchPageController(PublicContentService contentService) {

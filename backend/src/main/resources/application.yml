@@ -197,7 +197,11 @@ download:
 
 # Plan F (ADMIN-USER-01) — outbound mail via Microsoft Graph
 mail:
-  enabled: ${MAIL_ENABLED:true}
+  # Default false: any env that forgets MAIL_ENABLED or doesn't set the
+  # AZURE_* secrets would otherwise fail startup via requireConfigured(...)
+  # (cubic R5 P2). Opt-in via MAIL_ENABLED=true alongside
+  # AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET.
+  enabled: ${MAIL_ENABLED:false}
   from-address: ${MAIL_FROM_ADDRESS:noreply@fitrahtube.com}
   from-display-name: ${MAIL_FROM_DISPLAY_NAME:FitrahTube}
 

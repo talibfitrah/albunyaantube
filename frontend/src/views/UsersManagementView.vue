@@ -45,7 +45,7 @@
         </button>
         <ul v-if="lastResult.expand" class="toast-failures">
           <li v-for="f in lastResult.failures" :key="f.uid">
-            {{ f.uid }}: {{ t('users.bulk.reason.' + f.reason) }}
+            {{ f.uid }}: {{ t('users.bulk.reason.' + f.reason, t('users.bulk.reason.unknown')) }}
           </li>
         </ul>
       </div>
@@ -785,6 +785,10 @@ function toggleSelectAll() {
 
 // Bulk action helpers
 async function handleBulkBlock() {
+  // Guard against empty-selection bulk calls — the bulk buttons remain
+  // enabled even with no rows ticked and would otherwise POST `uids: []`
+  // and a confirm dialog appear with nothing to confirm (cubic R5 P2).
+  if (selected.value.size === 0) return;
   const uids = Array.from(selected.value);
   try {
     const result = await bulkBlock({ uids });
@@ -803,7 +807,11 @@ async function handleBulkBlock() {
 }
 
 async function handleBulkDelete() {
-  if (!window.confirm('Delete selected users? This cannot be undone.')) {
+  if (selected.value.size === 0) return;
+  // Use the i18n key added in the same diff (cubic R5 P1). The previous
+  // hardcoded English string left the Arabic/Dutch keys dead and broke
+  // Arabic admin workflows.
+  if (!window.confirm(t('users.confirmDelete.bulk', { n: selected.value.size }))) {
     return;
   }
   const uids = Array.from(selected.value);
@@ -824,6 +832,7 @@ async function handleBulkDelete() {
 }
 
 async function handleBulkRecover() {
+  if (selected.value.size === 0) return;
   const uids = Array.from(selected.value);
   try {
     const result = await bulkRecover({ uids });
@@ -842,6 +851,7 @@ async function handleBulkRecover() {
 }
 
 async function handleBulkRevokeSessions() {
+  if (selected.value.size === 0) return;
   const uids = Array.from(selected.value);
   try {
     const result = await bulkRevokeSessions({ uids });
@@ -863,11 +873,17 @@ async function handleForceLogout(user: AdminUser) {
   if (forcingLogoutUserId.value === user.id) {
     return;
   }
+  // Confirm prompt added in the same diff (cubic R5 P1) — without it a
+  // single misclick on the per-row red button instantly invalidated a
+  // user's sessions.
+  if (!window.confirm(t('users.forceLogout.confirm', { email: user.email }))) {
+    return;
+  }
   forcingLogoutUserId.value = user.id;
   actionError.value = null;
   try {
     await forceLogout(user.id);
-    actionMessage.value = `Force logout sent for ${user.email}`;
+    actionMessage.value = t('users.forceLogout.success', { email: user.email });
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Force logout failed';
   } finally {

@@ -82,14 +82,17 @@ class AccountRepositoryImpl(
     )
 
     /**
-     * Parses the HttpException error body for a `code` field. Uses naive
-     * substring match: the canonical Moshi parse would round-trip ResponseBody,
-     * which Retrofit has already consumed by the time we catch HttpException.
-     * Cheap and safe: the only producer is our own AccountController.
+     * Parses the HttpException error body for a `code` field. Uses a tighter
+     * substring match — the previous shape `contains("\"code\"") && contains("\"$code\"")`
+     * matched on `validationField: "AGE_INELIGIBLE_input"` and other places
+     * the code text appears in any field value, misrouting the user (cubic R5
+     * P2). Looks for the exact JSON key/value pair `"code":"$code"` (with
+     * optional whitespace) instead.
      */
     private fun bodyHasCode(e: HttpException, code: String): Boolean {
         val body = e.response()?.errorBody()?.string() ?: return false
-        return body.contains("\"code\"") && body.contains("\"$code\"")
+        val pattern = Regex("\"code\"\\s*:\\s*\"" + Regex.escape(code) + "\"")
+        return pattern.containsMatchIn(body)
     }
 
     companion object { private const val MAX_ATTEMPTS = 3 }

@@ -105,6 +105,10 @@ const thirdUser: AdminUser = {
 describe('UsersManagementView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // window.confirm() guards bulk-delete and force-logout actions; stub to
+    // auto-accept so click-through tests don't deadlock waiting for a
+    // confirmation that never resolves (cubic R5 Tier-A test fallout).
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     fetchUsersPageMock.mockResolvedValue(createPage([baseUser, secondUser]));
     createUserMock.mockResolvedValue({
       id: 'user-3',

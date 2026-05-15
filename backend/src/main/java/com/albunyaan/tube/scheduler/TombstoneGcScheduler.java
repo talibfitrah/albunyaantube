@@ -5,6 +5,7 @@ import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
+import com.google.cloud.firestore.WriteBatch;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +27,10 @@ public class TombstoneGcScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(TombstoneGcScheduler.class);
     private static final long RETENTION_DAYS = 90L;
+    /** Firestore WriteBatch hard limit (500 ops per batch). */
+    private static final int WRITE_BATCH_SIZE = 500;
+    /** Cap per scheduled run so one userbase doesn't pin the scheduler for minutes. */
+    private static final int MAX_DELETES_PER_RUN = 20_000;
 
     private final Firestore firestore;
     private final MeterRegistry meters;
@@ -55,13 +60,42 @@ public class TombstoneGcScheduler {
             QuerySnapshot snap = firestore.collectionGroup(type)
                     .whereEqualTo("deleted", true)
                     .whereLessThan("updatedAt", cutoff)
+                    .limit(MAX_DELETES_PER_RUN)
                     .get().get(timeouts.getBulkQuery(), TimeUnit.SECONDS);
-            int n = 0;
+            int total = 0;
+            WriteBatch batch = firestore.batch();
+            int inBatch = 0;
             for (QueryDocumentSnapshot d : snap.getDocuments()) {
-                d.getReference().delete().get(timeouts.getWrite(), TimeUnit.SECONDS);
-                n++;
+                // Re-assert deleted=true via updateTime precondition so a concurrent
+                // upsert that resurrected the row between snapshot and commit aborts
+                // this delete instead of clobbering the live data (cubic R5 P0 GC
+                // race). The precondition matches the snapshot's update time; if
+                // Firestore has seen a later write, the batch commit fails.
+                batch.delete(d.getReference(), com.google.cloud.firestore.Precondition.updatedAt(d.getUpdateTime()));
+                inBatch++;
+                total++;
+                if (inBatch == WRITE_BATCH_SIZE) {
+                    try {
+                        batch.commit().get(timeouts.getWrite(), TimeUnit.SECONDS);
+                    } catch (Exception commitErr) {
+                        // Partial-batch resurrection — log + continue with next batch
+                        // rather than aborting the whole run.
+                        log.warn("tombstone.gc.batch.commit.failed type={} batchSize={} err={}",
+                                type, inBatch, commitErr.getMessage());
+                    }
+                    batch = firestore.batch();
+                    inBatch = 0;
+                }
             }
-            return n;
+            if (inBatch > 0) {
+                try {
+                    batch.commit().get(timeouts.getWrite(), TimeUnit.SECONDS);
+                } catch (Exception commitErr) {
+                    log.warn("tombstone.gc.batch.commit.failed type={} batchSize={} err={}",
+                            type, inBatch, commitErr.getMessage());
+                }
+            }
+            return total;
         } catch (Exception e) {
             log.error("account.sync.tombstone.gc.error type={}", type, e);
             return 0;

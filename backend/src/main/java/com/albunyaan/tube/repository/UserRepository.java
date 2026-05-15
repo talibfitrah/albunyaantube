@@ -304,6 +304,12 @@ public class UserRepository {
      * atomically; Firestore's optimistic concurrency aborts and retries
      * losers.
      *
+     * <p><b>Factory contract</b> (cubic R5 P2): the supplier MUST be pure —
+     * no side effects, no audit emissions, no external state mutation. Firestore
+     * may invoke the transaction lambda multiple times on conflict; any side
+     * effect inside the factory will fire once per retry. Capture audit/event
+     * emissions in the controller AFTER {@code getOrCreate} returns.
+     *
      * <p>The cache eviction matches {@link #save(User)} so the next
      * {@code findByUid} call returns the freshly-written user rather than the
      * pre-create empty Optional.

@@ -29,7 +29,14 @@ class FakeSyncApi : SyncApi {
         Response.success(FavoriteSyncDto(id, true, 0L, "", "", null, 0, 0L))
     }
 
-    override suspend fun pull(subs: Long, playlists: Long, favorites: Long): Response<SyncResponseDto> = pullResponse()
+    override suspend fun pull(
+        subs: Long,
+        playlists: Long,
+        favorites: Long,
+        subsId: String?,
+        playlistsId: String?,
+        favoritesId: String?,
+    ): Response<SyncResponseDto> = pullResponse()
     override suspend fun putSubscription(id: String, body: PutSubscriptionRequest) = putSubResponse(id, body)
     override suspend fun deleteSubscription(id: String) = deleteSubResponse(id)
     override suspend fun putPlaylist(id: String, body: PutPlaylistRequest) = putPlaylistResponse(id, body)

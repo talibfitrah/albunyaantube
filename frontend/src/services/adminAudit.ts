@@ -79,9 +79,12 @@ export async function fetchAuditLogPage(params: AuditLogPageParams = {}): Promis
   }
 
   // Plan F (T21-T23): backend now returns { items, nextCursor } instead of a bare array.
-  const page = await authorizedJsonFetch<{ items: AuditLog[]; nextCursor: string | null }>(
-    `${AUDIT_BASE_PATH}?${queryParams}`
-  );
+  // Defensively handle deploy-order skew between FE and BE: if the backend
+  // momentarily returns a legacy bare array (rollback, cached proxy response,
+  // pre-deploy state), coerce it into the new shape rather than throwing
+  // `page.items.map is not a function` and crashing the page (cubic R5 P2).
+  const raw = await authorizedJsonFetch<unknown>(`${AUDIT_BASE_PATH}?${queryParams}`);
+  const page = normaliseAuditPage(raw);
 
   return {
     data: page.items.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null),
@@ -91,6 +94,22 @@ export async function fetchAuditLogPage(params: AuditLogPageParams = {}): Promis
       hasNext: page.nextCursor != null
     }
   };
+}
+
+function normaliseAuditPage(
+  raw: unknown
+): { items: AuditLog[]; nextCursor: string | null } {
+  if (Array.isArray(raw)) {
+    return { items: raw as AuditLog[], nextCursor: null };
+  }
+  if (raw && typeof raw === 'object' && 'items' in raw) {
+    const obj = raw as { items?: unknown; nextCursor?: unknown };
+    return {
+      items: Array.isArray(obj.items) ? (obj.items as AuditLog[]) : [],
+      nextCursor: typeof obj.nextCursor === 'string' ? obj.nextCursor : null
+    };
+  }
+  return { items: [], nextCursor: null };
 }
 
 export async function fetchAuditLogsByActor(

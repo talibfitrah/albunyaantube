@@ -34,7 +34,17 @@ public class SubmissionRateLimitInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest req, HttpServletResponse res, Object handler) throws Exception {
         if (!"POST".equals(req.getMethod())) return true;
         var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) return true;
+        // Spring's AnonymousAuthenticationToken returns true from isAuthenticated(),
+        // so the bare null/!isAuthenticated guard would let anonymous requests
+        // pass through. The downstream instanceof FirebaseUserDetails check
+        // today happens to also exclude anonymous tokens, but be explicit so a
+        // future change to allow other principal types doesn't accidentally
+        // widen the bypass (cubic R5 P2).
+        if (auth == null
+                || !auth.isAuthenticated()
+                || auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
+            return true;
+        }
         Object principal = auth.getPrincipal();
         if (!(principal instanceof FirebaseUserDetails fud)) return true;
         Long retryAfter = limiter.tryAcquire(fud.getUid());

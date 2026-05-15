@@ -920,15 +920,20 @@ export const messages = {
           not_deleted: 'Not deleted',
           self_action_forbidden: 'Cannot apply to your own account',
           admin_target_forbidden: 'Cannot apply to admin accounts',
+          blocked_cannot_delete: 'Unblock the user before soft-deleting',
+          deleted_cannot_block: 'Recover the deleted user before blocking',
+          deleted_cannot_role_change: 'Recover the deleted user before changing role',
           firebase_error: 'Provider error',
-          invalid_state: 'Invalid state for this action'
+          invalid_state: 'Invalid state for this action',
+          unknown: 'Unknown error'
         }
       },
       confirmDelete: {
         bulk: 'Soft-delete {n} users? They can be recovered later.'
       },
       forceLogout: {
-        confirm: 'Force logout {email}? They will be signed out within an hour.'
+        confirm: 'Force logout {email}? They will be signed out within an hour.',
+        success: 'Force logout sent for {email}'
       }
     },
     audit: {
@@ -2334,15 +2339,20 @@ export const messages = {
           not_deleted: 'غير محذوف',
           self_action_forbidden: 'لا يمكن تطبيق هذا الإجراء على حسابك',
           admin_target_forbidden: 'لا يمكن تطبيق هذا الإجراء على حسابات المسؤولين',
+          blocked_cannot_delete: 'يجب إلغاء الحظر قبل الحذف المؤقت',
+          deleted_cannot_block: 'يجب استرجاع المستخدم المحذوف قبل الحظر',
+          deleted_cannot_role_change: 'يجب استرجاع المستخدم المحذوف قبل تغيير الدور',
           firebase_error: 'خطأ في الموفر',
-          invalid_state: 'الحالة غير صالحة لهذا الإجراء'
+          invalid_state: 'الحالة غير صالحة لهذا الإجراء',
+          unknown: 'خطأ غير معروف'
         }
       },
       confirmDelete: {
         bulk: 'حذف {n} مستخدمين مبدئياً؟ يمكن استعادتهم لاحقاً.'
       },
       forceLogout: {
-        confirm: 'تسجيل خروج إجباري لـ {email}؟ سيتم تسجيل خروجه خلال ساعة.'
+        confirm: 'تسجيل خروج إجباري لـ {email}؟ سيتم تسجيل خروجه خلال ساعة.',
+        success: 'تم إرسال تسجيل الخروج الإجباري لـ {email}'
       }
     },
     audit: {
@@ -3579,15 +3589,20 @@ export const messages = {
           not_deleted: 'Niet verwijderd',
           self_action_forbidden: 'Kan niet op je eigen account toepassen',
           admin_target_forbidden: 'Kan niet op beheerdersaccounts toepassen',
+          blocked_cannot_delete: 'Hef eerst de blokkering op voor tijdelijk verwijderen',
+          deleted_cannot_block: 'Herstel de verwijderde gebruiker voor blokkeren',
+          deleted_cannot_role_change: 'Herstel de verwijderde gebruiker voor het wijzigen van de rol',
           firebase_error: 'Providerfout',
-          invalid_state: 'Ongeldige status voor deze actie'
+          invalid_state: 'Ongeldige status voor deze actie',
+          unknown: 'Onbekende fout'
         }
       },
       confirmDelete: {
         bulk: '{n} gebruikers tijdelijk verwijderen? Ze kunnen later worden hersteld.'
       },
       forceLogout: {
-        confirm: 'Geforceerd afmelden van {email}? Ze worden binnen een uur uitgelogd.'
+        confirm: 'Geforceerd afmelden van {email}? Ze worden binnen een uur uitgelogd.',
+        success: 'Geforceerd afmelden verzonden voor {email}'
       }
     },
     audit: {

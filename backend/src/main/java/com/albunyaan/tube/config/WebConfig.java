@@ -26,13 +26,23 @@ public class WebConfig implements WebMvcConfigurer {
         this.interceptorProvider = interceptorProvider;
     }
 
+    /**
+     * Conditional bean: only registers the interceptor when {@link SubmissionRateLimiter}
+     * is on the context. The previous shape returned {@code null}, which registered a
+     * null bean under the name — a future {@code @Autowired SubmissionRateLimitInterceptor}
+     * (non-Optional) would NPE rather than fail wiring (cubic R5 P2). The
+     * {@link org.springframework.boot.autoconfigure.condition.ConditionalOnBean}
+     * annotation lets Spring omit the bean entirely when the limiter isn't loaded
+     * (e.g. {@code @WebMvcTest} slices); {@link InterceptorRegistry#addInterceptors}
+     * below uses {@code ObjectProvider.ifAvailable} so the registration is a no-op
+     * when the bean is missing.
+     */
     @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(SubmissionRateLimiter.class)
     public SubmissionRateLimitInterceptor submissionRateLimitInterceptor(
-            ObjectProvider<SubmissionRateLimiter> limiter,
+            SubmissionRateLimiter limiter,
             ObjectMapper json) {
-        SubmissionRateLimiter resolved = limiter.getIfAvailable();
-        if (resolved == null) return null;   // interceptor will be absent in slices that don't load the limiter
-        return new SubmissionRateLimitInterceptor(resolved, json);
+        return new SubmissionRateLimitInterceptor(limiter, json);
     }
 
     @Override

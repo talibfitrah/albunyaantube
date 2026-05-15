@@ -46,6 +46,12 @@ class FirebaseAuthInterceptor @Inject constructor(
         // the stack.
         val token = try {
             runBlocking { user.getIdToken(false).await().token }
+        } catch (ie: InterruptedException) {
+            // Don't swallow interrupts (cubic R5 P2). Propagate so OkHttp's
+            // dispatcher can abort cleanly instead of proceeding unsigned
+            // and burning a 401 round-trip on a cancelled call.
+            Thread.currentThread().interrupt()
+            throw java.io.InterruptedIOException("Auth interceptor interrupted").initCause(ie) as java.io.InterruptedIOException
         } catch (_: Exception) {
             null
         } ?: return chain.proceed(chain.request())

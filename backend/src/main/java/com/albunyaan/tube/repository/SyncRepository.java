@@ -56,13 +56,17 @@ public class SyncRepository {
      */
     public List<RawRow> pull(String uid, String type, long since, String lastDocId, int limit)
             throws ExecutionException, InterruptedException, TimeoutException {
+        // Clamp negative since to 0 so Timestamp.ofTimeSecondsAndNanos can't
+        // throw on the negative nanos arg produced by a legacy `-1` cursor
+        // (cubic R5 P2).
+        long sinceClamped = Math.max(since, 0L);
         Query q = coll(uid, type)
                 .orderBy("updatedAt", Query.Direction.ASCENDING)
                 .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
-        if (since > 0L) {
+        if (sinceClamped > 0L) {
             Timestamp sinceTs = Timestamp.ofTimeSecondsAndNanos(
-                    since / 1_000L,
-                    (int) ((since % 1_000L) * 1_000_000L));
+                    sinceClamped / 1_000L,
+                    (int) ((sinceClamped % 1_000L) * 1_000_000L));
             if (lastDocId != null && !lastDocId.isBlank()) {
                 q = q.startAfter(sinceTs, lastDocId);
             } else {
