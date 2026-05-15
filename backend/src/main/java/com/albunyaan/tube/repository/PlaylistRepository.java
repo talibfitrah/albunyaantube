@@ -138,6 +138,36 @@ public class PlaylistRepository {
         }
     }
 
+    /**
+     * Cubic R5 P1 — batch counterpart of {@link #isArchivedById}.
+     * See {@code ChannelRepository.archivedIdsAmong} for rationale and chunking
+     * strategy; this is the playlist twin.
+     */
+    public java.util.Set<String> archivedIdsAmong(java.util.Collection<String> youtubeIds) {
+        if (youtubeIds == null || youtubeIds.isEmpty()) return java.util.Set.of();
+        java.util.Set<String> out = new java.util.HashSet<>();
+        java.util.List<String> all = new java.util.ArrayList<>(youtubeIds);
+        for (int i = 0; i < all.size(); i += 30) {
+            java.util.List<String> chunk = all.subList(i, Math.min(i + 30, all.size()));
+            try {
+                ApiFuture<QuerySnapshot> q = getCollection()
+                        .whereIn("youtubeId", new java.util.ArrayList<>(chunk))
+                        .get();
+                for (QueryDocumentSnapshot d : q.get(timeoutProperties.getRead(), java.util.concurrent.TimeUnit.SECONDS).getDocuments()) {
+                    Playlist p = d.toObject(Playlist.class);
+                    var s = p.getValidationStatus();
+                    if (s == com.albunyaan.tube.model.ValidationStatus.ARCHIVED
+                            || s == com.albunyaan.tube.model.ValidationStatus.UNAVAILABLE) {
+                        out.add(p.getYoutubeId());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("archivedIdsAmong: chunk lookup failed, failing open", e);
+            }
+        }
+        return out;
+    }
+
     public List<Playlist> findByStatus(String status) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", status)

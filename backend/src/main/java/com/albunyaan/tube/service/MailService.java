@@ -69,7 +69,13 @@ public class MailService {
         }
     }
 
-    @Async
+    /**
+     * Cubic R5 P1: routes to bounded {@code mailExecutor} instead of Spring's
+     * default {@code SimpleAsyncTaskExecutor}. The latter spawns an unbounded
+     * thread per send — a bulk-reset wave would create one HTTP-bound thread
+     * per recipient.
+     */
+    @Async("mailExecutor")
     public void sendPasswordResetEmail(String to, String resetLink) {
         if (!enabled) {
             log.info("mail.disabled to={}", to);
@@ -93,11 +99,37 @@ public class MailService {
     void handleSendFailure(String to, Exception e) {
         log.error("password_reset_email.failed to={}", to, e);
         meters.counter("email.send.failure", "type", "password_reset").increment();
+        // Cubic R5 P1: never pipe the raw `to` into an audit row — log-shippers
+        // and CSV exporters get poisoned by CR/LF/control chars in unvalidated
+        // recipient strings. Sanitise once here.
         auditLog.logSystem(
                 "USER_PASSWORD_RESET_EMAIL_FAILED",
                 "user",
-                to,
+                sanitiseRecipientForAudit(to),
                 "mail-service: error=" + e.getClass().getSimpleName());
+    }
+
+    /**
+     * Returns the recipient in a form safe to embed in an audit row: strips
+     * CR/LF/control chars, caps length to 254 chars (RFC 5321 max), and
+     * collapses anything that isn't a plausible RFC 5322 mailbox to the
+     * literal string {@code <invalid>}. We deliberately do not throw — the
+     * mail path itself already failed and we want the audit row written
+     * regardless. Package-private for test.
+     */
+    static String sanitiseRecipientForAudit(String to) {
+        if (to == null) return "<null>";
+        // strip CR / LF / control chars (header-injection vector for log shippers)
+        String stripped = to.replaceAll("[\\p{Cntrl}]", "");
+        if (stripped.isBlank() || stripped.length() > 254) return "<invalid>";
+        // Minimal RFC 5322 shape: local@domain, no spaces, exactly one @.
+        if (stripped.indexOf('@') < 1 || stripped.lastIndexOf('@') != stripped.indexOf('@')) {
+            return "<invalid>";
+        }
+        if (stripped.contains(" ") || stripped.contains(",") || stripped.contains(";")) {
+            return "<invalid>";
+        }
+        return stripped;
     }
 
     /** Package-private for unit-testability. */

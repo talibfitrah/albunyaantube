@@ -6,8 +6,11 @@ import com.albunyaan.tube.repository.SyncRepository.RawRow;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Plan D — converts archived live rows into virtual tombstones for sync reads.
@@ -36,22 +39,65 @@ public class ArchiveProjector {
         this.videos = videos;
     }
 
+    // ─── Per-row API (back-compat for unit tests) ────────────────────────
+    //
+    // Each call here triggers one Firestore round-trip via `isArchivedById`.
+    // Production callers should use the batch counterparts below instead —
+    // a full sync page of 500 rows across all three types would otherwise
+    // generate 1,500 sequential reads (cubic R5 P1 N+1 hazard).
+
     public RawRow projectSubscription(RawRow row) {
-        return projectIf(row, () -> channels.isArchivedById(row.id()));
+        return projectIf(row, channels.isArchivedById(row.id()));
     }
 
     public RawRow projectPlaylist(RawRow row) {
-        return projectIf(row, () -> playlists.isArchivedById(row.id()));
+        return projectIf(row, playlists.isArchivedById(row.id()));
     }
 
     public RawRow projectFavorite(RawRow row) {
-        return projectIf(row, () -> videos.isArchivedById(row.id()));
+        return projectIf(row, videos.isArchivedById(row.id()));
     }
 
-    private RawRow projectIf(RawRow row, java.util.function.BooleanSupplier archived) {
+    // ─── Batch API (used by SyncService for full-page reads) ─────────────
+    //
+    // Fetches the archive set in one chunked `whereIn` round-trip per page
+    // (chunks of 30) instead of one read per row. Maps each row through the
+    // same projection logic as the per-row API.
+
+    public List<RawRow> projectSubscriptions(List<RawRow> rows) {
+        if (rows.isEmpty()) return rows;
+        Set<String> archived = channels.archivedIdsAmong(idsOf(rows));
+        return projectBatch(rows, archived);
+    }
+
+    public List<RawRow> projectPlaylists(List<RawRow> rows) {
+        if (rows.isEmpty()) return rows;
+        Set<String> archived = playlists.archivedIdsAmong(idsOf(rows));
+        return projectBatch(rows, archived);
+    }
+
+    public List<RawRow> projectFavorites(List<RawRow> rows) {
+        if (rows.isEmpty()) return rows;
+        Set<String> archived = videos.archivedIdsAmong(idsOf(rows));
+        return projectBatch(rows, archived);
+    }
+
+    private static List<String> idsOf(List<RawRow> rows) {
+        List<String> ids = new ArrayList<>(rows.size());
+        for (RawRow r : rows) ids.add(r.id());
+        return ids;
+    }
+
+    private static List<RawRow> projectBatch(List<RawRow> rows, Set<String> archived) {
+        List<RawRow> out = new ArrayList<>(rows.size());
+        for (RawRow r : rows) out.add(projectIf(r, archived.contains(r.id())));
+        return out;
+    }
+
+    private static RawRow projectIf(RawRow row, boolean archived) {
         Object deletedFlag = row.data().get("deleted");
         if (Boolean.TRUE.equals(deletedFlag)) return row;        // real tombstone — no double-process
-        if (!archived.getAsBoolean()) return row;                // not archived — pass through
+        if (!archived) return row;                               // not archived — pass through
         Map<String, Object> tomb = new HashMap<>(row.data());
         tomb.put("deleted", true);
         return new RawRow(row.id(), tomb, row.updatedAt());

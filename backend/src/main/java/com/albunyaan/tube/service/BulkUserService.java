@@ -50,8 +50,13 @@ public class BulkUserService {
             // could be silently restored by another admin without the per-target
             // admin_target_forbidden audit row. Keeping the check uniform also
             // simplifies reasoning: bulk endpoints never touch admins.
+            //
+            // Cubic R5 P1: use the uncached read so a just-promoted admin from
+            // another node is correctly detected. `findByUid` goes through the
+            // per-JVM Caffeine cache (`userStatus`); the bulk-target guard MUST
+            // see the live role or we leak admins into the bulk path.
             try {
-                Optional<User> u = userRepository.findByUid(uid);
+                Optional<User> u = userRepository.findByUidUncached(uid);
                 if (u.isPresent() && "admin".equalsIgnoreCase(u.get().getRole())) {
                     failures.add(new FailureEntry(uid, "admin_target_forbidden"));
                     continue;
@@ -101,25 +106,27 @@ public class BulkUserService {
     private static String classify(String msg) {
         if (msg == null) return "invalid_state";
         String m = msg.toLowerCase();
-        // Patterns must match the actual exception messages AuthService throws
-        // (not aspirational "already blocked"/"not blocked" strings that the
-        // earlier impl matched against). Cross-state rejections were silently
-        // falling through to invalid_state because the predicates never hit.
-        // Sources (AuthService):
-        //   - "User is already blocked"                  → already_blocked
+        // Patterns must match the actual exception messages AuthService throws.
+        //
+        // Cubic R5 P1 — dead branches removed:
+        //   - "already blocked" / "already deleted":  F13 made BLOCK/DELETE
+        //     idempotent (no-op on already-X), so these strings are never
+        //     thrown any more — the predicates never fired.
+        //   - "cannot change role of a deleted":      ROLE_CHANGE is not a
+        //     BulkAction (see {@link BulkAction}); bulk endpoints never reach
+        //     {@code AuthService.updateRole} where this string is thrown.
+        //
+        // Live branches:
         //   - "User is not in BLOCKED status: ..."       → not_blocked
-        //   - "User is already deleted"                  → already_deleted
+        //     (recoverUser, when target isn't blocked)
         //   - "User is not in DELETED status: ..."       → not_deleted
+        //     (recoverUser, when target isn't deleted)
         //   - "Unblock before soft-deleting: ..."        → blocked_cannot_delete
         //   - "Cannot block a deleted user. Recover ..." → deleted_cannot_block
-        //   - "Cannot change role of a deleted ..."      → deleted_cannot_role_change
-        if (m.contains("already blocked"))                 return "already_blocked";
         if (m.contains("not in blocked status"))           return "not_blocked";
-        if (m.contains("already deleted"))                 return "already_deleted";
         if (m.contains("not in deleted status"))           return "not_deleted";
         if (m.contains("unblock before soft-deleting"))    return "blocked_cannot_delete";
         if (m.contains("cannot block a deleted user"))     return "deleted_cannot_block";
-        if (m.contains("cannot change role of a deleted")) return "deleted_cannot_role_change";
         return "invalid_state";
     }
 }

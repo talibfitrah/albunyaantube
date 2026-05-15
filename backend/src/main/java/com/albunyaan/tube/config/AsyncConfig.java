@@ -140,6 +140,39 @@ public class AsyncConfig {
     }
 
     /**
+     * Cubic R5 P1 — bounded executor for Graph mail sends.
+     *
+     * {@code @Async} on MailService.send* methods previously routed to Spring's
+     * default {@code SimpleAsyncTaskExecutor}, which spawns a NEW thread per
+     * send with no upper bound. A bulk-reset wave (operator initiates password
+     * reset for N users) creates N concurrent Graph HTTP calls — exactly the
+     * DoS surface F5 closed on AuditLogService.
+     *
+     * Configuration rationale:
+     * - corePoolSize=2: ambient capacity for solo sends.
+     * - maxPoolSize=4: keep concurrent Graph calls modest; Microsoft Graph
+     *   has its own throttling and bursts will get 429-throttled anyway.
+     * - queueCapacity=200: absorb a bulk-reset wave without spawning threads.
+     * - CallerRunsPolicy: under saturation the caller (admin HTTP thread) runs
+     *   the send inline. The send is fire-and-forget on the request path
+     *   (caller already returned 202), so the inline cost is bounded.
+     */
+    @Bean(name = "mailExecutor")
+    public Executor mailExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(200);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("mail-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(15);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    /**
      * Custom rejection handler that logs when tasks are rejected and throws an exception.
      *
      * This ensures:

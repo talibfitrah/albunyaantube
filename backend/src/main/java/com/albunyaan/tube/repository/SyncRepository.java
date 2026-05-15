@@ -96,6 +96,12 @@ public class SyncRepository {
      * Merge {@code payload} into {@code users/{uid}/{type}/{id}}, forcing
      * {@code deleted=false} and a server-side {@code updatedAt}.  Returns the
      * persisted row with its resolved timestamp.
+     *
+     * <p>Cubic R5 P1: use {@link WriteResult#getUpdateTime()} from the merge
+     * commit instead of re-reading the doc. A concurrent merge from another
+     * device between our write and the re-read would otherwise leak the
+     * other device's {@code updatedAt} back to us as if it were our commit
+     * time — the next pull then skips past a write the client doesn't have.
      */
     public RawRow upsert(String uid, String type, String id, Map<String, Object> payload)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -103,10 +109,12 @@ public class SyncRepository {
         Map<String, Object> body = new HashMap<>(payload);
         body.put("deleted",   false);
         body.put("updatedAt", FieldValue.serverTimestamp());
-        ref.set(body, SetOptions.merge()).get(timeouts.getWrite(), TimeUnit.SECONDS);
-        DocumentSnapshot stored = ref.get().get(timeouts.getRead(), TimeUnit.SECONDS);
-        Timestamp ts = stored.getTimestamp("updatedAt");
-        return new RawRow(id, stored.getData(), ts == null ? 0L : ts.toDate().getTime());
+        WriteResult wr = ref.set(body, SetOptions.merge())
+                .get(timeouts.getWrite(), TimeUnit.SECONDS);
+        Timestamp commit = wr.getUpdateTime();
+        Map<String, Object> echo = new HashMap<>(body);
+        echo.put("updatedAt", commit); // replace the serverTimestamp() sentinel with the resolved value
+        return new RawRow(id, echo, commit.toDate().getTime());
     }
 
     // -------------------------------------------------------------------------
@@ -116,6 +124,9 @@ public class SyncRepository {
     /**
      * Soft-delete {@code users/{uid}/{type}/{id}} by merging {@code deleted=true}
      * and a fresh server-side {@code updatedAt}.  Returns the persisted row.
+     *
+     * <p>Cubic R5 P1: same read-after-write hazard as {@link #upsert} — use the
+     * write result's commit time instead of a re-read.
      */
     public RawRow tombstone(String uid, String type, String id)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -123,9 +134,11 @@ public class SyncRepository {
         Map<String, Object> body = new HashMap<>();
         body.put("deleted",   true);
         body.put("updatedAt", FieldValue.serverTimestamp());
-        ref.set(body, SetOptions.merge()).get(timeouts.getWrite(), TimeUnit.SECONDS);
-        DocumentSnapshot stored = ref.get().get(timeouts.getRead(), TimeUnit.SECONDS);
-        Timestamp ts = stored.getTimestamp("updatedAt");
-        return new RawRow(id, stored.getData(), ts == null ? 0L : ts.toDate().getTime());
+        WriteResult wr = ref.set(body, SetOptions.merge())
+                .get(timeouts.getWrite(), TimeUnit.SECONDS);
+        Timestamp commit = wr.getUpdateTime();
+        Map<String, Object> echo = new HashMap<>(body);
+        echo.put("updatedAt", commit);
+        return new RawRow(id, echo, commit.toDate().getTime());
     }
 }

@@ -784,7 +784,10 @@ public class ApprovalService {
 
         Map<String, Object> details = new HashMap<>();
         details.put("notes", note);
-        auditLogService.logRejection("channel", channel.getId(), actorUid, actorDisplayName, details);
+        // Cubic R5 P1: REQUEST_CHANGES is not a rejection — emit the dedicated
+        // `*_changes_requested` action so downstream dashboards don't conflate
+        // the two.
+        auditLogService.logChangesRequested("channel", channel.getId(), actorUid, actorDisplayName, details);
 
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("REQUEST_CHANGES");
@@ -815,7 +818,8 @@ public class ApprovalService {
 
         Map<String, Object> details = new HashMap<>();
         details.put("notes", note);
-        auditLogService.logRejection("playlist", playlist.getId(), actorUid, actorDisplayName, details);
+        // Cubic R5 P1: dedicated changes-requested action — see channel path.
+        auditLogService.logChangesRequested("playlist", playlist.getId(), actorUid, actorDisplayName, details);
 
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("REQUEST_CHANGES");
@@ -846,7 +850,8 @@ public class ApprovalService {
 
         Map<String, Object> details = new HashMap<>();
         details.put("notes", note);
-        auditLogService.logRejection("video", video.getId(), actorUid, actorDisplayName, details);
+        // Cubic R5 P1: dedicated changes-requested action — see channel path.
+        auditLogService.logChangesRequested("video", video.getId(), actorUid, actorDisplayName, details);
 
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("REQUEST_CHANGES");

@@ -117,6 +117,32 @@ public class AuditLogService {
     }
 
     /**
+     * Cubic R5 P1 — REQUEST_CHANGES has its own audit action.
+     *
+     * Previously the requestChanges* paths reused {@link #logRejection}, so a
+     * "needs changes" review showed up as {@code *_rejected} in the audit log.
+     * Downstream dashboards and any reviewer query filtering on
+     * {@code action="*_rejected"} treated changes-requested events as
+     * rejections — false positives that polluted incident timelines and the
+     * moderator KPI tables.
+     */
+    @Async("auditExecutor")
+    public void logChangesRequested(String entityType, String entityId, String actorUid,
+                                    String actorDisplayName, Map<String, Object> details) {
+        try {
+            AuditLog auditLog = new AuditLog(entityType + "_changes_requested", entityType, entityId, actorUid);
+            auditLog.setActorDisplayName(actorDisplayName);
+            if (details != null) {
+                auditLog.setDetails(details);
+            }
+            auditLogRepository.save(auditLog);
+            logger.debug("Changes-requested audit log created: {} {} by {}", entityType, entityId, actorUid);
+        } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
+            logger.error("Failed to create changes-requested audit log: {} {} by {}", entityType, entityId, actorUid, e);
+        }
+    }
+
+    /**
      * Builder for USER_BLOCKED action log.
      * Used in transactional user blocking (Task 7).
      * Does NOT persist — caller must use tx.set() within AuthService transaction.

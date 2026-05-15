@@ -156,7 +156,17 @@ public class RegistryController {
                     ex.setApprovalMetadata(null);
                     ex.setUpdatedAt(com.google.cloud.Timestamp.now());
                     if (channel.getCategoryIds() != null) ex.setCategoryIds(channel.getCategoryIds());
-                    channelRepository.save(ex);
+                    // Cubic R5 P1: optimistic concurrency. Two concurrent resubmits,
+                    // or a resubmit racing an admin's `requestChanges` retry, would
+                    // otherwise silently overwrite each other. `saveIfStatus` runs
+                    // the write inside a Firestore tx that re-asserts the current
+                    // status is REQUEST_CHANGES; the loser gets IllegalStateException
+                    // → we return 409 so the client can re-fetch.
+                    try {
+                        channelRepository.saveIfStatus(ex, "REQUEST_CHANGES");
+                    } catch (IllegalStateException race) {
+                        return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                    }
                     auditLogService.log("channel_resubmitted_after_changes", "channel", ex.getId(), user);
                     return ResponseEntity.ok(ex);
                 }
@@ -345,7 +355,12 @@ public class RegistryController {
                     ex.setApprovalMetadata(null);
                     ex.setUpdatedAt(com.google.cloud.Timestamp.now());
                     if (playlist.getCategoryIds() != null) ex.setCategoryIds(playlist.getCategoryIds());
-                    playlistRepository.save(ex);
+                    // Cubic R5 P1: see channel resubmit path — optimistic concurrency.
+                    try {
+                        playlistRepository.saveIfStatus(ex, "REQUEST_CHANGES");
+                    } catch (IllegalStateException race) {
+                        return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                    }
                     auditLogService.log("playlist_resubmitted_after_changes", "playlist", ex.getId(), user);
                     return ResponseEntity.ok(ex);
                 }
@@ -626,7 +641,12 @@ public class RegistryController {
                     ex.setApprovalMetadata(null);
                     ex.setUpdatedAt(com.google.cloud.Timestamp.now());
                     if (video.getCategoryIds() != null) ex.setCategoryIds(video.getCategoryIds());
-                    videoRepository.save(ex);
+                    // Cubic R5 P1: see channel resubmit path — optimistic concurrency.
+                    try {
+                        videoRepository.saveIfStatus(ex, "REQUEST_CHANGES");
+                    } catch (IllegalStateException race) {
+                        return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                    }
                     auditLogService.log("video_resubmitted_after_changes", "video", ex.getId(), user);
                     return ResponseEntity.ok(ex);
                 }

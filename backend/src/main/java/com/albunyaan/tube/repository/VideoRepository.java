@@ -130,6 +130,36 @@ public class VideoRepository {
     }
 
     /**
+     * Cubic R5 P1 — batch counterpart of {@link #isArchivedById}.
+     * See {@code ChannelRepository.archivedIdsAmong} for rationale and chunking
+     * strategy; this is the video twin.
+     */
+    public java.util.Set<String> archivedIdsAmong(java.util.Collection<String> youtubeIds) {
+        if (youtubeIds == null || youtubeIds.isEmpty()) return java.util.Set.of();
+        java.util.Set<String> out = new java.util.HashSet<>();
+        java.util.List<String> all = new java.util.ArrayList<>(youtubeIds);
+        for (int i = 0; i < all.size(); i += 30) {
+            java.util.List<String> chunk = all.subList(i, Math.min(i + 30, all.size()));
+            try {
+                ApiFuture<QuerySnapshot> q = getCollection()
+                        .whereIn("youtubeId", new java.util.ArrayList<>(chunk))
+                        .get();
+                for (QueryDocumentSnapshot d : q.get(timeoutProperties.getRead(), java.util.concurrent.TimeUnit.SECONDS).getDocuments()) {
+                    Video v = d.toObject(Video.class);
+                    var s = v.getValidationStatus();
+                    if (s == com.albunyaan.tube.model.ValidationStatus.ARCHIVED
+                            || s == com.albunyaan.tube.model.ValidationStatus.UNAVAILABLE) {
+                        out.add(v.getYoutubeId());
+                    }
+                }
+            } catch (Exception e) {
+                // fail open — never break sync reads on archive-lookup error
+            }
+        }
+        return out;
+    }
+
+    /**
      * Find videos by status ordered by createdAt descending (newest first).
      *
      * Note: Requires Firestore composite index: status (ASC) + createdAt (DESC)

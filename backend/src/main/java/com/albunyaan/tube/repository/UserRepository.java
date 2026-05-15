@@ -116,6 +116,34 @@ public class UserRepository {
     }
 
     /**
+     * Cubic R5 P1 — bypass the {@code userStatus} cache for callers that must
+     * see writes from other JVM instances immediately.
+     *
+     * <p>The default {@code @Cacheable} path returns a per-JVM Caffeine entry.
+     * If another node promotes a user to admin (or blocks one), only that
+     * node's cache is evicted; this node still serves the stale role/status
+     * for up to the configured TTL. For most reads the staleness window is
+     * acceptable, but the bulk-action admin-target guard MUST see the live
+     * role — otherwise a just-promoted admin can be silently bulk-blocked
+     * from a different node.
+     *
+     * <p>Distinct from the global {@code FirebaseAuthFilter} multi-instance
+     * staleness (cubic R5 P0, deferred to Tier C): that one needs a shared
+     * Redis cache + pub/sub eviction; this one is a single hot-path read so
+     * a direct Firestore round-trip is fine.
+     *
+     * <p>Returns a defensive copy, matching {@link #findByUid} semantics.
+     */
+    public Optional<User> findByUidUncached(String uid)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        DocumentReference docRef = getCollection().document(uid);
+        User user = docRef.get()
+                .get(timeoutProperties.getRead(), TimeUnit.SECONDS)
+                .toObject(User.class);
+        return Optional.ofNullable(user).map(User::copy);
+    }
+
+    /**
      * Package-private cached loader. Not for direct call by other classes —
      * callers must go through {@link #findByUid(String)} which adds the
      * defensive copy on the way out.

@@ -139,6 +139,43 @@ public class ChannelRepository {
     }
 
     /**
+     * Cubic R5 P1 — batch counterpart of {@link #isArchivedById}.
+     *
+     * <p>The per-row variant does one Firestore round-trip per id; on a 500-row
+     * sync page that's 500 sequential reads (1,500 across all three types in
+     * {@link com.albunyaan.tube.service.sync.SyncService}). This method chunks
+     * the ids into Firestore {@code whereIn} batches (max 30 per query, per
+     * Firestore's clause limit) and returns the subset whose
+     * {@code validationStatus} is ARCHIVED or UNAVAILABLE.
+     *
+     * <p>Fails open on any chunk error — an archive lookup failure must not
+     * break sync reads. The empty-set result simply pass through every row.
+     */
+    public java.util.Set<String> archivedIdsAmong(java.util.Collection<String> youtubeIds) {
+        if (youtubeIds == null || youtubeIds.isEmpty()) return java.util.Set.of();
+        java.util.Set<String> out = new java.util.HashSet<>();
+        java.util.List<String> all = new java.util.ArrayList<>(youtubeIds);
+        for (int i = 0; i < all.size(); i += 30) {
+            java.util.List<String> chunk = all.subList(i, Math.min(i + 30, all.size()));
+            try {
+                ApiFuture<QuerySnapshot> q = getCollection()
+                        .whereIn("youtubeId", new java.util.ArrayList<>(chunk))
+                        .get();
+                for (QueryDocumentSnapshot d : q.get(timeoutProperties.getRead(), java.util.concurrent.TimeUnit.SECONDS).getDocuments()) {
+                    Channel c = d.toObject(Channel.class);
+                    ValidationStatus s = c.getValidationStatus();
+                    if (s == ValidationStatus.ARCHIVED || s == ValidationStatus.UNAVAILABLE) {
+                        out.add(c.getYoutubeId());
+                    }
+                }
+            } catch (Exception e) {
+                logger.warn("archivedIdsAmong: chunk lookup failed, failing open", e);
+            }
+        }
+        return out;
+    }
+
+    /**
      * Find channels by status, ordered by creation date descending (newest first).
      * This method is used for UI display where newest items should appear first.
      *

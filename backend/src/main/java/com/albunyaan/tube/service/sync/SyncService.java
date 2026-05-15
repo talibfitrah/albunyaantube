@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 @Service
 public class SyncService {
@@ -25,32 +26,43 @@ public class SyncService {
 
     public SyncResponseDto pull(String uid, SyncCursors cursors)
             throws ExecutionException, InterruptedException, TimeoutException {
+        // Cubic R5 P1: batch archive-lookup per page.
+        //
+        // The previous shape (`project::projectX` per-row mapping) hit Firestore
+        // once per row inside ArchiveProjector.projectIf → up to 1,500 sequential
+        // reads on a full page across all three types. The batch helpers below
+        // do one chunked `whereIn` round-trip per type (chunks of 30) which is
+        // a 50× reduction worst-case.
         SyncPageDto<SubscriptionSyncDto> subs = pullPage(
                 uid, SyncRepository.SUBS_COLL,
                 cursors.getSubscriptions(), cursors.getSubscriptionsId(),
-                projector::projectSubscription, SyncService::toSubscriptionDto);
+                projector::projectSubscriptions, SyncService::toSubscriptionDto);
         SyncPageDto<PlaylistSyncDto> pls = pullPage(
                 uid, SyncRepository.PLAYLISTS_COLL,
                 cursors.getPlaylists(), cursors.getPlaylistsId(),
-                projector::projectPlaylist, SyncService::toPlaylistDto);
+                projector::projectPlaylists, SyncService::toPlaylistDto);
         SyncPageDto<FavoriteSyncDto> favs = pullPage(
                 uid, SyncRepository.FAVORITES_COLL,
                 cursors.getFavorites(), cursors.getFavoritesId(),
-                projector::projectFavorite, SyncService::toFavoriteDto);
+                projector::projectFavorites, SyncService::toFavoriteDto);
         return new SyncResponseDto(subs, pls, favs);
     }
 
     private <T extends SyncRowDto> SyncPageDto<T> pullPage(
             String uid, String coll, long since, String lastDocId,
-            Function<RawRow, RawRow> project,
+            UnaryOperator<List<RawRow>> projectBatch,
             Function<RawRow, T> toDto)
             throws ExecutionException, InterruptedException, TimeoutException {
         List<RawRow> raw = repo.pull(uid, coll, since, lastDocId, SyncRepository.SYNC_PAGE_SIZE);
-        List<T> items = new ArrayList<>(raw.size());
-        for (RawRow r : raw) items.add(toDto.apply(project.apply(r)));
+        List<RawRow> projected = projectBatch.apply(raw);
+        List<T> items = new ArrayList<>(projected.size());
+        for (RawRow r : projected) items.add(toDto.apply(r));
         Long nextCursor = null;
         String nextCursorId = null;
         if (raw.size() == SyncRepository.SYNC_PAGE_SIZE) {
+            // Cursor advancement uses the underlying raw row's (updatedAt, id),
+            // not the projected (virtual-tombstone) row, so that virtual-tombstone
+            // stamping never pulls the cursor backwards.
             RawRow last = raw.get(raw.size() - 1);
             nextCursor = last.updatedAt();
             nextCursorId = last.id();
