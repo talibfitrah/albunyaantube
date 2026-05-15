@@ -1,0 +1,30 @@
+backend/src/main/java/com/albunyaan/tube/scheduler/TombstoneGcScheduler.java
+  s_dac267759ff6fd::t_9db0f035b52942 79-83,98,101-102,113
+android/app/src/main/java/com/albunyaan/tube/auth/AuthRepositoryImpl.kt
+  s_dac267759ff6fd::t_a3d4a445588e0f 79-87
+backend/src/main/java/com/albunyaan/tube/controller/SyncController.java
+  s_dac267759ff6fd::t_7f1fe4d3126657 71-76
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_dac267759ff6fd::t_d00f3a690e485c 255-274
+  s_dac267759ff6fd::t_5c87d4c4543a8f 133-137
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_dac267759ff6fd::t_ea210542b2aa8a 84-103
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_dac267759ff6fd::t_b2ad973a9482b4 51-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "b345c94d3723e67f2923e39a2379ed3c425fb6bf",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
