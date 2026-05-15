@@ -117,12 +117,17 @@ public class UserBackfillMigration {
                     + "Inspect audit_logs for incomplete USER_BACKFILL_RUN summary.",
                     ageMs, snap.getString("claimedBy"), snap.getString("claimedByUid"));
             }
+            // Cubic R8 P1 — must merge, not replace. The prior `tx.set` without
+            // SetOptions.merge() overwrote the whole doc and erased the
+            // `phase1Cursor` field that a previously-crashed run had written,
+            // making the resume path (read below) always observe null. Merge
+            // preserves the checkpoint across stale-lock reclaim.
             tx.set(lockRef, Map.of(
                 "running", true,
                 "startedAt", Timestamp.now(),
                 "claimedBy", InetAddress.getLocalHost().getHostName(),
                 "claimedByUid", actorUid
-            ));
+            ), SetOptions.merge());
             return true;
         }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
 
@@ -137,6 +142,10 @@ public class UserBackfillMigration {
         int updated = 0;
         int skipped = 0;
         int claimWriteFailures = 0;
+        // Cubic R8 P1 — track whether phase 1 finished naturally. We only
+        // clear `phase1Cursor` on a clean completion; on exception we keep
+        // it so a follow-up run can resume from the same page.
+        boolean phase1Completed = false;
         // Cubic R7 P2 — resume from any cursor checkpoint left by a prior
         // crashed run. The stale-lock reclaim (F14) only releases the
         // claim; the cursor was lost so the new run restarted from the
@@ -186,6 +195,7 @@ public class UserBackfillMigration {
                 }
                 if (page.size() < BATCH_SIZE) break;
             }
+            phase1Completed = true;
 
             // Phase 2: re-issue lowercase Firebase Auth custom claims (D6).
             // includeDeleted=true so we also fix deleted accounts in case they are recovered later.
@@ -236,14 +246,22 @@ public class UserBackfillMigration {
             final int finalScanned = scanned;
             final int finalUpdated = updated;
             final int finalClaimWriteFailures = claimWriteFailures;
+            final boolean finalPhase1Completed = phase1Completed;
             firestore.runTransaction(tx -> {
-                tx.set(lockRef, Map.of(
-                    "running", false,
-                    "completedAt", Timestamp.now(),
-                    "lastScanned", finalScanned,
-                    "lastUpdated", finalUpdated,
-                    "lastClaimWriteFailures", finalClaimWriteFailures
-                ), SetOptions.merge());
+                // Cubic R8 P1 — clear phase1Cursor only on natural completion.
+                // The R7 P2 checkpoint is a crash-resume aid; on exception we
+                // keep it so the next run resumes from the same page. On clean
+                // completion we delete the key so the NEXT run starts fresh.
+                Map<String, Object> patch = new java.util.HashMap<>();
+                patch.put("running", false);
+                patch.put("completedAt", Timestamp.now());
+                patch.put("lastScanned", finalScanned);
+                patch.put("lastUpdated", finalUpdated);
+                patch.put("lastClaimWriteFailures", finalClaimWriteFailures);
+                if (finalPhase1Completed) {
+                    patch.put("phase1Cursor", com.google.cloud.firestore.FieldValue.delete());
+                }
+                tx.set(lockRef, patch, SetOptions.merge());
 
                 AuditLog summary = auditLogService.buildBackfillRun(
                     finalScanned, finalUpdated, finalClaimWriteFailures, actorUid);

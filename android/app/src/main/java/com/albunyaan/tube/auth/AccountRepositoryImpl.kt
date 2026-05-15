@@ -121,14 +121,21 @@ class AccountRepositoryImpl(
         // returning a multi-MB error body would OOM the app on
         // errorBody().string(). The code envelope is two short fields;
         // 4 KiB is comfortably larger than any legitimate payload.
+        // Cubic R8 P2 — wrap in `.use { … }` so the underlying OkHttp
+        // ResponseBody (and its connection slot) is released on return.
+        // Pre-R8 the body was opened, peeked, then left dangling for GC;
+        // under retry storms the connection pool starved waiting for
+        // finalisation.
         val errorBody = e.response()?.errorBody() ?: return false
-        val source = errorBody.source()
-        source.request(MAX_ERROR_BODY_BYTES)
-        val peeked = source.buffer.snapshot(
-            minOf(source.buffer.size, MAX_ERROR_BODY_BYTES).toInt()
-        ).utf8()
-        val pattern = Regex("\"code\"\\s*:\\s*\"" + Regex.escape(code) + "\"")
-        return pattern.containsMatchIn(peeked)
+        return errorBody.use { body ->
+            val source = body.source()
+            source.request(MAX_ERROR_BODY_BYTES)
+            val peeked = source.buffer.snapshot(
+                minOf(source.buffer.size, MAX_ERROR_BODY_BYTES).toInt()
+            ).utf8()
+            val pattern = Regex("\"code\"\\s*:\\s*\"" + Regex.escape(code) + "\"")
+            pattern.containsMatchIn(peeked)
+        }
     }
 
     companion object {

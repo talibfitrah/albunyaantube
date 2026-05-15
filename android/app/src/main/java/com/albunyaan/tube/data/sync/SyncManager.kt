@@ -399,8 +399,17 @@ class SyncManager @Inject constructor(
         }
     }
 
-    fun unbind() {
+    suspend fun unbind() = syncMutex.withLock {
         // Cubic R7 P2 — cancel any queued push retry. See `pendingRetry` doc.
+        // Cubic R8 P2 — must acquire `syncMutex` first. Pre-R8 unbind ran
+        // without the lock, racing with `pushDirtyLocked`'s
+        // `pendingRetry?.cancel(); pendingRetry = scope.launch{...}`
+        // assignment. If unbind interleaved between cancel and assign — or
+        // simply observed the field before pushDirtyLocked published its new
+        // Job — the newly scheduled retry survived sign-out and fired
+        // `pushDirty(uid)` with a stale uid (the exact bug R7 P2 closed).
+        // `@Volatile` provides visibility but not check-then-set atomicity;
+        // the mutex closes that gap by serialising unbind with pushDirty.
         pendingRetry?.cancel()
         pendingRetry = null
         pushBackoff.reset()
