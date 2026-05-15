@@ -188,18 +188,30 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
 
     /** Routing logic in [SplashRouter] so it's unit-testable in isolation. */
     private fun routeAfterSplash(onboardingCompleted: Boolean, accountStatus: AccountStatus?) {
+        // Cubic R7 P2 — fragment may have detached between the parallel-fetch
+        // launch (line 94, viewLifecycleOwner-scoped) and resumption here if
+        // the user backed out of the app while the /api/account/me retry was
+        // in flight. `requireContext()` / `findNavController()` would then
+        // throw IllegalStateException ("Fragment … not attached to a context")
+        // and crash the dispatcher. Bail early on detach instead.
+        if (!isAdded) return
         if (findNavController().currentDestination?.id != R.id.splashFragment) return
         val signedIn = firebaseAuth.currentUser != null
         if (signedIn && accountStatus == null) {
             // D12: /api/account/me fetch failed after retries. Surface to user
             // and sign out so they get a clean re-attempt instead of an infinite
             // signed-in-but-stuck loop.
+            val ctx = context ?: return
             android.widget.Toast.makeText(
-                requireContext(),
+                ctx,
                 getString(R.string.splash_couldnt_connect),
                 android.widget.Toast.LENGTH_LONG
             ).show()
-            viewLifecycleOwner.lifecycleScope.launch {
+            // Sign-out uses the activity scope so it completes even if the
+            // user pops the splash fragment immediately after seeing the
+            // Toast — fire-and-forget cleanup must not be killed by view
+            // teardown.
+            requireActivity().lifecycleScope.launch {
                 authRepository.signOut()
             }
         }

@@ -221,9 +221,23 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
             .requestEmail()
             .build()
         val client = GoogleSignIn.getClient(requireContext(), gso)
-        // Best-effort: clear cached Google account to force the picker each time.
-        // Without this, signing in after sign-out can silently re-use the prior account.
-        client.signOut().addOnCompleteListener {
+        // Cubic R7 P2 — force the Google account chooser on every sign-in.
+        //
+        // Pre-fix called `signOut()` which clears the local cached account
+        // but does NOT clear Google Play services' per-device account
+        // preference. Result: on devices with a single Google account
+        // associated with the app, the chooser was silently bypassed and
+        // the previously-used account was reselected — a problem when the
+        // user explicitly tapped "Sign in with Google" precisely because
+        // they want to switch accounts. `revokeAccess()` forces a fresh
+        // consent + chooser flow every time.
+        //
+        // Trade-off: user must re-grant the OAuth scopes (email + id token)
+        // on each sign-in. Acceptable here because (a) the scopes are
+        // minimal and (b) the sign-in screen is the explicit point at which
+        // the user is choosing an identity — exactly when chooser
+        // determinism matters most.
+        client.revokeAccess().addOnCompleteListener {
             googleSignInLauncher.launch(client.signInIntent)
         }
     }

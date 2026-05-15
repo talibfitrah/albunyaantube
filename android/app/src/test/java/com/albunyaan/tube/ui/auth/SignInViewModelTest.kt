@@ -113,11 +113,14 @@ class SignInViewModelTest {
     }
 
     @Test fun `submit failure surfaces mapped error`() = runTest(dispatcher) {
-        whenever(repository.signInWithEmail("a@b.com", "bad"))
+        // Cubic R7 P2 added a client-side password-length gate before the
+        // network call; use a 6+ char password so the request reaches the
+        // mocked repository and the mapped exception is the surfaced error.
+        whenever(repository.signInWithEmail("a@b.com", "badpass"))
             .thenReturn(Result.failure(FirebaseAuthException("ERROR_WRONG_PASSWORD", "")))
 
         viewModel.onEmailChanged("a@b.com")
-        viewModel.onPasswordChanged("bad")
+        viewModel.onPasswordChanged("badpass")
         viewModel.submit()
         advanceUntilIdle()
 

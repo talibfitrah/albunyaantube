@@ -111,9 +111,9 @@ const entries = ref<AuditEntry[]>([]);
 const nextCursor = ref<string | null>(null);
 const isLoading = ref(false);
 
-// Cubic R5 P1 #30 — track the actual page size so paginationSummary can
-// distinguish "Showing N of N" (no more) from "Showing N of N+" (more
-// pages available). Default matches `fetchAuditLogPage`'s default `limit`.
+// Page size used for the server-side fetch limit. The pagination summary
+// no longer uses this value (Cubic R7 P2 dropped the "of M" denominator);
+// it remains the load() request's page-size hint.
 const PAGE_LIMIT = 100;
 
 // Cubic R5 P1 #29 — request-id guard against filter-vs-loadMore races.
@@ -208,14 +208,19 @@ function formatDateTime(value: string) {
 }
 
 const paginationSummary = computed(() => {
-  // Cubic R5 P1 #30 — show the real page limit, not `count` aliased to
-  // itself. When `nextCursor != null` more pages are available, so format
-  // the limit with a trailing `+` so the summary reads "Showing N of M+".
+  // Cubic R7 P2 — drop the "of M" frame. Pre-fix the summary read
+  // "Showing N of M+" with M fixed at PAGE_LIMIT (100); once the user
+  // hit "Load more" once, N grew past M and the comparison became
+  // incoherent ("Showing 250 of 100+"). The new copy is keyed by
+  // whether more pages exist:
+  //   nextCursor == null → "Showing {N} events"
+  //   nextCursor != null → "Showing {N}+ events (load more for more)"
+  // N is always the accurate count of rows currently loaded.
   const formatter = new Intl.NumberFormat(currentLocale.value);
   const count = formatter.format(entries.value.length);
-  const baseLimit = formatter.format(PAGE_LIMIT);
-  const limit = nextCursor.value != null ? `${baseLimit}+` : count;
-  return t('audit.pagination.showing', { count, limit });
+  return nextCursor.value != null
+    ? t('audit.pagination.showingPartial', { count })
+    : t('audit.pagination.showing', { count });
 });
 </script>
 

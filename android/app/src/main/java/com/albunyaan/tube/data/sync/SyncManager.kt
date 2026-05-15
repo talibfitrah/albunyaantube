@@ -59,6 +59,17 @@ class SyncManager @Inject constructor(
     // drain; advanced on transient failure (5xx/429/network).
     private val pushBackoff = SyncBackoff()
 
+    // Cubic R7 P2 — track the in-flight retry Job so unbind() can cancel it.
+    //
+    // Pre-fix the retry-after-transient-failure path called `scope.launch {
+    // delay(wait); pushDirty(uid) }` from `pushDirtyLocked`. The handle was
+    // discarded, so a retry scheduled while the user was still signed in
+    // would still fire after a subsequent sign-out → `pushDirty(uid)` with
+    // a now-stale uid → request signed with the new user's token (or
+    // anonymous) writing the previous user's dirty rows. Cancelling on
+    // unbind() makes the retry chain strictly bound to the active session.
+    @Volatile private var pendingRetry: kotlinx.coroutines.Job? = null
+
     suspend fun bind(uid: String) = syncMutex.withLock { bindLocked(uid) }
 
     private suspend fun bindLocked(uid: String) {
@@ -350,7 +361,12 @@ class SyncManager @Inject constructor(
             pushBackoff.reset()
         } else if (hadTransientFailure) {
             val wait = pushBackoff.next()
-            scope.launch {
+            // Cubic R7 P2 — replace any previously-queued retry with this
+            // one. The handle is stored so unbind() can cancel it on
+            // sign-out; without this an orphan retry can fire post-signout
+            // and push rows under the wrong identity.
+            pendingRetry?.cancel()
+            pendingRetry = scope.launch {
                 delay(wait)
                 pushDirty(uid)
             }
@@ -383,7 +399,12 @@ class SyncManager @Inject constructor(
         }
     }
 
-    fun unbind() { /* in-memory clear; nothing persistent to flush */ }
+    fun unbind() {
+        // Cubic R7 P2 — cancel any queued push retry. See `pendingRetry` doc.
+        pendingRetry?.cancel()
+        pendingRetry = null
+        pushBackoff.reset()
+    }
 
     fun pushDirtyAsync(uid: String) { scope.launch { pushDirty(uid) } }
 }
