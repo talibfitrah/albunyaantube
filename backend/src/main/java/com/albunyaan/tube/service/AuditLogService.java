@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.AuditLog;
 import com.albunyaan.tube.repository.AuditLogRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
@@ -11,6 +12,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-04: Audit Log Service
@@ -24,10 +27,14 @@ public class AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
     private final Firestore firestore;
+    private final FirestoreTimeoutProperties timeoutProperties;
 
-    public AuditLogService(AuditLogRepository auditLogRepository, Firestore firestore) {
+    public AuditLogService(AuditLogRepository auditLogRepository,
+                           Firestore firestore,
+                           FirestoreTimeoutProperties timeoutProperties) {
         this.auditLogRepository = auditLogRepository;
         this.firestore = firestore;
+        this.timeoutProperties = timeoutProperties;
     }
 
     /**
@@ -170,7 +177,7 @@ public class AuditLogService {
 
     public com.albunyaan.tube.dto.PaginatedAuditLog findPaginated(
             String actorUid, String action, int limit, String cursor)
-            throws java.util.concurrent.ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         int effLimit = Math.min(Math.max(limit, 1), 200);
         com.google.cloud.firestore.Query q = firestore.collection("audit_logs")
                 .orderBy("timestamp", com.google.cloud.firestore.Query.Direction.DESCENDING)
@@ -184,14 +191,28 @@ public class AuditLogService {
             com.albunyaan.tube.util.AuditCursor.Decoded c =
                     com.albunyaan.tube.util.AuditCursor.decode(cursor);
             com.google.cloud.firestore.DocumentSnapshot snap = firestore.collection("audit_logs")
-                    .document(c.docId()).get().get();
+                    .document(c.docId())
+                    .get()
+                    .get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snap.exists()) {
                 throw new IllegalArgumentException("Cursor references missing document");
+            }
+            // F8 sanity check: encoded ts should match the stored timestamp on the
+            // referenced doc. Drift here means either the doc was rewritten or the
+            // cursor was tampered with — log a warning so operators can spot it,
+            // but don't fail the page (the docId is the authoritative tiebreak).
+            com.google.cloud.Timestamp storedTs = snap.getTimestamp("timestamp");
+            if (storedTs != null && c.ts() != null
+                    && !storedTs.toDate().toInstant().equals(c.ts())) {
+                logger.warn("Audit cursor ts drift: cursorTs={} storedTs={} docId={}",
+                        c.ts(), storedTs.toDate().toInstant(), c.docId());
             }
             q = q.startAfter(snap);
         }
 
-        com.google.cloud.firestore.QuerySnapshot snapAll = q.limit(effLimit + 1).get().get();
+        com.google.cloud.firestore.QuerySnapshot snapAll = q.limit(effLimit + 1)
+                .get()
+                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         var docs = snapAll.getDocuments();
         java.util.List<com.albunyaan.tube.model.AuditLog> rows =
                 docs.stream()

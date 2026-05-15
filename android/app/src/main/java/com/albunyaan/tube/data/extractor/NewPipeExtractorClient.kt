@@ -161,8 +161,22 @@ class NewPipeExtractorClient(
                 throwable.message?.contains("visitorData", ignoreCase = true) == true
             ) {
                 try {
+                    // Re-acquire the global client lock so a concurrent resolveStreams() on
+                    // another video cannot rotate NewPipe's process-wide client setting out
+                    // from under this retry. Mirrors the same synchronized() guard used on
+                    // the first-attempt path upstream of this catch block. Re-derive the
+                    // initial client from feature flags rather than peeking the rotator —
+                    // visitorData hiccups are usually client-agnostic and re-applying the
+                    // initial client gives the most predictable second-attempt behaviour.
                     val retryHandler = streamLinkHandlerFactory.fromId(videoId)
-                    val retryExtractor = youtubeService.getStreamExtractor(retryHandler)
+                    val retryExtractor = synchronized(NewPipeExtractorClient::class.java) {
+                        if (featureFlags.isClientRotationEnabled) {
+                            applyClientSetting(clientRotator.initialClient(featureFlags.isIosFetchEnabled))
+                        } else {
+                            applyIosFetchSetting()
+                        }
+                        youtubeService.getStreamExtractor(retryHandler)
+                    }
                     retryExtractor.fetchPage()
                     val retryInfo = StreamInfo.getInfo(retryExtractor)
                     val urlGeneratedAt = clock()
@@ -175,6 +189,11 @@ class NewPipeExtractorClient(
                         metrics.onStreamResolveSuccess(videoId, clock() - start)
                         return@withContext resolved
                     }
+                } catch (cancellation: CancellationException) {
+                    // Structured concurrency: never swallow cancellation. The outer
+                    // catch path only rethrows CancellationException for the first
+                    // attempt; the retry needs its own rethrow.
+                    throw cancellation
                 } catch (_: Throwable) {
                     // Retry also failed; fall through to normal error handling
                 }

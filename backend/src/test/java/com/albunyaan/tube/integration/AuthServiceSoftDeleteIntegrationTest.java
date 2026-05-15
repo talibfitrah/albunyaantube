@@ -98,7 +98,10 @@ class AuthServiceSoftDeleteIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void softDeleteUnknownUid_throws() {
-        assertThrows(IllegalArgumentException.class,
+        // AuthService throws typed UserNotFoundException (not IllegalArgumentException)
+        // so admin endpoints return 404 and BulkUserService can classify failures
+        // without fragile string matching against exception messages.
+        assertThrows(com.albunyaan.tube.service.UserNotFoundException.class,
                 () -> authService.softDeleteUser("nonexistent-uid", "admin", "x"));
     }
 

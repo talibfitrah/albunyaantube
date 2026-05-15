@@ -220,7 +220,7 @@ public class AuthService {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
-                throw new IllegalArgumentException("User not found: " + uid);
+                throw new UserNotFoundException(uid);
             }
             User target = snap.toObject(User.class);
             previousRole[0] = target.getRole();
@@ -369,7 +369,7 @@ public class AuthService {
             }
             case "active" -> {
                 User current = userRepository.findByUid(uid)
-                        .orElseThrow(() -> new IllegalArgumentException("User not found: " + uid));
+                        .orElseThrow(() -> new UserNotFoundException(uid));
                 if (current.isBlocked()) {
                     unblockUser(uid, actorUid);
                 } else if (current.isDeleted()) {
@@ -383,7 +383,7 @@ public class AuthService {
         }
 
         return userRepository.findByUid(uid)
-                .orElseThrow(() -> new IllegalArgumentException("User not found after status update: " + uid));
+                .orElseThrow(() -> new UserNotFoundException(uid));
     }
 
     /**
@@ -412,7 +412,7 @@ public class AuthService {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
-                throw new IllegalArgumentException("User not found: " + uid);
+                throw new UserNotFoundException(uid);
             }
             User target = snap.toObject(User.class);
 
@@ -504,7 +504,7 @@ public class AuthService {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
-                throw new IllegalArgumentException("User not found: " + uid);
+                throw new UserNotFoundException(uid);
             }
             User target = snap.toObject(User.class);
             if (!target.isDeleted()) {
@@ -572,7 +572,7 @@ public class AuthService {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
-                throw new IllegalArgumentException("User not found: " + uid);
+                throw new UserNotFoundException(uid);
             }
             User target = snap.toObject(User.class);
 
@@ -670,7 +670,7 @@ public class AuthService {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
-                throw new IllegalArgumentException("User not found: " + uid);
+                throw new UserNotFoundException(uid);
             }
             User target = snap.toObject(User.class);
             // F13 — three cases for non-BLOCKED targets:

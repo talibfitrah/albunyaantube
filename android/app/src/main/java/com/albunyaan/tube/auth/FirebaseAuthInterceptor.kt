@@ -59,7 +59,15 @@ class FirebaseAuthInterceptor @Inject constructor(
                 runBlocking { user.getIdToken(true).await().token }
             } catch (_: Exception) {
                 null
-            } ?: return chain.proceed(signed)
+            }
+            if (refreshed == null) {
+                // Token refresh failed (network blip, account just disabled, etc.). Re-issuing
+                // the same already-rejected signed request would just yield another 401 and
+                // waste a round-trip; replay the request unsigned so the backend can emit a
+                // fresh 401 with an accurate WWW-Authenticate envelope and upstream callers
+                // can distinguish "token refresh failed" from "first 401 from server".
+                return chain.proceed(chain.request())
+            }
             return chain.proceed(signed.withBearer(refreshed))
         }
         return response

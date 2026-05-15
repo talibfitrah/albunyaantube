@@ -47,7 +47,13 @@ public class ContentReportController {
             HttpServletRequest request) {
         String deviceKey = request.getHeader(HEADER_DEVICE_ID);
         if (deviceKey == null || deviceKey.isBlank()) {
-            deviceKey = request.getRemoteAddr();
+            // Refuse rather than falling back to request.getRemoteAddr(): behind a reverse
+            // proxy that does not forward X-Forwarded-For, every anonymous caller would share
+            // the proxy's IP and (a) DoS legitimate clients out of the rate-limit bucket, or
+            // (b) bypass rate limiting entirely by churning the missing header. The Android
+            // app always sends X-Device-Id via NetworkModule, so refusing is safe.
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", "Missing X-Device-Id header"));
         }
         try {
             ContentReport saved = reportService.submitReport(

@@ -22,7 +22,9 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -47,8 +49,29 @@ public class WatchPageController {
 
     private static final int DESCRIPTION_MAX_CHARS = 300;
     private static final int TITLE_MAX_CHARS = 160;
+    private static final int SHARE_IMAGE_MAX_CHARS = 500;
     private static final long SHARE_METADATA_TTL_MILLIS = 10 * 60 * 1000L;
+    private static final long SHARE_METADATA_RATE_LIMIT_TTL_MILLIS = 60_000L;
+    private static final int SHARE_METADATA_RATE_LIMIT_PER_MINUTE = 30;
     private static final String PUBLIC_SHARE_HOST = "app.fitrahtube.com";
+    private static final String HEADER_DEVICE_ID = "X-Device-Id";
+
+    /**
+     * Closed allow-list of hosts permitted to appear as {@code og:image} when the
+     * Android client seeds the share-metadata cache. Anything outside this set is
+     * dropped (silently coerced to empty) — the previous behaviour of accepting
+     * any HTTPS URL turned the POST /api/share-metadata endpoint into a
+     * phishing-grade Open Graph spoofing primitive: an unauthenticated caller
+     * could write an arbitrary {@code og:image} for any well-formed video,
+     * channel or playlist ID and have it served to link unfurlers (WhatsApp,
+     * Telegram, Slack, Skype, etc.) for ten minutes per cache entry.
+     */
+    private static final Set<String> APPROVED_IMAGE_HOSTS = Set.of(
+            "i.ytimg.com",
+            "img.youtube.com",
+            "yt3.googleusercontent.com",
+            "yt3.ggpht.com"
+    );
 
     /**
      * Allowed shape for the {@code videoId} path variable. Firestore document IDs and
@@ -70,6 +93,19 @@ public class WatchPageController {
             .maximumSize(5_000)
             .expireAfterWrite(SHARE_METADATA_TTL_MILLIS, TimeUnit.MILLISECONDS)
             .build();
+    /**
+     * Per-X-Device-Id rate-limit bucket for POST /api/share-metadata. Each entry
+     * holds the request count within the trailing rate-limit window; entries
+     * expire automatically so the table can never grow unbounded. The bucket
+     * is per-device rather than per-IP so a misbehaving NAT/proxy doesn't lock
+     * legitimate clients out, and per-device requires a header that the Android
+     * app always sends — anonymous browser callers (who never sign-share-flow)
+     * can be turned away by header presence alone.
+     */
+    private final Cache<String, AtomicInteger> shareMetadataRateLimit = Caffeine.newBuilder()
+            .maximumSize(50_000)
+            .expireAfterWrite(SHARE_METADATA_RATE_LIMIT_TTL_MILLIS, TimeUnit.MILLISECONDS)
+            .build();
 
     public WatchPageController(PublicContentService contentService) {
         this.contentService = contentService;
@@ -80,7 +116,8 @@ public class WatchPageController {
     public ResponseEntity<Void> shareMetadata(
             @PathVariable String type,
             @PathVariable String id,
-            @RequestBody(required = false) ShareMetadataRequest metadata
+            @RequestBody(required = false) ShareMetadataRequest metadata,
+            HttpServletRequest request
     ) {
         if (!isSupportedShareType(type) || id == null || !VIDEO_ID_PATTERN.matcher(id).matches()) {
             return ResponseEntity.badRequest().build();
@@ -89,9 +126,26 @@ public class WatchPageController {
             return ResponseEntity.badRequest().build();
         }
 
-        String image = "channel".equals(type)
-                ? resolveChannelImage(metadata.image())
-                : resolvePreviewImage(metadata.image(), "watch".equals(type) ? id : "");
+        // Require X-Device-Id so the rate-limit bucket can't be bypassed by stripping
+        // a single header. Falling back to remote address (the previous behaviour for
+        // /api/v1/reports) would let a misconfigured proxy collapse every anonymous
+        // caller into one bucket — either DoSing real clients out, or letting an
+        // attacker churn random IDs to bypass the limit. The Android share publisher
+        // always sets the header in NetworkModule.
+        String deviceId = request.getHeader(HEADER_DEVICE_ID);
+        if (deviceId == null || deviceId.isBlank()) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).build();
+        }
+        AtomicInteger counter = shareMetadataRateLimit.get(deviceId, k -> new AtomicInteger(0));
+        if (counter.incrementAndGet() > SHARE_METADATA_RATE_LIMIT_PER_MINUTE) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS).build();
+        }
+
+        // Image URL: only YouTube hosts on the closed allow-list survive. Anything
+        // else is silently dropped (coerced to empty) so the title/description can
+        // still seed the cache without giving an attacker control of og:image. The
+        // 500-char cap also bounds the cache footprint (5,000 entries × 500 chars).
+        String image = validateShareImage(metadata.image());
         String title = truncate(firstNonBlank(metadata.title(), ""), TITLE_MAX_CHARS);
         String description = truncate(firstNonBlank(metadata.description(), ""), DESCRIPTION_MAX_CHARS);
         if (title.isEmpty() && description.isEmpty() && image.isEmpty()) {
@@ -100,6 +154,34 @@ public class WatchPageController {
 
         shareMetadataCache.put(cacheKey(type, id), new CachedShareMetadata(title, description, image));
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Returns {@code rawImageUrl} only if it is an https URL within the configured
+     * size limit and its host is in {@link #APPROVED_IMAGE_HOSTS}; otherwise
+     * returns the empty string. The Android client may legitimately pass a YouTube
+     * thumbnail URL when seeding the share cache; anything else is treated as
+     * untrusted input and dropped without an error so the title/description path
+     * still functions.
+     */
+    private static String validateShareImage(String rawImageUrl) {
+        String url = nullSafe(rawImageUrl, "").trim();
+        if (url.isEmpty()) return "";
+        if (url.length() > SHARE_IMAGE_MAX_CHARS) return "";
+        if (!HTTPS_URL_PATTERN.matcher(url).matches()) return "";
+        try {
+            java.net.URI parsed = java.net.URI.create(url);
+            String host = parsed.getHost();
+            if (host == null) return "";
+            // Strip any user-info smuggling (e.g. "evil.com@i.ytimg.com" would
+            // resolve to host=i.ytimg.com on some parsers; URI.getHost is the
+            // authority host so this is already correct, but be explicit).
+            String normalised = host.toLowerCase(Locale.ROOT);
+            if (!APPROVED_IMAGE_HOSTS.contains(normalised)) return "";
+            return url;
+        } catch (IllegalArgumentException e) {
+            return "";
+        }
     }
 
     @GetMapping(value = {"/watch/{videoId}", "/api/watch/{videoId}"}, produces = MediaType.TEXT_HTML_VALUE)

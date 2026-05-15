@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class AuditLogServiceBuildersTest {
 
-    private final AuditLogService svc = new AuditLogService(null /* repo */, null /* firestore */);
+    private final AuditLogService svc = new AuditLogService(null /* repo */, null /* firestore */, null /* timeouts */);
 
     @Test
     void buildBlock_setsActionAndReason() {

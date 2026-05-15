@@ -174,6 +174,7 @@ class WatchPageControllerTest {
         when(contentService.getChannelDetails("UCmissing")).thenThrow(new RuntimeException("not found"));
 
         mockMvc.perform(post("/api/share-metadata/{type}/{id}", "channel", "UCmissing")
+                        .header("X-Device-Id", "test-device-123")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

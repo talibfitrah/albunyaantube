@@ -45,18 +45,21 @@ public class BulkUserService {
                 continue;
             }
 
-            if (action != BulkAction.RECOVER) {
-                try {
-                    Optional<User> u = userRepository.findByUid(uid);
-                    if (u.isPresent() && "admin".equalsIgnoreCase(u.get().getRole())) {
-                        failures.add(new FailureEntry(uid, "admin_target_forbidden"));
-                        continue;
-                    }
-                } catch (Exception e) {
-                    log.error("admin.target.check.error uid={}", uid, e);
-                    failures.add(new FailureEntry(uid, "firebase_error"));
+            // Admin-target guard applies to every bulk action — including RECOVER.
+            // Skipping it for RECOVER (the previous behaviour) meant a deleted admin
+            // could be silently restored by another admin without the per-target
+            // admin_target_forbidden audit row. Keeping the check uniform also
+            // simplifies reasoning: bulk endpoints never touch admins.
+            try {
+                Optional<User> u = userRepository.findByUid(uid);
+                if (u.isPresent() && "admin".equalsIgnoreCase(u.get().getRole())) {
+                    failures.add(new FailureEntry(uid, "admin_target_forbidden"));
                     continue;
                 }
+            } catch (Exception e) {
+                log.error("admin.target.check.error uid={}", uid, e);
+                failures.add(new FailureEntry(uid, "firebase_error"));
+                continue;
             }
 
             try {
@@ -68,18 +71,10 @@ public class BulkUserService {
                 }
                 successes.add(uid);
             } catch (com.albunyaan.tube.service.UserNotFoundException e) {
+                // AuthService now throws UserNotFoundException uniformly for missing
+                // users — no string-match fallback against IllegalArgumentException
+                // messages, which broke silently when message text drifted.
                 failures.add(new FailureEntry(uid, "user_not_found"));
-            } catch (IllegalArgumentException e) {
-                // AuthService throws IllegalArgumentException("User not found: ...") rather
-                // than the typed UserNotFoundException for several lifecycle paths. Surface
-                // these as user_not_found rather than firebase_error.
-                String msg = e.getMessage();
-                if (msg != null && msg.toLowerCase().contains("not found")) {
-                    failures.add(new FailureEntry(uid, "user_not_found"));
-                } else {
-                    log.error("bulk.action.error uid={} action={}", uid, action, e);
-                    failures.add(new FailureEntry(uid, "firebase_error"));
-                }
             } catch (IllegalStateException e) {
                 failures.add(new FailureEntry(uid, classify(e.getMessage())));
             } catch (Exception e) {

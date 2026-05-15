@@ -115,6 +115,27 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handle UserNotFoundException (404) — admin lifecycle endpoints throw this
+     * via {@code AuthService} when the target uid is absent. Mapped explicitly so
+     * BulkUserService can catch the typed exception (no fragile string match) and
+     * admin clients receive a semantically correct 404 instead of a generic 400.
+     */
+    @ExceptionHandler(com.albunyaan.tube.service.UserNotFoundException.class)
+    public ResponseEntity<Object> handleUserNotFound(
+            com.albunyaan.tube.service.UserNotFoundException ex, WebRequest request) {
+        logger.warn("User not found: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.NOT_FOUND.value());
+        body.put("error", "Not Found");
+        body.put("message", ex.getMessage());
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.NOT_FOUND);
+    }
+
+    /**
      * Handle IllegalArgumentException (400)
      */
     @ExceptionHandler(IllegalArgumentException.class)
