@@ -297,10 +297,22 @@ public class AuthService {
             }
             // Re-throw the ORIGINAL save exception so the controller maps it to
             // the right HTTP status (500 / 503), not the compensation failure.
+            //
+            // Cubic R-final4 P2 — explicit type-dispatching chain. The caught
+            // types are `ExecutionException | InterruptedException |
+            // TimeoutException | RuntimeException`. Pre-fix the final branch
+            // was `throw (RuntimeException) saveEx;` which is safe today but
+            // becomes a ClassCastException-on-failure-path footgun the
+            // moment a future maintainer adds a new checked exception to the
+            // throws clause. The explicit chain below makes the contract
+            // visible and surfaces the mismatch at compile time.
             if (saveEx instanceof ExecutionException ee) throw ee;
             if (saveEx instanceof InterruptedException ie) throw ie;
             if (saveEx instanceof TimeoutException te) throw te;
-            throw (RuntimeException) saveEx;
+            if (saveEx instanceof RuntimeException re) throw re;
+            // Unreachable: the catch clause caps the type universe.
+            throw new IllegalStateException(
+                    "Unexpected createUser save-failure type: " + saveEx.getClass().getName(), saveEx);
         }
     }
 

@@ -61,9 +61,20 @@ class AccountStatusInterceptor @Inject constructor(
         // FirebaseAuth.signOut() never ran, the terminal-dialog event was never
         // emitted. The user looped back through splash → /me 403 → sign-in with no
         // UX. Adding /api/account/ restores the R7 P0 envelope-pinning intent.
+        //
+        // Cubic R-final4 P2 — /api/share-metadata/* must also be in the
+        // allow-list. R-final2 P1 switched FirebaseAuthFilter to method-based
+        // fail-closed (POST/PUT/PATCH/DELETE always rejected for
+        // blocked/deleted users) and explicitly cited share-metadata as the
+        // route that motivated the broader gating. A blocked user issuing a
+        // share-metadata POST now reliably gets the ACCOUNT_BLOCKED envelope
+        // from the server, but without this prefix the client silently
+        // ignored it — the user stayed in a "blocked but app behaves normal"
+        // state until their next admin/v1/account request.
         if (!path.startsWith("/api/admin/") &&
             !path.startsWith("/api/v1/") &&
-            !path.startsWith("/api/account/")) {
+            !path.startsWith("/api/account/") &&
+            !path.startsWith("/api/share-metadata/")) {
             return response
         }
 

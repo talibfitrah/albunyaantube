@@ -80,6 +80,35 @@ public class UserRepository {
      * <p>Eviction cost: one extra Firestore round-trip on the next read of
      * the affected uid. Acceptable — much cheaper than allowing stale data
      * to surface.
+     *
+     * <p>Cubic R-final4 P2 — known sub-millisecond stale-read window. Spring
+     * {@code @CacheEvict} with default {@code beforeInvocation=false} fires
+     * the eviction AFTER successful method return, so the order is:
+     * <ol>
+     *   <li>Firestore commit returns</li>
+     *   <li>{@code save} returns to the caller</li>
+     *   <li>AOP aspect evicts the cache entry</li>
+     * </ol>
+     * Between (2) and (3) a concurrent {@code findByUid(uid)} call could
+     * observe the pre-write cached value. The window is sub-millisecond
+     * because the eviction is in-process Caffeine. Accepted because:
+     * <ul>
+     *   <li>Lifecycle methods (block/unblock/etc) bypass this path entirely
+     *       — they use {@code tx.set} + explicit {@code evictUserStatus} in
+     *       a {@code finally} block, with the eviction happening before
+     *       any caller can observe the post-tx state.</li>
+     *   <li>The only callers that go through {@code save()} are recordLogin
+     *       and createUser. Both write data tolerant of brief staleness
+     *       (lastLoginAt / new-user genesis row that the cache didn't
+     *       have anyway).</li>
+     * </ul>
+     * Tightening this further (switch to {@code @CachePut} or manual
+     * {@code cacheManager.getCache(…).put(uid, Optional.of(user))} inside
+     * the method body) is plausible but requires aligning the cache value
+     * type with {@code loadByUid}'s {@code Optional<User>} return —
+     * {@code @CachePut} on a {@code User}-returning method caches the
+     * naked {@code User} and breaks the {@code Optional.map} chain in
+     * {@code findByUid}. Not worth the ripple for a sub-ms window.
      */
     @CacheEvict(value = "userStatus", key = "#user.uid")
     public User save(User user) throws ExecutionException, InterruptedException, TimeoutException {

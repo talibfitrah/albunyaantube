@@ -1,8 +1,10 @@
 package com.albunyaan.tube.repository;
 
+import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.ValidationStatus;
+import org.springframework.cache.annotation.Cacheable;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
 import com.google.cloud.firestore.AggregateQuerySnapshot;
@@ -122,7 +124,17 @@ public class ChannelRepository {
      * Plan D — returns true when the channel is unplayable (ARCHIVED or UNAVAILABLE).
      * Used by ArchiveProjector to convert sync rows into virtual tombstones.
      * False if the channel is not in the registry (it isn't tracked = not gated).
+     *
+     * <p>Cubic R-final4 P2 — cached with 30s TTL via Spring {@code @Cacheable}.
+     * Sync writes (SyncService upsert / tombstone methods) call this on
+     * every row; pre-cache, each sync write paid an extra Firestore
+     * round-trip (~2x the cost vs. pre-SYNC-ECHO-01). The cache collapses
+     * repeat lookups for the same id to ~1x cost on cache-hit. Trade-off:
+     * up to 30s of stale "not archived" after an admin/validation-driven
+     * archive flip — acceptable because the next pull cycle will see the
+     * post-expiry truth, and archive flips are rare relative to sync RPS.
      */
+    @Cacheable(value = CacheConfig.CACHE_CHANNEL_ARCHIVE_FLAG, key = "#youtubeId")
     public boolean isArchivedById(String youtubeId) {
         try {
             return findByYoutubeId(youtubeId)

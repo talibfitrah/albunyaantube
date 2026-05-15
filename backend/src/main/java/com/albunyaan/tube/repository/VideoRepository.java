@@ -1,8 +1,10 @@
 package com.albunyaan.tube.repository;
 
+import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
+import org.springframework.cache.annotation.Cacheable;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
 import com.google.cloud.firestore.AggregateQuerySnapshot;
@@ -113,7 +115,11 @@ public class VideoRepository {
      * Plan D — returns true when the video is unplayable (ARCHIVED or UNAVAILABLE).
      * Used by ArchiveProjector to convert sync rows into virtual tombstones.
      * False if the video is not in the registry (it isn't tracked = not gated).
+     *
+     * <p>Cubic R-final4 P2 — cached with 30s TTL. See
+     * {@link ChannelRepository#isArchivedById(String)} for rationale.
      */
+    @Cacheable(value = CacheConfig.CACHE_VIDEO_ARCHIVE_FLAG, key = "#youtubeId")
     public boolean isArchivedById(String youtubeId) {
         try {
             return findByYoutubeId(youtubeId)
