@@ -401,7 +401,7 @@
       ]
     },
     {
-      "collectionGroup": "playlists_user",
+      "collectionGroup": "playlists",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "deleted", "order": "ASCENDING" },
