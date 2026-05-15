@@ -224,11 +224,42 @@ public class AuditLogService {
                 // Stale cursor (doc archived/pruned). Reset to first page rather
                 // than 400 — a long-lived admin tab shouldn't hard-fail when a
                 // referenced audit row disappears; the next page query without
-                // cursor returns the freshest rows. Log so operators can spot
-                // unexpected gaps in the audit log retention policy. The
-                // returned page mints its own nextCursor from the last row so
-                // pagination continues rather than appearing to end.
-                logger.warn("Audit cursor references missing doc {}; resetting to first page", c.docId());
+                // cursor returns the freshest rows. The returned page mints its
+                // own nextCursor from the last row so pagination continues
+                // rather than appearing to end.
+                //
+                // Cubic R6 P2 — do NOT include the raw docId in the warn line.
+                // Pre-fix that turned the log into an oracle: an admin who
+                // could mint cursors could enumerate which arbitrary docIds
+                // exist in audit_logs by watching for the warn-or-not.
+                logger.warn("Audit cursor references missing doc; resetting to first page");
+                return findFirstPageWithCursor(actorUid, action, effLimit);
+            }
+            // Cubic R6 P2 — close the cross-filter existence-oracle.
+            //
+            // Pre-fix: the {@code firestore.document(c.docId()).get()} above
+            // fetched ANY audit_logs doc by id without applying the request's
+            // {@code actorUid}/{@code action} filters. {@code startAfter(snap)}
+            // then narrowed the page result to the filtered set, but the
+            // initial fetch leaked "does docId X exist in audit_logs" — and
+            // (via the snap-vs-filter divergence) "does docId X match these
+            // filters". One admin could craft cursors to probe audit rows
+            // outside the filter views they're entitled to.
+            //
+            // Post-fix: require the snap to satisfy the same predicates as
+            // the page query. If it does not, drop into the same first-page
+            // fallback as the not-exists branch — so the response shape is
+            // identical for {not-exists} ∪ {exists-but-mismatched-filter},
+            // collapsing the side-channel. The admin learns nothing new about
+            // docs outside their filter scope.
+            if (actorUid != null && !actorUid.isBlank()
+                    && !actorUid.equals(snap.getString("actorUid"))) {
+                logger.warn("Audit cursor filter mismatch (actorUid); resetting to first page");
+                return findFirstPageWithCursor(actorUid, action, effLimit);
+            }
+            if (action != null && !action.isBlank()
+                    && !action.equals(snap.getString("action"))) {
+                logger.warn("Audit cursor filter mismatch (action); resetting to first page");
                 return findFirstPageWithCursor(actorUid, action, effLimit);
             }
             // F8 sanity check: encoded ts should match the stored timestamp on the

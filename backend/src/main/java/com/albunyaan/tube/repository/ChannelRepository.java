@@ -169,7 +169,7 @@ public class ChannelRepository {
                     }
                 }
             } catch (Exception e) {
-                logger.warn("archivedIdsAmong: chunk lookup failed, failing open", e);
+                log.warn("archivedIdsAmong: chunk lookup failed, failing open", e);
             }
         }
         return out;

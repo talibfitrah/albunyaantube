@@ -21,6 +21,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -62,16 +63,25 @@ class AccountProfileServiceTest {
     void completeProfileUnder13Rejected() throws Exception {
         User existing = new User("uid-1", "a@b.com", null, "user");
         existing.setStatusEnum(UserStatus.PENDING_PROFILE);
+        // Cubic R5 Tier C P1 #11 — rejectUnderAge now SOFT-deletes rather
+        // than hard-deletes; the path is findByUid → recordSoftDelete → save.
         when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
         AgeIneligibleException ex = assertThrows(AgeIneligibleException.class,
             () -> service.completeProfile("uid-1", "Tot", LocalDate.of(2020, 1, 1)));
 
-        // Revoke must happen BEFORE delete (see plan §self-critique #3).
+        // Revoke must happen BEFORE the soft-delete write — see Tier C javadoc:
+        // if we wrote first and revoke failed, a stale ID token could be used
+        // to re-bootstrap from a different device before the tombstone landed.
         var order = inOrder(firebaseAuth, userRepository);
         order.verify(firebaseAuth).revokeRefreshTokens("uid-1");
-        order.verify(userRepository).deleteByUid("uid-1");
-        verify(userRepository, never()).save(any());
+        order.verify(userRepository).save(argThat((User u) -> u.isDeleted()
+                && "age-ineligible".equals(u.getDeleteReason())));
+        // hard-delete path is gone — the user remains as a soft-delete tombstone
+        // so retry sign-in returns ACCOUNT_DELETED instead of lazy-creating a
+        // fresh PENDING_PROFILE row that bypasses the age gate.
+        verify(userRepository, never()).deleteByUid(any());
     }
 
     @Test

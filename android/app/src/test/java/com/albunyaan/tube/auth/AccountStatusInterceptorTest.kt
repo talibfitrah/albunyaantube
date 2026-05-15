@@ -3,6 +3,7 @@ package com.albunyaan.tube.auth
 import com.google.firebase.auth.FirebaseAuth
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import javax.inject.Provider
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
@@ -15,6 +16,7 @@ import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 
 /**
  * Plan B (ANDROID-AUTH-01) T3: covers the Moshi-parsed 403 envelope handling.
@@ -24,6 +26,8 @@ class AccountStatusInterceptorTest {
     private lateinit var server: MockWebServer
     private lateinit var firebaseAuth: FirebaseAuth
     private lateinit var emitter: AccountStatusEmitter
+    private lateinit var accountRepository: AccountRepository
+    private lateinit var accountRepositoryProvider: Provider<AccountRepository>
     private lateinit var client: OkHttpClient
 
     @Before
@@ -31,9 +35,12 @@ class AccountStatusInterceptorTest {
         server = MockWebServer().apply { start() }
         firebaseAuth = mock()
         emitter = mock()
+        accountRepository = mock()
+        accountRepositoryProvider = mock()
+        whenever(accountRepositoryProvider.get()).thenReturn(accountRepository)
         val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
         client = OkHttpClient.Builder()
-            .addInterceptor(AccountStatusInterceptor(firebaseAuth, emitter, moshi))
+            .addInterceptor(AccountStatusInterceptor(firebaseAuth, emitter, accountRepositoryProvider, moshi))
             .build()
     }
 

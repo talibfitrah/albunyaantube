@@ -458,7 +458,8 @@ public class AuthService {
             // delete entirely, admins must explicitly unblock or follow the
             // recover path, both of which write the right audit events.
             if (target.isBlocked()) {
-                throw new IllegalStateException(
+                throw new UserStateConflictException(
+                    UserStateConflictException.ReasonCode.BLOCKED_CANNOT_DELETE,
                     "Unblock before soft-deleting: " + uid);
             }
 
@@ -547,7 +548,9 @@ public class AuthService {
             }
             User target = snap.toObject(User.class);
             if (!target.isDeleted()) {
-                throw new IllegalStateException("User is not in DELETED status: " + uid);
+                throw new UserStateConflictException(
+                    UserStateConflictException.ReasonCode.NOT_DELETED,
+                    "User is not in DELETED status: " + uid);
             }
 
             target.recordRecover(actorUid);
@@ -642,7 +645,8 @@ public class AuthService {
             // audit. That evaded the audit trail. Force admins down the recover
             // path so the audit log reflects what actually happened.
             if (target.isDeleted()) {
-                throw new IllegalStateException(
+                throw new UserStateConflictException(
+                    UserStateConflictException.ReasonCode.DELETED_CANNOT_BLOCK,
                     "Cannot block a deleted user. Recover first: " + uid);
             }
 
@@ -753,7 +757,9 @@ public class AuthService {
                 return Boolean.FALSE;
             }
             if (!target.isBlocked()) {
-                throw new IllegalStateException("User is not in BLOCKED status: " + uid);
+                throw new UserStateConflictException(
+                    UserStateConflictException.ReasonCode.NOT_BLOCKED,
+                    "User is not in BLOCKED status: " + uid);
             }
 
             target.recordUnblock(actorUid);

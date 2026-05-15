@@ -127,7 +127,20 @@ public class AuditLog {
     }
 
     public void setDetails(Map<String, Object> details) {
-        this.details = details;
+        if (details == null) {
+            this.details = new HashMap<>();
+            return;
+        }
+        // Cubic R6 P2 — defensive sanitisation for every value passing through
+        // setDetails / addDetail. Counterpart to MailService.sanitiseRecipient
+        // ForAudit: CR/LF and other control chars in audit values can poison
+        // line-oriented log shippers, CSV exports, and downstream incident
+        // tooling that splits on \n. No current caller forwards user-supplied
+        // strings into details, but the surface area (rejection notes, block
+        // reasons, future request-changes payloads) is wide enough that the
+        // first time someone DOES, we want this already wired.
+        this.details = new HashMap<>();
+        details.forEach((k, v) -> this.details.put(k, sanitiseDetailValue(v)));
     }
 
     public Timestamp getTimestamp() {
@@ -147,8 +160,33 @@ public class AuditLog {
     }
 
     public void addDetail(String key, Object value) {
-        this.details.put(key, value);
+        // Cubic R6 P2 — sanitise per setDetails javadoc.
+        this.details.put(key, sanitiseDetailValue(value));
     }
+
+    /**
+     * Cubic R6 P2 — strip control chars (CR/LF/NUL/etc.) and cap length on
+     * String values that flow into the {@code details} map. Non-String values
+     * (numbers, booleans, nested maps/lists) are passed through unchanged;
+     * Firestore serialises them losslessly without going through a CR/LF
+     * sensitive code path. Package-private for unit-testability.
+     *
+     * <p>Limit ({@value #DETAIL_VALUE_MAX_LEN}) is generous — covers
+     * block-reason notes, request-changes copy, and rejection rationale —
+     * but bounds the worst-case audit row size. Truncated strings have
+     * {@code "…"} appended so operators see the truncation.
+     */
+    static Object sanitiseDetailValue(Object v) {
+        if (!(v instanceof String s)) return v;
+        if (s == null) return null;
+        String stripped = s.replaceAll("[\\p{Cntrl}]", "");
+        if (stripped.length() > DETAIL_VALUE_MAX_LEN) {
+            return stripped.substring(0, DETAIL_VALUE_MAX_LEN) + "…";
+        }
+        return stripped;
+    }
+
+    static final int DETAIL_VALUE_MAX_LEN = 1024;
 
     /**
      * Factory method for creating AuditLog instances with all fields set.

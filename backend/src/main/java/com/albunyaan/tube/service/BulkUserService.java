@@ -80,8 +80,17 @@ public class BulkUserService {
                 // users — no string-match fallback against IllegalArgumentException
                 // messages, which broke silently when message text drifted.
                 failures.add(new FailureEntry(uid, "user_not_found"));
+            } catch (UserStateConflictException e) {
+                // Cubic R6 P2 — typed reason code. Replaces the
+                // {@code msg.toLowerCase().contains(...)} routing that silently
+                // downgraded any AuthService message rename to "invalid_state",
+                // breaking the i18n keys (users.bulk.reason.blocked_cannot_delete,
+                // etc.) without a test signal.
+                failures.add(new FailureEntry(uid, classify(e.getReasonCode())));
             } catch (IllegalStateException e) {
-                failures.add(new FailureEntry(uid, classify(e.getMessage())));
+                // Defensive fallback — any plain IllegalStateException from new
+                // call sites that hasn't yet been promoted to a typed code.
+                failures.add(new FailureEntry(uid, "invalid_state"));
             } catch (Exception e) {
                 log.error("bulk.action.error uid={} action={}", uid, action, e);
                 failures.add(new FailureEntry(uid, "firebase_error"));
@@ -103,30 +112,21 @@ public class BulkUserService {
         return new BulkUserActionResult(successes, failures);
     }
 
-    private static String classify(String msg) {
-        if (msg == null) return "invalid_state";
-        String m = msg.toLowerCase();
-        // Patterns must match the actual exception messages AuthService throws.
-        //
-        // Cubic R5 P1 — dead branches removed:
-        //   - "already blocked" / "already deleted":  F13 made BLOCK/DELETE
-        //     idempotent (no-op on already-X), so these strings are never
-        //     thrown any more — the predicates never fired.
-        //   - "cannot change role of a deleted":      ROLE_CHANGE is not a
-        //     BulkAction (see {@link BulkAction}); bulk endpoints never reach
-        //     {@code AuthService.updateRole} where this string is thrown.
-        //
-        // Live branches:
-        //   - "User is not in BLOCKED status: ..."       → not_blocked
-        //     (recoverUser, when target isn't blocked)
-        //   - "User is not in DELETED status: ..."       → not_deleted
-        //     (recoverUser, when target isn't deleted)
-        //   - "Unblock before soft-deleting: ..."        → blocked_cannot_delete
-        //   - "Cannot block a deleted user. Recover ..." → deleted_cannot_block
-        if (m.contains("not in blocked status"))           return "not_blocked";
-        if (m.contains("not in deleted status"))           return "not_deleted";
-        if (m.contains("unblock before soft-deleting"))    return "blocked_cannot_delete";
-        if (m.contains("cannot block a deleted user"))     return "deleted_cannot_block";
-        return "invalid_state";
+    /**
+     * Cubic R6 P2 — typed dispatch.
+     *
+     * <p>Maps {@link UserStateConflictException.ReasonCode} to the stable
+     * reason strings consumed by the bulk-action i18n keys
+     * ({@code users.bulk.reason.*}). The mapping is enum-driven so a rename
+     * of an AuthService exception message no longer breaks classification —
+     * the compiler enforces exhaustiveness on the switch instead.
+     */
+    private static String classify(UserStateConflictException.ReasonCode code) {
+        return switch (code) {
+            case NOT_BLOCKED            -> "not_blocked";
+            case NOT_DELETED            -> "not_deleted";
+            case BLOCKED_CANNOT_DELETE  -> "blocked_cannot_delete";
+            case DELETED_CANNOT_BLOCK   -> "deleted_cannot_block";
+        };
     }
 }

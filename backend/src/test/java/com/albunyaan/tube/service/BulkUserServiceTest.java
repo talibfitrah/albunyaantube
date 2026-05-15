@@ -81,8 +81,11 @@ class BulkUserServiceTest {
         UserRepository userRepo = mock(UserRepository.class);
         AuditLogService auditLog = mock(AuditLogService.class);
 
-        when(userRepo.findByUid("admin-target")).thenReturn(Optional.of(userWithRole("admin")));
-        when(userRepo.findByUid("user-target")).thenReturn(Optional.of(userWithRole("user")));
+        // Cubic R5 Tier B switched the admin-target guard to
+        // findByUidUncached() to avoid the userStatus Caffeine cache. Tests
+        // must mock the uncached variant for the guard to fire.
+        when(userRepo.findByUidUncached("admin-target")).thenReturn(Optional.of(userWithRole("admin")));
+        when(userRepo.findByUidUncached("user-target")).thenReturn(Optional.of(userWithRole("user")));
 
         BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
 
@@ -109,7 +112,7 @@ class BulkUserServiceTest {
         UserRepository userRepo = mock(UserRepository.class);
         AuditLogService auditLog = mock(AuditLogService.class);
 
-        when(userRepo.findByUid("admin-target")).thenReturn(Optional.of(userWithRole("admin")));
+        when(userRepo.findByUidUncached("admin-target")).thenReturn(Optional.of(userWithRole("admin")));
 
         BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
 
@@ -127,13 +130,59 @@ class BulkUserServiceTest {
     }
 
     @Test
-    void alreadyBlockedException_classifiedAsAlreadyBlocked() throws Exception {
+    void typedConflict_notBlocked_classifiedTyped() throws Exception {
+        // Cubic R6 P2 — typed UserStateConflictException replaces the
+        // pre-fix msg.contains classifier. The enum-driven switch makes a
+        // future rename of AuthService throw-site strings a compile error
+        // rather than a silent downgrade to "invalid_state".
         AuthService authService = mock(AuthService.class);
         UserRepository userRepo = mock(UserRepository.class);
         AuditLogService auditLog = mock(AuditLogService.class);
 
-        when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
-        doThrow(new IllegalStateException("User is already blocked"))
+        when(userRepo.findByUidUncached("u1")).thenReturn(Optional.of(userWithRole("user")));
+        doThrow(new UserStateConflictException(
+                UserStateConflictException.ReasonCode.NOT_BLOCKED, "msg"))
+                .when(authService).recoverUser("u1", "admin-uid");
+
+        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
+
+        BulkUserActionResult result = svc.execute(
+                BulkAction.RECOVER, List.of("u1"), ADMIN_ACTOR, null);
+
+        assertEquals("not_blocked", result.getFailures().get(0).reason());
+    }
+
+    @Test
+    void typedConflict_blockedCannotDelete_classifiedTyped() throws Exception {
+        AuthService authService = mock(AuthService.class);
+        UserRepository userRepo = mock(UserRepository.class);
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        when(userRepo.findByUidUncached("u1")).thenReturn(Optional.of(userWithRole("user")));
+        doThrow(new UserStateConflictException(
+                UserStateConflictException.ReasonCode.BLOCKED_CANNOT_DELETE, "msg"))
+                .when(authService).softDeleteUser("u1", "admin-uid", null);
+
+        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
+
+        BulkUserActionResult result = svc.execute(
+                BulkAction.DELETE, List.of("u1"), ADMIN_ACTOR, null);
+
+        assertEquals("blocked_cannot_delete", result.getFailures().get(0).reason());
+    }
+
+    @Test
+    void plainIllegalState_legacyPath_classifiedAsInvalidState() throws Exception {
+        // Cubic R6 P2 — defensive fallback: a plain IllegalStateException
+        // (no ReasonCode) from a future call site that hasn't yet been
+        // promoted to UserStateConflictException routes to "invalid_state"
+        // rather than swallowing the failure as "firebase_error".
+        AuthService authService = mock(AuthService.class);
+        UserRepository userRepo = mock(UserRepository.class);
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        when(userRepo.findByUidUncached("u1")).thenReturn(Optional.of(userWithRole("user")));
+        doThrow(new IllegalStateException("some untyped legacy message"))
                 .when(authService).blockUser("u1", "admin-uid", null);
 
         BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
@@ -141,7 +190,7 @@ class BulkUserServiceTest {
         BulkUserActionResult result = svc.execute(
                 BulkAction.BLOCK, List.of("u1"), ADMIN_ACTOR, null);
 
-        assertEquals("already_blocked", result.getFailures().get(0).reason());
+        assertEquals("invalid_state", result.getFailures().get(0).reason());
     }
 
     @Test
@@ -150,7 +199,7 @@ class BulkUserServiceTest {
         UserRepository userRepo = mock(UserRepository.class);
         AuditLogService auditLog = mock(AuditLogService.class);
 
-        when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
+        when(userRepo.findByUidUncached("u1")).thenReturn(Optional.of(userWithRole("user")));
         doThrow(new com.albunyaan.tube.service.UserNotFoundException("u1"))
                 .when(authService).blockUser("u1", "admin-uid", null);
 
@@ -162,41 +211,13 @@ class BulkUserServiceTest {
         assertEquals("user_not_found", result.getFailures().get(0).reason());
     }
 
-    @Test
-    void illegalStateAlreadyDeleted_classified() throws Exception {
-        AuthService authService = mock(AuthService.class);
-        UserRepository userRepo = mock(UserRepository.class);
-        AuditLogService auditLog = mock(AuditLogService.class);
-
-        when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
-        doThrow(new IllegalStateException("User already deleted"))
-                .when(authService).softDeleteUser("u1", "admin-uid", null);
-
-        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
-
-        BulkUserActionResult result = svc.execute(
-                BulkAction.DELETE, List.of("u1"), ADMIN_ACTOR, null);
-
-        assertEquals("already_deleted", result.getFailures().get(0).reason());
-    }
-
-    @Test
-    void unrecognizedIllegalStateMessage_classifiedAsInvalidState() throws Exception {
-        AuthService authService = mock(AuthService.class);
-        UserRepository userRepo = mock(UserRepository.class);
-        AuditLogService auditLog = mock(AuditLogService.class);
-
-        when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
-        doThrow(new IllegalStateException("some weird business rule"))
-                .when(authService).blockUser("u1", "admin-uid", null);
-
-        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
-
-        BulkUserActionResult result = svc.execute(
-                BulkAction.BLOCK, List.of("u1"), ADMIN_ACTOR, null);
-
-        assertEquals("invalid_state", result.getFailures().get(0).reason());
-    }
+    // Cubic R6 P2 — the pre-fix `alreadyBlocked` / `alreadyDeleted` /
+    // `unrecognizedIllegalStateMessage` cases have been folded into the new
+    // typed-conflict tests above (typedConflict_*_classifiedTyped) plus
+    // plainIllegalState_legacyPath_classifiedAsInvalidState. The R5 dead-
+    // branch removal already collapsed the "already blocked" / "already
+    // deleted" predicates because F13 made BLOCK/DELETE idempotent — those
+    // strings are never thrown any more.
 
     private static User userWithRole(String role) {
         User u = new User();
