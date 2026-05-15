@@ -49,6 +49,7 @@ public class AccountController {
             @AuthenticationPrincipal FirebaseUserDetails principal,
             @Valid @RequestBody CompleteProfileRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
+        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         var saved = accountProfileService.completeProfile(
                 principal.getUid(), req.getDisplayName(), req.getDateOfBirth());
         return ResponseEntity.ok(AccountMeResponse.from(saved));
@@ -58,6 +59,7 @@ public class AccountController {
     public ResponseEntity<?> getMe(
             @AuthenticationPrincipal FirebaseUserDetails principal)
             throws ExecutionException, InterruptedException, TimeoutException {
+        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         String uid = principal.getUid();
         User user = userRepository.findByUid(uid).orElseGet(() -> {
             // Plan C T12 fix: lazy-create on first /api/account/me hit (per
@@ -66,12 +68,56 @@ public class AccountController {
             fresh.setStatusEnum(UserStatus.PENDING_PROFILE);
             try {
                 return userRepository.save(fresh);
-            } catch (ExecutionException | InterruptedException | TimeoutException e) {
-                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-                throw new RuntimeException("lazy-create failed for uid=" + uid, e);
+            } catch (TimeoutException e) {
+                // Preserve the typed exception so the right HTTP status is
+                // returned: a generic RuntimeException would fall through to
+                // GlobalExceptionHandler.handleGenericException → 500 instead
+                // of the more accurate 504 Gateway Timeout.
+                throw new LazyCreateTimeoutException(uid, e);
+            } catch (ExecutionException e) {
+                throw new LazyCreateExecutionException(uid, e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new LazyCreateInterruptedException(uid, e);
             }
         });
         return ResponseEntity.ok(AccountMeResponse.from(user));
+    }
+
+    /**
+     * Typed wrappers for {@code lazy-create} failures inside the {@code orElseGet}
+     * lambda — checked exceptions cannot escape a {@code Supplier}, so we wrap
+     * with typed unchecked exceptions and map them back to the right HTTP
+     * status via the handlers below.
+     */
+    public static class LazyCreateTimeoutException extends RuntimeException {
+        public LazyCreateTimeoutException(String uid, Throwable cause) {
+            super("lazy-create timeout for uid=" + uid, cause);
+        }
+    }
+    public static class LazyCreateExecutionException extends RuntimeException {
+        public LazyCreateExecutionException(String uid, Throwable cause) {
+            super("lazy-create execution failure for uid=" + uid, cause);
+        }
+    }
+    public static class LazyCreateInterruptedException extends RuntimeException {
+        public LazyCreateInterruptedException(String uid, Throwable cause) {
+            super("lazy-create interrupted for uid=" + uid, cause);
+        }
+    }
+
+    @ExceptionHandler(LazyCreateTimeoutException.class)
+    public ResponseEntity<Map<String, String>> handleLazyCreateTimeout(LazyCreateTimeoutException e) {
+        return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
+                .body(Map.of("code", "LAZY_CREATE_TIMEOUT",
+                             "message", "Account bootstrap timed out. Please try again."));
+    }
+
+    @ExceptionHandler({LazyCreateExecutionException.class, LazyCreateInterruptedException.class})
+    public ResponseEntity<Map<String, String>> handleLazyCreateFailure(RuntimeException e) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("code", "LAZY_CREATE_FAILED",
+                             "message", "Account bootstrap failed. Please try again."));
     }
 
     // ── Exception handlers ─────────────────────────────────────────────────

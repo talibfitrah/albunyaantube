@@ -201,11 +201,21 @@ public class AuditLogService {
             // referenced doc. Drift here means either the doc was rewritten or the
             // cursor was tampered with — log a warning so operators can spot it,
             // but don't fail the page (the docId is the authoritative tiebreak).
+            //
+            // Both sides are truncated to millisecond precision before comparison:
+            // Firestore Timestamp.toDate() rounds to milliseconds, but the encode
+            // fallback `: Instant.now()` mints nanoseconds. Comparing nanos to millis
+            // would log spurious "drift" on every cursor minted down that fallback.
             com.google.cloud.Timestamp storedTs = snap.getTimestamp("timestamp");
-            if (storedTs != null && c.ts() != null
-                    && !storedTs.toDate().toInstant().equals(c.ts())) {
-                logger.warn("Audit cursor ts drift: cursorTs={} storedTs={} docId={}",
-                        c.ts(), storedTs.toDate().toInstant(), c.docId());
+            if (storedTs != null && c.ts() != null) {
+                java.time.Instant storedMs = storedTs.toDate().toInstant()
+                        .truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+                java.time.Instant cursorMs = c.ts()
+                        .truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+                if (!storedMs.equals(cursorMs)) {
+                    logger.warn("Audit cursor ts drift: cursorTs={} storedTs={} docId={}",
+                            cursorMs, storedMs, c.docId());
+                }
             }
             q = q.startAfter(snap);
         }

@@ -57,13 +57,20 @@ class SyncManager @Inject constructor(
                 runMerge(uid)
             }
             else -> {
-                // Account switch: wipe old uid's rows
-                subs.wipeForUid(b.user_id)
-                playlists.wipeForUid(b.user_id)
-                favorites.wipeForUid(b.user_id)
-                syncState.clearForUid(b.user_id)
-                binding.clear()
-                binding.upsert(AccountBindingEntity(uid, System.currentTimeMillis(), false))
+                // Account switch: wipe old uid's rows. Wrap the whole sequence in a
+                // single transaction so a process kill / OOM / OS termination between
+                // `binding.clear()` and `binding.upsert(...)` can't leave the device
+                // with no account binding *and* freshly-wiped tables — a re-launch
+                // would then hit the `b == null` branch and re-merge as a fresh user
+                // while the old uid's rows are already gone (Plan D account-switch).
+                db.withTransaction {
+                    subs.wipeForUid(b.user_id)
+                    playlists.wipeForUid(b.user_id)
+                    favorites.wipeForUid(b.user_id)
+                    syncState.clearForUid(b.user_id)
+                    binding.clear()
+                    binding.upsert(AccountBindingEntity(uid, System.currentTimeMillis(), false))
+                }
                 runMerge(uid)
             }
         }

@@ -2,7 +2,9 @@ package com.albunyaan.tube.share
 
 import android.net.Uri
 import com.albunyaan.tube.BuildConfig
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -28,6 +30,15 @@ object ShareMetadataPublisher {
         withTimeoutOrNull(PUBLISH_TIMEOUT_MS) {
             withContext(Dispatchers.IO) {
                 runCatching {
+                    // POST /api/share-metadata now requires a Firebase ID token —
+                    // anonymous writes were a phishing-grade OG cache poisoning vector
+                    // (any non-registry videoId could be seeded with attacker text).
+                    // If the user is not signed in, skip the publish silently; the
+                    // backend's GET fallback still renders a generic FitrahTube card
+                    // from registry data.
+                    val firebaseUser = FirebaseAuth.getInstance().currentUser ?: return@runCatching
+                    val token = firebaseUser.getIdToken(false).await().token ?: return@runCatching
+
                     val url = Uri.parse(shareBaseUrl)
                         .buildUpon()
                         .appendPath("api")
@@ -47,6 +58,7 @@ object ShareMetadataPublisher {
 
                     val request = Request.Builder()
                         .url(url)
+                        .header("Authorization", "Bearer $token")
                         .post(payload.toString().toRequestBody(jsonMediaType))
                         .build()
                     client.newCall(request).execute().use { response ->

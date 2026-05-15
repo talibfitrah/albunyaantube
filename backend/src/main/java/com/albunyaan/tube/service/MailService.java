@@ -41,6 +41,14 @@ public class MailService {
         this.auditLog = auditLog;
 
         if (enabled) {
+            // Explicit checks so a missing Azure value yields a clearly attributed
+            // startup failure rather than a stack trace pointing into MSAL/Azure
+            // SDK internals (ClientSecretCredentialBuilder throws an NPE that does
+            // not mention which field is missing).
+            requireConfigured("azure.tenant-id", azure.getTenantId());
+            requireConfigured("azure.client-id", azure.getClientId());
+            requireConfigured("azure.client-secret", azure.getClientSecret());
+            requireConfigured("mail.from-address", this.fromAddress);
             ClientSecretCredential cred = new ClientSecretCredentialBuilder()
                     .tenantId(azure.getTenantId())
                     .clientId(azure.getClientId())
@@ -50,6 +58,14 @@ public class MailService {
                     "https://graph.microsoft.com/.default");
         } else {
             this.graph = null;
+        }
+    }
+
+    private static void requireConfigured(String key, String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(
+                    "mail.enabled=true but " + key + " is not set. " +
+                    "Either set " + key + " in application.yml / env or disable mail.");
         }
     }
 

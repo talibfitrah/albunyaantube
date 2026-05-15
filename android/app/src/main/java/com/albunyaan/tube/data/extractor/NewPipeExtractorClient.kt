@@ -161,22 +161,22 @@ class NewPipeExtractorClient(
                 throwable.message?.contains("visitorData", ignoreCase = true) == true
             ) {
                 try {
-                    // Re-acquire the global client lock so a concurrent resolveStreams() on
-                    // another video cannot rotate NewPipe's process-wide client setting out
-                    // from under this retry. Mirrors the same synchronized() guard used on
-                    // the first-attempt path upstream of this catch block. Re-derive the
-                    // initial client from feature flags rather than peeking the rotator —
-                    // visitorData hiccups are usually client-agnostic and re-applying the
-                    // initial client gives the most predictable second-attempt behaviour.
+                    // Re-acquire the global client lock around applyClientSetting only —
+                    // narrowed to match the first-attempt path's scope upstream (apply is
+                    // inside the synchronized block; getStreamExtractor is not). A
+                    // concurrent resolveStreams() can still rotate the client between
+                    // the apply and the fetchPage() below, but that is the same race
+                    // accepted on the first attempt (callers tolerate it because
+                    // NewPipe toggles are rare and not driven by playback).
                     val retryHandler = streamLinkHandlerFactory.fromId(videoId)
-                    val retryExtractor = synchronized(NewPipeExtractorClient::class.java) {
+                    synchronized(NewPipeExtractorClient::class.java) {
                         if (featureFlags.isClientRotationEnabled) {
                             applyClientSetting(clientRotator.initialClient(featureFlags.isIosFetchEnabled))
                         } else {
                             applyIosFetchSetting()
                         }
-                        youtubeService.getStreamExtractor(retryHandler)
                     }
+                    val retryExtractor = youtubeService.getStreamExtractor(retryHandler)
                     retryExtractor.fetchPage()
                     val retryInfo = StreamInfo.getInfo(retryExtractor)
                     val urlGeneratedAt = clock()

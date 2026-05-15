@@ -99,7 +99,12 @@ class BulkUserServiceTest {
     }
 
     @Test
-    void recoverAdminTarget_isAllowed() throws Exception {
+    void recoverAdminTarget_isRejected() throws Exception {
+        // Cubic round-2 (P3): admin-target guard now applies uniformly across
+        // BLOCK / DELETE / RECOVER / REVOKE_SESSIONS. The previous RECOVER carve-
+        // out meant a deleted admin could be silently restored without the
+        // per-target admin_target_forbidden audit row. Bulk endpoints never
+        // touch admins.
         AuthService authService = mock(AuthService.class);
         UserRepository userRepo = mock(UserRepository.class);
         AuditLogService auditLog = mock(AuditLogService.class);
@@ -114,9 +119,11 @@ class BulkUserServiceTest {
                 ADMIN_ACTOR,
                 null);
 
-        assertEquals(List.of("admin-target"), result.getSuccesses());
-        assertTrue(result.getFailures().isEmpty());
-        verify(authService).recoverUser("admin-target", "admin-uid");
+        assertTrue(result.getSuccesses().isEmpty());
+        assertEquals(1, result.getFailures().size());
+        assertEquals("admin-target", result.getFailures().get(0).uid());
+        assertEquals("admin_target_forbidden", result.getFailures().get(0).reason());
+        verify(authService, never()).recoverUser(eq("admin-target"), any());
     }
 
     @Test

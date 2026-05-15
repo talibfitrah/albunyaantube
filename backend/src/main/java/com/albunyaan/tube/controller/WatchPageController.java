@@ -163,6 +163,13 @@ public class WatchPageController {
      * thumbnail URL when seeding the share cache; anything else is treated as
      * untrusted input and dropped without an error so the title/description path
      * still functions.
+     *
+     * <p>The returned URL is reconstructed via {@code URI} without any user-info
+     * segment: a URL like {@code https://attacker.com@i.ytimg.com/vi/abc/...}
+     * has its host resolved to {@code i.ytimg.com} (no SSRF), but the original
+     * userinfo segment was previously preserved verbatim in the og:image meta
+     * tag where some scrapers and debug surfaces would log or display the
+     * attacker-chosen prefix. Rebuilding from components strips it.
      */
     private static String validateShareImage(String rawImageUrl) {
         String url = nullSafe(rawImageUrl, "").trim();
@@ -173,13 +180,23 @@ public class WatchPageController {
             java.net.URI parsed = java.net.URI.create(url);
             String host = parsed.getHost();
             if (host == null) return "";
-            // Strip any user-info smuggling (e.g. "evil.com@i.ytimg.com" would
-            // resolve to host=i.ytimg.com on some parsers; URI.getHost is the
-            // authority host so this is already correct, but be explicit).
             String normalised = host.toLowerCase(Locale.ROOT);
             if (!APPROVED_IMAGE_HOSTS.contains(normalised)) return "";
-            return url;
-        } catch (IllegalArgumentException e) {
+            if (parsed.getUserInfo() == null) {
+                return url;
+            }
+            // Reconstruct without userinfo. Use the 5-arg URI ctor so port,
+            // path, query and fragment are preserved verbatim.
+            java.net.URI sanitised = new java.net.URI(
+                    parsed.getScheme(),
+                    null,
+                    parsed.getHost(),
+                    parsed.getPort(),
+                    parsed.getPath(),
+                    parsed.getQuery(),
+                    parsed.getFragment());
+            return sanitised.toString();
+        } catch (java.net.URISyntaxException | IllegalArgumentException e) {
             return "";
         }
     }
