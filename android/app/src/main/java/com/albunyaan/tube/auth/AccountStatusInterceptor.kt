@@ -80,12 +80,18 @@ class AccountStatusInterceptor @Inject constructor(
             else -> return response
         }
 
-        // Order matters: signOut BEFORE emit. The Firebase AuthStateListener
-        // posts to the main looper and flips authState to SignedOut; if we
-        // emit() first, T6's MainActivity collector receives the dialog event
-        // while authState still reads SignedIn, creating a transient "blocked
-        // but logged in" UI state. Doing signOut first lets the listener fire
-        // before the dialog renders.
+        // Cubic R7 P2 — comment correction.
+        //
+        // signOut runs before emit so the in-process AccountRepository state
+        // reset and FirebaseAuth.signOut() complete before the UI consumes
+        // the AccountStatusEvent. The previous comment claimed the
+        // AuthStateListener "flips authState" before the dialog event
+        // dispatches; in fact AuthStateListener posts to the main looper
+        // and may not have run by the time MainActivity collects the
+        // emitter flow. Ordering here is a best-effort to minimise the
+        // "blocked but still signed in" window; the UI must still tolerate
+        // racing emissions (T6 already does — it routes terminal events
+        // regardless of the live authState).
         firebaseAuth.signOut()
         // Cubic R5 P1 #24 — also clear the AccountRepository in-memory state.
         // Pre-fix, FirebaseAuth.signOut() did not propagate to AccountRepository,

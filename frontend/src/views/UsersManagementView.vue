@@ -36,11 +36,18 @@
       data-testid="bulk-result-toast"
       class="bulk-toast"
       role="status"
+      aria-live="polite"
     >
+      <!-- Cubic R7 P2 — aria-live so screen readers announce the bulk
+           result without focus stealing; assistive tech otherwise missed
+           the toast entirely (just `role="status"` is not enough on its
+           own in some Voice-Over implementations). -->
       <span>{{ lastResult.action }}: {{ lastResult.ok }} succeeded, {{ lastResult.fail }} failed</span>
       <button type="button" class="toast-close" @click="lastResult = null">✕</button>
       <div v-if="lastResult.failures.length > 0">
-        <button type="button" class="toast-details-toggle" @click="lastResult.expand = !lastResult.expand">
+        <!-- Cubic R7 P2 — toggle moved to a method so the inline template
+             mutation doesn't violate one-way data flow. -->
+        <button type="button" class="toast-details-toggle" @click="toggleResultExpand">
           {{ lastResult.expand ? 'Hide details' : 'Details' }}
         </button>
         <ul v-if="lastResult.expand" class="toast-failures">
@@ -120,7 +127,7 @@
                 type="checkbox"
                 :checked="users.length > 0 && selected.size === users.length"
                 @change="toggleSelectAll"
-                aria-label="Select all"
+                :aria-label="t('users.table.selectAll')"
               />
             </th>
             <th scope="col">{{ t('users.columns.email') }}</th>
@@ -863,6 +870,15 @@ function toggleSelectAll() {
   } else {
     selected.value = new Set(users.value.map((u) => u.id));
   }
+}
+
+/**
+ * Cubic R7 P2 — extracted from the inline template handler so we don't
+ * mutate `lastResult.expand` from the template (Vue one-way data flow).
+ */
+function toggleResultExpand() {
+  if (!lastResult.value) return;
+  lastResult.value = { ...lastResult.value, expand: !lastResult.value.expand };
 }
 
 // Bulk action helpers

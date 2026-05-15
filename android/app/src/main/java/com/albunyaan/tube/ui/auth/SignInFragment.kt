@@ -250,7 +250,11 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
                 // Nav transition driven by the observer set up in MainActivity (T5/T6).
                 viewModel.setLoading(false)
             } catch (e: Exception) {
-                Log.w(TAG, "Microsoft sign-in failed", e)
+                // Cubic R7 P2 — log only the class + truncated message, not
+                // the full Throwable. Firebase exceptions can carry tokens or
+                // PII in their detail string; the full stack ends up in
+                // logcat and crash-reporting pipelines.
+                Log.w(TAG, "Microsoft sign-in failed: ${e.javaClass.simpleName}: ${e.message?.take(120)}")
                 val code = e.toAuthErrorCode().takeIf { it != AuthErrorCode.UNKNOWN }
                     ?: AuthErrorCode.MICROSOFT_SIGN_IN_FAILED
                 viewModel.surfaceError(code)

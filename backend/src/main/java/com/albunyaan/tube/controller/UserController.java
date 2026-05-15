@@ -232,7 +232,13 @@ public class UserController {
     public ResponseEntity<Void> deleteUser(
             @PathVariable String uid,
             @AuthenticationPrincipal FirebaseUserDetails actor,
-            @RequestParam(required = false, defaultValue = "admin-action") String reason
+            // Cubic R7 P2 — drop the literal sentinel default. Pre-fix every
+            // operator who omitted the query param landed in audit rows as
+            // reason="admin-action", indistinguishable from a thoughtful
+            // typed-out "admin-action" reason. Null carries the intent
+            // honestly: "no reason supplied", and the downstream service
+            // path already handles null.
+            @RequestParam(required = false) String reason
     ) throws Exception {
         if (actor == null) return ResponseEntity.status(401).build();
         authService.softDeleteUser(uid, actor.getUid(), reason);

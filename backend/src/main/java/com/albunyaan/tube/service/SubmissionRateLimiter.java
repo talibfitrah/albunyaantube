@@ -40,9 +40,21 @@ public class SubmissionRateLimiter {
                 .build();
     }
 
-    /** Returns null if allowed; otherwise seconds until the oldest hit ages out. */
+    /**
+     * Returns null if allowed; otherwise seconds until the oldest hit ages out.
+     *
+     * <p>Cubic R7 P2 — blank uid now {@code throws IllegalArgumentException}
+     * instead of returning "allowed".
+     *
+     * <p>Pre-fix the null/empty-uid path returned null (= allowed), which
+     * silently bypassed the per-user limit when a caller forgot to thread
+     * principal.uid through. The rate limit was supposed to be the user's
+     * own write quota — empty-uid sneaking past defeated the cap.
+     */
     public Long tryAcquire(String uid) {
-        if (uid == null || uid.isEmpty()) return null;
+        if (uid == null || uid.isBlank()) {
+            throw new IllegalArgumentException("tryAcquire requires a non-blank uid");
+        }
         Instant now = clock.instant();
         Instant cutoff = now.minus(WINDOW);
         // Use the cache's atomic compute so the mutation happens under the cache's

@@ -838,7 +838,8 @@ export const messages = {
         loading: 'Loading users…',
         error: 'Unable to load users.',
         retry: 'Retry',
-        never: 'Never'
+        never: 'Never',
+        selectAll: 'Select all users on this page'
       },
       pagination: {
         previous: 'Previous',
@@ -2267,7 +2268,8 @@ export const messages = {
         loading: 'جارٍ تحميل المستخدمين…',
         error: 'تعذّر تحميل المستخدمين.',
         retry: 'إعادة المحاولة',
-        never: 'لم يحدث'
+        never: 'لم يحدث',
+        selectAll: 'تحديد جميع المستخدمين في هذه الصفحة'
       },
       pagination: {
         previous: 'السابق',
@@ -3527,7 +3529,8 @@ export const messages = {
         loading: 'Gebruikers laden…',
         error: 'Gebruikers kunnen niet worden geladen.',
         retry: 'Opnieuw proberen',
-        never: 'Nooit'
+        never: 'Nooit',
+        selectAll: 'Alle gebruikers op deze pagina selecteren'
       },
       pagination: {
         previous: 'Vorige',

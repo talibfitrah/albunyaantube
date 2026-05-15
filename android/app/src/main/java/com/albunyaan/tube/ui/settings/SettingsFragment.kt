@@ -111,8 +111,12 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                     // IllegalStateException in that case.
                     val activity = activity ?: return@launch
                     if (activity.isFinishing || activity.isDestroyed) return@launch
+                    // Cubic R7 P2 — central host-id constant decouples this
+                    // child fragment from any specific Activity-level layout
+                    // ID. If the host ever changes, only NavHostIds needs to
+                    // update — the call sites stay.
                     val outerNav = try {
-                        Navigation.findNavController(activity, R.id.nav_host_fragment)
+                        Navigation.findNavController(activity, NavHostIds.ROOT)
                     } catch (e: IllegalStateException) {
                         android.util.Log.w(
                             "SettingsFragment",

@@ -43,8 +43,19 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ROLE_CLAIM = "role";
-    /** Only these role values are accepted from Firebase custom claims. Any other value falls back to "user". */
-    private static final Set<String> VALID_ROLES = Set.of("admin", "moderator", "user");
+    /**
+     * Only these role values are accepted from Firebase custom claims. Any other
+     * value falls back to "user".
+     *
+     * <p>Cubic R7 P2 — drop "user" from the allow-list. The token side never
+     * emits {@code role: "user"} (default-role users have no role claim at
+     * all); accepting it on the read side widened the surface for free —
+     * a stale or hand-crafted token with {@code role: "user"} would still
+     * be honoured. Restricting to the two elevated roles is conservative;
+     * the fallback path below already covers default users by returning
+     * "user" anyway.
+     */
+    private static final Set<String> VALID_ROLES = Set.of("admin", "moderator");
 
     private final FirebaseAuth firebaseAuth;
     private final UserRepository userRepository;

@@ -156,9 +156,12 @@ export const bulkRevokeSessions = (req: BulkUserActionRequest) => postBulk('bulk
  * the silent optional.
  */
 export async function forceLogout(uid: string): Promise<void> {
+  // Cubic R7 P2 — no body. Backend's POST /{uid}/revoke-sessions has
+  // @RequestBody(required = false); sending {} works today but some
+  // intermediate proxies / future stricter mappings reject empty JSON
+  // bodies. Drop the Content-Type and body entirely so the request is a
+  // bare POST.
   await authorizedJsonFetch<void>(`${USERS_BASE_PATH}/${uid}/revoke-sessions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
+    method: 'POST'
   });
 }
