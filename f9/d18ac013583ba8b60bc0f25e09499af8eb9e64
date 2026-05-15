@@ -1,0 +1,54 @@
+backend/src/main/java/com/albunyaan/tube/dto/sync/SyncCursors.java
+  s_dac267759ff6fd::t_462a29ed8bcd59 7-12,16-21,29-34
+android/app/src/main/java/com/albunyaan/tube/data/sync/dto/SyncDtos.kt
+  s_dac267759ff6fd::t_e02b14ce067754 16-17
+backend/src/main/java/com/albunyaan/tube/dto/sync/SyncPageDto.java
+  s_dac267759ff6fd::t_801fe88d1f80f6 8-14,19-22,25,43-49
+backend/src/main/java/com/albunyaan/tube/service/sync/SyncService.java
+  s_dac267759ff6fd::t_76b1061b85102d 29-30,33-34,37-38,44,48,51-58
+backend/src/main/java/com/albunyaan/tube/service/AuditLogService.java
+  s_dac267759ff6fd::t_567f24bee9cc16 202-204,206
+  s_dac267759ff6fd::t_b2b2b9220422ef 256-260,262,271,273-276,279-288
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncApi.kt
+  s_dac267759ff6fd::t_d5ed185ab35ca3 11-19
+backend/src/main/java/com/albunyaan/tube/repository/SyncRepository.java
+  s_dac267759ff6fd::t_09696fbfadf32a 45-55,57,61-72,82-85
+backend/src/main/java/com/albunyaan/tube/service/MailServiceStartupCheck.java
+  s_dac267759ff6fd::t_5de010596c0e70 13-15
+  s_dac267759ff6fd::t_5f7b66642c9211 45-50,60-64,66-67,92-97
+backend/src/main/java/com/albunyaan/tube/security/FirebaseAuthFilter.java
+  s_dac267759ff6fd::t_1b77f7f89fbc14 91-99
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_dac267759ff6fd::t_5b93950483b88e 98-109,113-120,149-151
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerTest.java
+  s_dac267759ff6fd::t_e8e4079c1a8612 181-185,198-210,217
+backend/src/main/java/com/albunyaan/tube/repository/UserRepository.java
+  s_dac267759ff6fd::t_d33a1e58f876f7 297-324
+android/app/src/main/java/com/albunyaan/tube/share/ShareMetadataPublisher.kt
+  s_dac267759ff6fd::t_80ca68c2b0e670 5
+  s_dac267759ff6fd::t_64dc44fb0e8364 42-48
+backend/src/main/java/com/albunyaan/tube/service/BulkUserService.java
+  s_dac267759ff6fd::t_2ce15be70f6997 104-122
+backend/src/main/java/com/albunyaan/tube/controller/SyncController.java
+  s_dac267759ff6fd::t_f317aa04d6c3c3 46-53,56
+backend/src/main/java/com/albunyaan/tube/controller/WatchPageController.java
+  s_dac267759ff6fd::t_9cd7d727653539 140-150
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_dac267759ff6fd::t_bb4253f59007a3 64-68,71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "f9d18ac013583ba8b60bc0f25e09499af8eb9e64",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
