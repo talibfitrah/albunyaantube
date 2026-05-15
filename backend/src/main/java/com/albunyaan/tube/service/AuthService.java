@@ -146,12 +146,26 @@ public class AuthService {
      * blocks/deletes/role-changes don't pay the serialisation cost.
      */
     private void lockAdminSentinel(Transaction tx, String op) throws Exception {
+        // Cubic R-final3 P1 — read-only sentinel acquisition.
+        //
+        // Pre-fix this method did `tx.get(lockRef)` THEN `tx.set(lockRef, …)`.
+        // Callers immediately followed with `tx.get(firestore.collection(…))`
+        // to count active admins. google-cloud-firestore 3.x enforces
+        // "all reads before all writes" in a transaction; the second tx.get
+        // would throw IllegalStateException ("Firestore transactions require
+        // all reads to be executed before all writes"), making the entire
+        // last-admin guard unreachable against a real Firestore. Mockito
+        // mocks in tests didn't catch it because the precondition is in the
+        // Firestore client, not in the tx.get stub.
+        //
+        // Fix: drop the sentinel write. The sentinel WRITE was redundant
+        // for conflict detection — the lifecycle tx already writes
+        // userRef + auditDoc, both of which fail on concurrent modification
+        // with the same effect. We keep the sentinel READ so concurrent
+        // admin-on-admin operations still serialise on the lock document.
         DocumentReference lockRef = firestore.document("system/admin_lock");
         tx.get(lockRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        tx.set(lockRef, java.util.Map.of(
-                "lastOp", op,
-                "lastModified", FieldValue.serverTimestamp()
-        ), SetOptions.merge());
+        // op parameter retained for future telemetry; sentinel write removed.
     }
 
     private <T> T runLifecycleTx(Transaction.Function<T> fn) throws Exception {
