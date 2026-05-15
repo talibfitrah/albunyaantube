@@ -145,29 +145,34 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                         "SERVICE_UNAVAILABLE", "Account status check failed; try again.");
                     return;
                 } catch (RuntimeException e) {
-                    // Cubic R7 P1 — fail-open instead of 503-blanket.
+                    // Cubic R7 P1 — fail-open instead of 503-blanket on
+                    // non-status-sensitive routes. Cubic R-final-verify P1
+                    // — fail-CLOSED on /api/admin/ + /api/v1/me + lifecycle
+                    // routes where a blocked/deleted user must NOT slip
+                    // through a mapping quirk.
                     //
-                    // Pre-fix any unexpected error (Caffeine load failure, mapping
-                    // change, classloader weirdness, NPE in mappers) returned
-                    // SERVICE_UNAVAILABLE to the user, DoSing the entire
-                    // authenticated surface — even for non-status-sensitive
-                    // endpoints (e.g. /api/v1/categories) the user could
-                    // perfectly well call without status enforcement.
-                    //
-                    // The user already presented a valid Firebase ID token, so
-                    // their identity is established. We log the failure for
-                    // operators and let the request proceed; if it hits an
-                    // endpoint that re-reads status (e.g. an admin write),
-                    // that endpoint can re-check or trip on its own. The
-                    // known-Firestore-failure paths above (Execution /
-                    // Timeout / Interrupted) remain fail-closed because they
-                    // represent a confirmed inability to reach Firestore at
-                    // all — different signal than a runtime quirk in the
-                    // mapping layer.
-                    logger.error("Unexpected error during status check for uid {} — failing open: {}",
-                        uid, e.getMessage(), e);
-                    // fall through — request continues unauthorized-by-status
-                    // but with a valid identity attached below.
+                    // The fail-open trade-off is correct for read-only
+                    // public surfaces (/api/v1/categories, /api/v1/channels,
+                    // public catalog) — a Caffeine load failure or mapper
+                    // NPE shouldn't DoS the entire authenticated read path.
+                    // But admin endpoints write or expose privileged data;
+                    // there a blocked admin slipping through is far worse
+                    // than 503ing them until the mapper is fixed.
+                    boolean statusSensitive = requestURI.startsWith("/api/admin/")
+                            || requestURI.startsWith("/api/account/")
+                            || requestURI.equals("/api/v1/me")
+                            || requestURI.startsWith("/api/v1/me/");
+                    if (statusSensitive) {
+                        logger.error("Unexpected error during status check for uid {} on status-sensitive route {} — failing CLOSED: {}",
+                                uid, requestURI, e.getMessage(), e);
+                        writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                                "SERVICE_UNAVAILABLE", "Account status check failed; try again.");
+                        return;
+                    }
+                    logger.error("Unexpected error during status check for uid {} on route {} — failing open: {}",
+                            uid, requestURI, e.getMessage(), e);
+                    // fall through — non-status-sensitive request continues
+                    // unauthorized-by-status but with a valid identity attached below.
                 }
 
                 // Extract role from custom claims with allowlist validation

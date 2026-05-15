@@ -359,14 +359,29 @@
               />
               <span>{{ t('users.status.active') }}</span>
             </label>
+            <!-- Cubic R-final-verify P0 — replaced the now-invalid
+                 value="DISABLED" radio with the canonical BLOCKED option,
+                 plus DELETED so an admin can transition a user through the
+                 full lifecycle from this dialog. PENDING_PROFILE intentionally
+                 absent — that state is set by the bootstrap flow, not by
+                 admin action. -->
             <label class="radio-item">
               <input
                 type="radio"
-                value="DISABLED"
+                value="BLOCKED"
                 v-model="editState.status"
                 :disabled="editState.isSubmitting"
               />
-              <span>{{ t('users.status.disabled') }}</span>
+              <span>{{ t('users.status.blocked') }}</span>
+            </label>
+            <label class="radio-item">
+              <input
+                type="radio"
+                value="DELETED"
+                v-model="editState.status"
+                :disabled="editState.isSubmitting"
+              />
+              <span>{{ t('users.status.deleted') }}</span>
             </label>
           </fieldset>
           <p v-if="editState.error" class="form-error" role="alert">{{ editState.error }}</p>

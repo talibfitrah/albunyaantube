@@ -30,6 +30,14 @@ function toBackendStatus(status: AdminUserStatus): string {
     case 'BLOCKED':         return 'blocked';
     case 'DELETED':         return 'deleted';
     case 'PENDING_PROFILE': return 'pending_profile';
+    default:
+      // Cubic R-final-verify P1 — defensive throw. TypeScript exhaustiveness
+      // covers compile-time new members, but legacy string values reaching
+      // this function at runtime (e.g. the now-removed 'DISABLED') would
+      // silently return undefined and produce `JSON.stringify({status:undefined})`
+      // = `{}`, dropping the status field entirely on the wire. The PUT
+      // then no-ops — invisible to the admin. Throw loudly instead.
+      throw new Error(`Invalid AdminUserStatus: ${String(status)}`);
   }
 }
 

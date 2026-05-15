@@ -73,7 +73,7 @@ const secondUser: AdminUser = {
   id: 'user-2',
   email: 'moderator@example.com',
   role: 'MODERATOR',
-  status: 'DISABLED',
+  status: 'BLOCKED',
   displayName: 'Mod Two',
   lastLoginAt: null,
   createdAt: '2025-09-15T08:00:00Z',
@@ -176,14 +176,17 @@ describe('UsersManagementView', () => {
     const moderatorRadio = within(editDialog).getByLabelText(/moderator/i);
     await fireEvent.click(moderatorRadio);
 
-    const disabledRadio = within(editDialog).getByLabelText(/disabled/i);
-    await fireEvent.click(disabledRadio);
+    // Cubic R9 P2: status radios are now Active / Blocked / Deleted (no
+    // "Disabled" label). The test exercises the "block via edit dialog"
+    // path which sends 'BLOCKED' (canonical) instead of the legacy 'DISABLED'.
+    const blockedRadio = within(editDialog).getByLabelText(/blocked/i);
+    await fireEvent.click(blockedRadio);
 
     await fireEvent.click(within(editDialog).getByRole('button', { name: /save changes/i }));
 
     await waitFor(() => {
       expect(updateUserRole).toHaveBeenCalledWith('user-1', 'MODERATOR');
-      expect(updateUserStatus).toHaveBeenCalledWith('user-1', 'DISABLED');
+      expect(updateUserStatus).toHaveBeenCalledWith('user-1', 'BLOCKED');
     });
   });
 
@@ -194,7 +197,7 @@ describe('UsersManagementView', () => {
     await fireEvent.click(screen.getByRole('button', { name: /deactivate/i }));
 
     await waitFor(() => {
-      expect(updateUserStatus).toHaveBeenCalledWith('user-1', 'DISABLED');
+      expect(updateUserStatus).toHaveBeenCalledWith('user-1', 'BLOCKED');
     });
   });
 
