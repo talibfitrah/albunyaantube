@@ -124,8 +124,17 @@ const PAGE_LIMIT = 100;
 // Bumping `loadEpoch` on every load invocation and re-checking on resolve
 // drops any response whose epoch is no longer current.
 let loadEpoch = 0;
+// Cubic R7 P1 — also abort the underlying fetch so the server doesn't spend
+// quota on a request the client has already discarded. The previous epoch's
+// AbortController is aborted at the start of every load() to short-circuit
+// any in-flight HTTP call.
+let inflightController: AbortController | null = null;
 
 async function load(reset = false) {
+  // Cancel in-flight request before the supersede.
+  inflightController?.abort();
+  const controller = new AbortController();
+  inflightController = controller;
   const epoch = ++loadEpoch;
   if (reset) {
     entries.value = [];
@@ -138,7 +147,8 @@ async function load(reset = false) {
       cursor: reset ? null : nextCursor.value,
       actorId: actorFilter.value.trim() || undefined,
       action: actionFilter.value.trim() || undefined,
-      limit: PAGE_LIMIT
+      limit: PAGE_LIMIT,
+      signal: controller.signal,
     });
     if (epoch !== loadEpoch) return; // stale response — newer load() superseded us
     entries.value = reset ? page.data : [...entries.value, ...page.data];

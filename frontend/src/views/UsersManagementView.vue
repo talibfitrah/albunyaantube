@@ -51,19 +51,30 @@
       </div>
     </div>
 
+    <!-- Cubic R7 P1 — surface cross-page selection loss. Auto-dismissable
+         via close button; clears on next reload. -->
+    <div v-if="selectionDroppedCount > 0" class="selection-dropped-toast" role="status">
+      <span>{{ t('users.selection.dropped', { n: selectionDroppedCount }) }}</span>
+      <button type="button" class="toast-close" @click="selectionDroppedCount = 0">✕</button>
+    </div>
+
     <!-- Sticky bulk-action toolbar -->
     <div v-if="selected.size >= 1" class="bulk-toolbar">
       <span class="bulk-selected">{{ selected.size }} selected</span>
-      <button type="button" data-testid="bulk-block" class="bulk-btn" @click="handleBulkBlock">
+      <!-- Cubic R7 P1 — bulk buttons :disabled while a bulk request is in
+           flight. Pre-fix a slow API + impatient double-click submitted two
+           POSTs; the second ran against a half-mutated set after the first
+           reload(). -->
+      <button type="button" data-testid="bulk-block" class="bulk-btn" :disabled="bulkActionRunning" @click="handleBulkBlock">
         {{ t('users.bulk.block') }}
       </button>
-      <button type="button" data-testid="bulk-delete" class="bulk-btn danger" @click="handleBulkDelete">
+      <button type="button" data-testid="bulk-delete" class="bulk-btn danger" :disabled="bulkActionRunning" @click="handleBulkDelete">
         {{ t('users.bulk.delete') }}
       </button>
-      <button type="button" data-testid="bulk-recover" class="bulk-btn" @click="handleBulkRecover">
+      <button type="button" data-testid="bulk-recover" class="bulk-btn" :disabled="bulkActionRunning" @click="handleBulkRecover">
         {{ t('users.bulk.recover') }}
       </button>
-      <button type="button" data-testid="bulk-revoke-sessions" class="bulk-btn" @click="handleBulkRevokeSessions">
+      <button type="button" data-testid="bulk-revoke-sessions" class="bulk-btn" :disabled="bulkActionRunning" @click="handleBulkRevokeSessions">
         {{ t('users.bulk.revokeSessions') }}
       </button>
     </div>
@@ -452,6 +463,11 @@ const actionError = ref<string | null>(null);
 const busyUserId = ref<string | null>(null);
 const resettingPasswordUserId = ref<string | null>(null);
 const forcingLogoutUserId = ref<string | null>(null);
+// Cubic R7 P1 — gate every bulk handler on this ref so a double-click on a
+// slow API can't submit two POSTs.
+const bulkActionRunning = ref(false);
+// Cubic R7 P1 — surface cross-page selection loss with a transient notice.
+const selectionDroppedCount = ref(0);
 
 // Checkbox selection
 const selected = ref<Set<string>>(new Set());
@@ -503,7 +519,15 @@ watch(users, (newUsers) => {
   const visible = new Set(newUsers.map((u) => u.id));
   const next = new Set<string>();
   for (const id of selected.value) if (visible.has(id)) next.add(id);
-  if (next.size !== selected.value.size) selected.value = next;
+  if (next.size !== selected.value.size) {
+    // Cubic R7 P1 — surface dropped cross-page selection to the admin.
+    // Pre-fix the prune silently discarded selections that moved out of
+    // view on page navigation; admins thought their selection persisted
+    // and were surprised when bulk actions ran against fewer rows than
+    // they ticked. The notice clears on the next reload + scroll.
+    selectionDroppedCount.value = selected.value.size - next.size;
+    selected.value = next;
+  }
 });
 
 const searchInputRef = ref<HTMLInputElement | null>(null);
@@ -846,7 +870,14 @@ async function handleBulkBlock() {
   // Guard against empty-selection bulk calls — the bulk buttons remain
   // enabled even with no rows ticked and would otherwise POST `uids: []`
   // and a confirm dialog appear with nothing to confirm (cubic R5 P2).
-  if (selected.value.size === 0) return;
+  if (selected.value.size === 0 || bulkActionRunning.value) return;
+  // Cubic R7 P1 — confirm dialog parity with bulk-delete. Bulk block is
+  // destructive (blocks N users with one click) and should not fire on
+  // a misclick.
+  if (!window.confirm(t('users.confirmBulk.block', { n: selected.value.size }))) {
+    return;
+  }
+  bulkActionRunning.value = true;
   const uids = Array.from(selected.value);
   try {
     const result = await bulkBlock({ uids });
@@ -861,17 +892,20 @@ async function handleBulkBlock() {
     await reload();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Bulk block failed';
+  } finally {
+    bulkActionRunning.value = false;
   }
 }
 
 async function handleBulkDelete() {
-  if (selected.value.size === 0) return;
+  if (selected.value.size === 0 || bulkActionRunning.value) return;
   // Use the i18n key added in the same diff (cubic R5 P1). The previous
   // hardcoded English string left the Arabic/Dutch keys dead and broke
   // Arabic admin workflows.
   if (!window.confirm(t('users.confirmDelete.bulk', { n: selected.value.size }))) {
     return;
   }
+  bulkActionRunning.value = true;
   const uids = Array.from(selected.value);
   try {
     const result = await bulkDelete({ uids });
@@ -886,11 +920,19 @@ async function handleBulkDelete() {
     await reload();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Bulk delete failed';
+  } finally {
+    bulkActionRunning.value = false;
   }
 }
 
 async function handleBulkRecover() {
-  if (selected.value.size === 0) return;
+  if (selected.value.size === 0 || bulkActionRunning.value) return;
+  // Cubic R7 P1 — confirm dialog parity. Recover is less destructive
+  // but admins should still see the row count.
+  if (!window.confirm(t('users.confirmBulk.recover', { n: selected.value.size }))) {
+    return;
+  }
+  bulkActionRunning.value = true;
   const uids = Array.from(selected.value);
   try {
     const result = await bulkRecover({ uids });
@@ -905,11 +947,20 @@ async function handleBulkRecover() {
     await reload();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Bulk recover failed';
+  } finally {
+    bulkActionRunning.value = false;
   }
 }
 
 async function handleBulkRevokeSessions() {
-  if (selected.value.size === 0) return;
+  if (selected.value.size === 0 || bulkActionRunning.value) return;
+  // Cubic R7 P1 — bulk revoke-sessions invalidates sessions for N users
+  // at once; this MUST have a confirm dialog. Pre-fix only handleBulkDelete
+  // had one, so a single misclick force-signed-out an entire selection.
+  if (!window.confirm(t('users.confirmBulk.revokeSessions', { n: selected.value.size }))) {
+    return;
+  }
+  bulkActionRunning.value = true;
   const uids = Array.from(selected.value);
   try {
     const result = await bulkRevokeSessions({ uids });
@@ -924,6 +975,8 @@ async function handleBulkRevokeSessions() {
     await reload();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Bulk revoke sessions failed';
+  } finally {
+    bulkActionRunning.value = false;
   }
 }
 

@@ -145,10 +145,20 @@ export const bulkDelete         = (req: BulkUserActionRequest) => postBulk('bulk
 export const bulkRecover        = (req: BulkUserActionRequest) => postBulk('bulk-recover', req);
 export const bulkRevokeSessions = (req: BulkUserActionRequest) => postBulk('bulk-revoke-sessions', req);
 
-export async function forceLogout(uid: string, reason?: string): Promise<void> {
+/**
+ * Cubic R7 P1 — `reason` parameter dropped.
+ *
+ * Pre-fix the helper accepted an optional `reason` but no UI surfaced a
+ * prompt for it; every call went out without a reason and the backend
+ * audit row recorded blank. Misleading API surface. If a per-revoke
+ * justification becomes a product requirement, surface it as a dialog in
+ * UsersManagementView and re-add as a typed field; do not re-introduce
+ * the silent optional.
+ */
+export async function forceLogout(uid: string): Promise<void> {
   await authorizedJsonFetch<void>(`${USERS_BASE_PATH}/${uid}/revoke-sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(reason !== undefined ? { reason } : {})
+    body: JSON.stringify({})
   });
 }

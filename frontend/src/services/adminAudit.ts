@@ -11,6 +11,13 @@ export interface AuditLogPageParams {
   limit?: number;
   actorId?: string;
   action?: string;
+  /**
+   * Cubic R7 P1 — wire AbortSignal so superseded fetches actually cancel
+   * server-side. Pre-fix the AuditLogView epoch guard discarded stale
+   * responses on the client, but the underlying request still ran to
+   * completion and cost audit-read quota per superseded supersede.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -83,7 +90,10 @@ export async function fetchAuditLogPage(params: AuditLogPageParams = {}): Promis
   // momentarily returns a legacy bare array (rollback, cached proxy response,
   // pre-deploy state), coerce it into the new shape rather than throwing
   // `page.items.map is not a function` and crashing the page (cubic R5 P2).
-  const raw = await authorizedJsonFetch<unknown>(`${AUDIT_BASE_PATH}?${queryParams}`);
+  const raw = await authorizedJsonFetch<unknown>(
+    `${AUDIT_BASE_PATH}?${queryParams}`,
+    params.signal ? { signal: params.signal } : {}
+  );
   const page = normaliseAuditPage(raw);
 
   return {
@@ -122,9 +132,13 @@ export async function fetchAuditLogsByActor(
   if (options.cursor) qp.append('cursor', options.cursor);
 
   // Plan F (T22): /actor/{uid} now returns { items, nextCursor }
-  const page = await authorizedJsonFetch<{ items: AuditLog[]; nextCursor: string | null }>(
+  // Cubic R7 P1 — route through normaliseAuditPage so a deploy-order skew
+  // (BE returns legacy bare array) doesn't crash the filter page with
+  // `page.items.map is not a function`.
+  const raw = await authorizedJsonFetch<unknown>(
     `${AUDIT_BASE_PATH}/actor/${encodeURIComponent(actorUid)}?${qp}`
   );
+  const page = normaliseAuditPage(raw);
 
   return {
     data: page.items.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null),
@@ -151,9 +165,11 @@ export async function fetchAuditLogsByAction(
   if (options.cursor) qp.append('cursor', options.cursor);
 
   // Plan F (T23): /action/{action} now returns { items, nextCursor }
-  const page = await authorizedJsonFetch<{ items: AuditLog[]; nextCursor: string | null }>(
+  // Cubic R7 P1 — see fetchAuditLogsByActor for rationale.
+  const raw = await authorizedJsonFetch<unknown>(
     `${AUDIT_BASE_PATH}/action/${encodeURIComponent(action)}?${qp}`
   );
+  const page = normaliseAuditPage(raw);
 
   return {
     data: page.items.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null),

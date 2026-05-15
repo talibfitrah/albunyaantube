@@ -931,6 +931,14 @@ export const messages = {
       confirmDelete: {
         bulk: 'Soft-delete {n} users? They can be recovered later.'
       },
+      confirmBulk: {
+        block: 'Block {n} users? They will lose access until unblocked.',
+        recover: 'Recover {n} users? Their accounts return to ACTIVE.',
+        revokeSessions: 'Force logout {n} users? Their sessions will be invalidated within an hour.'
+      },
+      selection: {
+        dropped: '{n} selected user(s) were dropped because they are no longer visible on this page.'
+      },
       forceLogout: {
         button: 'Force Logout',
         busy: 'Logging out…',
@@ -2352,6 +2360,14 @@ export const messages = {
       confirmDelete: {
         bulk: 'حذف {n} مستخدمين مبدئياً؟ يمكن استعادتهم لاحقاً.'
       },
+      confirmBulk: {
+        block: 'حظر {n} مستخدمين؟ سيفقدون الوصول حتى يتم رفع الحظر.',
+        recover: 'استعادة {n} مستخدمين؟ ستعود حساباتهم إلى نشطة.',
+        revokeSessions: 'تسجيل خروج إجباري لـ {n} مستخدمين؟ سيتم إبطال جلساتهم خلال ساعة.'
+      },
+      selection: {
+        dropped: 'تم إسقاط {n} مستخدمين محددين لأنهم لم يعودوا مرئيين في هذه الصفحة.'
+      },
       forceLogout: {
         button: 'تسجيل خروج إجباري',
         busy: 'جارٍ تسجيل الخروج…',
@@ -3603,6 +3619,14 @@ export const messages = {
       },
       confirmDelete: {
         bulk: '{n} gebruikers tijdelijk verwijderen? Ze kunnen later worden hersteld.'
+      },
+      confirmBulk: {
+        block: '{n} gebruikers blokkeren? Ze verliezen toegang tot ze gedeblokkeerd worden.',
+        recover: '{n} gebruikers herstellen? Hun accounts gaan terug naar ACTIEF.',
+        revokeSessions: '{n} gebruikers geforceerd afmelden? Hun sessies worden binnen een uur ongeldig.'
+      },
+      selection: {
+        dropped: '{n} geselecteerde gebruiker(s) zijn weggevallen omdat ze niet meer zichtbaar zijn op deze pagina.'
       },
       forceLogout: {
         button: 'Geforceerd afmelden',
