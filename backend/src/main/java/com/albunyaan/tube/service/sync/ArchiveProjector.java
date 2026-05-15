@@ -7,6 +7,7 @@ import com.albunyaan.tube.repository.VideoRepository;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -64,20 +65,25 @@ public class ArchiveProjector {
     // (chunks of 30) instead of one read per row. Maps each row through the
     // same projection logic as the per-row API.
 
+    // Cubic R7 P2 — return immutable lists. Callers (SyncService streaming a
+    // page through Jackson) treat the projection result as a value, never as a
+    // mutable buffer; surfacing that via the type prevents accidental
+    // post-projection writes that would silently desync archive flags.
+
     public List<RawRow> projectSubscriptions(List<RawRow> rows) {
-        if (rows.isEmpty()) return rows;
+        if (rows.isEmpty()) return List.of();
         Set<String> archived = channels.archivedIdsAmong(idsOf(rows));
         return projectBatch(rows, archived);
     }
 
     public List<RawRow> projectPlaylists(List<RawRow> rows) {
-        if (rows.isEmpty()) return rows;
+        if (rows.isEmpty()) return List.of();
         Set<String> archived = playlists.archivedIdsAmong(idsOf(rows));
         return projectBatch(rows, archived);
     }
 
     public List<RawRow> projectFavorites(List<RawRow> rows) {
-        if (rows.isEmpty()) return rows;
+        if (rows.isEmpty()) return List.of();
         Set<String> archived = videos.archivedIdsAmong(idsOf(rows));
         return projectBatch(rows, archived);
     }
@@ -91,7 +97,7 @@ public class ArchiveProjector {
     private static List<RawRow> projectBatch(List<RawRow> rows, Set<String> archived) {
         List<RawRow> out = new ArrayList<>(rows.size());
         for (RawRow r : rows) out.add(projectIf(r, archived.contains(r.id())));
-        return out;
+        return Collections.unmodifiableList(out);
     }
 
     private static RawRow projectIf(RawRow row, boolean archived) {

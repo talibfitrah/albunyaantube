@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.DocumentSnapshot;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +24,7 @@ import java.util.Map;
  */
 public class CursorUtils {
 
+    private static final Logger log = LoggerFactory.getLogger(CursorUtils.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -125,9 +128,14 @@ public class CursorUtils {
             String json = new String(decoded, StandardCharsets.UTF_8);
             return objectMapper.readValue(json, CursorData.class);
         } catch (IllegalArgumentException | IOException e) {
-            // Malformed or unrecognisable cursor — treat as first page (null cursor).
-            // This is the correct behaviour: an invalid cursor should not crash the
-            // request; it should simply restart from the beginning.
+            // Cubic R7 P2 — malformed cursors previously fell back to "first
+            // page" silently, hiding pagination bugs (e.g. clients holding
+            // stale/truncated tokens across deploys never noticed they were
+            // restarting). Restart semantics are still the safest fallback,
+            // but warn so we have telemetry: a spike in this log = real client
+            // bug or token format drift, not a quietly broken paginator.
+            log.warn("Malformed pagination cursor (len={}, err={}): restarting from page 1",
+                    cursor.length(), e.getClass().getSimpleName());
             return null;
         }
     }

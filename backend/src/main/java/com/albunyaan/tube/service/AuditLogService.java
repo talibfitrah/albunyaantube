@@ -228,11 +228,13 @@ public class AuditLogService {
                 // own nextCursor from the last row so pagination continues
                 // rather than appearing to end.
                 //
-                // Cubic R6 P2 — do NOT include the raw docId in the warn line.
-                // Pre-fix that turned the log into an oracle: an admin who
-                // could mint cursors could enumerate which arbitrary docIds
-                // exist in audit_logs by watching for the warn-or-not.
-                logger.warn("Audit cursor references missing doc; resetting to first page");
+                // Cubic R6 P2 — no raw docId in the warn line; pre-fix that
+                // turned the log into an oracle.
+                // Cubic R7 P2 — uniform warn wording across all stale-cursor
+                // branches (missing-doc, actorUid-mismatch, action-mismatch)
+                // so the warn pattern itself is not an oracle for which
+                // filter the cursor failed against. See branch below.
+                logger.warn("Audit cursor invalid; resetting to first page");
                 return findFirstPageWithCursor(actorUid, action, effLimit);
             }
             // Cubic R6 P2 — close the cross-filter existence-oracle.
@@ -252,14 +254,20 @@ public class AuditLogService {
             // identical for {not-exists} ∪ {exists-but-mismatched-filter},
             // collapsing the side-channel. The admin learns nothing new about
             // docs outside their filter scope.
+            // Cubic R7 P2 — uniform warn ("Audit cursor invalid") across all
+            // three stale-cursor branches collapses the side channel: an
+            // attacker watching info-level logs cannot distinguish
+            // missing-doc vs actorUid-mismatch vs action-mismatch and so
+            // cannot probe whether docId X exists under a filter view they
+            // are not entitled to.
             if (actorUid != null && !actorUid.isBlank()
                     && !actorUid.equals(snap.getString("actorUid"))) {
-                logger.warn("Audit cursor filter mismatch (actorUid); resetting to first page");
+                logger.warn("Audit cursor invalid; resetting to first page");
                 return findFirstPageWithCursor(actorUid, action, effLimit);
             }
             if (action != null && !action.isBlank()
                     && !action.equals(snap.getString("action"))) {
-                logger.warn("Audit cursor filter mismatch (action); resetting to first page");
+                logger.warn("Audit cursor invalid; resetting to first page");
                 return findFirstPageWithCursor(actorUid, action, effLimit);
             }
             // F8 sanity check: encoded ts should match the stored timestamp on the
