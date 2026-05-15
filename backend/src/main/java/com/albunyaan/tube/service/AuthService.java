@@ -349,8 +349,34 @@ public class AuthService {
         // distinguishes the auto-fire from an admin-triggered revoke.
         FirebaseUserDetails actor =
                 new FirebaseUserDetails(actorUid, null, "admin");
-        try {
-            firebaseAuth.revokeRefreshTokens(uid);
+        // Cubic R7 P2 — bounded retry around revokeRefreshTokens.
+        //
+        // Pre-fix a single failed call (transient FB Auth 5xx, network blip)
+        // left the user holding a valid JWT carrying the OLD role until the
+        // token's natural expiry — critical for role DOWNGRADES (admin → user
+        // / moderator → user) where the user retained elevated privileges
+        // for up to an hour. The retry is bounded (3 attempts, 200ms /
+        // 400ms backoff) so it cannot stall an admin request; if all three
+        // fail we still audit and return — same fail-open contract as before.
+        Exception lastError = null;
+        boolean revoked = false;
+        for (int attempt = 1; attempt <= 3 && !revoked; attempt++) {
+            try {
+                firebaseAuth.revokeRefreshTokens(uid);
+                revoked = true;
+            } catch (Exception e) {
+                lastError = e;
+                if (attempt < 3) {
+                    try {
+                        Thread.sleep(200L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        if (revoked) {
             auditLogService.log(
                     "USER_SESSIONS_REVOKED_AUTO",
                     "user", uid,
@@ -359,14 +385,16 @@ public class AuthService {
                             "oldRole", previousRole[0] == null ? "" : previousRole[0],
                             "newRole", newRole.getValue(),
                             "trigger", "role_change"));
-        } catch (Exception e) {
+        } else {
             // F6 + risk §11.6: log + audit-failure, never throw.
-            logger.error("auto-revoke after role change failed uid={}", uid, e);
+            logger.error("auto-revoke after role change failed (after retries) uid={}", uid, lastError);
             auditLogService.log(
                     "USER_SESSIONS_REVOKED_AUTO_FAILED",
                     "user", uid,
                     actor,
-                    java.util.Map.of("error", e.getClass().getSimpleName()));
+                    java.util.Map.of(
+                            "error", lastError == null ? "unknown" : lastError.getClass().getSimpleName(),
+                            "attempts", "3"));
         }
 
         return updated;
