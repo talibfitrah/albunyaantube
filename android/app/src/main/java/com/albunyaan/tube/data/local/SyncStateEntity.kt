@@ -11,5 +11,10 @@ data class SyncStateEntity(
     val entityType: String,
     val user_id: String,
     val last_cursor: Long,
+    // SYNC-CURSOR-PERSIST-01 (Cubic R7 P1) — compound-cursor tiebreaker
+    // docId so the (updatedAt, docId) pair survives process death. The
+    // first pull after restart now resumes from the same page boundary
+    // instead of dropping rows tied to the same millisecond.
+    val last_doc_id: String? = null,
     val last_sync_at: Long,
 )

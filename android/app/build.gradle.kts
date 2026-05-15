@@ -198,12 +198,23 @@ android {
         arg("room.schemaLocation", "$projectDir/schemas")
     }
 
-    // Schemas live in the debug source set only — Robolectric MigrationTestHelper
-    // (testDebugUnitTest) reads them via the merged debug assets, and they don't
-    // ship in release APKs.
+    // Schemas live in the debug + benchmark source sets — Robolectric
+    // MigrationTestHelper (testDebugUnitTest, testBenchmarkUnitTest) reads
+    // them via the merged assets, and they don't ship in release APKs.
+    //
+    // Schema-export build infra fix (review cleanup, 2026-05-15): pre-fix
+    // the benchmark variant lacked the schema assets so migration tests
+    // failed under testBenchmarkUnitTest with FileNotFoundException for
+    // AppDatabase/{2,3,7,8}.json — even though the JSONs exist in the
+    // repo. Wiring `benchmark` source set fixes this.
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")
         getByName("debug").assets.srcDirs("$projectDir/schemas")
+        // AGP creates the benchmark variant sourceSet lazily; force creation
+        // via getByName so the assets wiring lands. Pre-fix findByName returned
+        // null during evaluation order and migration tests silently lacked the
+        // schemas at runtime under testBenchmarkUnitTest.
+        getByName("benchmark").assets.srcDirs("$projectDir/schemas")
     }
 
     java {

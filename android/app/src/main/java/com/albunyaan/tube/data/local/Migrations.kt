@@ -333,3 +333,17 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         """.trimIndent())
     }
 }
+
+/**
+ * MIGRATION_8_9 — SYNC-CURSOR-PERSIST-01 (Cubic R7 P1).
+ *
+ * Adds `last_doc_id TEXT NULL` to sync_state so the compound-cursor
+ * tiebreaker docId survives process death. Pre-migration the docId
+ * lived only in SyncManager's `lastIds` map; the first pull after
+ * restart could drop rows tied on the same `updated_at` value.
+ */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE sync_state ADD COLUMN last_doc_id TEXT DEFAULT NULL")
+    }
+}

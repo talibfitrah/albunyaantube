@@ -132,15 +132,15 @@ class SyncManager @Inject constructor(
         )
         // Compound-cursor tiebreakers (cubic R3/R4 P1) — only persisted for
         // the duration of the pullAll loop. After process death the first
-        // pull falls back to the legacy whereGreaterThan(ts) behaviour
-        // (which can drop rows tied on the same millisecond at the previous
-        // page boundary). Persisting across process death would need a Room
-        // migration on sync_state; deferred until that DAO is touched
-        // anyway.
+        // SYNC-CURSOR-PERSIST-01 (Cubic R7 P1) — persisted in Room v9
+        // (MIGRATION_8_9 adds last_doc_id to sync_state). The (cursor_ts,
+        // last_doc_id) pair survives process death, eliminating the
+        // post-restart row-drop window for rows tied on the same
+        // millisecond at the previous page boundary.
         val lastIds = mutableMapOf<String, String?>(
-            "subscriptions" to null,
-            "playlists"     to null,
-            "favorites"     to null,
+            "subscriptions" to syncState.cursorIdFor(uid, "subscriptions"),
+            "playlists"     to syncState.cursorIdFor(uid, "playlists"),
+            "favorites"     to syncState.cursorIdFor(uid, "favorites"),
         )
 
         var more: Boolean
@@ -211,16 +211,34 @@ class SyncManager @Inject constructor(
                 // compound cursor on next request: ts from client-max, id from
                 // server-page-end → overlapping fetches or dropped rows on
                 // ties, defeating the R3/R4 compound-cursor fix.
+                // SYNC-CURSOR-PERSIST-01 — persist (cursor_ts, last_doc_id)
+                // atomically. Both round-trip in the same Room write so the
+                // post-restart resume sees a consistent compound cursor.
                 body.subscriptions.nextCursor?.let {
-                    syncState.upsert(SyncStateEntity("subscriptions", uid, it, System.currentTimeMillis()))
+                    syncState.upsert(SyncStateEntity(
+                        entityType   = "subscriptions",
+                        user_id      = uid,
+                        last_cursor  = it,
+                        last_doc_id  = body.subscriptions.nextCursorId,
+                        last_sync_at = System.currentTimeMillis()))
                     cursors["subscriptions"] = it
                 }
                 body.playlists.nextCursor?.let {
-                    syncState.upsert(SyncStateEntity("playlists", uid, it, System.currentTimeMillis()))
+                    syncState.upsert(SyncStateEntity(
+                        entityType   = "playlists",
+                        user_id      = uid,
+                        last_cursor  = it,
+                        last_doc_id  = body.playlists.nextCursorId,
+                        last_sync_at = System.currentTimeMillis()))
                     cursors["playlists"] = it
                 }
                 body.favorites.nextCursor?.let {
-                    syncState.upsert(SyncStateEntity("favorites", uid, it, System.currentTimeMillis()))
+                    syncState.upsert(SyncStateEntity(
+                        entityType   = "favorites",
+                        user_id      = uid,
+                        last_cursor  = it,
+                        last_doc_id  = body.favorites.nextCursorId,
+                        last_sync_at = System.currentTimeMillis()))
                     cursors["favorites"] = it
                 }
                 lastIds["subscriptions"] = body.subscriptions.nextCursorId
