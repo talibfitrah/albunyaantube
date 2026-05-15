@@ -12,6 +12,8 @@ import com.albunyaan.tube.service.AgeIneligibleException;
 import com.albunyaan.tube.service.ProfileAlreadyCompletedException;
 import com.albunyaan.tube.service.UserNotFoundException;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -34,6 +36,8 @@ import java.util.concurrent.TimeoutException;
 @RestController
 @RequestMapping("/api/account")
 public class AccountController {
+
+    private static final Logger logger = LoggerFactory.getLogger(AccountController.class);
 
     private final AccountProfileService accountProfileService;
     private final UserRepository userRepository;
@@ -89,6 +93,24 @@ public class AccountController {
         final User user;
         try {
             user = userRepository.getOrCreate(uid, () -> {
+                // Cubic R-final4 P3 — warn on non-user lazy-create. When a
+                // pre-existing admin/moderator's Firestore doc went missing
+                // (operator error, half-applied migration, manual cleanup),
+                // their Firebase Auth custom claim survives and this branch
+                // mints a fresh doc with role=admin/moderator + status=
+                // PENDING_PROFILE. Firestore rules require status==active
+                // for isAdmin()/isModerator(), so the user can't yet
+                // exercise privileges — safe by design — but an admin in
+                // PENDING_PROFILE in the admin dashboard's user list is
+                // anomalous and should ping the operator.
+                if (!"user".equals(seedRole)) {
+                    logger.warn("Lazy-create recovery: uid={} email={} seedRole={} "
+                            + "minted as PENDING_PROFILE. Indicates the user's "
+                            + "Firestore row was missing but their Firebase Auth "
+                            + "custom claim survived. Investigate who/when the row "
+                            + "disappeared.",
+                            uid, principal.getEmail(), seedRole);
+                }
                 User fresh = new User(uid, principal.getEmail(), null, seedRole);
                 fresh.setStatusEnum(UserStatus.PENDING_PROFILE);
                 return fresh;
