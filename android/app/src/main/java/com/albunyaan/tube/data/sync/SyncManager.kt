@@ -6,6 +6,7 @@ import com.albunyaan.tube.data.sync.dto.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -38,10 +39,29 @@ class SyncManager @Inject constructor(
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val pullMutex = Mutex()
-    private val pushMutex = Mutex()
 
-    suspend fun bind(uid: String) {
+    // Cubic R5 P1 — single global mutex serialising all of bind/pull/push.
+    //
+    // Pre-fix this class had two independent mutexes (`pullMutex` and
+    // `pushMutex`), so a pull and a push could interleave. That created
+    // read-modify-write hazards: pull reads server `updatedAt`, push runs
+    // concurrently, server writes a new row, pull writes the older row's
+    // cursor with a stale tail. A single mutex makes the read/write cycle
+    // strictly sequential.
+    //
+    // `bind()` also acquires the same mutex (cubic R5 P1 #21) so a pull
+    // or push in flight when the user account-switches can't slip writes
+    // tagged with the wrong uid into the freshly-bound user's tables.
+    private val syncMutex = Mutex()
+
+    // Cubic R5 P1 #20 — wire the existing SyncBackoff. Per-instance, holds
+    // the current schedule for transient push retries. Reset on a clean
+    // drain; advanced on transient failure (5xx/429/network).
+    private val pushBackoff = SyncBackoff()
+
+    suspend fun bind(uid: String) = syncMutex.withLock { bindLocked(uid) }
+
+    private suspend fun bindLocked(uid: String) {
         val b = binding.get()
         when {
             b == null -> {
@@ -49,12 +69,12 @@ class SyncManager @Inject constructor(
                 runMerge(uid)
             }
             b.user_id == uid && b.initial_merge_done -> {
-                pullAll(uid)
-                pushDirty(uid)
+                pullAllLocked(uid)
+                pushDirtyLocked(uid)
             }
             b.user_id == uid && !b.initial_merge_done -> {
                 // Prior merge crashed mid-way — re-enter
-                runMerge(uid)
+                runMergeLocked(uid)
             }
             else -> {
                 // Account switch: wipe old uid's rows. Wrap the whole sequence in a
@@ -71,25 +91,29 @@ class SyncManager @Inject constructor(
                     binding.clear()
                     binding.upsert(AccountBindingEntity(uid, System.currentTimeMillis(), false))
                 }
-                runMerge(uid)
+                runMergeLocked(uid)
             }
         }
     }
 
-    suspend fun runMerge(uid: String) {
+    suspend fun runMerge(uid: String) = syncMutex.withLock { runMergeLocked(uid) }
+
+    private suspend fun runMergeLocked(uid: String) {
         // Step 1: tag anon rows
         subs.tagAnonRowsToUid(uid)
         playlists.tagAnonRowsToUid(uid)
         favorites.tagAnonRowsToUid(uid)
         // Step 2: pull server — collisions overwrite local, clearing dirty
-        pullAll(uid)
+        pullAllLocked(uid)
         // Step 3: push remaining local-only rows
-        pushDirty(uid)
+        pushDirtyLocked(uid)
         // Step 4: mark merge done
         binding.markMergeDone(uid)
     }
 
-    suspend fun pullAll(uid: String) = pullMutex.withLock {
+    suspend fun pullAll(uid: String) = syncMutex.withLock { pullAllLocked(uid) }
+
+    private suspend fun pullAllLocked(uid: String) {
         val cursors = mutableMapOf(
             "subscriptions" to (syncState.cursorFor(uid, "subscriptions") ?: 0L),
             "playlists"     to (syncState.cursorFor(uid, "playlists")     ?: 0L),
@@ -118,8 +142,8 @@ class SyncManager @Inject constructor(
                 lastIds["playlists"],
                 lastIds["favorites"],
             )
-            if (!resp.isSuccessful) return@withLock
-            val body = resp.body() ?: return@withLock
+            if (!resp.isSuccessful) return
+            val body = resp.body() ?: return
 
             db.withTransaction {
                 for (row in body.subscriptions.items) {
@@ -203,10 +227,25 @@ class SyncManager @Inject constructor(
             dirty           = false,
         )
 
-    suspend fun pushDirty(uid: String) = pushMutex.withLock {
+    suspend fun pushDirty(uid: String) = syncMutex.withLock { pushDirtyLocked(uid) }
+
+    private suspend fun pushDirtyLocked(uid: String) {
+        // Cubic R5 P1 #19 — drain across types is *resilient*, not all-or-nothing.
+        //
+        // Pre-fix the first transient failure aborted the whole drain: one
+        // 5xx on a single subscription row left every other dirty row (in any
+        // type) stuck waiting for the next trigger. Now we record the failure
+        // and keep going; the row that failed remains `dirty=1` for next cycle,
+        // and the rest of the queue makes forward progress.
+        //
+        // Auth failures (401/403) DO short-circuit — they are not transient
+        // and the AccountStatusInterceptor will sign the user out anyway.
+        var hadTransientFailure = false
+        var authFailed = false
+
         // Subscriptions
         for (row in subs.selectDirty(uid)) {
-            val ok = if (row.deleted) {
+            val outcome = if (row.deleted) {
                 push({ api.deleteSubscription(row.channelId) },
                     onSuccess = { resp -> subs.clearDirty(uid, row.channelId, resp.updatedAt) },
                     on404    = { subs.clearDirty(uid, row.channelId, System.currentTimeMillis()) })
@@ -217,11 +256,15 @@ class SyncManager @Inject constructor(
                     onSuccess = { resp -> subs.clearDirty(uid, row.channelId, resp.updatedAt) },
                     on404    = { /* PUT 404 shouldn't happen; surface failure */ })
             }
-            if (!ok) return@withLock     // 5xx/429/abort — leave dirty for next cycle
+            when (outcome) {
+                PushOutcome.AUTH_FAILED -> { authFailed = true; break }
+                PushOutcome.TRANSIENT_FAILURE -> hadTransientFailure = true
+                PushOutcome.OK -> { /* keep going */ }
+            }
         }
         // Playlists
-        for (row in playlists.selectDirty(uid)) {
-            val ok = if (row.deleted) {
+        if (!authFailed) for (row in playlists.selectDirty(uid)) {
+            val outcome = if (row.deleted) {
                 push({ api.deletePlaylist(row.playlistId) },
                     onSuccess = { resp -> playlists.clearDirty(uid, row.playlistId, resp.updatedAt) },
                     on404    = { playlists.clearDirty(uid, row.playlistId, System.currentTimeMillis()) })
@@ -233,11 +276,15 @@ class SyncManager @Inject constructor(
                     onSuccess = { resp -> playlists.clearDirty(uid, row.playlistId, resp.updatedAt) },
                     on404    = { /* PUT 404 shouldn't happen */ })
             }
-            if (!ok) return@withLock
+            when (outcome) {
+                PushOutcome.AUTH_FAILED -> { authFailed = true; break }
+                PushOutcome.TRANSIENT_FAILURE -> hadTransientFailure = true
+                PushOutcome.OK -> { /* keep going */ }
+            }
         }
         // Favorites
-        for (row in favorites.selectDirty(uid)) {
-            val ok = if (row.deleted) {
+        if (!authFailed) for (row in favorites.selectDirty(uid)) {
+            val outcome = if (row.deleted) {
                 push({ api.deleteFavorite(row.videoId) },
                     onSuccess = { resp -> favorites.clearDirty(uid, row.videoId, resp.updatedAt) },
                     on404    = { favorites.clearDirty(uid, row.videoId, System.currentTimeMillis()) })
@@ -249,29 +296,54 @@ class SyncManager @Inject constructor(
                     onSuccess = { resp -> favorites.clearDirty(uid, row.videoId, resp.updatedAt) },
                     on404    = { /* PUT 404 shouldn't happen */ })
             }
-            if (!ok) return@withLock
+            when (outcome) {
+                PushOutcome.AUTH_FAILED -> { authFailed = true; break }
+                PushOutcome.TRANSIENT_FAILURE -> hadTransientFailure = true
+                PushOutcome.OK -> { /* keep going */ }
+            }
+        }
+
+        // Cubic R5 P1 #20 — wire SyncBackoff.
+        //
+        // On a clean drain reset the schedule (next transient failure starts
+        // back at 1s). On any transient failure, advance the schedule and
+        // schedule a one-shot retry from the application scope; the syncMutex
+        // unlocks first, so the retry waits cleanly behind whatever is next.
+        // Auth failure does not retry — AccountStatusInterceptor signs out.
+        if (authFailed) {
+            pushBackoff.reset()
+        } else if (hadTransientFailure) {
+            val wait = pushBackoff.next()
+            scope.launch {
+                delay(wait)
+                pushDirty(uid)
+            }
+        } else {
+            pushBackoff.reset()
         }
     }
 
+    private enum class PushOutcome { OK, AUTH_FAILED, TRANSIENT_FAILURE }
+
     /**
-     * Returns true on success (caller should continue), false on retryable failure
-     * (caller should break out of the drain loop and retry next cycle).
-     * - 2xx → onSuccess(body), returns true
-     * - 404 → on404(), returns true (treated as success for idempotent DELETEs)
-     * - 401/403 → return false (interceptors handle; abort loop)
-     * - 5xx/429 → return false (back off; retry next trigger)
+     * Classify an HTTP response so the drain loop can decide whether to keep
+     * going, retry the cycle later, or short-circuit.
+     * - 2xx → onSuccess(body), OK
+     * - 404 → on404(), OK (idempotent DELETE; nothing to do)
+     * - 401/403 → AUTH_FAILED (AccountStatusInterceptor signs out)
+     * - 5xx/429/network/unknown → TRANSIENT_FAILURE (row stays dirty, retry)
      */
     private suspend inline fun <T> push(
         crossinline op: suspend () -> retrofit2.Response<T>,
         crossinline onSuccess: suspend (T) -> Unit,
         crossinline on404: suspend () -> Unit,
-    ): Boolean {
+    ): PushOutcome {
         val resp = op()
         return when {
-            resp.isSuccessful -> { resp.body()?.let { onSuccess(it) }; true }
-            resp.code() == 404 -> { on404(); true }
-            resp.code() == 401 || resp.code() == 403 -> false
-            else -> false   // 5xx / 429 / unknown — pause draining
+            resp.isSuccessful -> { resp.body()?.let { onSuccess(it) }; PushOutcome.OK }
+            resp.code() == 404 -> { on404(); PushOutcome.OK }
+            resp.code() == 401 || resp.code() == 403 -> PushOutcome.AUTH_FAILED
+            else -> PushOutcome.TRANSIENT_FAILURE
         }
     }
 

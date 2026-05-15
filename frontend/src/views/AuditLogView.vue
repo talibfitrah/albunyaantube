@@ -111,7 +111,22 @@ const entries = ref<AuditEntry[]>([]);
 const nextCursor = ref<string | null>(null);
 const isLoading = ref(false);
 
+// Cubic R5 P1 #30 — track the actual page size so paginationSummary can
+// distinguish "Showing N of N" (no more) from "Showing N of N+" (more
+// pages available). Default matches `fetchAuditLogPage`'s default `limit`.
+const PAGE_LIMIT = 100;
+
+// Cubic R5 P1 #29 — request-id guard against filter-vs-loadMore races.
+// `load(reset=true)` clears state synchronously then awaits the fetch.
+// If a Load-more fetch is in flight when the filters change, the previous
+// Promise resolves after the reset and would append onto the new filter's
+// page; the 300 ms debounce protects rapid typing but not click-then-filter.
+// Bumping `loadEpoch` on every load invocation and re-checking on resolve
+// drops any response whose epoch is no longer current.
+let loadEpoch = 0;
+
 async function load(reset = false) {
+  const epoch = ++loadEpoch;
   if (reset) {
     entries.value = [];
     nextCursor.value = null;
@@ -122,14 +137,17 @@ async function load(reset = false) {
     const page = await fetchAuditLogPage({
       cursor: reset ? null : nextCursor.value,
       actorId: actorFilter.value.trim() || undefined,
-      action: actionFilter.value.trim() || undefined
+      action: actionFilter.value.trim() || undefined,
+      limit: PAGE_LIMIT
     });
+    if (epoch !== loadEpoch) return; // stale response — newer load() superseded us
     entries.value = reset ? page.data : [...entries.value, ...page.data];
     nextCursor.value = page.pageInfo.nextCursor ?? null;
   } catch (err) {
+    if (epoch !== loadEpoch) return;
     errorMessage.value = err instanceof Error ? err.message : t('audit.table.error');
   } finally {
-    isLoading.value = false;
+    if (epoch === loadEpoch) isLoading.value = false;
   }
 }
 
@@ -180,9 +198,14 @@ function formatDateTime(value: string) {
 }
 
 const paginationSummary = computed(() => {
+  // Cubic R5 P1 #30 — show the real page limit, not `count` aliased to
+  // itself. When `nextCursor != null` more pages are available, so format
+  // the limit with a trailing `+` so the summary reads "Showing N of M+".
   const formatter = new Intl.NumberFormat(currentLocale.value);
   const count = formatter.format(entries.value.length);
-  return t('audit.pagination.showing', { count, limit: count });
+  const baseLimit = formatter.format(PAGE_LIMIT);
+  const limit = nextCursor.value != null ? `${baseLimit}+` : count;
+  return t('audit.pagination.showing', { count, limit });
 });
 </script>
 

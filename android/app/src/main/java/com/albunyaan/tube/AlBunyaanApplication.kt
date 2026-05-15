@@ -12,6 +12,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import com.albunyaan.tube.app.AppLifecycleTracker
 import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.auth.currentUid
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.me.work.RefreshScheduler
@@ -24,6 +25,7 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -130,14 +132,25 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
         com.albunyaan.tube.share.ShareMetadataPublisher.httpClientProvider = { okHttpClient }
     }
 
-    /** Plan D T26: pull + push on every app foreground resume. */
+    /**
+     * Plan D T26: pull + push on every app foreground resume.
+     *
+     * Cubic R5 P1 #23 — wait for accountState to settle before syncing.
+     *
+     * The naive `currentUid()` synchronous read returned empty when `/me` was
+     * still in-flight at cold-start onResume; the sync trigger then silently
+     * skipped, leaving the user on stale local rows until the next foreground.
+     * Now we suspend on the StateFlow until it is no longer `Loading` and
+     * only fire sync if the resolved state is `Loaded`.
+     */
     override fun onResume(owner: LifecycleOwner) {
-        val uid = accountRepository.currentUid()
-        if (uid.isNotEmpty()) {
-            appScope.launch {
-                syncManager.pullAll(uid)
-                syncManager.pushDirty(uid)
-            }
+        appScope.launch {
+            val resolved = accountRepository.accountState
+                .first { it !is AccountState.Loading }
+            val uid = (resolved as? AccountState.Loaded)?.uid ?: return@launch
+            if (uid.isEmpty()) return@launch
+            syncManager.pullAll(uid)
+            syncManager.pushDirty(uid)
         }
     }
 

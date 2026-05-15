@@ -98,10 +98,16 @@
         <thead>
           <tr>
             <th scope="col" class="checkbox-column">
+              <!--
+                Cubic R5 P1 #28: `indeterminate` is an IDL property, not an
+                HTML attribute — `:indeterminate="…"` would silently set an
+                attribute the browser ignores. Bind a template ref instead
+                and write the property directly from a watcher.
+              -->
               <input
+                ref="selectAllRef"
                 type="checkbox"
                 :checked="users.length > 0 && selected.size === users.length"
-                :indeterminate="selected.size > 0 && selected.size < users.length"
                 @change="toggleSelectAll"
                 aria-label="Select all"
               />
@@ -424,6 +430,7 @@ const forcingLogoutUserId = ref<string | null>(null);
 
 // Checkbox selection
 const selected = ref<Set<string>>(new Set());
+const selectAllRef = ref<HTMLInputElement | null>(null);
 
 interface BulkResult {
   action: string;
@@ -447,6 +454,32 @@ const pagination = useCursorPagination<AdminUser>(async (cursor, limit) => {
 const { items, isLoading, error, load, next, previous, hasNext, hasPrevious, pageInfo } = pagination;
 const users = items;
 const loadError = computed(() => error.value);
+
+// Cubic R5 P1 #28 — Vue's attribute binding cannot set the `indeterminate`
+// IDL property on a checkbox. Compute the tri-state condition and apply it
+// to the element's property whenever it changes. `flush: 'post'` so the
+// ref is bound before the watcher fires.
+const isSelectAllIndeterminate = computed(
+  () => selected.value.size > 0 && selected.value.size < users.value.length
+);
+watch(
+  isSelectAllIndeterminate,
+  (v) => { if (selectAllRef.value) selectAllRef.value.indeterminate = v; },
+  { flush: 'post', immediate: true }
+);
+
+// Cubic R5 P1 #27 — prune `selected` to ids still present in the current
+// page. After `reload()` or filter change the Set kept ids from prior
+// pages, so the header "select all" comparison drifted (size === length
+// could match while no row was actually checked) and a subsequent bulk
+// POST sent stale uids the admin no longer has visibility on.
+watch(users, (newUsers) => {
+  if (selected.value.size === 0) return;
+  const visible = new Set(newUsers.map((u) => u.id));
+  const next = new Set<string>();
+  for (const id of selected.value) if (visible.has(id)) next.add(id);
+  if (next.size !== selected.value.size) selected.value = next;
+});
 
 const searchInputRef = ref<HTMLInputElement | null>(null);
 

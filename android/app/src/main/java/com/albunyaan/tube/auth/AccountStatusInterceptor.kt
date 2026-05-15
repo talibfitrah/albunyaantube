@@ -9,6 +9,7 @@ import okhttp3.Interceptor
 import okhttp3.Response
 import java.io.IOException
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 /**
@@ -27,6 +28,11 @@ import javax.inject.Singleton
 class AccountStatusInterceptor @Inject constructor(
     private val firebaseAuth: FirebaseAuth,
     private val emitter: AccountStatusEmitter,
+    // Cubic R5 P1 #24 — reset AccountRepository state on sign-out from this
+    // interceptor. Provider<> rather than direct injection breaks the
+    // Hilt cycle (AccountRepositoryImpl → AccountService → Retrofit →
+    // OkHttp → this interceptor).
+    private val accountRepositoryProvider: Provider<AccountRepository>,
     moshi: Moshi,
 ) : Interceptor {
 
@@ -67,6 +73,17 @@ class AccountStatusInterceptor @Inject constructor(
         // but logged in" UI state. Doing signOut first lets the listener fire
         // before the dialog renders.
         firebaseAuth.signOut()
+        // Cubic R5 P1 #24 — also clear the AccountRepository in-memory state.
+        // Pre-fix, FirebaseAuth.signOut() did not propagate to AccountRepository,
+        // so its `_state` StateFlow still held the previous user's profile.
+        // SplashRouter and onResume both read that StateFlow; without the
+        // reset they treated the signed-out user as still signed-in until the
+        // next process restart.
+        try {
+            accountRepositoryProvider.get().signOut()
+        } catch (e: Exception) {
+            Log.w(TAG, "accountRepository.signOut() failed: ${e.message}")
+        }
         emitter.emit(event)
         return response
     }
