@@ -3,8 +3,12 @@ package com.albunyaan.tube.service.sync;
 import com.albunyaan.tube.dto.sync.*;
 import com.albunyaan.tube.repository.SyncRepository;
 import com.albunyaan.tube.repository.SyncRepository.RawRow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +19,26 @@ import java.util.function.UnaryOperator;
 
 @Service
 public class SyncService {
+
+    private static final Logger log = LoggerFactory.getLogger(SyncService.class);
+
+    /**
+     * Cubic R-final5 P1 — tombstone retention window for the slow-client gap.
+     *
+     * <p>TombstoneGcScheduler GCs tombstones older than 90 days. A client
+     * paginating with {@code since=T_old} that has been offline long enough
+     * for a tombstone at {@code T_old+1} to be GC'd will never see that
+     * delete — the client's local view stays out of sync with no signal.
+     *
+     * <p>Mitigation today is observational: we WARN when a pull arrives with
+     * {@code since} older than {@code now - 90d} so operators have a signal
+     * that a client is in the danger zone. A protocol-level fix (server
+     * returns RESYNC_REQUIRED, client clears cursor and pulls from 0) is
+     * deferred — it requires a coordinated Android client update to handle
+     * the new error, otherwise enabling the reject would brick existing
+     * 91+-day-offline clients.
+     */
+    static final long OFFLINE_RESYNC_THRESHOLD_DAYS = 90L;
 
     private final SyncRepository repo;
     private final ArchiveProjector projector;
@@ -53,6 +77,19 @@ public class SyncService {
             UnaryOperator<List<RawRow>> projectBatch,
             Function<RawRow, T> toDto)
             throws ExecutionException, InterruptedException, TimeoutException {
+        // Cubic R-final5 P1 — observe slow-client cursor that crosses the
+        // tombstone GC horizon. See OFFLINE_RESYNC_THRESHOLD_DAYS docstring.
+        if (since > 0) {
+            long thresholdMs = Instant.now()
+                    .minus(Duration.ofDays(OFFLINE_RESYNC_THRESHOLD_DAYS))
+                    .toEpochMilli();
+            if (since < thresholdMs) {
+                log.warn("Sync pull from stale cursor: uid={} coll={} since={} (>{}d behind). "
+                        + "Tombstones in (since, now-{}d) may have been GC'd; client view "
+                        + "could miss deletions. Track for RESYNC_REQUIRED protocol upgrade.",
+                        uid, coll, since, OFFLINE_RESYNC_THRESHOLD_DAYS, OFFLINE_RESYNC_THRESHOLD_DAYS);
+            }
+        }
         List<RawRow> raw = repo.pull(uid, coll, since, lastDocId, SyncRepository.SYNC_PAGE_SIZE);
         List<RawRow> projected = projectBatch.apply(raw);
         List<T> items = new ArrayList<>(projected.size());

@@ -173,6 +173,40 @@ public class AsyncConfig {
     }
 
     /**
+     * Cubic R-final5 P2 — bounded executor for FB Auth token-revocation retries.
+     *
+     * <p>Pre-fix, {@code AuthService.updateUserRoleAsActor} ran a 3-attempt
+     * retry loop with 200ms+400ms backoffs on the admin HTTP request thread.
+     * Under bursty role-change traffic this stacks 600ms worst-case Tomcat
+     * thread occupancy per request. Moving the retry to a bounded background
+     * executor lets the role-change response return immediately after the
+     * audit row commits; the revoke's success/failure pair audit decouples
+     * the response from completion.
+     *
+     * Configuration rationale:
+     * - corePoolSize=1: revoke is a rare, single-action background op.
+     * - maxPoolSize=4: bursts (concurrent role downgrades) tolerated.
+     * - queueCapacity=200: absorb operator role-change waves.
+     * - CallerRunsPolicy: under saturation the admin HTTP thread runs the
+     *   retry inline — same as the pre-fix behaviour, no regression vs old
+     *   shape; healthy paths keep the response-time win.
+     */
+    @Bean(name = "authExecutor")
+    public Executor authExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(200);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("auth-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(15);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    /**
      * Custom rejection handler that logs when tasks are rejected and throws an exception.
      *
      * This ensures:

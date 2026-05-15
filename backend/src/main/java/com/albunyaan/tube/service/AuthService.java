@@ -20,9 +20,12 @@ import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -52,6 +55,17 @@ public class AuthService {
     private final CacheManager cacheManager;
     private final FirestoreTimeoutProperties timeoutProperties;
     private final MailService mailService;
+
+    /**
+     * Cubic R-final5 P2 — self-reference for {@code @Async} self-invocation.
+     * Spring's AOP proxy is only consulted when the call goes through the
+     * bean reference, not {@code this}. Without this lazy self-injection,
+     * {@code revokeTokensWithAuditAsync} would run on the caller's thread
+     * (defeating the point of the async dispatch).
+     */
+    @Autowired
+    @Lazy
+    private AuthService self;
 
     @Value("${app.security.initial-admin.email}")
     private String initialAdminEmail;
@@ -393,15 +407,43 @@ public class AuthService {
         // distinguishes the auto-fire from an admin-triggered revoke.
         FirebaseUserDetails actor =
                 new FirebaseUserDetails(actorUid, null, "admin");
-        // Cubic R7 P2 — bounded retry around revokeRefreshTokens.
+        // Cubic R-final5 P2 — fire revoke retry asynchronously.
         //
-        // Pre-fix a single failed call (transient FB Auth 5xx, network blip)
-        // left the user holding a valid JWT carrying the OLD role until the
-        // token's natural expiry — critical for role DOWNGRADES (admin → user
-        // / moderator → user) where the user retained elevated privileges
-        // for up to an hour. The retry is bounded (3 attempts, 200ms /
-        // 400ms backoff) so it cannot stall an admin request; if all three
-        // fail we still audit and return — same fail-open contract as before.
+        // Pre-fix the bounded 3-attempt retry (200ms/400ms backoff) ran
+        // inline on the admin HTTP request thread, stacking up to 600ms of
+        // Tomcat thread occupancy on every role change. The retry +
+        // success/failure audit emission is now delegated to the
+        // `authExecutor` bean (see AsyncConfig). The role-change response
+        // returns as soon as the role + audit are committed; the revoke
+        // completes (or audits a failure) on the background executor.
+        // Same fail-open contract as before — failure surfaces via the
+        // USER_SESSIONS_REVOKED_AUTO_FAILED audit row, not the HTTP path.
+        // self is null in unit tests that construct AuthService without a Spring
+        // context. Fall back to a direct (synchronous) call so test contracts
+        // around audit-row emission still hold; production paths always have
+        // the proxy wired via @Autowired @Lazy.
+        if (self != null) {
+            self.revokeTokensWithAuditAsync(uid, actor, previousRole[0], newRole.getValue(), "role_change");
+        } else {
+            revokeTokensWithAuditAsync(uid, actor, previousRole[0], newRole.getValue(), "role_change");
+        }
+
+        return updated;
+    }
+
+    /**
+     * Cubic R-final5 P2 — async retry+audit for refresh-token revocation.
+     * Called from {@link #updateUserRoleAsActor} after the role-change
+     * commit. Runs on the {@code authExecutor} thread pool so admin HTTP
+     * threads return immediately. Self-invocation will not trigger the
+     * proxy — always invoke through the Spring-managed bean reference.
+     */
+    @Async("authExecutor")
+    public void revokeTokensWithAuditAsync(String uid,
+                                            FirebaseUserDetails actor,
+                                            String oldRole,
+                                            String newRole,
+                                            String trigger) {
         Exception lastError = null;
         boolean revoked = false;
         for (int attempt = 1; attempt <= 3 && !revoked; attempt++) {
@@ -426,9 +468,9 @@ public class AuthService {
                     "user", uid,
                     actor,
                     java.util.Map.of(
-                            "oldRole", previousRole[0] == null ? "" : previousRole[0],
-                            "newRole", newRole.getValue(),
-                            "trigger", "role_change"));
+                            "oldRole", oldRole == null ? "" : oldRole,
+                            "newRole", newRole,
+                            "trigger", trigger));
         } else {
             // F6 + risk §11.6: log + audit-failure, never throw.
             logger.error("auto-revoke after role change failed (after retries) uid={}", uid, lastError);
@@ -440,8 +482,6 @@ public class AuthService {
                             "error", lastError == null ? "unknown" : lastError.getClass().getSimpleName(),
                             "attempts", "3"));
         }
-
-        return updated;
     }
 
     /**

@@ -1,8 +1,11 @@
 package com.albunyaan.tube.dto.sync;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+/** Cubic R-final5 P2 — see {@link PutSubscriptionRequest} for rationale. */
+@JsonIgnoreProperties(ignoreUnknown = false)
 public class PutPlaylistRequest {
     @NotBlank
     private String playlistUrl;

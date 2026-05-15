@@ -149,8 +149,22 @@ public class AccountProfileService {
         if (user.getDisplayName() == null || !user.getDisplayName().equals(displayName.trim())) return false;
         Timestamp ts = user.getDateOfBirth();
         if (ts == null) return false;
-        long incomingEpoch = dateOfBirth.atStartOfDay(ZoneOffset.UTC).toEpochSecond();
-        return ts.getSeconds() == incomingEpoch && ts.getNanos() == 0;
+        // Cubic R-final5 P2 — compare by date components, not raw epoch + nanos.
+        //
+        // Pre-fix the equality required {@code ts.getSeconds() == incomingEpoch
+        // && ts.getNanos() == 0}. A legacy client that wrote dateOfBirth via
+        // {@code Timestamp.now()} (or any path that produced a non-zero nanos
+        // value) failed this check on retry — even though the stored DOB
+        // represents the same calendar date the client is re-submitting.
+        // The legitimate idempotent retry then bypassed the early-return and
+        // tripped {@code ProfileAlreadyCompletedException} instead of returning
+        // the existing user. Comparing by LocalDate (UTC) restores idempotency
+        // regardless of the timestamp's sub-day precision.
+        LocalDate storedDate = java.time.Instant
+                .ofEpochSecond(ts.getSeconds(), ts.getNanos())
+                .atZone(ZoneOffset.UTC)
+                .toLocalDate();
+        return storedDate.equals(dateOfBirth);
     }
 
     private void validateDisplayName(String name) {

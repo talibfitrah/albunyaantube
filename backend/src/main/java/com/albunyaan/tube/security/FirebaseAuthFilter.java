@@ -84,12 +84,32 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
             logger.debug("  Token length: {}", token.length());
 
             try {
-                // Single verifyIdToken call gated on isAdminPath: previously the filter
-                // ran verifyIdToken(token) unconditionally and then verifyIdToken(token, true)
-                // again on admin paths, paying two network/CPU calls to Firebase per admin
-                // request. The decodedToken from the first (cheaper) call was discarded.
-                boolean isAdminPath = requestURI.startsWith("/api/admin/");
-                FirebaseToken decodedToken = firebaseAuth.verifyIdToken(token, isAdminPath);
+                // Single verifyIdToken call gated on the revocation-check scope:
+                // previously the filter ran verifyIdToken(token) unconditionally and
+                // then verifyIdToken(token, true) again on admin paths, paying two
+                // network/CPU calls to Firebase per admin request. The decodedToken
+                // from the first (cheaper) call was discarded.
+                //
+                // Cubic R-final5 P0 — /api/account/* must also enable checkRevoked.
+                // AccountProfileService.rejectUnderAge revokes refresh tokens and
+                // soft-deletes the user, but the under-13 user's *current* ID token
+                // stays valid until natural expiry (~1h). Without checkRevoked on
+                // /api/account/*, that token passes verification, the filter's
+                // "no Firestore doc yet — allow" lazy-create branch fires, and
+                // AccountController re-lazy-creates a fresh PENDING_PROFILE row.
+                // The user retries completeProfile with a different DOB and the
+                // COPPA gate is bypassed. Enabling checkRevoked here makes
+                // verifyIdToken consult validSince (updated by revokeRefreshTokens)
+                // so the post-rejection token fails immediately.
+                //
+                // /api/v1/* reads keep the cheaper path — under-13 collateral read
+                // access for ≤1h after rejection is not a COPPA write violation,
+                // and /api/v1/* is high-traffic. If full revocation across all
+                // namespaces is needed, route this through validSince-bypass tracking
+                // in a dedicated plan (the AuthFilter cost grows linearly with RPS).
+                boolean checkRevoked = requestURI.startsWith("/api/admin/")
+                        || requestURI.startsWith("/api/account/");
+                FirebaseToken decodedToken = firebaseAuth.verifyIdToken(token, checkRevoked);
                 String uid = decodedToken.getUid();
                 String email = decodedToken.getEmail();
 

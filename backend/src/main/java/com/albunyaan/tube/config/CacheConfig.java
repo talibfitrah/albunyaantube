@@ -152,6 +152,28 @@ public class CacheConfig {
                             .build());
         }
 
+        // Cubic R-final5 P2 — order-of-operations guard.
+        //
+        // CaffeineCacheManager builds caches lazily on first getCache() call,
+        // using setCaffeine(default-builder) unless registerCustomCache has
+        // pre-registered one. Spring guarantees the bean method runs to
+        // completion BEFORE any @PostConstruct on dependent beans fires, so
+        // every registerCustomCache above is durable by the time consumers
+        // touch the manager — there is no race against startup reads.
+        //
+        // The risk cubic flagged is a future addition that inserts a read
+        // between setCaffeine and registerCustomCache (or between registers).
+        // Assertion below makes that drift explicit: if the assertion ever
+        // fails, somebody removed a registration without updating the check.
+        if (cacheManager.getCache(CACHE_USER_STATUS) == null
+                || cacheManager.getCache(CACHE_CHANNEL_ARCHIVE_FLAG) == null
+                || cacheManager.getCache(CACHE_PLAYLIST_ARCHIVE_FLAG) == null
+                || cacheManager.getCache(CACHE_VIDEO_ARCHIVE_FLAG) == null) {
+            throw new IllegalStateException(
+                    "CacheConfig: custom-TTL cache missing after registration — "
+                    + "a startup read may have lazily built it with the default 1h TTL.");
+        }
+
         return cacheManager;
     }
 

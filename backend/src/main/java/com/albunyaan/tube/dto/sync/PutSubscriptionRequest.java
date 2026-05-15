@@ -1,8 +1,17 @@
 package com.albunyaan.tube.dto.sync;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+/**
+ * Cubic R-final5 P2 — strict deserializer rejects unknown JSON properties.
+ * SyncService builds the upsert payload Map explicitly from typed getters,
+ * so an unknown JSON field could not reach Firestore today; this annotation
+ * closes the gap defensively against any future call site that might pipe a
+ * raw deserialized Map through.
+ */
+@JsonIgnoreProperties(ignoreUnknown = false)
 public class PutSubscriptionRequest {
     @NotBlank
     private String channelUrl;

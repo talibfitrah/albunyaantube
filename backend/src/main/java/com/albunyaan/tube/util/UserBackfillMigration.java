@@ -60,6 +60,7 @@ public class UserBackfillMigration {
 
     public record RunSummary(int scanned, int updated, int skipped,
                              int claimWriteFailures,
+                             int phase1CheckpointFailures,
                              String startedAt, String completedAt) {}
 
     private final Firestore firestore;
@@ -142,6 +143,15 @@ public class UserBackfillMigration {
         int updated = 0;
         int skipped = 0;
         int claimWriteFailures = 0;
+        // Cubic R-final5 P1 — surface phase-1 checkpoint write failures.
+        // Pre-fix the catch on the lockRef.update("phase1Cursor", ...) call
+        // only logged at WARN; operators had no aggregate signal in either
+        // the lock doc or the RunSummary. A burst of checkpoint failures
+        // (Firestore quota / network hiccup) means the resume cursor is
+        // stale → next run re-processes those pages (idempotent, but burns
+        // quota). The counter lets the on-call rotation decide whether to
+        // schedule a fresh full run vs. live with the wasted work.
+        int phase1CheckpointFailures = 0;
         // Cubic R8 P1 — track whether phase 1 finished naturally. We only
         // clear `phase1Cursor` on a clean completion; on exception we keep
         // it so a follow-up run can resume from the same page.
@@ -190,8 +200,9 @@ public class UserBackfillMigration {
                                    "phase1CheckpointedAt", Timestamp.now())
                             .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
                 } catch (Exception e) {
-                    logger.warn("Phase 1 cursor checkpoint write failed (cursor={}): {}",
-                            cursor, e.getMessage());
+                    phase1CheckpointFailures++;
+                    logger.warn("Phase 1 cursor checkpoint write failed (cursor={}, totalFailures={}): {}",
+                            cursor, phase1CheckpointFailures, e.getMessage());
                 }
                 if (page.size() < BATCH_SIZE) break;
             }
@@ -246,6 +257,7 @@ public class UserBackfillMigration {
             final int finalScanned = scanned;
             final int finalUpdated = updated;
             final int finalClaimWriteFailures = claimWriteFailures;
+            final int finalPhase1CheckpointFailures = phase1CheckpointFailures;
             final boolean finalPhase1Completed = phase1Completed;
             firestore.runTransaction(tx -> {
                 // Cubic R8 P1 — clear phase1Cursor only on natural completion.
@@ -258,6 +270,10 @@ public class UserBackfillMigration {
                 patch.put("lastScanned", finalScanned);
                 patch.put("lastUpdated", finalUpdated);
                 patch.put("lastClaimWriteFailures", finalClaimWriteFailures);
+                // Cubic R-final5 P1 — surface checkpoint failures alongside
+                // claimWriteFailures so the on-call rotation has parity in
+                // both lock doc and RunSummary.
+                patch.put("lastPhase1CheckpointFailures", finalPhase1CheckpointFailures);
                 if (finalPhase1Completed) {
                     patch.put("phase1Cursor", com.google.cloud.firestore.FieldValue.delete());
                 }
@@ -271,9 +287,11 @@ public class UserBackfillMigration {
         }
 
         String completedAt = Timestamp.now().toString();
-        logger.info("UserBackfillMigration complete: scanned={} updated={} skipped={} claimWriteFailures={}",
-            scanned, updated, skipped, claimWriteFailures);
-        return new RunSummary(scanned, updated, skipped, claimWriteFailures, startedAt, completedAt);
+        logger.info("UserBackfillMigration complete: scanned={} updated={} skipped={} "
+            + "claimWriteFailures={} phase1CheckpointFailures={}",
+            scanned, updated, skipped, claimWriteFailures, phase1CheckpointFailures);
+        return new RunSummary(scanned, updated, skipped, claimWriteFailures,
+                              phase1CheckpointFailures, startedAt, completedAt);
     }
 
     /**
