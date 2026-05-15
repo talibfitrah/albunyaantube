@@ -58,9 +58,11 @@ public class MigrationController {
                     value = "X-Confirm-Migration", required = false) String confirmHeader)
             throws Exception {
 
-        if (actor == null) {
-            return ResponseEntity.status(401).body(Map.of("code", "UNAUTHENTICATED"));
-        }
+        // Cubic R8 P3 — `actor == null` 401 branch removed.
+        // @PreAuthorize("hasRole('ADMIN')") above already rejects an
+        // unauthenticated principal with 403 before this handler body runs,
+        // so the inline 401 was unreachable defensive scaffolding from an
+        // earlier shape. Authentication state below is guaranteed non-null.
 
         // Cubic R7 P2 — confirm-header gate for destructive admin action.
         //
