@@ -185,3 +185,7 @@ synthetic_dash_data.json
 
 # Local security/review tool reports
 .gstack/
+
+# Claude Code runtime state (lockfiles, per-user settings) — workflow.md stays tracked
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
