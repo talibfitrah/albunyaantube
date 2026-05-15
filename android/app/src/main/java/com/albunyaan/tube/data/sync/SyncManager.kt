@@ -300,7 +300,18 @@ class SyncManager @Inject constructor(
                 push({ api.putSubscription(row.channelId, PutSubscriptionRequest(
                     channelUrl = row.channelUrl, name = row.name,
                     avatarUrl  = row.avatarUrl,  subscribedAt = row.subscribedAt)) },
-                    onSuccess = { resp -> subs.clearDirty(uid, row.channelId, resp.updatedAt) },
+                    onSuccess = { resp ->
+                        // SYNC-ECHO-01 — archive-echo: if server projection
+                        // says this row is virtually tombstoned (parent is
+                        // archived), apply the tombstone locally instead of
+                        // clearing dirty. Pre-fix the row stayed alive
+                        // locally until the next pull cycle.
+                        if (resp.deleted) {
+                            subs.applyTombstone(uid, row.channelId, resp.updatedAt)
+                        } else {
+                            subs.clearDirty(uid, row.channelId, resp.updatedAt)
+                        }
+                    },
                     on404    = { /* PUT 404 shouldn't happen; surface failure */ })
             }
             when (outcome) {
@@ -320,7 +331,13 @@ class SyncManager @Inject constructor(
                     playlistUrl  = row.playlistUrl,  name         = row.name,
                     thumbnailUrl = row.thumbnailUrl, uploaderName = row.uploaderName,
                     savedAt      = row.savedAt)) },
-                    onSuccess = { resp -> playlists.clearDirty(uid, row.playlistId, resp.updatedAt) },
+                    onSuccess = { resp ->
+                        if (resp.deleted) {
+                            playlists.applyTombstone(uid, row.playlistId, resp.updatedAt)
+                        } else {
+                            playlists.clearDirty(uid, row.playlistId, resp.updatedAt)
+                        }
+                    },
                     on404    = { /* PUT 404 shouldn't happen */ })
             }
             when (outcome) {
@@ -340,7 +357,13 @@ class SyncManager @Inject constructor(
                     title           = row.title,           channelName     = row.channelName,
                     thumbnailUrl    = row.thumbnailUrl,    durationSeconds = row.durationSeconds,
                     addedAt         = row.addedAt)) },
-                    onSuccess = { resp -> favorites.clearDirty(uid, row.videoId, resp.updatedAt) },
+                    onSuccess = { resp ->
+                        if (resp.deleted) {
+                            favorites.applyTombstone(uid, row.videoId, resp.updatedAt)
+                        } else {
+                            favorites.clearDirty(uid, row.videoId, resp.updatedAt)
+                        }
+                    },
                     on404    = { /* PUT 404 shouldn't happen */ })
             }
             when (outcome) {

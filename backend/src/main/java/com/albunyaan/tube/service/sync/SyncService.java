@@ -131,6 +131,15 @@ public class SyncService {
 
     // ── Write path ───────────────────────────────────────────────────────────
 
+    // SYNC-ECHO-01 (Cubic R7 P1) — every write-path response is projected
+    // through ArchiveProjector so a client writing a row backing an archived
+    // parent learns the row is virtually tombstoned immediately, instead of
+    // discovering it on the next pull cycle. The Firestore document is
+    // unchanged (writes are not archive-gated); only the wire echo carries
+    // the virtual deleted=true flag. ArchiveProjector projection of a
+    // tombstone row is a null op (deleted=true already), so the tombstone
+    // paths below are symmetric without semantic change.
+
     public SubscriptionSyncDto upsertSubscription(String uid, String id, PutSubscriptionRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
         Map<String, Object> body = new java.util.HashMap<>();
@@ -138,12 +147,14 @@ public class SyncService {
         body.put("name", req.getName());
         body.put("avatarUrl", req.getAvatarUrl());
         body.put("subscribedAt", req.getSubscribedAt());
-        return toSubscriptionDto(repo.upsert(uid, SyncRepository.SUBS_COLL, id, body));
+        return toSubscriptionDto(projector.projectSubscription(
+                repo.upsert(uid, SyncRepository.SUBS_COLL, id, body)));
     }
 
     public SubscriptionSyncDto tombstoneSubscription(String uid, String id)
             throws ExecutionException, InterruptedException, TimeoutException {
-        return toSubscriptionDto(repo.tombstone(uid, SyncRepository.SUBS_COLL, id));
+        return toSubscriptionDto(projector.projectSubscription(
+                repo.tombstone(uid, SyncRepository.SUBS_COLL, id)));
     }
 
     public PlaylistSyncDto upsertPlaylist(String uid, String id, PutPlaylistRequest req)
@@ -154,12 +165,14 @@ public class SyncService {
         body.put("thumbnailUrl", req.getThumbnailUrl());
         body.put("uploaderName", req.getUploaderName());
         body.put("savedAt", req.getSavedAt());
-        return toPlaylistDto(repo.upsert(uid, SyncRepository.PLAYLISTS_COLL, id, body));
+        return toPlaylistDto(projector.projectPlaylist(
+                repo.upsert(uid, SyncRepository.PLAYLISTS_COLL, id, body)));
     }
 
     public PlaylistSyncDto tombstonePlaylist(String uid, String id)
             throws ExecutionException, InterruptedException, TimeoutException {
-        return toPlaylistDto(repo.tombstone(uid, SyncRepository.PLAYLISTS_COLL, id));
+        return toPlaylistDto(projector.projectPlaylist(
+                repo.tombstone(uid, SyncRepository.PLAYLISTS_COLL, id)));
     }
 
     public FavoriteSyncDto upsertFavorite(String uid, String id, PutFavoriteRequest req)
@@ -170,11 +183,13 @@ public class SyncService {
         body.put("thumbnailUrl", req.getThumbnailUrl());
         body.put("durationSeconds", req.getDurationSeconds());
         body.put("addedAt", req.getAddedAt());
-        return toFavoriteDto(repo.upsert(uid, SyncRepository.FAVORITES_COLL, id, body));
+        return toFavoriteDto(projector.projectFavorite(
+                repo.upsert(uid, SyncRepository.FAVORITES_COLL, id, body)));
     }
 
     public FavoriteSyncDto tombstoneFavorite(String uid, String id)
             throws ExecutionException, InterruptedException, TimeoutException {
-        return toFavoriteDto(repo.tombstone(uid, SyncRepository.FAVORITES_COLL, id));
+        return toFavoriteDto(projector.projectFavorite(
+                repo.tombstone(uid, SyncRepository.FAVORITES_COLL, id)));
     }
 }

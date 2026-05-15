@@ -123,8 +123,11 @@ class SyncServiceTest {
     void upsertSubscriptionPersistsBodyAndEchoesUpdatedAt() throws Exception {
         var req = new PutSubscriptionRequest();
         req.setChannelUrl("u"); req.setName("n"); req.setSubscribedAt(50L);
+        RawRow stored = new RawRow("ch1", Map.of("deleted", false), 1234L);
         when(repo.upsert(eq("u1"), eq("subscriptions"), eq("ch1"), Mockito.anyMap()))
-                .thenReturn(new RawRow("ch1", Map.of("deleted", false), 1234L));
+                .thenReturn(stored);
+        // SYNC-ECHO-01 — write path projects the echo through ArchiveProjector.
+        when(projector.projectSubscription(stored)).thenReturn(stored);
 
         SubscriptionSyncDto out = service.upsertSubscription("u1", "ch1", req);
 
@@ -134,9 +137,32 @@ class SyncServiceTest {
     }
 
     @Test
+    void upsertSubscriptionOnArchivedParent_echoesDeletedTrue() throws Exception {
+        // SYNC-ECHO-01 — when ArchiveProjector says the parent channel is
+        // archived, the echo carries deleted=true even though Firestore
+        // stored the live row. Client picks up the tombstone immediately.
+        var req = new PutSubscriptionRequest();
+        req.setChannelUrl("u"); req.setName("n"); req.setSubscribedAt(50L);
+        RawRow stored = new RawRow("ch1", new java.util.HashMap<>(Map.of("deleted", false)), 1234L);
+        RawRow projected = new RawRow("ch1", new java.util.HashMap<>(Map.of("deleted", true)), 1234L);
+        when(repo.upsert(eq("u1"), eq("subscriptions"), eq("ch1"), Mockito.anyMap()))
+                .thenReturn(stored);
+        when(projector.projectSubscription(stored)).thenReturn(projected);
+
+        SubscriptionSyncDto out = service.upsertSubscription("u1", "ch1", req);
+
+        assertEquals("ch1", out.getEntityId());
+        assertTrue(out.isDeleted());
+        assertEquals(1234L, out.getUpdatedAt());
+    }
+
+    @Test
     void tombstoneSubscriptionEchoesDeletedTrue() throws Exception {
+        RawRow tomb = new RawRow("ch1", Map.of("deleted", true), 5678L);
         when(repo.tombstone(eq("u1"), eq("subscriptions"), eq("ch1")))
-                .thenReturn(new RawRow("ch1", Map.of("deleted", true), 5678L));
+                .thenReturn(tomb);
+        // Projection of a tombstone is a null op (deleted=true already).
+        when(projector.projectSubscription(tomb)).thenReturn(tomb);
 
         SubscriptionSyncDto out = service.tombstoneSubscription("u1", "ch1");
 
