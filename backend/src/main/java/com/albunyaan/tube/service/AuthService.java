@@ -145,27 +145,44 @@ public class AuthService {
      * the caller's `if (target.isAdmin())` branch), so regular non-admin
      * blocks/deletes/role-changes don't pay the serialisation cost.
      */
-    private void lockAdminSentinel(Transaction tx, String op) throws Exception {
-        // Cubic R-final3 P1 — read-only sentinel acquisition.
-        //
-        // Pre-fix this method did `tx.get(lockRef)` THEN `tx.set(lockRef, …)`.
-        // Callers immediately followed with `tx.get(firestore.collection(…))`
-        // to count active admins. google-cloud-firestore 3.x enforces
-        // "all reads before all writes" in a transaction; the second tx.get
-        // would throw IllegalStateException ("Firestore transactions require
-        // all reads to be executed before all writes"), making the entire
-        // last-admin guard unreachable against a real Firestore. Mockito
-        // mocks in tests didn't catch it because the precondition is in the
-        // Firestore client, not in the tx.get stub.
-        //
-        // Fix: drop the sentinel write. The sentinel WRITE was redundant
-        // for conflict detection — the lifecycle tx already writes
-        // userRef + auditDoc, both of which fail on concurrent modification
-        // with the same effect. We keep the sentinel READ so concurrent
-        // admin-on-admin operations still serialise on the lock document.
+    /**
+     * Reads the admin sentinel lock document. Pairs with
+     * {@link #lockAdminSentinelWrite(Transaction, String)} which MUST be
+     * called AFTER all other reads in the tx and BEFORE any writes.
+     *
+     * <p>Cubic R-final3 P1 collapsed the original read+write into a
+     * read-only stub because google-cloud-firestore 3.x enforces "all reads
+     * before all writes" — the original {@code tx.get(lockRef);
+     * tx.set(lockRef, …);} sequence was immediately followed by callers'
+     * {@code tx.get(adminCount)} and threw IllegalStateException against a
+     * real Firestore.
+     *
+     * <p>Cubic R-final4 P1 restores the write half (now split into a
+     * second method): dropping the sentinel write silently broke
+     * cross-target concurrent admin-on-admin tx isolation. Two
+     * demote/block/delete txs targeting DIFFERENT admin uids share no
+     * read/write doc pairs (different userRef writes, different auditDoc
+     * writes), so both commit cleanly past the
+     * {@code admins.size() <= 1} guard → zero admins. Splitting the read
+     * out lets callers stage all reads first, run the count check, then
+     * call the write half to restore conflict detection on the sentinel
+     * itself.
+     */
+    private void lockAdminSentinelRead(Transaction tx) throws Exception {
         DocumentReference lockRef = firestore.document("system/admin_lock");
         tx.get(lockRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        // op parameter retained for future telemetry; sentinel write removed.
+    }
+
+    /**
+     * Writes the admin sentinel. MUST be called after
+     * {@link #lockAdminSentinelRead(Transaction)} and after every other read
+     * in the tx — Firestore aborts the commit if a concurrent tx has since
+     * modified this doc, which is exactly the cross-target serialisation we
+     * want for admin-on-admin lifecycle operations.
+     */
+    private void lockAdminSentinelWrite(Transaction tx, String op) {
+        DocumentReference lockRef = firestore.document("system/admin_lock");
+        tx.set(lockRef, Map.of("op", op, "ts", com.google.cloud.Timestamp.now()), SetOptions.merge());
     }
 
     private <T> T runLifecycleTx(Transaction.Function<T> fn) throws Exception {
@@ -319,7 +336,7 @@ public class AuthService {
                 if (uid.equals(actorUid)) {
                     throw new LastAdminException("Admins cannot demote themselves. Ask another admin.");
                 }
-                lockAdminSentinel(tx, "demote");
+                lockAdminSentinelRead(tx);
                 QuerySnapshot admins = tx.get(firestore.collection("users")
                         .whereEqualTo("role", "admin")
                         .whereEqualTo("status", "active"))
@@ -327,6 +344,7 @@ public class AuthService {
                 if (admins.size() <= 1) {
                     throw new LastAdminException("Cannot demote the last active admin.");
                 }
+                lockAdminSentinelWrite(tx, "demote");
             }
 
             target.setRole(newRole.getValue());
@@ -569,7 +587,7 @@ public class AuthService {
                 if (uid.equals(actorUid)) {
                     throw new LastAdminException("Admins cannot delete themselves.");
                 }
-                lockAdminSentinel(tx, "delete");
+                lockAdminSentinelRead(tx);
                 QuerySnapshot admins = tx.get(firestore.collection("users")
                         .whereEqualTo("role", "admin")
                         .whereEqualTo("status", "active"))
@@ -577,6 +595,7 @@ public class AuthService {
                 if (admins.size() <= 1) {
                     throw new LastAdminException("Cannot delete the last active admin.");
                 }
+                lockAdminSentinelWrite(tx, "delete");
             }
 
             target.recordSoftDelete(actorUid, reason);
@@ -781,7 +800,7 @@ public class AuthService {
                 if (uid.equals(actorUid)) {
                     throw new LastAdminException("Admins cannot block themselves.");
                 }
-                lockAdminSentinel(tx, "block");
+                lockAdminSentinelRead(tx);
                 QuerySnapshot admins = tx.get(firestore.collection("users")
                         .whereEqualTo("role", "admin")
                         .whereEqualTo("status", "active"))
@@ -789,6 +808,7 @@ public class AuthService {
                 if (admins.size() <= 1) {
                     throw new LastAdminException("Cannot block the last active admin.");
                 }
+                lockAdminSentinelWrite(tx, "block");
             }
 
             target.recordBlock(actorUid, reason);
