@@ -124,7 +124,16 @@ class FavoritesRepositoryImpl @Inject constructor(
             user_id = uid,
             dirty = true,
         )
-        // Use upsert to update metadata while preserving addedAt for existing favorites
+        // Cubic R7 P1 — resurrect a soft-deleted row before upsert.
+        //
+        // Pre-fix upsertFavorite's exists-check (isFavoriteOnce) excluded
+        // deleted=1 rows, so the upsert path took the addFavorite branch with
+        // OnConflictStrategy.IGNORE — which silently no-op'd against the
+        // existing tombstone. The favorite never made it back to the list.
+        // clearSoftDelete flips the tombstone back live so the upsert sees the
+        // row, takes the updateMetadata branch, refreshes title/channel/
+        // thumbnail, and stamps dirty=1 for sync push.
+        favoriteVideoDao.clearSoftDelete(uid = uid, videoId = videoId)
         favoriteVideoDao.upsertFavorite(favorite)
         syncManager.pushDirtyAsync(uid)
     }

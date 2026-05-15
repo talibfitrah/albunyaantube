@@ -39,6 +39,24 @@ class SubmitContentViewModel @Inject constructor(
     private val _submitting = MutableStateFlow(false)
     val submitting: StateFlow<Boolean> = _submitting
 
+    // Cubic R7 P1 — hoist rotation-sensitive form state into the VM.
+    //
+    // Pre-fix SubmitContentBottomSheet held parsedUrl + selectedCategoryId
+    // as fragment fields; both reset on onCreateView, so a configuration
+    // change (rotation, dark-mode toggle, keyboard locale change) emptied
+    // the form and the user had to re-paste the URL + re-pick the category.
+    // ViewModel scope survives configuration changes; the fragment seeds
+    // these on bind and reads them back on next bind.
+    private val _parsedUrl = MutableStateFlow<ParsedYouTubeUrl?>(null)
+    val parsedUrl: StateFlow<ParsedYouTubeUrl?> = _parsedUrl
+
+    private val _selectedCategoryId = MutableStateFlow<String?>(null)
+    val selectedCategoryId: StateFlow<String?> = _selectedCategoryId
+
+    /** Cubic R7 P1 — fragment writes through these on user input. */
+    fun setParsedUrl(p: ParsedYouTubeUrl?) { _parsedUrl.value = p }
+    fun setSelectedCategoryId(id: String?) { _selectedCategoryId.value = id }
+
     init {
         viewModelScope.launch {
             runCatching { contentService.fetchCategories() }

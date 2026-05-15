@@ -232,7 +232,18 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
         if (viewModel.ui.value.isLoading) return
         viewModel.setLoading(true)
         val provider = OAuthProvider.newBuilder("microsoft.com").build()
-        viewLifecycleOwner.lifecycleScope.launch {
+        // Cubic R7 P1 — bind the suspend to the Activity's lifecycleScope.
+        //
+        // Pre-fix viewLifecycleOwner.lifecycleScope was the host scope. The
+        // MS sign-in journey leaves the app for a Custom Tab; on rotation
+        // back to the fragment, viewLifecycleOwner is destroyed and the
+        // coroutine cancels mid-await. The Firebase Task still completes
+        // (it's process-bound) and AuthStateListener flips authState, but
+        // the await() success path (setLoading(false)) never fires AND the
+        // catch path never fires — the sign-in spinner is stuck until the
+        // user backs out. The Activity's scope survives fragment view
+        // destruction so the suspend resolves cleanly.
+        requireActivity().lifecycleScope.launch {
             try {
                 firebaseAuth.startActivityForSignInWithProvider(requireActivity(), provider).await()
                 // AuthStateListener (in AuthRepositoryImpl) flips state to SignedIn.

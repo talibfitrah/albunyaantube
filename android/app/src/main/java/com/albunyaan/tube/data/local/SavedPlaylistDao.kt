@@ -18,6 +18,10 @@ interface SavedPlaylistDao {
     @Query("SELECT * FROM saved_playlists WHERE playlistId = :id AND user_id = :uid AND deleted = 0")
     suspend fun getById(uid: String, id: String): SavedPlaylist?
 
+    /** Cubic R7 P1 — deleted-agnostic lookup. See SubscribedChannelDao.getByIdAny. */
+    @Query("SELECT * FROM saved_playlists WHERE playlistId = :id AND user_id = :uid LIMIT 1")
+    suspend fun getByIdAny(uid: String, id: String): SavedPlaylist?
+
     @Query("SELECT EXISTS(SELECT 1 FROM saved_playlists WHERE playlistId = :id AND user_id = :uid AND deleted = 0)")
     fun observeIsSaved(uid: String, id: String): Flow<Boolean>
 
@@ -36,13 +40,16 @@ interface SavedPlaylistDao {
     @Query("SELECT * FROM saved_playlists WHERE user_id = :uid AND dirty = 1")
     suspend fun selectDirty(uid: String): List<SavedPlaylist>
 
-    @Query("UPDATE saved_playlists SET updated_at = :ts, dirty = 0 WHERE playlistId = :id AND user_id = :uid")
+    // Cubic R7 P1 — monotonicity guard. See FavoriteVideoDao.clearDirty for
+    // rationale. The AND updated_at < :ts predicate prevents a stale pull
+    // from clobbering a fresher local edit.
+    @Query("UPDATE saved_playlists SET updated_at = :ts, dirty = 0 WHERE playlistId = :id AND user_id = :uid AND updated_at < :ts")
     suspend fun clearDirty(uid: String, id: String, ts: Long)
 
     @Query("DELETE FROM saved_playlists WHERE user_id = :uid")
     suspend fun wipeForUid(uid: String)
 
-    @Query("UPDATE saved_playlists SET deleted = 1, dirty = 0, updated_at = :ts WHERE playlistId = :id AND user_id = :uid")
+    @Query("UPDATE saved_playlists SET deleted = 1, dirty = 0, updated_at = :ts WHERE playlistId = :id AND user_id = :uid AND updated_at < :ts")
     suspend fun applyTombstone(uid: String, id: String, ts: Long)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

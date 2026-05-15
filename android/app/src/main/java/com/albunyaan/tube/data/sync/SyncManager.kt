@@ -146,17 +146,53 @@ class SyncManager @Inject constructor(
             val body = resp.body() ?: return
 
             db.withTransaction {
+                // Cubic R7 P1 — anon-merge timestamp guard.
+                //
+                // Pre-fix upsertFromServer (OnConflictStrategy.REPLACE)
+                // discarded ANY local row on entityId collision, regardless
+                // of which side had the newer write. The motivating scenario:
+                //   1. anon-era user creates favorite F at t=100, dirty=1
+                //   2. sign-in triggers bind() → tagAnonRowsToUid → F now
+                //      user_id=uid, still dirty=1, updated_at=100
+                //   3. pullAll fetches server rows; server returns F' with
+                //      updated_at=80 (an old write from a different device)
+                //   4. REPLACE clobbers the t=100 local row with the t=80
+                //      server row — locally-tagged addition silently lost.
+                //
+                // Guard: before upsertFromServer, check if a local row exists
+                // with a fresher updated_at AND dirty=1 (unsynced local edit).
+                // If so, skip the server row — pushDirty will resolve it on
+                // the next round. applyTombstone keeps its monotonicity
+                // guard (R7 P1 in *Dao.applyTombstone).
                 for (row in body.subscriptions.items) {
-                    if (row.deleted) subs.applyTombstone(uid, row.entityId, row.updatedAt)
-                    else             subs.upsertFromServer(rowToSub(uid, row))
+                    if (row.deleted) {
+                        subs.applyTombstone(uid, row.entityId, row.updatedAt)
+                    } else {
+                        val local = subs.getByIdAny(uid, row.entityId)
+                        if (local != null && local.dirty && local.updated_at > row.updatedAt) {
+                            // Local edit is newer + unsynced; defer to push.
+                            continue
+                        }
+                        subs.upsertFromServer(rowToSub(uid, row))
+                    }
                 }
                 for (row in body.playlists.items) {
-                    if (row.deleted) playlists.applyTombstone(uid, row.entityId, row.updatedAt)
-                    else             playlists.upsertFromServer(rowToPlaylist(uid, row))
+                    if (row.deleted) {
+                        playlists.applyTombstone(uid, row.entityId, row.updatedAt)
+                    } else {
+                        val local = playlists.getByIdAny(uid, row.entityId)
+                        if (local != null && local.dirty && local.updated_at > row.updatedAt) continue
+                        playlists.upsertFromServer(rowToPlaylist(uid, row))
+                    }
                 }
                 for (row in body.favorites.items) {
-                    if (row.deleted) favorites.applyTombstone(uid, row.entityId, row.updatedAt)
-                    else             favorites.upsertFromServer(rowToFavorite(uid, row))
+                    if (row.deleted) {
+                        favorites.applyTombstone(uid, row.entityId, row.updatedAt)
+                    } else {
+                        val local = favorites.getById(uid, row.entityId)
+                        if (local != null && local.dirty && local.updated_at > row.updatedAt) continue
+                        favorites.upsertFromServer(rowToFavorite(uid, row))
+                    }
                 }
                 // Use the server's (nextCursor, nextCursorId) pair to advance
                 // — never the client-side max(items.updatedAt). The previous

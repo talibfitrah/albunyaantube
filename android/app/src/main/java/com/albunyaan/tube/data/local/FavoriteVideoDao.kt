@@ -110,13 +110,24 @@ interface FavoriteVideoDao {
     @Query("SELECT * FROM favorite_videos WHERE user_id = :uid AND dirty = 1")
     suspend fun selectDirty(uid: String): List<FavoriteVideo>
 
-    @Query("UPDATE favorite_videos SET updated_at = :ts, dirty = 0 WHERE videoId = :videoId AND user_id = :uid")
+    /**
+     * Cubic R7 P1 — monotonicity guard.
+     *
+     * Pre-fix the WHERE clause did not compare timestamps, so a slow PULL
+     * arriving with T1 followed by a clearDirty for the fresher local edit
+     * at T2 (or the reverse interleave) could clobber a fresher state. The
+     * AND updated_at &lt; :ts predicate makes the write a no-op when the
+     * existing row already has a more-recent server timestamp; the row's
+     * local edit then survives until the next genuine server-side change.
+     */
+    @Query("UPDATE favorite_videos SET updated_at = :ts, dirty = 0 WHERE videoId = :videoId AND user_id = :uid AND updated_at < :ts")
     suspend fun clearDirty(uid: String, videoId: String, ts: Long)
 
     @Query("DELETE FROM favorite_videos WHERE user_id = :uid")
     suspend fun wipeForUid(uid: String)
 
-    @Query("UPDATE favorite_videos SET deleted = 1, dirty = 0, updated_at = :ts WHERE videoId = :videoId AND user_id = :uid")
+    /** Cubic R7 P1 — same monotonicity guard as clearDirty. */
+    @Query("UPDATE favorite_videos SET deleted = 1, dirty = 0, updated_at = :ts WHERE videoId = :videoId AND user_id = :uid AND updated_at < :ts")
     suspend fun applyTombstone(uid: String, videoId: String, ts: Long)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

@@ -26,8 +26,15 @@ class SubmitContentBottomSheet : BottomSheetDialogFragment() {
     private var _binding: BottomSheetSubmitContentBinding? = null
     private val binding get() = _binding!!
 
-    private var parsedUrl: ParsedYouTubeUrl? = null
-    private var selectedCategoryId: String? = null
+    // Cubic R7 P1 — read-through helpers to the ViewModel's hoisted state.
+    // The previous local fields reset on rotation and lost the user's
+    // pasted URL + category pick; the ViewModel-backed state survives.
+    private var parsedUrl: ParsedYouTubeUrl?
+        get() = viewModel.parsedUrl.value
+        set(value) { viewModel.setParsedUrl(value) }
+    private var selectedCategoryId: String?
+        get() = viewModel.selectedCategoryId.value
+        set(value) { viewModel.setSelectedCategoryId(value) }
 
     override fun onCreateView(
         inflater: LayoutInflater,
