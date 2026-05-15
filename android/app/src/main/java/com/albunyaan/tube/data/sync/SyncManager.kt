@@ -134,17 +134,23 @@ class SyncManager @Inject constructor(
                     if (row.deleted) favorites.applyTombstone(uid, row.entityId, row.updatedAt)
                     else             favorites.upsertFromServer(rowToFavorite(uid, row))
                 }
-                body.subscriptions.items.maxByOrNull { it.updatedAt }?.let {
-                    syncState.upsert(SyncStateEntity("subscriptions", uid, it.updatedAt, System.currentTimeMillis()))
-                    cursors["subscriptions"] = it.updatedAt
+                // Use the server's (nextCursor, nextCursorId) pair to advance
+                // — never the client-side max(items.updatedAt). The previous
+                // client-max approach (cubic R5 P0) produced a mismatched
+                // compound cursor on next request: ts from client-max, id from
+                // server-page-end → overlapping fetches or dropped rows on
+                // ties, defeating the R3/R4 compound-cursor fix.
+                body.subscriptions.nextCursor?.let {
+                    syncState.upsert(SyncStateEntity("subscriptions", uid, it, System.currentTimeMillis()))
+                    cursors["subscriptions"] = it
                 }
-                body.playlists.items.maxByOrNull { it.updatedAt }?.let {
-                    syncState.upsert(SyncStateEntity("playlists", uid, it.updatedAt, System.currentTimeMillis()))
-                    cursors["playlists"] = it.updatedAt
+                body.playlists.nextCursor?.let {
+                    syncState.upsert(SyncStateEntity("playlists", uid, it, System.currentTimeMillis()))
+                    cursors["playlists"] = it
                 }
-                body.favorites.items.maxByOrNull { it.updatedAt }?.let {
-                    syncState.upsert(SyncStateEntity("favorites", uid, it.updatedAt, System.currentTimeMillis()))
-                    cursors["favorites"] = it.updatedAt
+                body.favorites.nextCursor?.let {
+                    syncState.upsert(SyncStateEntity("favorites", uid, it, System.currentTimeMillis()))
+                    cursors["favorites"] = it
                 }
                 lastIds["subscriptions"] = body.subscriptions.nextCursorId
                 lastIds["playlists"]     = body.playlists.nextCursorId

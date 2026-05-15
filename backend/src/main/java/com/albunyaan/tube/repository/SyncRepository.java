@@ -79,11 +79,10 @@ public class SyncRepository {
         return out;
     }
 
-    /** Legacy overload that drops same-ms ties; kept for any caller mid-migration. */
-    public List<RawRow> pull(String uid, String type, long since, int limit)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        return pull(uid, type, since, null, limit);
-    }
+    // The legacy 4-arg pull(uid, type, since, limit) overload was removed
+    // (cubic R5 P0): it called the strict-greater-than branch which silently
+    // dropped same-ms ties — exactly the bug the compound cursor closes.
+    // All callers must thread the compound cursor through.
 
     // -------------------------------------------------------------------------
     // Upsert (create or merge)
