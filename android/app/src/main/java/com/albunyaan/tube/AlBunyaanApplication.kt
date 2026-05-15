@@ -57,6 +57,9 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
     @Inject
     lateinit var accountRepository: AccountRepository
 
+    @Inject
+    lateinit var okHttpClient: okhttp3.OkHttpClient
+
     /** Application-scoped coroutine scope for lifecycle-triggered sync work. */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -118,6 +121,13 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
         // Schedule periodic download expiry cleanup (P4-T3)
         downloadScheduler.scheduleExpiryCleanup()
         Log.d(TAG, "Download expiry cleanup scheduled")
+
+        // Route share-metadata POSTs through the Hilt-managed OkHttpClient so
+        // X-Device-Id, Bearer auth, and account-status interceptors are
+        // attached automatically. The publisher's default fallback uses a
+        // bare client (test-only); without this hand-off, production POSTs
+        // would 400 on the backend's X-Device-Id requirement (cubic round-3 P0).
+        com.albunyaan.tube.share.ShareMetadataPublisher.httpClientProvider = { okHttpClient }
     }
 
     /** Plan D T26: pull + push on every app foreground resume. */

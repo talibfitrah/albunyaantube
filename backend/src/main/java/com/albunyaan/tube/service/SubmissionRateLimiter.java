@@ -45,15 +45,25 @@ public class SubmissionRateLimiter {
         if (uid == null || uid.isEmpty()) return null;
         Instant now = clock.instant();
         Instant cutoff = now.minus(WINDOW);
-        Deque<Instant> dq = hits.get(uid, k -> new ArrayDeque<>());
-        synchronized (dq) {
+        // Use the cache's atomic compute so the mutation happens under the cache's
+        // bucket lock for this uid. The previous `cache.get(uid, factory)` followed
+        // by `synchronized (dq)` raced with Caffeine eviction: if the cache evicted
+        // the entry between the get() and the synchronized block, the next caller
+        // for the same uid got a fresh empty deque while this thread mutated the
+        // orphan — two concurrent callers each see "under limit" against
+        // independent deques and the per-uid 50/24h cap leaks.
+        Long[] retryAfter = new Long[]{null};
+        hits.asMap().compute(uid, (key, existing) -> {
+            Deque<Instant> dq = existing != null ? existing : new ArrayDeque<>();
             while (!dq.isEmpty() && dq.peekFirst().isBefore(cutoff)) dq.pollFirst();
             if (dq.size() >= LIMIT) {
                 Instant oldest = dq.peekFirst();
-                return oldest.plus(WINDOW).getEpochSecond() - now.getEpochSecond();
+                retryAfter[0] = oldest.plus(WINDOW).getEpochSecond() - now.getEpochSecond();
+            } else {
+                dq.addLast(now);
             }
-            dq.addLast(now);
-            return null;
-        }
+            return dq;
+        });
+        return retryAfter[0];
     }
 }

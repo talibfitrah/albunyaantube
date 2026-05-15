@@ -137,9 +137,14 @@ public class WatchPageController {
             return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).build();
         }
         AtomicInteger counter = shareMetadataRateLimit.get(deviceId, k -> new AtomicInteger(0));
-        if (counter.incrementAndGet() > SHARE_METADATA_RATE_LIMIT_PER_MINUTE) {
+        // Check-then-increment so blocked callers don't keep growing the counter
+        // unbounded for the remaining TTL window. Acceptable race: two near-
+        // simultaneous reads can each pass the check before the increment;
+        // for an N=30/min bucket that's at most 31 admitted under contention.
+        if (counter.get() >= SHARE_METADATA_RATE_LIMIT_PER_MINUTE) {
             return ResponseEntity.status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS).build();
         }
+        counter.incrementAndGet();
 
         // Image URL: only YouTube hosts on the closed allow-list survive. Anything
         // else is silently dropped (coerced to empty) so the title/description can

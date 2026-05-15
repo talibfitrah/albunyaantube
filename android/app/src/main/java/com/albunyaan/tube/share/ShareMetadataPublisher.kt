@@ -2,9 +2,7 @@ package com.albunyaan.tube.share
 
 import android.net.Uri
 import com.albunyaan.tube.BuildConfig
-import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -14,7 +12,20 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 object ShareMetadataPublisher {
-    private val client = OkHttpClient()
+    /**
+     * Provider of the OkHttpClient used to publish share metadata. Wired by
+     * {@code AlBunyaanApplication.onCreate()} to point at the Hilt-managed
+     * client from NetworkModule, which carries the X-Device-Id, Bearer-token,
+     * and account-status interceptors. The default fallback is a bare client
+     * for unit-test convenience; production paths always overwrite it.
+     *
+     * Previously this object used its own `OkHttpClient()` without
+     * interceptors — every share-metadata POST then 400'd on the backend's
+     * X-Device-Id requirement (cubic round-3 P0). Going through the Hilt
+     * client ensures both X-Device-Id and Bearer headers are attached
+     * automatically.
+     */
+    @Volatile var httpClientProvider: () -> OkHttpClient = { OkHttpClient() }
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     suspend fun publish(
@@ -30,15 +41,6 @@ object ShareMetadataPublisher {
         withTimeoutOrNull(PUBLISH_TIMEOUT_MS) {
             withContext(Dispatchers.IO) {
                 runCatching {
-                    // POST /api/share-metadata now requires a Firebase ID token —
-                    // anonymous writes were a phishing-grade OG cache poisoning vector
-                    // (any non-registry videoId could be seeded with attacker text).
-                    // If the user is not signed in, skip the publish silently; the
-                    // backend's GET fallback still renders a generic FitrahTube card
-                    // from registry data.
-                    val firebaseUser = FirebaseAuth.getInstance().currentUser ?: return@runCatching
-                    val token = firebaseUser.getIdToken(false).await().token ?: return@runCatching
-
                     val url = Uri.parse(shareBaseUrl)
                         .buildUpon()
                         .appendPath("api")
@@ -58,10 +60,9 @@ object ShareMetadataPublisher {
 
                     val request = Request.Builder()
                         .url(url)
-                        .header("Authorization", "Bearer $token")
                         .post(payload.toString().toRequestBody(jsonMediaType))
                         .build()
-                    client.newCall(request).execute().use { response ->
+                    httpClientProvider().newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
                             android.util.Log.w(TAG, "Share metadata publish failed: HTTP ${response.code}")
                         }

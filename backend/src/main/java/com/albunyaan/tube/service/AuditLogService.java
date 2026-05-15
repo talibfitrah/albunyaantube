@@ -195,7 +195,14 @@ public class AuditLogService {
                     .get()
                     .get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snap.exists()) {
-                throw new IllegalArgumentException("Cursor references missing document");
+                // Stale cursor (doc archived/pruned). Reset to first page rather
+                // than 400 — a long-lived admin tab shouldn't hard-fail when a
+                // referenced audit row disappears; the next page query without
+                // cursor returns the freshest rows. Log so operators can spot
+                // unexpected gaps in the audit log retention policy.
+                logger.warn("Audit cursor references missing doc {}; resetting to first page", c.docId());
+                return new com.albunyaan.tube.dto.PaginatedAuditLog(
+                        findFirstPage(actorUid, action, effLimit), null);
             }
             // F8 sanity check: encoded ts should match the stored timestamp on the
             // referenced doc. Drift here means either the doc was rewritten or the
@@ -241,6 +248,30 @@ public class AuditLogService {
             nextCursor = com.albunyaan.tube.util.AuditCursor.encode(ts, lastDoc.getId());
         }
         return new com.albunyaan.tube.dto.PaginatedAuditLog(rows, nextCursor);
+    }
+
+    /**
+     * Stale-cursor fallback for {@link #findPaginated}: re-runs the same query
+     * without any startAfter, returning at most {@code effLimit} rows. Used when
+     * the cursor's referenced doc no longer exists so admin UIs degrade
+     * gracefully into a first-page view instead of a 400.
+     */
+    private java.util.List<com.albunyaan.tube.model.AuditLog> findFirstPage(
+            String actorUid, String action, int effLimit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        com.google.cloud.firestore.Query q = firestore.collection("audit_logs")
+                .orderBy("timestamp", com.google.cloud.firestore.Query.Direction.DESCENDING)
+                .orderBy(com.google.cloud.firestore.FieldPath.documentId(),
+                        com.google.cloud.firestore.Query.Direction.DESCENDING);
+        if (actorUid != null && !actorUid.isBlank()) q = q.whereEqualTo("actorUid", actorUid);
+        if (action != null && !action.isBlank())     q = q.whereEqualTo("action", action);
+        return q.limit(effLimit)
+                .get()
+                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS)
+                .getDocuments()
+                .stream()
+                .map(d -> d.toObject(com.albunyaan.tube.model.AuditLog.class))
+                .toList();
     }
 }
 

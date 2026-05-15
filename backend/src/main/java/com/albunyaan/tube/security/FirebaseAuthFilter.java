@@ -73,17 +73,14 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
             logger.debug("  Token length: {}", token.length());
 
             try {
-                FirebaseToken decodedToken = firebaseAuth.verifyIdToken(token);
+                // Single verifyIdToken call gated on isAdminPath: previously the filter
+                // ran verifyIdToken(token) unconditionally and then verifyIdToken(token, true)
+                // again on admin paths, paying two network/CPU calls to Firebase per admin
+                // request. The decodedToken from the first (cheaper) call was discarded.
+                boolean isAdminPath = requestURI.startsWith("/api/admin/");
+                FirebaseToken decodedToken = firebaseAuth.verifyIdToken(token, isAdminPath);
                 String uid = decodedToken.getUid();
                 String email = decodedToken.getEmail();
-
-                // Conditional revocation check on admin paths (higher-trust paths)
-                boolean isAdminPath = requestURI.startsWith("/api/admin/");
-                if (isAdminPath) {
-                    decodedToken = firebaseAuth.verifyIdToken(token, true);
-                    uid = decodedToken.getUid();
-                    email = decodedToken.getEmail();
-                }
 
                 // Server-authoritative status check against Firestore
                 try {
