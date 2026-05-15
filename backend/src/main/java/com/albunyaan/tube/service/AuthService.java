@@ -630,6 +630,19 @@ public class AuthService {
                 throw new UserNotFoundException(uid);
             }
             User target = snap.toObject(User.class);
+            // F13 / F20 (R7 P1 deferred, applied in F-LIFECYCLE-NOOP-01):
+            // mirrors unblockUser's three-case shape.
+            //   1) Already ACTIVE → idempotent no-op (retry-safe).
+            //   2) BLOCKED → reject (must go through unblock, not recover).
+            //   3) PENDING_PROFILE → reject (was never deleted).
+            // Pre-fix every non-DELETED case threw UserStateConflictException
+            // (NOT_DELETED) → 409, inconsistent with blockUser/softDeleteUser
+            // / unblockUser which return false → 200 on the idempotent path.
+            // ACTIVE no-op preserves the "look, we're done" UX while keeping
+            // the BLOCKED/PENDING guard strict (audit-trail honesty).
+            if (target.isActive()) {
+                return Boolean.FALSE;
+            }
             if (!target.isDeleted()) {
                 throw new UserStateConflictException(
                     UserStateConflictException.ReasonCode.NOT_DELETED,
