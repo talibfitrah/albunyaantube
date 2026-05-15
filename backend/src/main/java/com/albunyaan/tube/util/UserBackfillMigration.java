@@ -137,7 +137,19 @@ public class UserBackfillMigration {
         int updated = 0;
         int skipped = 0;
         int claimWriteFailures = 0;
-        String cursor = null;
+        // Cubic R7 P2 — resume from any cursor checkpoint left by a prior
+        // crashed run. The stale-lock reclaim (F14) only releases the
+        // claim; the cursor was lost so the new run restarted from the
+        // top, re-doing every already-normalised user. We now read the
+        // checkpoint set by the prior run (if any) and resume after it.
+        // First-run case: snap.getString("phase1Cursor") returns null,
+        // matching the previous behaviour.
+        DocumentSnapshot postClaimSnap = lockRef.get()
+                .get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+        String cursor = postClaimSnap.exists() ? postClaimSnap.getString("phase1Cursor") : null;
+        if (cursor != null) {
+            logger.info("Resuming backfill phase 1 from checkpoint cursor={}", cursor);
+        }
 
         try {
             // Phase 1: cursor-paginated normalisation pass.
@@ -158,6 +170,20 @@ public class UserBackfillMigration {
                     }
                 }
                 cursor = page.get(page.size() - 1).getUid();
+                // Cubic R7 P2 — write the cursor checkpoint after each page.
+                // Best-effort: if the checkpoint write fails we still continue
+                // (the phase will complete normally and the failure is logged);
+                // if the JVM then crashes the worst case is re-processing
+                // BATCH_SIZE rows on resume, which is idempotent (normalize()
+                // returns false when nothing needs to change).
+                try {
+                    lockRef.update("phase1Cursor", cursor,
+                                   "phase1CheckpointedAt", Timestamp.now())
+                            .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    logger.warn("Phase 1 cursor checkpoint write failed (cursor={}): {}",
+                            cursor, e.getMessage());
+                }
                 if (page.size() < BATCH_SIZE) break;
             }
 
