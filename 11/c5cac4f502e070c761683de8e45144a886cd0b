@@ -1,0 +1,38 @@
+backend/src/main/java/com/albunyaan/tube/dto/sync/PutSubscriptionRequest.java
+  s_99ef915f306233::t_b728a7ed82118c 3,7-14
+backend/src/main/java/com/albunyaan/tube/util/UserBackfillMigration.java
+  s_99ef915f306233::t_b728a7ed82118c 63,146-154,203-205,260,273-276,290-294
+backend/src/main/java/com/albunyaan/tube/service/AccountProfileService.java
+  s_99ef915f306233::t_b728a7ed82118c 152-167
+backend/src/main/java/com/albunyaan/tube/dto/sync/PutFavoriteRequest.java
+  s_99ef915f306233::t_b728a7ed82118c 3,8-9
+backend/src/main/java/com/albunyaan/tube/service/sync/SyncService.java
+  s_99ef915f306233::t_b728a7ed82118c 6-7,10-11,23-42,80-92
+backend/src/main/java/com/albunyaan/tube/config/AsyncConfig.java
+  s_99ef915f306233::t_b728a7ed82118c 176-208
+backend/src/main/java/com/albunyaan/tube/config/CacheConfig.java
+  s_99ef915f306233::t_b728a7ed82118c 155-176
+backend/src/main/java/com/albunyaan/tube/security/FirebaseAuthFilter.java
+  s_99ef915f306233::t_b728a7ed82118c 87-112
+backend/src/main/java/com/albunyaan/tube/dto/sync/PutPlaylistRequest.java
+  s_99ef915f306233::t_b728a7ed82118c 3,7-8
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_99ef915f306233::t_418a0049821397 421-429
+  s_99ef915f306233::t_b728a7ed82118c 23,27-28,59-69,410,412-420,430-446,471-473
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "11c5cac4f502e070c761683de8e45144a886cd0b",
+  "prompts": {},
+  "sessions": {
+    "s_99ef915f306233": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6959ccab-c0c0-45fe-9e9a-2b8a2253a0fa",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
