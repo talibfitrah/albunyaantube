@@ -1,9 +1,12 @@
 package com.albunyaan.tube.data.local
 
 import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.auth.currentUid
 import com.albunyaan.tube.data.sync.SyncManager
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -83,13 +86,22 @@ class FavoritesRepositoryImpl @Inject constructor(
     private val syncManager: SyncManager,
 ) : FavoritesRepository {
 
-    override fun getAllFavorites(): Flow<List<FavoriteVideo>> {
-        return favoriteVideoDao.getAllFavorites(uid = accountRepository.currentUid())
-    }
+    // Cubic R5 P0 #5 — see SubscriptionRepository: Flow factories must
+    // rescope on accountState transitions, otherwise the captured uid leaks
+    // across sign-in / sign-out (anon rows persist after cold-start sign-in;
+    // previous user's rows persist after sign-out).
 
-    override fun isFavorite(videoId: String): Flow<Boolean> {
-        return favoriteVideoDao.isFavorite(uid = accountRepository.currentUid(), videoId = videoId)
-    }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun getAllFavorites(): Flow<List<FavoriteVideo>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            favoriteVideoDao.getAllFavorites(uid = uidOf(state))
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun isFavorite(videoId: String): Flow<Boolean> =
+        accountRepository.accountState.flatMapLatest { state ->
+            favoriteVideoDao.isFavorite(uid = uidOf(state), videoId = videoId)
+        }
 
     override suspend fun isFavoriteOnce(videoId: String): Boolean {
         return favoriteVideoDao.isFavoriteOnce(uid = accountRepository.currentUid(), videoId = videoId)
@@ -145,11 +157,16 @@ class FavoritesRepositoryImpl @Inject constructor(
         return result
     }
 
-    override fun getFavoriteCount(): Flow<Int> {
-        return favoriteVideoDao.getFavoriteCount(uid = accountRepository.currentUid())
-    }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun getFavoriteCount(): Flow<Int> =
+        accountRepository.accountState.flatMapLatest { state ->
+            favoriteVideoDao.getFavoriteCount(uid = uidOf(state))
+        }
 
     override suspend fun clearAll() {
         favoriteVideoDao.clearAll(uid = accountRepository.currentUid())
     }
+
+    private fun uidOf(state: AccountState): String =
+        (state as? AccountState.Loaded)?.uid ?: ""
 }

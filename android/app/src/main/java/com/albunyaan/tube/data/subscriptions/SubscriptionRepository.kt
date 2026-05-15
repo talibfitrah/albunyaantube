@@ -2,6 +2,7 @@ package com.albunyaan.tube.data.subscriptions
 
 import androidx.room.withTransaction
 import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.auth.currentUid
 import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
@@ -11,7 +12,9 @@ import com.albunyaan.tube.data.local.SavedPlaylistDao
 import com.albunyaan.tube.data.local.SubscribedChannel
 import com.albunyaan.tube.data.local.SubscribedChannelDao
 import com.albunyaan.tube.data.sync.SyncManager
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,20 +28,49 @@ class SubscriptionRepository @Inject constructor(
     private val accountRepository: AccountRepository,
     private val syncManager: SyncManager,
 ) {
+    // Cubic R5 P0 #5 — flow factories must rescope on accountState changes.
+    //
+    // Pre-fix: `channels.observeAll(uid = accountRepository.currentUid())`
+    // evaluated `currentUid()` ONCE when the Flow was constructed. Sign-in
+    // (or sign-out) during observation did not re-scope the Flow — after
+    // cold-start sign-in the UI kept showing anon rows (uid=""); after
+    // sign-out it kept the previous user's rows.
+    //
+    // Fix: re-derive the uid from the live `accountState` StateFlow and
+    // restart the underlying DAO flow on every change. `flatMapLatest`
+    // cancels the previous downstream collection before subscribing to the
+    // new one, so we never multiplex rows across uid boundaries.
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun observeSubscribedChannels(): Flow<List<SubscribedChannel>> =
-        channels.observeAll(uid = accountRepository.currentUid())
+        accountRepository.accountState.flatMapLatest { state ->
+            channels.observeAll(uid = uidOf(state))
+        }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun observeSavedPlaylists(): Flow<List<SavedPlaylist>> =
-        playlists.observeAll(uid = accountRepository.currentUid())
+        accountRepository.accountState.flatMapLatest { state ->
+            playlists.observeAll(uid = uidOf(state))
+        }
 
+    // One-shot read — uid is captured at call time, no Flow rescoping needed.
     suspend fun getSubscribedChannels(): List<SubscribedChannel> =
         channels.getAll(uid = accountRepository.currentUid())
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun isChannelSubscribed(id: String): Flow<Boolean> =
-        channels.observeIsSubscribed(uid = accountRepository.currentUid(), id = id)
+        accountRepository.accountState.flatMapLatest { state ->
+            channels.observeIsSubscribed(uid = uidOf(state), id = id)
+        }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun isPlaylistSaved(id: String): Flow<Boolean> =
-        playlists.observeIsSaved(uid = accountRepository.currentUid(), id = id)
+        accountRepository.accountState.flatMapLatest { state ->
+            playlists.observeIsSaved(uid = uidOf(state), id = id)
+        }
+
+    private fun uidOf(state: AccountState): String =
+        (state as? AccountState.Loaded)?.uid ?: ""
 
     /**
      * Direct DAO upsert. **Bypasses the 30-channel cap** enforced by

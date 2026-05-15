@@ -10,6 +10,8 @@ import com.albunyaan.tube.repository.AuditLogRepository;
 import com.albunyaan.tube.repository.UserRepository;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
+import com.google.cloud.firestore.FieldValue;
+import com.google.cloud.firestore.SetOptions;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.Transaction;
@@ -123,6 +125,35 @@ public class AuthService {
      * propagate to @ControllerAdvice for proper HTTP status mapping. Without this, every
      * lifecycle method's spec'd 409/400/409 handler is unreachable.
      */
+    /**
+     * Cubic R5 P0 #2 — serialising sentinel for the last-admin guard.
+     *
+     * <p>The admin-count query (`role="admin" AND status="active"`) runs
+     * inside the transaction, but Firestore txs only lock documents READ via
+     * `tx.get(DocumentReference)`. A `QuerySnapshot` does not take per-doc
+     * locks on its result set — two concurrent demote/block/delete txs
+     * targeting <em>different</em> admin uids each see "2 admins", both pass
+     * the {@code <= 1} guard, both commit → zero admins.
+     *
+     * <p>Fix: every lifecycle op that touches admin status reads AND writes a
+     * single shared sentinel doc inside its tx. Firestore detects the
+     * read-then-write conflict at commit time and aborts the losing tx; on
+     * retry it observes the updated admin count and the guard fires
+     * correctly.
+     *
+     * <p>The sentinel only kicks in for admin-touching operations (gated by
+     * the caller's `if (target.isAdmin())` branch), so regular non-admin
+     * blocks/deletes/role-changes don't pay the serialisation cost.
+     */
+    private void lockAdminSentinel(Transaction tx, String op) throws Exception {
+        DocumentReference lockRef = firestore.document("system/admin_lock");
+        tx.get(lockRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        tx.set(lockRef, java.util.Map.of(
+                "lastOp", op,
+                "lastModified", FieldValue.serverTimestamp()
+        ), SetOptions.merge());
+    }
+
     private <T> T runLifecycleTx(Transaction.Function<T> fn) throws Exception {
         try {
             return firestore.runTransaction(fn)
@@ -238,6 +269,7 @@ public class AuthService {
                 if (uid.equals(actorUid)) {
                     throw new LastAdminException("Admins cannot demote themselves. Ask another admin.");
                 }
+                lockAdminSentinel(tx, "demote");
                 QuerySnapshot admins = tx.get(firestore.collection("users")
                         .whereEqualTo("role", "admin")
                         .whereEqualTo("status", "active"))
@@ -253,7 +285,10 @@ public class AuthService {
             AuditLog audit = auditLogService.buildRoleChange(uid, actorUid,
                     previousRole[0], newRole.getValue());
 
-            tx.set(userRef, target);
+            // Cubic R5 P1 #7: merge instead of full-replace so out-of-band
+            // fields written by Plan D sync or future schema migrations are
+            // not silently wiped on every lifecycle commit.
+            tx.set(userRef, target, SetOptions.merge());
             auditLogRepository.saveInTransaction(tx, audit);
             return target;
         });
@@ -448,6 +483,7 @@ public class AuthService {
                 if (uid.equals(actorUid)) {
                     throw new LastAdminException("Admins cannot delete themselves.");
                 }
+                lockAdminSentinel(tx, "delete");
                 QuerySnapshot admins = tx.get(firestore.collection("users")
                         .whereEqualTo("role", "admin")
                         .whereEqualTo("status", "active"))
@@ -461,7 +497,10 @@ public class AuthService {
 
             AuditLog audit = auditLogService.buildSoftDelete(uid, actorUid, reason);
 
-            tx.set(userRef, target);
+            // Cubic R5 P1 #7: merge instead of full-replace so out-of-band
+            // fields written by Plan D sync or future schema migrations are
+            // not silently wiped on every lifecycle commit.
+            tx.set(userRef, target, SetOptions.merge());
             auditLogRepository.saveInTransaction(tx, audit);
             return Boolean.TRUE;
         });
@@ -515,7 +554,10 @@ public class AuthService {
 
             AuditLog audit = auditLogService.buildRecover(uid, actorUid);
 
-            tx.set(userRef, target);
+            // Cubic R5 P1 #7: merge instead of full-replace so out-of-band
+            // fields written by Plan D sync or future schema migrations are
+            // not silently wiped on every lifecycle commit.
+            tx.set(userRef, target, SetOptions.merge());
             auditLogRepository.saveInTransaction(tx, audit);
             return Boolean.TRUE;
         });
@@ -545,9 +587,27 @@ public class AuthService {
                                FirebaseUserDetails actor,
                                String reason)
             throws FirebaseAuthException {
-        firebaseAuth.revokeRefreshTokens(uid);
         Map<String, Object> details = new HashMap<>();
         if (reason != null && !reason.isBlank()) details.put("reason", reason);
+
+        // Cubic R5 P1 #10 — audit BEFORE the revoke, not after.
+        //
+        // A security-sensitive action must produce an audit row regardless of
+        // outcome. Previously the audit row was written only after a
+        // successful revoke; when `revokeRefreshTokens` threw (FirebaseAuth
+        // outage, network blip, mistyped uid) no row was written and the
+        // attempt was invisible in the audit trail. Writing the
+        // `USER_SESSIONS_REVOKE_ATTEMPTED` row first guarantees the attempt
+        // is recorded; the `USER_SESSIONS_REVOKED` row on success then
+        // closes the pair.
+        auditLogService.log(
+                "USER_SESSIONS_REVOKE_ATTEMPTED",
+                "user", uid,
+                actor,
+                details);
+
+        firebaseAuth.revokeRefreshTokens(uid);
+
         auditLogService.log(
                 "USER_SESSIONS_REVOKED",
                 "user", uid,
@@ -607,6 +667,7 @@ public class AuthService {
                 if (uid.equals(actorUid)) {
                     throw new LastAdminException("Admins cannot block themselves.");
                 }
+                lockAdminSentinel(tx, "block");
                 QuerySnapshot admins = tx.get(firestore.collection("users")
                         .whereEqualTo("role", "admin")
                         .whereEqualTo("status", "active"))
@@ -620,7 +681,10 @@ public class AuthService {
 
             AuditLog audit = auditLogService.buildBlock(uid, actorUid, reason);
 
-            tx.set(userRef, target);
+            // Cubic R5 P1 #7: merge instead of full-replace so out-of-band
+            // fields written by Plan D sync or future schema migrations are
+            // not silently wiped on every lifecycle commit.
+            tx.set(userRef, target, SetOptions.merge());
             auditLogRepository.saveInTransaction(tx, audit);
             return Boolean.TRUE;
         });
@@ -696,7 +760,10 @@ public class AuthService {
 
             AuditLog audit = auditLogService.buildUnblock(uid, actorUid);
 
-            tx.set(userRef, target);
+            // Cubic R5 P1 #7: merge instead of full-replace so out-of-band
+            // fields written by Plan D sync or future schema migrations are
+            // not silently wiped on every lifecycle commit.
+            tx.set(userRef, target, SetOptions.merge());
             auditLogRepository.saveInTransaction(tx, audit);
             return Boolean.TRUE;
         });
