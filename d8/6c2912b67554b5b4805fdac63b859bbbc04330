@@ -1,0 +1,26 @@
+frontend/src/services/adminUsers.ts
+  s_dac267759ff6fd::t_c523b444963fbc 33-40
+frontend/src/views/UsersManagementView.vue
+  s_dac267759ff6fd::t_c57f73bdc66e64 362-367,371,375-384
+frontend/tests/UsersManagementView.spec.ts
+  s_dac267759ff6fd::t_7d698438563015 179-183
+  s_dac267759ff6fd::t_e8755a6f72510d 76,189,200
+backend/src/main/java/com/albunyaan/tube/security/FirebaseAuthFilter.java
+  s_dac267759ff6fd::t_08b5f9cd2066e0 148-152,154-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "d86c2912b67554b5b4805fdac63b859bbbc04330",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
