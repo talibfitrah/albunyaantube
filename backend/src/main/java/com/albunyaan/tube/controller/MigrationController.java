@@ -53,10 +53,30 @@ public class MigrationController {
     @PostMapping("/user-backfill")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> runUserBackfill(
-            @AuthenticationPrincipal FirebaseUserDetails actor) throws Exception {
+            @AuthenticationPrincipal FirebaseUserDetails actor,
+            @org.springframework.web.bind.annotation.RequestHeader(
+                    value = "X-Confirm-Migration", required = false) String confirmHeader)
+            throws Exception {
 
         if (actor == null) {
             return ResponseEntity.status(401).body(Map.of("code", "UNAUTHENTICATED"));
+        }
+
+        // Cubic R7 P2 — confirm-header gate for destructive admin action.
+        //
+        // Pre-fix any authenticated admin token could trigger a full
+        // tenant-wide user backfill with a single POST; a CSRF-equivalent
+        // (misclick in admin UI, replay of a leaked curl, malicious browser
+        // extension on an admin machine) would silently kick off a long
+        // mutation. Until 2FA arrives, gating the endpoint on an
+        // explicit-intent header — which the admin UI must populate, and a
+        // generic POST replay would not — closes the trivial-trigger
+        // attack. The expected value mirrors the action so a "yes" coerced
+        // into an unrelated form does not fire.
+        if (!"run-user-backfill".equals(confirmHeader)) {
+            return ResponseEntity.status(428).body(Map.of(
+                "code", "MIGRATION_CONFIRM_REQUIRED",
+                "hint", "Set X-Confirm-Migration: run-user-backfill header."));
         }
 
         if (!backfillEnabled) {

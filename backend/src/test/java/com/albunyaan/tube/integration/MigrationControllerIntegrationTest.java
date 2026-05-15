@@ -59,7 +59,8 @@ class MigrationControllerIntegrationTest extends BaseIntegrationTest {
         stubToken(adminUid, "admin");
 
         mvc.perform(post("/api/admin/migrations/user-backfill")
-                .header("Authorization", "Bearer fake-token"))
+                .header("Authorization", "Bearer fake-token")
+                .header("X-Confirm-Migration", "run-user-backfill"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.scanned").exists())
             .andExpect(jsonPath("$.updated").exists())
@@ -89,7 +90,8 @@ class MigrationControllerIntegrationTest extends BaseIntegrationTest {
         stubToken(adminUid, "admin");
 
         mvc.perform(post("/api/admin/migrations/user-backfill")
-                .header("Authorization", "Bearer fake-token"))
+                .header("Authorization", "Bearer fake-token")
+                .header("X-Confirm-Migration", "run-user-backfill"))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("MIGRATION_RUNNING"));
     }
@@ -100,8 +102,36 @@ class MigrationControllerIntegrationTest extends BaseIntegrationTest {
         stubToken(modUid, "moderator");
 
         mvc.perform(post("/api/admin/migrations/user-backfill")
-                .header("Authorization", "Bearer fake-token"))
+                .header("Authorization", "Bearer fake-token")
+                .header("X-Confirm-Migration", "run-user-backfill"))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void migrationEndpoint_missingConfirmHeader_returns428() throws Exception {
+        // Cubic R7 P2 — admin role alone is insufficient; the destructive
+        // backfill requires an explicit-intent header so a generic POST
+        // replay or stray click cannot trigger it.
+        String adminUid = seedUser("admin-noconfirm@t", "admin");
+        stubToken(adminUid, "admin");
+
+        mvc.perform(post("/api/admin/migrations/user-backfill")
+                .header("Authorization", "Bearer fake-token"))
+            // No X-Confirm-Migration header.
+            .andExpect(status().isPreconditionRequired())
+            .andExpect(jsonPath("$.code").value("MIGRATION_CONFIRM_REQUIRED"));
+    }
+
+    @Test
+    void migrationEndpoint_wrongConfirmValue_returns428() throws Exception {
+        String adminUid = seedUser("admin-wrongconfirm@t", "admin");
+        stubToken(adminUid, "admin");
+
+        mvc.perform(post("/api/admin/migrations/user-backfill")
+                .header("Authorization", "Bearer fake-token")
+                .header("X-Confirm-Migration", "yes"))   // wrong magic
+            .andExpect(status().isPreconditionRequired())
+            .andExpect(jsonPath("$.code").value("MIGRATION_CONFIRM_REQUIRED"));
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

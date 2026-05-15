@@ -47,12 +47,22 @@ service cloud.firestore {
       // Plan C T4 — self-write specific profile sub-fields, only when in PENDING_PROFILE.
       // Backend mediates all writes today; this is defense-in-depth so any future
       // direct-from-client write is limited to the bootstrap field set.
+      //
+      // Cubic R7 P2 — pin the post-write status. The affectedKeys whitelist
+      // restricts WHICH fields change but not the VALUES. Pre-fix a user in
+      // pending_profile could write `status: 'active'` AND any other value;
+      // worse, if the client controlled the role field via a future schema
+      // change, the same rule would have allowed self-elevation. Now the
+      // status transition is bounded to {pending_profile → pending_profile,
+      // pending_profile → active}, and the role field is explicitly pinned.
       allow update: if isSelf(userId) &&
                        resource.data.status == 'pending_profile' &&
                        request.resource.data.diff(resource.data)
                          .affectedKeys()
                          .hasOnly(['displayName', 'dateOfBirth', 'updatedAt',
-                                  'profileCompletedAt', 'status']);
+                                  'profileCompletedAt', 'status']) &&
+                       request.resource.data.status in ['pending_profile', 'active'] &&
+                       request.resource.data.role == resource.data.role;
     }
 
     // Categories collection
