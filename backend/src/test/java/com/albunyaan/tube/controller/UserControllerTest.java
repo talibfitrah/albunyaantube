@@ -284,11 +284,14 @@ class UserControllerTest {
         when(authService.updateUserRoleAsActor("test-mod-uid", "admin", "admin-uid")).thenReturn(updatedUser);
 
         // Act
-        ResponseEntity<User> response = userController.updateUserRole("test-mod-uid", request, adminUser);
+        // Cubic R7 P1 — return type widened to ResponseEntity<?> for the
+        // self-action SELF_ACTION_FORBIDDEN branch; cast back for the User
+        // assertions on the happy-path.
+        ResponseEntity<?> response = userController.updateUserRole("test-mod-uid", request, adminUser);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("admin", response.getBody().getRole());
+        assertEquals("admin", ((User) response.getBody()).getRole());
         verify(authService).updateUserRoleAsActor("test-mod-uid", "admin", "admin-uid");
     }
 
@@ -299,7 +302,10 @@ class UserControllerTest {
         request.role = "admin";
 
         // Act
-        ResponseEntity<User> response = userController.updateUserRole("test-mod-uid", request, null);
+        // Cubic R7 P1 — return type widened to ResponseEntity<?> for the
+        // self-action SELF_ACTION_FORBIDDEN branch; cast back for the User
+        // assertions on the happy-path.
+        ResponseEntity<?> response = userController.updateUserRole("test-mod-uid", request, null);
 
         // Assert
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());

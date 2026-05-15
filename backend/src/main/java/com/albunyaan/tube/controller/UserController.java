@@ -170,17 +170,32 @@ public class UserController {
     }
 
     /**
-     * Update user role (admin only)
+     * Update user role (admin only).
+     *
+     * <p>Cubic R7 P1 — explicit self-action guard.
+     *
+     * <p>Pre-fix the last-admin guard correctly blocked self-demotion when the
+     * caller was the only remaining ADMIN, but did NOT cover the case where
+     * another admin existed: a multi-admin tenant let an admin demote
+     * <em>themselves</em> to MODERATOR, silently losing privileges with no
+     * second-pair-of-eyes check. Bulk endpoints already self-skip via
+     * {@code BulkUserService.execute}; the single-endpoint path didn't.
+     * Now PUT /{uid}/role returns 403 when {@code uid == actor.uid}.
      */
     @PutMapping("/{uid}/role")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<User> updateUserRole(
+    public ResponseEntity<?> updateUserRole(
             @PathVariable String uid,
             @RequestBody UpdateRoleRequest request,
             @AuthenticationPrincipal FirebaseUserDetails currentUser
     ) throws Exception {
         if (currentUser == null) {
             return ResponseEntity.status(401).build();
+        }
+        if (uid.equals(currentUser.getUid())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("code", "SELF_ACTION_FORBIDDEN",
+                                 "message", "You cannot change your own role."));
         }
         return ResponseEntity.ok(authService.updateUserRoleAsActor(uid, request.role, currentUser.getUid()));
     }

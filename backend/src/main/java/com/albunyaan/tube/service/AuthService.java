@@ -228,13 +228,49 @@ public class AuthService {
         // role-update path.
         setUserRoleClaim(uid, canonicalRole);
 
-        // Create user document in Firestore — canonical lowercase role
-        User user = new User(uid, email, displayName, canonicalRole);
-        user.setCreatedBy(createdByUid);
-        userRepository.save(user);
-
-        logger.info("Created user: {} (uid: {}) with role: {}", email, uid, canonicalRole);
-        return user;
+        // Create user document in Firestore — canonical lowercase role.
+        //
+        // Cubic R7 P1 — compensate FB Auth if Firestore save fails.
+        //
+        // Pre-fix a Firestore save failure left a fresh FB Auth account
+        // dangling with no Firestore row. Next /me sign-in lazy-created the
+        // row as role="user" (R7 P1 #4 also tightens that path) and the
+        // operator-intended role was lost — admins created via the wizard
+        // could be silently downgraded to "user" by a single Firestore
+        // hiccup. The compensation here deletes the FB Auth user so the
+        // operator can retry cleanly. Any compensation failure is logged
+        // and propagates the ORIGINAL exception so observability points at
+        // the root cause, not the cleanup.
+        try {
+            User user = new User(uid, email, displayName, canonicalRole);
+            user.setCreatedBy(createdByUid);
+            userRepository.save(user);
+            logger.info("Created user: {} (uid: {}) with role: {}", email, uid, canonicalRole);
+            return user;
+        } catch (ExecutionException | InterruptedException | TimeoutException | RuntimeException saveEx) {
+            if (saveEx instanceof InterruptedException) Thread.currentThread().interrupt();
+            logger.error("createUser: Firestore save failed for uid={}; compensating FB Auth delete", uid, saveEx);
+            try {
+                firebaseAuth.deleteUser(uid);
+            } catch (FirebaseAuthException compensateEx) {
+                // Orphan FB Auth row. Operator must clean up manually. Audit
+                // surfaces the situation; logging at error level lets
+                // dashboards page the on-call rotation.
+                logger.error("createUser: COMPENSATION FAILED — orphan FB Auth uid={}", uid, compensateEx);
+                try {
+                    auditLogService.logSystem(
+                            "USER_CREATE_COMPENSATION_FAILED",
+                            "user", uid,
+                            "auth-delete-failed: " + compensateEx.getClass().getSimpleName());
+                } catch (RuntimeException ignored) {}
+            }
+            // Re-throw the ORIGINAL save exception so the controller maps it to
+            // the right HTTP status (500 / 503), not the compensation failure.
+            if (saveEx instanceof ExecutionException ee) throw ee;
+            if (saveEx instanceof InterruptedException ie) throw ie;
+            if (saveEx instanceof TimeoutException te) throw te;
+            throw (RuntimeException) saveEx;
+        }
     }
 
     /**
@@ -479,6 +515,13 @@ public class AuthService {
                 return Boolean.FALSE;
             }
 
+            // Cubic R7 P1 — F13/F20 noop reason was silently dropped.
+            // Captured here so the post-tx side can emit an audit row.
+            // (Tx side is the wrong place: auditLogService.log uses its own
+            // Firestore writes and would fire on retries.)
+            // No-op via the if-branch above already returned; this is the
+            // proceed path where transition will occur.
+
             // Last-admin guard (D2) — inline transactional check
             if (target.isAdmin()) {
                 if (uid.equals(actorUid)) {
@@ -518,6 +561,18 @@ public class AuthService {
                 // D9 — outside the tx, idempotent
                 firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
                 firebaseAuth.revokeRefreshTokens(uid);
+            } else if (reason != null && !reason.isBlank()) {
+                // Cubic R7 P1 — preserve the noop reason in an audit row.
+                //
+                // Pre-fix when softDelete was called on an already-deleted target,
+                // F13/F20 returned no-op and the supplied {@code reason} was
+                // silently dropped. Re-blocking for a more severe policy
+                // violation never reached the audit trail. The _NOOP variant
+                // captures the new reason without altering the user's state.
+                auditLogService.logSystem(
+                        "USER_SOFT_DELETE_NOOP",
+                        "user", uid,
+                        "noop-reason: " + reason);
             }
         } finally {
             evictUserStatus(uid);
@@ -703,6 +758,16 @@ public class AuthService {
                 // D9 — outside the tx, idempotent
                 firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
                 firebaseAuth.revokeRefreshTokens(uid);
+            } else if (reason != null && !reason.isBlank()) {
+                // Cubic R7 P1 — see softDeleteUser noop-audit rationale. A
+                // re-block for a more severe policy violation against an
+                // already-BLOCKED user previously dropped the reason on the
+                // floor with no audit signal; now the _NOOP variant captures
+                // it without touching state.
+                auditLogService.logSystem(
+                        "USER_BLOCK_NOOP",
+                        "user", uid,
+                        "noop-reason: " + reason);
             }
         } finally {
             evictUserStatus(uid);

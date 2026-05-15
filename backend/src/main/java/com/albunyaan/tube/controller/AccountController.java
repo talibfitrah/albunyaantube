@@ -65,8 +65,24 @@ public class AccountController {
         // concurrent first-time /me callers can no longer both observe
         // "absent" and both blindly upsert. The loser's createdAt /
         // lifecycle fields used to be silently clobbered.
+        //
+        // Cubic R7 P1 — preserve role on lazy-create.
+        //
+        // Pre-fix the lazy-create hardcoded role="user". For a real first-time
+        // user that's correct, but the path also fires when an existing
+        // admin's Firestore doc went missing (operator error, half-applied
+        // migration, manual cleanup gone wrong). The admin's Firebase custom
+        // claim is still "admin" — the token shows it via principal.getRole()
+        // — but the new Firestore doc was minted as plain "user" with no audit
+        // signal, silently demoting them until an operator noticed and fixed
+        // the row by hand. Read the claim from the verified ID token and use
+        // that as the seed role; fall back to "user" only when no claim is
+        // present (true first-time sign-in).
+        final String seedRole = principal.getRole() != null && !principal.getRole().isBlank()
+                ? principal.getRole()
+                : "user";
         User user = userRepository.getOrCreate(uid, () -> {
-            User fresh = new User(uid, principal.getEmail(), null, "user");
+            User fresh = new User(uid, principal.getEmail(), null, seedRole);
             fresh.setStatusEnum(UserStatus.PENDING_PROFILE);
             return fresh;
         });

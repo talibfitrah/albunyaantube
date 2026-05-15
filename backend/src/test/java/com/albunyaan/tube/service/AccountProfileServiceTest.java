@@ -29,6 +29,7 @@ class AccountProfileServiceTest {
 
     @Mock private UserRepository userRepository;
     @Mock private FirebaseAuth firebaseAuth;
+    @Mock private AuditLogService auditLogService;
 
     private AccountProfileService service;
     private final Clock fixedClock = Clock.fixed(
@@ -38,7 +39,10 @@ class AccountProfileServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AccountProfileService(userRepository, firebaseAuth, fixedClock);
+        // Cubic R7 P1 — AccountProfileService now depends on AuditLogService
+        // for the orphan-audit emission path. Mocked so the noop path returns
+        // cleanly (the audit call itself is best-effort, wrapped in catch).
+        service = new AccountProfileService(userRepository, firebaseAuth, fixedClock, auditLogService);
     }
 
     @Test

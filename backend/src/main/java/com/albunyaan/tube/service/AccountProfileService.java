@@ -27,13 +27,18 @@ public class AccountProfileService {
     private final UserRepository userRepository;
     private final FirebaseAuth firebaseAuth;
     private final Clock clock;
+    // Cubic R7 P1 — orphan audit. Injected so rejectUnderAge can emit an
+    // observability row when the soft-delete write fails after token revoke.
+    private final AuditLogService auditLogService;
 
     public AccountProfileService(UserRepository userRepository,
                                   FirebaseAuth firebaseAuth,
-                                  Clock clock) {
+                                  Clock clock,
+                                  AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.firebaseAuth = firebaseAuth;
         this.clock = clock;
+        this.auditLogService = auditLogService;
     }
 
     public User completeProfile(String uid, String displayName, LocalDate dateOfBirth)
@@ -117,6 +122,19 @@ public class AccountProfileService {
             // The operator can clean up via the admin user-deletion path.
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             log.error("AGE_INELIGIBLE: soft-delete failed for uid={} (refresh tokens already revoked)", uid, e);
+            // Cubic R7 P1 — emit orphan audit row so operators can find this
+            // half-state user without grepping logs. The user.recordSoftDelete
+            // write failed but tokens are revoked; surface the abort with the
+            // failure class so the on-call dashboard can route it to the
+            // cleanup queue.
+            try {
+                auditLogService.logSystem(
+                        "USER_AGE_INELIGIBLE_ABORTED",
+                        "user", uid,
+                        "save-failed: " + e.getClass().getSimpleName());
+            } catch (RuntimeException auditEx) {
+                log.error("AGE_INELIGIBLE: orphan audit emission also failed uid={}", uid, auditEx);
+            }
             throw new AgeIneligibleAbortedException(uid, e);
         }
         log.warn("AGE_INELIGIBLE: soft-deleted uid={} (deleteReason=age-ineligible, refresh tokens revoked)", uid);

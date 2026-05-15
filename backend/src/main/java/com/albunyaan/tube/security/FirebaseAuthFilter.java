@@ -82,9 +82,19 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                 String uid = decodedToken.getUid();
                 String email = decodedToken.getEmail();
 
-                // Server-authoritative status check against Firestore
+                // Server-authoritative status check against Firestore.
+                //
+                // Cubic R7 P1 — switched from cached findByUid() to
+                // findByUidUncached(). The cached path stores results in a
+                // per-JVM Caffeine @Cacheable("userStatus", TTL=60s); on a
+                // multi-node deployment a user blocked on node A continues to
+                // authenticate on node B for up to 60s. Bulk-action targeting
+                // already uses findByUidUncached for the same reason. The
+                // canonical Plan-D multi-instance cache (Redis + pub/sub
+                // eviction) remains deferred to a dedicated plan; until then,
+                // uncached is the only safe enforcement read.
                 try {
-                    Optional<User> userOpt = userRepository.findByUid(uid);
+                    Optional<User> userOpt = userRepository.findByUidUncached(uid);
                     if (userOpt.isPresent()) {
                         User u = userOpt.get();
                         if (u.isDeleted()) {
@@ -124,13 +134,29 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                         "SERVICE_UNAVAILABLE", "Account status check failed; try again.");
                     return;
                 } catch (RuntimeException e) {
-                    // Catch-all for unexpected Firestore client errors (network, NPE in mappers,
-                    // etc.) so the filter never bubbles a stack trace to the caller as a 500.
-                    logger.error("Unexpected error during status check for uid {}: {}",
+                    // Cubic R7 P1 — fail-open instead of 503-blanket.
+                    //
+                    // Pre-fix any unexpected error (Caffeine load failure, mapping
+                    // change, classloader weirdness, NPE in mappers) returned
+                    // SERVICE_UNAVAILABLE to the user, DoSing the entire
+                    // authenticated surface — even for non-status-sensitive
+                    // endpoints (e.g. /api/v1/categories) the user could
+                    // perfectly well call without status enforcement.
+                    //
+                    // The user already presented a valid Firebase ID token, so
+                    // their identity is established. We log the failure for
+                    // operators and let the request proceed; if it hits an
+                    // endpoint that re-reads status (e.g. an admin write),
+                    // that endpoint can re-check or trip on its own. The
+                    // known-Firestore-failure paths above (Execution /
+                    // Timeout / Interrupted) remain fail-closed because they
+                    // represent a confirmed inability to reach Firestore at
+                    // all — different signal than a runtime quirk in the
+                    // mapping layer.
+                    logger.error("Unexpected error during status check for uid {} — failing open: {}",
                         uid, e.getMessage(), e);
-                    writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
-                        "SERVICE_UNAVAILABLE", "Account status check failed; try again.");
-                    return;
+                    // fall through — request continues unauthorized-by-status
+                    // but with a valid identity attached below.
                 }
 
                 // Extract role from custom claims with allowlist validation

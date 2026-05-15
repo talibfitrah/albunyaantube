@@ -57,9 +57,23 @@ public class TombstoneGcScheduler {
 
     private int purgeOne(String type, Timestamp cutoff) {
         try {
+            // Cubic R7 P1 — orderBy("updatedAt", ASC) so the OLDEST tombstones
+            // are processed first.
+            //
+            // Pre-fix the query had no order-by; Firestore's default order on
+            // collection-group reads is effectively by document name (random
+            // hash). For a cohort exceeding MAX_DELETES_PER_RUN=20_000, each
+            // weekly run picked the same arbitrary 20k rows; rows older than
+            // 90 days BEHIND the head were never reached and accumulated
+            // forever, defeating the GC's purpose. ASC by updatedAt drains
+            // the oldest backlog first so eventual consistency holds even if
+            // the cohort temporarily exceeds the run budget. The compound
+            // index (deleted, updatedAt, __name__) supports this without
+            // extra Firestore work.
             QuerySnapshot snap = firestore.collectionGroup(type)
                     .whereEqualTo("deleted", true)
                     .whereLessThan("updatedAt", cutoff)
+                    .orderBy("updatedAt", com.google.cloud.firestore.Query.Direction.ASCENDING)
                     .limit(MAX_DELETES_PER_RUN)
                     .get().get(timeouts.getBulkQuery(), TimeUnit.SECONDS);
             int total = 0;
