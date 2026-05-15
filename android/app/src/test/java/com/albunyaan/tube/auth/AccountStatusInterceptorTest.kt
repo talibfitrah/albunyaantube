@@ -148,6 +148,23 @@ class AccountStatusInterceptorTest {
         verify(firebaseAuth, never()).signOut()
     }
 
+    /**
+     * Cubic R9 P1 — /api/account/ MUST be in the allow-list. Pre-R9 the
+     * R7 P0 prefix guard excluded it; AccountRepositoryImpl.fetchMe() hits
+     * /api/account/me on splash, so blocked users got bounced to sign-in
+     * with no terminal-dialog UX.
+     */
+    @Test fun `403 on api account path emits and signs out`() {
+        server.enqueue(MockResponse().setResponseCode(403).setBody(
+            """{"code":"ACCOUNT_BLOCKED","message":"x"}"""
+        ))
+
+        call(path = "/api/account/me").close()
+
+        verify(firebaseAuth).signOut()
+        verify(emitter).emit(AccountStatusEvent.Blocked)
+    }
+
     @Test fun `signOut is called before emit`() {
         server.enqueue(MockResponse().setResponseCode(403).setBody(
             """{"code":"ACCOUNT_BLOCKED","message":"x"}"""

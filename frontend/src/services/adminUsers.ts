@@ -20,12 +20,29 @@ function toBackendRole(role: AdminRole): string {
   return role.toLowerCase(); // API uses lowercase: 'admin', 'moderator'
 }
 
+// Cubic R9 P2 — 1:1 mapping with backend UserStatus enum. Pre-R9 the
+// fromBackendStatus mapper collapsed blocked/deleted/pending_profile to
+// 'DISABLED'; the toBackendStatus mapper sent the legacy alias 'inactive'
+// instead of the canonical 'blocked'. Both now mirror UserStatus.java.
 function toBackendStatus(status: AdminUserStatus): string {
-  return status === 'ACTIVE' ? 'active' : 'inactive';
+  switch (status) {
+    case 'ACTIVE':          return 'active';
+    case 'BLOCKED':         return 'blocked';
+    case 'DELETED':         return 'deleted';
+    case 'PENDING_PROFILE': return 'pending_profile';
+  }
 }
 
 function fromBackendStatus(status?: string): AdminUserStatus {
-  return status === 'active' ? 'ACTIVE' : 'DISABLED';
+  switch (status) {
+    case 'active':          return 'ACTIVE';
+    case 'blocked':         return 'BLOCKED';
+    case 'deleted':         return 'DELETED';
+    case 'pending_profile': return 'PENDING_PROFILE';
+    // Unknown / legacy values surface as BLOCKED rather than ACTIVE so a
+    // bug in the backend never silently re-enables a user in the admin UI.
+    default:                return 'BLOCKED';
+  }
 }
 
 function fromBackendRole(role?: string): AdminRole {

@@ -811,6 +811,9 @@ export const messages = {
       },
       status: {
         active: 'Active',
+        blocked: 'Blocked',
+        deleted: 'Deleted',
+        pendingProfile: 'Pending profile',
         disabled: 'Disabled'
       },
       actions: {
@@ -2242,6 +2245,9 @@ export const messages = {
       },
       status: {
         active: 'نشط',
+        blocked: 'محظور',
+        deleted: 'محذوف',
+        pendingProfile: 'بانتظار اكتمال الملف',
         disabled: 'معطّل'
       },
       actions: {
@@ -3504,6 +3510,9 @@ export const messages = {
       },
       status: {
         active: 'Actief',
+        blocked: 'Geblokkeerd',
+        deleted: 'Verwijderd',
+        pendingProfile: 'Profiel onvolledig',
         disabled: 'Uitgeschakeld'
       },
       actions: {

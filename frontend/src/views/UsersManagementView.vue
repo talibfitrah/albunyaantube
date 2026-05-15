@@ -100,7 +100,9 @@
         <select v-model="statusFilter" @change="handleFilterChange">
           <option value="all">{{ t('users.filters.statusAll') }}</option>
           <option value="ACTIVE">{{ t('users.status.active') }}</option>
-          <option value="DISABLED">{{ t('users.status.disabled') }}</option>
+          <option value="BLOCKED">{{ t('users.status.blocked') }}</option>
+          <option value="DELETED">{{ t('users.status.deleted') }}</option>
+          <option value="PENDING_PROFILE">{{ t('users.status.pendingProfile') }}</option>
         </select>
       </label>
     </div>
@@ -167,7 +169,7 @@
               <span class="role-tag">{{ roleLabel(user.role) }}</span>
             </td>
             <td>
-              <span :class="['status-badge', user.status === 'ACTIVE' ? 'status-active' : 'status-disabled']">
+              <span :class="['status-badge', `status-${user.status.toLowerCase()}`]">
                 {{ statusLabel(user.status) }}
               </span>
             </td>
@@ -656,7 +658,14 @@ function roleLabel(role: AdminRole) {
 }
 
 function statusLabel(status: AdminUserStatus) {
-  return status === 'ACTIVE' ? t('users.status.active') : t('users.status.disabled');
+  // Cubic R9 P2 — 4 distinct labels so admins can see blocked vs deleted
+  // vs pending-profile in the table column, not just active/disabled.
+  switch (status) {
+    case 'ACTIVE':          return t('users.status.active');
+    case 'BLOCKED':         return t('users.status.blocked');
+    case 'DELETED':         return t('users.status.deleted');
+    case 'PENDING_PROFILE': return t('users.status.pendingProfile');
+  }
 }
 
 function formatMaybeDate(value: string | null) {
@@ -772,7 +781,10 @@ async function handleDeactivate(user: AdminUser) {
   busyUserId.value = user.id;
   actionError.value = null;
   try {
-    await updateUserStatus(user.id, 'DISABLED');
+    // Cubic R9 P2 — pre-R9 this sent 'DISABLED' (mapped to backend
+    // 'inactive', a legacy alias). New semantics: deactivate-from-UI
+    // means BLOCK the user; the backend canonicalises to 'blocked'.
+    await updateUserStatus(user.id, 'BLOCKED');
     actionMessage.value = t('users.toasts.deactivated', { email: user.email });
     await reload();
   } catch (err) {
@@ -1206,9 +1218,21 @@ td {
   color: var(--color-success);
 }
 
-.status-disabled {
+/* Cubic R9 P2 — distinct visual treatments for each non-active state. */
+.status-blocked {
   background: var(--color-danger-soft);
   color: var(--color-danger);
+}
+
+.status-deleted {
+  background: var(--color-neutral-soft, var(--color-danger-soft));
+  color: var(--color-text-muted, var(--color-danger));
+  text-decoration: line-through;
+}
+
+.status-pending_profile {
+  background: var(--color-warning-soft, var(--color-success-soft));
+  color: var(--color-warning, var(--color-success));
 }
 
 .actions-cell {

@@ -2,7 +2,11 @@ import type { CursorPage } from './pagination';
 
 export type AdminRole = 'ADMIN' | 'MODERATOR';
 
-export type AdminUserStatus = 'ACTIVE' | 'DISABLED';
+// Cubic R9 P2 — expose all 4 backend statuses. Pre-R9 the mapper
+// collapsed BLOCKED, DELETED, PENDING_PROFILE to a single 'DISABLED'
+// bucket; bulk-recover decisions and the status filter dropdown were
+// blind to the distinction. Now mirrors UserStatus.java values.
+export type AdminUserStatus = 'ACTIVE' | 'BLOCKED' | 'DELETED' | 'PENDING_PROFILE';
 
 export interface AdminUser {
   id: string;

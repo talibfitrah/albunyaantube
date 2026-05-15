@@ -97,10 +97,33 @@ public class BulkUserService {
             }
         }
 
+        // Cubic R9 P2 — record a batchId + UID samples in the bulk audit row.
+        // Pre-fix the audit row only carried success/failure counts; an admin
+        // reviewing audit_logs could not answer "who was bulk-blocked in this
+        // operation?" The per-user lifecycle audits (USER_BLOCKED, etc) did
+        // exist but had no correlation key tying them back to the batch.
+        // We now: (a) mint a batchId UUID, (b) include first 20 success UIDs
+        // and first 20 failure UID/reason pairs as samples — bounded so a
+        // 500-user batch does not bloat the audit row beyond Firestore's
+        // 1 MiB document limit, (c) ALSO log the batchId on every per-user
+        // audit row via the details map (handled by the lifecycle methods
+        // accepting a batchId param — out of scope for this audit-shape fix,
+        // captured in the follow-up note below).
+        String batchId = java.util.UUID.randomUUID().toString();
+        int sampleLimit = 20;
+
         Map<String, Object> details = new HashMap<>();
         details.put("action", action.name().toLowerCase());
         details.put("successes", successes.size());
         details.put("failures", failures.size());
+        details.put("batchId", batchId);
+        details.put("successUidsSample", successes.stream().limit(sampleLimit).toList());
+        details.put("failureUidsSample", failures.stream()
+                .limit(sampleLimit)
+                .map(f -> Map.of("uid", f.uid(), "reason", f.reason()))
+                .toList());
+        if (successes.size() > sampleLimit) details.put("successUidsTruncated", true);
+        if (failures.size() > sampleLimit)  details.put("failureUidsTruncated", true);
         if (reason != null && !reason.isBlank()) details.put("reason", reason);
 
         auditLogService.log(

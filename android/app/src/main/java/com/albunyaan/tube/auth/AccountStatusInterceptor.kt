@@ -52,7 +52,16 @@ class AccountStatusInterceptor @Inject constructor(
         // Pinning the URL prefix to /api/admin/ and /api/v1/ scopes the
         // sign-out to our backend's lifecycle envelopes only.
         val path = request.url.encodedPath
-        if (!path.startsWith("/api/admin/") && !path.startsWith("/api/v1/")) {
+        // Cubic R9 P1 — /api/account/* must be in the allow-list. AccountController
+        // is the sole path the splash hits via AccountRepositoryImpl.fetchMe(); a
+        // blocked user signing in cold previously got 403 returned as HttpException
+        // → SplashRouter saw accountStatus == null → bounced to sign-in silently,
+        // FirebaseAuth.signOut() never ran, the terminal-dialog event was never
+        // emitted. The user looped back through splash → /me 403 → sign-in with no
+        // UX. Adding /api/account/ restores the R7 P0 envelope-pinning intent.
+        if (!path.startsWith("/api/admin/") &&
+            !path.startsWith("/api/v1/") &&
+            !path.startsWith("/api/account/")) {
             return response
         }
 
