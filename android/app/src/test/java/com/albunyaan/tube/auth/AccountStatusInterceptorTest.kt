@@ -3,7 +3,6 @@ package com.albunyaan.tube.auth
 import com.google.firebase.auth.FirebaseAuth
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import javax.inject.Provider
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
@@ -26,8 +25,6 @@ class AccountStatusInterceptorTest {
     private lateinit var server: MockWebServer
     private lateinit var firebaseAuth: FirebaseAuth
     private lateinit var emitter: AccountStatusEmitter
-    private lateinit var accountRepository: AccountRepository
-    private lateinit var accountRepositoryProvider: Provider<AccountRepository>
     private lateinit var client: OkHttpClient
 
     @Before
@@ -35,12 +32,13 @@ class AccountStatusInterceptorTest {
         server = MockWebServer().apply { start() }
         firebaseAuth = mock()
         emitter = mock()
-        accountRepository = mock()
-        accountRepositoryProvider = mock()
-        whenever(accountRepositoryProvider.get()).thenReturn(accountRepository)
+        // AUTH-INTERCEPT-DECOUPLE-01 — Provider<AccountRepository> dropped.
+        // AccountRepositoryImpl now self-subscribes to AuthRepository's
+        // accountStatusEvents (see AccountModule); the interceptor just
+        // emits, doesn't call signOut directly.
         val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
         client = OkHttpClient.Builder()
-            .addInterceptor(AccountStatusInterceptor(firebaseAuth, emitter, accountRepositoryProvider, moshi))
+            .addInterceptor(AccountStatusInterceptor(firebaseAuth, emitter, moshi))
             .build()
     }
 

@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
 import java.io.IOException
@@ -17,10 +18,39 @@ class AccountRepositoryImpl(
     private val service: AccountService,
     /** Linear backoff between retry attempts. 1s in prod; overridable for tests. */
     private val backoffMs: Long = 1_000L,
+    /**
+     * AUTH-INTERCEPT-DECOUPLE-01 — optional AuthRepository observer that, when
+     * supplied, clears the AccountState on terminal AccountStatusEvent (Blocked
+     * / Deleted / Unauthenticated). Replaces the Provider<AccountRepository>
+     * hack that AccountStatusInterceptor previously used to call signOut()
+     * imperatively. Null for the lightweight test-default constructor.
+     */
+    authStatusEvents: kotlinx.coroutines.flow.SharedFlow<AccountStatusEvent>? = null,
+    observerScope: kotlinx.coroutines.CoroutineScope? = null,
 ) : AccountRepository {
 
     private val _state = MutableStateFlow<AccountState>(AccountState.NotSignedIn)
     override val accountState: StateFlow<AccountState> = _state.asStateFlow()
+
+    init {
+        // AUTH-INTERCEPT-DECOUPLE-01 — when wired through Hilt the
+        // authStatusEvents flow and observerScope are non-null; we subscribe
+        // for the lifetime of this singleton and clear the local profile on
+        // any terminal event the interceptor emits. Pre-fix the interceptor
+        // had to inject a Provider<AccountRepository> and call signOut()
+        // imperatively (Hilt cycle break); now the dependency direction is
+        // reversed and the cycle is gone.
+        if (authStatusEvents != null && observerScope != null) {
+            observerScope.launch {
+                authStatusEvents.collect { event ->
+                    when (event) {
+                        AccountStatusEvent.Blocked,
+                        AccountStatusEvent.Deleted -> signOut()
+                    }
+                }
+            }
+        }
+    }
 
     override suspend fun fetchMe(): Result<AccountState.Loaded> = fetchMe(MAX_ATTEMPTS)
 

@@ -9,7 +9,6 @@ import okhttp3.Interceptor
 import okhttp3.Response
 import java.io.IOException
 import javax.inject.Inject
-import javax.inject.Provider
 import javax.inject.Singleton
 
 /**
@@ -28,13 +27,16 @@ import javax.inject.Singleton
 class AccountStatusInterceptor @Inject constructor(
     private val firebaseAuth: FirebaseAuth,
     private val emitter: AccountStatusEmitter,
-    // Cubic R5 P1 #24 — reset AccountRepository state on sign-out from this
-    // interceptor. Provider<> rather than direct injection breaks the
-    // Hilt cycle (AccountRepositoryImpl → AccountService → Retrofit →
-    // OkHttp → this interceptor).
-    private val accountRepositoryProvider: Provider<AccountRepository>,
     moshi: Moshi,
 ) : Interceptor {
+    // AUTH-INTERCEPT-DECOUPLE-01 — the previous Provider<AccountRepository>
+    // dependency is gone. AccountRepositoryImpl now collects accountStatusEvents
+    // directly (wired via AccountModule) and clears its state on any terminal
+    // event we emit below. Decoupling removes the Hilt construction cycle
+    // (AccountStatusInterceptor → OkHttp → AccountService → AccountRepository
+    // → AccountStatusInterceptor) — Provider broke it lazily but cold-start
+    // network calls fired from Application.onCreate could still block on
+    // provider.get() while the DI graph was still building.
 
     private val adapter = moshi.adapter(ApiErrorEnvelope::class.java)
 
@@ -102,17 +104,9 @@ class AccountStatusInterceptor @Inject constructor(
         // racing emissions (T6 already does — it routes terminal events
         // regardless of the live authState).
         firebaseAuth.signOut()
-        // Cubic R5 P1 #24 — also clear the AccountRepository in-memory state.
-        // Pre-fix, FirebaseAuth.signOut() did not propagate to AccountRepository,
-        // so its `_state` StateFlow still held the previous user's profile.
-        // SplashRouter and onResume both read that StateFlow; without the
-        // reset they treated the signed-out user as still signed-in until the
-        // next process restart.
-        try {
-            accountRepositoryProvider.get().signOut()
-        } catch (e: Exception) {
-            Log.w(TAG, "accountRepository.signOut() failed: ${e.message}")
-        }
+        // AUTH-INTERCEPT-DECOUPLE-01 — emit-only. AccountRepositoryImpl's
+        // bus collector (wired in AccountModule) calls its own signOut on
+        // terminal events, replacing the Provider-based imperative call.
         emitter.emit(event)
         return response
     }
