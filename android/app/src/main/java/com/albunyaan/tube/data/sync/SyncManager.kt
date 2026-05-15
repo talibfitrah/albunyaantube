@@ -130,13 +130,11 @@ class SyncManager @Inject constructor(
             "playlists"     to (syncState.cursorFor(uid, "playlists")     ?: 0L),
             "favorites"     to (syncState.cursorFor(uid, "favorites")     ?: 0L),
         )
-        // Compound-cursor tiebreakers (cubic R3/R4 P1) — only persisted for
-        // the duration of the pullAll loop. After process death the first
-        // SYNC-CURSOR-PERSIST-01 (Cubic R7 P1) — persisted in Room v9
-        // (MIGRATION_8_9 adds last_doc_id to sync_state). The (cursor_ts,
-        // last_doc_id) pair survives process death, eliminating the
-        // post-restart row-drop window for rows tied on the same
-        // millisecond at the previous page boundary.
+        // Compound-cursor tiebreakers (cubic R3/R4 P1), persisted in Room v9
+        // (SYNC-CURSOR-PERSIST-01 + MIGRATION_8_9 add last_doc_id to
+        // sync_state). The (cursor_ts, last_doc_id) pair survives process
+        // death, eliminating the post-restart row-drop window for rows tied
+        // on the same millisecond at the previous page boundary.
         val lastIds = mutableMapOf<String, String?>(
             "subscriptions" to syncState.cursorIdFor(uid, "subscriptions"),
             "playlists"     to syncState.cursorIdFor(uid, "playlists"),
@@ -254,9 +252,26 @@ class SyncManager @Inject constructor(
                         last_sync_at = System.currentTimeMillis()))
                     cursors["favorites"] = it
                 }
-                lastIds["subscriptions"] = body.subscriptions.nextCursorId
-                lastIds["playlists"]     = body.playlists.nextCursorId
-                lastIds["favorites"]     = body.favorites.nextCursorId
+                // Cubic R-final2 P2 — only overwrite lastIds for the types
+                // that advanced this iteration. Pre-fix lastIds was set to
+                // body.X.nextCursorId unconditionally; when a type was
+                // exhausted mid-loop (returned nextCursor=null and
+                // nextCursorId=null) while another type still had pages,
+                // the next iteration sent (cursor=T_old, lastDocId=null) for
+                // the exhausted type. A new row written by another device
+                // with updated_at=T_old could be silently dropped by the
+                // server's strict-> branch (no tiebreaker). Pairing the
+                // update with the cursor update keeps (cursor_ts, doc_id)
+                // consistent across iterations.
+                body.subscriptions.nextCursor?.let {
+                    lastIds["subscriptions"] = body.subscriptions.nextCursorId
+                }
+                body.playlists.nextCursor?.let {
+                    lastIds["playlists"] = body.playlists.nextCursorId
+                }
+                body.favorites.nextCursor?.let {
+                    lastIds["favorites"] = body.favorites.nextCursorId
+                }
             }
             // Cubic R-final P3 — known bounded waste: when one type is
             // exhausted (returned null) but another still has more pages,

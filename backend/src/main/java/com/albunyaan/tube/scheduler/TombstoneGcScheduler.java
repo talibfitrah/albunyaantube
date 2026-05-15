@@ -76,6 +76,11 @@ public class TombstoneGcScheduler {
                     .orderBy("updatedAt", com.google.cloud.firestore.Query.Direction.ASCENDING)
                     .limit(MAX_DELETES_PER_RUN)
                     .get().get(timeouts.getBulkQuery(), TimeUnit.SECONDS);
+            // Cubic R-final2 P2 — count only committed deletes. Pre-fix
+            // `total++` ran in the row loop before commit; on batch commit
+            // failure the rows were NOT deleted, but the counter (and the
+            // Micrometer purge metric) already included them, overstating
+            // GC progress to operators.
             int total = 0;
             WriteBatch batch = firestore.batch();
             int inBatch = 0;
@@ -87,13 +92,14 @@ public class TombstoneGcScheduler {
                 // Firestore has seen a later write, the batch commit fails.
                 batch.delete(d.getReference(), com.google.cloud.firestore.Precondition.updatedAt(d.getUpdateTime()));
                 inBatch++;
-                total++;
                 if (inBatch == WRITE_BATCH_SIZE) {
                     try {
                         batch.commit().get(timeouts.getWrite(), TimeUnit.SECONDS);
+                        total += inBatch;
                     } catch (Exception commitErr) {
                         // Partial-batch resurrection — log + continue with next batch
-                        // rather than aborting the whole run.
+                        // rather than aborting the whole run. Skipped rows do not
+                        // count toward `total`.
                         log.warn("tombstone.gc.batch.commit.failed type={} batchSize={} err={}",
                                 type, inBatch, commitErr.getMessage());
                     }
@@ -104,6 +110,7 @@ public class TombstoneGcScheduler {
             if (inBatch > 0) {
                 try {
                     batch.commit().get(timeouts.getWrite(), TimeUnit.SECONDS);
+                    total += inBatch;
                 } catch (Exception commitErr) {
                     log.warn("tombstone.gc.batch.commit.failed type={} batchSize={} err={}",
                             type, inBatch, commitErr.getMessage());

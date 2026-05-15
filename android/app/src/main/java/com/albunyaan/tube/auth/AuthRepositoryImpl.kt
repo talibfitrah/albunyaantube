@@ -76,7 +76,15 @@ class AuthRepositoryImpl @Inject constructor(
         Unit
     }
 
-    /** suspend reserved for future server-side token revocation. */
+    /**
+     * Cubic R-final2 P3 — kept suspend on the interface for future
+     * server-side token revocation (revokeRefreshTokens via Firebase
+     * Admin SDK + an /api/account/sign-out endpoint), but the current
+     * body does no async work. Callers should NOT rely on awaiting this
+     * to imply session revocation has completed server-side; today it
+     * only clears the FirebaseAuth local state and the
+     * AuthStateListener fires synchronously.
+     */
     override suspend fun signOut() {
         firebaseAuth.signOut()
         // AuthStateListener will flip _authState to SignedOut; we do not need

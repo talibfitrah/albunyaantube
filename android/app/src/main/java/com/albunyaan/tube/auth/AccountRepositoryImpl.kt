@@ -48,8 +48,11 @@ class AccountRepositoryImpl(
         if (authStatusEvents != null && observerScope != null) {
             observerScope.launch {
                 authStatusEvents.collect { event ->
-                    when (event) {
-                        AccountStatusEvent.Blocked,
+                    // Cubic R-final2 P2 — exhaustive WHEN-as-EXPRESSION so a
+                    // future variant added to AccountStatusEvent forces a
+                    // compile error here instead of silently no-opping.
+                    val unused: Unit = when (event) {
+                        AccountStatusEvent.Blocked -> signOut()
                         AccountStatusEvent.Deleted -> signOut()
                     }
                 }

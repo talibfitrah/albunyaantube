@@ -81,11 +81,26 @@ public class AccountController {
         final String seedRole = principal.getRole() != null && !principal.getRole().isBlank()
                 ? principal.getRole()
                 : "user";
-        User user = userRepository.getOrCreate(uid, () -> {
-            User fresh = new User(uid, principal.getEmail(), null, seedRole);
-            fresh.setStatusEnum(UserStatus.PENDING_PROFILE);
-            return fresh;
-        });
+        // Cubic R-final2 P2 — wire the typed Lazy* envelope. Pre-fix the
+        // checked exceptions from getOrCreate were declared throws and the
+        // Lazy* classes + their @ExceptionHandler mappings were unreachable
+        // dead code. Translating here lets the @ExceptionHandler differentiate
+        // a lazy-create timeout (504) from a generic Firestore timeout (500).
+        final User user;
+        try {
+            user = userRepository.getOrCreate(uid, () -> {
+                User fresh = new User(uid, principal.getEmail(), null, seedRole);
+                fresh.setStatusEnum(UserStatus.PENDING_PROFILE);
+                return fresh;
+            });
+        } catch (TimeoutException e) {
+            throw new LazyCreateTimeoutException(uid, e);
+        } catch (ExecutionException e) {
+            throw new LazyCreateExecutionException(uid, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new LazyCreateInterruptedException(uid, e);
+        }
         return ResponseEntity.ok(AccountMeResponse.from(user));
     }
 

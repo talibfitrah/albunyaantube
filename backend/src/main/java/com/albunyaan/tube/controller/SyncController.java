@@ -68,6 +68,12 @@ public class SyncController {
     private static boolean isValidCursorId(String id) {
         if (id == null || id.isEmpty()) return true;
         if (id.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_CURSOR_ID_BYTES) return false;
+        // Cubic R-final2 P2 — Firestore reserves several docId patterns
+        // (".", "..", "__name__", etc.). Pre-fix these passed our validator
+        // and produced a Firestore-side 500 at startAfter() instead of a
+        // clean 400 at the controller boundary.
+        if (".".equals(id) || "..".equals(id)) return false;
+        if (id.startsWith("__") && id.endsWith("__")) return false;
         for (int i = 0; i < id.length(); i++) {
             char c = id.charAt(i);
             if (c == '/' || c < 0x20 || c == 0x7f) return false;
