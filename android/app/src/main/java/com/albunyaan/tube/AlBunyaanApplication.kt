@@ -62,6 +62,17 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
     @Inject
     lateinit var okHttpClient: okhttp3.OkHttpClient
 
+    /**
+     * Cubic R-final5 P1 — eager-wire the sign-out collector that calls
+     * SyncManager.unbind() on AccountStatusEvent.SignedOut. Hilt provides
+     * the collector lazily by default; injecting the marker here forces
+     * provideSignOutCollector to run during application graph construction
+     * so the SharedFlow subscription is live before the user can sign out.
+     */
+    @Inject
+    @Suppress("unused")
+    lateinit var signOutSyncCollector: com.albunyaan.tube.di.SignOutSyncCollector
+
     /** Application-scoped coroutine scope for lifecycle-triggered sync work. */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -226,6 +237,22 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
+            // Cubic R-final5 P0 — pin WorkManager to the main process.
+            //
+            // SyncManager.syncMutex is a singleton field on the Hilt-singleton
+            // SyncManager. WorkManager jobs default to the main process, so the
+            // mutex serializes correctly today. If anything ever adds
+            // android:process to a service or initializer (or the OS spawns the
+            // worker in :remote), a second SyncManager would exist in the other
+            // process with its own Mutex — both racing on the SAME SQLite DB
+            // for the read→pull→cursor-write cycle. SQLite serializes writes,
+            // but the read+write cycle would no longer be atomic, leading to
+            // duplicate page fetches and missed deletions.
+            //
+            // Setting the default process name explicitly is the supported way
+            // to enforce "WorkManager runs in this process only" (per
+            // androidx.work.Configuration.Builder.setDefaultProcessName javadoc).
+            .setDefaultProcessName(packageName)
             .build()
 
     override fun onTrimMemory(level: Int) {

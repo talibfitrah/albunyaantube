@@ -90,9 +90,16 @@ class AccountStatusInterceptor @Inject constructor(
 
         val envelope = try {
             adapter.fromJson(peeked)
-        } catch (_: JsonDataException) {
+        } catch (e: JsonDataException) {
+            // Cubic R-final5 P2 — log malformed envelopes at WARN so a
+            // backend bug returning malformed account-status JSON doesn't
+            // fail open silently. Pre-fix both catches returned null and
+            // the caller treated it as "no envelope, proceed" — the
+            // sign-out + terminal-dialog UX never fired.
+            Log.w(TAG, "malformed 403 envelope JSON (path=${request.url.encodedPath}): ${e.message}")
             null
-        } catch (_: IOException) {
+        } catch (e: IOException) {
+            Log.w(TAG, "I/O error parsing 403 envelope (path=${request.url.encodedPath}): ${e.message}")
             null
         }
 

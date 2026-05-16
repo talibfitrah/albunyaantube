@@ -54,6 +54,13 @@ class AccountRepositoryImpl(
                     val unused: Unit = when (event) {
                         AccountStatusEvent.Blocked -> signOut()
                         AccountStatusEvent.Deleted -> signOut()
+                        // Cubic R-final5 P1 — sign-out is initiated by the
+                        // user (not a 403 envelope), so AccountRepository
+                        // doesn't need to react. The SyncManager collector
+                        // wired in SyncModule consumes this event for
+                        // unbind(). The branch keeps the `when` exhaustive
+                        // (compile-error on future sealed variants).
+                        AccountStatusEvent.SignedOut -> Unit
                     }
                 }
             }

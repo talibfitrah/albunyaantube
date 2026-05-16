@@ -2,6 +2,8 @@ package com.albunyaan.tube.auth
 
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Interceptor
@@ -69,8 +71,26 @@ class FirebaseAuthInterceptor @Inject constructor(
 
         if (response.code == 401 && response.isFirebaseUnauthorized()) {
             response.close()
+            // Cubic R-final5 P2 — singleflight the force-refresh.
+            // Pre-fix N parallel 401s each entered getIdToken(true) and
+            // serialised on the SDK's internal task bridge anyway, but each
+            // dispatcher thread blocked separately. The Mutex coalesces all
+            // concurrent refreshes; once one succeeds the cached token
+            // returned by the next withLock holder is the just-refreshed
+            // value, so the second/third callers don't pay the network round
+            // trip again.
             val refreshed = try {
-                runBlocking { withTimeoutOrNull(TOKEN_REFRESH_TIMEOUT_MS) { user.getIdToken(true).await().token } }
+                runBlocking {
+                    withTimeoutOrNull(TOKEN_REFRESH_TIMEOUT_MS) {
+                        refreshMutex.withLock {
+                            // Re-check inside the lock — a prior holder may
+                            // have just refreshed; getIdToken(false) returns
+                            // the cached fresh token instantly.
+                            user.getIdToken(false).await().token
+                                ?: user.getIdToken(true).await().token
+                        }
+                    }
+                }
             } catch (_: Exception) {
                 null
             }
@@ -106,5 +126,13 @@ class FirebaseAuthInterceptor @Inject constructor(
         // longer on the force-refresh retry since it always hits the network.
         private const val TOKEN_FETCH_TIMEOUT_MS = 3_000L
         private const val TOKEN_REFRESH_TIMEOUT_MS = 5_000L
+
+        /**
+         * Cubic R-final5 P2 — process-wide singleflight gate for the
+         * force-refresh path. Static so all interceptor instances (only
+         * one in practice via @Singleton, but the SDK caller could
+         * theoretically have parallel chains) coalesce.
+         */
+        private val refreshMutex = Mutex()
     }
 }

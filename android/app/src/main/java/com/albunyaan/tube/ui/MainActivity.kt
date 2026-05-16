@@ -128,7 +128,13 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 authRepository.accountStatusEvents.collect { event ->
-                    showAccountStatusDialog(event)
+                    // Cubic R-final5 P1 — SignedOut is user-initiated; no
+                    // terminal dialog. Reserved for sync subsystem unbind
+                    // (wired in SyncModule). All other events still surface
+                    // the dialog explaining why the user was bounced out.
+                    if (event !is AccountStatusEvent.SignedOut) {
+                        showAccountStatusDialog(event)
+                    }
                 }
             }
         }
@@ -140,6 +146,10 @@ class MainActivity : AppCompatActivity() {
                 R.string.account_blocked_title to R.string.account_blocked_body
             AccountStatusEvent.Deleted ->
                 R.string.account_deleted_title to R.string.account_deleted_body
+            // Filtered out before reaching this dialog (see observeAccountStatusEvents).
+            // Branch present to keep the `when` exhaustive at compile time.
+            AccountStatusEvent.SignedOut ->
+                R.string.account_blocked_title to R.string.account_blocked_body
         }
         MaterialAlertDialogBuilder(this)
             .setTitle(titleRes)

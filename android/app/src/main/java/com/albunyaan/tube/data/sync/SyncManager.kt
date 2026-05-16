@@ -94,6 +94,19 @@ class SyncManager @Inject constructor(
                 // with no account binding *and* freshly-wiped tables — a re-launch
                 // would then hit the `b == null` branch and re-merge as a fresh user
                 // while the old uid's rows are already gone (Plan D account-switch).
+                //
+                // Cubic R-final5 P1 — tag any user_id='' rows to b.user_id BEFORE
+                // wiping. MIGRATION_7_8 stamped every pre-v8 row with user_id=''
+                // (the column didn't exist before v8). Pre-fix the switch branch
+                // wipeForUid(A) skipped those rows (their user_id was '' not A),
+                // then runMergeLocked → tagAnonRowsToUid(B) re-tagged them to the
+                // new user, effectively transferring A's local data to B's account
+                // and pushing it as B's data. Tagging '' → A here unifies the
+                // anon-era rows with the previous owner so wipeForUid(A) catches
+                // them on the same line.
+                subs.tagAnonRowsToUid(b.user_id)
+                playlists.tagAnonRowsToUid(b.user_id)
+                favorites.tagAnonRowsToUid(b.user_id)
                 db.withTransaction {
                     subs.wipeForUid(b.user_id)
                     playlists.wipeForUid(b.user_id)
@@ -143,15 +156,39 @@ class SyncManager @Inject constructor(
 
         var more: Boolean
         do {
-            val resp = api.pull(
-                cursors["subscriptions"]!!,
-                cursors["playlists"]!!,
-                cursors["favorites"]!!,
-                lastIds["subscriptions"],
-                lastIds["playlists"],
-                lastIds["favorites"],
-            )
-            if (!resp.isSuccessful) return
+            // Cubic R-final5 P1 — bounded retry on transient 5xx mid-pull.
+            //
+            // Pre-fix a single 5xx aborted the loop and we returned silently.
+            // Prior page iterations had already persisted last_doc_id / cursor,
+            // so the partial advance left the local view ahead of confirmed
+            // pulled rows — pushDirty then drained against a stale view.
+            // Three attempts with 200ms / 400ms backoff matches the push-side
+            // transient-failure handling. A persistent 4xx still aborts (the
+            // server is telling us the request is bad, not stalled); only
+            // 5xx and IOExceptions retry.
+            var resp: retrofit2.Response<com.albunyaan.tube.data.sync.dto.SyncResponseDto>? = null
+            for (attempt in 1..3) {
+                val attemptResp = try {
+                    api.pull(
+                        cursors["subscriptions"]!!,
+                        cursors["playlists"]!!,
+                        cursors["favorites"]!!,
+                        lastIds["subscriptions"],
+                        lastIds["playlists"],
+                        lastIds["favorites"],
+                    )
+                } catch (e: java.io.IOException) {
+                    if (attempt < 3) { kotlinx.coroutines.delay(200L * attempt); continue }
+                    return
+                }
+                if (attemptResp.isSuccessful) { resp = attemptResp; break }
+                val code = attemptResp.code()
+                if (code in 500..599 && attempt < 3) {
+                    kotlinx.coroutines.delay(200L * attempt); continue
+                }
+                resp = attemptResp; break
+            }
+            if (resp == null || !resp.isSuccessful) return
             val body = resp.body() ?: return
 
             db.withTransaction {
@@ -371,6 +408,11 @@ class SyncManager @Inject constructor(
             when (outcome) {
                 PushOutcome.AUTH_FAILED -> { authFailed = true; break }
                 PushOutcome.TRANSIENT_FAILURE -> hadTransientFailure = true
+                PushOutcome.PERMANENT_FAILURE -> {
+                    // Cubic R-final5 P2 — drop dirty so we don't loop forever
+                    // on a malformed/conflicting row.
+                    subs.clearDirty(uid, row.channelId, System.currentTimeMillis())
+                }
                 PushOutcome.OK -> { /* keep going */ }
             }
         }
@@ -397,6 +439,9 @@ class SyncManager @Inject constructor(
             when (outcome) {
                 PushOutcome.AUTH_FAILED -> { authFailed = true; break }
                 PushOutcome.TRANSIENT_FAILURE -> hadTransientFailure = true
+                PushOutcome.PERMANENT_FAILURE -> {
+                    playlists.clearDirty(uid, row.playlistId, System.currentTimeMillis())
+                }
                 PushOutcome.OK -> { /* keep going */ }
             }
         }
@@ -423,6 +468,9 @@ class SyncManager @Inject constructor(
             when (outcome) {
                 PushOutcome.AUTH_FAILED -> { authFailed = true; break }
                 PushOutcome.TRANSIENT_FAILURE -> hadTransientFailure = true
+                PushOutcome.PERMANENT_FAILURE -> {
+                    favorites.clearDirty(uid, row.videoId, System.currentTimeMillis())
+                }
                 PushOutcome.OK -> { /* keep going */ }
             }
         }
@@ -452,7 +500,7 @@ class SyncManager @Inject constructor(
         }
     }
 
-    private enum class PushOutcome { OK, AUTH_FAILED, TRANSIENT_FAILURE }
+    private enum class PushOutcome { OK, AUTH_FAILED, PERMANENT_FAILURE, TRANSIENT_FAILURE }
 
     /**
      * Classify an HTTP response so the drain loop can decide whether to keep
@@ -460,6 +508,10 @@ class SyncManager @Inject constructor(
      * - 2xx → onSuccess(body), OK
      * - 404 → on404(), OK (idempotent DELETE; nothing to do)
      * - 401/403 → AUTH_FAILED (AccountStatusInterceptor signs out)
+     * - 400/409/422 → PERMANENT_FAILURE — server says the payload is bad,
+     *   retrying with the same payload will keep failing. Cubic R-final5 P2:
+     *   drop the dirty flag with a local-WARN so subsequent pulls don't
+     *   block on a forever-failing push.
      * - 5xx/429/network/unknown → TRANSIENT_FAILURE (row stays dirty, retry)
      */
     private suspend inline fun <T> push(
@@ -472,6 +524,11 @@ class SyncManager @Inject constructor(
             resp.isSuccessful -> { resp.body()?.let { onSuccess(it) }; PushOutcome.OK }
             resp.code() == 404 -> { on404(); PushOutcome.OK }
             resp.code() == 401 || resp.code() == 403 -> PushOutcome.AUTH_FAILED
+            resp.code() == 400 || resp.code() == 409 || resp.code() == 422 -> {
+                android.util.Log.w("SyncManager",
+                    "Push permanent-fail code=${resp.code()} — dropping dirty flag to unblock pull")
+                PushOutcome.PERMANENT_FAILURE
+            }
             else -> PushOutcome.TRANSIENT_FAILURE
         }
     }

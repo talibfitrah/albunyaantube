@@ -294,23 +294,43 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
  */
 val MIGRATION_7_8 = object : Migration(7, 8) {
     override fun migrate(db: SupportSQLiteDatabase) {
+        // Cubic R-final5 P0 — defensive ALTER TABLE wrapper.
+        //
+        // Pre-fix each ALTER ran unguarded. A device whose v7 schema is
+        // missing any of these three tables (Auto-Backup partial restore,
+        // sideload, manual sqlite intervention) threw "no such table" mid-
+        // migration → Room bumped to destructiveMigration → ALL local
+        // tables wiped. The try/catch below makes per-table ALTER failures
+        // local: a missing table loses its own data only (already lost
+        // since the table didn't exist), other tables' data is preserved.
+        //
+        // SQLite's ALTER TABLE … ADD COLUMN doesn't support IF NOT EXISTS,
+        // so a re-run on a partially-applied v7→v8 (e.g., crash mid-batch)
+        // would also throw — the try/catch absorbs that too.
+        fun tryAlter(table: String, ddl: String) {
+            try { db.execSQL(ddl) } catch (e: android.database.SQLException) {
+                android.util.Log.w("Migrations",
+                    "MIGRATION_7_8: skipping ALTER on $table — likely missing/already-applied: ${e.message}")
+            }
+        }
+
         // subscribed_channels
-        db.execSQL("ALTER TABLE subscribed_channels ADD COLUMN user_id    TEXT    NOT NULL DEFAULT ''")
-        db.execSQL("ALTER TABLE subscribed_channels ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
-        db.execSQL("ALTER TABLE subscribed_channels ADD COLUMN deleted    INTEGER NOT NULL DEFAULT 0")
-        db.execSQL("ALTER TABLE subscribed_channels ADD COLUMN dirty      INTEGER NOT NULL DEFAULT 0")
+        tryAlter("subscribed_channels", "ALTER TABLE subscribed_channels ADD COLUMN user_id    TEXT    NOT NULL DEFAULT ''")
+        tryAlter("subscribed_channels", "ALTER TABLE subscribed_channels ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+        tryAlter("subscribed_channels", "ALTER TABLE subscribed_channels ADD COLUMN deleted    INTEGER NOT NULL DEFAULT 0")
+        tryAlter("subscribed_channels", "ALTER TABLE subscribed_channels ADD COLUMN dirty      INTEGER NOT NULL DEFAULT 0")
 
         // saved_playlists
-        db.execSQL("ALTER TABLE saved_playlists ADD COLUMN user_id    TEXT    NOT NULL DEFAULT ''")
-        db.execSQL("ALTER TABLE saved_playlists ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
-        db.execSQL("ALTER TABLE saved_playlists ADD COLUMN deleted    INTEGER NOT NULL DEFAULT 0")
-        db.execSQL("ALTER TABLE saved_playlists ADD COLUMN dirty      INTEGER NOT NULL DEFAULT 0")
+        tryAlter("saved_playlists", "ALTER TABLE saved_playlists ADD COLUMN user_id    TEXT    NOT NULL DEFAULT ''")
+        tryAlter("saved_playlists", "ALTER TABLE saved_playlists ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+        tryAlter("saved_playlists", "ALTER TABLE saved_playlists ADD COLUMN deleted    INTEGER NOT NULL DEFAULT 0")
+        tryAlter("saved_playlists", "ALTER TABLE saved_playlists ADD COLUMN dirty      INTEGER NOT NULL DEFAULT 0")
 
         // favorite_videos
-        db.execSQL("ALTER TABLE favorite_videos ADD COLUMN user_id    TEXT    NOT NULL DEFAULT ''")
-        db.execSQL("ALTER TABLE favorite_videos ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
-        db.execSQL("ALTER TABLE favorite_videos ADD COLUMN deleted    INTEGER NOT NULL DEFAULT 0")
-        db.execSQL("ALTER TABLE favorite_videos ADD COLUMN dirty      INTEGER NOT NULL DEFAULT 0")
+        tryAlter("favorite_videos", "ALTER TABLE favorite_videos ADD COLUMN user_id    TEXT    NOT NULL DEFAULT ''")
+        tryAlter("favorite_videos", "ALTER TABLE favorite_videos ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+        tryAlter("favorite_videos", "ALTER TABLE favorite_videos ADD COLUMN deleted    INTEGER NOT NULL DEFAULT 0")
+        tryAlter("favorite_videos", "ALTER TABLE favorite_videos ADD COLUMN dirty      INTEGER NOT NULL DEFAULT 0")
 
         // sync_state — composite PK (entityType, user_id)
         db.execSQL("""

@@ -215,6 +215,23 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
                 authRepository.signOut()
             }
         }
+        // Cubic R-final5 P2 — emit AccountStatusEvent.Deleted/Blocked when the
+        // cold-start splash detects a terminal account state, so the UI layer
+        // (MainActivity terminal-dialog observer) can show the user *why*
+        // they were bounced back to sign-in. Pre-fix the splash silently
+        // routed to sign-in for both BLOCKED and DELETED with no signal —
+        // the warm-path AccountStatusInterceptor only fires during an active
+        // session, leaving cold-start launches into a deleted account with
+        // no UX feedback.
+        if (signedIn) {
+            when (accountStatus) {
+                AccountStatus.DELETED -> (authRepository as? com.albunyaan.tube.auth.AccountStatusEmitter)
+                    ?.emit(com.albunyaan.tube.auth.AccountStatusEvent.Deleted)
+                AccountStatus.BLOCKED -> (authRepository as? com.albunyaan.tube.auth.AccountStatusEmitter)
+                    ?.emit(com.albunyaan.tube.auth.AccountStatusEvent.Blocked)
+                else -> Unit
+            }
+        }
         val action = SplashRouter.decideSplashRoute(
             onboardingCompleted = onboardingCompleted,
             signedIn = signedIn,

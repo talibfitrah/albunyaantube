@@ -86,6 +86,18 @@ class AuthRepositoryImpl @Inject constructor(
      * AuthStateListener fires synchronously.
      */
     override suspend fun signOut() {
+        // Cubic R-final5 P1 — emit SignedOut BEFORE firebaseAuth.signOut.
+        // The SyncManager collector wired in SyncModule consumes this event
+        // and calls SyncManager.unbind(), which:
+        //   - cancels pending pushDirty(oldUid) retry coroutines
+        //   - clears the account_binding row
+        //   - clears sync_state rows for the old uid
+        // Pre-fix none of that ran on sign-out, so a subsequent fresh sign-in
+        // inherited the prior user's cursor state. Emitting before signOut
+        // ensures the collector observes a valid uid via FirebaseAuth (the
+        // collector pairs the event with the current uid for the unbind
+        // call).
+        _accountStatusEvents.tryEmit(AccountStatusEvent.SignedOut)
         firebaseAuth.signOut()
         // AuthStateListener will flip _authState to SignedOut; we do not need
         // to set it here. Setting it twice can race with the listener.

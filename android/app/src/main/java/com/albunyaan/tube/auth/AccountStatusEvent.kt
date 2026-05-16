@@ -11,4 +11,11 @@ package com.albunyaan.tube.auth
 sealed interface AccountStatusEvent {
     data object Blocked : AccountStatusEvent
     data object Deleted : AccountStatusEvent
+    /**
+     * Cubic R-final5 P1 — emitted on user-initiated sign-out so subsystems
+     * holding per-account state (SyncManager.unbind, pushDirty retry
+     * coroutines, etc.) can release resources without creating a Hilt
+     * construction cycle on AuthRepository.
+     */
+    data object SignedOut : AccountStatusEvent
 }
