@@ -116,10 +116,9 @@ public class VideoRepository {
      * Used by ArchiveProjector to convert sync rows into virtual tombstones.
      * False if the video is not in the registry (it isn't tracked = not gated).
      *
-     * <p>Cubic R-final4 P2 — cached with 30s TTL. See
+     * <p>Cubic R-final7 P0 — cache reverted. See
      * {@link ChannelRepository#isArchivedById(String)} for rationale.
      */
-    @Cacheable(value = CacheConfig.CACHE_VIDEO_ARCHIVE_FLAG, key = "#youtubeId")
     public boolean isArchivedById(String youtubeId) {
         try {
             return findByYoutubeId(youtubeId)

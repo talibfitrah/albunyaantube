@@ -1,20 +1,27 @@
 package com.albunyaan.tube.data.me
 
 import com.albunyaan.tube.R
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 
 /**
- * ANDROID-PERSONAL-03 / T3: rolling 7-day bucket math for the Me-tab feed.
+ * ANDROID-PERSONAL-03 / T3: ISO-week bucket math for the Me-tab feed.
  *
- * The Me-tab now renders content grouped by week. Buckets are NOT ISO weeks
- * (Mon-Sun) — they are rolling 7-day windows from `now`:
- *  - weekIndex=0: now-7d to now ("This week")
- *  - weekIndex=1: now-14d to now-7d ("Last week")
- *  - weekIndex=N: now-(N+1)*7d to now-N*7d ("N weeks ago")
+ * Cubic R-final7 / weekly grouping design — boundaries are ISO weeks
+ * (Monday → Sunday), per the design answer from the 2026-05-16 session:
+ *  - weekIndex=0: Monday of the current ISO week → next Monday ("This week")
+ *  - weekIndex=1: Monday of the previous ISO week → previous Monday's next ("Last week")
+ *  - weekIndex=N: N ISO weeks back from this Monday
+ *
+ * Prior implementation used rolling 7-day windows from `now`. ISO weeks
+ * give predictable calendar alignment — a user's "this week" matches their
+ * calendar app — at the cost of week 0 sometimes being only a single day
+ * (when the user opens the app on a Monday morning, week 0 is just today).
  *
  * The `now` argument is the test seam — production code passes
- * [System.currentTimeMillis]. Rolling boundaries mean "today is Sunday" is
- * NOT a special case: the only thing that matters is the timestamp at which
- * `now` was computed, which is per-call.
+ * [System.currentTimeMillis].
  *
  * Empty weeks (no shorts AND no videos) are skipped at the ViewModel layer;
  * this class does not concern itself with content.
@@ -25,7 +32,9 @@ data class WeekBucket(
     val endMs: Long,
 ) {
     companion object {
-        /** 7 days in milliseconds. */
+        /** 7 days in milliseconds. Retained for legacy callers; new code should
+         *  not rely on a fixed 7-day window because DST transitions shift the
+         *  ISO week boundary by ±1 hour. */
         const val WEEK_MS: Long = 7L * 24L * 60L * 60L * 1_000L
 
         /**
@@ -35,30 +44,31 @@ data class WeekBucket(
          * (persisted as `deepPageUrl = DEEP_PAGE_EOF_SENTINEL` in the
          * refresh state), not this cap.
          *
-         * ANDROID-PERSONAL-03 round 8 [field-bug]: the previous value of
-         * 52 (= 1 year) caused users to "hit bottom" after scrolling a
-         * single year of a long-running channel. A daily-driver scholar
-         * channel with 14+ years of uploads has thousands of videos, but
-         * loadNextWeek would set reachedEnd=true at week 52 and refuse
-         * to load more.
-         *
-         * 5000 weeks ≈ 96 years — safely beyond any real YouTube channel
-         * (the platform launched in 2005, max ~21 years old). At 5000
-         * weeks the UI bookkeeping is bounded by the cache size (rows
-         * paged in by NewPipe), not this number.
+         * 5000 weeks ≈ 96 years — safely beyond any real YouTube channel.
          */
         const val MAX_WEEKS_BACK: Int = 5_000
 
         /**
          * Build a bucket for `weekIndex` relative to `now`. The window is
          * half-open: `[startMs, endMs)`.
+         *
+         * Cubic R-final7 — ISO-week boundaries. The Monday of the ISO week
+         * containing `now` is the start of weekIndex=0. Subsequent weeks
+         * step back one ISO week at a time. Uses the system default zone
+         * for the day-boundary calculation so users see weeks aligned to
+         * their local calendar.
          */
         fun forIndex(weekIndex: Int, now: Long): WeekBucket {
             require(weekIndex >= 0) { "weekIndex must be non-negative, got $weekIndex" }
+            val zone = ZoneId.systemDefault()
+            val nowDate = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+            val thisMonday = nowDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            val targetMonday = thisMonday.minusWeeks(weekIndex.toLong())
+            val nextMonday = targetMonday.plusWeeks(1)
             return WeekBucket(
                 weekIndex = weekIndex,
-                startMs = now - (weekIndex + 1).toLong() * WEEK_MS,
-                endMs = now - weekIndex.toLong() * WEEK_MS,
+                startMs = targetMonday.atStartOfDay(zone).toInstant().toEpochMilli(),
+                endMs = nextMonday.atStartOfDay(zone).toInstant().toEpochMilli(),
             )
         }
 

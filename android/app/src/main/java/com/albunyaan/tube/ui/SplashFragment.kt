@@ -223,13 +223,26 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         // the warm-path AccountStatusInterceptor only fires during an active
         // session, leaving cold-start launches into a deleted account with
         // no UX feedback.
-        if (signedIn) {
-            when (accountStatus) {
-                AccountStatus.DELETED -> (authRepository as? com.albunyaan.tube.auth.AccountStatusEmitter)
-                    ?.emit(com.albunyaan.tube.auth.AccountStatusEvent.Deleted)
-                AccountStatus.BLOCKED -> (authRepository as? com.albunyaan.tube.auth.AccountStatusEmitter)
-                    ?.emit(com.albunyaan.tube.auth.AccountStatusEvent.Blocked)
-                else -> Unit
+        if (signedIn && (accountStatus == AccountStatus.DELETED || accountStatus == AccountStatus.BLOCKED)) {
+            // Cubic R-final7 P2 — fail loud if AuthRepository doesn't implement
+            // AccountStatusEmitter. Pre-fix `authRepository as? Emitter`
+            // returned null silently on Hilt/test setups missing the emitter
+            // wiring, so the cold-start terminal-dialog UX never fired. In
+            // production AuthRepositoryImpl always implements the emitter;
+            // a missing implementation here is a test/DI wiring bug that
+            // should surface immediately.
+            val emitter = authRepository as? com.albunyaan.tube.auth.AccountStatusEmitter
+            if (emitter == null) {
+                android.util.Log.e("SplashFragment",
+                    "AuthRepository does not implement AccountStatusEmitter; " +
+                    "cold-start terminal-dialog event WILL NOT fire. Check the DI graph.")
+            } else {
+                emitter.emit(
+                    if (accountStatus == AccountStatus.DELETED)
+                        com.albunyaan.tube.auth.AccountStatusEvent.Deleted
+                    else
+                        com.albunyaan.tube.auth.AccountStatusEvent.Blocked
+                )
             }
         }
         val action = SplashRouter.decideSplashRoute(

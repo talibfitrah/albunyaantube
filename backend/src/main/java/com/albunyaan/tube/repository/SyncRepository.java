@@ -70,7 +70,19 @@ public class SyncRepository {
             if (lastDocId != null && !lastDocId.isBlank()) {
                 q = q.startAfter(sinceTs, lastDocId);
             } else {
-                q = q.whereGreaterThan("updatedAt", sinceTs);
+                // Cubic R-final7 P1 — legacy null-cursorId path no longer drops
+                // same-millisecond ties. Pre-fix `whereGreaterThan("updatedAt",
+                // sinceTs)` excluded any row whose updatedAt equalled the
+                // cursor's timestamp; under continuous writes at the same
+                // millisecond, those rows silently never reached the client.
+                // startAfter(sinceTs, "") with the (updatedAt, __name__) order
+                // by means: rows where (updatedAt, docId) > (sinceTs, "").
+                // Since "" sorts before any valid docId, this includes every
+                // row with updatedAt > sinceTs AND every row with
+                // updatedAt == sinceTs (any docId). The client deduplicates on
+                // entityId upsert, so the small over-pull at exact-cursor
+                // millisecond is harmless; dropping rows is not.
+                q = q.startAfter(sinceTs, "");
             }
         }
         QuerySnapshot snap = q.limit(limit).get().get(timeouts.getBulkQuery(), TimeUnit.SECONDS);

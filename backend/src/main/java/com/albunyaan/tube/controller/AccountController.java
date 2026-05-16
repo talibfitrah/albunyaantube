@@ -2,6 +2,7 @@ package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.dto.AccountMeResponse;
 import com.albunyaan.tube.dto.CompleteProfileRequest;
+import com.albunyaan.tube.model.Role;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.UserRepository;
@@ -82,9 +83,16 @@ public class AccountController {
         // the row by hand. Read the claim from the verified ID token and use
         // that as the seed role; fall back to "user" only when no claim is
         // present (true first-time sign-in).
-        final String seedRole = principal.getRole() != null && !principal.getRole().isBlank()
-                ? principal.getRole()
-                : "user";
+        // Cubic R-final7 P2 — normalise through Role.fromString instead of
+        // persisting the raw principal value. The verified ID-token claim
+        // SHOULD be a canonical enum value, but defensive normalisation
+        // protects against a future custom-claim mint that bypassed
+        // setUserRoleClaim's enum gate (e.g., a one-off migration script).
+        // Unknown values log + downgrade to USER via Role.fromString.
+        final String rawRoleClaim = principal.getRole();
+        final String seedRole = (rawRoleClaim != null && !rawRoleClaim.isBlank())
+                ? Role.fromString(rawRoleClaim).getValue()
+                : Role.USER.getValue();
         // Cubic R-final2 P2 — wire the typed Lazy* envelope. Pre-fix the
         // checked exceptions from getOrCreate were declared throws and the
         // Lazy* classes + their @ExceptionHandler mappings were unreachable

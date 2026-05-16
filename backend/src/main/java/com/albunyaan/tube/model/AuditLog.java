@@ -181,7 +181,18 @@ public class AuditLog {
         if (s == null) return null;
         String stripped = s.replaceAll("[\\p{Cntrl}]", "");
         if (stripped.length() > DETAIL_VALUE_MAX_LEN) {
-            return stripped.substring(0, DETAIL_VALUE_MAX_LEN) + "…";
+            // Cubic R-final7 P3 — UTF-8 boundary-safe truncation.
+            // String.substring counts char (code-unit) indices; a surrogate
+            // pair lives across char N and N+1, and splitting at the
+            // boundary produces an unpaired high surrogate that
+            // serialisers reject or substitute with the replacement char.
+            // Truncating at the highest valid code-point boundary keeps
+            // the audit row JSON-clean.
+            int end = DETAIL_VALUE_MAX_LEN;
+            if (end > 0 && Character.isHighSurrogate(stripped.charAt(end - 1))) {
+                end--; // drop the unpaired high surrogate
+            }
+            return stripped.substring(0, end) + "…";
         }
         return stripped;
     }

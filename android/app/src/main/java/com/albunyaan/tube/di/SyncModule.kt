@@ -9,7 +9,9 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import javax.inject.Singleton
@@ -30,10 +32,12 @@ object SyncModule {
 
     /**
      * Side-effect bean: collects AuthRepository.accountStatusEvents and
-     * invokes SyncManager.unbind() when a SignedOut event arrives. Marker
-     * type (Unit) — the bean exists for its constructor's side effect of
-     * starting the collector. Singleton scope so the collector starts
-     * exactly once at app graph creation.
+     * invokes SyncManager.unbind() when a SignedOut event arrives. Singleton
+     * scope so the collector starts exactly once at app graph creation; the
+     * scope lives for the app's lifetime alongside the SingletonComponent.
+     *
+     * <p>Cubic R-final7 P2 — return a closeable holder so tests can cancel
+     * the scope without leaking observers across Robolectric runs.
      */
     @Provides
     @Singleton
@@ -41,18 +45,28 @@ object SyncModule {
         authRepository: AuthRepository,
         syncManager: SyncManager,
     ): SignOutSyncCollector {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + Dispatchers.Default)
         scope.launch {
             authRepository.accountStatusEvents
                 .filter { it is AccountStatusEvent.SignedOut }
                 .collect { syncManager.unbind() }
         }
-        return SignOutSyncCollector(scope)
+        return SignOutSyncCollector(scope, job)
     }
 }
 
 /**
- * Marker holder so Hilt instantiates the collector. Holding the scope lets
- * future tests / lifecycle wiring cancel the observer if needed.
+ * Holder for the sign-out collector's scope. Exposes [close] so tests can
+ * cancel the observer cleanly between runs. Production keeps the scope
+ * alive for the singleton's lifetime.
  */
-class SignOutSyncCollector(@Suppress("unused") private val scope: CoroutineScope)
+class SignOutSyncCollector(
+    private val scope: CoroutineScope,
+    private val job: Job,
+) : AutoCloseable {
+    override fun close() {
+        job.cancel()
+        scope.cancel()
+    }
+}

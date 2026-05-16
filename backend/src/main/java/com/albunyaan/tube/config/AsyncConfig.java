@@ -161,8 +161,13 @@ public class AsyncConfig {
     public Executor mailExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(4);
-        executor.setQueueCapacity(200);
+        // Cubic R-final7 P3 — bumped maxPoolSize 4 → 8 and queueCapacity
+        // 200 → 500. Bulk operator waves saturated 4 threads and fell
+        // into CallerRunsPolicy — HTTP thread served send inline, partially
+        // defeating async dispatch. 8 threads + 500-deep queue gives bursts
+        // breathing room; Graph throttle backpressures real overload.
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(500);
         executor.setKeepAliveSeconds(60);
         executor.setThreadNamePrefix("mail-");
         executor.setWaitForTasksToCompleteOnShutdown(true);

@@ -125,16 +125,14 @@ public class ChannelRepository {
      * Used by ArchiveProjector to convert sync rows into virtual tombstones.
      * False if the channel is not in the registry (it isn't tracked = not gated).
      *
-     * <p>Cubic R-final4 P2 — cached with 30s TTL via Spring {@code @Cacheable}.
-     * Sync writes (SyncService upsert / tombstone methods) call this on
-     * every row; pre-cache, each sync write paid an extra Firestore
-     * round-trip (~2x the cost vs. pre-SYNC-ECHO-01). The cache collapses
-     * repeat lookups for the same id to ~1x cost on cache-hit. Trade-off:
-     * up to 30s of stale "not archived" after an admin/validation-driven
-     * archive flip — acceptable because the next pull cycle will see the
-     * post-expiry truth, and archive flips are rare relative to sync RPS.
+     * <p>Cubic R-final4 P2 added 30s @Cacheable; Cubic R-final7 P0 reverted it.
+     * The 30s TTL meant an admin archive action took up to 30s to surface in
+     * sync DTOs — a real moderation-freshness gap (archived content kept being
+     * served as "not archived" for that window). The R-final4 perf concern
+     * was theoretical at single-digit-RPS scale; correctness wins. If write
+     * load grows enough to make per-row Firestore reads matter, the right
+     * design is @CacheEvict on the admin archive endpoints, not a TTL.
      */
-    @Cacheable(value = CacheConfig.CACHE_CHANNEL_ARCHIVE_FLAG, key = "#youtubeId")
     public boolean isArchivedById(String youtubeId) {
         try {
             return findByYoutubeId(youtubeId)

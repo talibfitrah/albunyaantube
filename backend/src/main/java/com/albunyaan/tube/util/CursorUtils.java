@@ -128,13 +128,17 @@ public class CursorUtils {
             String json = new String(decoded, StandardCharsets.UTF_8);
             return objectMapper.readValue(json, CursorData.class);
         } catch (IllegalArgumentException | IOException e) {
-            // Cubic R7 P2 — malformed cursors previously fell back to "first
-            // page" silently, hiding pagination bugs (e.g. clients holding
-            // stale/truncated tokens across deploys never noticed they were
-            // restarting). Restart semantics are still the safest fallback,
-            // but warn so we have telemetry: a spike in this log = real client
-            // bug or token format drift, not a quietly broken paginator.
-            log.warn("Malformed pagination cursor (len={}, err={}): restarting from page 1",
+            // Cubic R7 P2 added log.warn (above pre-existing silent null);
+            // Cubic R-final7 P2 escalates warn → error. A malformed cursor
+            // is never expected from a healthy client — it indicates token
+            // truncation, deploy-cycle format drift, or an attacker probing
+            // pagination. Restart semantics remain the fallback because
+            // throwing would break paginators (8+ call sites already encode
+            // the null contract), but ERROR-level surfacing makes spikes
+            // hard to miss on dashboards.
+            log.error("Malformed pagination cursor (len={}, err={}): restarting from page 1. "
+                    + "Restart fallback is intentional; ERROR level so this surfaces in "
+                    + "monitoring — a spike here is a real client bug or format drift.",
                     cursor.length(), e.getClass().getSimpleName());
             return null;
         }

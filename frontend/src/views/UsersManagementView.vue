@@ -430,6 +430,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { apiErrorToMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { useCursorPagination } from '@/composables/useCursorPagination';
 import { useFocusTrap } from '@/composables/useFocusTrap';
@@ -994,7 +995,7 @@ async function handleBulkBlock() {
     selected.value = new Set();
     await reload();
   } catch (err) {
-    actionError.value = err instanceof Error ? err.message : 'Bulk block failed';
+    actionError.value = apiErrorToMessage(err, t, 'users.bulk.reason.unknown');
   } finally {
     bulkActionRunning.value = false;
   }
@@ -1031,7 +1032,7 @@ async function handleBulkDelete() {
     selected.value = new Set();
     await reload();
   } catch (err) {
-    actionError.value = err instanceof Error ? err.message : 'Bulk delete failed';
+    actionError.value = apiErrorToMessage(err, t, 'users.bulk.reason.unknown');
   } finally {
     bulkActionRunning.value = false;
   }
@@ -1067,7 +1068,7 @@ async function handleBulkRecover() {
     selected.value = new Set();
     await reload();
   } catch (err) {
-    actionError.value = err instanceof Error ? err.message : 'Bulk recover failed';
+    actionError.value = apiErrorToMessage(err, t, 'users.bulk.reason.unknown');
   } finally {
     bulkActionRunning.value = false;
   }
@@ -1104,7 +1105,7 @@ async function handleBulkRevokeSessions() {
     selected.value = new Set();
     await reload();
   } catch (err) {
-    actionError.value = err instanceof Error ? err.message : 'Bulk revoke sessions failed';
+    actionError.value = apiErrorToMessage(err, t, 'users.bulk.reason.unknown');
   } finally {
     bulkActionRunning.value = false;
   }
@@ -1126,7 +1127,7 @@ async function handleForceLogout(user: AdminUser) {
     await forceLogout(user.id);
     actionMessage.value = t('users.forceLogout.success', { email: user.email });
   } catch (err) {
-    actionError.value = err instanceof Error ? err.message : 'Force logout failed';
+    actionError.value = apiErrorToMessage(err, t, 'users.bulk.reason.unknown');
   } finally {
     forcingLogoutUserId.value = null;
   }

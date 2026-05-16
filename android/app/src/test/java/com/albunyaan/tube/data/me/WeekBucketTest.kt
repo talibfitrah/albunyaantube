@@ -6,44 +6,54 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 
 /**
- * ANDROID-PERSONAL-03 / T3: rolling 7-day bucket math.
+ * ANDROID-PERSONAL-03 / T3: ISO-week bucket math.
  *
- * Anchored at a fixed `now` so behaviour is deterministic across runs and
- * across "today is Sunday" edge cases (rolling buckets ignore the day of
- * the week — only the timestamp matters).
+ * Cubic R-final7 — boundaries are ISO weeks (Monday-Sunday) per the
+ * 2026-05-16 weekly-grouping design. Tests pin `now` to a Monday so the
+ * math is obvious, and recompute expected boundaries via the same
+ * TemporalAdjusters used by the production code (relative to
+ * ZoneId.systemDefault() — same zone the impl uses).
  */
 class WeekBucketTest {
 
-    /** 2026-04-27 12:00:00 UTC (a Monday — picked to make the math obvious). */
+    /** 2026-04-27 12:00:00 UTC — a Monday. */
     private val NOW = 1761566400000L
-    private val WEEK = WeekBucket.WEEK_MS
+
+    private fun expectedMondayMillis(weeksBack: Long): Long {
+        val zone = ZoneId.systemDefault()
+        val nowDate = Instant.ofEpochMilli(NOW).atZone(zone).toLocalDate()
+        val thisMonday = nowDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        return thisMonday.minusWeeks(weeksBack).atStartOfDay(zone).toInstant().toEpochMilli()
+    }
 
     @Test
-    fun `weekIndex 0 covers the most recent 7 days ending at now`() {
+    fun `weekIndex 0 spans this ISO Monday to next Monday`() {
         val b = WeekBucket.forIndex(weekIndex = 0, now = NOW)
         assertEquals(0, b.weekIndex)
-        assertEquals(NOW - WEEK, b.startMs)
-        assertEquals(NOW, b.endMs)
+        assertEquals(expectedMondayMillis(0), b.startMs)
+        assertEquals(expectedMondayMillis(-1), b.endMs)
     }
 
     @Test
-    fun `weekIndex 1 is the prior week`() {
+    fun `weekIndex 1 is the prior ISO week`() {
         val b = WeekBucket.forIndex(weekIndex = 1, now = NOW)
         assertEquals(1, b.weekIndex)
-        assertEquals(NOW - 2L * WEEK, b.startMs)
-        assertEquals(NOW - WEEK, b.endMs)
+        assertEquals(expectedMondayMillis(1), b.startMs)
+        assertEquals(expectedMondayMillis(0), b.endMs)
     }
 
     @Test
-    fun `weekIndex N covers now-(N+1)w to now-Nw`() {
+    fun `weekIndex N spans weeksBack=N+1 to weeksBack=N`() {
         for (i in 0..52) {
             val b = WeekBucket.forIndex(weekIndex = i, now = NOW)
-            assertEquals(NOW - (i + 1L) * WEEK, b.startMs)
-            assertEquals(NOW - i.toLong() * WEEK, b.endMs)
-            // Always exactly one week wide.
-            assertEquals(WEEK, b.endMs - b.startMs)
+            assertEquals(expectedMondayMillis(i.toLong()), b.startMs)
+            assertEquals(expectedMondayMillis(i.toLong() - 1L), b.endMs)
         }
     }
 

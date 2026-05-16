@@ -108,11 +108,21 @@ public class AuthService {
      * to remember D6 separately.
      */
     public void setUserRoleClaim(String uid, String role) throws FirebaseAuthException {
+        // Cubic R-final7 P2 — validate role against the canonical enum
+        // BEFORE writing to Firebase. Pre-fix any string passed straight
+        // through to setCustomUserClaims; a typo'd or malicious caller could
+        // mint a token with role="super-admin" and the FirebaseAuthFilter's
+        // VALID_ROLES allow-list would still down-convert it to "user"
+        // safely — but the Firebase audit trail would carry the bogus value.
+        // Routing through Role.fromString clamps to the enum's canonical
+        // lowercase value (admin / moderator / user) and logs a WARN on
+        // unknown input via Role.fromString's R-final7 hook.
+        String canonical = Role.fromString(role).getValue();
         UserRecord existing = firebaseAuth.getUser(uid);
         Map<String, Object> merged = existing.getCustomClaims() == null
                 ? new HashMap<>()
                 : new HashMap<>(existing.getCustomClaims());
-        merged.put("role", role == null ? null : role.toLowerCase(java.util.Locale.ROOT));
+        merged.put("role", canonical);
         firebaseAuth.setCustomUserClaims(uid, merged);
     }
 

@@ -125,6 +125,10 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                 // eviction) remains deferred to a dedicated plan; until then,
                 // uncached is the only safe enforcement read.
                 try {
+                    // Cubic R-final7 P2 — findByUidUncached uses
+                    // FirestoreTimeoutProperties.getRead() (2s default,
+                    // configurable). TimeoutException catch below maps to
+                    // 503 SERVICE_UNAVAILABLE; the auth path cannot hang.
                     Optional<User> userOpt = userRepository.findByUidUncached(uid);
                     if (userOpt.isPresent()) {
                         User u = userOpt.get();

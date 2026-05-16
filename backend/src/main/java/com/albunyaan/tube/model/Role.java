@@ -1,11 +1,15 @@
 package com.albunyaan.tube.model;
 
 import java.util.Locale;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public enum Role {
     USER("user", 0),
     MODERATOR("moderator", 1),
     ADMIN("admin", 2);
+
+    private static final Logger log = LoggerFactory.getLogger(Role.class);
 
     private final String value;
     private final int rank;
@@ -31,7 +35,13 @@ public enum Role {
             case "admin" -> ADMIN;
             case "moderator" -> MODERATOR;
             case "user" -> USER;
-            default -> USER;
+            default -> {
+                // Cubic R-final7 P3 — log unknown role values so a backend
+                // schema drift or a typo'd custom-claim mint surfaces in
+                // observability instead of silently downgrading to USER.
+                log.warn("Role.fromString: unknown role value '{}' — defaulting to USER", trimmed);
+                yield USER;
+            }
         };
     }
 }

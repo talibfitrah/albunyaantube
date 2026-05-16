@@ -526,7 +526,32 @@ class SyncManager @Inject constructor(
     ): PushOutcome {
         val resp = op()
         return when {
-            resp.isSuccessful -> { resp.body()?.let { onSuccess(it) }; PushOutcome.OK }
+            resp.isSuccessful -> {
+                val body = resp.body()
+                if (body != null) {
+                    onSuccess(body)
+                    PushOutcome.OK
+                } else {
+                    // Cubic R-final7 P0 — success with null body.
+                    //
+                    // Pre-fix `resp.body()?.let { onSuccess(it) }; PushOutcome.OK`
+                    // returned OK silently when the server replied 200/204 with no
+                    // body. The drain loop saw "success", but onSuccess never ran
+                    // → clearDirty was never called → the row stayed dirty →
+                    // pushDirty re-pushed it next cycle → server replied with no
+                    // body again → infinite re-push loop.
+                    //
+                    // Treat success-with-null-body as a transient failure so the
+                    // row stays dirty AND the backoff schedule advances (the
+                    // drain loop sets hadTransientFailure=true). If the server
+                    // intentionally returns no body on success (e.g., 204), the
+                    // call site's @DELETE should map to on404's clearDirty path
+                    // — surface the unexpected shape rather than loop silently.
+                    android.util.Log.w("SyncManager",
+                        "Push success with null body (code=${resp.code()}) — treating as transient; retry next cycle")
+                    PushOutcome.TRANSIENT_FAILURE
+                }
+            }
             resp.code() == 404 -> { on404(); PushOutcome.OK }
             resp.code() == 401 || resp.code() == 403 -> PushOutcome.AUTH_FAILED
             resp.code() == 400 || resp.code() == 409 || resp.code() == 422 -> {

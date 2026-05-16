@@ -55,19 +55,12 @@ public class CacheConfig {
     // User status cache (60s TTL per D4; evicted on lifecycle mutation)
     public static final String CACHE_USER_STATUS = "userStatus";
 
-    // Cubic R-final4 P2 — archive-flag caches for ArchiveProjector write-path
-    // single-row lookups. SyncService upsert / tombstone methods each call
-    // `projector.projectSubscription/projectPlaylist/projectVideo`, which
-    // calls `channels/playlists/videos.isArchivedById(row.id())` — one
-    // Firestore round-trip per write. With three short-TTL caches the
-    // 2x write cost collapses to ~1x on cache-hit. 30s TTL accepts up to
-    // ~30s of stale archive state on sync DTOs, which is fine because:
-    //   - Archive flips are admin/validation driven, not user-driven
-    //   - The DTO consequence is "user re-fetches an archived item once
-    //     more before the next sync sees archived=true"; harmless
-    public static final String CACHE_CHANNEL_ARCHIVE_FLAG = "channelArchiveFlag";
-    public static final String CACHE_PLAYLIST_ARCHIVE_FLAG = "playlistArchiveFlag";
-    public static final String CACHE_VIDEO_ARCHIVE_FLAG = "videoArchiveFlag";
+    // Cubic R-final4 P2 added 30s archive-flag caches; Cubic R-final7 P0
+    // reverted them. The TTL meant admin archive actions took up to 30s to
+    // surface in sync DTOs — a real moderation-freshness gap. The perf
+    // benefit was theoretical at single-digit RPS. If write load ever
+    // justifies caching, the right design is @CacheEvict on the admin
+    // archive endpoints, not a TTL.
 
     /**
      * Configure Caffeine CacheManager with default settings.
@@ -113,12 +106,7 @@ public class CacheConfig {
                 CACHE_NEWPIPE_PLAYLIST_VIDEOS,
 
                 // User status cache (overridden below to 60s TTL per D4)
-                CACHE_USER_STATUS,
-
-                // Archive-flag caches (overridden below to 30s TTL each)
-                CACHE_CHANNEL_ARCHIVE_FLAG,
-                CACHE_PLAYLIST_ARCHIVE_FLAG,
-                CACHE_VIDEO_ARCHIVE_FLAG
+                CACHE_USER_STATUS
 
                 // Note: workspace exclusions and dashboard category stats use dedicated beans
                 // with 5-min TTL, not the CacheManager (see beans below)
@@ -137,21 +125,6 @@ public class CacheConfig {
                         .recordStats()
                         .build());
 
-        // Cubic R-final4 P2 — archive-flag caches with 30s TTL.
-        // Sized generously (10k entries each) because sync hot-paths are
-        // user-driven and can churn through many distinct IDs.
-        for (String name : java.util.List.of(
-                CACHE_CHANNEL_ARCHIVE_FLAG,
-                CACHE_PLAYLIST_ARCHIVE_FLAG,
-                CACHE_VIDEO_ARCHIVE_FLAG)) {
-            cacheManager.registerCustomCache(name,
-                    Caffeine.newBuilder()
-                            .expireAfterWrite(30, TimeUnit.SECONDS)
-                            .maximumSize(10_000)
-                            .recordStats()
-                            .build());
-        }
-
         // Cubic R-final5 P2 — order-of-operations guard.
         //
         // CaffeineCacheManager builds caches lazily on first getCache() call,
@@ -165,10 +138,7 @@ public class CacheConfig {
         // between setCaffeine and registerCustomCache (or between registers).
         // Assertion below makes that drift explicit: if the assertion ever
         // fails, somebody removed a registration without updating the check.
-        if (cacheManager.getCache(CACHE_USER_STATUS) == null
-                || cacheManager.getCache(CACHE_CHANNEL_ARCHIVE_FLAG) == null
-                || cacheManager.getCache(CACHE_PLAYLIST_ARCHIVE_FLAG) == null
-                || cacheManager.getCache(CACHE_VIDEO_ARCHIVE_FLAG) == null) {
+        if (cacheManager.getCache(CACHE_USER_STATUS) == null) {
             throw new IllegalStateException(
                     "CacheConfig: custom-TTL cache missing after registration — "
                     + "a startup read may have lazily built it with the default 1h TTL.");
