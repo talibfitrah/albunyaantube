@@ -205,35 +205,50 @@ android {
     }
 
     // Schemas live in variant assets so Robolectric MigrationTestHelper can
-    // read them via the target context for testDebugUnitTest,
-    // testReleaseUnitTest, and testBenchmarkUnitTest.
+    // read them via the target context for testDebugUnitTest and
+    // testBenchmarkUnitTest. The `release` variant is intentionally NOT
+    // wired — see comment below.
     //
     // Schema-export build infra history:
     //  - 2026-05-15 (cubic R5): pre-fix the benchmark variant lacked schema
     //    assets so migration tests failed under testBenchmarkUnitTest with
     //    FileNotFoundException for AppDatabase/{2,3,7,8}.json. The fix wired
     //    `benchmark` + `debug` + `release` variant source sets.
-    //  - 2026-05-16 (Codex cleanup review): tested moving schemas to the
-    //    `test` (common parent) and `testRelease` (variant test) source sets
-    //    so the release APK would not bundle them, but AGP does not propagate
-    //    assets from `test*` source sets to `test*UnitTest` tasks — only the
-    //    variant source sets (debug/release/benchmark) feed Robolectric's
-    //    asset manager via the packaged APK context. Both attempts crashed
-    //    testReleaseUnitTest / testBenchmarkUnitTest with SIGABRT. Reverted
-    //    to the variant-source-set wiring and accepted ~50KB Room version-
-    //    history JSON bloat in the release APK. P3 follow-up: investigate
-    //    `androidResources.noCompress` filter or move schemas to JVM-only
-    //    resources with a custom MigrationTestHelper reader so the assets
-    //    can stay out of every production APK.
+    //  - 2026-05-16 (Codex cleanup review): caught that wiring `release`
+    //    variant source set leaks ~50KB of Room version-history JSONs into
+    //    the user-facing release APK. Tested moving schemas to the `test`
+    //    (common parent) and `testRelease` (variant test) source sets so the
+    //    release APK would not bundle them, but AGP does not propagate
+    //    assets from `test*` source sets to `test*UnitTest` tasks — both
+    //    attempts crashed testReleaseUnitTest with SIGABRT.
+    //  - 2026-05-16 (cubic R1 P2 followup): dropped the `release` wiring
+    //    entirely and excluded `AppDatabaseMigration*Test` from
+    //    testReleaseUnitTest (see below). Migration tests verify schema
+    //    correctness, which doesn't depend on the build variant —
+    //    testDebugUnitTest + testBenchmarkUnitTest provide sufficient
+    //    coverage. Release APK is now bloat-free.
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")
         getByName("debug").assets.srcDirs("$projectDir/schemas")
-        getByName("release").assets.srcDirs("$projectDir/schemas")
         // AGP creates the benchmark variant sourceSet lazily; force creation
         // via getByName so the assets wiring lands. Pre-fix findByName returned
         // null during evaluation order and migration tests silently lacked the
         // schemas at runtime under testBenchmarkUnitTest.
         getByName("benchmark").assets.srcDirs("$projectDir/schemas")
+    }
+
+    // testReleaseUnitTest cannot find Room schemas because the `release`
+    // variant source set deliberately does not include them (would leak to
+    // the user-facing APK). Migration test coverage is variant-agnostic —
+    // testDebugUnitTest + testBenchmarkUnitTest already exercise every
+    // AppDatabase migration path. Excluding these tests from the release
+    // unit-test task keeps the suite green without compromising coverage.
+    testOptions {
+        unitTests.all {
+            if (it.name == "testReleaseUnitTest") {
+                it.exclude("**/AppDatabaseMigration*Test*")
+            }
+        }
     }
 
     java {

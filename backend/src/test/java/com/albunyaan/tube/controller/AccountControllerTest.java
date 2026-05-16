@@ -235,4 +235,32 @@ class AccountControllerTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("AGE_INELIGIBLE_ABORTED"));
     }
+
+    // ── Defense-in-depth contract tests (cubic R1 follow-up) ──────────────
+    // Spring Security gates /api/account/** server-side, so principal should
+    // never be null in production. The defensive `if (principal == null)`
+    // guards exist as belt-and-suspenders: if a future config refactor ever
+    // drops `permitAll`, misorders filter chains, or someone hits the
+    // endpoint via a test harness that bypasses filters, the contract is to
+    // return 401 (auth failure), not 500 (NPE on principal.getUid()). These
+    // tests pin that contract.
+
+    @Test
+    void getMe_returnsUnauthorized_whenPrincipalIsNull() throws Exception {
+        SecurityContextHolder.clearContext();  // override @BeforeEach
+        mockMvc.perform(get("/api/account/me"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void postProfile_returnsUnauthorized_whenPrincipalIsNull() throws Exception {
+        SecurityContextHolder.clearContext();  // override @BeforeEach
+        CompleteProfileRequest req = new CompleteProfileRequest();
+        req.setDisplayName("X");
+        req.setDateOfBirth(LocalDate.of(2000, 1, 1));
+        mockMvc.perform(post("/api/account/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isUnauthorized());
+    }
 }
