@@ -83,14 +83,29 @@ class FirebaseAuthInterceptor @Inject constructor(
                 runBlocking {
                     withTimeoutOrNull(TOKEN_REFRESH_TIMEOUT_MS) {
                         refreshMutex.withLock {
-                            // Re-check inside the lock — a prior holder may
-                            // have just refreshed; getIdToken(false) returns
-                            // the cached fresh token instantly.
-                            val cached = user.getIdToken(false).await().token
-                            if (cached != null && cached != token) {
-                                cached
+                            // Cubic round 1 P1: cross-account leak guard.
+                            // If the active Firebase user changed between
+                            // outer capture (line 43) and this 401 retry
+                            // (sign-out then sign-in as a different account),
+                            // do NOT replay the original request with the new
+                            // user's bearer. Return null to propagate as a
+                            // refresh failure (handled below by surfacing the
+                            // original 401 per Cubic R7 P1). Force-refreshing
+                            // would otherwise silently rebind the request to
+                            // the wrong identity, leaking one account's
+                            // request to another user's auth.
+                            if (auth.currentUser?.uid != user.uid) {
+                                null
                             } else {
-                                user.getIdToken(true).await().token
+                                // Re-check inside the lock — a prior holder may
+                                // have just refreshed; getIdToken(false) returns
+                                // the cached fresh token instantly.
+                                val cached = user.getIdToken(false).await().token
+                                if (cached != null && cached != token) {
+                                    cached
+                                } else {
+                                    user.getIdToken(true).await().token
+                                }
                             }
                         }
                     }

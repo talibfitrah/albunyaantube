@@ -129,22 +129,11 @@ class NewPipeChannelFeedFetcher @Inject constructor(
      */
     private fun extractVideoId(url: String): String {
         if (url.isEmpty()) return ""
-        return VIDEO_ID_REGEX.find(url)?.groupValues?.getOrNull(1).orEmpty()
-    }
-
-    companion object {
-        /**
-         * Matches the 11-char YouTube video id in any of these shapes:
-         *   https://www.youtube.com/watch?v=<id>
-         *   https://www.youtube.com/watch?list=PL...&v=<id>    (v= after other params)
-         *   https://youtu.be/<id>
-         *   https://www.youtube.com/shorts/<id>
-         *   https://www.youtube.com/embed/<id>
-         *   https://www.youtube.com/watch/<id>                 (older path form)
-         *   https://music.youtube.com/watch?v=<id>
-         *   //www.youtube.com/watch?v=<id>                     (protocol-relative)
-         */
-        internal val VIDEO_ID_REGEX =
-            Regex("""(?:[?&]v=|youtu\.be/|/shorts/|/embed/|/watch/)([A-Za-z0-9_-]{11})""")
+        // Cubic round 1 P3: deduped with YouTubeVideoIdRegex (the canonical
+        // source — also used by ChannelDeepPaginator + YouTubeVideoIdRegexTest).
+        // Previously this class kept its own companion-object VIDEO_ID_REGEX
+        // copy that risked drifting out of sync with the standalone object
+        // over time as new URL shapes were added.
+        return YouTubeVideoIdRegex.VIDEO_ID_REGEX.find(url)?.groupValues?.getOrNull(1).orEmpty()
     }
 }

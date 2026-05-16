@@ -145,4 +145,54 @@ class FirebaseAuthInterceptorTest {
         assertEquals(200, response.code)
         assertNull(server.takeRequest().getHeader("Authorization"))
     }
+
+    /**
+     * Cubic round 1 P1 regression test: cross-account leak guard.
+     *
+     * Scenario: request is dispatched while user A is signed in (outer
+     * capture). Backend returns 401 (token stale). Between dispatch and the
+     * 401 retry, user A signs out and user B signs in on the same device.
+     * The 401 retry path must NOT replay the request with user B's token —
+     * doing so would silently rebind user A's original request to user B's
+     * identity, leaking cross-account state.
+     *
+     * Pre-fix: `cached != token` would see user B's token as different from
+     * user A's failed token, use it, and leak. Post-fix: the
+     * `auth.currentUser?.uid != user.uid` guard inside the mutex detects the
+     * uid change and returns null; the original 401 surfaces to the caller
+     * and the UI re-prompts.
+     */
+    @Test fun `cross-account drift during 401 retry surfaces original 401 instead of leaking`() {
+        val userA = mock<FirebaseUser>()
+        val userB = mock<FirebaseUser>()
+        whenever(userA.uid).thenReturn("uid-A")
+        whenever(userB.uid).thenReturn("uid-B")
+        // The interceptor calls auth.currentUser twice:
+        //   1. outer capture for the initial request
+        //   2. inside the mutex on the 401 retry (added by P1 fix)
+        whenever(firebaseAuth.currentUser)
+            .thenReturn(userA)  // initial dispatch sees user A
+            .thenReturn(userB)  // 401 retry sees user B (sign-out + sign-in happened)
+        val tokenA = tokenResult("token-A")  // hoist per setUp() comment — UnfinishedStubbingException if inlined
+        whenever(userA.getIdToken(false)).thenReturn(Tasks.forResult(tokenA))
+        // userB.getIdToken must NEVER be invoked — guard returns null first.
+        // Two responses queued: first 401 triggers refresh; cross-account
+        // guard aborts refresh (returns null); per Cubic R7 P1 the interceptor
+        // re-executes the signed request to surface a clean final 401 instead
+        // of replaying unsigned and faking success on public endpoints.
+        server.enqueue(MockResponse().setResponseCode(401).addHeader("WWW-Authenticate", "Bearer"))
+        server.enqueue(MockResponse().setResponseCode(401).addHeader("WWW-Authenticate", "Bearer"))
+
+        val response = client.newCall(Request.Builder().url(server.url("/x")).build()).execute()
+        response.close()
+
+        assertEquals(401, response.code)             // final 401 surfaces — NO rebinding to user B
+        assertEquals(2, server.requestCount)         // initial + re-execution (no force-refresh to user B's token)
+        // BOTH requests carry user A's stale token, never user B's token.
+        // Replaying with user A's stale token is harmless (gets 401 again);
+        // replaying with user B's token (pre-fix behavior) would silently
+        // bind user A's request to user B's identity — the actual leak.
+        assertEquals("Bearer token-A", server.takeRequest().getHeader("Authorization"))
+        assertEquals("Bearer token-A", server.takeRequest().getHeader("Authorization"))
+    }
 }
