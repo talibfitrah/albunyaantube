@@ -86,7 +86,10 @@ tasks.test {
     useJUnitPlatform {
         // AGENTS.md: Exclude integration tests by default (require Firebase emulator)
         // Run with -Pintegration=true to include integration tests
-        if (!project.hasProperty("integration")) {
+        val runIntegration = providers.gradleProperty("integration")
+            .map(String::toBoolean)
+            .getOrElse(false)
+        if (!runIntegration) {
             excludeTags("integration")
         }
     }
@@ -126,7 +129,18 @@ tasks.register<org.openapitools.generator.gradle.plugin.tasks.GenerateTask>("gen
 
     // Generate models only (no HTTP client)
     globalProperties.set(mapOf(
-        "models" to "",
+        "models" to listOf(
+            "ContentItemDto",
+            "PageInfo",
+            "DownloadManifestDto",
+            "StreamOption",
+            "DownloadTokenRequest",
+            "DownloadTokenDto",
+            "DownloadStartedEvent",
+            "DownloadPolicyDto",
+            "DownloadFailedEvent",
+            "DownloadCompletedEvent"
+        ).joinToString(","),
         "modelDocs" to "false"
     ))
 

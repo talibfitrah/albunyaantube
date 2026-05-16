@@ -150,13 +150,6 @@ children's ability to learn Islam independently.
 > - [Architecture Overview](architecture/overview.md) - System architecture, tech stack details, and C4 diagrams
 > - [API Specification](architecture/api-specification.yaml) - Complete OpenAPI REST API documentation
 
-**Testing Scope (TestSprite)**:
-- **Frontend Testing**: Test only the `/frontend` directory (Vue 3 Admin Dashboard)
-  - **IMPORTANT**: Exclude `/android` directory from frontend test scope
-  - Android app has separate native testing (Kotlin/Gradle)
-- **Backend Testing**: Test only the `/backend` directory (Spring Boot API)
-  - **IMPORTANT**: Exclude `/frontend` and `/android` directories from backend test scope
-
 > **See Also:**
 > - [Testing Guide](status/TESTING_GUIDE.md) - Comprehensive testing strategy, data verification, and performance testing
 

@@ -178,37 +178,22 @@ test.describe('Admin users & audit log', () => {
       await route.fallback();
     });
 
-    await page.route('**/api/v1/admin/audit**', async (route) => {
+    await page.route('**/api/admin/audit**', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          data: auditLog.map((event) => ({
+          items: auditLog.map((event) => ({
             id: event.id,
-            actor: {
-              id: `actor-${event.id}`,
-              email: event.actorEmail,
-              roles: ['ADMIN'],
-              status: 'ACTIVE',
-              lastLoginAt: null,
-              createdAt: event.createdAt,
-              updatedAt: event.createdAt
-            },
+            actorUid: `actor-${event.id}`,
+            actorEmail: event.actorEmail,
             action: event.action,
-            entity: {
-              type: 'USER',
-              id: event.entityId,
-              slug: null
-            },
+            entityType: 'USER',
+            entityId: event.entityId,
             metadata: event.metadata,
-            createdAt: event.createdAt
+            timestamp: event.createdAt
           })),
-          pageInfo: {
-            cursor: null,
-            nextCursor: null,
-            hasNext: false,
-            limit: auditLog.length
-          }
+          nextCursor: null
         })
       });
     });
@@ -252,8 +237,8 @@ test.describe('Admin users & audit log', () => {
     await newUserRow.getByRole('button', { name: /deactivate/i }).click();
     await deleteRequestPromise;
 
-    await page.goto('/audit');
-    await expect(page.getByRole('heading', { name: /audit log/i })).toBeVisible();
+    await page.goto('/activity');
+    await expect(page.getByRole('heading', { name: /activity log/i })).toBeVisible();
     await page.waitForSelector('text=users:create');
     await expect(page.getByText('users:create')).toBeVisible();
   });

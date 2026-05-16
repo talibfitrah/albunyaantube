@@ -5,17 +5,10 @@ import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.service.VideoValidationService;
-import com.github.benmanes.caffeine.cache.Cache;
 import com.google.cloud.Timestamp;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.ExecutionException;
 
 /**
  * FIREBASE-MIGRATE-04: Dashboard Controller
@@ -26,27 +19,21 @@ import java.util.concurrent.ExecutionException;
 @RequestMapping("/api/admin/dashboard")
 public class DashboardController {
 
-    private static final Logger log = LoggerFactory.getLogger(DashboardController.class);
-    private static final String CATEGORY_STATS_CACHE_KEY = "all";
-
     private final CategoryRepository categoryRepository;
     private final ChannelRepository channelRepository;
     private final UserRepository userRepository;
     private final VideoValidationService videoValidationService;
-    private final Cache<String, Map<String, ?>> dashboardCategoryStatsCache;
 
     public DashboardController(
             CategoryRepository categoryRepository,
             ChannelRepository channelRepository,
             UserRepository userRepository,
-            VideoValidationService videoValidationService,
-            Cache<String, Map<String, ?>> dashboardCategoryStatsCache
+            VideoValidationService videoValidationService
     ) {
         this.categoryRepository = categoryRepository;
         this.channelRepository = channelRepository;
         this.userRepository = userRepository;
         this.videoValidationService = videoValidationService;
-        this.dashboardCategoryStatsCache = dashboardCategoryStatsCache;
     }
 
     /**
@@ -140,57 +127,6 @@ public class DashboardController {
         return "FLAT";
     }
 
-    /**
-     * Get statistics by category using server-side aggregation queries with caching.
-     *
-     * This endpoint uses a 5-minute cache to prevent N+1 Firestore aggregation queries
-     * from exhausting quota when the dashboard is refreshed frequently or has many categories.
-     *
-     * Performance characteristics:
-     * - First request: O(3N) Firestore count queries where N = number of categories
-     * - Subsequent requests within 5 minutes: O(1) cache hit, no Firestore queries
-     *
-     * @return Map of category ID to channel statistics
-     */
-    @GetMapping("/stats/by-category")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
-    @SuppressWarnings("unchecked")
-    public ResponseEntity<Map<String, CategoryStats>> getStatsByCategory()
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-
-        // Try cache first
-        Map<String, ?> cached = dashboardCategoryStatsCache.getIfPresent(CATEGORY_STATS_CACHE_KEY);
-        if (cached != null) {
-            log.debug("Dashboard category stats cache hit");
-            return ResponseEntity.ok((Map<String, CategoryStats>) cached);
-        }
-
-        log.debug("Dashboard category stats cache miss - fetching from Firestore");
-        Map<String, CategoryStats> stats = new HashMap<>();
-
-        // Get all categories first (this is a bounded, small dataset)
-        var categories = categoryRepository.findAll();
-
-        // For each category, use server-side count queries instead of loading all channels
-        for (var category : categories) {
-            String categoryId = category.getId();
-            CategoryStats categoryStats = new CategoryStats();
-
-            // Use server-side aggregation queries - no document reads needed
-            categoryStats.totalChannels = (int) channelRepository.countByCategoryId(categoryId);
-            categoryStats.approvedChannels = (int) channelRepository.countByCategoryIdAndStatus(categoryId, "APPROVED");
-            categoryStats.pendingChannels = (int) channelRepository.countByCategoryIdAndStatus(categoryId, "PENDING");
-
-            stats.put(categoryId, categoryStats);
-        }
-
-        // Cache the result for 5 minutes (TTL configured in CacheConfig)
-        dashboardCategoryStatsCache.put(CATEGORY_STATS_CACHE_KEY, stats);
-        log.debug("Dashboard category stats cached for {} categories", stats.size());
-
-        return ResponseEntity.ok(stats);
-    }
-
     // DTOs
 
     public static class DashboardMetricsResponse {
@@ -268,11 +204,4 @@ public class DashboardController {
             this.label = label;
         }
     }
-
-    public static class CategoryStats {
-        public int totalChannels = 0;
-        public int approvedChannels = 0;
-        public int pendingChannels = 0;
-    }
 }
-

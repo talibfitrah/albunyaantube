@@ -106,9 +106,12 @@ android {
         val enableDegradation = localProperties.getProperty("playback.degradation.enabled", "true").toBoolean()
         buildConfigField("boolean", "ENABLE_DEGRADATION_MANAGER", "$enableDegradation")
 
-        buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "true")
-        buildConfigField("boolean", "ENABLE_HLS_PROBATION", "true")
-        buildConfigField("boolean", "ENABLE_CRONET", "true")
+        val enableClientRotation = localProperties.getProperty("playback.client.rotation.enabled", "true").toBoolean()
+        val enableHlsProbation = localProperties.getProperty("playback.hls.probation.enabled", "true").toBoolean()
+        val enableCronet = localProperties.getProperty("playback.cronet.enabled", "true").toBoolean()
+        buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "$enableClientRotation")
+        buildConfigField("boolean", "ENABLE_HLS_PROBATION", "$enableHlsProbation")
+        buildConfigField("boolean", "ENABLE_CRONET", "$enableCronet")
         // Predictive prefetch starts extraction when list cells attach so
         // tap-to-open is instant. OFF by default — turning it on with the
         // current controller fires for every visible cell, which on a
@@ -119,9 +122,12 @@ android {
         // playback.predictive.prefetch.enabled=true
         val enablePredictivePrefetch = localProperties.getProperty("playback.predictive.prefetch.enabled", "false").toBoolean()
         buildConfigField("boolean", "ENABLE_PREDICTIVE_PREFETCH", "$enablePredictivePrefetch")
-        buildConfigField("boolean", "ENABLE_SEGMENT_PRELOAD", "true")
-        buildConfigField("boolean", "ENABLE_NEVER_FREEZE_ABR", "true")
-        buildConfigField("boolean", "ENABLE_TTL_WATCHER", "true")
+        val enableSegmentPreload = localProperties.getProperty("playback.segment.preload.enabled", "true").toBoolean()
+        val enableNeverFreezeAbr = localProperties.getProperty("playback.never.freeze.abr.enabled", "true").toBoolean()
+        val enableTtlWatcher = localProperties.getProperty("playback.ttl.watcher.enabled", "true").toBoolean()
+        buildConfigField("boolean", "ENABLE_SEGMENT_PRELOAD", "$enableSegmentPreload")
+        buildConfigField("boolean", "ENABLE_NEVER_FREEZE_ABR", "$enableNeverFreezeAbr")
+        buildConfigField("boolean", "ENABLE_TTL_WATCHER", "$enableTtlWatcher")
     }
 
     signingConfigs {
@@ -198,18 +204,31 @@ android {
         arg("room.schemaLocation", "$projectDir/schemas")
     }
 
-    // Schemas live in the debug + benchmark source sets — Robolectric
-    // MigrationTestHelper (testDebugUnitTest, testBenchmarkUnitTest) reads
-    // them via the merged assets, and they don't ship in release APKs.
+    // Schemas live in variant assets so Robolectric MigrationTestHelper can
+    // read them via the target context for testDebugUnitTest,
+    // testReleaseUnitTest, and testBenchmarkUnitTest.
     //
-    // Schema-export build infra fix (review cleanup, 2026-05-15): pre-fix
-    // the benchmark variant lacked the schema assets so migration tests
-    // failed under testBenchmarkUnitTest with FileNotFoundException for
-    // AppDatabase/{2,3,7,8}.json — even though the JSONs exist in the
-    // repo. Wiring `benchmark` source set fixes this.
+    // Schema-export build infra history:
+    //  - 2026-05-15 (cubic R5): pre-fix the benchmark variant lacked schema
+    //    assets so migration tests failed under testBenchmarkUnitTest with
+    //    FileNotFoundException for AppDatabase/{2,3,7,8}.json. The fix wired
+    //    `benchmark` + `debug` + `release` variant source sets.
+    //  - 2026-05-16 (Codex cleanup review): tested moving schemas to the
+    //    `test` (common parent) and `testRelease` (variant test) source sets
+    //    so the release APK would not bundle them, but AGP does not propagate
+    //    assets from `test*` source sets to `test*UnitTest` tasks — only the
+    //    variant source sets (debug/release/benchmark) feed Robolectric's
+    //    asset manager via the packaged APK context. Both attempts crashed
+    //    testReleaseUnitTest / testBenchmarkUnitTest with SIGABRT. Reverted
+    //    to the variant-source-set wiring and accepted ~50KB Room version-
+    //    history JSON bloat in the release APK. P3 follow-up: investigate
+    //    `androidResources.noCompress` filter or move schemas to JVM-only
+    //    resources with a custom MigrationTestHelper reader so the assets
+    //    can stay out of every production APK.
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")
         getByName("debug").assets.srcDirs("$projectDir/schemas")
+        getByName("release").assets.srcDirs("$projectDir/schemas")
         // AGP creates the benchmark variant sourceSet lazily; force creation
         // via getByName so the assets wiring lands. Pre-fix findByName returned
         // null during evaluation order and migration tests silently lacked the

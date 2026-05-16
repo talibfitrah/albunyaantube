@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/vue';
+import { createPinia } from 'pinia';
 import { createI18n } from 'vue-i18n';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import UsersManagementView from '@/views/UsersManagementView.vue';
@@ -41,7 +42,7 @@ const i18n = createI18n({
 function renderView() {
   return render(UsersManagementView, {
     global: {
-      plugins: [i18n]
+      plugins: [createPinia(), i18n]
     }
   });
 }

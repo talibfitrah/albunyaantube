@@ -98,6 +98,15 @@ class UserBackfillMigrationTimeoutTest {
         when(releaseFuture.get(eq(2L), eq(TimeUnit.SECONDS)))
                 .thenThrow(new TimeoutException("simulated stall on release"));
 
+        // post-claim resume read: no prior phase-1 cursor
+        ApiFuture postClaimReadFuture = mock(ApiFuture.class);
+        com.google.cloud.firestore.DocumentSnapshot postClaimSnap =
+                mock(com.google.cloud.firestore.DocumentSnapshot.class);
+        when(lockRef.get()).thenReturn(postClaimReadFuture);
+        when(postClaimReadFuture.get(eq(timeouts.getRead()), eq(TimeUnit.SECONDS)))
+                .thenReturn(postClaimSnap);
+        when(postClaimSnap.exists()).thenReturn(false);
+
         // runTransaction is called twice — return claim first, release second
         doReturn(claimFuture, releaseFuture).when(firestore).runTransaction(any());
 

@@ -18,7 +18,6 @@ const ArchivedContentReviewView = () => import('@/views/ArchivedContentReviewVie
 const ContentSortingView = () => import('@/views/ContentSortingView.vue');
 const UsersManagementView = () => import('@/views/UsersManagementView.vue');
 const ReportsView = () => import('@/views/ReportsView.vue');
-const AuditLogView = () => import('@/views/AuditLogView.vue');
 const ActivityLogView = () => import('@/views/ActivityLogView.vue');
 const ProfileSettingsView = () => import('@/views/ProfileSettingsView.vue');
 const NotificationsSettingsView = () => import('@/views/NotificationsSettingsView.vue');
@@ -95,12 +94,6 @@ const protectedChildRoutes = [
     path: 'users',
     name: 'users',
     component: UsersManagementView,
-    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
-  },
-  {
-    path: 'audit',
-    name: 'audit',
-    component: AuditLogView,
     meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {

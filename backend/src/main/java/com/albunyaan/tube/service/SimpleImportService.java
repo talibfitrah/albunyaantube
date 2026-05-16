@@ -51,20 +51,20 @@ public class SimpleImportService {
     private static final int MAX_KEYWORDS = 50;
     private static final int MAX_KEYWORD_LENGTH = 100;
 
-    private final YouTubeService youTubeService;
+    private final ChannelOrchestrator channelOrchestrator;
     private final CategoryMappingService categoryMappingService;
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
 
     public SimpleImportService(
-            YouTubeService youTubeService,
+            ChannelOrchestrator channelOrchestrator,
             CategoryMappingService categoryMappingService,
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository
     ) {
-        this.youTubeService = youTubeService;
+        this.channelOrchestrator = channelOrchestrator;
         this.categoryMappingService = categoryMappingService;
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -178,7 +178,7 @@ public class SimpleImportService {
                 }
 
                 // 2. Validate YouTube ID still exists and fetch metadata
-                ChannelDetailsDto ytChannel = youTubeService.validateAndFetchChannelDto(youtubeId);
+                ChannelDetailsDto ytChannel = channelOrchestrator.validateAndFetchChannelDto(youtubeId);
 
                 if (ytChannel == null) {
                     response.addResult(SimpleImportItemResult.failed(
@@ -317,7 +317,7 @@ public class SimpleImportService {
                 }
 
                 // 2. Validate YouTube ID and fetch metadata
-                PlaylistDetailsDto ytPlaylist = youTubeService.validateAndFetchPlaylistDto(youtubeId);
+                PlaylistDetailsDto ytPlaylist = channelOrchestrator.validateAndFetchPlaylistDto(youtubeId);
 
                 if (ytPlaylist == null) {
                     response.addResult(SimpleImportItemResult.failed(
@@ -449,7 +449,7 @@ public class SimpleImportService {
                 }
 
                 // 2. Validate YouTube ID and fetch metadata
-                StreamDetailsDto ytVideo = youTubeService.validateAndFetchVideoDto(youtubeId);
+                StreamDetailsDto ytVideo = channelOrchestrator.validateAndFetchVideoDto(youtubeId);
 
                 if (ytVideo == null) {
                     response.addResult(SimpleImportItemResult.failed(

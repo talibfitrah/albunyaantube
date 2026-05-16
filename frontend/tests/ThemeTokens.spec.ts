@@ -3,7 +3,6 @@ import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 const cssPath = resolve(__dirname, '../src/assets/main.css');
-const moderationViewPath = resolve(__dirname, '../src/views/ModerationQueueView.vue');
 const dashboardViewPath = resolve(__dirname, '../src/views/DashboardView.vue');
 
 describe('theme tokens', () => {
@@ -30,10 +29,7 @@ describe('theme tokens', () => {
   });
 
   it('maps views to the tokenized palette', () => {
-    const moderationView = readFileSync(moderationViewPath, 'utf8');
     const dashboardView = readFileSync(dashboardViewPath, 'utf8');
-    [moderationView, dashboardView].forEach(content => {
-      expect(content).toMatch(/var\(--color-/);
-    });
+    expect(dashboardView).toMatch(/var\(--color-/);
   });
 });

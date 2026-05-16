@@ -7,9 +7,8 @@ package com.albunyaan.tube.data.me
  *
  * v3 (ANDROID-PERSONAL-02 / ATOM refresh): result type extended to carry
  * conditional-GET metadata (ETag, Last-Modified) and a NotModified branch
- * for HTTP 304 responses. The default ATOM implementation is
- * [AtomChannelFeedFetcher]; the legacy NewPipe-scraping path remains as
- * [NewPipeChannelFeedFetcher] (rollback path; not bound by default).
+ * for HTTP 304 responses. The default implementation is
+ * [AtomChannelFeedFetcher].
  */
 interface ChannelFeedFetcher {
 

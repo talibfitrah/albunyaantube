@@ -89,12 +89,6 @@ export type CreateCategoryRequest = operations['createCategory']['requestBody'][
 export type ListChannelsParams = operations['listChannels']['parameters']['query']
 export type ListChannelsResponse = operations['listChannels']['responses']['200']['content']['application/json']
 
-// Admin YouTube Search
-export type YoutubeSearchUnifiedParams = operations['youtubeSearchUnified']['parameters']['query']
-export type YoutubeSearchChannelsParams = operations['youtubeSearchChannels']['parameters']['query']
-export type YoutubeSearchPlaylistsParams = operations['youtubeSearchPlaylists']['parameters']['query']
-export type YoutubeSearchVideosParams = operations['youtubeSearchVideos']['parameters']['query']
-
 // Admin Approvals
 export type ListPendingApprovalsParams = operations['listPendingApprovals']['parameters']['query']
 

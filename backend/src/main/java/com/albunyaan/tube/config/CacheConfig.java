@@ -49,9 +49,6 @@ public class CacheConfig {
     // Category mapping cache (used by CategoryMappingService)
     public static final String CACHE_CATEGORY_NAME_MAPPING = "categoryNameMapping";
 
-    // Dashboard stats cache (5-minute TTL for admin dashboard by-category stats)
-    public static final String CACHE_DASHBOARD_CATEGORY_STATS = "dashboardCategoryStats";
-
     // User status cache (60s TTL per D4; evicted on lifecycle mutation)
     public static final String CACHE_USER_STATUS = "userStatus";
 
@@ -108,8 +105,8 @@ public class CacheConfig {
                 // User status cache (overridden below to 60s TTL per D4)
                 CACHE_USER_STATUS
 
-                // Note: workspace exclusions and dashboard category stats use dedicated beans
-                // with 5-min TTL, not the CacheManager (see beans below)
+                // Note: workspace exclusions use a dedicated bean with 5-min TTL,
+                // not the CacheManager (see bean below)
         );
 
         cacheManager.setCaffeine(Caffeine.newBuilder()
@@ -167,23 +164,6 @@ public class CacheConfig {
     }
 
     /**
-     * Dedicated cache for dashboard category stats with 5-minute TTL.
-     * This prevents N+1 aggregation queries from exhausting Firestore quota
-     * when dashboard is refreshed frequently or has many categories.
-     *
-     * Key: "all" (single cached result for all categories)
-     * Value: Map<String, CategoryStats> (category ID to stats)
-     */
-    @Bean
-    public com.github.benmanes.caffeine.cache.Cache<String, java.util.Map<String, ?>> dashboardCategoryStatsCache() {
-        return Caffeine.newBuilder()
-                .expireAfterWrite(5, TimeUnit.MINUTES)
-                .maximumSize(1)  // Only one cached result
-                .recordStats()
-                .build();
-    }
-
-    /**
      * Rate-limit cache for content report submissions.
      * Key: deviceId or IP address. Value: submission count within the TTL window.
      * Max 5 submissions per device per hour.
@@ -196,4 +176,3 @@ public class CacheConfig {
                 .build();
     }
 }
-

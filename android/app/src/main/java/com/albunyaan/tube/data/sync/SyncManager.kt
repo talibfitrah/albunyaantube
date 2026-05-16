@@ -77,7 +77,7 @@ class SyncManager @Inject constructor(
         when {
             b == null -> {
                 binding.upsert(AccountBindingEntity(user_id = uid, bound_at = System.currentTimeMillis(), initial_merge_done = false))
-                runMerge(uid)
+                runMergeLocked(uid)
             }
             b.user_id == uid && b.initial_merge_done -> {
                 pullAllLocked(uid)

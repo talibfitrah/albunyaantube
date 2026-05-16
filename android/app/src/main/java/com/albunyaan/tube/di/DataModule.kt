@@ -9,14 +9,10 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
-import com.albunyaan.tube.analytics.ListMetricsReporter
 import com.albunyaan.tube.analytics.LogExtractorMetricsReporter
-import com.albunyaan.tube.analytics.LogListMetricsReporter
 import com.albunyaan.tube.analytics.TelemetryExtractorMetricsReporter
 import com.albunyaan.tube.data.extractor.ExtractorClient
-import com.albunyaan.tube.data.extractor.MetadataHydrator
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
-import com.albunyaan.tube.data.extractor.NoOpMetadataHydrator
 import com.albunyaan.tube.data.extractor.OkHttpDownloader
 import com.albunyaan.tube.data.extractor.YoutubeClientRotator
 import com.albunyaan.tube.data.extractor.cache.MetadataCache
@@ -26,7 +22,6 @@ import com.albunyaan.tube.data.paging.DefaultContentPagingRepository
 import com.albunyaan.tube.data.report.ReportRepository
 import com.albunyaan.tube.data.report.RetrofitReportRepository
 import com.albunyaan.tube.data.source.ContentService
-import com.albunyaan.tube.data.source.FakeContentService
 import com.albunyaan.tube.data.source.RetrofitContentService
 import com.albunyaan.tube.data.source.RetrofitDownloadService
 import com.albunyaan.tube.data.source.api.ContentApi
@@ -224,26 +219,11 @@ object DataModule {
 
     @Provides
     @Singleton
-    fun provideMetadataHydrator(): MetadataHydrator {
-        // Use NoOpMetadataHydrator since backend provides complete data (fast loading)
-        return NoOpMetadataHydrator()
-    }
-
-    @Provides
-    @Singleton
     @Named("retrofitContentService")
     fun provideRetrofitContentService(
-        contentApi: ContentApi,
-        metadataHydrator: MetadataHydrator
+        contentApi: ContentApi
     ): ContentService {
-        return RetrofitContentService(contentApi, metadataHydrator)
-    }
-
-    @Provides
-    @Singleton
-    @Named("fakeContentService")
-    fun provideFakeContentService(): ContentService {
-        return FakeContentService()
+        return RetrofitContentService(contentApi)
     }
 
     @Provides
@@ -263,12 +243,6 @@ object DataModule {
     @Singleton
     fun provideContentPagingRepository(@Named("real") contentService: ContentService): ContentPagingRepository {
         return DefaultContentPagingRepository(contentService)
-    }
-
-    @Provides
-    @Singleton
-    fun provideListMetricsReporter(): ListMetricsReporter {
-        return LogListMetricsReporter()
     }
 
     /**

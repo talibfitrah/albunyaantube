@@ -52,7 +52,7 @@ class ContentValidationServiceTest {
     private ValidationRunRepository validationRunRepository;
 
     @Mock
-    private YouTubeService youtubeService;
+    private ChannelOrchestrator channelOrchestrator;
 
     @Mock
     private AuditLogService auditLogService;
@@ -76,7 +76,7 @@ class ContentValidationServiceTest {
                 channelRepository,
                 playlistRepository,
                 videoRepository,
-                youtubeService,
+                channelOrchestrator,
                 auditLogService,
                 validationRunRepository,
                 validationProperties,
@@ -110,7 +110,7 @@ class ContentValidationServiceTest {
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
             result.addValid("UC123", dto);
 
-            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -139,7 +139,7 @@ class ContentValidationServiceTest {
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
             result.addNotFound("UC123");
 
-            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -165,7 +165,7 @@ class ContentValidationServiceTest {
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
             result.addError("UC123", "Network timeout");
 
-            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -193,7 +193,7 @@ class ContentValidationServiceTest {
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
             result.addValid("UC456", new ChannelDetailsDto());
 
-            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -202,7 +202,7 @@ class ContentValidationServiceTest {
             // Assert
             // Only UC456 should be validated (UC123 skipped due to ARCHIVED status)
             ArgumentCaptor<List<String>> idsCaptor = ArgumentCaptor.forClass(List.class);
-            verify(youtubeService).batchValidateChannelsDtoWithDetails(idsCaptor.capture());
+            verify(channelOrchestrator).batchValidateChannelsDtoWithDetails(idsCaptor.capture());
 
             List<String> validatedIds = idsCaptor.getValue();
             assertEquals(1, validatedIds.size());
@@ -225,7 +225,7 @@ class ContentValidationServiceTest {
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
             result.addValid("UC123", new ChannelDetailsDto());
 
-            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -233,7 +233,7 @@ class ContentValidationServiceTest {
 
             // Assert - channel should be included for retry
             ArgumentCaptor<List<String>> idsCaptor = ArgumentCaptor.forClass(List.class);
-            verify(youtubeService).batchValidateChannelsDtoWithDetails(idsCaptor.capture());
+            verify(channelOrchestrator).batchValidateChannelsDtoWithDetails(idsCaptor.capture());
 
             List<String> validatedIds = idsCaptor.getValue();
             assertEquals(1, validatedIds.size());
@@ -281,7 +281,7 @@ class ContentValidationServiceTest {
             BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
             result.addValid("PL123", dto);
 
-            when(youtubeService.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -322,7 +322,7 @@ class ContentValidationServiceTest {
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
             result.addValid("abc123", dto);
 
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -390,17 +390,17 @@ class ContentValidationServiceTest {
             BatchValidationResult<ChannelDetailsDto> channelResult = new BatchValidationResult<>();
             channelResult.addValid("UC1", new ChannelDetailsDto());
             channelResult.addValid("UC2", new ChannelDetailsDto());
-            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(channelResult);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(channelResult);
 
             BatchValidationResult<PlaylistDetailsDto> playlistResult = new BatchValidationResult<>();
             playlistResult.addValid("PL1", new PlaylistDetailsDto());
             playlistResult.addValid("PL2", new PlaylistDetailsDto());
-            when(youtubeService.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(playlistResult);
+            when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(playlistResult);
 
             BatchValidationResult<StreamDetailsDto> videoResult = new BatchValidationResult<>();
             videoResult.addValid("V1", new StreamDetailsDto());
             videoResult.addValid("V2", new StreamDetailsDto());
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(videoResult);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(videoResult);
 
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -408,11 +408,11 @@ class ContentValidationServiceTest {
             ValidationRun run = service.validateAllContent("MANUAL", "tester", "Tester", null);
 
             // Assert: all IDs were sent for validation and counted
-            verify(youtubeService).batchValidateChannelsDtoWithDetails(argThat(ids ->
+            verify(channelOrchestrator).batchValidateChannelsDtoWithDetails(argThat(ids ->
                     ids.size() == 2 && ids.containsAll(List.of("UC1", "UC2"))));
-            verify(youtubeService).batchValidatePlaylistsDtoWithDetails(argThat(ids ->
+            verify(channelOrchestrator).batchValidatePlaylistsDtoWithDetails(argThat(ids ->
                     ids.size() == 2 && ids.containsAll(List.of("PL1", "PL2"))));
-            verify(youtubeService).batchValidateVideosDtoWithDetails(argThat(ids ->
+            verify(channelOrchestrator).batchValidateVideosDtoWithDetails(argThat(ids ->
                     ids.size() == 2 && ids.containsAll(List.of("V1", "V2"))));
 
             assertEquals(2, run.getChannelsChecked());
@@ -436,14 +436,14 @@ class ContentValidationServiceTest {
 
             BatchValidationResult<StreamDetailsDto> videoResult = new BatchValidationResult<>();
             videoResult.addNotFound("VLOWER");
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(videoResult);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(videoResult);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
             ValidationRun run = service.validateVideos("MANUAL", "tester", "Tester", null);
 
             // Assert: the lowercase item was included and processed
-            verify(youtubeService).batchValidateVideosDtoWithDetails(argThat(ids ->
+            verify(channelOrchestrator).batchValidateVideosDtoWithDetails(argThat(ids ->
                     ids.size() == 1 && ids.contains("VLOWER")));
             assertEquals(1, run.getVideosChecked());
             assertEquals(1, run.getVideosMarkedArchived());
@@ -465,7 +465,7 @@ class ContentValidationServiceTest {
 
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
             result.addNotFound("UCabc");
-            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             service.validateChannels("MANUAL", "test-user", "Test User", 100);
@@ -483,7 +483,7 @@ class ContentValidationServiceTest {
             // Channel is valid on YouTube — no archive happens
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
             result.addValid("UCabc", new ChannelDetailsDto());
-            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             service.validateChannels("MANUAL", "test-user", "Test User", 100);
@@ -502,7 +502,7 @@ class ContentValidationServiceTest {
 
             BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
             result.addNotFound("PLxyz");
-            when(youtubeService.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             service.validatePlaylists("MANUAL", "test-user", "Test User", 100);
@@ -520,7 +520,7 @@ class ContentValidationServiceTest {
             // Playlist is valid on YouTube — no archive happens
             BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
             result.addValid("PLxyz", new PlaylistDetailsDto());
-            when(youtubeService.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             service.validatePlaylists("MANUAL", "test-user", "Test User", 100);
@@ -539,7 +539,7 @@ class ContentValidationServiceTest {
 
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
             result.addNotFound("dQw4w9WgXcQ");
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             service.validateVideos("MANUAL", "test-user", "Test User", 100);
@@ -557,7 +557,7 @@ class ContentValidationServiceTest {
             // Video is valid on YouTube — no archive happens
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
             result.addValid("dQw4w9WgXcQ", new StreamDetailsDto());
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             service.validateVideos("MANUAL", "test-user", "Test User", 100);
@@ -577,7 +577,7 @@ class ContentValidationServiceTest {
 
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
             result.addNotFound("UCabc");
-            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Simulate Redis being down
@@ -605,7 +605,7 @@ class ContentValidationServiceTest {
 
             BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
             result.addNotFound("PLxyz");
-            when(youtubeService.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Simulate Redis being down
@@ -631,7 +631,7 @@ class ContentValidationServiceTest {
 
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
             result.addNotFound("dQw4w9WgXcQ");
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Simulate Redis being down
@@ -662,7 +662,7 @@ class ContentValidationServiceTest {
 
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
             result.addNotFound("UCabc");
-            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -682,7 +682,7 @@ class ContentValidationServiceTest {
 
             BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
             result.addNotFound("PLxyz");
-            when(youtubeService.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -702,7 +702,7 @@ class ContentValidationServiceTest {
 
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
             result.addNotFound("dQw4w9WgXcQ");
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act

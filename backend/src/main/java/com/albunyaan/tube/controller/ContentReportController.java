@@ -9,7 +9,7 @@ import com.albunyaan.tube.model.ReportStatus;
 import com.albunyaan.tube.model.ReportTargetType;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.ContentReportService;
-import com.albunyaan.tube.service.YouTubeService;
+import com.albunyaan.tube.service.ChannelOrchestrator;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -34,11 +34,11 @@ public class ContentReportController {
     private static final String HEADER_DEVICE_ID = "X-Device-Id";
 
     private final ContentReportService reportService;
-    private final YouTubeService youTubeService;
+    private final ChannelOrchestrator channelOrchestrator;
 
-    public ContentReportController(ContentReportService reportService, YouTubeService youTubeService) {
+    public ContentReportController(ContentReportService reportService, ChannelOrchestrator channelOrchestrator) {
         this.reportService = reportService;
-        this.youTubeService = youTubeService;
+        this.channelOrchestrator = channelOrchestrator;
     }
 
     @PostMapping("/api/v1/reports")
@@ -123,7 +123,7 @@ public class ContentReportController {
         try {
             switch (type) {
                 case VIDEO -> {
-                    StreamDetailsDto video = youTubeService.getVideoDetailsDto(id);
+                    StreamDetailsDto video = channelOrchestrator.getVideoDetailsDto(id);
                     Map<String, String> body = new java.util.HashMap<>();
                     body.put("title", video.getName());
                     body.put("name", video.getName());
@@ -131,7 +131,7 @@ public class ContentReportController {
                     return ResponseEntity.ok(body);
                 }
                 case PLAYLIST -> {
-                    PlaylistDetailsDto playlist = youTubeService.getPlaylistDetailsDto(id);
+                    PlaylistDetailsDto playlist = channelOrchestrator.getPlaylistDetailsDto(id);
                     Map<String, String> body = new java.util.HashMap<>();
                     body.put("title", playlist.getName());
                     body.put("name", playlist.getName());
@@ -139,7 +139,7 @@ public class ContentReportController {
                     return ResponseEntity.ok(body);
                 }
                 case CHANNEL -> {
-                    ChannelDetailsDto channel = youTubeService.getChannelDetailsDto(id);
+                    ChannelDetailsDto channel = channelOrchestrator.getChannelDetailsDto(id);
                     Map<String, String> body = new java.util.HashMap<>();
                     body.put("title", channel.getName());
                     body.put("name", channel.getName());

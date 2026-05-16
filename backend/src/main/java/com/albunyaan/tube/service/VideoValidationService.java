@@ -36,20 +36,20 @@ public class VideoValidationService {
     private static final int DEFAULT_BATCH_SIZE = 50; // YouTube API limit
 
     private final VideoRepository videoRepository;
-    private final YouTubeService youtubeService;
+    private final ChannelOrchestrator channelOrchestrator;
     private final AuditLogService auditLogService;
     private final ValidationRunRepository validationRunRepository;
     private final ValidationProperties validationProperties;
 
     public VideoValidationService(
             VideoRepository videoRepository,
-            YouTubeService youtubeService,
+            ChannelOrchestrator channelOrchestrator,
             AuditLogService auditLogService,
             ValidationRunRepository validationRunRepository,
             ValidationProperties validationProperties
     ) {
         this.videoRepository = videoRepository;
-        this.youtubeService = youtubeService;
+        this.channelOrchestrator = channelOrchestrator;
         this.auditLogService = auditLogService;
         this.validationRunRepository = validationRunRepository;
         this.validationProperties = validationProperties;
@@ -99,7 +99,7 @@ public class VideoValidationService {
             // IMPORTANT: Do NOT treat "missing from results" as UNAVAILABLE, because the old API
             // hid transient errors (rate limiting/network) and caused mass false-unavailability.
             BatchValidationResult<StreamDetailsDto> validationResult =
-                    youtubeService.batchValidateVideosDtoWithDetails(youtubeIds);
+                    channelOrchestrator.batchValidateVideosDtoWithDetails(youtubeIds);
 
             // Process results
             int checkedCount = 0;
@@ -320,7 +320,7 @@ public class VideoValidationService {
 
             // Batch validate with detailed error categorization (see validateStandaloneVideos for rationale)
             BatchValidationResult<StreamDetailsDto> validationResult =
-                    youtubeService.batchValidateVideosDtoWithDetails(youtubeIds);
+                    channelOrchestrator.batchValidateVideosDtoWithDetails(youtubeIds);
 
             // Process results
             int checkedCount = 0;

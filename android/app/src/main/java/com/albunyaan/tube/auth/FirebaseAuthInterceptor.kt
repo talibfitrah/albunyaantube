@@ -86,8 +86,12 @@ class FirebaseAuthInterceptor @Inject constructor(
                             // Re-check inside the lock — a prior holder may
                             // have just refreshed; getIdToken(false) returns
                             // the cached fresh token instantly.
-                            user.getIdToken(false).await().token
-                                ?: user.getIdToken(true).await().token
+                            val cached = user.getIdToken(false).await().token
+                            if (cached != null && cached != token) {
+                                cached
+                            } else {
+                                user.getIdToken(true).await().token
+                            }
                         }
                     }
                 }

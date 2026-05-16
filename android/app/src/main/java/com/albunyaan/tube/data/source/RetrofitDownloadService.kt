@@ -16,7 +16,7 @@ import com.albunyaan.tube.download.SelectedStream
 /**
  * Retrofit-based implementation of download service using generated OpenAPI DTOs
  *
- * Replaces MockDownloadService with real backend API calls.
+ * Real backend-backed download service.
  * Follows Transport Types vs Domain Models pattern with explicit DTO → domain mappers.
  */
 class RetrofitDownloadService(

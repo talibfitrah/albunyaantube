@@ -41,7 +41,7 @@ import static org.mockito.Mockito.*;
 class ContentImportServiceTest {
 
     @Mock
-    private YouTubeService youtubeService;
+    private ChannelOrchestrator channelOrchestrator;
 
     @Mock
     private CategoryMappingService categoryMappingService;
@@ -63,7 +63,7 @@ class ContentImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new ContentImportService(
-                youtubeService,
+                channelOrchestrator,
                 categoryMappingService,
                 channelRepository,
                 playlistRepository,
@@ -102,7 +102,7 @@ class ContentImportServiceTest {
             ChannelDetailsDto dto = createChannelDto(youtubeId, "Channel " + youtubeId.substring(2));
             validationResult.addValid(youtubeId, dto);
         }
-        when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
 
         // Mock: Category mapping
         when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenReturn(List.of("cat-1"));
@@ -161,7 +161,7 @@ class ContentImportServiceTest {
             String youtubeId = "UC" + i;
             validationResult.addValid(youtubeId, createChannelDto(youtubeId, "Channel " + i));
         }
-        when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
 
         when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenReturn(List.of("cat-1"));
         when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -212,7 +212,7 @@ class ContentImportServiceTest {
         validationResult.addNotFound("UC8");
         validationResult.addNotFound("UC9");
 
-        when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
         when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenReturn(List.of("cat-1"));
         when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -264,7 +264,7 @@ class ContentImportServiceTest {
         for (int i = 0; i < 5; i++) {
             validationResult.addValid("UC" + i, createChannelDto("UC" + i, "Channel " + i));
         }
-        when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
         when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenReturn(List.of("cat-1"));
 
         // Mock: Firestore fails for 2 channels
@@ -319,7 +319,7 @@ class ContentImportServiceTest {
         when(channelRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
 
         // Mock: All validate successfully (batch validation will be called multiple times)
-        when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenAnswer(invocation -> {
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             List<String> batch = invocation.getArgument(0);
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
@@ -344,7 +344,7 @@ class ContentImportServiceTest {
         assertEquals(ValidationRun.STATUS_COMPLETED, run.getStatus());
 
         // Verify batch validation called multiple times (batch size is 500)
-        verify(youtubeService, atLeast(2)).batchValidateChannelsDtoWithDetails(anyList());
+        verify(channelOrchestrator, atLeast(2)).batchValidateChannelsDtoWithDetails(anyList());
         verify(channelRepository, times(1000)).save(any(Channel.class));
     }
 
@@ -380,7 +380,7 @@ class ContentImportServiceTest {
         when(videoRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
 
         // Mock: All validate successfully
-        when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenAnswer(invocation -> {
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             List<String> batch = invocation.getArgument(0);
             BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
@@ -390,7 +390,7 @@ class ContentImportServiceTest {
             return result;
         });
 
-        when(youtubeService.batchValidatePlaylistsDtoWithDetails(anyList())).thenAnswer(invocation -> {
+        when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             List<String> batch = invocation.getArgument(0);
             BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
@@ -400,7 +400,7 @@ class ContentImportServiceTest {
             return result;
         });
 
-        when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenAnswer(invocation -> {
+        when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             List<String> batch = invocation.getArgument(0);
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
@@ -471,7 +471,7 @@ class ContentImportServiceTest {
         validationResult.addNotFound("UC8");
         validationResult.addNotFound("UC9");
 
-        when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
         when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenReturn(List.of("cat-1"));
         when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -524,7 +524,7 @@ class ContentImportServiceTest {
         retryResult.addValid("UC2", createChannelDto("UC2", "Channel 2"));
         retryResult.addError("UC3", "429 Too Many Requests (retry)");
 
-        when(youtubeService.batchValidateChannelsDtoWithDetails(anyList()))
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList()))
                 .thenReturn(firstResult)
                 .thenReturn(retryResult);
 
@@ -548,7 +548,7 @@ class ContentImportServiceTest {
         assertTrue(failedItemIds.contains("channel:UC3"));
         assertFalse(failedItemIds.contains("channel:UC2"));
 
-        verify(youtubeService, times(2)).batchValidateChannelsDtoWithDetails(anyList());
+        verify(channelOrchestrator, times(2)).batchValidateChannelsDtoWithDetails(anyList());
         verify(channelRepository, times(2)).save(any(Channel.class));
     }
 

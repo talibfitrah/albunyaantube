@@ -527,11 +527,6 @@ DownloadStorage  Firestore (download_events)
 - **Manual testing**: Device/emulator with real backend
 - **Scope**: Native Kotlin/Gradle testing separate from frontend
 
-### TestSprite Integration
-- **Frontend Testing**: Test only `/frontend` directory (exclude `/android`)
-- **Backend Testing**: Test only `/backend` directory (exclude `/frontend` and `/android`)
-- Android app has separate native testing tooling
-
 See [../status/TESTING_GUIDE.md](../status/TESTING_GUIDE.md) for detailed testing procedures.
 
 ---

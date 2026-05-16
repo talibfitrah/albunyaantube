@@ -1,29 +1,21 @@
 package com.albunyaan.tube.controller;
 
-import com.albunyaan.tube.dto.ChannelDetailsDto;
-import com.albunyaan.tube.dto.EnrichedSearchResult;
-import com.albunyaan.tube.dto.PaginatedItemsResponse;
-import com.albunyaan.tube.dto.PlaylistDetailsDto;
-import com.albunyaan.tube.dto.PlaylistItemDto;
-import com.albunyaan.tube.dto.SearchPageResponse;
-import com.albunyaan.tube.dto.StreamDetailsDto;
-import com.albunyaan.tube.dto.StreamItemDto;
-import com.albunyaan.tube.service.YouTubeService;
+import com.albunyaan.tube.repository.ChannelRepository;
+import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.VideoRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
-/**
- * FIREBASE-MIGRATE-04: YouTube Search Controller
- *
- * Provides YouTube search and preview functionality for admin interface.
- * Used to search and select content before adding to master list.
- */
 @RestController
 @RequestMapping("/api/admin/youtube")
 @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
@@ -31,76 +23,33 @@ public class YouTubeSearchController {
 
     private static final Logger logger = LoggerFactory.getLogger(YouTubeSearchController.class);
 
-    private final YouTubeService youtubeService;
-    private final com.albunyaan.tube.repository.ChannelRepository channelRepository;
-    private final com.albunyaan.tube.repository.PlaylistRepository playlistRepository;
-    private final com.albunyaan.tube.repository.VideoRepository videoRepository;
+    private final ChannelRepository channelRepository;
+    private final PlaylistRepository playlistRepository;
+    private final VideoRepository videoRepository;
 
     public YouTubeSearchController(
-            YouTubeService youtubeService,
-            com.albunyaan.tube.repository.ChannelRepository channelRepository,
-            com.albunyaan.tube.repository.PlaylistRepository playlistRepository,
-            com.albunyaan.tube.repository.VideoRepository videoRepository
+            ChannelRepository channelRepository,
+            PlaylistRepository playlistRepository,
+            VideoRepository videoRepository
     ) {
-        this.youtubeService = youtubeService;
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
     }
 
     /**
-     * Unified search - single API call, mixed results (FAST!)
-     */
-    @GetMapping("/search/unified")
-    public ResponseEntity<List<EnrichedSearchResult>> searchUnified(@RequestParam String query) {
-        try {
-            List<EnrichedSearchResult> results = youtubeService.searchAllEnriched(query);
-            return ResponseEntity.ok(results);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Search for all content types with pagination support (FAST + INFINITE SCROLL!)
-     */
-    @GetMapping("/search/all")
-    public ResponseEntity<SearchPageResponse> searchAll(
-            @RequestParam String query,
-            @RequestParam(required = false) String pageToken
-    ) {
-        try {
-            SearchPageResponse results = youtubeService.searchAllEnrichedPaged(query, pageToken);
-            return ResponseEntity.ok(results);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Search for channels with enriched metadata
-     */
-    @GetMapping("/search/channels")
-    public ResponseEntity<List<EnrichedSearchResult>> searchChannels(@RequestParam String query) {
-        try {
-            List<EnrichedSearchResult> results = youtubeService.searchChannelsEnriched(query);
-            return ResponseEntity.ok(results);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Check which YouTube IDs already exist in the registry
+     * Check which YouTube IDs already exist in the registry.
+     *
+     * The admin UI searches YouTube directly from the browser; this endpoint is
+     * only the backend existence check that prevents duplicate submissions.
      */
     @PostMapping("/check-existing")
     public ResponseEntity<ExistingContentResponse> checkExisting(@RequestBody ExistingContentRequest request) {
         try {
-            java.util.Set<String> existingChannels = new java.util.HashSet<>();
-            java.util.Set<String> existingPlaylists = new java.util.HashSet<>();
-            java.util.Set<String> existingVideos = new java.util.HashSet<>();
+            Set<String> existingChannels = new HashSet<>();
+            Set<String> existingPlaylists = new HashSet<>();
+            Set<String> existingVideos = new HashSet<>();
 
-            // Check channels
             for (String ytId : request.getChannelIds()) {
                 try {
                     if (channelRepository.findByYoutubeId(ytId).isPresent()) {
@@ -111,7 +60,6 @@ public class YouTubeSearchController {
                 }
             }
 
-            // Check playlists
             for (String ytId : request.getPlaylistIds()) {
                 try {
                     if (playlistRepository.findByYoutubeId(ytId).isPresent()) {
@@ -122,7 +70,6 @@ public class YouTubeSearchController {
                 }
             }
 
-            // Check videos
             for (String ytId : request.getVideoIds()) {
                 try {
                     if (videoRepository.findByYoutubeId(ytId).isPresent()) {
@@ -139,9 +86,6 @@ public class YouTubeSearchController {
         }
     }
 
-    /**
-     * Request body for checking existing content
-     */
     public static class ExistingContentRequest {
         private List<String> channelIds = List.of();
         private List<String> playlistIds = List.of();
@@ -152,7 +96,7 @@ public class YouTubeSearchController {
         }
 
         public void setChannelIds(List<String> channelIds) {
-            this.channelIds = channelIds;
+            this.channelIds = channelIds != null ? channelIds : List.of();
         }
 
         public List<String> getPlaylistIds() {
@@ -160,7 +104,7 @@ public class YouTubeSearchController {
         }
 
         public void setPlaylistIds(List<String> playlistIds) {
-            this.playlistIds = playlistIds;
+            this.playlistIds = playlistIds != null ? playlistIds : List.of();
         }
 
         public List<String> getVideoIds() {
@@ -168,224 +112,31 @@ public class YouTubeSearchController {
         }
 
         public void setVideoIds(List<String> videoIds) {
-            this.videoIds = videoIds;
+            this.videoIds = videoIds != null ? videoIds : List.of();
         }
     }
 
-    /**
-     * Response for existing content check
-     */
     public static class ExistingContentResponse {
-        private final java.util.Set<String> existingChannels;
-        private final java.util.Set<String> existingPlaylists;
-        private final java.util.Set<String> existingVideos;
+        private final Set<String> existingChannels;
+        private final Set<String> existingPlaylists;
+        private final Set<String> existingVideos;
 
-        public ExistingContentResponse(java.util.Set<String> existingChannels, java.util.Set<String> existingPlaylists, java.util.Set<String> existingVideos) {
+        public ExistingContentResponse(Set<String> existingChannels, Set<String> existingPlaylists, Set<String> existingVideos) {
             this.existingChannels = existingChannels;
             this.existingPlaylists = existingPlaylists;
             this.existingVideos = existingVideos;
         }
 
-        public java.util.Set<String> getExistingChannels() {
+        public Set<String> getExistingChannels() {
             return existingChannels;
         }
 
-        public java.util.Set<String> getExistingPlaylists() {
+        public Set<String> getExistingPlaylists() {
             return existingPlaylists;
         }
 
-        public java.util.Set<String> getExistingVideos() {
+        public Set<String> getExistingVideos() {
             return existingVideos;
         }
     }
-
-    /**
-     * Response wrapper for enriched search all endpoint
-     */
-    public static class EnrichedSearchAllResponse {
-        private final List<EnrichedSearchResult> channels;
-        private final List<EnrichedSearchResult> playlists;
-        private final List<EnrichedSearchResult> videos;
-
-        public EnrichedSearchAllResponse(List<EnrichedSearchResult> channels, List<EnrichedSearchResult> playlists, List<EnrichedSearchResult> videos) {
-            this.channels = channels;
-            this.playlists = playlists;
-            this.videos = videos;
-        }
-
-        public List<EnrichedSearchResult> getChannels() {
-            return channels;
-        }
-
-        public List<EnrichedSearchResult> getPlaylists() {
-            return playlists;
-        }
-
-        public List<EnrichedSearchResult> getVideos() {
-            return videos;
-        }
-    }
-
-    /**
-     * Search for playlists with enriched metadata
-     */
-    @GetMapping("/search/playlists")
-    public ResponseEntity<List<EnrichedSearchResult>> searchPlaylists(@RequestParam String query) {
-        try {
-            List<EnrichedSearchResult> results = youtubeService.searchPlaylistsEnriched(query);
-            return ResponseEntity.ok(results);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Search for videos with enriched metadata
-     */
-    @GetMapping("/search/videos")
-    public ResponseEntity<List<EnrichedSearchResult>> searchVideos(@RequestParam String query) {
-        try {
-            List<EnrichedSearchResult> results = youtubeService.searchVideosEnriched(query);
-            return ResponseEntity.ok(results);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Get channel details
-     */
-    @GetMapping("/channels/{channelId}")
-    public ResponseEntity<ChannelDetailsDto> getChannelDetails(@PathVariable String channelId) {
-        try {
-            ChannelDetailsDto dto = youtubeService.getChannelDetailsDto(channelId);
-            if (dto == null) {
-                return ResponseEntity.notFound().build();
-            }
-            return ResponseEntity.ok(dto);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Get videos from a channel with optional search and pagination
-     * @param channelId The YouTube channel ID
-     * @param pageToken Optional pagination token
-     * @param q Optional search query to filter videos
-     */
-    @GetMapping("/channels/{channelId}/videos")
-    public ResponseEntity<PaginatedItemsResponse<StreamItemDto>> getChannelVideos(
-            @PathVariable String channelId,
-            @RequestParam(required = false) String pageToken,
-            @RequestParam(required = false) String q
-    ) {
-        try {
-            PaginatedItemsResponse<StreamItemDto> result = youtubeService.getChannelVideosDtoPaginated(channelId, pageToken, q);
-            return ResponseEntity.ok(result);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Get shorts from a channel with pagination
-     */
-    @GetMapping("/channels/{channelId}/shorts")
-    public ResponseEntity<PaginatedItemsResponse<StreamItemDto>> getChannelShorts(
-            @PathVariable String channelId,
-            @RequestParam(required = false) String pageToken
-    ) {
-        try {
-            PaginatedItemsResponse<StreamItemDto> result = youtubeService.getChannelShortsDtoPaginated(channelId, pageToken);
-            return ResponseEntity.ok(result);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Get live streams from a channel with pagination
-     */
-    @GetMapping("/channels/{channelId}/livestreams")
-    public ResponseEntity<PaginatedItemsResponse<StreamItemDto>> getChannelLiveStreams(
-            @PathVariable String channelId,
-            @RequestParam(required = false) String pageToken
-    ) {
-        try {
-            PaginatedItemsResponse<StreamItemDto> result = youtubeService.getChannelLiveStreamsDtoPaginated(channelId, pageToken);
-            return ResponseEntity.ok(result);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Get playlists from a channel with pagination
-     */
-    @GetMapping("/channels/{channelId}/playlists")
-    public ResponseEntity<PaginatedItemsResponse<PlaylistItemDto>> getChannelPlaylists(
-            @PathVariable String channelId,
-            @RequestParam(required = false) String pageToken
-    ) {
-        try {
-            PaginatedItemsResponse<PlaylistItemDto> result = youtubeService.getChannelPlaylistsDtoPaginated(channelId, pageToken);
-            return ResponseEntity.ok(result);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Get playlist details
-     */
-    @GetMapping("/playlists/{playlistId}")
-    public ResponseEntity<PlaylistDetailsDto> getPlaylistDetails(@PathVariable String playlistId) {
-        try {
-            PlaylistDetailsDto dto = youtubeService.getPlaylistDetailsDto(playlistId);
-            if (dto == null) {
-                return ResponseEntity.notFound().build();
-            }
-            return ResponseEntity.ok(dto);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Get videos in a playlist with optional search and pagination
-     * @param playlistId The YouTube playlist ID
-     * @param pageToken Optional pagination token
-     * @param q Optional search query to filter videos by title/description
-     */
-    @GetMapping("/playlists/{playlistId}/videos")
-    public ResponseEntity<PaginatedItemsResponse<StreamItemDto>> getPlaylistVideos(
-            @PathVariable String playlistId,
-            @RequestParam(required = false) String pageToken,
-            @RequestParam(required = false) String q
-    ) {
-        try {
-            PaginatedItemsResponse<StreamItemDto> result = youtubeService.getPlaylistVideosDtoPaginated(playlistId, pageToken, q);
-            return ResponseEntity.ok(result);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    /**
-     * Get video details
-     */
-    @GetMapping("/videos/{videoId}")
-    public ResponseEntity<StreamDetailsDto> getVideoDetails(@PathVariable String videoId) {
-        try {
-            StreamDetailsDto dto = youtubeService.getVideoDetailsDto(videoId);
-            if (dto == null) {
-                return ResponseEntity.notFound().build();
-            }
-            return ResponseEntity.ok(dto);
-        } catch (IOException e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
 }
-

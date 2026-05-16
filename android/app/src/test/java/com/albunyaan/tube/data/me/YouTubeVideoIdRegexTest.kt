@@ -11,9 +11,9 @@ import org.junit.Test
  * at source, but the regex itself must also cover every URL shape the
  * extractor realistically returns.
  */
-class NewPipeChannelFeedFetcherTest {
+class YouTubeVideoIdRegexTest {
 
-    private val regex = NewPipeChannelFeedFetcher.VIDEO_ID_REGEX
+    private val regex = YouTubeVideoIdRegex.VIDEO_ID_REGEX
 
     @Test
     fun `matches standard watch URL`() {

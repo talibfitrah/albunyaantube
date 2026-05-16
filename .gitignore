@@ -175,11 +175,6 @@ synthetic_dash_data.json
 /shared/**/generated/
 /shared/**/openapi-client/
 
-# -----------------------
-# TestSprite test artifacts
-# -----------------------
-/testsprite_tests/
-
 # Gradle build cache
 .gradle-home/
 

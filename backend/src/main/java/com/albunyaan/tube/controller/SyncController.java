@@ -52,7 +52,6 @@ public class SyncController {
             @RequestParam(name = "playlists_id", required = false) String playlistsId,
             @RequestParam(name = "favorites_id", required = false) String favoritesId)
             throws ExecutionException, InterruptedException, TimeoutException {
-        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         // Validate cursor ids: Firestore docIds are <= 1500 bytes; reject anything
         // with slashes/control chars or larger than that so a malicious client
         // can't bloat the startAfter query (cubic R5 P2).
@@ -89,7 +88,6 @@ public class SyncController {
             @PathVariable String id,
             @Valid @RequestBody PutSubscriptionRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
-        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         return ResponseEntity.ok(sync.upsertSubscription(principal.getUid(), id, req));
     }
 
@@ -98,7 +96,6 @@ public class SyncController {
             @AuthenticationPrincipal FirebaseUserDetails principal,
             @PathVariable String id)
             throws ExecutionException, InterruptedException, TimeoutException {
-        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         return ResponseEntity.ok(sync.tombstoneSubscription(principal.getUid(), id));
     }
 
@@ -110,7 +107,6 @@ public class SyncController {
             @PathVariable String id,
             @Valid @RequestBody PutPlaylistRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
-        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         return ResponseEntity.ok(sync.upsertPlaylist(principal.getUid(), id, req));
     }
 
@@ -119,7 +115,6 @@ public class SyncController {
             @AuthenticationPrincipal FirebaseUserDetails principal,
             @PathVariable String id)
             throws ExecutionException, InterruptedException, TimeoutException {
-        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         return ResponseEntity.ok(sync.tombstonePlaylist(principal.getUid(), id));
     }
 
@@ -131,7 +126,6 @@ public class SyncController {
             @PathVariable String id,
             @Valid @RequestBody PutFavoriteRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
-        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         return ResponseEntity.ok(sync.upsertFavorite(principal.getUid(), id, req));
     }
 
@@ -140,7 +134,6 @@ public class SyncController {
             @AuthenticationPrincipal FirebaseUserDetails principal,
             @PathVariable String id)
             throws ExecutionException, InterruptedException, TimeoutException {
-        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         return ResponseEntity.ok(sync.tombstoneFavorite(principal.getUid(), id));
     }
 }

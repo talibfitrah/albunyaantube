@@ -13,7 +13,7 @@ export interface AuditLogPageParams {
   action?: string;
   /**
    * Cubic R7 P1 — wire AbortSignal so superseded fetches actually cancel
-   * server-side. Pre-fix the AuditLogView epoch guard discarded stale
+   * server-side. Pre-fix the audit page epoch guard discarded stale
    * responses on the client, but the underlying request still ran to
    * completion and cost audit-read quota per superseded supersede.
    */

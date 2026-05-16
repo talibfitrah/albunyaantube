@@ -257,7 +257,6 @@ function getNavIcon(labelKey: string): string {
     'navigation.bulkImportExport': '📥',
     'navigation.archivedContent': '📦',
     'navigation.users': '👥',
-    'navigation.audit': '📋',
     'navigation.activity': '📝',
     'navigation.settings': '⚙️'
   };

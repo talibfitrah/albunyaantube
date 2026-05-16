@@ -3,7 +3,6 @@ package com.albunyaan.tube.data.model.mappers
 import com.albunyaan.tube.data.model.Category as DomainCategory
 import com.albunyaan.tube.data.model.ContentItem as DomainContentItem
 import com.albunyaan.tube.data.model.HomeSection
-import com.albunyaan.tube.data.model.api.models.ContentItem as ApiContentItem
 import com.albunyaan.tube.data.model.api.models.ContentItemDto as ApiContentItemDto
 import com.albunyaan.tube.data.source.api.CategoryResponse
 import com.albunyaan.tube.data.source.api.HomeCategorySection
@@ -30,44 +29,6 @@ fun CategoryResponse.toDomain(): DomainCategory {
         displayOrder = this.displayOrder,
         localizedNames = this.localizedNames
     )
-}
-
-/**
- * Map API ContentItem DTO to domain ContentItem sealed class
- */
-fun ApiContentItem.toDomain(primaryCategory: String = "General"): DomainContentItem? {
-    // Map based on content type
-    return when (this.type) {
-        ApiContentItem.Type.VIDEO -> DomainContentItem.Video(
-            id = this.id ?: return null,
-            title = this.title ?: "",
-            category = primaryCategory,
-            durationSeconds = 0, // Not available in ContentItem DTO
-            uploadedDaysAgo = computeDaysAgo(this.createdAt),
-            description = this.description ?: "",
-            thumbnailUrl = this.thumbnailUrl,
-            viewCount = this.count
-        )
-        ApiContentItem.Type.CHANNEL -> DomainContentItem.Channel(
-            id = this.id ?: return null,
-            name = this.title ?: "",
-            category = primaryCategory,
-            subscribers = this.count?.toInt() ?: 0,
-            description = this.description,
-            thumbnailUrl = this.thumbnailUrl,
-            videoCount = null, // Not available in ContentItem DTO
-            categories = this.categoryIds
-        )
-        ApiContentItem.Type.PLAYLIST -> DomainContentItem.Playlist(
-            id = this.id ?: return null,
-            title = this.title ?: "",
-            category = primaryCategory,
-            itemCount = this.count?.toInt() ?: 0,
-            description = this.description,
-            thumbnailUrl = this.thumbnailUrl
-        )
-        else -> null
-    }
 }
 
 /**
@@ -109,21 +70,8 @@ fun ApiContentItemDto.toDomain(): DomainContentItem {
 }
 
 /**
- * Compute days ago from OffsetDateTime (nullable)
- */
-private fun computeDaysAgo(createdAt: java.time.OffsetDateTime?): Int {
-    if (createdAt == null) return 0
-    val now = java.time.OffsetDateTime.now()
-    return java.time.temporal.ChronoUnit.DAYS.between(createdAt, now).toInt()
-}
-
-/**
  * Extension to map list of API DTOs to domain models
  */
-fun List<ApiContentItem>.toDomainContentItems(defaultCategory: String = "General"): List<DomainContentItem> {
-    return this.mapNotNull { it.toDomain(defaultCategory) }
-}
-
 fun List<ApiContentItemDto>.toDomainContentItems(): List<DomainContentItem> {
     return this.map { it.toDomain() }
 }

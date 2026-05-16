@@ -27,7 +27,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
  * priority bypasses the gates and is reserved for live playback only.
  *
  * The injected [NewPipeExtractorClient] ensures `NewPipe.init()` has run
- * before first use (same pattern as [NewPipeChannelFeedFetcher]).
+ * before first use.
  *
  * Test seam: [pageProvider] is `internal` and replaceable by test code via
  * the @VisibleForTesting secondary constructor. Production callers use the
@@ -254,7 +254,7 @@ private fun Page.toSerialized(): ChannelDeepPaginator.SerializedPage =
  * shape. Returns null if the item is missing essential fields.
  */
 private fun StreamInfoItem.toFeedItem(): ChannelFeedFetcher.ChannelFeedItem? {
-    val videoId = NewPipeChannelFeedFetcher.VIDEO_ID_REGEX
+    val videoId = YouTubeVideoIdRegex.VIDEO_ID_REGEX
         .find(url.orEmpty())
         ?.groupValues
         ?.getOrNull(1)

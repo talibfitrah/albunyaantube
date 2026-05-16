@@ -21,7 +21,6 @@ export const navRoutes: NavRoute[] = [
   { labelKey: 'navigation.bulkImportExport', route: { name: 'bulk-import-export' }, requiredRole: 'ADMIN' },
   { labelKey: 'navigation.archivedContent', route: { name: 'archived-content' }, requiredRole: 'ADMIN' },
   { labelKey: 'navigation.users', route: { name: 'users' }, requiredRole: 'ADMIN' },
-  { labelKey: 'navigation.audit', route: { name: 'audit' }, requiredRole: 'ADMIN' },
   { labelKey: 'navigation.activity', route: { name: 'activity' }, requiredRole: 'ADMIN' },
   {
     labelKey: 'navigation.settings',

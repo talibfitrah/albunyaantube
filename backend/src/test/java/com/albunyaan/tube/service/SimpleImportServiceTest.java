@@ -32,7 +32,7 @@ import static org.mockito.Mockito.when;
 class SimpleImportServiceTest {
 
     @Mock
-    private YouTubeService youTubeService;
+    private ChannelOrchestrator channelOrchestrator;
 
     @Mock
     private CategoryMappingService categoryMappingService;
@@ -51,7 +51,7 @@ class SimpleImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new SimpleImportService(
-                youTubeService,
+                channelOrchestrator,
                 categoryMappingService,
                 channelRepository,
                 playlistRepository,
@@ -72,7 +72,7 @@ class SimpleImportServiceTest {
         dto.setSubscriberCount(5_000L);
 
         when(channelRepository.findByYoutubeId("UC123")).thenReturn(Optional.empty());
-        when(youTubeService.validateAndFetchChannelDto("UC123")).thenReturn(dto);
+        when(channelOrchestrator.validateAndFetchChannelDto("UC123")).thenReturn(dto);
         when(categoryMappingService.mapCategoryNamesToIds("CatA")).thenReturn(List.of("cat-1"));
         when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -103,7 +103,7 @@ class SimpleImportServiceTest {
         dto.setStreamCount(42L);
 
         when(playlistRepository.findByYoutubeId("PL123")).thenReturn(Optional.empty());
-        when(youTubeService.validateAndFetchPlaylistDto("PL123")).thenReturn(dto);
+        when(channelOrchestrator.validateAndFetchPlaylistDto("PL123")).thenReturn(dto);
         when(categoryMappingService.mapCategoryNamesToIds("CatB")).thenReturn(List.of("cat-2"));
         when(playlistRepository.save(any(Playlist.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -136,7 +136,7 @@ class SimpleImportServiceTest {
         dto.setViewCount(1_000L);
 
         when(videoRepository.findByYoutubeId("VID123")).thenReturn(Optional.empty());
-        when(youTubeService.validateAndFetchVideoDto("VID123")).thenReturn(dto);
+        when(channelOrchestrator.validateAndFetchVideoDto("VID123")).thenReturn(dto);
         when(categoryMappingService.mapCategoryNamesToIds("CatC")).thenReturn(List.of("cat-3"));
         when(videoRepository.save(any(Video.class))).thenAnswer(invocation -> invocation.getArgument(0));
 

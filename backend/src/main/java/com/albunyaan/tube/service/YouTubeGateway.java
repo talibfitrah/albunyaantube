@@ -71,11 +71,11 @@ public class YouTubeGateway {
 
     @Autowired
     public YouTubeGateway(
-            @Qualifier("newPipeYouTubeService") StreamingService youTubeService,
+            @Qualifier("newPipeYouTubeService") StreamingService youtubeService,
             @Value("${app.newpipe.executor.pool-size:3}") int poolSize,
             @Nullable YouTubeThrottler throttler,
             @Nullable YouTubeCircuitBreaker circuitBreaker) {
-        this.youtube = youTubeService;
+        this.youtube = youtubeService;
         this.executorService = Executors.newFixedThreadPool(poolSize);
         this.channelLinkHandlerFactory = YoutubeChannelLinkHandlerFactory.getInstance();
         this.playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance();

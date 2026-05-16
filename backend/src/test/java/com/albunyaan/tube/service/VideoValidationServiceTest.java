@@ -38,7 +38,7 @@ class VideoValidationServiceTest {
     private VideoRepository videoRepository;
 
     @Mock
-    private YouTubeService youtubeService;
+    private ChannelOrchestrator channelOrchestrator;
 
     @Mock
     private AuditLogService auditLogService;
@@ -59,7 +59,7 @@ class VideoValidationServiceTest {
         // Use lenient stubbing - not all tests use these stubs
         lenient().when(validationProperties.getVideo()).thenReturn(videoProperties);
         lenient().when(videoProperties.getMaxItemsPerRun()).thenReturn(10);
-        service = new VideoValidationService(videoRepository, youtubeService, auditLogService, validationRunRepository, validationProperties);
+        service = new VideoValidationService(videoRepository, channelOrchestrator, auditLogService, validationRunRepository, validationProperties);
     }
 
     @Test
@@ -81,7 +81,7 @@ class VideoValidationServiceTest {
         validationResult.addValid("keep-me", dto);
         validationResult.addNotFound("remove-me");
         validationResult.addError("flaky", "Network error: timeout");
-        when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(validationResult);
+        when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(validationResult);
 
         ValidationRun run = service.validateStandaloneVideos(
                 ValidationRun.TRIGGER_SCHEDULED,
@@ -97,7 +97,7 @@ class VideoValidationServiceTest {
         assertSame(ValidationStatus.UNAVAILABLE, notFoundVideo.getValidationStatus());
         assertSame(ValidationStatus.ERROR, errorVideo.getValidationStatus());
 
-        verify(youtubeService).batchValidateVideosDtoWithDetails(argThat(ids ->
+        verify(channelOrchestrator).batchValidateVideosDtoWithDetails(argThat(ids ->
                 new HashSet<>(ids).equals(Set.of("keep-me", "remove-me", "flaky"))
         ));
         verify(auditLogService).logSystem(eq("video_marked_unavailable"), eq("video"), eq("v-2"), any());
@@ -118,14 +118,14 @@ class VideoValidationServiceTest {
         validationResult.addValid("exists", dto);
         validationResult.addNotFound("missing");
         validationResult.addError("error", "Network error: timeout");
-        when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(validationResult);
+        when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(validationResult);
 
         ValidationRun result = service.validateSpecificVideos(List.of(valid, missing, error), ValidationRun.TRIGGER_IMPORT);
 
         assertEquals(3, result.getVideosChecked());
         assertEquals(1, result.getVideosMarkedUnavailable());
         assertEquals(1, result.getErrorCount());
-        verify(youtubeService).batchValidateVideosDtoWithDetails(argThat(ids ->
+        verify(channelOrchestrator).batchValidateVideosDtoWithDetails(argThat(ids ->
                 new HashSet<>(ids).equals(Set.of("exists", "missing", "error"))
         ));
         verify(videoRepository, never()).save(any(Video.class));

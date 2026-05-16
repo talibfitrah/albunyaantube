@@ -41,7 +41,7 @@ class ContentReportControllerTest {
     FirebaseAuth firebaseAuth;
 
     @MockBean
-    com.albunyaan.tube.service.YouTubeService youTubeService;
+    com.albunyaan.tube.service.ChannelOrchestrator channelOrchestrator;
 
     @MockBean
     com.albunyaan.tube.repository.UserRepository userRepository;
@@ -66,6 +66,7 @@ class ContentReportControllerTest {
 
         mockMvc.perform(post("/api/v1/reports")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Device-Id", "test-device")
                         .content(VALID_BODY))
                 .andExpect(status().isCreated());
     }
@@ -127,6 +128,7 @@ class ContentReportControllerTest {
 
         mockMvc.perform(post("/api/v1/reports")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Device-Id", "test-device")
                         .content(VALID_BODY))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error").exists());

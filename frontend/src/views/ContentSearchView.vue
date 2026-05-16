@@ -155,7 +155,6 @@
 import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from '@/utils/toast';
-import { fetchAllCategories } from '@/services/categories';
 import { searchYouTube, addToPendingApprovals, parseYouTubeUrl } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
 import { useAuthStore } from '@/stores/auth';

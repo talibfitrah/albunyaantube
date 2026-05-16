@@ -1,6 +1,5 @@
 package com.albunyaan.tube.data.source
 
-import com.albunyaan.tube.data.extractor.MetadataHydrator
 import com.albunyaan.tube.data.source.api.ContentApi
 import kotlinx.coroutines.test.runTest
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -15,8 +14,7 @@ import retrofit2.Response
 class RetrofitContentServiceTest {
 
     private val api: ContentApi = mock()
-    private val metadataHydrator: MetadataHydrator = mock()
-    private val service = RetrofitContentService(api, metadataHydrator)
+    private val service = RetrofitContentService(api)
 
     // --- VIDEO ---
 

@@ -283,6 +283,9 @@ class FavoritesRepositoryImplTest {
         }
 
         override suspend fun getById(uid: String, videoId: String): FavoriteVideo? =
+            favoritesFlow.value.firstOrNull { it.videoId == videoId && it.user_id == uid && !it.deleted }
+
+        override suspend fun getByIdAny(uid: String, videoId: String): FavoriteVideo? =
             favoritesFlow.value.firstOrNull { it.videoId == videoId && it.user_id == uid }
 
         override suspend fun clearSoftDelete(uid: String, videoId: String) {

@@ -10,14 +10,11 @@ import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
 import com.albunyaan.tube.data.model.HomeFeedResult
 import com.albunyaan.tube.data.model.mappers.toDomainContentItems
-import com.albunyaan.tube.data.extractor.MetadataHydrator
 import com.albunyaan.tube.data.model.mappers.toDomain
 import com.albunyaan.tube.data.source.api.ContentApi
-import kotlinx.coroutines.CancellationException
 
 class RetrofitContentService(
-    private val api: ContentApi,
-    private val metadataHydrator: MetadataHydrator
+    private val api: ContentApi
 ) : ContentService {
 
     override suspend fun fetchContent(
@@ -44,11 +41,8 @@ class RetrofitContentService(
             query = query?.takeIf { it.isNotBlank() }
         )
         // Use mapper to convert generated DTOs to domain models
-        val baseItems = response.data.toDomainContentItems()
-        val hydratedItems = runCatching { metadataHydrator.hydrate(type, baseItems) }
-            .onFailure { if (it is CancellationException) throw it }
-            .getOrElse { baseItems }
-        return CursorResponse(hydratedItems, CursorResponse.PageInfo(response.pageInfo.nextCursor))
+        val items = response.data.toDomainContentItems()
+        return CursorResponse(items, CursorResponse.PageInfo(response.pageInfo.nextCursor))
     }
 
     private fun VideoLength.toQueryValue(): String? = when (this) {

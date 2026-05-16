@@ -42,3 +42,33 @@ data class DownloadEntry(
     val filePath: String? = null,
     val metadata: DownloadFileMetadata? = null
 )
+
+/**
+ * Selected stream option from the backend manifest.
+ *
+ * Progressive streams use progressiveUrl. Split streams use videoUrl + audioUrl and require merging.
+ */
+data class SelectedStream(
+    val id: String,
+    val qualityLabel: String,
+    val mimeType: String,
+    val requiresMerging: Boolean,
+    val progressiveUrl: String?,
+    val videoUrl: String?,
+    val audioUrl: String?,
+    val fileSize: Long,
+    val bitrate: Int
+)
+
+data class DownloadManifest(
+    val videoId: String,
+    val selectedStream: SelectedStream,
+    /** Expiration time in milliseconds since epoch (UTC). */
+    val expiresAtMillis: Long
+)
+
+data class DownloadPolicyResult(
+    val allowed: Boolean,
+    val reason: String,
+    val requiresEula: Boolean
+)

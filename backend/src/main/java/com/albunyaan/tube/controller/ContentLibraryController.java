@@ -814,37 +814,8 @@ public class ContentLibraryController {
      */
     @PostMapping("/bulk/approve")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BulkActionResponse> bulkApprove(@Valid @RequestBody BulkActionRequest request)
+    public ResponseEntity<BulkActionResponse> bulkApprove(@NotNull @Valid @RequestBody BulkActionRequest request)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-
-        // Early validation: check for null/empty items (redundant with @Valid but explicit)
-        if (request == null || request.items == null || request.items.isEmpty()) {
-            log.warn("Bulk approve rejected: empty or null request");
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, List.of("Request must contain at least one item")));
-        }
-
-        // Validate individual items for null, blank type/id
-        List<String> validationErrors = new ArrayList<>();
-        for (int i = 0; i < request.items.size(); i++) {
-            BulkActionItem item = request.items.get(i);
-            if (item == null) {
-                validationErrors.add("Item at index " + i + " is null");
-            } else {
-                if (item.type == null || item.type.isBlank()) {
-                    validationErrors.add("Item at index " + i + " has null or blank type");
-                }
-                if (item.id == null || item.id.isBlank()) {
-                    validationErrors.add("Item at index " + i + " has null or blank id");
-                }
-            }
-        }
-
-        if (!validationErrors.isEmpty()) {
-            log.warn("Bulk approve rejected: {} validation errors", validationErrors.size());
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, validationErrors));
-        }
 
         String username = org.springframework.security.core.context.SecurityContextHolder
                 .getContext().getAuthentication().getName();
@@ -885,37 +856,8 @@ public class ContentLibraryController {
      */
     @PostMapping("/bulk/reject")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BulkActionResponse> bulkReject(@Valid @RequestBody BulkActionRequest request)
+    public ResponseEntity<BulkActionResponse> bulkReject(@NotNull @Valid @RequestBody BulkActionRequest request)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-
-        // Early validation: check for null/empty items
-        if (request == null || request.items == null || request.items.isEmpty()) {
-            log.warn("Bulk reject rejected: empty or null request");
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, List.of("Request must contain at least one item")));
-        }
-
-        // Validate individual items for null, blank type/id
-        List<String> validationErrors = new ArrayList<>();
-        for (int i = 0; i < request.items.size(); i++) {
-            BulkActionItem item = request.items.get(i);
-            if (item == null) {
-                validationErrors.add("Item at index " + i + " is null");
-            } else {
-                if (item.type == null || item.type.isBlank()) {
-                    validationErrors.add("Item at index " + i + " has null or blank type");
-                }
-                if (item.id == null || item.id.isBlank()) {
-                    validationErrors.add("Item at index " + i + " has null or blank id");
-                }
-            }
-        }
-
-        if (!validationErrors.isEmpty()) {
-            log.warn("Bulk reject rejected: {} validation errors", validationErrors.size());
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, validationErrors));
-        }
 
         String username = org.springframework.security.core.context.SecurityContextHolder
                 .getContext().getAuthentication().getName();
@@ -951,37 +893,8 @@ public class ContentLibraryController {
      */
     @PostMapping("/bulk/delete")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BulkActionResponse> bulkDelete(@Valid @RequestBody BulkActionRequest request)
+    public ResponseEntity<BulkActionResponse> bulkDelete(@NotNull @Valid @RequestBody BulkActionRequest request)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-
-        // Early validation: check for null/empty items
-        if (request == null || request.items == null || request.items.isEmpty()) {
-            log.warn("Bulk delete rejected: empty or null request");
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, List.of("Request must contain at least one item")));
-        }
-
-        // Validate individual items for null, blank type/id
-        List<String> validationErrors = new ArrayList<>();
-        for (int i = 0; i < request.items.size(); i++) {
-            BulkActionItem item = request.items.get(i);
-            if (item == null) {
-                validationErrors.add("Item at index " + i + " is null");
-            } else {
-                if (item.type == null || item.type.isBlank()) {
-                    validationErrors.add("Item at index " + i + " has null or blank type");
-                }
-                if (item.id == null || item.id.isBlank()) {
-                    validationErrors.add("Item at index " + i + " has null or blank id");
-                }
-            }
-        }
-
-        if (!validationErrors.isEmpty()) {
-            log.warn("Bulk delete rejected: {} validation errors", validationErrors.size());
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, validationErrors));
-        }
 
         String username = org.springframework.security.core.context.SecurityContextHolder
                 .getContext().getAuthentication().getName();
@@ -1026,43 +939,8 @@ public class ContentLibraryController {
      */
     @PostMapping("/bulk/assign-categories")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BulkActionResponse> bulkAssignCategories(@Valid @RequestBody BulkCategoryAssignmentRequest request)
+    public ResponseEntity<BulkActionResponse> bulkAssignCategories(@NotNull @Valid @RequestBody BulkCategoryAssignmentRequest request)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-
-        // Early validation: check for null/empty items and categoryIds
-        if (request == null || request.items == null || request.items.isEmpty()) {
-            log.warn("Bulk assign categories rejected: empty or null items");
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, List.of("Request must contain at least one item")));
-        }
-
-        if (request.categoryIds == null) {
-            log.warn("Bulk assign categories rejected: null categoryIds");
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, List.of("Category IDs cannot be null")));
-        }
-
-        // Validate individual items for null, blank type/id
-        List<String> validationErrors = new ArrayList<>();
-        for (int i = 0; i < request.items.size(); i++) {
-            BulkActionItem item = request.items.get(i);
-            if (item == null) {
-                validationErrors.add("Item at index " + i + " is null");
-            } else {
-                if (item.type == null || item.type.isBlank()) {
-                    validationErrors.add("Item at index " + i + " has null or blank type");
-                }
-                if (item.id == null || item.id.isBlank()) {
-                    validationErrors.add("Item at index " + i + " has null or blank id");
-                }
-            }
-        }
-
-        if (!validationErrors.isEmpty()) {
-            log.warn("Bulk assign categories rejected: {} validation errors", validationErrors.size());
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, validationErrors));
-        }
 
         int successCount = 0;
         List<String> errors = new ArrayList<>();
@@ -1290,40 +1168,8 @@ public class ContentLibraryController {
      */
     @PostMapping("/bulk/reorder")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BulkActionResponse> bulkReorder(@Valid @RequestBody ReorderRequest request)
+    public ResponseEntity<BulkActionResponse> bulkReorder(@NotNull @Valid @RequestBody ReorderRequest request)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-
-        // Early validation
-        if (request == null || request.items == null || request.items.isEmpty()) {
-            log.warn("Bulk reorder rejected: empty or null request");
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, List.of("Request must contain at least one item")));
-        }
-
-        // Validate individual items
-        List<String> validationErrors = new ArrayList<>();
-        for (int i = 0; i < request.items.size(); i++) {
-            ReorderItem item = request.items.get(i);
-            if (item == null) {
-                validationErrors.add("Item at index " + i + " is null");
-            } else {
-                if (item.type == null || item.type.isBlank()) {
-                    validationErrors.add("Item at index " + i + " has null or blank type");
-                }
-                if (item.id == null || item.id.isBlank()) {
-                    validationErrors.add("Item at index " + i + " has null or blank id");
-                }
-                if (item.displayOrder == null || item.displayOrder < 0) {
-                    validationErrors.add("Item at index " + i + " has invalid displayOrder (must be >= 0)");
-                }
-            }
-        }
-
-        if (!validationErrors.isEmpty()) {
-            log.warn("Bulk reorder rejected: {} validation errors", validationErrors.size());
-            return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, validationErrors));
-        }
 
         String username = org.springframework.security.core.context.SecurityContextHolder
                 .getContext().getAuthentication().getName();
@@ -1333,6 +1179,7 @@ public class ContentLibraryController {
         Map<String, Integer> channelOrders = new HashMap<>();
         Map<String, Integer> playlistOrders = new HashMap<>();
         Map<String, Integer> videoOrders = new HashMap<>();
+        List<String> invalidTypes = new ArrayList<>();
 
         for (ReorderItem item : request.items) {
             switch (item.type.toLowerCase()) {
@@ -1346,13 +1193,13 @@ public class ContentLibraryController {
                     videoOrders.put(item.id, item.displayOrder);
                     break;
                 default:
-                    validationErrors.add("Invalid type: " + item.type);
+                    invalidTypes.add("Invalid type: " + item.type);
             }
         }
 
-        if (!validationErrors.isEmpty()) {
+        if (!invalidTypes.isEmpty()) {
             return ResponseEntity.badRequest()
-                    .body(new BulkActionResponse(0, validationErrors));
+                    .body(new BulkActionResponse(0, invalidTypes));
         }
 
         int totalOperations = channelOrders.size() + playlistOrders.size() + videoOrders.size();
@@ -1659,8 +1506,7 @@ public class ContentLibraryController {
     public static class ReorderRequest {
         @NotNull(message = "Items list cannot be null")
         @NotEmpty(message = "Items list cannot be empty")
-        @Valid
-        public List<ReorderItem> items;
+        public List<@NotNull @Valid ReorderItem> items;
     }
 
     public static class ReorderItem {
@@ -1680,8 +1526,7 @@ public class ContentLibraryController {
     public static class BulkActionRequest {
         @NotNull(message = "Items list cannot be null")
         @NotEmpty(message = "Items list cannot be empty")
-        @Valid
-        public List<BulkActionItem> items;
+        public List<@NotNull @Valid BulkActionItem> items;
     }
 
     public static class BulkActionItem {
@@ -1697,8 +1542,7 @@ public class ContentLibraryController {
     public static class BulkCategoryAssignmentRequest {
         @NotNull(message = "Items list cannot be null")
         @NotEmpty(message = "Items list cannot be empty")
-        @Valid
-        public List<BulkActionItem> items;
+        public List<@NotNull @Valid BulkActionItem> items;
 
         @NotNull(message = "Category IDs list cannot be null")
         public List<String> categoryIds;
@@ -1782,4 +1626,3 @@ public class ContentLibraryController {
         }
     }
 }
-

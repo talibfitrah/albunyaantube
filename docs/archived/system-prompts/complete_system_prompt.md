@@ -213,11 +213,6 @@
 - Manual testing: Device/emulator with real backend
 - **Scope**: Native Kotlin/Gradle testing separate from frontend
 
-### TestSprite Integration
-- **Frontend**: Test only `/frontend` directory
-- **Backend**: Test only `/backend` directory
-- **Android**: Separate native testing tooling (exclude from TestSprite)
-
 ---
 
 ## MVP Scope & Limitations

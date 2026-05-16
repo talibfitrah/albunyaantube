@@ -28,11 +28,11 @@ import java.util.stream.Collectors;
  * Content Import Service (Async)
  *
  * Imports content from JSON files with YouTube validation.
- * REUSES existing validation infrastructure (ValidationRun, YouTubeService.batchValidate*).
+ * REUSES existing validation infrastructure (ValidationRun, ChannelOrchestrator.batchValidate*).
  *
  * Import flow:
  * 1. Check which items already exist (skipped)
- * 2. Batch validate new items via YouTubeService (validationFailed if not found)
+ * 2. Batch validate new items via ChannelOrchestrator (validationFailed if not found)
  * 3. Import valid items to Firestore (failed if Firestore error)
  * 4. Track all results in ValidationRun with detailed reason counts
  */
@@ -55,7 +55,7 @@ public class ContentImportService {
      */
     private static final long RETRY_DELAY_MS = 2000;
 
-    private final YouTubeService youtubeService; // REUSE existing validation logic
+    private final ChannelOrchestrator channelOrchestrator; // REUSE existing validation logic
     private final CategoryMappingService categoryMappingService;
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
@@ -63,14 +63,14 @@ public class ContentImportService {
     private final ValidationRunRepository validationRunRepository;
 
     public ContentImportService(
-            YouTubeService youtubeService,
+            ChannelOrchestrator channelOrchestrator,
             CategoryMappingService categoryMappingService,
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
             ValidationRunRepository validationRunRepository
     ) {
-        this.youtubeService = youtubeService;
+        this.channelOrchestrator = channelOrchestrator;
         this.categoryMappingService = categoryMappingService;
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -220,10 +220,10 @@ public class ContentImportService {
                 continue;
             }
 
-            // REUSE existing YouTubeService validation logic
+            // REUSE existing ChannelOrchestrator validation logic
             BatchValidationResult<ChannelDetailsDto> validationResult = retryValidationErrors(
-                    youtubeService.batchValidateChannelsDtoWithDetails(newIds),
-                    ids -> youtubeService.batchValidateChannelsDtoWithDetails(ids),
+                    channelOrchestrator.batchValidateChannelsDtoWithDetails(newIds),
+                    ids -> channelOrchestrator.batchValidateChannelsDtoWithDetails(ids),
                     "channel"
             );
 
@@ -357,8 +357,8 @@ public class ContentImportService {
 
             // REUSE existing validation logic
             BatchValidationResult<PlaylistDetailsDto> validationResult = retryValidationErrors(
-                    youtubeService.batchValidatePlaylistsDtoWithDetails(newIds),
-                    ids -> youtubeService.batchValidatePlaylistsDtoWithDetails(ids),
+                    channelOrchestrator.batchValidatePlaylistsDtoWithDetails(newIds),
+                    ids -> channelOrchestrator.batchValidatePlaylistsDtoWithDetails(ids),
                     "playlist"
             );
 
@@ -487,8 +487,8 @@ public class ContentImportService {
 
             // REUSE existing validation logic
             BatchValidationResult<StreamDetailsDto> validationResult = retryValidationErrors(
-                    youtubeService.batchValidateVideosDtoWithDetails(newIds),
-                    ids -> youtubeService.batchValidateVideosDtoWithDetails(ids),
+                    channelOrchestrator.batchValidateVideosDtoWithDetails(newIds),
+                    ids -> channelOrchestrator.batchValidateVideosDtoWithDetails(ids),
                     "video"
             );
 

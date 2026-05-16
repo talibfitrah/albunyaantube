@@ -33,7 +33,7 @@ import static org.mockito.Mockito.*;
  * - Items 5-10 are SKIPPED and do NOT have their status or lastValidatedAt updated
  * - Skipped items retain their prior state for retry on next run
  *
- * This simulates the scenario where YouTubeService.batchValidateVideosDtoWithDetails()
+ * This simulates the scenario where ChannelOrchestrator.batchValidateVideosDtoWithDetails()
  * marks remaining items as "skipped" when the circuit breaker opens mid-batch.
  */
 @ExtendWith(MockitoExtension.class)
@@ -52,7 +52,7 @@ class MidBatchSkippedItemsTest {
     private ValidationRunRepository validationRunRepository;
 
     @Mock
-    private YouTubeService youtubeService;
+    private ChannelOrchestrator channelOrchestrator;
 
     @Mock
     private AuditLogService auditLogService;
@@ -76,7 +76,7 @@ class MidBatchSkippedItemsTest {
                 channelRepository,
                 playlistRepository,
                 videoRepository,
-                youtubeService,
+                channelOrchestrator,
                 auditLogService,
                 validationRunRepository,
                 validationProperties,
@@ -116,7 +116,7 @@ class MidBatchSkippedItemsTest {
                 result.addSkipped("video-" + i);
             }
 
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -181,7 +181,7 @@ class MidBatchSkippedItemsTest {
                 result.addSkipped("video-" + i);
             }
 
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
 
             // Capture the validation run saves to verify details
             ArgumentCaptor<ValidationRun> runCaptor = ArgumentCaptor.forClass(ValidationRun.class);
@@ -220,7 +220,7 @@ class MidBatchSkippedItemsTest {
                 result.addSkipped("video-" + i);
             }
 
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -262,7 +262,7 @@ class MidBatchSkippedItemsTest {
                 result.addSkipped("video-" + i);
             }
 
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act
@@ -318,7 +318,7 @@ class MidBatchSkippedItemsTest {
             firstResult.addValid("video-1", new StreamDetailsDto());
             firstResult.addSkipped("video-2");
 
-            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(firstResult);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(firstResult);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             // Act - first run

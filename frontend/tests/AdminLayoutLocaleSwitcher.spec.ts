@@ -27,7 +27,6 @@ function buildRouter() {
       { path: '/content-sorting', name: 'content-sorting', component: { template: '<div />' } },
       { path: '/users', name: 'users', component: { template: '<div />' } },
       { path: '/reports', name: 'reports', component: { template: '<div />' } },
-      { path: '/audit', name: 'audit', component: { template: '<div />' } },
       { path: '/activity', name: 'activity', component: { template: '<div />' } },
       { path: '/settings/profile', name: 'settings-profile', component: { template: '<div />' } },
       { path: '/settings/notifications', name: 'settings-notifications', component: { template: '<div />' } },

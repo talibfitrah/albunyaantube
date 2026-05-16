@@ -54,7 +54,6 @@ public class AccountController {
             @AuthenticationPrincipal FirebaseUserDetails principal,
             @Valid @RequestBody CompleteProfileRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
-        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         var saved = accountProfileService.completeProfile(
                 principal.getUid(), req.getDisplayName(), req.getDateOfBirth());
         return ResponseEntity.ok(AccountMeResponse.from(saved));
@@ -64,7 +63,6 @@ public class AccountController {
     public ResponseEntity<?> getMe(
             @AuthenticationPrincipal FirebaseUserDetails principal)
             throws ExecutionException, InterruptedException, TimeoutException {
-        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         String uid = principal.getUid();
         // Atomic get-or-create via Firestore transaction (cubic R4 P2): two
         // concurrent first-time /me callers can no longer both observe

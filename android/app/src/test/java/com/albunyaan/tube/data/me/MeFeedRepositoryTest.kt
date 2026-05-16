@@ -925,10 +925,10 @@ class MeFeedRepositoryTest {
     @Test
     fun `T4 observeWeek splits items into shorts and videos`() = runTest {
         subscribe("UC1")
-        // Three items in week 0 (within last 7 days):
-        val recent1 = clockMillis - 1L * 24L * 60L * 60L * 1_000L
-        val recent2 = clockMillis - 3L * 24L * 60L * 60L * 1_000L
-        val recent3 = clockMillis - 5L * 24L * 60L * 60L * 1_000L
+        val bucket = WeekBucket.forIndex(weekIndex = 0, now = clockMillis)
+        val recent1 = bucket.startMs + 3_000L
+        val recent2 = bucket.startMs + 2_000L
+        val recent3 = bucket.startMs + 1_000L
         fetcher.responses["https://yt/UC1"] = listOf(
             item("video1", uploadedAt = recent1, isShort = false),
             item("short1", uploadedAt = recent2, isShort = true),
@@ -947,11 +947,13 @@ class MeFeedRepositoryTest {
     @Test
     fun `T4 observeWeek scopes to weekIndex window not the entire history`() = runTest {
         subscribe("UC1")
-        val fiveDaysAgo = clockMillis - 5L * 24L * 60L * 60L * 1_000L
-        val tenDaysAgo = clockMillis - 10L * 24L * 60L * 60L * 1_000L
+        val week0 = WeekBucket.forIndex(weekIndex = 0, now = clockMillis)
+        val week1 = WeekBucket.forIndex(weekIndex = 1, now = clockMillis)
+        val thisWeek = week0.startMs + 1_000L
+        val lastWeek = week1.startMs + 1_000L
         fetcher.responses["https://yt/UC1"] = listOf(
-            item("recent", uploadedAt = fiveDaysAgo),
-            item("older", uploadedAt = tenDaysAgo),
+            item("recent", uploadedAt = thisWeek),
+            item("older", uploadedAt = lastWeek),
         )
         repo.refresh(force = true)
 

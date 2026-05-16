@@ -14,11 +14,12 @@ data/model/
 ├── CursorResponse.kt      ← Domain model (pagination wrapper)
 ├── api/
 │   └── models/           ← Generated DTOs (DO NOT EDIT)
-│       ├── ContentItem.kt   ← Generated from OpenAPI spec
-│       ├── Category.kt      ← Generated from OpenAPI spec
-│       ├── ...              ← Other generated DTOs
+│       ├── ContentItemDto.kt
+│       ├── PageInfo.kt
+│       ├── Download*.kt
+│       └── StreamOption.kt
 └── mappers/
-    └── ApiMappers.kt     ← Mapper functions (to be created)
+    └── ApiMappers.kt     ← Mapper functions
 ```
 
 ### Generated DTOs (`api/models/`)
@@ -27,6 +28,7 @@ data/model/
 - **Command**: `cd backend && ./gradlew generateKotlinDtos`
 - **Annotations**: Moshi-annotated for JSON serialization
 - **Usage**: Use in Retrofit interfaces **only**
+- **Scope**: Generated only for the Android app's live public-content and download API DTOs.
 - **DO NOT** manually edit these files — they are regenerated on every build
 
 ### Domain Models (this directory)
@@ -44,52 +46,41 @@ Create extension functions to map from API DTOs to domain models:
 
 **Example** (`mappers/ApiMappers.kt`):
 ```kotlin
-import com.albunyaan.tube.data.model.api.models.ContentItem as ApiContentItem
-import com.albunyaan.tube.data.model.api.models.Category as ApiCategory
+import com.albunyaan.tube.data.model.api.models.ContentItemDto as ApiContentItemDto
 
 // Map generated DTO to domain model
-fun ApiContentItem.toDomain(): ContentItem = when (this) {
-    is ApiContentItem.VideoItem -> ContentItem.Video(
+fun ApiContentItemDto.toDomain(): ContentItem = when (this.type) {
+    ApiContentItemDto.Type.VIDEO -> ContentItem.Video(
         id = this.id,
-        title = this.title,
+        title = this.title ?: "",
         // ... other fields
     )
-    is ApiContentItem.ChannelItem -> ContentItem.Channel(
+    ApiContentItemDto.Type.CHANNEL -> ContentItem.Channel(
         id = this.id,
-        title = this.title,
+        name = this.name ?: this.title ?: "",
         // ... other fields
     )
-    is ApiContentItem.PlaylistItem -> ContentItem.Playlist(
+    ApiContentItemDto.Type.PLAYLIST -> ContentItem.Playlist(
         id = this.id,
-        title = this.title,
+        title = this.title ?: "",
         // ... other fields
     )
 }
-
-fun ApiCategory.toDomain(): Category = Category(
-    id = this.id,
-    name = this.name,
-    slug = this.slug ?: this.id,
-    parentCategoryId = this.parentCategoryId,
-    // ... other fields
-)
 ```
 
 **In Repository**:
 ```kotlin
-import com.albunyaan.tube.data.model.api.models.CursorPageDto
-import com.albunyaan.tube.data.model.api.models.ContentItem as ApiContentItem
+import com.albunyaan.tube.data.model.api.models.ContentItemDto
 
 class ContentRepository(private val api: AlbunyaanApiService) {
     suspend fun getContent(cursor: String?): CursorResponse<ContentItem> {
         // Retrofit returns generated DTO
-        val response: CursorPageDto<ApiContentItem> = api.getContent(cursor)
+        val response = api.getContent(cursor)
 
         // Map to domain models for UI
         return CursorResponse(
-            items = response.items.map { it.toDomain() },
-            nextCursor = response.nextCursor,
-            hasMore = response.hasMore
+            items = response.data.map { it.toDomain() },
+            pageInfo = CursorResponse.PageInfo(response.pageInfo.nextCursor)
         )
     }
 }

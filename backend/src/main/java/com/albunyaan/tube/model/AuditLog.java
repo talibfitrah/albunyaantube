@@ -137,7 +137,7 @@ public class AuditLog {
         // line-oriented log shippers, CSV exports, and downstream incident
         // tooling that splits on \n. No current caller forwards user-supplied
         // strings into details, but the surface area (rejection notes, block
-        // reasons, future request-changes payloads) is wide enough that the
+        // reasons and rejection rationale) is wide enough that the
         // first time someone DOES, we want this already wired.
         this.details = new HashMap<>();
         details.forEach((k, v) -> this.details.put(k, sanitiseDetailValue(v)));
@@ -172,7 +172,7 @@ public class AuditLog {
      * sensitive code path. Package-private for unit-testability.
      *
      * <p>Limit ({@value #DETAIL_VALUE_MAX_LEN}) is generous — covers
-     * block-reason notes, request-changes copy, and rejection rationale —
+     * block-reason notes and rejection rationale —
      * but bounds the worst-case audit row size. Truncated strings have
      * {@code "…"} appended so operators see the truncation.
      */
@@ -217,4 +217,3 @@ public class AuditLog {
         return log;
     }
 }
-

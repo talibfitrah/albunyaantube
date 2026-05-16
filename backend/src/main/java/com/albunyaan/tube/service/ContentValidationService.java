@@ -42,7 +42,7 @@ public class ContentValidationService {
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
-    private final YouTubeService youtubeService;
+    private final ChannelOrchestrator channelOrchestrator;
     private final AuditLogService auditLogService;
     private final ValidationRunRepository validationRunRepository;
     private final ValidationProperties validationProperties;
@@ -53,7 +53,7 @@ public class ContentValidationService {
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
-            YouTubeService youtubeService,
+            ChannelOrchestrator channelOrchestrator,
             AuditLogService auditLogService,
             ValidationRunRepository validationRunRepository,
             ValidationProperties validationProperties,
@@ -63,7 +63,7 @@ public class ContentValidationService {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
-        this.youtubeService = youtubeService;
+        this.channelOrchestrator = channelOrchestrator;
         this.auditLogService = auditLogService;
         this.validationRunRepository = validationRunRepository;
         this.validationProperties = validationProperties;
@@ -418,7 +418,7 @@ public class ContentValidationService {
 
         // Use the new method that properly distinguishes between "not found" and "error"
         BatchValidationResult<ChannelDetailsDto> validationResult =
-                youtubeService.batchValidateChannelsDtoWithDetails(youtubeIds);
+                channelOrchestrator.batchValidateChannelsDtoWithDetails(youtubeIds);
         List<String> archivedChannelIds = new ArrayList<>();
         List<String> errorChannelIds = new ArrayList<>();
 
@@ -537,7 +537,7 @@ public class ContentValidationService {
 
         // Use the new method that properly distinguishes between "not found" and "error"
         BatchValidationResult<PlaylistDetailsDto> validationResult =
-                youtubeService.batchValidatePlaylistsDtoWithDetails(youtubeIds);
+                channelOrchestrator.batchValidatePlaylistsDtoWithDetails(youtubeIds);
         List<String> archivedPlaylistIds = new ArrayList<>();
         List<String> errorPlaylistIds = new ArrayList<>();
 
@@ -656,7 +656,7 @@ public class ContentValidationService {
 
         // Use the new method that properly distinguishes between "not found" and "error"
         BatchValidationResult<StreamDetailsDto> validationResult =
-                youtubeService.batchValidateVideosDtoWithDetails(youtubeIds);
+                channelOrchestrator.batchValidateVideosDtoWithDetails(youtubeIds);
         List<String> archivedVideoIds = new ArrayList<>();
         List<String> errorVideoIds = new ArrayList<>();
 

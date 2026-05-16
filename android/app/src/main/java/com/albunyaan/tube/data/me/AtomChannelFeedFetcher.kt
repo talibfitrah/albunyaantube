@@ -22,7 +22,7 @@ import javax.inject.Singleton
  * Note on threading: callers (e.g. [MeFeedRepository.refreshOne]) already
  * dispatch this on Dispatchers.IO. The fetcher additionally wraps the
  * blocking `execute()` in `withContext(Dispatchers.IO)` for defence-in-depth
- * against future direct callers — same pattern as [NewPipeChannelFeedFetcher].
+ * against future direct callers.
  */
 @Singleton
 class AtomChannelFeedFetcher @VisibleForTesting internal constructor(
