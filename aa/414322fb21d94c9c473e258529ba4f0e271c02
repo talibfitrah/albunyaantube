@@ -1,0 +1,115 @@
+backend/src/main/java/com/albunyaan/tube/controller/YouTubeSearchController.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 3-5,10-13,15,17,26-28,31-33,41-44,49-51,99,107,115,120-122,124,130,134,138
+android/app/src/main/java/com/albunyaan/tube/download/DownloadModels.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 45-74
+android/app/src/test/java/com/albunyaan/tube/data/me/YouTubeVideoIdRegexTest.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 14,16
+android/app/src/test/java/com/albunyaan/tube/data/source/FakeContentService.kt
+  s_0f8a313510a2b6::t_a30099dc395fe4 4-6,12-55,63-106,108-112,114,117-123,125-130,139-143,145-154,156-162,165-178,181-187,191-193,195-197
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 817,859,896,942,1171,1182,1196,1200,1202,1509,1529,1545
+android/app/src/main/java/com/albunyaan/tube/di/DataModule.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 224,226
+backend/build.gradle.kts
+  s_0f8a313510a2b6::t_22315b5670b1a5 89-92,132-143
+android/app/src/main/java/com/albunyaan/tube/data/me/YouTubeVideoIdRegex.kt
+  s_288f42a1a1ed14::t_9fad97f8405b69 1,3,5-7,9-10
+backend/src/test/java/com/albunyaan/tube/service/ContentImportServiceTest.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 44,66,105,164,215,267,322,347,383,393,403,474,527,551
+backend/src/main/java/com/albunyaan/tube/controller/ChannelController.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 9-16,27-30,36,57,76,147,167
+backend/src/main/java/com/albunyaan/tube/controller/ContentReportController.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 12,37,39,41,126,134,142
+android/app/src/main/res/menu/bottom_nav_menu.xml
+  s_0f8a313510a2b6::t_22315b5670b1a5 17,21
+backend/src/main/java/com/albunyaan/tube/service/SimpleImportService.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 54,61,67,181,320,452
+backend/src/test/java/com/albunyaan/tube/controller/YouTubeSearchControllerTest.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 3-5,18-19,23,50-54,56-60,62-63,67-69,73-78,80-81,85-87
+android/app/src/main/java/com/albunyaan/tube/data/source/RetrofitContentService.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 17,44-45
+frontend/src/services/adminAudit.ts
+  s_0f8a313510a2b6::t_22315b5670b1a5 16
+android/app/src/main/java/com/albunyaan/tube/data/me/AtomChannelFeedFetcher.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 25
+frontend/tests/UsersManagementView.spec.ts
+  s_0f8a313510a2b6::t_22315b5670b1a5 3,45
+backend/src/test/java/com/albunyaan/tube/util/UserBackfillMigrationTimeoutTest.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 101-109
+frontend/tests/ThemeTokens.spec.ts
+  s_0f8a313510a2b6::t_22315b5670b1a5 33
+backend/src/test/java/com/albunyaan/tube/service/VideoValidationServiceTest.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 41,62,84,100,121,128
+android/app/src/test/java/com/albunyaan/tube/data/source/RetrofitContentServiceTest.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 17
+backend/src/test/java/com/albunyaan/tube/service/ContentValidationServiceTest.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 55,79,113,142,168,196,205,228,236,284,325,393,398,403,411,413,415,439,446,468,486,505,523,542,560,580,608,634,665,685,705
+android/app/src/main/java/com/albunyaan/tube/auth/FirebaseAuthInterceptor.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 89-94
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 80
+backend/src/main/java/com/albunyaan/tube/service/ContentImportService.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 31,35,58,66,73,223,225-226,360-361,490-491
+android/app/build.gradle.kts
+  s_0f8a313510a2b6::t_22315b5670b1a5 109-114,125-130
+  s_0f8a313510a2b6::t_aea45b6a4c6887 207-209,211-215
+  s_0f8a313510a2b6::t_f1134dac2cddc5 216-227,231
+android/app/src/test/java/com/albunyaan/tube/data/local/FavoritesRepositoryImplTest.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 286-288
+backend/src/test/java/com/albunyaan/tube/controller/ContentReportControllerTest.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 44,69,131
+backend/src/main/java/com/albunyaan/tube/config/CacheConfig.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 108-109
+backend/src/main/java/com/albunyaan/tube/model/AuditLog.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 140,175
+backend/src/main/java/com/albunyaan/tube/service/VideoValidationService.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 39,46,52,102,323
+android/app/src/main/java/com/albunyaan/tube/data/me/ChannelFeedFetcher.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 10-11
+android/app/src/main/java/com/albunyaan/tube/data/source/RetrofitDownloadService.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 19
+backend/src/test/java/com/albunyaan/tube/service/SimpleImportServiceTest.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 35,54,75,106,139
+backend/src/main/java/com/albunyaan/tube/service/ContentValidationService.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 45,56,66,421,540,659
+backend/src/test/java/com/albunyaan/tube/service/MidBatchSkippedItemsTest.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 36,55,79,119,184,223,265,321
+frontend/tests/e2e/users-and-audit.e2e.spec.ts
+  s_0f8a313510a2b6::t_22315b5670b1a5 181,186,188-189,191-192,194,196,240-241
+android/app/src/main/java/com/albunyaan/tube/data/model/README.md
+  s_0f8a313510a2b6::t_22315b5670b1a5 17-20,22,31,49,52-53,55,58,60,63,65,73,78,82-83
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 74,78
+android/app/src/main/java/com/albunyaan/tube/data/me/ChannelDeepPaginator.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 30,257
+frontend/src/utils/toast.ts
+  s_0f8a313510a2b6::t_22315b5670b1a5 1,13,22
+backend/src/main/java/com/albunyaan/tube/controller/DashboardController.java
+  s_0f8a313510a2b6::t_22315b5670b1a5 31
+android/app/src/test/java/com/albunyaan/tube/data/me/MeFeedRepositoryTest.kt
+  s_0f8a313510a2b6::t_22315b5670b1a5 928-931,950-953,955-956
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "aa414322fb21d94c9c473e258529ba4f0e271c02",
+  "prompts": {},
+  "sessions": {
+    "s_0f8a313510a2b6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e2de100a-ca7d-43ed-9016-5415911f40d9",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    },
+    "s_288f42a1a1ed14": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e2e25-19b2-7032-ac5e-7d0316702b57",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
