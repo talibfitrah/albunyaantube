@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/data/me/YouTubeVideoIdRegex.kt
+  s_0f8a313510a2b6::t_6a49c060596047 5-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "6e290199c19c2d1d4d12141438462f92051868ea",
+  "prompts": {},
+  "sessions": {
+    "s_0f8a313510a2b6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e2de100a-ca7d-43ed-9016-5415911f40d9",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
