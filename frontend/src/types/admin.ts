@@ -1,6 +1,14 @@
 import type { CursorPage } from './pagination';
 
-export type AdminRole = 'ADMIN' | 'MODERATOR';
+/**
+ * Cubic R-final6 P1 — extended to include USER so the type system reflects
+ * what backend rows can carry. Previously this was 'ADMIN' | 'MODERATOR'
+ * and fromBackendRole had to cast 'USER' through the union, hiding the
+ * default-fallback bug from TS narrowing checks. The admin dashboard
+ * still primarily lists elevated roles, but the wire shape can legitimately
+ * surface USER (e.g., a soft-deleted ex-moderator whose role was reset).
+ */
+export type AdminRole = 'ADMIN' | 'MODERATOR' | 'USER';
 
 // Cubic R9 P2 — expose all 4 backend statuses. Pre-R9 the mapper
 // collapsed BLOCKED, DELETED, PENDING_PROFILE to a single 'DISABLED'

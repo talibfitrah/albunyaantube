@@ -95,19 +95,24 @@ class SyncManager @Inject constructor(
                 // would then hit the `b == null` branch and re-merge as a fresh user
                 // while the old uid's rows are already gone (Plan D account-switch).
                 //
-                // Cubic R-final5 P1 — tag any user_id='' rows to b.user_id BEFORE
-                // wiping. MIGRATION_7_8 stamped every pre-v8 row with user_id=''
-                // (the column didn't exist before v8). Pre-fix the switch branch
-                // wipeForUid(A) skipped those rows (their user_id was '' not A),
-                // then runMergeLocked → tagAnonRowsToUid(B) re-tagged them to the
-                // new user, effectively transferring A's local data to B's account
-                // and pushing it as B's data. Tagging '' → A here unifies the
-                // anon-era rows with the previous owner so wipeForUid(A) catches
-                // them on the same line.
-                subs.tagAnonRowsToUid(b.user_id)
-                playlists.tagAnonRowsToUid(b.user_id)
-                favorites.tagAnonRowsToUid(b.user_id)
+                // Cubic R-final5 P1 / R-final6 P1 — tag user_id='' rows to
+                // b.user_id atomically with the wipe. MIGRATION_7_8 stamped
+                // every pre-v8 row with user_id=''; pre-R-final5 wipeForUid(A)
+                // skipped those rows and runMergeLocked → tagAnonRowsToUid(B)
+                // re-tagged them to the new user — transferring A's local data
+                // to B's account.
+                //
+                // R-final5 fix moved the tagging here, but kept it OUTSIDE the
+                // db.withTransaction — a crash between the tag calls and the
+                // wipe left anon rows attributed to b.user_id without being
+                // wiped, then relaunch hit the `b.user_id == uid &&
+                // !b.initial_merge_done` branch and merged the old user's
+                // data into the new user. R-final6 moves both tag and wipe
+                // into the same transaction so the sequence is all-or-nothing.
                 db.withTransaction {
+                    subs.tagAnonRowsToUid(b.user_id)
+                    playlists.tagAnonRowsToUid(b.user_id)
+                    favorites.tagAnonRowsToUid(b.user_id)
                     subs.wipeForUid(b.user_id)
                     playlists.wipeForUid(b.user_id)
                     favorites.wipeForUid(b.user_id)
