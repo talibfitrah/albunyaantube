@@ -1,0 +1,31 @@
+AGENTS.md
+  s_9abba335aa413e::t_2fcb9dbe7ce3f1 74-76,79,88-91,94,102,104-105,108
+frontend/src/types/admin.ts
+  s_99ef915f306233::t_589628843339c9 3-11
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_99ef915f306233::t_1eae64389dd94d 98-111,113-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "3ab9b8759abaebcc0bd5346dfcd02878b737635a",
+  "prompts": {},
+  "sessions": {
+    "s_99ef915f306233": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6959ccab-c0c0-45fe-9e9a-2b8a2253a0fa",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    },
+    "s_9abba335aa413e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e2e1f-aefd-7ce0-859c-934fc669618a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
