@@ -202,6 +202,8 @@ object DataModule {
             .connectTimeout(okHttpClient.connectTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
             .readTimeout(okHttpClient.readTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
             .writeTimeout(okHttpClient.writeTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
+            // callTimeout: parent is 0 (disabled) today; line is kept so any future
+            // NetworkModule callTimeout addition propagates automatically.
             .callTimeout(okHttpClient.callTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
             .apply {
                 if (BuildConfig.DEBUG) {
