@@ -4,7 +4,11 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.albunyaan.tube.data.me.MeRefreshTelemetry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -95,12 +99,23 @@ class RateLimitedDownloaderTest {
     private lateinit var limiter: GlobalNewPipeRateLimiter
     private lateinit var cooldown: CooldownState
     private lateinit var dataStore: DataStore<Preferences>
+    private lateinit var dataStoreScope: CoroutineScope
     private lateinit var clock: AtomicLong
 
     @Before
     fun setUp() {
         clock = AtomicLong(1_000_000_000L)
+        // Own the DataStore's CoroutineScope explicitly so we can cancel it
+        // in @After before TemporaryFolder deletes the backing file.
+        // Without ownership, pending DataStore writes fire on the default
+        // IO-dispatched SupervisorJob after the temp dir is gone, throwing
+        // FileNotFoundException onto kotlinx.coroutines.test's global
+        // uncaught-exception handler — surfaces as
+        // UncaughtExceptionsBeforeTest on the NEXT test that calls runTest
+        // in the same JVM batch (intermittent flake).
+        dataStoreScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         dataStore = PreferenceDataStoreFactory.create(
+            scope = dataStoreScope,
             produceFile = { File(tmp.root, "rld.preferences_pb") }
         )
         cooldown = CooldownState(dataStore, { clock.get() }, MeRefreshTelemetry())
@@ -111,7 +126,7 @@ class RateLimitedDownloaderTest {
 
     @After
     fun tearDown() {
-        // DataStore closes on GC; tmp folder cleans up.
+        dataStoreScope.cancel()
     }
 
     private fun newRequest(): Request =

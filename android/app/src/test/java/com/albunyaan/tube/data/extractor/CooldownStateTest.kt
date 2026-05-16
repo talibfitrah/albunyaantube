@@ -5,6 +5,10 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import com.albunyaan.tube.data.me.MeRefreshTelemetry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -40,17 +44,24 @@ class CooldownStateTest {
 
     @get:Rule val tmp = TemporaryFolder().also { it.create() }
     private lateinit var dataStore: DataStore<Preferences>
+    private lateinit var dataStoreScope: CoroutineScope
     private lateinit var clock: AtomicLong
 
     @Before
     fun setup() {
         clock = AtomicLong(1_000_000_000L)
+        // Own the DataStore's scope so we can cancel it before TemporaryFolder
+        // deletes the file. Pending writes that fire after the dir is gone
+        // throw FileNotFoundException on the default IO scope and surface as
+        // UncaughtExceptionsBeforeTest on the next runTest in the same JVM.
+        dataStoreScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         dataStore = PreferenceDataStoreFactory.create(
+            scope = dataStoreScope,
             produceFile = { File(tmp.root, "cd.preferences_pb") }
         )
     }
 
-    @After fun tearDown() { /* DataStore closes on GC; tmp folder cleans up */ }
+    @After fun tearDown() { dataStoreScope.cancel() }
 
     @Test
     fun first_trip_is_one_hour() = runTest {
