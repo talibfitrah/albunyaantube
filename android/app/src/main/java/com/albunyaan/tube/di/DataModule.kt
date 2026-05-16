@@ -55,6 +55,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 import java.io.File
 import javax.inject.Named
 import javax.inject.Singleton
@@ -175,8 +176,21 @@ object DataModule {
         okHttpClient: OkHttpClient,
         @ApplicationContext context: Context
     ): OkHttpDownloader {
-        val newPipeClient = okHttpClient.newBuilder()
+        // Build a clean client for NewPipe that shares the singleton's connection
+        // pool (no wasted sockets) but inherits NONE of its application interceptors.
+        // The singleton carries FirebaseAuthInterceptor and accountStatusInterceptor;
+        // those attach a Firebase Bearer token to every outgoing request. YouTube's
+        // Innertube API (visitor_id, browse, player) rejects unrecognised credentials
+        // with HTTP 401 UNAUTHENTICATED, breaking all stream resolution and channel
+        // loading whenever a user is signed in. Using newBuilder() (previous approach)
+        // copies all interceptors — the only safe path is a fresh Builder that shares
+        // only the pool and timeout config.
+        val newPipeClient = OkHttpClient.Builder()
+            .connectionPool(okHttpClient.connectionPool)
             .dispatcher(Dispatcher())
+            .connectTimeout(okHttpClient.connectTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
+            .readTimeout(okHttpClient.readTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
+            .writeTimeout(okHttpClient.writeTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
             .build()
         return OkHttpDownloader(newPipeClient, context.cacheDir)
     }
