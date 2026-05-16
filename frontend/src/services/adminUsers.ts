@@ -12,7 +12,18 @@ import type { User } from '@/types/api';
 const USERS_BASE_PATH = '/api/admin/users';
 
 export interface UsersPageParams {
-  // Placeholder for future filtering/pagination params
+  /** Cursor from a previous page's nextCursor. Forward-compat: backend currently ignores. */
+  cursor?: string | null;
+  /** Max rows per page. Forward-compat: backend currently returns all rows. */
+  limit?: number;
+  /** Free-text search (email / displayName). Forward-compat: backend ignores today. */
+  search?: string;
+  /** Role filter. Forward-compat: backend ignores; use null/undefined to skip. */
+  role?: string | null;
+  /** Status filter. Forward-compat: backend ignores; use null/undefined to skip. */
+  status?: string | null;
+  /** Include soft-deleted users. Cubic R-final5 P0 — wired through. Required by Bulk-Recover. */
+  includeDeleted?: boolean;
 }
 
 // Transform frontend types to backend format
@@ -54,7 +65,13 @@ function fromBackendStatus(status?: string): AdminUserStatus {
 }
 
 function fromBackendRole(role?: string): AdminRole {
-  return (role?.toUpperCase() || 'MODERATOR') as AdminRole;
+  // Cubic R-final5 P1 — default to USER, not MODERATOR. Pre-fix, a backend
+  // row with a missing/null role claim rendered as MODERATOR in the admin
+  // table — a default that grants elevated privileges visually, even
+  // though the actual claim on the token is empty. USER is the non-elevated
+  // bucket the backend's lazy-create branch produces; defaulting here
+  // preserves the principle that visual role never overstates server truth.
+  return (role?.toUpperCase() || 'USER') as AdminRole;
 }
 
 /**
@@ -74,13 +91,34 @@ function transformUser(apiUser: User): AdminUser {
 }
 
 export async function fetchUsersPage(params: UsersPageParams = {}): Promise<CursorPage<AdminUser>> {
-  // Backend returns array, not paginated response
-  const users = await authorizedJsonFetch<User[]>(USERS_BASE_PATH);
+  // Cubic R-final5 P0 — build a real query string instead of dropping every
+  // argument. The backend GET /api/admin/users currently honours only
+  // {@code includeDeleted}, but the rest are forwarded so the moment the
+  // server-side pagination + filter wire-up lands (separate ticket — see
+  // memory 11883), the frontend already feeds the right shape. The previous
+  // behaviour silently broke Bulk-Recover (needs includeDeleted=true to see
+  // soft-deleted rows) and made the search/role/status filters and
+  // pagination buttons visual theater.
+  const qs = new URLSearchParams();
+  if (params.includeDeleted) qs.set('includeDeleted', 'true');
+  if (params.cursor) qs.set('cursor', params.cursor);
+  if (typeof params.limit === 'number') qs.set('limit', String(params.limit));
+  if (params.search) qs.set('search', params.search);
+  if (params.role) qs.set('role', params.role);
+  if (params.status) qs.set('status', params.status);
+  const query = qs.toString();
+  const path = query ? `${USERS_BASE_PATH}?${query}` : USERS_BASE_PATH;
 
+  const users = await authorizedJsonFetch<User[]>(path);
+
+  // Backend returns a flat array today (no cursor envelope). Until the
+  // server-side pagination ticket lands, the UI treats every fetch as a
+  // single complete page — hasNext=false suppresses the Load-more button
+  // and the result is honest about what the server actually returned.
   return {
     data: users.map(transformUser),
     pageInfo: {
-      cursor: null,
+      cursor: params.cursor ?? null,
       nextCursor: null,
       hasNext: false
     }

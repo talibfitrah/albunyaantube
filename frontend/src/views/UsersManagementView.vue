@@ -430,6 +430,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAuthStore } from '@/stores/auth';
 import { useCursorPagination } from '@/composables/useCursorPagination';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import {
@@ -449,6 +450,32 @@ import type { AdminRole, AdminUser, AdminUserStatus } from '@/types/admin';
 import { formatDateTime as baseFormatDateTime } from '@/utils/formatters';
 
 const { t, locale } = useI18n();
+const authStore = useAuthStore();
+
+/**
+ * Cubic R-final5 P2 — prune self and admin targets from a bulk-action
+ * selection BEFORE issuing the POST. Pre-fix the bulk payload included
+ * the actor's own uid + any admin rows; each one round-tripped through
+ * the backend and landed in {@code result.failures} with
+ * {@code self_action_forbidden} / {@code admin_target_forbidden}. A
+ * 50-row bulk-block including the actor returned N-1 successes + a
+ * confusing per-row failure even though the admin's intent was clear.
+ * Returns the pruned uid list AND the count of dropped rows so the
+ * caller can surface "N skipped" to the UI.
+ */
+function pruneSelfAndAdmins(selectedIds: Iterable<string>): { uids: string[]; dropped: number } {
+  const selfUid = authStore.currentUser?.uid ?? null;
+  const byId = new Map(users.value.map((u) => [u.id, u]));
+  const kept: string[] = [];
+  let dropped = 0;
+  for (const id of selectedIds) {
+    if (id === selfUid) { dropped++; continue; }
+    const u = byId.get(id);
+    if (u && u.role === 'ADMIN') { dropped++; continue; }
+    kept.push(id);
+  }
+  return { uids: kept, dropped };
+}
 const currentLocale = computed(() => locale.value);
 
 // Cubic R7 P0 — whitelist of reason codes accepted from the backend bulk-action
@@ -507,12 +534,18 @@ interface BulkResult {
 const lastResult = ref<BulkResult | null>(null);
 
 const pagination = useCursorPagination<AdminUser>(async (cursor, limit) => {
+  // Cubic R-final5 P0 — pass includeDeleted=true when the status filter
+  // explicitly targets DELETED users, OR when 'all' is selected (so Bulk
+  // Recover can see soft-deleted rows). Anything else hides them — they
+  // are excluded from the admin's normal moderation surface.
+  const isDeletedView = statusFilter.value === 'DELETED' || statusFilter.value === 'all';
   return fetchUsersPage({
     cursor,
     limit,
     search: activeSearch.value || undefined,
     role: roleFilter.value === 'all' ? null : roleFilter.value,
-    status: statusFilter.value === 'all' ? null : statusFilter.value
+    status: statusFilter.value === 'all' ? null : statusFilter.value,
+    includeDeleted: isDeletedView
   });
 });
 
@@ -768,15 +801,30 @@ async function handleEdit() {
     return;
   }
 
+  // Cubic R-final5 P1 — compare status to current value (parity with role),
+  // and reload after partial failure so the table reflects the half-committed
+  // state. Pre-fix `if (editState.status)` was always truthy (radio guarantees
+  // a value), so we fired the status PUT on every save even when the user
+  // only edited the role — wasted PUT, pointless audit row, unnecessary
+  // network spend. Worse: a partial failure (role PUT commits, status PUT
+  // throws) used to leave the dialog showing only the second error while
+  // the first had already committed and no reload() ran — the visible table
+  // would still claim the old role until manual refresh.
+  const roleChanged = editState.role !== editingUser.value.role;
+  const statusChanged = !!editState.status && editState.status !== editingUser.value.status;
+
+  if (!roleChanged && !statusChanged) {
+    closeEditDialog();
+    return;
+  }
+
   editState.error = null;
   editState.isSubmitting = true;
   try {
-    // Update role if changed
-    if (editState.role !== editingUser.value.role) {
+    if (roleChanged) {
       await updateUserRole(editingUser.value.id, editState.role);
     }
-    // Update status if changed
-    if (editState.status) {
+    if (statusChanged) {
       await updateUserStatus(editingUser.value.id, editState.status);
     }
     actionMessage.value = t('users.toasts.updated', { email: editingUser.value.email });
@@ -784,6 +832,9 @@ async function handleEdit() {
     closeEditDialog();
   } catch (err) {
     editState.error = err instanceof Error ? err.message : t('users.dialogs.edit.errors.generic');
+    // Refresh so the table reflects any committed half — role may have
+    // succeeded before status threw, and the admin needs to see that.
+    await reload();
   } finally {
     editState.isSubmitting = false;
   }
@@ -921,7 +972,16 @@ async function handleBulkBlock() {
     return;
   }
   bulkActionRunning.value = true;
-  const uids = Array.from(selected.value);
+  // Cubic R-final5 P2 — prune self + admin targets before POSTing.
+  const pruned = pruneSelfAndAdmins(selected.value);
+  const uids = pruned.uids;
+  if (pruned.dropped > 0) {
+    selectionDroppedCount.value = pruned.dropped;
+  }
+  if (uids.length === 0) {
+    bulkActionRunning.value = false;
+    return;
+  }
   try {
     const result = await bulkBlock({ uids });
     lastResult.value = {
@@ -949,7 +1009,16 @@ async function handleBulkDelete() {
     return;
   }
   bulkActionRunning.value = true;
-  const uids = Array.from(selected.value);
+  // Cubic R-final5 P2 — prune self + admin targets before POSTing.
+  const pruned = pruneSelfAndAdmins(selected.value);
+  const uids = pruned.uids;
+  if (pruned.dropped > 0) {
+    selectionDroppedCount.value = pruned.dropped;
+  }
+  if (uids.length === 0) {
+    bulkActionRunning.value = false;
+    return;
+  }
   try {
     const result = await bulkDelete({ uids });
     lastResult.value = {
@@ -976,7 +1045,16 @@ async function handleBulkRecover() {
     return;
   }
   bulkActionRunning.value = true;
-  const uids = Array.from(selected.value);
+  // Cubic R-final5 P2 — prune self + admin targets before POSTing.
+  const pruned = pruneSelfAndAdmins(selected.value);
+  const uids = pruned.uids;
+  if (pruned.dropped > 0) {
+    selectionDroppedCount.value = pruned.dropped;
+  }
+  if (uids.length === 0) {
+    bulkActionRunning.value = false;
+    return;
+  }
   try {
     const result = await bulkRecover({ uids });
     lastResult.value = {
@@ -1004,7 +1082,16 @@ async function handleBulkRevokeSessions() {
     return;
   }
   bulkActionRunning.value = true;
-  const uids = Array.from(selected.value);
+  // Cubic R-final5 P2 — prune self + admin targets before POSTing.
+  const pruned = pruneSelfAndAdmins(selected.value);
+  const uids = pruned.uids;
+  if (pruned.dropped > 0) {
+    selectionDroppedCount.value = pruned.dropped;
+  }
+  if (uids.length === 0) {
+    bulkActionRunning.value = false;
+    return;
+  }
   try {
     const result = await bulkRevokeSessions({ uids });
     lastResult.value = {

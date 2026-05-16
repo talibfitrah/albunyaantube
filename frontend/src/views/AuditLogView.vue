@@ -180,8 +180,17 @@ function scheduleReload() {
   }, 300);
 }
 
-// Reset + refetch when filters change
+// Reset + refetch when filters change.
+// Cubic R-final5 P1 — also synchronously clear nextCursor on filter change.
+// Pre-fix, a 300ms debounce window let the user click "Load more" while the
+// new filter was queued. loadMore() would advance pagination with the cursor
+// minted under the previous filter combination → backend returns rows
+// matching the new filter but using the old cursor's continuation point,
+// producing inconsistent results. Clearing nextCursor here hides the
+// Load-more button immediately (the v-if="nextCursor !== null" gate fires),
+// so the debounce window is effectively non-interactive for pagination.
 watch([actorFilter, actionFilter], () => {
+  nextCursor.value = null;
   scheduleReload();
 });
 
