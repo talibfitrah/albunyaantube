@@ -1,0 +1,49 @@
+android/app/src/main/java/com/albunyaan/tube/AlBunyaanApplication.kt
+  s_99ef915f306233::t_a7962a924a8790 65-75
+  s_99ef915f306233::t_2a648ddcc79201 240-254
+  s_99ef915f306233::t_2b559e716d7a21 255
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_99ef915f306233::t_d7dc4025f99273 57-63
+android/app/src/main/java/com/albunyaan/tube/auth/AccountStatusEvent.kt
+  s_99ef915f306233::t_a9b12e51cfdb56 14-20
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_99ef915f306233::t_53a7fed0334f06 218-234
+android/app/src/main/java/com/albunyaan/tube/data/local/Migrations.kt
+  s_99ef915f306233::t_8284d1bfd5588d 297-316,318-321,324-327,330-333
+android/app/src/main/java/com/albunyaan/tube/auth/FirebaseAuthInterceptor.kt
+  s_99ef915f306233::t_3f816f554fb10c 74-81,83-93
+  s_99ef915f306233::t_a86adb58a2fbd6 129-136
+  s_99ef915f306233::t_e377d0a99b9f18 5-6
+android/app/src/main/java/com/albunyaan/tube/auth/AccountStatusInterceptor.kt
+  s_99ef915f306233::t_2bcfbdba99d577 93-99,101-102
+android/app/src/main/java/com/albunyaan/tube/auth/AuthRepositoryImpl.kt
+  s_99ef915f306233::t_0c67948c156e52 89-100
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_99ef915f306233::t_8340cbaf94226c 97-109
+  s_99ef915f306233::t_5e316f45fcb8db 159-168,170-191
+  s_99ef915f306233::t_8fef1e1ef2b87e 169
+  s_99ef915f306233::t_f0caddc67fee5e 411-415
+  s_99ef915f306233::t_db6d67a0b58f77 442-444
+  s_99ef915f306233::t_b917bfcbf57e18 471-473
+  s_99ef915f306233::t_1404cd13baa28c 503,511-514,527-531
+android/app/src/main/java/com/albunyaan/tube/ui/MainActivity.kt
+  s_99ef915f306233::t_0f31575f3cf903 131-137,149-152
+android/app/src/main/java/com/albunyaan/tube/di/SyncModule.kt
+  s_99ef915f306233::t_80ed9777c54369 3-5,7,10-15,19-25,29-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "fbfd39703bd2634077f638408e28b16ef8155fbb",
+  "prompts": {},
+  "sessions": {
+    "s_99ef915f306233": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6959ccab-c0c0-45fe-9e9a-2b8a2253a0fa",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
