@@ -174,6 +174,7 @@ class PlayerViewModelAvailabilityGateTest {
             videoId: String,
             forceRefresh: Boolean,
             priority: Priority,
+            sourceChannelId: String?,
         ): ResolvedStreams? {
             resolveCallCount++
             if (videoId in archivedIds) {

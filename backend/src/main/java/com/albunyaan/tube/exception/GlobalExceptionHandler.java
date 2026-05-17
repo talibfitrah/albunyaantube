@@ -43,6 +43,24 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handle ContentGoneException (410) — content was in registry but explicitly removed/archived.
+     */
+    @ExceptionHandler(ContentGoneException.class)
+    public ResponseEntity<Object> handleContentGoneException(
+            ContentGoneException ex, WebRequest request) {
+        logger.info("Content gone: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.GONE.value());
+        body.put("error", "Gone");
+        body.put("message", ex.getMessage());
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.GONE);
+    }
+
+    /**
      * Handle InvalidTokenException (401)
      */
     @ExceptionHandler(InvalidTokenException.class)

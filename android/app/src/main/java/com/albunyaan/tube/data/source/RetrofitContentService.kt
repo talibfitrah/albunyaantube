@@ -111,6 +111,15 @@ class RetrofitContentService(
         }
         return when {
             response.isSuccessful -> true
+            // 410 Gone: backend confirmed this content was explicitly removed/archived by admin.
+            // Hard block regardless of type — never fail-open on a deliberate admin action.
+            response.code() == 410 -> false
+            // 404 for VIDEO: the video is not in the standalone registry.
+            // Channel-sourced videos are never individually registered, so a shared link
+            // to a channel video will always 404 here. Fail-open and let NewPipe resolve;
+            // if the video is genuinely gone from YouTube, NewPipe will error naturally.
+            response.code() == 404 && type == AvailabilityCheckType.VIDEO -> true
+            // 404 for CHANNEL/PLAYLIST: the item was registered but is now missing — block.
             response.code() == 404 -> false
             else -> throw retrofit2.HttpException(response)
         }

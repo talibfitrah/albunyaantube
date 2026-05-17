@@ -231,7 +231,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             override fun onPageSelected(position: Int) {
                 val item = viewModel.items.value.getOrNull(position) ?: return
                 viewModel.onPageChanged(position)
-                bindPageWhenReady(position, item.id)
+                bindPageWhenReady(position, item.id, item.channelId)
             }
         }
         pageChangeCallback = callback
@@ -315,7 +315,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                     if (!hasBoundInitialPage && list.isNotEmpty()) {
                         hasBoundInitialPage = true
                         val first = list[0]
-                        bindPageWhenReady(0, first.id)
+                        bindPageWhenReady(0, first.id, first.channelId)
                     }
                 }
             }
@@ -428,13 +428,13 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
      * it directly — no `lifecycleScope.launch` wrapper is needed. The binder
      * cancels its own prior in-flight resolve on each new bind.
      */
-    private fun bindPageWhenReady(position: Int, videoId: String) {
+    private fun bindPageWhenReady(position: Int, videoId: String, channelId: String? = null) {
         val b = binding ?: return
         val b2 = binder ?: return
         pushCachedAudioLanguagesForVideo(videoId)
         val holder = findViewHolderAt(position)
         if (holder != null) {
-            b2.bind(holder.playerView, videoId)
+            b2.bind(holder.playerView, videoId, channelId)
             attachTimeBarToHolder(holder)
             return
         }
@@ -458,7 +458,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             val retry = findViewHolderAt(position) ?: return@post
             attachTimeBarToHolder(retry)
             val activeBinder = binder ?: return@post
-            activeBinder.bind(retry.playerView, videoId)
+            activeBinder.bind(retry.playerView, videoId, channelId)
         }
     }
 

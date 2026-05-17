@@ -282,6 +282,7 @@ class PlayerViewModelPrefetchTtlTest {
             videoId: String,
             forceRefresh: Boolean,
             priority: Priority,
+            sourceChannelId: String?,
         ): ResolvedStreams? {
             resolveCallCount++
             resolvedVideoIds += videoId

@@ -79,7 +79,8 @@ class PlayerBinderTest {
         override suspend fun resolveStreams(
             videoId: String,
             forceRefresh: Boolean,
-            priority: Priority
+            priority: Priority,
+            sourceChannelId: String?,
         ): ResolvedStreams? = deferred.getOrPut(videoId) { CompletableDeferred() }.await()
 
         fun complete(videoId: String, result: ResolvedStreams?) {

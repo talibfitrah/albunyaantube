@@ -26,9 +26,21 @@ class RetrofitContentServiceTest {
     }
 
     @Test
-    fun `verifyAvailable VIDEO returns false when backend returns 404`() = runTest {
+    fun `verifyAvailable VIDEO returns true when backend returns 404 (not in registry, fail-open for channel videos)`() = runTest {
+        // 404 means "video not in standalone registry" — channel-sourced videos are never
+        // individually registered. Fail-open so NewPipe can resolve them via the channel path.
         whenever(api.checkVideoAvailable("ytv-1")).thenReturn(
             Response.error(404, "".toResponseBody(null))
+        )
+
+        assertTrue(service.verifyAvailable(AvailabilityCheckType.VIDEO, "ytv-1"))
+    }
+
+    @Test
+    fun `verifyAvailable VIDEO returns false when backend returns 410 (explicitly admin-removed)`() = runTest {
+        // 410 Gone means the video was in the registry and explicitly archived/rejected by admin.
+        whenever(api.checkVideoAvailable("ytv-1")).thenReturn(
+            Response.error(410, "".toResponseBody(null))
         )
 
         assertFalse(service.verifyAvailable(AvailabilityCheckType.VIDEO, "ytv-1"))

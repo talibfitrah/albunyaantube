@@ -716,6 +716,7 @@ class PlayerViewModelPlaylistPagingTest {
             videoId: String,
             forceRefresh: Boolean,
             priority: Priority,
+            sourceChannelId: String?,
         ): ResolvedStreams? {
             lastObservedPriority = priority
             resolvedVideoIds += videoId

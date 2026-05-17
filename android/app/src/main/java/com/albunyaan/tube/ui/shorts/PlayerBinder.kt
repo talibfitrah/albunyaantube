@@ -239,11 +239,18 @@ class PlayerBinder private constructor(
      * On stream-resolution failure, emits to [failureEvents] (suppressed —
      * never throws) so the fragment can skip past the bad short.
      */
-    fun bind(target: PlayerView, videoId: String) {
+    /**
+     * Retained across bind calls so forceRefreshCurrent can re-use the same
+     * channel context without the fragment needing to track it separately.
+     */
+    @Volatile private var boundSourceChannelId: String? = null
+
+    fun bind(target: PlayerView, videoId: String, sourceChannelId: String? = null) {
         check(!scopeCancelled) {
             "PlayerBinder.bind called after cancelScope/release; binder must not be reused"
         }
         val myGen = generation.incrementAndGet()
+        boundSourceChannelId = sourceChannelId
 
         // Cancel any in-flight resolve for the prior bind. The coroutine body
         // also checks myGen against generation as a second line of defence in
@@ -269,7 +276,7 @@ class PlayerBinder private constructor(
         playerOps.clearMediaItems()
 
         bindJob = scope.launch {
-            prepareAndPlay(videoId, myGen)
+            prepareAndPlay(videoId, myGen, sourceChannelId)
         }
     }
 
@@ -326,13 +333,13 @@ class PlayerBinder private constructor(
         val view = boundView ?: return
         val cached = synchronized(resolvedCache) { resolvedCache.entries.lastOrNull()?.key } ?: return
         nextResolveForceRefresh = true
-        bind(view, cached)
+        bind(view, cached, boundSourceChannelId)
     }
 
-    private suspend fun prepareAndPlay(videoId: String, myGen: Int) {
+    private suspend fun prepareAndPlay(videoId: String, myGen: Int, sourceChannelId: String? = null) {
         val force = nextResolveForceRefresh.also { nextResolveForceRefresh = false }
         val resolved: ResolvedStreams? = runCatching {
-            playerRepository.resolveStreams(videoId, forceRefresh = force)
+            playerRepository.resolveStreams(videoId, forceRefresh = force, sourceChannelId = sourceChannelId)
         }.getOrNull()
 
         // Discard if a newer bind has superseded this one.

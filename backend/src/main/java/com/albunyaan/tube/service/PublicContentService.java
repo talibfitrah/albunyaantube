@@ -963,18 +963,23 @@ public class PublicContentService {
     }
 
     public Video getVideoDetails(String videoId) throws ExecutionException, InterruptedException, TimeoutException {
-        Video video = videoRepository.findByYoutubeId(videoId)
-                .orElseThrow(() -> new ResourceNotFoundException("Video", videoId));
+        Video video = videoRepository.findByYoutubeId(videoId).orElse(null);
 
-        // Only return approved and available videos
-        if (!"APPROVED".equals(video.getStatus())) {
+        // Video not in registry at all — may be a channel-sourced video not individually
+        // registered. Return 404 so the Android client can fail-open and let NewPipe resolve.
+        if (video == null) {
             throw new ResourceNotFoundException("Video", videoId);
         }
 
-        // Exclude unavailable or archived videos
+        // Video was registered but explicitly rejected or not yet approved — block with 410.
+        if (!"APPROVED".equals(video.getStatus())) {
+            throw new com.albunyaan.tube.exception.ContentGoneException("Video", videoId);
+        }
+
+        // Video was approved but has since been archived or marked unavailable — block with 410.
         if (video.getValidationStatus() == ValidationStatus.UNAVAILABLE
                 || video.getValidationStatus() == ValidationStatus.ARCHIVED) {
-            throw new ResourceNotFoundException("Video", videoId);
+            throw new com.albunyaan.tube.exception.ContentGoneException("Video", videoId);
         }
 
         return video;
