@@ -111,15 +111,9 @@ class RetrofitContentService(
         }
         return when {
             response.isSuccessful -> true
-            // 410 Gone: backend confirmed content was explicitly admin-archived/blocked.
-            // Hard block for any type — never fail-open on a deliberate admin action.
+            // 410 Gone: explicitly admin-blocked — hard stop, never fail-open.
             response.code() == 410 -> false
-            // 404: content is not in the backend registry or not yet approved.
-            // Fail-open for all types so NewPipe can resolve the item directly.
-            // Videos not in the standalone registry (channel-sourced), channels navigated
-            // from a playlist, and playlists fetched from a channel's Playlists tab all
-            // return 404 but are valid YouTube content that NewPipe can serve.
-            // The backend signals a deliberate admin block via 410, not 404.
+            // 404: not in registry yet; fail-open so NewPipe can resolve directly.
             response.code() == 404 -> true
             else -> throw retrofit2.HttpException(response)
         }

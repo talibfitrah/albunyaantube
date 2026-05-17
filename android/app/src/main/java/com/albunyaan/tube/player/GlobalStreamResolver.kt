@@ -370,7 +370,7 @@ class GlobalStreamResolver private constructor(
                 // extraction fails.
                 if (contentService != null) {
                     val available = try {
-                        if (sourceChannelId != null) {
+                        if (!sourceChannelId.isNullOrBlank()) {
                             // Video is from an approved channel — check channel availability,
                             // not per-video registry (channel videos aren't individually registered).
                             contentService.verifyAvailable(AvailabilityCheckType.CHANNEL, sourceChannelId)

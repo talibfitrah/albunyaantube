@@ -1219,33 +1219,20 @@ class PlayerViewModel @Inject constructor(
                 // NB1 fix: the chokepoint inside [GlobalStreamResolver] propagates
                 // [ContentUnavailableException] all the way out through the
                 // prefetch await path (the prefetch service forwards the in-flight
-                // job's exception). Handle it here with the same UX as the
-                // [repository.resolveStreams] catch below: no retries, auto-skip
-                // in playlist mode, otherwise ContentUnavailable overlay.
-                //
-                // Channel-source exception: prefetch has no channel context so it uses
-                // the per-video registry check, which 404s for channel videos. If the
-                // item has a sourceChannelId, the prefetch result is not authoritative —
-                // fall through to repository.resolveStreams which uses the CHANNEL check.
-                if (item.sourceChannelId != null) {
-                    android.util.Log.d(
-                        "PlayerViewModel",
-                        "Prefetch VIDEO check 404'd for channel video ${item.streamId}; falling through to CHANNEL check",
-                    )
-                    null
-                } else {
-                    android.util.Log.i(
-                        "PlayerViewModel",
-                        "Content unavailable for ${item.streamId} via prefetch await; halting retries",
-                    )
-                    playbackMetrics.onPlaybackFailed(item.streamId, "content_unavailable")
-                    publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
-                    if (handleStreamResolutionFailure(item)) {
-                        return  // Auto-skipped to next item in playlist
-                    }
-                    updateState { it.copy(streamState = StreamState.ContentUnavailable) }
-                    return
+                // job's exception). Since 404 is now fail-open, ContentUnavailableException
+                // here always means the backend returned 410 (explicit admin block) — respect it
+                // regardless of sourceChannelId.
+                android.util.Log.i(
+                    "PlayerViewModel",
+                    "Content unavailable for ${item.streamId} via prefetch await; halting retries",
+                )
+                playbackMetrics.onPlaybackFailed(item.streamId, "content_unavailable")
+                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
+                if (handleStreamResolutionFailure(item)) {
+                    return  // Auto-skipped to next item in playlist
                 }
+                updateState { it.copy(streamState = StreamState.ContentUnavailable) }
+                return
             }
             if (tapPrefetched != null) {
                 android.util.Log.d("PlayerViewModel", "Using tap-prefetched stream for ${item.streamId}")
@@ -1735,8 +1722,6 @@ class PlayerViewModel @Inject constructor(
                 return@withLock false
             }
 
-            // Convert and add to queue. sourceChannelId intentionally absent — playlist
-            // videos use the per-video registry check, not channel-level availability.
             val newItems = page.items.map { playlistItem ->
                 UpNextItem(
                     id = playlistItem.videoId,

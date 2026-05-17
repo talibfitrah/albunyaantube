@@ -5,6 +5,7 @@ import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.dto.HomeCategoryDto;
+import com.albunyaan.tube.exception.ContentGoneException;
 import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.CategoryContentOrder;
@@ -932,16 +933,16 @@ public class PublicContentService {
         Channel channel = channelRepository.findByYoutubeId(channelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Channel", channelId));
 
-        // Admin explicitly blocked (archived or validation-failed) → 410 Gone.
-        // Android client treats 410 as a hard block; 404 fails-open so channels
-        // not individually registered (e.g. navigated to from a playlist) still load
-        // via NewPipe.
-        if (channel.getValidationStatus() == ValidationStatus.ARCHIVED
+        // Admin explicitly blocked → 410 (hard block on Android side).
+        // REJECTED = admin reviewed and denied. ARCHIVED/UNAVAILABLE = validation-flagged as gone.
+        // 404 is reserved for "not in registry / not yet reviewed" → Android fails-open to NewPipe.
+        if ("REJECTED".equals(channel.getStatus())
+                || channel.getValidationStatus() == ValidationStatus.ARCHIVED
                 || channel.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
-            throw new com.albunyaan.tube.exception.ContentGoneException("Channel", channelId);
+            throw new ContentGoneException("Channel", channelId);
         }
 
-        // Not yet approved (PENDING, REQUEST_CHANGES, etc.) → 404, same fail-open semantics.
+        // PENDING or REQUEST_CHANGES → 404; admin hasn't decided yet, fail-open.
         if (!"APPROVED".equals(channel.getStatus())) {
             throw new ResourceNotFoundException("Channel", channelId);
         }
@@ -953,15 +954,14 @@ public class PublicContentService {
         Playlist playlist = playlistRepository.findByYoutubeId(playlistId)
                 .orElseThrow(() -> new ResourceNotFoundException("Playlist", playlistId));
 
-        // Admin explicitly blocked → 410 Gone (hard block).
-        // 404 fails-open so playlists fetched from a channel's Playlists tab via
-        // NewPipe (not individually registered in the backend) still load.
-        if (playlist.getValidationStatus() == ValidationStatus.ARCHIVED
+        // Admin explicitly blocked → 410 (hard block).
+        if ("REJECTED".equals(playlist.getStatus())
+                || playlist.getValidationStatus() == ValidationStatus.ARCHIVED
                 || playlist.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
-            throw new com.albunyaan.tube.exception.ContentGoneException("Playlist", playlistId);
+            throw new ContentGoneException("Playlist", playlistId);
         }
 
-        // Not yet approved → 404, fail-open.
+        // PENDING or REQUEST_CHANGES → 404; fail-open.
         if (!"APPROVED".equals(playlist.getStatus())) {
             throw new ResourceNotFoundException("Playlist", playlistId);
         }
@@ -978,15 +978,16 @@ public class PublicContentService {
             throw new ResourceNotFoundException("Video", videoId);
         }
 
-        // Video was registered but explicitly rejected or not yet approved — block with 410.
+        // Videos are admin-submitted to registry (unlike channels/playlists which may be browse-discovered),
+        // so any non-APPROVED state means "not cleared yet" — hard block with 410.
         if (!"APPROVED".equals(video.getStatus())) {
-            throw new com.albunyaan.tube.exception.ContentGoneException("Video", videoId);
+            throw new ContentGoneException("Video", videoId);
         }
 
         // Video was approved but has since been archived or marked unavailable — block with 410.
         if (video.getValidationStatus() == ValidationStatus.UNAVAILABLE
                 || video.getValidationStatus() == ValidationStatus.ARCHIVED) {
-            throw new com.albunyaan.tube.exception.ContentGoneException("Video", videoId);
+            throw new ContentGoneException("Video", videoId);
         }
 
         return video;

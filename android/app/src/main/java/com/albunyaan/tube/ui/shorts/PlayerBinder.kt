@@ -228,6 +228,9 @@ class PlayerBinder private constructor(
      */
     val resolvedEvents: SharedFlow<Pair<String, ResolvedStreams>> = _resolvedEvents.asSharedFlow()
 
+    /** Retained across bind calls so forceRefreshCurrent can re-use the same channel context. */
+    @Volatile private var boundSourceChannelId: String? = null
+
     /**
      * Detach the player from any previously bound PlayerView, attach it to
      * [target], then resolve and begin playback for [videoId].
@@ -239,12 +242,6 @@ class PlayerBinder private constructor(
      * On stream-resolution failure, emits to [failureEvents] (suppressed —
      * never throws) so the fragment can skip past the bad short.
      */
-    /**
-     * Retained across bind calls so forceRefreshCurrent can re-use the same
-     * channel context without the fragment needing to track it separately.
-     */
-    @Volatile private var boundSourceChannelId: String? = null
-
     fun bind(target: PlayerView, videoId: String, sourceChannelId: String? = null) {
         check(!scopeCancelled) {
             "PlayerBinder.bind called after cancelScope/release; binder must not be reused"
@@ -336,7 +333,7 @@ class PlayerBinder private constructor(
         bind(view, cached, boundSourceChannelId)
     }
 
-    private suspend fun prepareAndPlay(videoId: String, myGen: Int, sourceChannelId: String? = null) {
+    private suspend fun prepareAndPlay(videoId: String, myGen: Int, sourceChannelId: String?) {
         val force = nextResolveForceRefresh.also { nextResolveForceRefresh = false }
         val resolved: ResolvedStreams? = runCatching {
             playerRepository.resolveStreams(videoId, forceRefresh = force, sourceChannelId = sourceChannelId)

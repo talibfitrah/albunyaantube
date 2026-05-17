@@ -4,6 +4,7 @@ import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.exception.GlobalExceptionHandler;
+import com.albunyaan.tube.exception.ContentGoneException;
 import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
@@ -111,30 +112,29 @@ public class PublicContentControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/videos/{videoId} - Pending Video (Not Approved)")
+    @DisplayName("GET /api/v1/videos/{videoId} - Pending Video → 410 (videos are admin-submitted to registry; block until approved, unlike channels/playlists which may be browse-discovered)")
     void testGetVideoDetails_PendingVideo() throws Exception {
-        // Given - Pending video should not be accessible via public API
         when(contentService.getVideoDetails(anyString()))
-                .thenThrow(new ResourceNotFoundException("Video", "pending-video-id"));
+                .thenThrow(new ContentGoneException("Video", "pending-video-id"));
 
-        // When & Then
         mockMvc.perform(get("/api/v1/videos/{videoId}", "pending-video-id")
                         .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.status").value(410))
+                .andExpect(jsonPath("$.error").value("Gone"));
     }
 
     @Test
-    @DisplayName("GET /api/v1/videos/{videoId} - Unavailable Video")
+    @DisplayName("GET /api/v1/videos/{videoId} - Unavailable/Archived Video → 410")
     void testGetVideoDetails_UnavailableVideo() throws Exception {
-        // Given - Unavailable video should not be accessible
         when(contentService.getVideoDetails(anyString()))
-                .thenThrow(new ResourceNotFoundException("Video", "unavailable-video-id"));
+                .thenThrow(new ContentGoneException("Video", "unavailable-video-id"));
 
-        // When & Then
         mockMvc.perform(get("/api/v1/videos/{videoId}", "unavailable-video-id")
                         .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.status").value(404));
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.status").value(410))
+                .andExpect(jsonPath("$.error").value("Gone"));
     }
 
     @Test
@@ -251,17 +251,28 @@ public class PublicContentControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/channels/{channelId} - Channel Not Found")
+    @DisplayName("GET /api/v1/channels/{channelId} - Channel Not Found → 404")
     void testGetChannelDetails_NotFound() throws Exception {
-        // Given
         when(contentService.getChannelDetails(anyString()))
                 .thenThrow(new ResourceNotFoundException("Channel", "nonexistent"));
 
-        // When & Then
         mockMvc.perform(get("/api/v1/channels/{channelId}", "nonexistent")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/channels/{channelId} - REJECTED/ARCHIVED channel → 410")
+    void testGetChannelDetails_Gone() throws Exception {
+        when(contentService.getChannelDetails(anyString()))
+                .thenThrow(new ContentGoneException("Channel", "UCblocked"));
+
+        mockMvc.perform(get("/api/v1/channels/{channelId}", "UCblocked")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.status").value(410))
+                .andExpect(jsonPath("$.error").value("Gone"));
     }
 
     @Test
@@ -282,17 +293,28 @@ public class PublicContentControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/playlists/{playlistId} - Playlist Not Found")
+    @DisplayName("GET /api/v1/playlists/{playlistId} - Playlist Not Found → 404")
     void testGetPlaylistDetails_NotFound() throws Exception {
-        // Given
         when(contentService.getPlaylistDetails(anyString()))
                 .thenThrow(new ResourceNotFoundException("Playlist", "nonexistent"));
 
-        // When & Then
         mockMvc.perform(get("/api/v1/playlists/{playlistId}", "nonexistent")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/playlists/{playlistId} - REJECTED/ARCHIVED playlist → 410")
+    void testGetPlaylistDetails_Gone() throws Exception {
+        when(contentService.getPlaylistDetails(anyString()))
+                .thenThrow(new ContentGoneException("Playlist", "PLblocked"));
+
+        mockMvc.perform(get("/api/v1/playlists/{playlistId}", "PLblocked")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.status").value(410))
+                .andExpect(jsonPath("$.error").value("Gone"));
     }
 
     @Test
