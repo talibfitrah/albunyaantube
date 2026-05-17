@@ -1,0 +1,34 @@
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_d813aff2ba6056::t_54fc24b840f09d 1222-1232,1234-1235
+backend/src/test/java/com/albunyaan/tube/controller/PublicContentControllerTest.java
+  s_d813aff2ba6056::t_54fc24b840f09d 7,118,122-124,128,131,135-137,254,265-277,296,307-317
+  s_d813aff2ba6056::t_48dee78bbdb0c4 115
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_d813aff2ba6056::t_90791534711183 981-982
+  s_d813aff2ba6056::t_54fc24b840f09d 8,936-940,942,945,957-959,961,964,984,990
+android/app/src/main/java/com/albunyaan/tube/ui/shorts/PlayerBinder.kt
+  s_d813aff2ba6056::t_0795f2a1420416 231-233
+  s_d813aff2ba6056::t_16f5abe37db46a 336
+android/app/src/main/java/com/albunyaan/tube/player/GlobalStreamResolver.kt
+  s_d813aff2ba6056::t_54fc24b840f09d 373
+backend/src/main/java/com/albunyaan/tube/exception/ContentGoneException.java
+  s_d813aff2ba6056::t_c3f79fb6490f8d 3
+android/app/src/main/java/com/albunyaan/tube/data/source/RetrofitContentService.kt
+  s_d813aff2ba6056::t_54fc24b840f09d 114,116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "babe7b5820baffce2298d33166d209d22ab3c879",
+  "prompts": {},
+  "sessions": {
+    "s_d813aff2ba6056": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b63a5958-42b2-4521-b000-86b73124d6c9",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
