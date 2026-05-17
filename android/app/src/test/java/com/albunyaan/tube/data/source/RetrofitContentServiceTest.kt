@@ -65,9 +65,21 @@ class RetrofitContentServiceTest {
     }
 
     @Test
-    fun `verifyAvailable CHANNEL returns false when backend returns 404`() = runTest {
+    fun `verifyAvailable CHANNEL returns true when backend returns 404 (not in registry, fail-open)`() = runTest {
+        // 404 means the channel is not in the backend registry (or not yet approved).
+        // Fail-open so NewPipe can resolve channels navigated to from playlists.
         whenever(api.checkChannelAvailable("UCabc")).thenReturn(
             Response.error(404, "".toResponseBody(null))
+        )
+
+        assertTrue(service.verifyAvailable(AvailabilityCheckType.CHANNEL, "UCabc"))
+    }
+
+    @Test
+    fun `verifyAvailable CHANNEL returns false when backend returns 410 (explicitly admin-blocked)`() = runTest {
+        // 410 Gone means the channel was explicitly archived/blocked by an admin.
+        whenever(api.checkChannelAvailable("UCabc")).thenReturn(
+            Response.error(410, "".toResponseBody(null))
         )
 
         assertFalse(service.verifyAvailable(AvailabilityCheckType.CHANNEL, "UCabc"))
@@ -92,9 +104,22 @@ class RetrofitContentServiceTest {
     }
 
     @Test
-    fun `verifyAvailable PLAYLIST returns false when backend returns 404`() = runTest {
+    fun `verifyAvailable PLAYLIST returns true when backend returns 404 (not in registry, fail-open)`() = runTest {
+        // 404 means the playlist is not in the backend registry (e.g. fetched from a
+        // channel's Playlists tab via NewPipe but not individually approved).
+        // Fail-open so NewPipe can load the playlist directly.
         whenever(api.checkPlaylistAvailable("PLxyz")).thenReturn(
             Response.error(404, "".toResponseBody(null))
+        )
+
+        assertTrue(service.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLxyz"))
+    }
+
+    @Test
+    fun `verifyAvailable PLAYLIST returns false when backend returns 410 (explicitly admin-blocked)`() = runTest {
+        // 410 Gone means the playlist was explicitly archived/blocked by an admin.
+        whenever(api.checkPlaylistAvailable("PLxyz")).thenReturn(
+            Response.error(410, "".toResponseBody(null))
         )
 
         assertFalse(service.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLxyz"))
@@ -112,7 +137,7 @@ class RetrofitContentServiceTest {
     // --- ERROR propagation ---
 
     @Test(expected = retrofit2.HttpException::class)
-    fun `verifyAvailable throws HttpException on non-200 non-404 response`() = runTest {
+    fun `verifyAvailable throws HttpException on non-200 non-404 non-410 response`() = runTest {
         whenever(api.checkVideoAvailable("ytv-err")).thenReturn(
             Response.error(500, "server error".toResponseBody(null))
         )

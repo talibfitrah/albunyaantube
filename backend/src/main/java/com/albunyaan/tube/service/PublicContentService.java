@@ -932,13 +932,17 @@ public class PublicContentService {
         Channel channel = channelRepository.findByYoutubeId(channelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Channel", channelId));
 
-        // Only return approved channels
-        if (!"APPROVED".equals(channel.getStatus())) {
-            throw new ResourceNotFoundException("Channel", channelId);
+        // Admin explicitly blocked (archived or validation-failed) → 410 Gone.
+        // Android client treats 410 as a hard block; 404 fails-open so channels
+        // not individually registered (e.g. navigated to from a playlist) still load
+        // via NewPipe.
+        if (channel.getValidationStatus() == ValidationStatus.ARCHIVED
+                || channel.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
+            throw new com.albunyaan.tube.exception.ContentGoneException("Channel", channelId);
         }
 
-        // Exclude archived channels
-        if (channel.getValidationStatus() == ValidationStatus.ARCHIVED) {
+        // Not yet approved (PENDING, REQUEST_CHANGES, etc.) → 404, same fail-open semantics.
+        if (!"APPROVED".equals(channel.getStatus())) {
             throw new ResourceNotFoundException("Channel", channelId);
         }
 
@@ -949,13 +953,16 @@ public class PublicContentService {
         Playlist playlist = playlistRepository.findByYoutubeId(playlistId)
                 .orElseThrow(() -> new ResourceNotFoundException("Playlist", playlistId));
 
-        // Only return approved playlists
-        if (!"APPROVED".equals(playlist.getStatus())) {
-            throw new ResourceNotFoundException("Playlist", playlistId);
+        // Admin explicitly blocked → 410 Gone (hard block).
+        // 404 fails-open so playlists fetched from a channel's Playlists tab via
+        // NewPipe (not individually registered in the backend) still load.
+        if (playlist.getValidationStatus() == ValidationStatus.ARCHIVED
+                || playlist.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
+            throw new com.albunyaan.tube.exception.ContentGoneException("Playlist", playlistId);
         }
 
-        // Exclude archived playlists
-        if (playlist.getValidationStatus() == ValidationStatus.ARCHIVED) {
+        // Not yet approved → 404, fail-open.
+        if (!"APPROVED".equals(playlist.getStatus())) {
             throw new ResourceNotFoundException("Playlist", playlistId);
         }
 
