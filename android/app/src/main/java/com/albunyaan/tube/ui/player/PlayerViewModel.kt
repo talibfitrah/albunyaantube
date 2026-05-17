@@ -641,7 +641,8 @@ class PlayerViewModel @Inject constructor(
         thumbnailUrl: String? = null,
         description: String? = null,
         durationSeconds: Int = 0,
-        viewCount: Long? = null
+        viewCount: Long? = null,
+        sourceChannelId: String? = null,
     ) {
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
@@ -667,7 +668,8 @@ class PlayerViewModel @Inject constructor(
             streamId = videoId,
             thumbnailUrl = thumbnailUrl,
             description = description,
-            viewCount = viewCount
+            viewCount = viewCount,
+            sourceChannelId = sourceChannelId,
         )
 
         currentItem = item
@@ -867,7 +869,8 @@ class PlayerViewModel @Inject constructor(
             }
         }
 
-        // Convert to UpNextItems
+        // Convert to UpNextItems. sourceChannelId is intentionally absent: playlist videos
+        // are individually registered in the backend registry, so the per-video check applies.
         val upNextItems = orderedItems.map { playlistItem ->
             UpNextItem(
                 id = playlistItem.videoId,
@@ -1219,17 +1222,30 @@ class PlayerViewModel @Inject constructor(
                 // job's exception). Handle it here with the same UX as the
                 // [repository.resolveStreams] catch below: no retries, auto-skip
                 // in playlist mode, otherwise ContentUnavailable overlay.
-                android.util.Log.i(
-                    "PlayerViewModel",
-                    "Content unavailable for ${item.streamId} via prefetch await; halting retries",
-                )
-                playbackMetrics.onPlaybackFailed(item.streamId, "content_unavailable")
-                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
-                if (handleStreamResolutionFailure(item)) {
-                    return  // Auto-skipped to next item in playlist
+                //
+                // Channel-source exception: prefetch has no channel context so it uses
+                // the per-video registry check, which 404s for channel videos. If the
+                // item has a sourceChannelId, the prefetch result is not authoritative —
+                // fall through to repository.resolveStreams which uses the CHANNEL check.
+                if (item.sourceChannelId != null) {
+                    android.util.Log.d(
+                        "PlayerViewModel",
+                        "Prefetch VIDEO check 404'd for channel video ${item.streamId}; falling through to CHANNEL check",
+                    )
+                    null
+                } else {
+                    android.util.Log.i(
+                        "PlayerViewModel",
+                        "Content unavailable for ${item.streamId} via prefetch await; halting retries",
+                    )
+                    playbackMetrics.onPlaybackFailed(item.streamId, "content_unavailable")
+                    publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
+                    if (handleStreamResolutionFailure(item)) {
+                        return  // Auto-skipped to next item in playlist
+                    }
+                    updateState { it.copy(streamState = StreamState.ContentUnavailable) }
+                    return
                 }
-                updateState { it.copy(streamState = StreamState.ContentUnavailable) }
-                return
             }
             if (tapPrefetched != null) {
                 android.util.Log.d("PlayerViewModel", "Using tap-prefetched stream for ${item.streamId}")
@@ -1268,7 +1284,11 @@ class PlayerViewModel @Inject constructor(
                 // Add timeout wrapper to prevent indefinite hangs during extraction
                 // Use forceRefresh on first attempt to bypass stream URL cache
                 kotlinx.coroutines.withTimeout(EXTRACTOR_TIMEOUT_MS) {
-                    repository.resolveStreams(item.streamId, forceRefresh = forceRefresh && attempt == 1)
+                    repository.resolveStreams(
+                        item.streamId,
+                        forceRefresh = forceRefresh && attempt == 1,
+                        sourceChannelId = item.sourceChannelId,
+                    )
                 }
             } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
                 // C1 fix: backend availability gate inside DefaultPlayerRepository
@@ -1406,8 +1426,13 @@ class PlayerViewModel @Inject constructor(
         android.util.Log.d("PlayerViewModel", "Live stream: proactively refreshing URLs for $streamId")
 
         try {
-            // Force refresh to get new URLs
-            val freshStreams = repository.resolveStreams(streamId, forceRefresh = true)
+            // Force refresh to get new URLs. Pass sourceChannelId so channel-sourced live
+            // streams use CHANNEL availability check (not per-video registry check).
+            val freshStreams = repository.resolveStreams(
+                streamId,
+                forceRefresh = true,
+                sourceChannelId = currentItem?.sourceChannelId,
+            )
             if (freshStreams == null || !freshStreams.isLive) {
                 android.util.Log.w("PlayerViewModel", "Live stream: refresh failed or stream no longer live")
                 return
@@ -1519,6 +1544,7 @@ class PlayerViewModel @Inject constructor(
                     val resolved = repository.resolveStreams(
                         item.streamId,
                         priority = Priority.BACKGROUND_REFRESH,
+                        sourceChannelId = item.sourceChannelId,
                     )
                     if (resolved != null) {
                         // PR5: Signal success to reset backoff state
@@ -1709,7 +1735,8 @@ class PlayerViewModel @Inject constructor(
                 return@withLock false
             }
 
-            // Convert and add to queue
+            // Convert and add to queue. sourceChannelId intentionally absent — playlist
+            // videos use the per-video registry check, not channel-level availability.
             val newItems = page.items.map { playlistItem ->
                 UpNextItem(
                     id = playlistItem.videoId,
@@ -1836,7 +1863,8 @@ data class UpNextItem(
     val streamId: String,
     val thumbnailUrl: String? = null,
     val description: String? = null,
-    val viewCount: Long? = null
+    val viewCount: Long? = null,
+    val sourceChannelId: String? = null,
 )
 
 sealed class StreamState {

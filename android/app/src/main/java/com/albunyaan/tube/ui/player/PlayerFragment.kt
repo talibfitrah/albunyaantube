@@ -391,6 +391,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val description = arguments?.getString("description")
         val durationSeconds = arguments?.getInt("durationSeconds", 0) ?: 0
         val viewCount = arguments?.getLong("viewCount", -1L)?.takeIf { it >= 0 }
+        val sourceChannelId = arguments?.getString("channelId")?.takeIf { it.isNotBlank() }
 
         when {
             !playlistId.isNullOrEmpty() -> {
@@ -407,7 +408,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     thumbnailUrl = thumbnailUrl,
                     description = description,
                     durationSeconds = durationSeconds,
-                    viewCount = viewCount
+                    viewCount = viewCount,
+                    sourceChannelId = sourceChannelId,
                 )
             }
             // If no arguments, ViewModel will use default stub queue (for testing)

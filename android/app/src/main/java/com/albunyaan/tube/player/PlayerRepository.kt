@@ -53,6 +53,7 @@ interface PlayerRepository {
         videoId: String,
         forceRefresh: Boolean = false,
         priority: Priority = Priority.PLAYER,
+        sourceChannelId: String? = null,
     ): ResolvedStreams?
 }
 
@@ -87,12 +88,14 @@ class DefaultPlayerRepository(
         videoId: String,
         forceRefresh: Boolean,
         priority: Priority,
+        sourceChannelId: String?,
     ): ResolvedStreams? {
         return globalResolver.resolveStreams(
             videoId = videoId,
             forceRefresh = forceRefresh,
             caller = "player",
             priority = priority,
+            sourceChannelId = sourceChannelId,
         )
     }
 }

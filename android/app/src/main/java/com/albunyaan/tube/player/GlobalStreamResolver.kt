@@ -255,6 +255,7 @@ class GlobalStreamResolver private constructor(
         timeoutMs: Long = DEFAULT_TIMEOUT_MS,
         caller: String = "unknown",
         priority: Priority = Priority.USER_FOREGROUND,
+        sourceChannelId: String? = null,
     ): ResolvedStreams? {
         // Fast path: check if there's already an in-flight job we can join (only if not forceRefresh)
         // Note: We skip the isActive check since the job state can change immediately after.
@@ -369,7 +370,13 @@ class GlobalStreamResolver private constructor(
                 // extraction fails.
                 if (contentService != null) {
                     val available = try {
-                        contentService.verifyAvailable(AvailabilityCheckType.VIDEO, videoId)
+                        if (sourceChannelId != null) {
+                            // Video is from an approved channel — check channel availability,
+                            // not per-video registry (channel videos aren't individually registered).
+                            contentService.verifyAvailable(AvailabilityCheckType.CHANNEL, sourceChannelId)
+                        } else {
+                            contentService.verifyAvailable(AvailabilityCheckType.VIDEO, videoId)
+                        }
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Exception) {
