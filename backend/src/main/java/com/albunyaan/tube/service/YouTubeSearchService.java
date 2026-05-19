@@ -96,6 +96,15 @@ public class YouTubeSearchService {
 
             return new YouTubeSearchResponse(hits, raw.nextPageToken());
 
+        } catch (InterruptedException e) {
+            // Plan G cubic R4 P2: restore the thread's interrupt flag so the
+            // calling thread's cooperative-cancellation contract isn't
+            // silently lost. The exception is still surfaced as a 502 via
+            // YouTubeSearchException for the moderator client.
+            Thread.currentThread().interrupt();
+            logger.warn("YouTubeSearchService.search interrupted [q={}, type={}]: {}",
+                    q, type, e.getMessage());
+            throw new YouTubeSearchException("Search interrupted", e);
         } catch (Exception e) {
             logger.warn("YouTubeSearchService.search failed [q={}, type={}, page={}]: {}",
                     q, type, pageToken, e.getMessage());
