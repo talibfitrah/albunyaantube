@@ -1,6 +1,8 @@
 package com.albunyaan.tube.config;
 
+import com.albunyaan.tube.security.ProfileUpdateRateLimitInterceptor;
 import com.albunyaan.tube.security.SubmissionRateLimitInterceptor;
+import com.albunyaan.tube.service.ProfileUpdateRateLimiter;
 import com.albunyaan.tube.service.SubmissionRateLimiter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.ObjectProvider;
@@ -10,33 +12,40 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Plan E — wires the submission rate-limit interceptor onto registry POSTs.
+ * Plans E + G — wires rate-limit interceptors.
  *
- * The interceptor bean is constructed here (rather than via @Component scan)
- * so @WebMvcTest slices that don't load regular @Component services don't
- * fail with a missing SubmissionRateLimiter dependency. ObjectProvider on
- * the limiter lets the config itself load even when the limiter is absent.
+ * <ul>
+ *   <li>Plan E: {@link SubmissionRateLimitInterceptor} on admin registry POSTs
+ *       (50 submissions / 24h per uid).
+ *   <li>Plan G B5: {@link ProfileUpdateRateLimitInterceptor} on
+ *       PUT /api/account/profile (10 updates / hour per uid).
+ * </ul>
+ *
+ * Interceptors are constructed as {@code @Bean}s here rather than via
+ * {@code @Component} scan so {@code @WebMvcTest} slices that don't load
+ * regular {@code @Component} services don't fail with a missing limiter
+ * dependency. {@link ObjectProvider} lets the config itself load even when
+ * a limiter bean is absent. {@link org.springframework.boot.autoconfigure.condition.ConditionalOnBean}
+ * lets Spring omit the interceptor bean entirely when the limiter is absent
+ * (e.g. in {@code @WebMvcTest} slices); {@code ObjectProvider.ifAvailable}
+ * in {@link #addInterceptors} makes registration a no-op when the bean is
+ * missing.
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    private final ObjectProvider<SubmissionRateLimitInterceptor> interceptorProvider;
+    private final ObjectProvider<SubmissionRateLimitInterceptor> submissionInterceptorProvider;
+    private final ObjectProvider<ProfileUpdateRateLimitInterceptor> profileUpdateInterceptorProvider;
 
-    public WebConfig(ObjectProvider<SubmissionRateLimitInterceptor> interceptorProvider) {
-        this.interceptorProvider = interceptorProvider;
+    public WebConfig(
+            ObjectProvider<SubmissionRateLimitInterceptor> submissionInterceptorProvider,
+            ObjectProvider<ProfileUpdateRateLimitInterceptor> profileUpdateInterceptorProvider) {
+        this.submissionInterceptorProvider = submissionInterceptorProvider;
+        this.profileUpdateInterceptorProvider = profileUpdateInterceptorProvider;
     }
 
-    /**
-     * Conditional bean: only registers the interceptor when {@link SubmissionRateLimiter}
-     * is on the context. The previous shape returned {@code null}, which registered a
-     * null bean under the name — a future {@code @Autowired SubmissionRateLimitInterceptor}
-     * (non-Optional) would NPE rather than fail wiring (cubic R5 P2). The
-     * {@link org.springframework.boot.autoconfigure.condition.ConditionalOnBean}
-     * annotation lets Spring omit the bean entirely when the limiter isn't loaded
-     * (e.g. {@code @WebMvcTest} slices); {@link InterceptorRegistry#addInterceptors}
-     * below uses {@code ObjectProvider.ifAvailable} so the registration is a no-op
-     * when the bean is missing.
-     */
+    // ── Plan E ────────────────────────────────────────────────────────────────
+
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(SubmissionRateLimiter.class)
     public SubmissionRateLimitInterceptor submissionRateLimitInterceptor(
@@ -45,15 +54,31 @@ public class WebConfig implements WebMvcConfigurer {
         return new SubmissionRateLimitInterceptor(limiter, json);
     }
 
+    // ── Plan G B5 ─────────────────────────────────────────────────────────────
+
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(ProfileUpdateRateLimiter.class)
+    public ProfileUpdateRateLimitInterceptor profileUpdateRateLimitInterceptor(
+            ProfileUpdateRateLimiter limiter,
+            ObjectMapper json) {
+        return new ProfileUpdateRateLimitInterceptor(limiter, json);
+    }
+
+    // ── Registry ──────────────────────────────────────────────────────────────
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        interceptorProvider.ifAvailable(interceptor ->
+        submissionInterceptorProvider.ifAvailable(interceptor ->
                 registry.addInterceptor(interceptor)
                         .addPathPatterns(
                                 "/api/admin/registry/channels",
                                 "/api/admin/registry/playlists",
                                 "/api/admin/registry/videos"
                         )
+        );
+        profileUpdateInterceptorProvider.ifAvailable(interceptor ->
+                registry.addInterceptor(interceptor)
+                        .addPathPatterns("/api/account/profile")
         );
     }
 }
