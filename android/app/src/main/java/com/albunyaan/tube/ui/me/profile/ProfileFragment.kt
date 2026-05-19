@@ -104,8 +104,26 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                 ).show()
             }
             ProfileError.AgeIneligible -> showAgeDialog()
-            is ProfileError.Validation ->
-                binding.displayNameLayout.error = error.message
+            is ProfileError.Validation -> {
+                // Plan G cubic R5 P1: route validation errors to the right
+                // surface based on the field the backend rejected. Pre-fix
+                // every validation message landed on displayNameLayout
+                // regardless of `field`, so DOB errors rendered as a red
+                // label under the name input. displayName errors stay
+                // inline (the input has a TextInputLayout); DOB errors go
+                // through a Snackbar because the dobRow is a plain
+                // TextView with no error slot.
+                when (error.field) {
+                    "displayName" ->
+                        binding.displayNameLayout.error = error.message
+                    "dateOfBirth" -> Snackbar.make(
+                        binding.root, error.message, Snackbar.LENGTH_LONG,
+                    ).show()
+                    else -> Snackbar.make(
+                        binding.root, error.message, Snackbar.LENGTH_LONG,
+                    ).show()
+                }
+            }
             ProfileError.Unknown ->
                 snack(R.string.profile_error_network)
         }

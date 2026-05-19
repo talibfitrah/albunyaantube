@@ -57,7 +57,12 @@ public class ProfileUpdateRateLimitInterceptor implements HandlerInterceptor {
         if (!(principal instanceof FirebaseUserDetails fud)) return true;
 
         Long retryAfter = limiter.tryAcquire(fud.getUid());
-        if (retryAfter == null) return true;
+        if (retryAfter == null) {
+            // Plan G cubic R5 P1: remember the uid that consumed the slot so
+            // afterCompletion can refund it if the request ends in non-2xx.
+            req.setAttribute(ATTR_RATE_LIMITED_UID, fud.getUid());
+            return true;
+        }
 
         res.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         res.setHeader("Retry-After", String.valueOf(retryAfter));
@@ -69,4 +74,29 @@ public class ProfileUpdateRateLimitInterceptor implements HandlerInterceptor {
         json.writeValue(res.getWriter(), body);
         return false;
     }
+
+    /**
+     * Plan G cubic R5 P1 — refund the slot when the request ended in a
+     * non-2xx status. Keeps the abuse gate intact for true bot-style
+     * floods (which produce 2xx successes or 5xx server errors) while
+     * preventing legitimate users from being locked out by a streak of
+     * validation-error PUTs.
+     */
+    @Override
+    public void afterCompletion(HttpServletRequest req, HttpServletResponse res,
+                                Object handler, Exception ex) {
+        Object uidAttr = req.getAttribute(ATTR_RATE_LIMITED_UID);
+        if (!(uidAttr instanceof String uid)) return;
+        int status = res.getStatus();
+        // Refund on client errors (4xx) and outright failures (no status
+        // set means the response was never written, treat as failure).
+        // Keep the slot consumed on 2xx success AND 5xx server faults
+        // (5xx may indicate buggy retries we want to rate-limit).
+        if (status >= 400 && status < 500) {
+            limiter.releaseLast(uid);
+        }
+    }
+
+    private static final String ATTR_RATE_LIMITED_UID =
+            ProfileUpdateRateLimitInterceptor.class.getName() + ".uid";
 }

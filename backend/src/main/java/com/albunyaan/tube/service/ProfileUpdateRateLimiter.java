@@ -66,4 +66,25 @@ public class ProfileUpdateRateLimiter {
         });
         return retryAfter[0];
     }
+
+    /**
+     * Plan G cubic R5 P1 — refund the most-recent slot for {@code uid}.
+     *
+     * <p>Called from {@code ProfileUpdateRateLimitInterceptor#afterCompletion}
+     * when a request that consumed a slot returned a non-2xx status. A user
+     * who fat-fingers a display name and hits 400 ten times in a row would
+     * otherwise burn their hourly budget without ever landing an edit;
+     * refund-on-failure preserves the abuse gate (success / 5xx still
+     * count) while keeping the UX usable.
+     *
+     * <p>Safe under concurrent {@link #tryAcquire(String)} calls because the
+     * deque mutation runs inside the same per-key {@code compute} lock.
+     */
+    public void releaseLast(String uid) {
+        if (uid == null || uid.isBlank()) return;
+        hits.asMap().computeIfPresent(uid, (key, dq) -> {
+            dq.pollLast();
+            return dq;
+        });
+    }
 }
