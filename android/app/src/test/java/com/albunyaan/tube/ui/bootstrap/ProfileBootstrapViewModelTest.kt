@@ -70,7 +70,8 @@ class ProfileBootstrapViewModelTest {
     @Test fun `submit happy path transitions to NavigateToMain`() = runTest(dispatcher) {
         whenever(repository.completeProfile("Alice", LocalDate.of(2000, 1, 1)))
             .thenReturn(Result.success(AccountState.Loaded(
-                "uid-1", "a@b.com", "Alice", AccountStatus.ACTIVE, "user")))
+                uid = "uid-1", email = "a@b.com", displayName = "Alice",
+                dateOfBirth = null, status = AccountStatus.ACTIVE, role = "user")))
 
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))

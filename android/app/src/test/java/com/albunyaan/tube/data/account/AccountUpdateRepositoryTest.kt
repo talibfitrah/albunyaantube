@@ -13,11 +13,12 @@ class AccountUpdateRepositoryTest {
 
     // ── helpers ──────────────────────────────────────────────────────────
 
-    private fun fakeAccountMeResponse(displayName: String? = "Test User") =
+    private fun fakeAccountMeResponse(displayName: String? = "Test User", dateOfBirth: String? = null) =
         AccountMeResponseDto(
             uid = "uid-test",
             email = "test@example.com",
             displayName = displayName,
+            dateOfBirth = dateOfBirth,
             status = "active",
             role = "user",
             profileCompletedAt = null,

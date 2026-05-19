@@ -96,5 +96,6 @@ class SubscriptionRepositoryTest {
         override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate) =
             Result.failure<AccountState.Loaded>(RuntimeException("stub"))
         override fun signOut() {}
+        override fun applyProfileUpdate(response: com.albunyaan.tube.data.account.AccountMeResponseDto) {}
     }
 }

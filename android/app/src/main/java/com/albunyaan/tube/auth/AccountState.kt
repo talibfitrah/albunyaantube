@@ -35,6 +35,7 @@ sealed interface AccountState {
         val uid: String,
         val email: String?,
         val displayName: String?,
+        val dateOfBirth: String?,
         val status: AccountStatus,
         val role: String,
     ) : AccountState
