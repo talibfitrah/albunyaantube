@@ -7,7 +7,6 @@ import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
-import com.albunyaan.tube.dto.ErrorResponse;
 import com.albunyaan.tube.service.AccountProfileService;
 import com.albunyaan.tube.service.AgeIneligibleAbortedException;
 import com.albunyaan.tube.service.AgeIneligibleException;
@@ -205,9 +204,10 @@ public class AccountController {
     }
 
     @ExceptionHandler(ProfileValidationException.class)
-    public ResponseEntity<ErrorResponse> handleProfileValidation(ProfileValidationException e) {
+    public ResponseEntity<Map<String, String>> handleProfileValidation(ProfileValidationException e) {
         return ResponseEntity.badRequest().body(
-                new ErrorResponse("VALIDATION", e.getField() + ": " + e.getReason()));
+                Map.of("code", "VALIDATION",
+                       "message", e.getField() + ": " + e.getReason()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
