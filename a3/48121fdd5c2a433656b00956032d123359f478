@@ -1,0 +1,22 @@
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_ccab34f3b38945::t_3fe414488b7c3f 65-74
+  s_ccab34f3b38945::t_5485c8e6703298 5
+backend/src/test/java/com/albunyaan/tube/integration/UpdateProfileIT.java
+  s_ccab34f3b38945::t_2ff4337105e0d5 1-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "a348121fdd5c2a433656b00956032d123359f478",
+  "prompts": {},
+  "sessions": {
+    "s_ccab34f3b38945": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49d374f7-cefc-4908-9d8f-b56f4e71edf5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
