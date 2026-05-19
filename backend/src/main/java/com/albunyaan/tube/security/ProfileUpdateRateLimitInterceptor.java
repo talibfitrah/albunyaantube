@@ -56,14 +56,19 @@ public class ProfileUpdateRateLimitInterceptor implements HandlerInterceptor {
         Object principal = auth.getPrincipal();
         if (!(principal instanceof FirebaseUserDetails fud)) return true;
 
-        Long retryAfter = limiter.tryAcquire(fud.getUid());
-        if (retryAfter == null) {
-            // Plan G cubic R5 P1: remember the uid that consumed the slot so
-            // afterCompletion can refund it if the request ends in non-2xx.
+        var outcome = limiter.acquire(fud.getUid());
+        if (outcome instanceof com.albunyaan.tube.service.ProfileUpdateRateLimiter.AcquireOutcome.Acquired acq) {
+            // Plan G cubic R6 P2: remember BOTH uid AND the specific slot
+            // Instant we acquired, so afterCompletion can refund that exact
+            // slot instead of the deque's tail (which may belong to a
+            // concurrent request from the same uid).
             req.setAttribute(ATTR_RATE_LIMITED_UID, fud.getUid());
+            req.setAttribute(ATTR_RATE_LIMITED_SLOT, acq.slot());
             return true;
         }
 
+        long retryAfter = ((com.albunyaan.tube.service.ProfileUpdateRateLimiter.AcquireOutcome.Limited) outcome)
+                .retryAfterSec();
         res.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         res.setHeader("Retry-After", String.valueOf(retryAfter));
         res.setContentType(MediaType.APPLICATION_JSON_VALUE);
@@ -86,17 +91,20 @@ public class ProfileUpdateRateLimitInterceptor implements HandlerInterceptor {
     public void afterCompletion(HttpServletRequest req, HttpServletResponse res,
                                 Object handler, Exception ex) {
         Object uidAttr = req.getAttribute(ATTR_RATE_LIMITED_UID);
+        Object slotAttr = req.getAttribute(ATTR_RATE_LIMITED_SLOT);
         if (!(uidAttr instanceof String uid)) return;
+        if (!(slotAttr instanceof java.time.Instant slot)) return;
         int status = res.getStatus();
-        // Refund on client errors (4xx) and outright failures (no status
-        // set means the response was never written, treat as failure).
-        // Keep the slot consumed on 2xx success AND 5xx server faults
-        // (5xx may indicate buggy retries we want to rate-limit).
+        // Refund on client errors (4xx). Keep the slot consumed on 2xx
+        // success AND 5xx server faults (5xx may indicate buggy retries
+        // we want to rate-limit).
         if (status >= 400 && status < 500) {
-            limiter.releaseLast(uid);
+            limiter.release(uid, slot);
         }
     }
 
     private static final String ATTR_RATE_LIMITED_UID =
             ProfileUpdateRateLimitInterceptor.class.getName() + ".uid";
+    private static final String ATTR_RATE_LIMITED_SLOT =
+            ProfileUpdateRateLimitInterceptor.class.getName() + ".slot";
 }
