@@ -2,6 +2,7 @@ package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.dto.AccountMeResponse;
 import com.albunyaan.tube.dto.CompleteProfileRequest;
+import com.albunyaan.tube.dto.UpdateProfileRequest;
 import com.albunyaan.tube.model.Role;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.model.UserStatus;
@@ -59,6 +60,16 @@ public class AccountController {
         var saved = accountProfileService.completeProfile(
                 principal.getUid(), req.getDisplayName(), req.getDateOfBirth());
         return ResponseEntity.ok(AccountMeResponse.from(saved));
+    }
+
+    /** Plan G B3 — partial profile update for an authenticated ACTIVE user. */
+    @PutMapping("/profile")
+    public ResponseEntity<AccountMeResponse> updateProfile(
+            @AuthenticationPrincipal FirebaseUserDetails principal,
+            @Valid @RequestBody UpdateProfileRequest body)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        return ResponseEntity.ok(accountProfileService.updateProfile(principal.getUid(), body));
     }
 
     @GetMapping("/me")
