@@ -261,6 +261,15 @@ public class YouTubeGateway {
     }
 
     /**
+     * Create a search extractor with content-type filters.
+     * Valid filter values: "videos", "channels", "playlists" (see YoutubeSearchQueryHandlerFactory).
+     */
+    public SearchExtractor createSearchExtractor(String query, java.util.List<String> contentFilters)
+            throws ExtractionException {
+        return youtube.getSearchExtractor(query, contentFilters, "");
+    }
+
+    /**
      * Fetch the initial page for a search extractor with throttling and circuit breaker protection.
      * This should be used instead of calling extractor.fetchPage() directly.
      */
@@ -347,6 +356,45 @@ public class YouTubeGateway {
             // Factory failed to parse - fall back to /channel/ format
             logger.debug("Link handler factory failed for channelId '{}': {}", channelId, e.getMessage());
             return "https://www.youtube.com/channel/" + (channelId != null ? channelId : "");
+        }
+    }
+
+    /**
+     * Extract the YouTube channel ID from a channel URL (e.g. "/channel/UCxxxx" → "UCxxxx").
+     * Returns null if parsing fails.
+     */
+    public String extractChannelId(String url) {
+        try {
+            return channelLinkHandlerFactory.getId(url);
+        } catch (Exception e) {
+            logger.debug("Could not extract channel ID from '{}': {}", url, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Extract the YouTube playlist ID from a playlist URL.
+     * Returns null if parsing fails.
+     */
+    public String extractPlaylistId(String url) {
+        try {
+            return playlistLinkHandlerFactory.getId(url);
+        } catch (Exception e) {
+            logger.debug("Could not extract playlist ID from '{}': {}", url, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Extract the YouTube video ID from a video URL.
+     * Returns null if parsing fails.
+     */
+    public String extractVideoId(String url) {
+        try {
+            return streamLinkHandlerFactory.getId(url);
+        } catch (Exception e) {
+            logger.debug("Could not extract video ID from '{}': {}", url, e.getMessage());
+            return null;
         }
     }
 
