@@ -12,7 +12,15 @@ sealed class ProfileUpdateResult {
     data class Success(val response: AccountMeResponseDto) : ProfileUpdateResult()
     data class RateLimited(val retryAfterSec: Long) : ProfileUpdateResult()
     object AgeIneligible : ProfileUpdateResult()
-    data class ValidationFailed(val message: String) : ProfileUpdateResult()
+    /**
+     * Plan G cubic R2 P1: carries the rejected field so the UI can route
+     * the error to the right input row. Backend
+     * ProfileValidationException maps the field via the
+     * `"<field>: <reason>"` message envelope. If the backend returns a
+     * generic 400 with no field prefix, [field] defaults to "displayName"
+     * for backward-compat with the v1 UI behavior.
+     */
+    data class ValidationFailed(val field: String, val message: String) : ProfileUpdateResult()
     object NetworkError : ProfileUpdateResult()
     data class Unknown(val code: Int) : ProfileUpdateResult()
 }
@@ -32,9 +40,11 @@ class AccountUpdateRepository @Inject constructor(
             resp.isSuccessful && resp.body() != null -> ProfileUpdateResult.Success(resp.body()!!)
             resp.code() == 429 -> parseRateLimited(resp)
             resp.code() == 422 -> parseAgeIneligibleOrValidation(resp)
-            resp.code() == 400 -> ProfileUpdateResult.ValidationFailed(
-                errMessage(resp) ?: "Invalid input"
-            )
+            resp.code() == 400 -> {
+                val msg = errMessage(resp) ?: "Invalid input"
+                val (field, reason) = splitFieldMessage(msg)
+                ProfileUpdateResult.ValidationFailed(field, reason)
+            }
             resp.code() == 401 -> ProfileUpdateResult.Unknown(401)
             else -> ProfileUpdateResult.Unknown(resp.code())
         }
@@ -65,8 +75,31 @@ class AccountUpdateRepository @Inject constructor(
         return if (code == "AGE_INELIGIBLE") {
             ProfileUpdateResult.AgeIneligible
         } else {
-            val message = map?.get("message")?.toString() ?: "Validation failed"
-            ProfileUpdateResult.ValidationFailed(message)
+            val rawMessage = map?.get("message")?.toString() ?: "Validation failed"
+            // Plan G cubic R2 P1: backend ProfileValidationException's HTTP
+            // envelope is `"message": "<field>: <reason>"`. Split into
+            // (field, reason) so the UI renders DOB errors on the DOB row,
+            // not under display name. Falls back to ("displayName", raw)
+            // if the prefix isn't present (older backend, generic 400).
+            val (field, reason) = splitFieldMessage(rawMessage)
+            ProfileUpdateResult.ValidationFailed(field, reason)
+        }
+    }
+
+    /**
+     * Parse "<field>: <reason>" produced by backend
+     * ProfileValidationException. Returns ("displayName", whole-message)
+     * when no field prefix is detectable so the UI degrades gracefully.
+     */
+    private fun splitFieldMessage(raw: String): Pair<String, String> {
+        val sep = raw.indexOf(": ")
+        if (sep <= 0) return "displayName" to raw
+        val field = raw.substring(0, sep).trim()
+        // Only honor known field names — guards against unrelated colons
+        // (e.g. "Error: HTTP 500") being parsed as a field name.
+        return when (field) {
+            "displayName", "dateOfBirth" -> field to raw.substring(sep + 2).trim()
+            else -> "displayName" to raw
         }
     }
 

@@ -75,9 +75,12 @@ class ProfileViewModel @Inject constructor(
                     _uiState.value = state.copy(saving = false, error = ProfileError.AgeIneligible)
                 }
                 is ProfileUpdateResult.ValidationFailed ->
+                    // Plan G cubic R2 P1: route to the field the backend
+                    // actually rejected so a DOB error doesn't render on
+                    // the display-name row.
                     _uiState.value = state.copy(
                         saving = false,
-                        error = ProfileError.Validation("displayName", r.message),
+                        error = ProfileError.Validation(r.field, r.message),
                     )
                 ProfileUpdateResult.NetworkError ->
                     _uiState.value = state.copy(saving = false, error = ProfileError.Network)

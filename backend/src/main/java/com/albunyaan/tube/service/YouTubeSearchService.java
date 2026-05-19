@@ -66,7 +66,14 @@ public class YouTubeSearchService {
      */
     @Cacheable(
             value = CacheConfig.CACHE_NEWPIPE_SEARCH_RESULTS,
-            key = "#q + ':' + #type.name() + ':' + (#pageToken ?: '')",
+            // Plan G cubic R2 P2: separator-collision-safe key. The
+            // previous `:` separator was ambiguous because both `q`
+            // (user-supplied string) and `pageToken` (URL) can contain
+            // colons — `(q="cats:CHANNEL", type=VIDEO, token="")` collides
+            // with `(q="cats", type=CHANNEL, token="VIDEO:")`. Use the
+            // ASCII Unit Separator (U+001F) which cannot appear in
+            // legitimate queries or URLs.
+            key = "#q + T(java.lang.Character).toString(31) + #type.name() + T(java.lang.Character).toString(31) + (#pageToken ?: '')",
             unless = "#result == null"
     )
     public YouTubeSearchResponse search(String q, YouTubeContentType type, String pageToken) {

@@ -107,7 +107,10 @@ class AccountUpdateRepositoryTest {
             .updateProfile(UpdateProfileRequestDto(displayName = "X".repeat(50)))
 
         assertTrue(result is ProfileUpdateResult.ValidationFailed)
-        assertEquals("name too long", (result as ProfileUpdateResult.ValidationFailed).message)
+        val v = result as ProfileUpdateResult.ValidationFailed
+        // No "<field>: " prefix on this raw message → falls back to displayName.
+        assertEquals("displayName", v.field)
+        assertEquals("name too long", v.message)
     }
 
     // ── 400 validation ───────────────────────────────────────────────────
@@ -116,16 +119,32 @@ class AccountUpdateRepositoryTest {
     fun `updateProfile 400 returns ValidationFailed with message`() = runTest {
         val api = object : AccountUpdateApi {
             override suspend fun updateProfile(body: UpdateProfileRequestDto): Response<AccountMeResponseDto> =
-                Response.error(400, errorBody("""{"message":"displayName exceeds max length"}"""))
+                Response.error(400, errorBody("""{"message":"displayName: exceeds max length"}"""))
         }
         val result = AccountUpdateRepository(api)
             .updateProfile(UpdateProfileRequestDto(displayName = "X".repeat(50)))
 
         assertTrue(result is ProfileUpdateResult.ValidationFailed)
-        assertEquals(
-            "displayName exceeds max length",
-            (result as ProfileUpdateResult.ValidationFailed).message,
-        )
+        val v = result as ProfileUpdateResult.ValidationFailed
+        // Plan G cubic R2 P1: "<field>: <reason>" envelope parses out
+        // the field, reason becomes the user-facing message.
+        assertEquals("displayName", v.field)
+        assertEquals("exceeds max length", v.message)
+    }
+
+    @Test
+    fun `updateProfile 400 with dateOfBirth field routes to dateOfBirth`() = runTest {
+        val api = object : AccountUpdateApi {
+            override suspend fun updateProfile(body: UpdateProfileRequestDto): Response<AccountMeResponseDto> =
+                Response.error(400, errorBody("""{"message":"dateOfBirth: must not be in the future"}"""))
+        }
+        val result = AccountUpdateRepository(api)
+            .updateProfile(UpdateProfileRequestDto(dateOfBirth = "2099-01-01"))
+
+        assertTrue(result is ProfileUpdateResult.ValidationFailed)
+        val v = result as ProfileUpdateResult.ValidationFailed
+        assertEquals("dateOfBirth", v.field)
+        assertEquals("must not be in the future", v.message)
     }
 
     // ── network error ────────────────────────────────────────────────────

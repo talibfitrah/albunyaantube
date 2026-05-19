@@ -231,10 +231,10 @@ public class AccountProfileService {
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new UserNotFoundException(uid));
 
-        if (isNoOpUpdate(user, body)) {
-            return AccountMeResponse.from(user);
-        }
-
+        // Plan G cubic R2 P2: run validation BEFORE the no-op short-circuit
+        // so a future migration or admin tool that stored an under-13 or
+        // future DOB cannot be silently re-confirmed by a same-value PUT.
+        // Today no path persists such DOBs, but the gate is cheap.
         if (body.displayName() != null) {
             validateDisplayName(body.displayName());
         }
@@ -245,6 +245,10 @@ public class AccountProfileService {
             // who fat-fingered the picker.
             validateDateOfBirth(body.dateOfBirth());
             enforceAgeOrReject(uid, body.dateOfBirth());
+        }
+
+        if (isNoOpUpdate(user, body)) {
+            return AccountMeResponse.from(user);
         }
 
         // Plan G review-fix (codex P1 lost-update): write through the
@@ -353,10 +357,15 @@ public class AccountProfileService {
 
     private void validateDateOfBirth(LocalDate dob) {
         if (dob == null) {
-            throw new IllegalArgumentException("dateOfBirth must not be null");
+            throw new ProfileValidationException("dateOfBirth", "must not be null");
         }
         if (dob.isAfter(LocalDate.now(clock))) {
-            throw new IllegalArgumentException("dateOfBirth must not be in the future");
+            // Plan G cubic R2 P1: was IllegalArgumentException (mapped to
+            // 400 with raw message). The Android client tagged the error
+            // as a `displayName` validation failure because it has no way
+            // to discriminate field. Throw a typed exception with field
+            // metadata so the client can route the message to the DOB row.
+            throw new ProfileValidationException("dateOfBirth", "must not be in the future");
         }
     }
 }

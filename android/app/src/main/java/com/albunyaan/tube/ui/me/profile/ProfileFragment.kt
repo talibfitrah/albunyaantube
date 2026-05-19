@@ -140,10 +140,22 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
         // disabled, removing the one-tap path back to under-13 (today's date
         // implies age 0 → rejectUnderAge → soft-delete + Firebase disable on
         // a legitimate account). The user MUST pick a date before submission.
-        val todayMs = MaterialDatePicker.todayInUtcMilliseconds()
+        //
+        // Plan G cubic R2 P2: cap the picker upper bound at (today − 13y),
+        // not today. Pre-fix a fat-finger on a recent year (e.g. tapping
+        // 2020 instead of 1990) or a child borrowing a parent's phone
+        // could submit an under-13 DOB and trigger the destructive
+        // rejectUnderAge cascade on a previously-active adult account.
+        // Editing is for users who already passed the signup age-gate, so
+        // every pickable date here should already be ≥ 13 years ago.
+        val adultCutoffMs = LocalDate.now(ZoneOffset.UTC)
+            .minusYears(13)
+            .atStartOfDay(ZoneOffset.UTC)
+            .toInstant()
+            .toEpochMilli()
         val constraints = CalendarConstraints.Builder()
-            .setEnd(todayMs)
-            .setValidator(DateValidatorPointBackward.before(todayMs + 1L))
+            .setEnd(adultCutoffMs)
+            .setValidator(DateValidatorPointBackward.before(adultCutoffMs + 1L))
             .build()
         val picker = MaterialDatePicker.Builder.datePicker()
             .setTitleText(R.string.profile_date_of_birth)

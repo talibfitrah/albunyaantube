@@ -198,9 +198,13 @@ class AccountProfileServiceUpdateProfileTest {
         User existing = baseUser("u1", "Old Name", null);
         when(userRepository.findByUid("u1")).thenReturn(Optional.of(existing));
 
+        // Plan G cubic R2 P1: validateDateOfBirth now throws
+        // ProfileValidationException (not IllegalArgumentException) so the
+        // 400 envelope carries field metadata the Android client can
+        // route on. Reason text still contains "future".
         assertThatThrownBy(() -> svc.updateProfile("u1",
             new UpdateProfileRequest(null, tomorrow)))
-            .isInstanceOf(IllegalArgumentException.class)
+            .isInstanceOf(ProfileValidationException.class)
             .hasMessageContaining("future");
 
         // Critical: revoke/disable/soft-delete MUST NOT fire.

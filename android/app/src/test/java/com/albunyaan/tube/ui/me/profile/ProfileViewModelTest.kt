@@ -247,7 +247,7 @@ class ProfileViewModelTest {
         val accountRepo = makeAccountRepo()
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any()))
-            .thenReturn(ProfileUpdateResult.ValidationFailed("Name too short"))
+            .thenReturn(ProfileUpdateResult.ValidationFailed("displayName", "Name too short"))
 
         val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.onDisplayNameChange("B")
