@@ -23,7 +23,21 @@ class ProfileViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
-    init { loadFromAccount() }
+    init {
+        // Eager read for the common case (AccountState already Loaded
+        // when the fragment opens). The collect below handles the slow-/me
+        // case where the user navigates here before /me settles — only the
+        // first Loaded promotes Loading → Editing; later state changes
+        // don't clobber draft edits in progress.
+        loadFromAccount()
+        viewModelScope.launch {
+            accountRepository.accountState.collect { state ->
+                if (state is AccountState.Loaded && _uiState.value is ProfileUiState.Loading) {
+                    loadFromAccount()
+                }
+            }
+        }
+    }
 
     private fun loadFromAccount() {
         val state = accountRepository.accountState.value
@@ -35,7 +49,6 @@ class ProfileViewModel @Inject constructor(
             )
             _uiState.value = ProfileUiState.Editing(original = fields, draft = fields)
         }
-        // If not Loaded, stay in Loading — fragment will observe AccountState and try again
     }
 
     fun onDisplayNameChange(value: String) = mutateDraft { it.copy(displayName = value) }
