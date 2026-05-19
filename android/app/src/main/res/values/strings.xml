@@ -711,6 +711,20 @@
     <string name="my_submissions_submit_cta">Suggest content</string>
     <string name="my_submissions_error">Could not load submissions</string>
 
+    <!-- Profile (Plan G P3) -->
+    <string name="profile_title">Profile</string>
+    <string name="profile_personal_info">Personal info</string>
+    <string name="profile_display_name">Display name</string>
+    <string name="profile_date_of_birth">Date of birth</string>
+    <string name="profile_email_locked">Linked to your sign-in</string>
+    <string name="profile_save">Save</string>
+    <string name="profile_save_success">Profile updated</string>
+    <string name="profile_error_network">Couldn\'t save. Check your connection.</string>
+    <string name="profile_error_rate_limited">Too many updates. Try again in %1$d min.</string>
+    <string name="profile_error_age_dialog_title">Account no longer eligible</string>
+    <string name="profile_error_age_dialog_message">Your date of birth no longer meets our age requirement. You\'ll be signed out.</string>
+    <string name="profile_dob_pick">Pick a date</string>
+
     <!-- SubmitContentBottomSheet -->
     <string name="submit_content_sheet_title">Suggest Content</string>
     <string name="submit_content_url_hint">YouTube URL (channel, playlist, or video)</string>

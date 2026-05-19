@@ -633,4 +633,7 @@
          English strings in values/strings.xml. Per docs/design/i18n-strategy.md
          we do NOT machine-translate inline. -->
 
+    <!-- TODO(i18n): Plan G profile strings — pending Arabic translation.
+         Android falls back to English from values/strings.xml until delivered. -->
+
 </resources>
