@@ -609,4 +609,7 @@
     <!-- TODO(i18n): Plan G kebab menu strings — pending Dutch translation.
          Android falls back to English from values/strings.xml until delivered. -->
 
+    <!-- TODO(i18n): Plan G suggest content strings — pending Dutch translation.
+         Android falls back to English from values/strings.xml until delivered. -->
+
 </resources>

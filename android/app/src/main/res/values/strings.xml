@@ -728,6 +728,19 @@
     <!-- Me screen kebab menu -->
     <string name="me_kebab_profile">Profile</string>
     <string name="me_kebab_suggest_content">Suggest content</string>
+
+    <!-- Suggest content screen -->
+    <string name="suggest_type_channels">Channels</string>
+    <string name="suggest_type_playlists">Playlists</string>
+    <string name="suggest_type_videos">Videos</string>
+    <string name="suggest_already_in_registry">Already in the registry</string>
+    <string name="suggest_already_pending">Already pending review</string>
+    <string name="suggest_already_rejected">Previously rejected</string>
+    <string name="suggest_empty_results">No results for \"%1$s\"</string>
+    <string name="suggest_search_hint">Search YouTube…</string>
+    <string name="suggest_error_generic">Couldn\'t search. Try again.</string>
+    <string name="suggest_rate_limited">Search rate-limited. Try again shortly.</string>
+    <string name="suggest_loading_more">Loading more…</string>
     <string name="me_kebab_sign_out">Sign out</string>
 
     <!-- SubmitContentBottomSheet -->

@@ -639,4 +639,7 @@
     <!-- TODO(i18n): Plan G kebab menu strings — pending Arabic translation.
          Android falls back to English from values/strings.xml until delivered. -->
 
+    <!-- TODO(i18n): Plan G suggest content strings — pending Arabic translation.
+         Android falls back to English from values/strings.xml until delivered. -->
+
 </resources>
