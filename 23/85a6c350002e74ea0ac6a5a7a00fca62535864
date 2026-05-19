@@ -1,0 +1,23 @@
+android/app/src/main/res/drawable/ic_videos.xml
+  s_a1c6bb4df567ac::t_b653b92f94816f 4-9,13
+  s_a1c6bb4df567ac::t_e6fb7f67d8a8e7 12
+android/app/src/main/res/drawable/ic_playlists.xml
+  s_a1c6bb4df567ac::t_d5f0705077df47 5
+  s_a1c6bb4df567ac::t_f0105b5267c464 4,6-9,12-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "2385a6c350002e74ea0ac6a5a7a00fca62535864",
+  "prompts": {},
+  "sessions": {
+    "s_a1c6bb4df567ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9ca395f-3046-4ded-87a8-0e7db6abfe26",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
