@@ -1,15 +1,23 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.YouTubeContentType;
+import com.albunyaan.tube.dto.YouTubeSearchResponse;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.YouTubeSearchService;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashSet;
@@ -19,6 +27,7 @@ import java.util.Set;
 @RestController
 @RequestMapping("/api/admin/youtube")
 @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+@Validated
 public class YouTubeSearchController {
 
     private static final Logger logger = LoggerFactory.getLogger(YouTubeSearchController.class);
@@ -26,15 +35,26 @@ public class YouTubeSearchController {
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
+    private final YouTubeSearchService youtubeSearchService;
 
     public YouTubeSearchController(
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
-            VideoRepository videoRepository
+            VideoRepository videoRepository,
+            YouTubeSearchService youtubeSearchService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
+        this.youtubeSearchService = youtubeSearchService;
+    }
+
+    @GetMapping("/search")
+    public YouTubeSearchResponse search(
+            @RequestParam @NotBlank @Size(max = 200) String q,
+            @RequestParam YouTubeContentType type,
+            @RequestParam(required = false) String pageToken) {
+        return youtubeSearchService.search(q, type, pageToken);
     }
 
     /**

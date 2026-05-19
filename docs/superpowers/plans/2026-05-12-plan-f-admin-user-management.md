@@ -3528,3 +3528,9 @@ The `gh pr create` output prints the PR URL. Paste it into the conversation so t
 - One scope reduction vs spec narrative: the `application-test.yml` already exists, so T7 just appends rather than creating it.
 - Spec mentions `AuditController.java`; corrected to actual `AuditLogController.java` throughout.
 - TODO line in `AuthService.sendPasswordResetEmail` is L689 (spec said L686 approximate); T6 references the correct surrounding code.
+
+---
+
+## 2026-05-19 follow-up — Plan G
+
+Plan G does not wire `frontend/src/views/ProfileSettingsView.vue` (routed at `/settings/profile` per `frontend/src/router/index.ts:106` but not linked from any admin nav menu — confirmed by inspection on 2026-05-19). Verify whether this was intended as a Plan F deliverable; if so, the link belongs in the admin shell nav and the view should be QA'd against the current `/api/account/profile` endpoints (which include the new `PUT /profile` from Plan G). See `docs/superpowers/plans/2026-05-19-plan-g-profile-edit-and-suggest-search.md`.

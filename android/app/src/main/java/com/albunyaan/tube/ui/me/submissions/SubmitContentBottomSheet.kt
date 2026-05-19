@@ -140,6 +140,11 @@ class SubmitContentBottomSheet : BottomSheetDialogFragment() {
             val catId = selectedCategoryId ?: return@setOnClickListener
             viewModel.submit(parsed, catId)
         }
+
+        // Prefill URL if launched from SuggestContentFragment
+        arguments?.getString(ARG_PREFILL_URL)?.let { prefill ->
+            binding.urlInput.setText(prefill)
+        }
     }
 
     private fun updateSubmitEnabled() {
@@ -181,5 +186,15 @@ class SubmitContentBottomSheet : BottomSheetDialogFragment() {
 
     companion object {
         const val TAG = "SubmitContentBottomSheet"
+
+        private const val ARG_PREFILL_URL = "prefill_url"
+
+        fun newInstance(prefillUrl: String? = null): SubmitContentBottomSheet {
+            return SubmitContentBottomSheet().apply {
+                arguments = android.os.Bundle().apply {
+                    if (prefillUrl != null) putString(ARG_PREFILL_URL, prefillUrl)
+                }
+            }
+        }
     }
 }

@@ -111,8 +111,9 @@ class AccountRepositoryImplTest {
         assertEquals(AccountState.NotSignedIn, repository.accountState.value)
     }
 
-    private fun dto(status: String) = AccountMeResponseDto(
-        uid = "uid-1", email = "a@b.com", displayName = "Alice",
-        status = status, role = "user", profileCompletedAt = null,
-    )
+    private fun dto(status: String, displayName: String = "Alice", dateOfBirth: String? = null) =
+        AccountMeResponseDto(
+            uid = "uid-1", email = "a@b.com", displayName = displayName,
+            dateOfBirth = dateOfBirth, status = status, role = "user", profileCompletedAt = null,
+        )
 }

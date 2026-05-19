@@ -1,0 +1,194 @@
+package com.albunyaan.tube.ui.me.profile
+
+import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.View
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
+import com.albunyaan.tube.R
+import com.albunyaan.tube.databinding.FragmentProfileBinding
+import com.google.android.material.datepicker.CalendarConstraints
+import com.google.android.material.datepicker.DateValidatorPointBackward
+import com.google.android.material.datepicker.MaterialDatePicker
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+
+@AndroidEntryPoint
+class ProfileFragment : Fragment(R.layout.fragment_profile) {
+
+    private var _binding: FragmentProfileBinding? = null
+    private val binding get() = _binding!!
+
+    private val vm: ProfileViewModel by viewModels()
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        _binding = FragmentProfileBinding.bind(view)
+
+        binding.displayNameInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                vm.onDisplayNameChange(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        binding.dobRow.setOnClickListener { showDobPicker() }
+        binding.saveButton.setOnClickListener { vm.save() }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.uiState.collect { render(it) }
+            }
+        }
+    }
+
+    private fun render(state: ProfileUiState) {
+        when (state) {
+            ProfileUiState.Loading -> {
+                binding.saveButton.isEnabled = false
+                binding.savingSpinner.visibility = View.GONE
+            }
+            is ProfileUiState.Editing -> {
+                // Only push text into the field when it actually differs — avoids cursor-jump
+                // while the user is typing (TextWatcher fires → VM updates → collect fires).
+                val current = binding.displayNameInput.text?.toString()
+                if (current != state.draft.displayName) {
+                    binding.displayNameInput.setText(state.draft.displayName)
+                    binding.displayNameInput.setSelection(state.draft.displayName.length)
+                }
+                binding.dobValue.text =
+                    state.draft.dateOfBirth ?: getString(R.string.profile_dob_pick)
+                binding.emailLabel.text = state.draft.emailReadOnly
+                binding.saveButton.isEnabled = state.isDirty && !state.saving
+                binding.savingSpinner.visibility =
+                    if (state.saving) View.VISIBLE else View.GONE
+                // Plan G review-fix (reviewer Important #4): clear any
+                // lingering inline validation error when the VM clears it
+                // (e.g. user typed after a failed Save). showError() sets
+                // displayNameLayout.error on Validation errors but never
+                // resets it when error becomes null on the next state, so
+                // the red label persists until the fragment is recreated.
+                if (state.error == null) {
+                    binding.displayNameLayout.error = null
+                }
+                state.error?.let { showError(it) }
+            }
+            ProfileUiState.SignedOut -> {
+                // AccountStatusInterceptor will redirect to sign-in on the next network call.
+                // Pop back to wherever the nav graph landed before profileFragment.
+                findNavController().popBackStack()
+            }
+        }
+    }
+
+    private fun showError(error: ProfileError) {
+        when (error) {
+            ProfileError.Network ->
+                snack(R.string.profile_error_network)
+            is ProfileError.RateLimited -> {
+                val minutes = (error.retryAfterSec / 60).coerceAtLeast(1)
+                Snackbar.make(
+                    binding.root,
+                    getString(R.string.profile_error_rate_limited, minutes.toInt()),
+                    Snackbar.LENGTH_LONG,
+                ).show()
+            }
+            ProfileError.AgeIneligible -> showAgeDialog()
+            is ProfileError.Validation -> {
+                // Plan G cubic R5 P1: route validation errors to the right
+                // surface based on the field the backend rejected. Pre-fix
+                // every validation message landed on displayNameLayout
+                // regardless of `field`, so DOB errors rendered as a red
+                // label under the name input. displayName errors stay
+                // inline (the input has a TextInputLayout); DOB errors go
+                // through a Snackbar because the dobRow is a plain
+                // TextView with no error slot.
+                when (error.field) {
+                    "displayName" ->
+                        binding.displayNameLayout.error = error.message
+                    "dateOfBirth" -> Snackbar.make(
+                        binding.root, error.message, Snackbar.LENGTH_LONG,
+                    ).show()
+                    else -> Snackbar.make(
+                        binding.root, error.message, Snackbar.LENGTH_LONG,
+                    ).show()
+                }
+            }
+            ProfileError.Unknown ->
+                snack(R.string.profile_error_network)
+        }
+    }
+
+    private fun showAgeDialog() {
+        // Plan G cubic R1 P1: sign-out and the SignedOut emission run
+        // ONLY after the user dismisses this dialog. Pre-fix the VM
+        // wrote SignedOut immediately, conflating the Editing+error
+        // state away so this dialog never rendered before popBackStack.
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.profile_error_age_dialog_title)
+            .setMessage(R.string.profile_error_age_dialog_message)
+            .setCancelable(false)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                vm.confirmAgeIneligibleSignOut()
+            }
+            .show()
+    }
+
+    private fun snack(resId: Int) =
+        Snackbar.make(binding.root, resId, Snackbar.LENGTH_SHORT).show()
+
+    private fun showDobPicker() {
+        // Plan G review-fix (codex P1): cap picker at today so a future date
+        // never reaches the backend. The age-gate treats negative ages as
+        // under-13 and would soft-delete a legitimate account that
+        // fat-fingered the picker. Backend also validates as defence-in-depth.
+        //
+        // Plan G re-review-fix (reviewer Important #3): do NOT setSelection
+        // to a default — without an explicit user pick the OK button stays
+        // disabled, removing the one-tap path back to under-13 (today's date
+        // implies age 0 → rejectUnderAge → soft-delete + Firebase disable on
+        // a legitimate account). The user MUST pick a date before submission.
+        //
+        // Plan G cubic R2 P2: cap the picker upper bound at (today − 13y),
+        // not today. Pre-fix a fat-finger on a recent year (e.g. tapping
+        // 2020 instead of 1990) or a child borrowing a parent's phone
+        // could submit an under-13 DOB and trigger the destructive
+        // rejectUnderAge cascade on a previously-active adult account.
+        // Editing is for users who already passed the signup age-gate, so
+        // every pickable date here should already be ≥ 13 years ago.
+        val adultCutoffMs = LocalDate.now(ZoneOffset.UTC)
+            .minusYears(13)
+            .atStartOfDay(ZoneOffset.UTC)
+            .toInstant()
+            .toEpochMilli()
+        val constraints = CalendarConstraints.Builder()
+            .setEnd(adultCutoffMs)
+            .setValidator(DateValidatorPointBackward.before(adultCutoffMs + 1L))
+            .build()
+        val picker = MaterialDatePicker.Builder.datePicker()
+            .setTitleText(R.string.profile_date_of_birth)
+            .setCalendarConstraints(constraints)
+            .build()
+        picker.addOnPositiveButtonClickListener { selectionMs ->
+            val local =
+                LocalDate.ofInstant(Instant.ofEpochMilli(selectionMs), ZoneOffset.UTC)
+            vm.onDateOfBirthChange(local.toString()) // "YYYY-MM-DD"
+        }
+        picker.show(parentFragmentManager, "dob_picker")
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
+    }
+}

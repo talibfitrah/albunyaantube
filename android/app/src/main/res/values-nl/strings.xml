@@ -603,4 +603,13 @@
          English strings in values/strings.xml. Per docs/design/i18n-strategy.md
          we do NOT machine-translate inline. -->
 
+    <!-- TODO(i18n): Plan G profile strings — pending Dutch translation.
+         Android falls back to English from values/strings.xml until delivered. -->
+
+    <!-- TODO(i18n): Plan G kebab menu strings — pending Dutch translation.
+         Android falls back to English from values/strings.xml until delivered. -->
+
+    <!-- TODO(i18n): Plan G suggest content strings — pending Dutch translation.
+         Android falls back to English from values/strings.xml until delivered. -->
+
 </resources>

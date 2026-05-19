@@ -1,5 +1,7 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.AccountMeResponse;
+import com.albunyaan.tube.dto.UpdateProfileRequest;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.UserRepository;
@@ -14,8 +16,12 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.Period;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
 
 @Service
 public class AccountProfileService {
@@ -23,6 +29,10 @@ public class AccountProfileService {
     private static final Logger log = LoggerFactory.getLogger(AccountProfileService.class);
     private static final int MIN_AGE = 13;
     private static final int MAX_DISPLAY_NAME_LENGTH = 40;
+    private static final Pattern CONTROL_CHARS = Pattern.compile("\\p{Cntrl}");
+    /** Plan G cubic R1 P2 — Unicode format-control category (Cf). */
+    private static final Pattern FORMAT_CONTROL_CHARS = Pattern.compile("\\p{Cf}");
+    private static final Pattern URL_PATTERN   = Pattern.compile("https?://", Pattern.CASE_INSENSITIVE);
 
     private final UserRepository userRepository;
     private final FirebaseAuth firebaseAuth;
@@ -64,11 +74,7 @@ public class AccountProfileService {
             throw new ProfileAlreadyCompletedException(uid);
         }
 
-        int age = Period.between(dateOfBirth, LocalDate.now(clock)).getYears();
-        if (age < MIN_AGE) {
-            rejectUnderAge(uid);
-            throw new AgeIneligibleException(uid, age);
-        }
+        enforceAgeOrReject(uid, dateOfBirth);
 
         Timestamp dobTs = Timestamp.ofTimeSecondsAndNanos(
                 dateOfBirth.atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0);
@@ -78,6 +84,20 @@ public class AccountProfileService {
         user.setProfileCompletedAt(Timestamp.now());
         user.touch();
         return userRepository.save(user);
+    }
+
+    /**
+     * Check that {@code dateOfBirth} implies the user is at least {@link #MIN_AGE} years old.
+     * If under-age, delegates to {@link #rejectUnderAge(String)} (revoke + soft-delete) and
+     * then throws {@link AgeIneligibleException}. Call this after the idempotency check so
+     * a completed profile is never re-evaluated.
+     */
+    private void enforceAgeOrReject(String uid, LocalDate dateOfBirth) {
+        int age = Period.between(dateOfBirth, LocalDate.now(clock)).getYears();
+        if (age < MIN_AGE) {
+            rejectUnderAge(uid);
+            throw new AgeIneligibleException(uid, age);
+        }
     }
 
     /**
@@ -105,6 +125,29 @@ public class AccountProfileService {
             firebaseAuth.revokeRefreshTokens(uid);
         } catch (FirebaseAuthException e) {
             log.error("AGE_INELIGIBLE: revokeRefreshTokens failed for uid={}, aborting", uid, e);
+            throw new AgeIneligibleAbortedException(uid, e);
+        }
+        // Plan G review-fix: revoke alone leaves the Firebase Auth account
+        // enabled; the user can re-authenticate, get fresh tokens, and (if
+        // the soft-delete below fails) the FirebaseAuthFilter sees an ACTIVE
+        // user doc and lets them call updateProfile with an adult DOB —
+        // self-recovering from age-ineligibility. Disable the Firebase Auth
+        // record so the bypass closes even when the Firestore write fails.
+        try {
+            firebaseAuth.updateUser(new com.google.firebase.auth.UserRecord.UpdateRequest(uid)
+                    .setDisabled(true));
+        } catch (FirebaseAuthException e) {
+            log.error("AGE_INELIGIBLE: disable Firebase Auth account failed for uid={} "
+                    + "(refresh tokens already revoked, account stays enabled — re-auth-bypass possible)",
+                    uid, e);
+            try {
+                auditLogService.logSystem(
+                        "USER_AGE_INELIGIBLE_DISABLE_FAILED",
+                        "user", uid,
+                        "disable-failed: " + e.getClass().getSimpleName());
+            } catch (RuntimeException auditEx) {
+                log.error("AGE_INELIGIBLE: orphan audit emission also failed uid={}", uid, auditEx);
+            }
             throw new AgeIneligibleAbortedException(uid, e);
         }
         try {
@@ -167,22 +210,162 @@ public class AccountProfileService {
         return storedDate.equals(dateOfBirth);
     }
 
-    private void validateDisplayName(String name) {
-        if (name == null || name.trim().isEmpty()) {
-            throw new IllegalArgumentException("displayName must not be blank");
+    /**
+     * Plan G B2 — partial profile update. Supports changing displayName and/or
+     * dateOfBirth on an existing, completed profile.
+     *
+     * <p>Idempotency: if the resolved (trimmed) values are identical to what is
+     * already persisted, the method returns the existing response without writing
+     * or emitting an audit row.
+     *
+     * <p>Age gate: if a new dateOfBirth implies the user is under {@link #MIN_AGE},
+     * delegates to {@link #rejectUnderAge(String)} (revoke + soft-delete) and
+     * throws {@link AgeIneligibleException} — same path as {@code completeProfile}.
+     *
+     * @throws UserNotFoundException if uid has no Firestore document
+     * @throws ProfileValidationException if displayName fails validation
+     * @throws AgeIneligibleException if dateOfBirth implies under-13
+     */
+    public AccountMeResponse updateProfile(String uid, UpdateProfileRequest body)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        User user = userRepository.findByUid(uid)
+                .orElseThrow(() -> new UserNotFoundException(uid));
+
+        // Plan G cubic R2 P2: run validation BEFORE the no-op short-circuit
+        // so a future migration or admin tool that stored an under-13 or
+        // future DOB cannot be silently re-confirmed by a same-value PUT.
+        // Today no path persists such DOBs, but the gate is cheap.
+        if (body.displayName() != null) {
+            validateDisplayName(body.displayName());
         }
-        if (name.trim().length() > MAX_DISPLAY_NAME_LENGTH) {
-            throw new IllegalArgumentException(
-                    "displayName must be at most " + MAX_DISPLAY_NAME_LENGTH + " characters");
+        if (body.dateOfBirth() != null) {
+            // Plan G review-fix: reject future DOB before age-gate. A future
+            // date produces a negative Period and would fall through to
+            // rejectUnderAge → token revoke + soft-delete on a valid user
+            // who fat-fingered the picker.
+            validateDateOfBirth(body.dateOfBirth());
+            enforceAgeOrReject(uid, body.dateOfBirth());
+        }
+
+        if (isNoOpUpdate(user, body)) {
+            return AccountMeResponse.from(user);
+        }
+
+        // Plan G review-fix (codex P1 lost-update): write through the
+        // field-level merge so two concurrent edits on disjoint fields
+        // don't clobber each other. {@code userRepository.save(user)} uses
+        // {@code .set(user)} which is a whole-document overwrite — under
+        // the read-modify-write window in this method, T1's name change and
+        // T2's DOB change race to last-writer-wins.
+        Map<String, Object> updates = new LinkedHashMap<>();
+        User updated = user.copy();
+        if (body.displayName() != null) {
+            String trimmed = body.displayName().trim();
+            updates.put("displayName", trimmed);
+            updated.setDisplayName(trimmed);
+        }
+        if (body.dateOfBirth() != null) {
+            Timestamp dobTs = Timestamp.ofTimeSecondsAndNanos(
+                    body.dateOfBirth().atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0);
+            updates.put("dateOfBirth", dobTs);
+            updated.setDateOfBirth(dobTs);
+        }
+        userRepository.updateFields(uid, updates);
+        // Plan G re-review-fix (reviewer Important #2): mirror the persisted
+        // updatedAt touch on the local projection. Firestore's serverTimestamp
+        // sentinel is expanded at the write site; this keeps the in-memory
+        // response object aligned with what we just wrote (within JVM-clock
+        // skew). Without this, future refactors that expose updatedAt on
+        // AccountMeResponse would silently return stale values.
+        updated.touch();
+
+        auditLogService.logProfileEdit(uid, changedFields(user, updated));
+        return AccountMeResponse.from(updated);
+    }
+
+    /**
+     * Returns true iff both fields resolve to the same values already on the
+     * user — in which case no write or audit is needed.
+     *
+     * <p>Trim is applied to displayName before comparing so whitespace-only
+     * changes (e.g. trailing space stripped) still count as a real change.
+     */
+    private boolean isNoOpUpdate(User u, UpdateProfileRequest body) {
+        boolean nameSame = body.displayName() == null
+                || body.displayName().trim().equals(u.getDisplayName());
+        boolean dobSame = body.dateOfBirth() == null
+                || body.dateOfBirth().equals(timestampToLocalDate(u.getDateOfBirth()));
+        return nameSame && dobSame;
+    }
+
+    private LocalDate timestampToLocalDate(Timestamp t) {
+        if (t == null) return null;
+        return java.time.Instant.ofEpochSecond(t.getSeconds(), t.getNanos())
+                .atZone(ZoneOffset.UTC).toLocalDate();
+    }
+
+    /**
+     * Returns a diff map of fields that changed between {@code before} and
+     * {@code after}. Both fields are recorded as the sentinel {@code "changed"}
+     * (no raw value) to avoid writing PII to the audit log; display names are
+     * identifying data and the audit log is retained indefinitely, so storing
+     * before/after pairs creates a permanent name-history record per user.
+     * (Plan G review-fix: pre-fix the displayName diff stored {from,to}
+     * plaintext; cso/codex flagged this and the nested-Map shape also
+     * bypassed AuditLog.sanitiseDetailValue's control-char stripper.)
+     */
+    private Map<String, Object> changedFields(User before, User after) {
+        Map<String, Object> diff = new LinkedHashMap<>();
+        if (!Objects.equals(before.getDisplayName(), after.getDisplayName())) {
+            diff.put("displayName", "changed");
+        }
+        if (!Objects.equals(before.getDateOfBirth(), after.getDateOfBirth())) {
+            diff.put("dateOfBirth", "changed");
+        }
+        return diff;
+    }
+
+    /**
+     * Validate a display name for both {@code completeProfile} and the forthcoming
+     * {@code updateProfile}. Trims before checking so callers can work with raw input.
+     *
+     * <p>Throws {@link ProfileValidationException} (mapped to 400) on any violation.
+     */
+    void validateDisplayName(String name) {
+        String trimmed = (name == null) ? "" : name.trim();
+        if (trimmed.isEmpty() || trimmed.length() > MAX_DISPLAY_NAME_LENGTH) {
+            throw new ProfileValidationException("displayName",
+                    "must be 1–" + MAX_DISPLAY_NAME_LENGTH + " characters");
+        }
+        if (CONTROL_CHARS.matcher(trimmed).find()) {
+            throw new ProfileValidationException("displayName", "control characters not allowed");
+        }
+        // Plan G cubic R1 P2: reject zero-width / BOM / bidi-override
+        // characters that bypass the C0/C1 control-char filter but render
+        // identically to other users' display names or hijack RTL/LTR
+        // rendering. `\p{Cf}` (Unicode format-control class) covers
+        // U+200B–U+200D (ZWSP/ZWJ), U+FEFF (BOM), U+200E/F (LRM/RLM),
+        // U+202A–U+202E and U+2066–U+2069 (bidi-override).
+        if (FORMAT_CONTROL_CHARS.matcher(trimmed).find()) {
+            throw new ProfileValidationException("displayName",
+                    "zero-width or bidi-override characters not allowed");
+        }
+        if (URL_PATTERN.matcher(trimmed).find()) {
+            throw new ProfileValidationException("displayName", "URLs not allowed in display name");
         }
     }
 
     private void validateDateOfBirth(LocalDate dob) {
         if (dob == null) {
-            throw new IllegalArgumentException("dateOfBirth must not be null");
+            throw new ProfileValidationException("dateOfBirth", "must not be null");
         }
         if (dob.isAfter(LocalDate.now(clock))) {
-            throw new IllegalArgumentException("dateOfBirth must not be in the future");
+            // Plan G cubic R2 P1: was IllegalArgumentException (mapped to
+            // 400 with raw message). The Android client tagged the error
+            // as a `displayName` validation failure because it has no way
+            // to discriminate field. Throw a typed exception with field
+            // metadata so the client can route the message to the DOB row.
+            throw new ProfileValidationException("dateOfBirth", "must not be in the future");
         }
     }
 }

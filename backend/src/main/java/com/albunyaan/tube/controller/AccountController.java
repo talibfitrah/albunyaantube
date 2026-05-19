@@ -2,6 +2,7 @@ package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.dto.AccountMeResponse;
 import com.albunyaan.tube.dto.CompleteProfileRequest;
+import com.albunyaan.tube.dto.UpdateProfileRequest;
 import com.albunyaan.tube.model.Role;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.model.UserStatus;
@@ -11,6 +12,7 @@ import com.albunyaan.tube.service.AccountProfileService;
 import com.albunyaan.tube.service.AgeIneligibleAbortedException;
 import com.albunyaan.tube.service.AgeIneligibleException;
 import com.albunyaan.tube.service.ProfileAlreadyCompletedException;
+import com.albunyaan.tube.service.ProfileValidationException;
 import com.albunyaan.tube.service.UserNotFoundException;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -58,6 +60,16 @@ public class AccountController {
         var saved = accountProfileService.completeProfile(
                 principal.getUid(), req.getDisplayName(), req.getDateOfBirth());
         return ResponseEntity.ok(AccountMeResponse.from(saved));
+    }
+
+    /** Plan G B3 — partial profile update for an authenticated ACTIVE user. */
+    @PutMapping("/profile")
+    public ResponseEntity<AccountMeResponse> updateProfile(
+            @AuthenticationPrincipal FirebaseUserDetails principal,
+            @Valid @RequestBody UpdateProfileRequest body)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        return ResponseEntity.ok(accountProfileService.updateProfile(principal.getUid(), body));
     }
 
     @GetMapping("/me")
@@ -200,6 +212,13 @@ public class AccountController {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Map.of("code", "USER_NOT_FOUND",
                              "message", "Account not found."));
+    }
+
+    @ExceptionHandler(ProfileValidationException.class)
+    public ResponseEntity<Map<String, String>> handleProfileValidation(ProfileValidationException e) {
+        return ResponseEntity.badRequest().body(
+                Map.of("code", "VALIDATION",
+                       "message", e.getField() + ": " + e.getReason()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

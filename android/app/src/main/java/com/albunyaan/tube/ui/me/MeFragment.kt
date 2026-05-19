@@ -199,6 +199,42 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                 }
             }
         })
+
+        setupKebab(b)
+    }
+
+    // K2: wire the kebab menu on the fragment-owned MaterialToolbar.
+    // The toolbar exists in all three layout variants (phone adds AppBarLayout
+    // in this commit; tablet/TV already had meAppBar + meToolbar).
+    // app:menu="@menu/menu_me_kebab" is declared in XML so inflation is free;
+    // we only need to set visibility of action_suggest_content and handle clicks.
+    private fun setupKebab(b: FragmentMeBinding) {
+        val toolbar = b.meToolbar ?: return
+        val role = viewModel.snapshotRole()
+        toolbar.menu.findItem(R.id.action_suggest_content)?.isVisible =
+            role.equals("moderator", ignoreCase = true) || role.equals("admin", ignoreCase = true)
+
+        toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_profile -> {
+                    if (findNavController().currentDestination?.id == R.id.meFragment) {
+                        findNavController().navigate(R.id.action_me_to_profile)
+                    }
+                    true
+                }
+                R.id.action_suggest_content -> {
+                    if (findNavController().currentDestination?.id == R.id.meFragment) {
+                        findNavController().navigate(R.id.action_me_to_suggestContent)
+                    }
+                    true
+                }
+                R.id.action_sign_out -> {
+                    viewModel.signOut()
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     override fun onResume() {

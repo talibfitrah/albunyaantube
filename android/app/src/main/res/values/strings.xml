@@ -711,6 +711,38 @@
     <string name="my_submissions_submit_cta">Suggest content</string>
     <string name="my_submissions_error">Could not load submissions</string>
 
+    <!-- Profile (Plan G P3) -->
+    <string name="profile_title">Profile</string>
+    <string name="profile_personal_info">Personal info</string>
+    <string name="profile_display_name">Display name</string>
+    <string name="profile_date_of_birth">Date of birth</string>
+    <string name="profile_email_locked">Linked to your sign-in</string>
+    <string name="profile_save">Save</string>
+    <string name="profile_save_success">Profile updated</string>
+    <string name="profile_error_network">Couldn\'t save. Check your connection.</string>
+    <string name="profile_error_rate_limited">Too many updates. Try again in %1$d min.</string>
+    <string name="profile_error_age_dialog_title">Account no longer eligible</string>
+    <string name="profile_error_age_dialog_message">Your date of birth no longer meets our age requirement. You\'ll be signed out.</string>
+    <string name="profile_dob_pick">Pick a date</string>
+
+    <!-- Me screen kebab menu -->
+    <string name="me_kebab_profile">Profile</string>
+    <string name="me_kebab_suggest_content">Suggest content</string>
+
+    <!-- Suggest content screen -->
+    <string name="suggest_type_channels">Channels</string>
+    <string name="suggest_type_playlists">Playlists</string>
+    <string name="suggest_type_videos">Videos</string>
+    <string name="suggest_already_in_registry">Already in the registry</string>
+    <string name="suggest_already_pending">Already pending review</string>
+    <string name="suggest_already_rejected">Previously rejected</string>
+    <string name="suggest_empty_results">No results for \"%1$s\"</string>
+    <string name="suggest_search_hint">Search YouTube…</string>
+    <string name="suggest_error_generic">Couldn\'t search. Try again.</string>
+    <string name="suggest_rate_limited">Search rate-limited. Try again shortly.</string>
+    <string name="suggest_loading_more">Loading more…</string>
+    <string name="me_kebab_sign_out">Sign out</string>
+
     <!-- SubmitContentBottomSheet -->
     <string name="submit_content_sheet_title">Suggest Content</string>
     <string name="submit_content_url_hint">YouTube URL (channel, playlist, or video)</string>

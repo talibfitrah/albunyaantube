@@ -1,7 +1,7 @@
 package com.albunyaan.tube.auth
 
+import com.albunyaan.tube.data.account.AccountMeResponseDto
 import kotlinx.coroutines.flow.StateFlow
-
 import java.time.LocalDate
 
 /**
@@ -41,6 +41,14 @@ interface AccountRepository {
 
     /** Clears local state on sign-out. Does not call the network. */
     fun signOut()
+
+    /**
+     * Plan G A2 — optimistic state update after a successful profile save.
+     * Emits a new [AccountState.Loaded] with [displayName] and [dateOfBirth]
+     * replaced from [response]. Falls through silently when the current state
+     * is not [AccountState.Loaded] (sign-out race; caller can ignore).
+     */
+    fun applyProfileUpdate(response: AccountMeResponseDto)
 }
 
 /** Sentinel error type for under-13 rejection. UI maps this to navigation. */

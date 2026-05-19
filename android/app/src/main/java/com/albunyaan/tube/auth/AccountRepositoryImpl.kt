@@ -145,10 +145,22 @@ class AccountRepositoryImpl(
         _state.value = AccountState.NotSignedIn
     }
 
+    override fun applyProfileUpdate(response: AccountMeResponseDto) {
+        val current = _state.value
+        if (current is AccountState.Loaded) {
+            _state.value = current.copy(
+                displayName = response.displayName ?: current.displayName,
+                dateOfBirth = response.dateOfBirth ?: current.dateOfBirth,
+            )
+        }
+        // Not Loaded (NotSignedIn, Loading, Failed) — sign-out race; ignore silently.
+    }
+
     private fun AccountMeResponseDto.toLoaded() = AccountState.Loaded(
         uid = uid,
         email = email,
         displayName = displayName,
+        dateOfBirth = dateOfBirth,
         status = AccountStatus.fromWire(status),
         role = (role ?: "user").lowercase(),
     )

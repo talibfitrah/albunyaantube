@@ -56,13 +56,31 @@
         <action
             android:id="@+id/action_me_to_mySubmissions"
             app:destination="@id/mySubmissionsFragment" />
+        <action
+            android:id="@+id/action_me_to_profile"
+            app:destination="@id/profileFragment" />
+        <action
+            android:id="@+id/action_me_to_suggestContent"
+            app:destination="@id/suggestContentFragment" />
     </fragment>
+
+    <fragment
+        android:id="@+id/profileFragment"
+        android:name="com.albunyaan.tube.ui.me.profile.ProfileFragment"
+        android:label="@string/profile_title"
+        tools:layout="@layout/fragment_profile" />
 
     <fragment
         android:id="@+id/mySubmissionsFragment"
         android:name="com.albunyaan.tube.ui.me.submissions.MySubmissionsFragment"
         android:label="@string/my_submissions_title"
         tools:layout="@layout/fragment_my_submissions" />
+
+    <fragment
+        android:id="@+id/suggestContentFragment"
+        android:name="com.albunyaan.tube.ui.me.suggest.SuggestContentFragment"
+        android:label="@string/me_kebab_suggest_content"
+        tools:layout="@layout/fragment_suggest_content" />
 
     <fragment
         android:id="@+id/downloadsFragment"

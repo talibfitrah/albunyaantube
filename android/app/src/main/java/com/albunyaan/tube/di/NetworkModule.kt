@@ -176,6 +176,16 @@ object NetworkModule {
     @Singleton
     fun provideApprovalApi(retrofit: Retrofit): com.albunyaan.tube.data.approvals.ApprovalApi =
         retrofit.create(com.albunyaan.tube.data.approvals.ApprovalApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideAccountUpdateApi(retrofit: Retrofit): com.albunyaan.tube.data.account.AccountUpdateApi =
+        retrofit.create(com.albunyaan.tube.data.account.AccountUpdateApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideYouTubeSearchApi(retrofit: Retrofit): com.albunyaan.tube.data.search.YouTubeSearchApi =
+        retrofit.create(com.albunyaan.tube.data.search.YouTubeSearchApi::class.java)
 }
 
 /** Moshi adapter for java.time.OffsetDateTime used in OpenAPI-generated models. */

@@ -941,6 +941,35 @@ public class ChannelRepository {
     }
 
     /**
+     * Batch-fetch channels by their YouTube IDs using chunked whereIn queries.
+     * Returns a map of youtubeId → Channel for O(1) annotation lookups.
+     */
+    public Map<String, Channel> findByYoutubeIds(java.util.Collection<String> youtubeIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Channel> result = new HashMap<>();
+        if (youtubeIds == null || youtubeIds.isEmpty()) return result;
+
+        List<String> idList = new ArrayList<>(youtubeIds);
+        int chunkSize = 30;
+        for (int i = 0; i < idList.size(); i += chunkSize) {
+            List<String> chunk = idList.subList(i, Math.min(i + chunkSize, idList.size()));
+            ApiFuture<QuerySnapshot> query = getCollection()
+                    .whereIn("youtubeId", new ArrayList<>(chunk))
+                    .get();
+            List<QueryDocumentSnapshot> docs = query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS)
+                    .getDocuments();
+            for (QueryDocumentSnapshot doc : docs) {
+                Channel ch = doc.toObject(Channel.class);
+                if (ch != null) {
+                    ch.setId(doc.getId());
+                    result.put(ch.getYoutubeId(), ch);
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
      * Batch-fetch channels by their document IDs using Firestore getAll().
      * Returns a map of ID to Channel for efficient lookup.
      */

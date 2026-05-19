@@ -21,6 +21,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+// Note: ProfileValidationException is in the same package — no explicit import needed.
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
@@ -133,7 +134,7 @@ class AccountProfileServiceTest {
     @Test
     void completeProfileRejectsBlankDisplayName() {
         // Validation fires before any repository call — no stub needed.
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(ProfileValidationException.class,
             () -> service.completeProfile("uid-1", "   ", LocalDate.of(2000, 1, 1)));
     }
 
@@ -141,8 +142,26 @@ class AccountProfileServiceTest {
     void completeProfileRejectsTooLongDisplayName() {
         // Validation fires before any repository call — no stub needed.
         String over40 = "a".repeat(41);
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(ProfileValidationException.class,
             () -> service.completeProfile("uid-1", over40, LocalDate.of(2000, 1, 1)));
+    }
+
+    @Test
+    void validateDisplayNameRejectsControlChars() {
+        assertThrows(ProfileValidationException.class,
+            () -> service.validateDisplayName("BadName"));
+    }
+
+    @Test
+    void validateDisplayNameRejectsUrls() {
+        assertThrows(ProfileValidationException.class,
+            () -> service.validateDisplayName("Visit https://spam.com"));
+    }
+
+    @Test
+    void validateDisplayNameAcceptsValidName() {
+        // Should not throw — 40 chars exactly, no control chars, no URLs.
+        assertDoesNotThrow(() -> service.validateDisplayName("a".repeat(40)));
     }
 
     @Test

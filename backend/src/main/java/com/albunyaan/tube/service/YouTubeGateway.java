@@ -261,6 +261,15 @@ public class YouTubeGateway {
     }
 
     /**
+     * Create a search extractor with content-type filters.
+     * Valid filter values: "videos", "channels", "playlists" (see YoutubeSearchQueryHandlerFactory).
+     */
+    public SearchExtractor createSearchExtractor(String query, java.util.List<String> contentFilters)
+            throws ExtractionException {
+        return youtube.getSearchExtractor(query, contentFilters, "");
+    }
+
+    /**
      * Fetch the initial page for a search extractor with throttling and circuit breaker protection.
      * This should be used instead of calling extractor.fetchPage() directly.
      */
@@ -347,6 +356,45 @@ public class YouTubeGateway {
             // Factory failed to parse - fall back to /channel/ format
             logger.debug("Link handler factory failed for channelId '{}': {}", channelId, e.getMessage());
             return "https://www.youtube.com/channel/" + (channelId != null ? channelId : "");
+        }
+    }
+
+    /**
+     * Extract the YouTube channel ID from a channel URL (e.g. "/channel/UCxxxx" → "UCxxxx").
+     * Returns null if parsing fails.
+     */
+    public String extractChannelId(String url) {
+        try {
+            return channelLinkHandlerFactory.getId(url);
+        } catch (Exception e) {
+            logger.debug("Could not extract channel ID from '{}': {}", url, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Extract the YouTube playlist ID from a playlist URL.
+     * Returns null if parsing fails.
+     */
+    public String extractPlaylistId(String url) {
+        try {
+            return playlistLinkHandlerFactory.getId(url);
+        } catch (Exception e) {
+            logger.debug("Could not extract playlist ID from '{}': {}", url, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Extract the YouTube video ID from a video URL.
+     * Returns null if parsing fails.
+     */
+    public String extractVideoId(String url) {
+        try {
+            return streamLinkHandlerFactory.getId(url);
+        } catch (Exception e) {
+            logger.debug("Could not extract video ID from '{}': {}", url, e.getMessage());
+            return null;
         }
     }
 
@@ -488,14 +536,86 @@ public class YouTubeGateway {
     }
 
     /**
-     * Decode string token to NewPipe Page object
+     * Decode string token to NewPipe Page object.
+     *
+     * <p>Plan G review-fix (codex P1 SSRF): {@link NewPipeSearchClient} feeds
+     * this token straight into {@code extractor.getPage(decoded)} which
+     * dispatches an HTTP GET to {@code page.getUrl()}. Without validation a
+     * moderator-supplied {@code pageToken} could point at any URL — an
+     * internal admin endpoint, an attacker-controlled host, etc. Restrict
+     * to URL-shaped tokens hosted on YouTube; reject anything else as a
+     * null page (caller treats null as "first page", which is the safest
+     * default for an unverifiable token).
+     *
+     * <p>Plan G re-review-fix (codex P1 round-2): host whitelist alone is not
+     * enough — {@code http(s)://www.youtube.com/redirect?q=http://internal/}
+     * is on YouTube but is an external-redirect helper. NewPipe's downloader
+     * uses OkHttp which follows 302s by default, so a moderator with
+     * credentials could SSRF arbitrary URLs through that endpoint. Require
+     * HTTPS (drops the http:// open-redirect surface), and deny known
+     * redirect paths under the YouTube hosts.
      */
     public Page decodePageToken(String token) {
         if (token == null || token.isEmpty()) {
             return null;
         }
         try {
+            java.net.URI uri = java.net.URI.create(token);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            String path = uri.getPath();
+            if (scheme == null || host == null) {
+                logger.warn("Rejected pageToken with no scheme or host");
+                return null;
+            }
+            // Require HTTPS — drops the http:// open-redirect surface and is
+            // the only scheme YouTube pagination URLs use in practice.
+            if (!"https".equalsIgnoreCase(scheme)) {
+                logger.warn("Rejected pageToken with non-https scheme: {}", scheme);
+                return null;
+            }
+            String hostLower = host.toLowerCase(java.util.Locale.ROOT);
+            // Plan G round-3 review-fix (codex P2): drop `googlevideo.com` from
+            // the allowlist. NewPipe search/channel/playlist pagination URLs
+            // are always on youtube.com hosts (InnerTube API + HTML pages).
+            // googlevideo.com serves CDN media (streams/thumbnails) and never
+            // shows up as a pagination URL — keeping it in the allowlist
+            // expands the attack surface without operational benefit.
+            boolean allowed = hostLower.equals("youtube.com")
+                    || hostLower.endsWith(".youtube.com")
+                    || hostLower.equals("youtu.be");
+            if (!allowed) {
+                logger.warn("Rejected pageToken with non-YouTube host: {}", hostLower);
+                return null;
+            }
+            // Plan G round-3 review-fix (codex P1 + reviewer minor): exact-path
+            // denials, not substring `contains()`. This avoids false-positives
+            // on legitimate paths that happen to share a substring with a
+            // redirect helper, AND tightens against the codex-discovered
+            // chain bypass: `https://www.youtube.com/attribution_link?u=...`
+            // → YouTube emits a 303 to `/redirect?q=...`, which OkHttp's
+            // `.followRedirects(true)` (NewPipeConfiguration.java:76) follows
+            // straight to attacker URLs. The proper fix is at the HTTP-client
+            // layer (HMAC-signed tokens or per-request URL validation in an
+            // OkHttp interceptor) — see plan doc Review follow-ups. For now,
+            // explicitly deny the known chain entry points.
+            String pathLower = path == null ? "" : path.toLowerCase(java.util.Locale.ROOT);
+            boolean redirectHelper = pathLower.equals("/redirect")
+                    || pathLower.startsWith("/redirect/")
+                    || pathLower.equals("/url")
+                    || pathLower.startsWith("/url/")
+                    || pathLower.equals("/oembed")
+                    || pathLower.startsWith("/oembed/")
+                    || pathLower.equals("/attribution_link")
+                    || pathLower.startsWith("/attribution_link/");
+            if (redirectHelper) {
+                logger.warn("Rejected pageToken with redirect-shaped path: {}", pathLower);
+                return null;
+            }
             return new Page(token);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Failed to decode page token (URI parse): {}", e.getMessage());
+            return null;
         } catch (Exception e) {
             logger.warn("Failed to decode page token: {}", e.getMessage());
             return null;
