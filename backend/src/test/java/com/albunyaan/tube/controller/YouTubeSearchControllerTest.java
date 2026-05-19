@@ -6,6 +6,7 @@ import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.YouTubeSearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +36,9 @@ class YouTubeSearchControllerTest {
     @Mock
     private VideoRepository videoRepository;
 
+    @Mock
+    private YouTubeSearchService youtubeSearchService;
+
     private YouTubeSearchController controller;
 
     @BeforeEach
@@ -42,7 +46,8 @@ class YouTubeSearchControllerTest {
         controller = new YouTubeSearchController(
                 channelRepository,
                 playlistRepository,
-                videoRepository
+                videoRepository,
+                youtubeSearchService
         );
     }
 
