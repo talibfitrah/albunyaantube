@@ -1,0 +1,21 @@
+backend/src/main/java/com/albunyaan/tube/service/AuditLogService.java
+  s_ccab34f3b38945::t_2e9e3a2c1b26dd 216-225
+backend/src/test/java/com/albunyaan/tube/service/AuditLogServiceTest.java
+  s_ccab34f3b38945::t_2c28d8d406f1ce 1-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "95e9de650c40893dc7e8d430057a8ee004ddb933",
+  "prompts": {},
+  "sessions": {
+    "s_ccab34f3b38945": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49d374f7-cefc-4908-9d8f-b56f4e71edf5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
