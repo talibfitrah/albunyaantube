@@ -536,14 +536,47 @@ public class YouTubeGateway {
     }
 
     /**
-     * Decode string token to NewPipe Page object
+     * Decode string token to NewPipe Page object.
+     *
+     * <p>Plan G review-fix (codex P1 SSRF): {@link NewPipeSearchClient} feeds
+     * this token straight into {@code extractor.getPage(decoded)} which
+     * dispatches an HTTP GET to {@code page.getUrl()}. Without validation a
+     * moderator-supplied {@code pageToken} could point at any URL — an
+     * internal admin endpoint, an attacker-controlled host, etc. Restrict
+     * to URL-shaped tokens hosted on YouTube; reject anything else as a
+     * null page (caller treats null as "first page", which is the safest
+     * default for an unverifiable token).
      */
     public Page decodePageToken(String token) {
         if (token == null || token.isEmpty()) {
             return null;
         }
         try {
+            java.net.URI uri = java.net.URI.create(token);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null) {
+                logger.warn("Rejected pageToken with no scheme or host");
+                return null;
+            }
+            if (!("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                logger.warn("Rejected pageToken with non-http(s) scheme: {}", scheme);
+                return null;
+            }
+            String hostLower = host.toLowerCase(java.util.Locale.ROOT);
+            boolean allowed = hostLower.equals("youtube.com")
+                    || hostLower.endsWith(".youtube.com")
+                    || hostLower.equals("youtu.be")
+                    || hostLower.equals("googlevideo.com")
+                    || hostLower.endsWith(".googlevideo.com");
+            if (!allowed) {
+                logger.warn("Rejected pageToken with non-YouTube host: {}", hostLower);
+                return null;
+            }
             return new Page(token);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Failed to decode page token (URI parse): {}", e.getMessage());
+            return null;
         } catch (Exception e) {
             logger.warn("Failed to decode page token: {}", e.getMessage());
             return null;

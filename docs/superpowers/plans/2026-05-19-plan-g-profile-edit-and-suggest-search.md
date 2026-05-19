@@ -3149,3 +3149,29 @@ Two execution options:
 **2. Inline Execution** — Execute tasks in this session using executing-plans, batch execution with checkpoints
 
 Which approach?
+
+---
+
+## Review follow-ups (2026-05-19)
+
+Review pipeline (`superpowers:code-reviewer` + `cso` + `codex challenge`) ran against
+the implementation diff on `feature/plan-g-profile-edit` (commit `b39e6180`). Findings
+listed below were *not* fixed in this PR because they are pre-existing, deployment-time,
+or genuine product-taste calls. Block-merge fixes (P1 future-DOB, P1 lost-update race,
+P1 pageToken SSRF, P1 under-age recovery, MED rate-limit method gate, P2 alreadyKnown
+cache eviction, P2 Suggest flatMapLatest, P2 audit displayName redaction, P2 loadMore
+query-token pairing, reviewer-flagged inline error label stale, YouTubeSearchException
+→ 502) were patched in-PR.
+
+| # | Source | Finding | Why deferred |
+|---|--------|---------|---|
+| F1 | codex P1 | Duplicate registry submission race: `addChannel`/`addPlaylist`/`addVideo` on `RegistryController` do `findByYoutubeId` then `save` without a Firestore transaction. Two moderators submitting the same hit concurrently can both observe "absent" and create duplicate docs. | Pre-existing in `RegistryController` (long before Plan G); Plan G's Suggest UI raises the probability but does not introduce the bug. Fix requires a Firestore-transaction or a unique constraint on `youtubeId` — non-trivial change spanning three controller paths. **Follow-up plan: transactional registry submit (estimated 2 days).** |
+| F2 | codex P2 | `ProfileUpdateRateLimiter` is per-JVM only (Caffeine + in-memory deque). A two-node deployment effectively allows 20/hr/uid; a restart wipes the window entirely. | Documented as a known limitation in the class Javadoc since `SubmissionRateLimiter` (Plan E). Pre-release scale (single instance) is acceptable; production multi-instance migration belongs in the Redis-backed rate-limiter follow-up plan that already covers Plan E/F submissions. |
+| F3 | reviewer Minor #5 | `SuggestContentViewModel` shows `Error`/`RateLimited` as terminal states without a retry button. User has to clear-and-retype to recover. | UX polish, not a correctness bug. Add a retry action in a follow-up. |
+| F4 | reviewer Minor #6/#7 | `MeFragment.setupKebab` uses `setOnMenuItemClickListener` directly rather than `Fragment.MenuProvider`; `snapshotRole` is a one-shot read at view-creation. | Both function correctly today (role cannot change without sign-out, listener captures view-bound nav controller). Migrating to `MenuProvider` + live `accountState` observation is a refactor that should land alongside the future Plan F admin role-promotion-without-signout feature. |
+| F5 | reviewer Minor #11 | `parseYouTubeUrl` in `SubmitContentBottomSheet` does not recognise `youtube.com/@handle` URLs — moderators get `null` parsed with no inline error. | Acknowledged in code comments. Surface a friendlier "this URL shape is not yet supported" hint in i18n strings in a follow-up. |
+| F6 | reviewer Minor #12 | Kebab "Sign out" invokes `viewModel.signOut()` immediately with no confirmation dialog. | Existing app convention (sign-out in Settings also has no modal). Add a confirmation modal across both surfaces in a single follow-up rather than diverging UX inside Plan G. |
+| F7 | review (verify in CI) | `GlobalExceptionHandler` has no `@ExceptionHandler` for `ConstraintViolationException` / `HandlerMethodValidationException` (Spring 6.2). The `YouTubeSearchControllerIT.getSearch_emptyQuery_returns400` test claims 400 — verify in CI on PR #17. If it fails, add an explicit handler. | Could not run locally without Firebase emulator. Defer verification to CI. |
+
+Block-merge fixes shipped in the review-fix commit are tagged in-line in the source with
+`Plan G review-fix` comments and reference the originating reviewer.

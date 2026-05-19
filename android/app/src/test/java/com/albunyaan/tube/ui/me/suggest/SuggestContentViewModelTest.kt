@@ -294,4 +294,37 @@ class SuggestContentViewModelTest {
         verify(repo, never()).search(any(), any(), anyOrNull())
         assertTrue(vm.uiState.value is SuggestUiState.Idle)
     }
+
+    // ── Plan G review-fix: loadMore must use the originating query, not query.value ──
+
+    @Test fun `loadMore uses captured Results query not latest typed value`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        // First search settled on "isl" — returns one item plus a page-2 token.
+        whenever(repo.search("isl", YouTubeContentTypeDto.CHANNEL, null))
+            .thenReturn(successPage(listOf(hit("UC1")), nextPageToken = "tok1"))
+        // Page-2 of the original query — what loadMore SHOULD call.
+        whenever(repo.search("isl", YouTubeContentTypeDto.CHANNEL, "tok1"))
+            .thenReturn(successPage(listOf(hit("UC2")), nextPageToken = null))
+        // Default fallback: a new debounced search for "islam" would otherwise NPE.
+        whenever(repo.search("islam", YouTubeContentTypeDto.CHANNEL, null))
+            .thenReturn(successPage(listOf(hit("UC9")), nextPageToken = null))
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("isl")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+        // Page-1 of "isl" loaded; Results.query == "isl".
+
+        // User keeps typing — query.value is now "islam" but Results state
+        // still holds the "isl" page-1 (debounce hasn't fired the new search
+        // yet; the user can tap load-more right now).
+        vm.onQueryChange("islam")
+        vm.loadMore()
+        advanceUntilIdle()
+
+        // The page-2 token is bound to "isl". loadMore MUST send "isl",
+        // not "islam", or the backend returns corrupted page-2 results.
+        verify(repo).search("isl", YouTubeContentTypeDto.CHANNEL, "tok1")
+        verify(repo, never()).search("islam", YouTubeContentTypeDto.CHANNEL, "tok1")
+    }
 }

@@ -36,6 +36,15 @@ public class ProfileUpdateRateLimitInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest req, HttpServletResponse res, Object handler)
             throws Exception {
+        // Plan G review-fix (cso + codex MED): only PUT consumes the budget.
+        // {@code /api/account/profile} also serves POST (completeProfile) and
+        // an implicit OPTIONS preflight on cross-origin calls; without this
+        // gate a user who completes their profile and then hits a preflight
+        // burst would drain their hourly bucket without ever calling the
+        // intended PUT endpoint. Mirrors SubmissionRateLimitInterceptor:35.
+        if (!"PUT".equals(req.getMethod())) {
+            return true;
+        }
         var auth = SecurityContextHolder.getContext().getAuthentication();
         // Exclude null, unauthenticated, and anonymous tokens — same guard as
         // SubmissionRateLimitInterceptor (cubic R5 P2).

@@ -226,6 +226,33 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Plan G review-fix — handle {@link com.albunyaan.tube.service.YouTubeSearchException}.
+     *
+     * <p>Pre-fix every NewPipe extraction failure (circuit breaker open,
+     * ContentNotAvailable, Private, AgeRestricted, Geographic, ReCaptcha,
+     * IOException, ExtractionException) was wrapped into a YouTubeSearchException
+     * and fell through to the generic 500 handler, producing the body
+     * {@code "An unexpected error occurred"}. That conflated upstream NewPipe
+     * outages with backend bugs in operator dashboards and obscured the
+     * 5xx-vs-5xx distinction for clients. Map to 502 Bad Gateway (consistent
+     * with {@link StreamExtractionException}) so ops can route on it.
+     */
+    @ExceptionHandler(com.albunyaan.tube.service.YouTubeSearchException.class)
+    public ResponseEntity<Object> handleYouTubeSearchException(
+            com.albunyaan.tube.service.YouTubeSearchException ex, WebRequest request) {
+        logger.error("YouTube search failed: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.BAD_GATEWAY.value());
+        body.put("error", "Bad Gateway");
+        body.put("message", "YouTube search is temporarily unavailable. Please try again.");
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.BAD_GATEWAY);
+    }
+
+    /**
      * Handle all other exceptions (500)
      */
     @ExceptionHandler(Exception.class)

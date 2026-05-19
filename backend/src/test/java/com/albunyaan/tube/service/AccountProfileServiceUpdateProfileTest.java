@@ -71,16 +71,44 @@ class AccountProfileServiceUpdateProfileTest {
     void updateDisplayName_persistsTrimmedNameAndAuditLogs() throws Exception {
         User existing = baseUser("u1", "Old Name", null);
         when(userRepository.findByUid("u1")).thenReturn(Optional.of(existing));
-        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         AccountMeResponse resp = svc.updateProfile("u1",
             new UpdateProfileRequest("  New Name  ", null));
 
-        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(saved.capture());
-        assertThat(saved.getValue().getDisplayName()).isEqualTo("New Name");
+        // Plan G review-fix: field-level merge — verify updateFields was
+        // called with only displayName (not the whole document overwrite).
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, Object>> fields =
+            ArgumentCaptor.forClass(java.util.Map.class);
+        verify(userRepository).updateFields(eq("u1"), fields.capture());
+        verify(userRepository, never()).save(any());
+        assertThat(fields.getValue()).containsEntry("displayName", "New Name");
+        assertThat(fields.getValue()).doesNotContainKey("dateOfBirth");
         assertThat(resp.getDisplayName()).isEqualTo("New Name");
         verify(auditLogService).logProfileEdit(eq("u1"), any());
+    }
+
+    // ------------------------------------------------------------------
+    // Plan G review-fix (codex P1 lost-update): concurrent disjoint edits
+    // ------------------------------------------------------------------
+    @Test
+    void updateProfile_writesOnlyChangedFields_notWholeDocument() throws Exception {
+        User existing = baseUser("u1", "Old Name", null);
+        when(userRepository.findByUid("u1")).thenReturn(Optional.of(existing));
+
+        // DOB-only update: must NOT include displayName in the merge,
+        // otherwise a concurrent displayName edit on another device gets
+        // overwritten by this thread's stale read.
+        LocalDate twentyYearsAgo = LocalDate.of(2026, 5, 19).minusYears(20);
+        svc.updateProfile("u1", new UpdateProfileRequest(null, twentyYearsAgo));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, Object>> fields =
+            ArgumentCaptor.forClass(java.util.Map.class);
+        verify(userRepository).updateFields(eq("u1"), fields.capture());
+        verify(userRepository, never()).save(any());
+        assertThat(fields.getValue()).containsKey("dateOfBirth");
+        assertThat(fields.getValue()).doesNotContainKey("displayName");
     }
 
     // ------------------------------------------------------------------
@@ -102,6 +130,34 @@ class AccountProfileServiceUpdateProfileTest {
             .isInstanceOf(AgeIneligibleException.class);
 
         verify(firebaseAuth).revokeRefreshTokens("u1");
+        // Plan G review-fix (codex P1): Firebase Auth account is also
+        // disabled so the user cannot re-authenticate, regain a fresh
+        // token, and self-recover by submitting an adult DOB.
+        verify(firebaseAuth).updateUser(any(com.google.firebase.auth.UserRecord.UpdateRequest.class));
+    }
+
+    // ------------------------------------------------------------------
+    // Plan G review-fix (codex P1 future-DOB): a future date previously
+    // produced a negative Period and went through revoke + soft-delete on
+    // a legitimate account. Now rejected with IllegalArgumentException.
+    // ------------------------------------------------------------------
+    @Test
+    void updateDateOfBirth_future_throwsValidationNotAgeReject() throws Exception {
+        LocalDate tomorrow = LocalDate.of(2026, 5, 19).plusDays(1);
+
+        User existing = baseUser("u1", "Old Name", null);
+        when(userRepository.findByUid("u1")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> svc.updateProfile("u1",
+            new UpdateProfileRequest(null, tomorrow)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("future");
+
+        // Critical: revoke/disable/soft-delete MUST NOT fire.
+        verify(firebaseAuth, never()).revokeRefreshTokens(any());
+        verify(firebaseAuth, never()).updateUser(any(com.google.firebase.auth.UserRecord.UpdateRequest.class));
+        verify(userRepository, never()).updateFields(any(), any());
+        verify(userRepository, never()).save(any());
     }
 
     // ------------------------------------------------------------------
@@ -116,6 +172,7 @@ class AccountProfileServiceUpdateProfileTest {
             new UpdateProfileRequest("Same Name", null));
 
         assertThat(resp.getDisplayName()).isEqualTo("Same Name");
+        verify(userRepository, never()).updateFields(any(), any());
         verify(userRepository, never()).save(any());
         verify(auditLogService, never()).logProfileEdit(any(), any());
     }

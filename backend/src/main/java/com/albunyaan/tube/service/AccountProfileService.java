@@ -125,6 +125,29 @@ public class AccountProfileService {
             log.error("AGE_INELIGIBLE: revokeRefreshTokens failed for uid={}, aborting", uid, e);
             throw new AgeIneligibleAbortedException(uid, e);
         }
+        // Plan G review-fix: revoke alone leaves the Firebase Auth account
+        // enabled; the user can re-authenticate, get fresh tokens, and (if
+        // the soft-delete below fails) the FirebaseAuthFilter sees an ACTIVE
+        // user doc and lets them call updateProfile with an adult DOB —
+        // self-recovering from age-ineligibility. Disable the Firebase Auth
+        // record so the bypass closes even when the Firestore write fails.
+        try {
+            firebaseAuth.updateUser(new com.google.firebase.auth.UserRecord.UpdateRequest(uid)
+                    .setDisabled(true));
+        } catch (FirebaseAuthException e) {
+            log.error("AGE_INELIGIBLE: disable Firebase Auth account failed for uid={} "
+                    + "(refresh tokens already revoked, account stays enabled — re-auth-bypass possible)",
+                    uid, e);
+            try {
+                auditLogService.logSystem(
+                        "USER_AGE_INELIGIBLE_DISABLE_FAILED",
+                        "user", uid,
+                        "disable-failed: " + e.getClass().getSimpleName());
+            } catch (RuntimeException auditEx) {
+                log.error("AGE_INELIGIBLE: orphan audit emission also failed uid={}", uid, auditEx);
+            }
+            throw new AgeIneligibleAbortedException(uid, e);
+        }
         try {
             User user = userRepository.findByUid(uid)
                     .orElseThrow(() -> new UserNotFoundException(uid));
@@ -214,20 +237,34 @@ public class AccountProfileService {
             validateDisplayName(body.displayName());
         }
         if (body.dateOfBirth() != null) {
+            // Plan G review-fix: reject future DOB before age-gate. A future
+            // date produces a negative Period and would fall through to
+            // rejectUnderAge → token revoke + soft-delete on a valid user
+            // who fat-fingered the picker.
+            validateDateOfBirth(body.dateOfBirth());
             enforceAgeOrReject(uid, body.dateOfBirth());
         }
 
+        // Plan G review-fix (codex P1 lost-update): write through the
+        // field-level merge so two concurrent edits on disjoint fields
+        // don't clobber each other. {@code userRepository.save(user)} uses
+        // {@code .set(user)} which is a whole-document overwrite — under
+        // the read-modify-write window in this method, T1's name change and
+        // T2's DOB change race to last-writer-wins.
+        Map<String, Object> updates = new LinkedHashMap<>();
         User updated = user.copy();
         if (body.displayName() != null) {
-            updated.setDisplayName(body.displayName().trim());
+            String trimmed = body.displayName().trim();
+            updates.put("displayName", trimmed);
+            updated.setDisplayName(trimmed);
         }
         if (body.dateOfBirth() != null) {
             Timestamp dobTs = Timestamp.ofTimeSecondsAndNanos(
                     body.dateOfBirth().atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0);
+            updates.put("dateOfBirth", dobTs);
             updated.setDateOfBirth(dobTs);
         }
-        updated.touch();
-        userRepository.save(updated);
+        userRepository.updateFields(uid, updates);
 
         auditLogService.logProfileEdit(uid, changedFields(user, updated));
         return AccountMeResponse.from(updated);
@@ -256,15 +293,18 @@ public class AccountProfileService {
 
     /**
      * Returns a diff map of fields that changed between {@code before} and
-     * {@code after}. DateOfBirth is recorded as {@code "changed"} (no raw value)
-     * to avoid writing PII to the audit log.
+     * {@code after}. Both fields are recorded as the sentinel {@code "changed"}
+     * (no raw value) to avoid writing PII to the audit log; display names are
+     * identifying data and the audit log is retained indefinitely, so storing
+     * before/after pairs creates a permanent name-history record per user.
+     * (Plan G review-fix: pre-fix the displayName diff stored {from,to}
+     * plaintext; cso/codex flagged this and the nested-Map shape also
+     * bypassed AuditLog.sanitiseDetailValue's control-char stripper.)
      */
     private Map<String, Object> changedFields(User before, User after) {
         Map<String, Object> diff = new LinkedHashMap<>();
         if (!Objects.equals(before.getDisplayName(), after.getDisplayName())) {
-            diff.put("displayName", Map.of(
-                    "from", before.getDisplayName() == null ? "" : before.getDisplayName(),
-                    "to",   after.getDisplayName()  == null ? "" : after.getDisplayName()));
+            diff.put("displayName", "changed");
         }
         if (!Objects.equals(before.getDateOfBirth(), after.getDateOfBirth())) {
             diff.put("dateOfBirth", "changed");

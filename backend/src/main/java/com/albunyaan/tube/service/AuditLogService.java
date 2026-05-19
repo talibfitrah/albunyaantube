@@ -202,15 +202,20 @@ public class AuditLogService {
     }
 
     /**
-     * Plan G B2 stub — full implementation lands in Task B4.
+     * Plan G B4 — logs a user-initiated profile edit.
      *
-     * <p>Logs a user-initiated profile edit. {@code diff} contains changed-field
-     * entries; dateOfBirth is recorded as "changed" (no raw value) to avoid
-     * logging PII. Called synchronously from {@code AccountProfileService.updateProfile}
-     * so the audit row is guaranteed before the response returns (unlike the
-     * async admin-action paths above which use {@code @Async("auditExecutor")}).
+     * <p>{@code diff} contains changed-field entries; both displayName and
+     * dateOfBirth are recorded as the opaque sentinel {@code "changed"} (no
+     * raw value) to avoid persisting PII into the indefinitely-retained
+     * audit log.
      *
-     * <p>B4 will replace this stub with a proper Firestore write.
+     * <p>Called synchronously from {@code AccountProfileService.updateProfile}
+     * so the audit row is guaranteed before the HTTP response returns —
+     * unlike the async admin-action paths above which use
+     * {@code @Async("auditExecutor")}. Failures are logged at ERROR but
+     * swallowed so a Firestore audit outage does not propagate to the user;
+     * monitor the {@code Failed to create profile-edit audit log} log line
+     * to alert on audit-store degradation.
      */
     public void logProfileEdit(String actorUid, java.util.Map<String, Object> diff) {
         try {

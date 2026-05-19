@@ -12,6 +12,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentProfileBinding
+import com.google.android.material.datepicker.CalendarConstraints
+import com.google.android.material.datepicker.DateValidatorPointBackward
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -70,6 +72,15 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                 binding.saveButton.isEnabled = state.isDirty && !state.saving
                 binding.savingSpinner.visibility =
                     if (state.saving) View.VISIBLE else View.GONE
+                // Plan G review-fix (reviewer Important #4): clear any
+                // lingering inline validation error when the VM clears it
+                // (e.g. user typed after a failed Save). showError() sets
+                // displayNameLayout.error on Validation errors but never
+                // resets it when error becomes null on the next state, so
+                // the red label persists until the fragment is recreated.
+                if (state.error == null) {
+                    binding.displayNameLayout.error = null
+                }
                 state.error?.let { showError(it) }
             }
             ProfileUiState.SignedOut -> {
@@ -113,8 +124,19 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
         Snackbar.make(binding.root, resId, Snackbar.LENGTH_SHORT).show()
 
     private fun showDobPicker() {
+        // Plan G review-fix (codex P1): cap picker at today so a future date
+        // never reaches the backend. The age-gate treats negative ages as
+        // under-13 and would soft-delete a legitimate account that
+        // fat-fingered the picker. Backend also validates as defence-in-depth.
+        val todayMs = MaterialDatePicker.todayInUtcMilliseconds()
+        val constraints = CalendarConstraints.Builder()
+            .setEnd(todayMs)
+            .setValidator(DateValidatorPointBackward.before(todayMs + 1L))
+            .build()
         val picker = MaterialDatePicker.Builder.datePicker()
             .setTitleText(R.string.profile_date_of_birth)
+            .setCalendarConstraints(constraints)
+            .setSelection(todayMs)
             .build()
         picker.addOnPositiveButtonClickListener { selectionMs ->
             val local =

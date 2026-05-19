@@ -124,6 +124,39 @@ public class UserRepository {
     }
 
     /**
+     * Plan G review-fix (codex P1 lost-update) — field-level merge update.
+     *
+     * <p>{@link #save(User)} is a whole-document overwrite via {@code .set(user)}.
+     * Under the new {@code PUT /api/account/profile} flow, two concurrent edits
+     * (e.g. mobile + tablet) racing through the read-modify-write window in
+     * {@code AccountProfileService.updateProfile} could each load the same
+     * pre-edit snapshot and then overwrite each other — name-only edit and
+     * DOB-only edit would lose one field.
+     *
+     * <p>This method issues a Firestore {@code .update(fields)} which merges
+     * at the field level, so concurrent edits that touch disjoint fields are
+     * both preserved. Touches {@code updatedAt} with a server-side timestamp
+     * so the audit/read path sees a fresh value without an extra round-trip.
+     *
+     * <p>Cache key matches the existing {@link #save(User)} eviction so the
+     * {@code userStatus} cache (used by {@code FirebaseAuthFilter}) is
+     * invalidated identically.
+     */
+    @CacheEvict(value = "userStatus", key = "#uid")
+    public void updateFields(String uid, java.util.Map<String, Object> fields)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (uid == null || uid.isBlank()) {
+            throw new IllegalArgumentException("updateFields requires a non-blank uid");
+        }
+        java.util.Map<String, Object> withTouch = new java.util.LinkedHashMap<>(fields);
+        withTouch.put("updatedAt", com.google.cloud.Timestamp.now());
+        ApiFuture<WriteResult> result = getCollection()
+                .document(uid)
+                .update(withTouch);
+        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
+
+    /**
      * F10: returns a defensive copy of the cached User on every call.
      *
      * Pre-fix, @Cacheable cached Optional<User> wrapping a mutable User. Every
