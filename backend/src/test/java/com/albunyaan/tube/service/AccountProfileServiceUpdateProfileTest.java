@@ -89,10 +89,8 @@ class AccountProfileServiceUpdateProfileTest {
     // ------------------------------------------------------------------
     @Test
     void updateDateOfBirth_underAge_throwsAgeIneligible() throws Exception {
-        // 12 years ago from the fixed clock date (2026-05-19)
-        LocalDate twelveYearsAgoDate = LocalDate.of(2026, 5, 19).minusYears(12);
-        Timestamp twelveYearsAgo = Timestamp.ofTimeSecondsAndNanos(
-            twelveYearsAgoDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0);
+        // 12 years ago from the fixed clock date (2026-05-19) — LocalDate, not Timestamp
+        LocalDate twelveYearsAgo = LocalDate.of(2026, 5, 19).minusYears(12);
 
         User existing = baseUser("u1", "Old Name", null);
         when(userRepository.findByUid("u1")).thenReturn(Optional.of(existing));

@@ -214,10 +214,7 @@ public class AccountProfileService {
             validateDisplayName(body.displayName());
         }
         if (body.dateOfBirth() != null) {
-            // enforceAgeOrReject takes LocalDate — convert from Timestamp
-            LocalDate dob = body.dateOfBirth().toDate().toInstant()
-                    .atZone(ZoneOffset.UTC).toLocalDate();
-            enforceAgeOrReject(uid, dob);
+            enforceAgeOrReject(uid, body.dateOfBirth());
         }
 
         User updated = user.copy();
@@ -225,7 +222,9 @@ public class AccountProfileService {
             updated.setDisplayName(body.displayName().trim());
         }
         if (body.dateOfBirth() != null) {
-            updated.setDateOfBirth(body.dateOfBirth());
+            Timestamp dobTs = Timestamp.ofTimeSecondsAndNanos(
+                    body.dateOfBirth().atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0);
+            updated.setDateOfBirth(dobTs);
         }
         updated.touch();
         userRepository.save(updated);
@@ -245,8 +244,14 @@ public class AccountProfileService {
         boolean nameSame = body.displayName() == null
                 || body.displayName().trim().equals(u.getDisplayName());
         boolean dobSame = body.dateOfBirth() == null
-                || body.dateOfBirth().equals(u.getDateOfBirth());
+                || body.dateOfBirth().equals(timestampToLocalDate(u.getDateOfBirth()));
         return nameSame && dobSame;
+    }
+
+    private LocalDate timestampToLocalDate(Timestamp t) {
+        if (t == null) return null;
+        return java.time.Instant.ofEpochSecond(t.getSeconds(), t.getNanos())
+                .atZone(ZoneOffset.UTC).toLocalDate();
     }
 
     /**

@@ -11,7 +11,6 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -60,15 +59,14 @@ class UpdateProfileIT extends BaseIntegrationTest {
         String uid = seedActiveUser("update-underage@test");
         stubAuthAs(uid, "user");
 
-        long twelveYearsAgoEpochSec = LocalDate.now(java.time.Clock.systemUTC())
+        String twelveYearsAgoIso = LocalDate.now(java.time.Clock.systemUTC())
                 .minusYears(12)
-                .atStartOfDay(ZoneOffset.UTC)
-                .toEpochSecond();
+                .toString();   // "YYYY-MM-DD"
 
         mvc.perform(put("/api/account/profile")
                 .header("Authorization", "Bearer fake-token")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"dateOfBirth\":{\"seconds\":" + twelveYearsAgoEpochSec + ",\"nanos\":0}}"))
+                .content("{\"dateOfBirth\":\"" + twelveYearsAgoIso + "\"}"))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.code").value("AGE_INELIGIBLE"));
 
