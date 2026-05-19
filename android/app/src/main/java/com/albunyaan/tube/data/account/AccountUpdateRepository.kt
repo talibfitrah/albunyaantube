@@ -50,6 +50,11 @@ class AccountUpdateRepository @Inject constructor(
         }
     } catch (e: IOException) {
         ProfileUpdateResult.NetworkError
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        // Plan G cubic R3 P2: never swallow cancellation — let the
+        // coroutine's structured-concurrency contract propagate so the
+        // ViewModel/Fragment lifecycle correctly tears down the launch.
+        throw e
     } catch (e: Exception) {
         // Plan G cubic R1 P1: catch JsonDataException, JsonEncodingException
         // and any other Retrofit/Moshi failure that fires during success-body
