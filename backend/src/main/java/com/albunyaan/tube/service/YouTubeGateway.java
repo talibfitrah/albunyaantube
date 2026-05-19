@@ -575,22 +575,40 @@ public class YouTubeGateway {
                 return null;
             }
             String hostLower = host.toLowerCase(java.util.Locale.ROOT);
+            // Plan G round-3 review-fix (codex P2): drop `googlevideo.com` from
+            // the allowlist. NewPipe search/channel/playlist pagination URLs
+            // are always on youtube.com hosts (InnerTube API + HTML pages).
+            // googlevideo.com serves CDN media (streams/thumbnails) and never
+            // shows up as a pagination URL — keeping it in the allowlist
+            // expands the attack surface without operational benefit.
             boolean allowed = hostLower.equals("youtube.com")
                     || hostLower.endsWith(".youtube.com")
-                    || hostLower.equals("youtu.be")
-                    || hostLower.equals("googlevideo.com")
-                    || hostLower.endsWith(".googlevideo.com");
+                    || hostLower.equals("youtu.be");
             if (!allowed) {
                 logger.warn("Rejected pageToken with non-YouTube host: {}", hostLower);
                 return null;
             }
-            // Deny known redirect / cross-origin helpers on the YouTube hosts.
-            // These paths follow attacker-controlled `q` / `to` / `url` params
-            // and turn the page-token mechanism into an open-redirect SSRF.
+            // Plan G round-3 review-fix (codex P1 + reviewer minor): exact-path
+            // denials, not substring `contains()`. This avoids false-positives
+            // on legitimate paths that happen to share a substring with a
+            // redirect helper, AND tightens against the codex-discovered
+            // chain bypass: `https://www.youtube.com/attribution_link?u=...`
+            // → YouTube emits a 303 to `/redirect?q=...`, which OkHttp's
+            // `.followRedirects(true)` (NewPipeConfiguration.java:76) follows
+            // straight to attacker URLs. The proper fix is at the HTTP-client
+            // layer (HMAC-signed tokens or per-request URL validation in an
+            // OkHttp interceptor) — see plan doc Review follow-ups. For now,
+            // explicitly deny the known chain entry points.
             String pathLower = path == null ? "" : path.toLowerCase(java.util.Locale.ROOT);
-            if (pathLower.contains("/redirect")
-                    || pathLower.contains("/url")
-                    || pathLower.contains("/oembed")) {
+            boolean redirectHelper = pathLower.equals("/redirect")
+                    || pathLower.startsWith("/redirect/")
+                    || pathLower.equals("/url")
+                    || pathLower.startsWith("/url/")
+                    || pathLower.equals("/oembed")
+                    || pathLower.startsWith("/oembed/")
+                    || pathLower.equals("/attribution_link")
+                    || pathLower.startsWith("/attribution_link/");
+            if (redirectHelper) {
                 logger.warn("Rejected pageToken with redirect-shaped path: {}", pathLower);
                 return null;
             }

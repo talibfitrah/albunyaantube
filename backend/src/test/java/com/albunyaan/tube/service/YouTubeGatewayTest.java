@@ -109,6 +109,77 @@ class YouTubeGatewayTest {
             assertNotNull(decoded);
             assertEquals(testUrl, decoded.getUrl());
         }
+
+        // ── Plan G review-fix (reviewer Important #1): SSRF rejection tests ──
+        //
+        // The pageToken decoder is the user-supplied URL surface that
+        // dispatches outbound HTTP via NewPipe. Without these tests a
+        // future maintainer could silently weaken the whitelist or denylist
+        // and the regression would land production.
+
+        @Test
+        @DisplayName("Rejects pageToken with http scheme (only https allowed)")
+        void rejectsHttpScheme() {
+            assertNull(gateway.decodePageToken("http://www.youtube.com/results?q=cats"));
+        }
+
+        @Test
+        @DisplayName("Rejects pageToken on non-YouTube host")
+        void rejectsNonYouTubeHost() {
+            assertNull(gateway.decodePageToken("https://attacker.example.com/results"));
+            assertNull(gateway.decodePageToken("https://internal/admin"));
+            // userinfo trick should resolve via getHost() to the actual host
+            assertNull(gateway.decodePageToken("https://www.youtube.com@attacker.com/x"));
+        }
+
+        @Test
+        @DisplayName("Rejects pageToken on /redirect helper path (open-redirect SSRF surface)")
+        void rejectsRedirectHelperPath() {
+            assertNull(gateway.decodePageToken("https://www.youtube.com/redirect?q=http://internal/"));
+            assertNull(gateway.decodePageToken("https://youtube.com/redirect"));
+        }
+
+        @Test
+        @DisplayName("Rejects pageToken on /url helper path")
+        void rejectsUrlHelperPath() {
+            assertNull(gateway.decodePageToken("https://www.youtube.com/url?q=http://internal/"));
+        }
+
+        @Test
+        @DisplayName("Rejects pageToken on /oembed helper path")
+        void rejectsOembedPath() {
+            assertNull(gateway.decodePageToken("https://www.youtube.com/oembed?url=http://internal/"));
+        }
+
+        @Test
+        @DisplayName("Rejects pageToken on /attribution_link (codex round-3 redirect-chain)")
+        void rejectsAttributionLinkPath() {
+            assertNull(gateway.decodePageToken(
+                "https://www.youtube.com/attribution_link?u=%2Fredirect%3Fq%3Dhttp%3A%2F%2F169.254.169.254%2F"));
+        }
+
+        @Test
+        @DisplayName("Rejects pageToken with non-http(s) scheme")
+        void rejectsExoticSchemes() {
+            assertNull(gateway.decodePageToken("file:///etc/passwd"));
+            assertNull(gateway.decodePageToken("javascript:alert(1)"));
+            assertNull(gateway.decodePageToken("gopher://internal/"));
+            assertNull(gateway.decodePageToken("data:text/plain,hello"));
+        }
+
+        @Test
+        @DisplayName("Rejects googlevideo.com (no longer in pagination allowlist)")
+        void rejectsGooglevideoHost() {
+            assertNull(gateway.decodePageToken("https://r1---sn-x.googlevideo.com/videoplayback?..."));
+        }
+
+        @Test
+        @DisplayName("Accepts legitimate YouTube InnerTube pagination URL")
+        void acceptsInnerTubePaginationUrl() {
+            Page decoded = gateway.decodePageToken(
+                "https://www.youtube.com/youtubei/v1/search?prettyPrint=false&key=ABC");
+            assertNotNull(decoded);
+        }
     }
 
     @Nested

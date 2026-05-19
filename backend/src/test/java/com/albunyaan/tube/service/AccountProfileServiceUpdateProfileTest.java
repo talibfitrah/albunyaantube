@@ -89,6 +89,40 @@ class AccountProfileServiceUpdateProfileTest {
     }
 
     // ------------------------------------------------------------------
+    // Plan G round-3 review-fix (reviewer Important #2): allowlist enforcement.
+    // Verify a future caller cannot mass-assign role/status/deletedAt
+    // through {@code UserRepository.updateFields}.
+    // ------------------------------------------------------------------
+    @Test
+    void userRepository_updateFields_rejectsDisallowedKey() throws Exception {
+        com.albunyaan.tube.config.FirestoreTimeoutProperties timeouts =
+            new com.albunyaan.tube.config.FirestoreTimeoutProperties();
+        com.albunyaan.tube.repository.UserRepository repo =
+            new com.albunyaan.tube.repository.UserRepository(
+                org.mockito.Mockito.mock(com.google.cloud.firestore.Firestore.class),
+                timeouts);
+
+        // role is sensitive (admin escalation surface) — must throw before
+        // any Firestore call.
+        assertThatThrownBy(() ->
+            repo.updateFields("u1", java.util.Map.of("role", "ADMIN")))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("role");
+
+        // status is also sensitive (could revive a deleted user).
+        assertThatThrownBy(() ->
+            repo.updateFields("u1", java.util.Map.of("status", "ACTIVE")))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("status");
+
+        // The allowlist itself should be immutable (Set.of returns
+        // ImmutableCollections.Set12; verify defensively).
+        assertThatThrownBy(() ->
+            com.albunyaan.tube.repository.UserRepository.ALLOWED_UPDATE_FIELDS.add("hostile"))
+            .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    // ------------------------------------------------------------------
     // Plan G review-fix (codex P1 lost-update): concurrent disjoint edits
     // ------------------------------------------------------------------
     @Test
