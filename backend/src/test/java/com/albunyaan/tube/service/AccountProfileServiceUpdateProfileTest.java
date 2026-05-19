@@ -133,7 +133,23 @@ class AccountProfileServiceUpdateProfileTest {
         // Plan G review-fix (codex P1): Firebase Auth account is also
         // disabled so the user cannot re-authenticate, regain a fresh
         // token, and self-recover by submitting an adult DOB.
-        verify(firebaseAuth).updateUser(any(com.google.firebase.auth.UserRecord.UpdateRequest.class));
+        // Plan G re-review-fix (reviewer Minor #4): assert disabled == true
+        // specifically — without this, a future refactor that passes
+        // setDisabled(false) would silently pass. UpdateRequest stores
+        // mutations in a private "properties" map; reflect on that map to
+        // assert the value because the SDK exposes no public accessor.
+        ArgumentCaptor<com.google.firebase.auth.UserRecord.UpdateRequest> updateReq =
+            ArgumentCaptor.forClass(com.google.firebase.auth.UserRecord.UpdateRequest.class);
+        verify(firebaseAuth).updateUser(updateReq.capture());
+        java.lang.reflect.Field propsField =
+            com.google.firebase.auth.UserRecord.UpdateRequest.class.getDeclaredField("properties");
+        propsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> props =
+            (java.util.Map<String, Object>) propsField.get(updateReq.getValue());
+        // Firebase Admin SDK serializes setDisabled(true) as
+        // properties["disableUser"]=true on the wire (not "disabled").
+        assertThat(props).containsEntry("disableUser", Boolean.TRUE);
     }
 
     // ------------------------------------------------------------------

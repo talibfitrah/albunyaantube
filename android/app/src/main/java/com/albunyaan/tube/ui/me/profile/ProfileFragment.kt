@@ -128,6 +128,12 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
         // never reaches the backend. The age-gate treats negative ages as
         // under-13 and would soft-delete a legitimate account that
         // fat-fingered the picker. Backend also validates as defence-in-depth.
+        //
+        // Plan G re-review-fix (reviewer Important #3): do NOT setSelection
+        // to a default — without an explicit user pick the OK button stays
+        // disabled, removing the one-tap path back to under-13 (today's date
+        // implies age 0 → rejectUnderAge → soft-delete + Firebase disable on
+        // a legitimate account). The user MUST pick a date before submission.
         val todayMs = MaterialDatePicker.todayInUtcMilliseconds()
         val constraints = CalendarConstraints.Builder()
             .setEnd(todayMs)
@@ -136,7 +142,6 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
         val picker = MaterialDatePicker.Builder.datePicker()
             .setTitleText(R.string.profile_date_of_birth)
             .setCalendarConstraints(constraints)
-            .setSelection(todayMs)
             .build()
         picker.addOnPositiveButtonClickListener { selectionMs ->
             val local =

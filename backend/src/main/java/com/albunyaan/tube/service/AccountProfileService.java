@@ -265,6 +265,13 @@ public class AccountProfileService {
             updated.setDateOfBirth(dobTs);
         }
         userRepository.updateFields(uid, updates);
+        // Plan G re-review-fix (reviewer Important #2): mirror the persisted
+        // updatedAt touch on the local projection. Firestore's serverTimestamp
+        // sentinel is expanded at the write site; this keeps the in-memory
+        // response object aligned with what we just wrote (within JVM-clock
+        // skew). Without this, future refactors that expose updatedAt on
+        // AccountMeResponse would silently return stale values.
+        updated.touch();
 
         auditLogService.logProfileEdit(uid, changedFields(user, updated));
         return AccountMeResponse.from(updated);

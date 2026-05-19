@@ -546,6 +546,14 @@ public class YouTubeGateway {
      * to URL-shaped tokens hosted on YouTube; reject anything else as a
      * null page (caller treats null as "first page", which is the safest
      * default for an unverifiable token).
+     *
+     * <p>Plan G re-review-fix (codex P1 round-2): host whitelist alone is not
+     * enough — {@code http(s)://www.youtube.com/redirect?q=http://internal/}
+     * is on YouTube but is an external-redirect helper. NewPipe's downloader
+     * uses OkHttp which follows 302s by default, so a moderator with
+     * credentials could SSRF arbitrary URLs through that endpoint. Require
+     * HTTPS (drops the http:// open-redirect surface), and deny known
+     * redirect paths under the YouTube hosts.
      */
     public Page decodePageToken(String token) {
         if (token == null || token.isEmpty()) {
@@ -555,12 +563,15 @@ public class YouTubeGateway {
             java.net.URI uri = java.net.URI.create(token);
             String scheme = uri.getScheme();
             String host = uri.getHost();
+            String path = uri.getPath();
             if (scheme == null || host == null) {
                 logger.warn("Rejected pageToken with no scheme or host");
                 return null;
             }
-            if (!("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
-                logger.warn("Rejected pageToken with non-http(s) scheme: {}", scheme);
+            // Require HTTPS — drops the http:// open-redirect surface and is
+            // the only scheme YouTube pagination URLs use in practice.
+            if (!"https".equalsIgnoreCase(scheme)) {
+                logger.warn("Rejected pageToken with non-https scheme: {}", scheme);
                 return null;
             }
             String hostLower = host.toLowerCase(java.util.Locale.ROOT);
@@ -571,6 +582,16 @@ public class YouTubeGateway {
                     || hostLower.endsWith(".googlevideo.com");
             if (!allowed) {
                 logger.warn("Rejected pageToken with non-YouTube host: {}", hostLower);
+                return null;
+            }
+            // Deny known redirect / cross-origin helpers on the YouTube hosts.
+            // These paths follow attacker-controlled `q` / `to` / `url` params
+            // and turn the page-token mechanism into an open-redirect SSRF.
+            String pathLower = path == null ? "" : path.toLowerCase(java.util.Locale.ROOT);
+            if (pathLower.contains("/redirect")
+                    || pathLower.contains("/url")
+                    || pathLower.contains("/oembed")) {
+                logger.warn("Rejected pageToken with redirect-shaped path: {}", pathLower);
                 return null;
             }
             return new Page(token);

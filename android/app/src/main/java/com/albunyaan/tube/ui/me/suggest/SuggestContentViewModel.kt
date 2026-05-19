@@ -88,12 +88,25 @@ class SuggestContentViewModel @Inject constructor(
             // Mid-paginate type-ahead would otherwise send q="islam" with a
             // pageToken bound to q="isl" and the backend returns corrupted
             // page-2 results (token is server-opaque, tied to its query).
-            when (val r = repo.search(current.query, current.type, current.nextPageToken)) {
-                is SearchResult.Success -> _uiState.value = current.copy(
-                    items = current.items + r.page.items,
+            val r = repo.search(current.query, current.type, current.nextPageToken)
+            // Plan G re-review-fix (codex P2 round-2): after the suspend,
+            // flatMapLatest may have already emitted a new Results for a
+            // different query (user typed past page-1). Without this guard
+            // an older loadMore response can overwrite the newer search
+            // result and restore the stale list. Apply only if we're still
+            // on the same generation (query+type+token).
+            val latest = _uiState.value as? SuggestUiState.Results ?: return@launch
+            if (latest.query != current.query
+                    || latest.type != current.type
+                    || latest.nextPageToken != current.nextPageToken) {
+                return@launch
+            }
+            _uiState.value = when (r) {
+                is SearchResult.Success -> latest.copy(
+                    items = latest.items + r.page.items,
                     nextPageToken = r.page.nextPageToken,
                     loadingMore = false)
-                else -> _uiState.value = current.copy(loadingMore = false)
+                else -> latest.copy(loadingMore = false)
             }
         }
     }

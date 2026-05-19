@@ -141,15 +141,35 @@ public class UserRepository {
      * <p>Cache key matches the existing {@link #save(User)} eviction so the
      * {@code userStatus} cache (used by {@code FirebaseAuthFilter}) is
      * invalidated identically.
+     *
+     * <p>Plan G re-review-fix (codex P2 round-2): caller-supplied keys are
+     * gated against a hard allowlist so a future caller cannot accidentally
+     * mass-assign sensitive fields ({@code role}, {@code status},
+     * {@code deletedAt}, etc.) through this method. The current caller
+     * ({@code AccountProfileService.updateProfile}) uses only the two
+     * profile-edit fields, but the API surface must be safe by design.
      */
+    public static final java.util.Set<String> ALLOWED_UPDATE_FIELDS =
+            java.util.Set.of("displayName", "dateOfBirth");
+
     @CacheEvict(value = "userStatus", key = "#uid")
     public void updateFields(String uid, java.util.Map<String, Object> fields)
             throws ExecutionException, InterruptedException, TimeoutException {
         if (uid == null || uid.isBlank()) {
             throw new IllegalArgumentException("updateFields requires a non-blank uid");
         }
+        for (String key : fields.keySet()) {
+            if (!ALLOWED_UPDATE_FIELDS.contains(key)) {
+                throw new IllegalArgumentException(
+                    "updateFields rejected disallowed field: " + key);
+            }
+        }
         java.util.Map<String, Object> withTouch = new java.util.LinkedHashMap<>(fields);
-        withTouch.put("updatedAt", com.google.cloud.Timestamp.now());
+        // Plan G re-review-fix (reviewer Important #1): use Firestore server
+        // timestamp sentinel so concurrent writes from different nodes order
+        // by Firestore's clock, not each JVM's wall-clock. JVM clock skew on
+        // multi-instance deployments would otherwise mis-order audit cursors.
+        withTouch.put("updatedAt", com.google.cloud.firestore.FieldValue.serverTimestamp());
         ApiFuture<WriteResult> result = getCollection()
                 .document(uid)
                 .update(withTouch);
