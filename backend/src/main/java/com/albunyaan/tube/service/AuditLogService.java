@@ -213,8 +213,16 @@ public class AuditLogService {
      * <p>B4 will replace this stub with a proper Firestore write.
      */
     public void logProfileEdit(String actorUid, java.util.Map<String, Object> diff) {
-        // Stub — full implementation lands in Task B4.
-        logger.debug("PROFILE_EDIT: uid={} diff={}", actorUid, diff);
+        try {
+            AuditLog auditLog = new AuditLog("PROFILE_EDIT", "user", actorUid, actorUid);
+            if (diff != null) {
+                auditLog.setDetails(diff);
+            }
+            auditLogRepository.save(auditLog);
+            logger.debug("Profile-edit audit log created for uid={}", actorUid);
+        } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
+            logger.error("Failed to create profile-edit audit log for uid={}", actorUid, e);
+        }
     }
 
     public com.albunyaan.tube.dto.PaginatedAuditLog findPaginated(
