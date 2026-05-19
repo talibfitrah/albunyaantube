@@ -16,6 +16,7 @@ import java.time.Period;
 import java.time.ZoneOffset;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
 
 @Service
 public class AccountProfileService {
@@ -23,6 +24,8 @@ public class AccountProfileService {
     private static final Logger log = LoggerFactory.getLogger(AccountProfileService.class);
     private static final int MIN_AGE = 13;
     private static final int MAX_DISPLAY_NAME_LENGTH = 40;
+    private static final Pattern CONTROL_CHARS = Pattern.compile("\\p{Cntrl}");
+    private static final Pattern URL_PATTERN   = Pattern.compile("https?://", Pattern.CASE_INSENSITIVE);
 
     private final UserRepository userRepository;
     private final FirebaseAuth firebaseAuth;
@@ -64,11 +67,7 @@ public class AccountProfileService {
             throw new ProfileAlreadyCompletedException(uid);
         }
 
-        int age = Period.between(dateOfBirth, LocalDate.now(clock)).getYears();
-        if (age < MIN_AGE) {
-            rejectUnderAge(uid);
-            throw new AgeIneligibleException(uid, age);
-        }
+        enforceAgeOrReject(uid, dateOfBirth);
 
         Timestamp dobTs = Timestamp.ofTimeSecondsAndNanos(
                 dateOfBirth.atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0);
@@ -78,6 +77,20 @@ public class AccountProfileService {
         user.setProfileCompletedAt(Timestamp.now());
         user.touch();
         return userRepository.save(user);
+    }
+
+    /**
+     * Check that {@code dateOfBirth} implies the user is at least {@link #MIN_AGE} years old.
+     * If under-age, delegates to {@link #rejectUnderAge(String)} (revoke + soft-delete) and
+     * then throws {@link AgeIneligibleException}. Call this after the idempotency check so
+     * a completed profile is never re-evaluated.
+     */
+    private void enforceAgeOrReject(String uid, LocalDate dateOfBirth) {
+        int age = Period.between(dateOfBirth, LocalDate.now(clock)).getYears();
+        if (age < MIN_AGE) {
+            rejectUnderAge(uid);
+            throw new AgeIneligibleException(uid, age);
+        }
     }
 
     /**
@@ -167,13 +180,23 @@ public class AccountProfileService {
         return storedDate.equals(dateOfBirth);
     }
 
-    private void validateDisplayName(String name) {
-        if (name == null || name.trim().isEmpty()) {
-            throw new IllegalArgumentException("displayName must not be blank");
+    /**
+     * Validate a display name for both {@code completeProfile} and the forthcoming
+     * {@code updateProfile}. Trims before checking so callers can work with raw input.
+     *
+     * <p>Throws {@link ProfileValidationException} (mapped to 400) on any violation.
+     */
+    void validateDisplayName(String name) {
+        String trimmed = (name == null) ? "" : name.trim();
+        if (trimmed.isEmpty() || trimmed.length() > MAX_DISPLAY_NAME_LENGTH) {
+            throw new ProfileValidationException("displayName",
+                    "must be 1–" + MAX_DISPLAY_NAME_LENGTH + " characters");
         }
-        if (name.trim().length() > MAX_DISPLAY_NAME_LENGTH) {
-            throw new IllegalArgumentException(
-                    "displayName must be at most " + MAX_DISPLAY_NAME_LENGTH + " characters");
+        if (CONTROL_CHARS.matcher(trimmed).find()) {
+            throw new ProfileValidationException("displayName", "control characters not allowed");
+        }
+        if (URL_PATTERN.matcher(trimmed).find()) {
+            throw new ProfileValidationException("displayName", "URLs not allowed in display name");
         }
     }
 

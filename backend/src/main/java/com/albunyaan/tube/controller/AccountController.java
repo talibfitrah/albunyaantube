@@ -7,10 +7,12 @@ import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
+import com.albunyaan.tube.dto.ErrorResponse;
 import com.albunyaan.tube.service.AccountProfileService;
 import com.albunyaan.tube.service.AgeIneligibleAbortedException;
 import com.albunyaan.tube.service.AgeIneligibleException;
 import com.albunyaan.tube.service.ProfileAlreadyCompletedException;
+import com.albunyaan.tube.service.ProfileValidationException;
 import com.albunyaan.tube.service.UserNotFoundException;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -200,6 +202,12 @@ public class AccountController {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Map.of("code", "USER_NOT_FOUND",
                              "message", "Account not found."));
+    }
+
+    @ExceptionHandler(ProfileValidationException.class)
+    public ResponseEntity<ErrorResponse> handleProfileValidation(ProfileValidationException e) {
+        return ResponseEntity.badRequest().body(
+                new ErrorResponse("VALIDATION", e.getField() + ": " + e.getReason()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
