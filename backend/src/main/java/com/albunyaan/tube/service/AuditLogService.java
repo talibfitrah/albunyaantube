@@ -201,6 +201,22 @@ public class AuditLogService {
             Map.of("scanned", scanned, "updated", updated, "claimWriteFailures", claimWriteFailures));
     }
 
+    /**
+     * Plan G B2 stub — full implementation lands in Task B4.
+     *
+     * <p>Logs a user-initiated profile edit. {@code diff} contains changed-field
+     * entries; dateOfBirth is recorded as "changed" (no raw value) to avoid
+     * logging PII. Called synchronously from {@code AccountProfileService.updateProfile}
+     * so the audit row is guaranteed before the response returns (unlike the
+     * async admin-action paths above which use {@code @Async("auditExecutor")}).
+     *
+     * <p>B4 will replace this stub with a proper Firestore write.
+     */
+    public void logProfileEdit(String actorUid, java.util.Map<String, Object> diff) {
+        // Stub — full implementation lands in Task B4.
+        logger.debug("PROFILE_EDIT: uid={} diff={}", actorUid, diff);
+    }
+
     public com.albunyaan.tube.dto.PaginatedAuditLog findPaginated(
             String actorUid, String action, int limit, String cursor)
             throws ExecutionException, InterruptedException, TimeoutException {

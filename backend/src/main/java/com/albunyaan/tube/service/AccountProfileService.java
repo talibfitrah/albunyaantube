@@ -1,5 +1,7 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.AccountMeResponse;
+import com.albunyaan.tube.dto.UpdateProfileRequest;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.UserRepository;
@@ -14,6 +16,9 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.Period;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
@@ -178,6 +183,88 @@ public class AccountProfileService {
                 .atZone(ZoneOffset.UTC)
                 .toLocalDate();
         return storedDate.equals(dateOfBirth);
+    }
+
+    /**
+     * Plan G B2 — partial profile update. Supports changing displayName and/or
+     * dateOfBirth on an existing, completed profile.
+     *
+     * <p>Idempotency: if the resolved (trimmed) values are identical to what is
+     * already persisted, the method returns the existing response without writing
+     * or emitting an audit row.
+     *
+     * <p>Age gate: if a new dateOfBirth implies the user is under {@link #MIN_AGE},
+     * delegates to {@link #rejectUnderAge(String)} (revoke + soft-delete) and
+     * throws {@link AgeIneligibleException} — same path as {@code completeProfile}.
+     *
+     * @throws UserNotFoundException if uid has no Firestore document
+     * @throws ProfileValidationException if displayName fails validation
+     * @throws AgeIneligibleException if dateOfBirth implies under-13
+     */
+    public AccountMeResponse updateProfile(String uid, UpdateProfileRequest body)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        User user = userRepository.findByUid(uid)
+                .orElseThrow(() -> new UserNotFoundException(uid));
+
+        if (isNoOpUpdate(user, body)) {
+            return AccountMeResponse.from(user);
+        }
+
+        if (body.displayName() != null) {
+            validateDisplayName(body.displayName());
+        }
+        if (body.dateOfBirth() != null) {
+            // enforceAgeOrReject takes LocalDate — convert from Timestamp
+            LocalDate dob = body.dateOfBirth().toDate().toInstant()
+                    .atZone(ZoneOffset.UTC).toLocalDate();
+            enforceAgeOrReject(uid, dob);
+        }
+
+        User updated = user.copy();
+        if (body.displayName() != null) {
+            updated.setDisplayName(body.displayName().trim());
+        }
+        if (body.dateOfBirth() != null) {
+            updated.setDateOfBirth(body.dateOfBirth());
+        }
+        updated.touch();
+        userRepository.save(updated);
+
+        auditLogService.logProfileEdit(uid, changedFields(user, updated));
+        return AccountMeResponse.from(updated);
+    }
+
+    /**
+     * Returns true iff both fields resolve to the same values already on the
+     * user — in which case no write or audit is needed.
+     *
+     * <p>Trim is applied to displayName before comparing so whitespace-only
+     * changes (e.g. trailing space stripped) still count as a real change.
+     */
+    private boolean isNoOpUpdate(User u, UpdateProfileRequest body) {
+        boolean nameSame = body.displayName() == null
+                || body.displayName().trim().equals(u.getDisplayName());
+        boolean dobSame = body.dateOfBirth() == null
+                || body.dateOfBirth().equals(u.getDateOfBirth());
+        return nameSame && dobSame;
+    }
+
+    /**
+     * Returns a diff map of fields that changed between {@code before} and
+     * {@code after}. DateOfBirth is recorded as {@code "changed"} (no raw value)
+     * to avoid writing PII to the audit log.
+     */
+    private Map<String, Object> changedFields(User before, User after) {
+        Map<String, Object> diff = new LinkedHashMap<>();
+        if (!Objects.equals(before.getDisplayName(), after.getDisplayName())) {
+            diff.put("displayName", Map.of(
+                    "from", before.getDisplayName() == null ? "" : before.getDisplayName(),
+                    "to",   after.getDisplayName()  == null ? "" : after.getDisplayName()));
+        }
+        if (!Objects.equals(before.getDateOfBirth(), after.getDateOfBirth())) {
+            diff.put("dateOfBirth", "changed");
+        }
+        return diff;
     }
 
     /**
