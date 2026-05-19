@@ -30,6 +30,8 @@ public class AccountProfileService {
     private static final int MIN_AGE = 13;
     private static final int MAX_DISPLAY_NAME_LENGTH = 40;
     private static final Pattern CONTROL_CHARS = Pattern.compile("\\p{Cntrl}");
+    /** Plan G cubic R1 P2 — Unicode format-control category (Cf). */
+    private static final Pattern FORMAT_CONTROL_CHARS = Pattern.compile("\\p{Cf}");
     private static final Pattern URL_PATTERN   = Pattern.compile("https?://", Pattern.CASE_INSENSITIVE);
 
     private final UserRepository userRepository;
@@ -333,6 +335,16 @@ public class AccountProfileService {
         }
         if (CONTROL_CHARS.matcher(trimmed).find()) {
             throw new ProfileValidationException("displayName", "control characters not allowed");
+        }
+        // Plan G cubic R1 P2: reject zero-width / BOM / bidi-override
+        // characters that bypass the C0/C1 control-char filter but render
+        // identically to other users' display names or hijack RTL/LTR
+        // rendering. `\p{Cf}` (Unicode format-control class) covers
+        // U+200B–U+200D (ZWSP/ZWJ), U+FEFF (BOM), U+200E/F (LRM/RLM),
+        // U+202A–U+202E and U+2066–U+2069 (bidi-override).
+        if (FORMAT_CONTROL_CHARS.matcher(trimmed).find()) {
+            throw new ProfileValidationException("displayName",
+                    "zero-width or bidi-override characters not allowed");
         }
         if (URL_PATTERN.matcher(trimmed).find()) {
             throw new ProfileValidationException("displayName", "URLs not allowed in display name");

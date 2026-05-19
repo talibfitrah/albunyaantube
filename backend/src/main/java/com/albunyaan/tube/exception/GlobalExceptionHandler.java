@@ -226,6 +226,35 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Plan G cubic R1 P1 — handle Bean Validation parameter-constraint
+     * violations on {@code @Validated} controllers. {@code @NotBlank} /
+     * {@code @Size} on a {@code @RequestParam} (e.g.
+     * {@link com.albunyaan.tube.controller.YouTubeSearchController#search})
+     * raises {@code ConstraintViolationException} which used to fall through
+     * to the catch-all 500 handler, masking the real cause as
+     * "An unexpected error occurred". Map to a clean 400 with the
+     * violated-field message so moderators see actionable validation errors
+     * and ops dashboards don't drown in synthetic 500s.
+     */
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<Object> handleConstraintViolation(
+            jakarta.validation.ConstraintViolationException ex, WebRequest request) {
+        String message = ex.getConstraintViolations().stream()
+                .findFirst()
+                .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                .orElse("Validation failed");
+        logger.warn("Constraint violation: {}", message);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.BAD_REQUEST.value());
+        body.put("error", "Bad Request");
+        body.put("message", message);
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+        return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
      * Plan G review-fix — handle {@link com.albunyaan.tube.service.YouTubeSearchException}.
      *
      * <p>Pre-fix every NewPipe extraction failure (circuit breaker open,

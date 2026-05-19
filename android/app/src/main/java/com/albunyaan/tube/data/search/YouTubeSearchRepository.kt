@@ -38,5 +38,10 @@ class YouTubeSearchRepository @Inject constructor(
         }
     } catch (e: IOException) {
         SearchResult.NetworkError
+    } catch (e: Exception) {
+        // Plan G cubic R1 P1: catch JsonDataException, HttpException and
+        // any other Retrofit/Moshi failure during body deserialization so a
+        // malformed response body doesn't crash the calling coroutine.
+        SearchResult.Unknown(0)
     }
 }

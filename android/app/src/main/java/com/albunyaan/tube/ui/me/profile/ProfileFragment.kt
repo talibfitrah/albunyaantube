@@ -112,11 +112,17 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
     }
 
     private fun showAgeDialog() {
+        // Plan G cubic R1 P1: sign-out and the SignedOut emission run
+        // ONLY after the user dismisses this dialog. Pre-fix the VM
+        // wrote SignedOut immediately, conflating the Editing+error
+        // state away so this dialog never rendered before popBackStack.
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.profile_error_age_dialog_title)
             .setMessage(R.string.profile_error_age_dialog_message)
             .setCancelable(false)
-            .setPositiveButton(android.R.string.ok, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                vm.confirmAgeIneligibleSignOut()
+            }
             .show()
     }
 

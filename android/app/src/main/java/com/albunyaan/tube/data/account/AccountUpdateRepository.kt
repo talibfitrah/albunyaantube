@@ -40,6 +40,13 @@ class AccountUpdateRepository @Inject constructor(
         }
     } catch (e: IOException) {
         ProfileUpdateResult.NetworkError
+    } catch (e: Exception) {
+        // Plan G cubic R1 P1: catch JsonDataException, JsonEncodingException
+        // and any other Retrofit/Moshi failure that fires during success-body
+        // deserialization. Without this clause those propagate out of the
+        // suspend function, get lost to the default uncaught-exception
+        // handler, and leave the UI stuck on the "saving" spinner.
+        ProfileUpdateResult.Unknown(0)
     }
 
     private fun parseRateLimited(resp: retrofit2.Response<*>): ProfileUpdateResult.RateLimited {

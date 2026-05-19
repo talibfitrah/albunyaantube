@@ -62,9 +62,17 @@ class ProfileViewModel @Inject constructor(
                 is ProfileUpdateResult.RateLimited ->
                     _uiState.value = state.copy(saving = false, error = ProfileError.RateLimited(r.retryAfterSec))
                 ProfileUpdateResult.AgeIneligible -> {
+                    // Plan G cubic R1 P1: previously this block wrote
+                    //   Editing(error=AgeIneligible) → signOut → SignedOut
+                    // in three synchronous statements. _uiState is a
+                    // conflated MutableStateFlow, so the collector only
+                    // observed the latest value (SignedOut) and
+                    // popBackStack ran before the AgeIneligible dialog
+                    // could render. Now we stop at the dialog-trigger
+                    // state and let the fragment call
+                    // confirmAgeIneligibleSignOut() when the user
+                    // dismisses the dialog.
                     _uiState.value = state.copy(saving = false, error = ProfileError.AgeIneligible)
-                    accountRepository.signOut()
-                    _uiState.value = ProfileUiState.SignedOut
                 }
                 is ProfileUpdateResult.ValidationFailed ->
                     _uiState.value = state.copy(
@@ -77,6 +85,18 @@ class ProfileViewModel @Inject constructor(
                     _uiState.value = state.copy(saving = false, error = ProfileError.Unknown)
             }
         }
+    }
+
+    /**
+     * Plan G cubic R1 P1 — completes the AgeIneligible flow once the user
+     * has dismissed the modal dialog. Pre-fix the sign-out happened
+     * synchronously inside [save] and StateFlow conflation made the
+     * intermediate dialog-trigger state invisible to collectors, so the
+     * dialog was never displayed before the fragment popped.
+     */
+    fun confirmAgeIneligibleSignOut() {
+        accountRepository.signOut()
+        _uiState.value = ProfileUiState.SignedOut
     }
 
     private fun buildRequest(original: ProfileFields, draft: ProfileFields): UpdateProfileRequestDto {
