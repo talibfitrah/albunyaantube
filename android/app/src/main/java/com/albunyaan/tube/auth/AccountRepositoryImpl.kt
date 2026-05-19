@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
@@ -146,14 +147,20 @@ class AccountRepositoryImpl(
     }
 
     override fun applyProfileUpdate(response: AccountMeResponseDto) {
-        val current = _state.value
-        if (current is AccountState.Loaded) {
-            _state.value = current.copy(
-                displayName = response.displayName ?: current.displayName,
-                dateOfBirth = response.dateOfBirth ?: current.dateOfBirth,
-            )
+        // Atomic CAS via MutableStateFlow.update so a concurrent signOut
+        // from an off-main observerScope can't be clobbered by a
+        // post-read overwrite. Not-Loaded states (NotSignedIn / Loading /
+        // Failed / etc.) pass through unchanged.
+        _state.update { current ->
+            if (current is AccountState.Loaded) {
+                current.copy(
+                    displayName = response.displayName ?: current.displayName,
+                    dateOfBirth = response.dateOfBirth ?: current.dateOfBirth,
+                )
+            } else {
+                current
+            }
         }
-        // Not Loaded (NotSignedIn, Loading, Failed) — sign-out race; ignore silently.
     }
 
     private fun AccountMeResponseDto.toLoaded() = AccountState.Loaded(
