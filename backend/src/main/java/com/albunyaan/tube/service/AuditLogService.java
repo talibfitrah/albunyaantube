@@ -217,7 +217,10 @@ public class AuditLogService {
             }
             auditLogRepository.save(auditLog);
             logger.debug("Profile-edit audit log created for uid={}", actorUid);
-        } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Failed to create profile-edit audit log for uid={} (interrupted)", actorUid, e);
+        } catch (ExecutionException | java.util.concurrent.TimeoutException e) {
             logger.error("Failed to create profile-edit audit log for uid={}", actorUid, e);
         }
     }
