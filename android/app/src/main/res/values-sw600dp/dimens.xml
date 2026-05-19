@@ -109,4 +109,7 @@
     <dimen name="grid_tile_avatar_size">80dp</dimen>
     <dimen name="grid_tile_thumbnail_height">100dp</dimen>
     <dimen name="grid_tile_content_padding">12dp</dimen>
+
+    <!-- Suggest content search grid columns -->
+    <integer name="suggest_grid_columns">2</integer>
 </resources>
