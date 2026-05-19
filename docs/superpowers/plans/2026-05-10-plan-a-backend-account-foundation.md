@@ -3347,3 +3347,9 @@ Plan complete and saved to `docs/superpowers/plans/2026-05-10-plan-a-backend-acc
 **2. Inline Execution** — Execute tasks in this session using `superpowers:executing-plans`, batch with checkpoints for review.
 
 Which approach?
+
+---
+
+## 2026-05-19 follow-up — Plan G
+
+Extended `AccountController` with `PUT /api/account/profile` for personal-info edit (display name + DOB). The new endpoint reuses Plan C's ≥13 age-gate via a shared `enforceAgeOrReject` helper. See `docs/superpowers/plans/2026-05-19-plan-g-profile-edit-and-suggest-search.md` and spec `docs/superpowers/specs/2026-05-19-plan-g-profile-edit-and-suggest-search-design.md`.

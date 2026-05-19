@@ -2827,3 +2827,9 @@ Two execution options:
 2. **Inline Execution** — Execute tasks in this session using executing-plans. Faster on a small plan if the implementer is already loaded with context.
 
 Which approach?
+
+---
+
+## 2026-05-19 follow-up — Plan G
+
+`AccountProfileService.completeProfile` was refactored to share its ≥13 age-gate (`enforceAgeOrReject`) and display-name validation (`validateDisplayName`) with the new `updateProfile` method added in Plan G. Under-13 update path is identical to bootstrap: `revokeRefreshTokens` first, then soft-delete with `deleteReason="age-ineligible"`, then throw `AgeIneligibleException` (→ HTTP 422). See `docs/superpowers/plans/2026-05-19-plan-g-profile-edit-and-suggest-search.md`.

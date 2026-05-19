@@ -1133,3 +1133,9 @@ EOF
 - One scope reduction: SubmitContentBottomSheet ships Paste-URL only; Search tab deferred to follow-up.
 - Type consistency: backend `REQUEST_CHANGES` string ↔ Android status comparison string, both uppercase exact.
 - `getById` regression risk from Plan D not touched here.
+
+---
+
+## 2026-05-19 follow-up — Plan G
+
+The "Search tab" deferred from `SubmitContentBottomSheet` was replaced in Plan G by a dedicated `SuggestContentFragment` reachable from the Me-tab kebab. Search hits a new server-side `GET /api/admin/youtube/search` (NewPipe-Extractor backed; reuses the existing `CacheConfig.CACHE_NEWPIPE_SEARCH_RESULTS` cache). The bottom sheet remains URL-paste and now also accepts a `prefillUrl` argument from search results — `SuggestContentFragment` taps a result, builds the canonical URL, and shows the existing bottom sheet pre-filled. The submission rate-limit (50/24h per uid) still applies; a separate 10/hour rate limit was added in Plan G for `PUT /api/account/profile` only. See `docs/superpowers/plans/2026-05-19-plan-g-profile-edit-and-suggest-search.md`.
