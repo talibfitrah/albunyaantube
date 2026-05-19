@@ -86,7 +86,7 @@ class MeViewModelTest {
 
     @Test
     fun `empty subscriptions yields Empty state`() = runBlocking {
-        val vm = MeViewModel(subs, feed, favs)
+        val vm = MeViewModel(subs, feed, favs, FakeAccountRepository())
         val state = withTimeout(3_000L) { vm.state.first { it !is MeFeedState.Loading } }
         assertTrue("expected Empty, got $state", state is MeFeedState.Empty)
     }
@@ -94,7 +94,7 @@ class MeViewModelTest {
     @Test
     fun `chips include subscribed channels`() = runBlocking {
         subs.subscribe(SubscribedChannel("UC1", "https://yt/UC1", "A", null, 1_000L))
-        val vm = MeViewModel(subs, feed, favs)
+        val vm = MeViewModel(subs, feed, favs, FakeAccountRepository())
         val content = withTimeout(3_000L) {
             vm.state.first { it is MeFeedState.Content } as MeFeedState.Content
         }
@@ -138,7 +138,7 @@ class MeViewModelTest {
         // T9: pre-populate cache (replaces the prior init-triggered refresh).
         feedWithItems.refresh(force = true)
 
-        val vm = MeViewModel(subs, feedWithItems, favs)
+        val vm = MeViewModel(subs, feedWithItems, favs, FakeAccountRepository())
 
         val unfiltered = withTimeout(3_000L) {
             vm.state.first { it is MeFeedState.Content && it.videos.size == 2 }
@@ -163,7 +163,7 @@ class MeViewModelTest {
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         feedWithItems.refresh(force = true)
 
-        val vm = MeViewModel(subs, feedWithItems, favs)
+        val vm = MeViewModel(subs, feedWithItems, favs, FakeAccountRepository())
 
         val first = withTimeout(3_000L) {
             vm.weeks.first { it.isNotEmpty() }
@@ -184,7 +184,7 @@ class MeViewModelTest {
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         feedWithItems.refresh(force = true)
 
-        val vm = MeViewModel(subs, feedWithItems, favs)
+        val vm = MeViewModel(subs, feedWithItems, favs, FakeAccountRepository())
 
         // First load: should jump to week 2 (skipping empty 0 and 1).
         val first = withTimeout(3_000L) {
@@ -224,7 +224,7 @@ class MeViewModelTest {
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         feedWithItems.refresh(force = true)
 
-        val vm = MeViewModel(subs, feedWithItems, favs)
+        val vm = MeViewModel(subs, feedWithItems, favs, FakeAccountRepository())
 
         val firstLoad = withTimeout(3_000L) { vm.weeks.first { it.isNotEmpty() } }
         assertEquals(1, firstLoad.size)
@@ -274,7 +274,7 @@ class MeViewModelTest {
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
         feedWithItems.refresh(force = true)
 
-        val vm = MeViewModel(subs, feedWithItems, favs)
+        val vm = MeViewModel(subs, feedWithItems, favs, FakeAccountRepository())
 
         // Initial load: both videos visible in week 0.
         val unfiltered = withTimeout(3_000L) {
@@ -321,7 +321,7 @@ class MeViewModelTest {
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
         feedWithItems.refresh(force = true)
 
-        val vm = MeViewModel(subs, feedWithItems, favs)
+        val vm = MeViewModel(subs, feedWithItems, favs, FakeAccountRepository())
         // wait initial load
         withTimeout(3_000L) { vm.weeks.first { it.isNotEmpty() } }
 
@@ -367,7 +367,7 @@ class MeViewModelTest {
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
         feedWithItems.refresh(force = true)
 
-        val vm = MeViewModel(subs, feedWithItems, favs)
+        val vm = MeViewModel(subs, feedWithItems, favs, FakeAccountRepository())
 
         // Initial load (no filter): finds UC2's item in week 0.
         val unfiltered = withTimeout(3_000L) {
@@ -425,7 +425,7 @@ class MeViewModelTest {
             subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
             feedWithItems.refresh(force = true)
 
-            val vm = MeViewModel(subs, feedWithItems, favs)
+            val vm = MeViewModel(subs, feedWithItems, favs, FakeAccountRepository())
 
             // Wait until VM has loaded week 0 with v1.
             val initial = withTimeout(3_000L) {

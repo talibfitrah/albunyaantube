@@ -17,6 +17,8 @@ import com.albunyaan.tube.data.me.MeFeedRepository
 import com.albunyaan.tube.data.me.MeFeedState
 import com.albunyaan.tube.data.me.MeFeedVideo
 import com.albunyaan.tube.data.me.WeekBucket
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.data.me.WeekContent
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -41,6 +43,7 @@ class MeViewModel @Inject constructor(
     private val subscriptions: SubscriptionRepository,
     private val feed: MeFeedRepository,
     private val favorites: FavoritesRepository,
+    private val accountRepository: AccountRepository,
 ) : ViewModel() {
 
     private val filter = MutableStateFlow<String?>(null)
@@ -425,6 +428,17 @@ class MeViewModel @Inject constructor(
         uploadedAt = uploadedAt ?: 0L,
         isShort = isShort,
     )
+
+    /**
+     * K1: one-shot read of the current role from the account state.
+     * Returns the role string if the user is signed in and the account
+     * is loaded, or an empty string otherwise. Used by [MeFragment]'s
+     * MenuProvider (K2) to decide whether to show "Suggest content".
+     */
+    fun snapshotRole(): String {
+        val s = accountRepository.accountState.value
+        return (s as? AccountState.Loaded)?.role.orEmpty()
+    }
 
     companion object {
         private const val TAG = "MeViewModel"
