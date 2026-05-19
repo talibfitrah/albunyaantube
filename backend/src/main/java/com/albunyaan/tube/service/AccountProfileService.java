@@ -30,7 +30,7 @@ public class AccountProfileService {
     private static final int MIN_AGE = 13;
     private static final int MAX_DISPLAY_NAME_LENGTH = 40;
     private static final Pattern CONTROL_CHARS = Pattern.compile("\\p{Cntrl}");
-    /** Plan G cubic R1 P2 — Unicode format-control category (Cf). */
+    /** Unicode format-control category — zero-width, BOM, bidi-override. */
     private static final Pattern FORMAT_CONTROL_CHARS = Pattern.compile("\\p{Cf}");
     private static final Pattern URL_PATTERN   = Pattern.compile("https?://", Pattern.CASE_INSENSITIVE);
 
@@ -127,12 +127,9 @@ public class AccountProfileService {
             log.error("AGE_INELIGIBLE: revokeRefreshTokens failed for uid={}, aborting", uid, e);
             throw new AgeIneligibleAbortedException(uid, e);
         }
-        // Plan G review-fix: revoke alone leaves the Firebase Auth account
-        // enabled; the user can re-authenticate, get fresh tokens, and (if
-        // the soft-delete below fails) the FirebaseAuthFilter sees an ACTIVE
-        // user doc and lets them call updateProfile with an adult DOB —
-        // self-recovering from age-ineligibility. Disable the Firebase Auth
-        // record so the bypass closes even when the Firestore write fails.
+        // Revoke alone leaves the Auth account enabled — the user could
+        // re-authenticate after a failed soft-delete and self-recover via
+        // updateProfile. Disabling closes that bypass.
         try {
             firebaseAuth.updateUser(new com.google.firebase.auth.UserRecord.UpdateRequest(uid)
                     .setDisabled(true));
@@ -211,7 +208,7 @@ public class AccountProfileService {
     }
 
     /**
-     * Plan G B2 — partial profile update. Supports changing displayName and/or
+     * Partial profile update. Supports changing displayName and/or
      * dateOfBirth on an existing, completed profile.
      *
      * <p>Idempotency: if the resolved (trimmed) values are identical to what is
@@ -231,18 +228,16 @@ public class AccountProfileService {
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new UserNotFoundException(uid));
 
-        // Plan G cubic R2 P2: run validation BEFORE the no-op short-circuit
-        // so a future migration or admin tool that stored an under-13 or
-        // future DOB cannot be silently re-confirmed by a same-value PUT.
-        // Today no path persists such DOBs, but the gate is cheap.
+        // Validation runs BEFORE the no-op short-circuit — defence against
+        // a hypothetical migration that stored an under-13 / future DOB
+        // being silently re-confirmed by a same-value PUT.
         if (body.displayName() != null) {
             validateDisplayName(body.displayName());
         }
         if (body.dateOfBirth() != null) {
-            // Plan G review-fix: reject future DOB before age-gate. A future
-            // date produces a negative Period and would fall through to
-            // rejectUnderAge → token revoke + soft-delete on a valid user
-            // who fat-fingered the picker.
+            // Future DOB must be rejected BEFORE the age-gate; otherwise a
+            // negative Period falls through to rejectUnderAge → soft-delete
+            // a fat-fingered legitimate user.
             validateDateOfBirth(body.dateOfBirth());
             enforceAgeOrReject(uid, body.dateOfBirth());
         }
@@ -251,12 +246,8 @@ public class AccountProfileService {
             return AccountMeResponse.from(user);
         }
 
-        // Plan G review-fix (codex P1 lost-update): write through the
-        // field-level merge so two concurrent edits on disjoint fields
-        // don't clobber each other. {@code userRepository.save(user)} uses
-        // {@code .set(user)} which is a whole-document overwrite — under
-        // the read-modify-write window in this method, T1's name change and
-        // T2's DOB change race to last-writer-wins.
+        // Field-level merge — `save(user)` would whole-doc-overwrite,
+        // racing concurrent disjoint edits to last-writer-wins.
         Map<String, Object> updates = new LinkedHashMap<>();
         User updated = user.copy();
         if (body.displayName() != null) {
@@ -271,12 +262,8 @@ public class AccountProfileService {
             updated.setDateOfBirth(dobTs);
         }
         userRepository.updateFields(uid, updates);
-        // Plan G re-review-fix (reviewer Important #2): mirror the persisted
-        // updatedAt touch on the local projection. Firestore's serverTimestamp
-        // sentinel is expanded at the write site; this keeps the in-memory
-        // response object aligned with what we just wrote (within JVM-clock
-        // skew). Without this, future refactors that expose updatedAt on
-        // AccountMeResponse would silently return stale values.
+        // Mirror the persisted serverTimestamp on the local response
+        // projection. JVM-clock approximation; close enough for the DTO.
         updated.touch();
 
         auditLogService.logProfileEdit(uid, changedFields(user, updated));
@@ -305,14 +292,9 @@ public class AccountProfileService {
     }
 
     /**
-     * Returns a diff map of fields that changed between {@code before} and
-     * {@code after}. Both fields are recorded as the sentinel {@code "changed"}
-     * (no raw value) to avoid writing PII to the audit log; display names are
-     * identifying data and the audit log is retained indefinitely, so storing
-     * before/after pairs creates a permanent name-history record per user.
-     * (Plan G review-fix: pre-fix the displayName diff stored {from,to}
-     * plaintext; cso/codex flagged this and the nested-Map shape also
-     * bypassed AuditLog.sanitiseDetailValue's control-char stripper.)
+     * Diff with the sentinel {@code "changed"} (no raw value) on every
+     * field — the audit log is retained indefinitely and display names
+     * are PII (permanent name-history record per user otherwise).
      */
     private Map<String, Object> changedFields(User before, User after) {
         Map<String, Object> diff = new LinkedHashMap<>();
@@ -340,12 +322,8 @@ public class AccountProfileService {
         if (CONTROL_CHARS.matcher(trimmed).find()) {
             throw new ProfileValidationException("displayName", "control characters not allowed");
         }
-        // Plan G cubic R1 P2: reject zero-width / BOM / bidi-override
-        // characters that bypass the C0/C1 control-char filter but render
-        // identically to other users' display names or hijack RTL/LTR
-        // rendering. `\p{Cf}` (Unicode format-control class) covers
-        // U+200B–U+200D (ZWSP/ZWJ), U+FEFF (BOM), U+200E/F (LRM/RLM),
-        // U+202A–U+202E and U+2066–U+2069 (bidi-override).
+        // \p{Cf} catches zero-width chars and bidi overrides that bypass
+        // the C0/C1 control-char filter but render as homoglyphs.
         if (FORMAT_CONTROL_CHARS.matcher(trimmed).find()) {
             throw new ProfileValidationException("displayName",
                     "zero-width or bidi-override characters not allowed");
@@ -360,11 +338,8 @@ public class AccountProfileService {
             throw new ProfileValidationException("dateOfBirth", "must not be null");
         }
         if (dob.isAfter(LocalDate.now(clock))) {
-            // Plan G cubic R2 P1: was IllegalArgumentException (mapped to
-            // 400 with raw message). The Android client tagged the error
-            // as a `displayName` validation failure because it has no way
-            // to discriminate field. Throw a typed exception with field
-            // metadata so the client can route the message to the DOB row.
+            // Typed exception carries field metadata so the client routes
+            // the message to the DOB row, not the displayName input.
             throw new ProfileValidationException("dateOfBirth", "must not be in the future");
         }
     }

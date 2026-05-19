@@ -62,22 +62,12 @@ class ProfileViewModel @Inject constructor(
                 is ProfileUpdateResult.RateLimited ->
                     _uiState.value = state.copy(saving = false, error = ProfileError.RateLimited(r.retryAfterSec))
                 ProfileUpdateResult.AgeIneligible -> {
-                    // Plan G cubic R1 P1: previously this block wrote
-                    //   Editing(error=AgeIneligible) → signOut → SignedOut
-                    // in three synchronous statements. _uiState is a
-                    // conflated MutableStateFlow, so the collector only
-                    // observed the latest value (SignedOut) and
-                    // popBackStack ran before the AgeIneligible dialog
-                    // could render. Now we stop at the dialog-trigger
-                    // state and let the fragment call
-                    // confirmAgeIneligibleSignOut() when the user
-                    // dismisses the dialog.
+                    // Stop at the dialog-trigger state; the fragment calls
+                    // confirmAgeIneligibleSignOut() on OK. Emitting
+                    // SignedOut here would be conflated past Editing.
                     _uiState.value = state.copy(saving = false, error = ProfileError.AgeIneligible)
                 }
                 is ProfileUpdateResult.ValidationFailed ->
-                    // Plan G cubic R2 P1: route to the field the backend
-                    // actually rejected so a DOB error doesn't render on
-                    // the display-name row.
                     _uiState.value = state.copy(
                         saving = false,
                         error = ProfileError.Validation(r.field, r.message),
@@ -90,13 +80,8 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Plan G cubic R1 P1 — completes the AgeIneligible flow once the user
-     * has dismissed the modal dialog. Pre-fix the sign-out happened
-     * synchronously inside [save] and StateFlow conflation made the
-     * intermediate dialog-trigger state invisible to collectors, so the
-     * dialog was never displayed before the fragment popped.
-     */
+    /** Called from the AgeIneligible dialog's OK button; staged to avoid
+     *  StateFlow conflation skipping past the dialog-trigger state. */
     fun confirmAgeIneligibleSignOut() {
         accountRepository.signOut()
         _uiState.value = ProfileUiState.SignedOut

@@ -14,14 +14,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Plan G B5 — profile-update rate-limit gate.
- * Allows 10 PUT /api/account/profile calls per uid per hour.
- *
- * <p>Not annotated {@code @Component}: registered as a bean via
- * {@link com.albunyaan.tube.config.WebConfig} so {@code @WebMvcTest} slices
- * (which auto-load every {@link HandlerInterceptor} bean and would fail on
- * the {@link ProfileUpdateRateLimiter} dependency) don't pick it up by
- * accident. Mirrors the shape of {@link SubmissionRateLimitInterceptor}.
+ * Profile-update rate-limit gate — 10 PUT /api/account/profile per uid per hour.
+ * Not {@code @Component}: registered explicitly so {@code @WebMvcTest} slices
+ * don't auto-pick it up. Mirrors {@link SubmissionRateLimitInterceptor}.
  */
 public class ProfileUpdateRateLimitInterceptor implements HandlerInterceptor {
 
@@ -36,18 +31,12 @@ public class ProfileUpdateRateLimitInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest req, HttpServletResponse res, Object handler)
             throws Exception {
-        // Plan G review-fix (cso + codex MED): only PUT consumes the budget.
-        // {@code /api/account/profile} also serves POST (completeProfile) and
-        // an implicit OPTIONS preflight on cross-origin calls; without this
-        // gate a user who completes their profile and then hits a preflight
-        // burst would drain their hourly bucket without ever calling the
-        // intended PUT endpoint. Mirrors SubmissionRateLimitInterceptor:35.
+        // PUT-only gate — same path also serves POST (completeProfile) and
+        // OPTIONS preflights which would otherwise drain the bucket.
         if (!"PUT".equals(req.getMethod())) {
             return true;
         }
         var auth = SecurityContextHolder.getContext().getAuthentication();
-        // Exclude null, unauthenticated, and anonymous tokens — same guard as
-        // SubmissionRateLimitInterceptor (cubic R5 P2).
         if (auth == null
                 || !auth.isAuthenticated()
                 || auth instanceof AnonymousAuthenticationToken) {
@@ -58,10 +47,9 @@ public class ProfileUpdateRateLimitInterceptor implements HandlerInterceptor {
 
         var outcome = limiter.acquire(fud.getUid());
         if (outcome instanceof com.albunyaan.tube.service.ProfileUpdateRateLimiter.AcquireOutcome.Acquired acq) {
-            // Plan G cubic R6 P2: remember BOTH uid AND the specific slot
-            // Instant we acquired, so afterCompletion can refund that exact
-            // slot instead of the deque's tail (which may belong to a
-            // concurrent request from the same uid).
+            // Stash the exact slot Instant so afterCompletion can refund
+            // it precisely (not the deque tail, which may be another
+            // concurrent acquire from the same uid).
             req.setAttribute(ATTR_RATE_LIMITED_UID, fud.getUid());
             req.setAttribute(ATTR_RATE_LIMITED_SLOT, acq.slot());
             return true;
@@ -81,11 +69,8 @@ public class ProfileUpdateRateLimitInterceptor implements HandlerInterceptor {
     }
 
     /**
-     * Plan G cubic R5 P1 — refund the slot when the request ended in a
-     * non-2xx status. Keeps the abuse gate intact for true bot-style
-     * floods (which produce 2xx successes or 5xx server errors) while
-     * preventing legitimate users from being locked out by a streak of
-     * validation-error PUTs.
+     * Refund on 4xx client errors so a streak of validation failures
+     * doesn't lock out a legitimate user. 2xx/5xx still consume the slot.
      */
     @Override
     public void afterCompletion(HttpServletRequest req, HttpServletResponse res,
@@ -95,9 +80,6 @@ public class ProfileUpdateRateLimitInterceptor implements HandlerInterceptor {
         if (!(uidAttr instanceof String uid)) return;
         if (!(slotAttr instanceof java.time.Instant slot)) return;
         int status = res.getStatus();
-        // Refund on client errors (4xx). Keep the slot consumed on 2xx
-        // success AND 5xx server faults (5xx may indicate buggy retries
-        // we want to rate-limit).
         if (status >= 400 && status < 500) {
             limiter.release(uid, slot);
         }

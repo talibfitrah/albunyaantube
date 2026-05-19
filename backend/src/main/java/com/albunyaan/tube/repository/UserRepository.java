@@ -124,32 +124,12 @@ public class UserRepository {
     }
 
     /**
-     * Plan G review-fix (codex P1 lost-update) — field-level merge update.
-     *
-     * <p>{@link #save(User)} is a whole-document overwrite via {@code .set(user)}.
-     * Under the new {@code PUT /api/account/profile} flow, two concurrent edits
-     * (e.g. mobile + tablet) racing through the read-modify-write window in
-     * {@code AccountProfileService.updateProfile} could each load the same
-     * pre-edit snapshot and then overwrite each other — name-only edit and
-     * DOB-only edit would lose one field.
-     *
-     * <p>This method issues a Firestore {@code .update(fields)} which merges
-     * at the field level, so concurrent edits that touch disjoint fields are
-     * both preserved. Touches {@code updatedAt} with a server-side timestamp
-     * so the audit/read path sees a fresh value without an extra round-trip.
-     *
-     * <p>Cache key matches the existing {@link #save(User)} eviction so the
-     * {@code userStatus} cache (used by {@code FirebaseAuthFilter}) is
-     * invalidated identically.
-     *
-     * <p>Plan G re-review-fix (codex P2 round-2): caller-supplied keys are
-     * gated against a hard allowlist so a future caller cannot accidentally
-     * mass-assign sensitive fields ({@code role}, {@code status},
-     * {@code deletedAt}, etc.) through this method. The current caller
-     * ({@code AccountProfileService.updateProfile}) uses only the two
-     * profile-edit fields, but the API surface must be safe by design.
+     * Field-level merge update. {@link #save(User)} overwrites the whole
+     * document, which loses updates when concurrent edits touch disjoint
+     * fields. Allowlist-gated so callers can't mass-assign sensitive
+     * fields like {@code role} / {@code status}.
      */
-    public static final java.util.Set<String> ALLOWED_UPDATE_FIELDS =
+    private static final java.util.Set<String> ALLOWED_UPDATE_FIELDS =
             java.util.Set.of("displayName", "dateOfBirth");
 
     @CacheEvict(value = "userStatus", key = "#uid")
@@ -165,10 +145,9 @@ public class UserRepository {
             }
         }
         java.util.Map<String, Object> withTouch = new java.util.LinkedHashMap<>(fields);
-        // Plan G re-review-fix (reviewer Important #1): use Firestore server
-        // timestamp sentinel so concurrent writes from different nodes order
-        // by Firestore's clock, not each JVM's wall-clock. JVM clock skew on
-        // multi-instance deployments would otherwise mis-order audit cursors.
+        // Server-side timestamp orders writes by Firestore's clock — JVM
+        // wall-clock skew across instances would otherwise mis-order audit
+        // cursors.
         withTouch.put("updatedAt", com.google.cloud.firestore.FieldValue.serverTimestamp());
         ApiFuture<WriteResult> result = getCollection()
                 .document(uid)

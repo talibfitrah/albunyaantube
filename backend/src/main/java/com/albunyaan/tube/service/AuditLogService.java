@@ -202,20 +202,12 @@ public class AuditLogService {
     }
 
     /**
-     * Plan G B4 — logs a user-initiated profile edit.
-     *
-     * <p>{@code diff} contains changed-field entries; both displayName and
-     * dateOfBirth are recorded as the opaque sentinel {@code "changed"} (no
-     * raw value) to avoid persisting PII into the indefinitely-retained
-     * audit log.
-     *
-     * <p>Called synchronously from {@code AccountProfileService.updateProfile}
-     * so the audit row is guaranteed before the HTTP response returns —
-     * unlike the async admin-action paths above which use
-     * {@code @Async("auditExecutor")}. Failures are logged at ERROR but
-     * swallowed so a Firestore audit outage does not propagate to the user;
-     * monitor the {@code Failed to create profile-edit audit log} log line
-     * to alert on audit-store degradation.
+     * Logs a user-initiated profile edit. {@code diff} carries opaque
+     * "changed" sentinels — no raw PII into the audit row. Synchronous
+     * (no {@code @Async}) so the row commits before the HTTP response.
+     * Failures are logged at ERROR and swallowed so audit-store
+     * degradation doesn't break the user's edit; alert on the "Failed
+     * to create profile-edit audit log" line.
      */
     public void logProfileEdit(String actorUid, java.util.Map<String, Object> diff) {
         try {

@@ -110,12 +110,10 @@ class YouTubeGatewayTest {
             assertEquals(testUrl, decoded.getUrl());
         }
 
-        // ── Plan G review-fix (reviewer Important #1): SSRF rejection tests ──
-        //
-        // The pageToken decoder is the user-supplied URL surface that
-        // dispatches outbound HTTP via NewPipe. Without these tests a
-        // future maintainer could silently weaken the whitelist or denylist
-        // and the regression would land production.
+        // ── SSRF rejection tests for the pageToken decoder ──
+        // The decoder is the user-supplied URL surface that dispatches
+        // outbound HTTP via NewPipe — without these tests a maintainer
+        // could weaken the whitelist/denylist and ship the regression.
 
         @Test
         @DisplayName("Rejects pageToken with http scheme (only https allowed)")

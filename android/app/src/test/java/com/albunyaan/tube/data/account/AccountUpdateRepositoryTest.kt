@@ -126,8 +126,7 @@ class AccountUpdateRepositoryTest {
 
         assertTrue(result is ProfileUpdateResult.ValidationFailed)
         val v = result as ProfileUpdateResult.ValidationFailed
-        // Plan G cubic R2 P1: "<field>: <reason>" envelope parses out
-        // the field, reason becomes the user-facing message.
+        // "<field>: <reason>" wire envelope — split into typed fields.
         assertEquals("displayName", v.field)
         assertEquals("exceeds max length", v.message)
     }

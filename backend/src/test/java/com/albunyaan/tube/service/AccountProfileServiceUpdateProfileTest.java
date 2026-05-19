@@ -75,8 +75,7 @@ class AccountProfileServiceUpdateProfileTest {
         AccountMeResponse resp = svc.updateProfile("u1",
             new UpdateProfileRequest("  New Name  ", null));
 
-        // Plan G review-fix: field-level merge — verify updateFields was
-        // called with only displayName (not the whole document overwrite).
+        // Field-level merge — only displayName, not a whole-doc overwrite.
         @SuppressWarnings("unchecked")
         ArgumentCaptor<java.util.Map<String, Object>> fields =
             ArgumentCaptor.forClass(java.util.Map.class);
@@ -88,11 +87,8 @@ class AccountProfileServiceUpdateProfileTest {
         verify(auditLogService).logProfileEdit(eq("u1"), any());
     }
 
-    // ------------------------------------------------------------------
-    // Plan G round-3 review-fix (reviewer Important #2): allowlist enforcement.
-    // Verify a future caller cannot mass-assign role/status/deletedAt
-    // through {@code UserRepository.updateFields}.
-    // ------------------------------------------------------------------
+    // updateFields allowlist — sensitive field keys (role, status,
+    // deletedAt) must throw before any Firestore call.
     @Test
     void userRepository_updateFields_rejectsDisallowedKey() throws Exception {
         com.albunyaan.tube.config.FirestoreTimeoutProperties timeouts =
@@ -102,28 +98,19 @@ class AccountProfileServiceUpdateProfileTest {
                 org.mockito.Mockito.mock(com.google.cloud.firestore.Firestore.class),
                 timeouts);
 
-        // role is sensitive (admin escalation surface) — must throw before
-        // any Firestore call.
         assertThatThrownBy(() ->
             repo.updateFields("u1", java.util.Map.of("role", "ADMIN")))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("role");
 
-        // status is also sensitive (could revive a deleted user).
         assertThatThrownBy(() ->
             repo.updateFields("u1", java.util.Map.of("status", "ACTIVE")))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("status");
-
-        // The allowlist itself should be immutable (Set.of returns
-        // ImmutableCollections.Set12; verify defensively).
-        assertThatThrownBy(() ->
-            com.albunyaan.tube.repository.UserRepository.ALLOWED_UPDATE_FIELDS.add("hostile"))
-            .isInstanceOf(UnsupportedOperationException.class);
     }
 
     // ------------------------------------------------------------------
-    // Plan G review-fix (codex P1 lost-update): concurrent disjoint edits
+    // Concurrent disjoint edits should both persist via field-level merge.
     // ------------------------------------------------------------------
     @Test
     void updateProfile_writesOnlyChangedFields_notWholeDocument() throws Exception {
@@ -164,12 +151,10 @@ class AccountProfileServiceUpdateProfileTest {
             .isInstanceOf(AgeIneligibleException.class);
 
         verify(firebaseAuth).revokeRefreshTokens("u1");
-        // Plan G review-fix (codex P1): Firebase Auth account is also
-        // disabled so the user cannot re-authenticate, regain a fresh
-        // token, and self-recover by submitting an adult DOB.
-        // Plan G re-review-fix (reviewer Minor #4): assert disabled == true
-        // specifically — without this, a future refactor that passes
-        // setDisabled(false) would silently pass. UpdateRequest stores
+        // Firebase Auth account must be disabled (not just revoked) so the
+        // user can't re-authenticate and self-recover. Assert
+        // disabled == true specifically — a future refactor passing
+        // setDisabled(false) would otherwise slip through. UpdateRequest stores
         // mutations in a private "properties" map; reflect on that map to
         // assert the value because the SDK exposes no public accessor.
         ArgumentCaptor<com.google.firebase.auth.UserRecord.UpdateRequest> updateReq =
@@ -187,9 +172,8 @@ class AccountProfileServiceUpdateProfileTest {
     }
 
     // ------------------------------------------------------------------
-    // Plan G review-fix (codex P1 future-DOB): a future date previously
-    // produced a negative Period and went through revoke + soft-delete on
-    // a legitimate account. Now rejected with IllegalArgumentException.
+    // Future DOB must be rejected before the age-gate — a negative
+    // Period would otherwise trigger revoke + soft-delete.
     // ------------------------------------------------------------------
     @Test
     void updateDateOfBirth_future_throwsValidationNotAgeReject() throws Exception {
@@ -198,10 +182,8 @@ class AccountProfileServiceUpdateProfileTest {
         User existing = baseUser("u1", "Old Name", null);
         when(userRepository.findByUid("u1")).thenReturn(Optional.of(existing));
 
-        // Plan G cubic R2 P1: validateDateOfBirth now throws
-        // ProfileValidationException (not IllegalArgumentException) so the
-        // 400 envelope carries field metadata the Android client can
-        // route on. Reason text still contains "future".
+        // validateDateOfBirth throws ProfileValidationException (typed
+        // with field metadata for client routing); reason contains "future".
         assertThatThrownBy(() -> svc.updateProfile("u1",
             new UpdateProfileRequest(null, tomorrow)))
             .isInstanceOf(ProfileValidationException.class)

@@ -12,14 +12,7 @@ sealed class ProfileUpdateResult {
     data class Success(val response: AccountMeResponseDto) : ProfileUpdateResult()
     data class RateLimited(val retryAfterSec: Long) : ProfileUpdateResult()
     object AgeIneligible : ProfileUpdateResult()
-    /**
-     * Plan G cubic R2 P1: carries the rejected field so the UI can route
-     * the error to the right input row. Backend
-     * ProfileValidationException maps the field via the
-     * `"<field>: <reason>"` message envelope. If the backend returns a
-     * generic 400 with no field prefix, [field] defaults to "displayName"
-     * for backward-compat with the v1 UI behavior.
-     */
+    /** [field] lets the UI route the error to the right input row. */
     data class ValidationFailed(val field: String, val message: String) : ProfileUpdateResult()
     object NetworkError : ProfileUpdateResult()
     data class Unknown(val code: Int) : ProfileUpdateResult()
@@ -51,16 +44,10 @@ class AccountUpdateRepository @Inject constructor(
     } catch (e: IOException) {
         ProfileUpdateResult.NetworkError
     } catch (e: kotlinx.coroutines.CancellationException) {
-        // Plan G cubic R3 P2: never swallow cancellation — let the
-        // coroutine's structured-concurrency contract propagate so the
-        // ViewModel/Fragment lifecycle correctly tears down the launch.
-        throw e
+        throw e  // structured concurrency — never swallow.
     } catch (e: Exception) {
-        // Plan G cubic R1 P1: catch JsonDataException, JsonEncodingException
-        // and any other Retrofit/Moshi failure that fires during success-body
-        // deserialization. Without this clause those propagate out of the
-        // suspend function, get lost to the default uncaught-exception
-        // handler, and leave the UI stuck on the "saving" spinner.
+        // JsonDataException / HttpException etc. during body parsing —
+        // map to Unknown so the UI doesn't stick on "saving".
         ProfileUpdateResult.Unknown(0)
     }
 
@@ -81,11 +68,6 @@ class AccountUpdateRepository @Inject constructor(
             ProfileUpdateResult.AgeIneligible
         } else {
             val rawMessage = map?.get("message")?.toString() ?: "Validation failed"
-            // Plan G cubic R2 P1: backend ProfileValidationException's HTTP
-            // envelope is `"message": "<field>: <reason>"`. Split into
-            // (field, reason) so the UI renders DOB errors on the DOB row,
-            // not under display name. Falls back to ("displayName", raw)
-            // if the prefix isn't present (older backend, generic 400).
             val (field, reason) = splitFieldMessage(rawMessage)
             ProfileUpdateResult.ValidationFailed(field, reason)
         }

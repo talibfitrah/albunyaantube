@@ -538,22 +538,16 @@ public class YouTubeGateway {
     /**
      * Decode string token to NewPipe Page object.
      *
-     * <p>Plan G review-fix (codex P1 SSRF): {@link NewPipeSearchClient} feeds
-     * this token straight into {@code extractor.getPage(decoded)} which
-     * dispatches an HTTP GET to {@code page.getUrl()}. Without validation a
-     * moderator-supplied {@code pageToken} could point at any URL — an
-     * internal admin endpoint, an attacker-controlled host, etc. Restrict
-     * to URL-shaped tokens hosted on YouTube; reject anything else as a
-     * null page (caller treats null as "first page", which is the safest
-     * default for an unverifiable token).
-     *
-     * <p>Plan G re-review-fix (codex P1 round-2): host whitelist alone is not
-     * enough — {@code http(s)://www.youtube.com/redirect?q=http://internal/}
-     * is on YouTube but is an external-redirect helper. NewPipe's downloader
-     * uses OkHttp which follows 302s by default, so a moderator with
-     * credentials could SSRF arbitrary URLs through that endpoint. Require
-     * HTTPS (drops the http:// open-redirect surface), and deny known
-     * redirect paths under the YouTube hosts.
+     * <p>The token feeds into {@code extractor.getPage(decoded)} which
+     * dispatches an HTTP GET via NewPipe's OkHttp client. Without
+     * validation a moderator-supplied token could point at any URL —
+     * internal endpoints, attacker hosts, or YouTube redirect helpers
+     * that 302 to the {@code q=} param (NewPipe follows redirects).
+     * Restrict to HTTPS YouTube hosts and deny the known open-redirect
+     * paths. Unverifiable tokens return null (caller treats as first
+     * page). Architectural fix — HMAC-signed tokens or an OkHttp
+     * network interceptor — is tracked in the plan-doc Review
+     * follow-ups (F1a).
      */
     public Page decodePageToken(String token) {
         if (token == null || token.isEmpty()) {
@@ -568,19 +562,15 @@ public class YouTubeGateway {
                 logger.warn("Rejected pageToken with no scheme or host");
                 return null;
             }
-            // Require HTTPS — drops the http:// open-redirect surface and is
-            // the only scheme YouTube pagination URLs use in practice.
+            // HTTPS only — drops http:// open-redirect surface.
             if (!"https".equalsIgnoreCase(scheme)) {
                 logger.warn("Rejected pageToken with non-https scheme: {}", scheme);
                 return null;
             }
+            // NewPipe pagination URLs are always on youtube.com hosts
+            // (InnerTube API + HTML pages); CDN hosts like googlevideo.com
+            // never produce a Page token.
             String hostLower = host.toLowerCase(java.util.Locale.ROOT);
-            // Plan G round-3 review-fix (codex P2): drop `googlevideo.com` from
-            // the allowlist. NewPipe search/channel/playlist pagination URLs
-            // are always on youtube.com hosts (InnerTube API + HTML pages).
-            // googlevideo.com serves CDN media (streams/thumbnails) and never
-            // shows up as a pagination URL — keeping it in the allowlist
-            // expands the attack surface without operational benefit.
             boolean allowed = hostLower.equals("youtube.com")
                     || hostLower.endsWith(".youtube.com")
                     || hostLower.equals("youtu.be");
@@ -588,17 +578,10 @@ public class YouTubeGateway {
                 logger.warn("Rejected pageToken with non-YouTube host: {}", hostLower);
                 return null;
             }
-            // Plan G round-3 review-fix (codex P1 + reviewer minor): exact-path
-            // denials, not substring `contains()`. This avoids false-positives
-            // on legitimate paths that happen to share a substring with a
-            // redirect helper, AND tightens against the codex-discovered
-            // chain bypass: `https://www.youtube.com/attribution_link?u=...`
-            // → YouTube emits a 303 to `/redirect?q=...`, which OkHttp's
-            // `.followRedirects(true)` (NewPipeConfiguration.java:76) follows
-            // straight to attacker URLs. The proper fix is at the HTTP-client
-            // layer (HMAC-signed tokens or per-request URL validation in an
-            // OkHttp interceptor) — see plan doc Review follow-ups. For now,
-            // explicitly deny the known chain entry points.
+            // Deny YouTube's open-redirect entry points. Exact-path match
+            // (not substring) so legitimate paths sharing these substrings
+            // don't false-positive. Chain bypass is still possible if a
+            // future YouTube path 302s to one of these (see F1a follow-up).
             String pathLower = path == null ? "" : path.toLowerCase(java.util.Locale.ROOT);
             boolean redirectHelper = pathLower.equals("/redirect")
                     || pathLower.startsWith("/redirect/")

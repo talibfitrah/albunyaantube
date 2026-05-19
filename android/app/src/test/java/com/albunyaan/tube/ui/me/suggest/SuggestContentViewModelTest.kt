@@ -295,7 +295,7 @@ class SuggestContentViewModelTest {
         assertTrue(vm.uiState.value is SuggestUiState.Idle)
     }
 
-    // ── Plan G review-fix: loadMore must use the originating query, not query.value ──
+    // ── loadMore must pair the page token with its originating query ──
 
     @Test fun `loadMore uses captured Results query not latest typed value`() = runTest(dispatcher) {
         val repo: YouTubeSearchRepository = mock()

@@ -226,15 +226,9 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Plan G cubic R1 P1 — handle Bean Validation parameter-constraint
-     * violations on {@code @Validated} controllers. {@code @NotBlank} /
-     * {@code @Size} on a {@code @RequestParam} (e.g.
-     * {@link com.albunyaan.tube.controller.YouTubeSearchController#search})
-     * raises {@code ConstraintViolationException} which used to fall through
-     * to the catch-all 500 handler, masking the real cause as
-     * "An unexpected error occurred". Map to a clean 400 with the
-     * violated-field message so moderators see actionable validation errors
-     * and ops dashboards don't drown in synthetic 500s.
+     * Bean Validation parameter-constraint violations from {@code @Validated}
+     * controllers ({@code @NotBlank}/{@code @Size} on a {@code @RequestParam}).
+     * Without this handler the exception falls through to the catch-all 500.
      */
     @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
     public ResponseEntity<Object> handleConstraintViolation(
@@ -255,16 +249,9 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Plan G review-fix — handle {@link com.albunyaan.tube.service.YouTubeSearchException}.
-     *
-     * <p>Pre-fix every NewPipe extraction failure (circuit breaker open,
-     * ContentNotAvailable, Private, AgeRestricted, Geographic, ReCaptcha,
-     * IOException, ExtractionException) was wrapped into a YouTubeSearchException
-     * and fell through to the generic 500 handler, producing the body
-     * {@code "An unexpected error occurred"}. That conflated upstream NewPipe
-     * outages with backend bugs in operator dashboards and obscured the
-     * 5xx-vs-5xx distinction for clients. Map to 502 Bad Gateway (consistent
-     * with {@link StreamExtractionException}) so ops can route on it.
+     * Maps NewPipe extraction failures to 502 (consistent with
+     * {@link StreamExtractionException}) instead of leaking them as 500s
+     * with the generic "unexpected error" body.
      */
     @ExceptionHandler(com.albunyaan.tube.service.YouTubeSearchException.class)
     public ResponseEntity<Object> handleYouTubeSearchException(

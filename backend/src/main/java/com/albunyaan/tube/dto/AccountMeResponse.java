@@ -8,16 +8,9 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 
 /**
- * Plan C T3: public response for GET /api/account/me and POST /api/account/profile.
- * Exposes only user-safe fields — no admin metadata (blockedBy, deletedBy, etc).
- *
- * <p>Plan G cubic R3 P1: now exposes {@code dateOfBirth} as an ISO-8601
- * {@code YYYY-MM-DD} string. Pre-fix the Plan G profile-edit UI could not
- * pre-populate the existing DOB because the field was never serialized,
- * so the user saw an empty placeholder and could not tell what their
- * stored DOB was. The matching Android {@code AccountMeResponseDto} and
- * {@code AccountState.Loaded.dateOfBirth} fields were added in Plan G A2
- * but never wired here.
+ * Public response for GET /api/account/me and POST /api/account/profile.
+ * User-safe fields only — no admin metadata (blockedBy, deletedBy, etc).
+ * {@code dateOfBirth} serializes as ISO-8601 {@code YYYY-MM-DD}.
  */
 public class AccountMeResponse {
 

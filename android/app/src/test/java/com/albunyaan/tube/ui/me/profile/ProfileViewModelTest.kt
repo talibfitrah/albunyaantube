@@ -190,12 +190,10 @@ class ProfileViewModelTest {
     // ── P5: save — AgeIneligible → dialog-trigger state, signOut deferred ─
 
     @Test fun `save AgeIneligible stops at Editing+error and does NOT sign out yet`() = runTest(dispatcher) {
-        // Plan G cubic R1 P1 fix: pre-fix the VM wrote signOut + SignedOut
-        // synchronously after AgeIneligible, and StateFlow conflation
-        // skipped the dialog-trigger state. Now save() must stop at
-        // Editing(error=AgeIneligible) so the fragment's dialog actually
-        // renders. The fragment calls confirmAgeIneligibleSignOut() on
-        // OK to complete the flow.
+        // save() must stop at Editing(error=AgeIneligible) so the dialog
+        // renders before sign-out — StateFlow conflation would otherwise
+        // skip past it to SignedOut. Fragment calls
+        // confirmAgeIneligibleSignOut on OK to finish the flow.
         val accountRepo = makeAccountRepo()
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.AgeIneligible)

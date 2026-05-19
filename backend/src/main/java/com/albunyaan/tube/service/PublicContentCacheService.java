@@ -26,7 +26,7 @@ public class PublicContentCacheService {
      * - category-tree: category listings (public + admin)
      * - newpipe-search-results: moderator YouTube-search responses (the
      *   {@code alreadyKnown} annotation is baked into the cached value, so
-     *   any registry mutation can leave it stale — Plan G review-fix).
+     *   any registry mutation can leave it stale).
      */
     @CacheEvict(value = {
             CacheConfig.CACHE_PUBLIC_CONTENT,

@@ -39,15 +39,9 @@ class YouTubeSearchRepository @Inject constructor(
     } catch (e: IOException) {
         SearchResult.NetworkError
     } catch (e: kotlinx.coroutines.CancellationException) {
-        // Plan G cubic R3 P2: re-throw cancellation so flatMapLatest's
-        // restart-on-new-emission contract isn't broken. Without this,
-        // a cancelled search would be silently converted to Unknown(0)
-        // and the in-flight repo.search would run to completion.
-        throw e
+        throw e  // structured concurrency — flatMapLatest depends on this.
     } catch (e: Exception) {
-        // Plan G cubic R1 P1: catch JsonDataException, HttpException and
-        // any other Retrofit/Moshi failure during body deserialization so a
-        // malformed response body doesn't crash the calling coroutine.
+        // JsonDataException / HttpException etc. during body parsing.
         SearchResult.Unknown(0)
     }
 }

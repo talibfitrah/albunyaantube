@@ -49,11 +49,6 @@ class SuggestContentFragment : Fragment(R.layout.fragment_suggest_content) {
 
         binding.results.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                // Plan G cubic R1 P2: safe-cast — a future layout-variant
-                // swap to StaggeredGridLayoutManager would otherwise CCE
-                // here. LinearLayoutManager covers both LinearLayout and
-                // GridLayoutManager (GLM extends LLM) which is what the
-                // current sw600dp/sw720dp variants use.
                 val lm = rv.layoutManager as? LinearLayoutManager ?: return
                 if (dy > 0 && lm.findLastVisibleItemPosition() >= lm.itemCount - 10) {
                     vm.loadMore()

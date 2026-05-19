@@ -33,13 +33,8 @@ class SuggestContentViewModel @Inject constructor(
     val uiState: StateFlow<SuggestUiState> = _uiState.asStateFlow()
 
     init {
-        // Plan G review-fix (codex P2 + reviewer Important #2):
         // flatMapLatest cancels the in-flight repo.search when a new
-        // (query, type) pair arrives. The old `combine.collect { repo.search() }`
-        // pattern serialised emissions — a slow first search could write its
-        // results to _uiState AFTER the user had moved on, producing visible
-        // stale-then-fresh flicker. flatMapLatest gives us the cancel-and-
-        // restart behaviour the handoff claimed but the code did not have.
+        // (query, type) pair arrives, avoiding stale-then-fresh flicker.
         viewModelScope.launch {
             combine(query.debounce(300L).distinctUntilChanged(), type) { q, t -> q to t }
                 .flatMapLatest { (q, t) ->
@@ -83,18 +78,11 @@ class SuggestContentViewModel @Inject constructor(
         if (current.loadingMore || current.nextPageToken == null) return
         _uiState.value = current.copy(loadingMore = true)
         viewModelScope.launch {
-            // Plan G review-fix (reviewer Important #1): pair the page token
-            // with the query that *issued* it, not the latest typed text.
-            // Mid-paginate type-ahead would otherwise send q="islam" with a
-            // pageToken bound to q="isl" and the backend returns corrupted
-            // page-2 results (token is server-opaque, tied to its query).
+            // Pair the token with its originating query, not the latest
+            // typed text — server treats pageToken as opaque-but-bound.
             val r = repo.search(current.query, current.type, current.nextPageToken)
-            // Plan G re-review-fix (codex P2 round-2): after the suspend,
-            // flatMapLatest may have already emitted a new Results for a
-            // different query (user typed past page-1). Without this guard
-            // an older loadMore response can overwrite the newer search
-            // result and restore the stale list. Apply only if we're still
-            // on the same generation (query+type+token).
+            // After the suspend, flatMapLatest may have moved on to a new
+            // generation. Only apply if we're still on the same one.
             val latest = _uiState.value as? SuggestUiState.Results ?: return@launch
             if (latest.query != current.query
                     || latest.type != current.type

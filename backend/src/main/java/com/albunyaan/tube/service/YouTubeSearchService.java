@@ -66,13 +66,9 @@ public class YouTubeSearchService {
      */
     @Cacheable(
             value = CacheConfig.CACHE_NEWPIPE_SEARCH_RESULTS,
-            // Plan G cubic R2 P2: separator-collision-safe key. The
-            // previous `:` separator was ambiguous because both `q`
-            // (user-supplied string) and `pageToken` (URL) can contain
-            // colons — `(q="cats:CHANNEL", type=VIDEO, token="")` collides
-            // with `(q="cats", type=CHANNEL, token="VIDEO:")`. Use the
-            // ASCII Unit Separator (U+001F) which cannot appear in
-            // legitimate queries or URLs.
+            // U+001F (ASCII Unit Separator) cannot appear in legitimate
+            // queries or page-token URLs, so it's collision-safe; `:` was
+            // ambiguous because both `q` and `pageToken` may contain them.
             key = "#q + T(java.lang.Character).toString(31) + #type.name() + T(java.lang.Character).toString(31) + (#pageToken ?: '')",
             unless = "#result == null"
     )
@@ -97,10 +93,8 @@ public class YouTubeSearchService {
             return new YouTubeSearchResponse(hits, raw.nextPageToken());
 
         } catch (InterruptedException e) {
-            // Plan G cubic R4 P2: restore the thread's interrupt flag so the
-            // calling thread's cooperative-cancellation contract isn't
-            // silently lost. The exception is still surfaced as a 502 via
-            // YouTubeSearchException for the moderator client.
+            // Preserve the thread's interrupt flag for cooperative
+            // cancellation; surface to the client as 502.
             Thread.currentThread().interrupt();
             logger.warn("YouTubeSearchService.search interrupted [q={}, type={}]: {}",
                     q, type, e.getMessage());

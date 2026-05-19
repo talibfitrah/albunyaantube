@@ -100,10 +100,8 @@ public class SecurityConfig {
                         // Moderator and Admin endpoints
                         .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "MODERATOR")
 
-                        // Plan G cubic R1 P2: enumerate the new profile-edit
-                        // endpoint explicitly so a future wildcard `.permitAll()`
-                        // re-order can't silently expose it through the
-                        // `anyRequest()` fallback below.
+                        // Enumerated explicitly so a future wildcard re-order
+                        // can't expose it through the anyRequest() fallback.
                         .requestMatchers(HttpMethod.PUT, "/api/account/profile").authenticated()
 
                         // All other requests require authentication

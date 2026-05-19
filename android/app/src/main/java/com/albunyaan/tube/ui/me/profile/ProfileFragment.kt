@@ -72,12 +72,8 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                 binding.saveButton.isEnabled = state.isDirty && !state.saving
                 binding.savingSpinner.visibility =
                     if (state.saving) View.VISIBLE else View.GONE
-                // Plan G review-fix (reviewer Important #4): clear any
-                // lingering inline validation error when the VM clears it
-                // (e.g. user typed after a failed Save). showError() sets
-                // displayNameLayout.error on Validation errors but never
-                // resets it when error becomes null on the next state, so
-                // the red label persists until the fragment is recreated.
+                // Clear the inline error when the VM drops it — showError
+                // only sets the label, never resets it.
                 if (state.error == null) {
                     binding.displayNameLayout.error = null
                 }
@@ -105,23 +101,12 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
             }
             ProfileError.AgeIneligible -> showAgeDialog()
             is ProfileError.Validation -> {
-                // Plan G cubic R5 P1: route validation errors to the right
-                // surface based on the field the backend rejected. Pre-fix
-                // every validation message landed on displayNameLayout
-                // regardless of `field`, so DOB errors rendered as a red
-                // label under the name input. displayName errors stay
-                // inline (the input has a TextInputLayout); DOB errors go
-                // through a Snackbar because the dobRow is a plain
-                // TextView with no error slot.
-                when (error.field) {
-                    "displayName" ->
-                        binding.displayNameLayout.error = error.message
-                    "dateOfBirth" -> Snackbar.make(
-                        binding.root, error.message, Snackbar.LENGTH_LONG,
-                    ).show()
-                    else -> Snackbar.make(
-                        binding.root, error.message, Snackbar.LENGTH_LONG,
-                    ).show()
+                // displayName has a TextInputLayout error slot; DOB row is a
+                // plain TextView so its error surfaces via Snackbar.
+                if (error.field == "displayName") {
+                    binding.displayNameLayout.error = error.message
+                } else {
+                    Snackbar.make(binding.root, error.message, Snackbar.LENGTH_LONG).show()
                 }
             }
             ProfileError.Unknown ->
@@ -130,10 +115,8 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
     }
 
     private fun showAgeDialog() {
-        // Plan G cubic R1 P1: sign-out and the SignedOut emission run
-        // ONLY after the user dismisses this dialog. Pre-fix the VM
-        // wrote SignedOut immediately, conflating the Editing+error
-        // state away so this dialog never rendered before popBackStack.
+        // Sign-out is deferred to OK so StateFlow conflation doesn't skip
+        // past Editing(error=AgeIneligible) to SignedOut before render.
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.profile_error_age_dialog_title)
             .setMessage(R.string.profile_error_age_dialog_message)
@@ -148,24 +131,11 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
         Snackbar.make(binding.root, resId, Snackbar.LENGTH_SHORT).show()
 
     private fun showDobPicker() {
-        // Plan G review-fix (codex P1): cap picker at today so a future date
-        // never reaches the backend. The age-gate treats negative ages as
-        // under-13 and would soft-delete a legitimate account that
-        // fat-fingered the picker. Backend also validates as defence-in-depth.
-        //
-        // Plan G re-review-fix (reviewer Important #3): do NOT setSelection
-        // to a default — without an explicit user pick the OK button stays
-        // disabled, removing the one-tap path back to under-13 (today's date
-        // implies age 0 → rejectUnderAge → soft-delete + Firebase disable on
-        // a legitimate account). The user MUST pick a date before submission.
-        //
-        // Plan G cubic R2 P2: cap the picker upper bound at (today − 13y),
-        // not today. Pre-fix a fat-finger on a recent year (e.g. tapping
-        // 2020 instead of 1990) or a child borrowing a parent's phone
-        // could submit an under-13 DOB and trigger the destructive
-        // rejectUnderAge cascade on a previously-active adult account.
-        // Editing is for users who already passed the signup age-gate, so
-        // every pickable date here should already be ≥ 13 years ago.
+        // Cap upper bound at (today − 13y) so every pickable date is in the
+        // adult range. Editing is for users who already passed the signup
+        // age-gate, so any under-13 selection here would imply a client
+        // bypass — backend validates again as defence-in-depth. No default
+        // selection: OK stays disabled until the user picks.
         val adultCutoffMs = LocalDate.now(ZoneOffset.UTC)
             .minusYears(13)
             .atStartOfDay(ZoneOffset.UTC)
