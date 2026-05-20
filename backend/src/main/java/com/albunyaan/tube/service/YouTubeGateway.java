@@ -270,11 +270,15 @@ public class YouTubeGateway {
     }
 
     /**
-     * Fetch the initial page for a search extractor with throttling and circuit breaker protection.
-     * This should be used instead of calling extractor.fetchPage() directly.
+     * Fetch the initial page for a search extractor.
+     *
+     * Intentionally does NOT check the validation circuit breaker — that breaker
+     * governs background batch jobs (channel/video/playlist validation). Blocking
+     * interactive moderator search because a nightly validation run hit a rate limit
+     * is a poor trade-off. Rate-limit errors from search still get recorded via
+     * recordError() so the breaker state stays accurate for validation jobs.
      */
     public void fetchSearchPage(SearchExtractor extractor) throws IOException, ExtractionException {
-        checkCircuitBreaker();
         applyThrottling();
 
         try {
@@ -287,12 +291,13 @@ public class YouTubeGateway {
     }
 
     /**
-     * Get a specific page from a search extractor with throttling and circuit breaker protection.
-     * This should be used instead of calling extractor.getPage() directly for pagination.
+     * Get a specific page from a search extractor (pagination).
+     *
+     * Same reasoning as {@link #fetchSearchPage}: no circuit-breaker check for
+     * interactive search. Rate-limit errors are still recorded.
      */
     public ListExtractor.InfoItemsPage<InfoItem> getSearchPage(SearchExtractor extractor, Page page)
             throws IOException, ExtractionException {
-        checkCircuitBreaker();
         applyThrottling();
 
         try {

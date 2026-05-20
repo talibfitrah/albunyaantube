@@ -13,6 +13,7 @@ import com.albunyaan.tube.repository.VideoRepository;
 import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.Image;
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem;
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.slf4j.Logger;
@@ -99,6 +100,13 @@ public class YouTubeSearchService {
             logger.warn("YouTubeSearchService.search interrupted [q={}, type={}]: {}",
                     q, type, e.getMessage());
             throw new YouTubeSearchException("Search interrupted", e);
+        } catch (ReCaptchaException e) {
+            // YouTube is actively rate-limiting this IP. Surface as 429 so
+            // the Android client shows a "try again later" message instead
+            // of a generic 502.
+            logger.warn("YouTubeSearchService.search rate-limited [q={}, type={}]: {}",
+                    q, type, e.getMessage());
+            throw new YouTubeSearchRateLimitedException(60L, e);
         } catch (Exception e) {
             logger.warn("YouTubeSearchService.search failed [q={}, type={}, page={}]: {}",
                     q, type, pageToken, e.getMessage());

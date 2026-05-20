@@ -269,6 +269,28 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Maps YouTube rate-limit errors from moderator search to 429 so the Android
+     * client can show a "try again later" message (SearchResult.RateLimited) instead
+     * of a generic 502. Must be registered before the generic Exception handler.
+     */
+    @ExceptionHandler(com.albunyaan.tube.service.YouTubeSearchRateLimitedException.class)
+    public ResponseEntity<Object> handleYouTubeSearchRateLimited(
+            com.albunyaan.tube.service.YouTubeSearchRateLimitedException ex, WebRequest request) {
+        logger.warn("YouTube search rate-limited: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.TOO_MANY_REQUESTS.value());
+        body.put("error", "Too Many Requests");
+        body.put("message", "YouTube search is temporarily rate-limited. Please try again shortly.");
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSec()))
+                .body(body);
+    }
+
+    /**
      * Handle all other exceptions (500)
      */
     @ExceptionHandler(Exception.class)
