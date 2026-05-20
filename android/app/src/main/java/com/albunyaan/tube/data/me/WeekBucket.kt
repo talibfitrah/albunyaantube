@@ -85,6 +85,21 @@ data class WeekBucket(
             1 -> R.string.me_week_last
             else -> R.string.me_week_n_ago
         }
+
+        /**
+         * Returns the ISO week index of [uploadedAt] relative to [now].
+         * Uses the same Monday-boundary logic as [forIndex] so callers that
+         * classify an item's week and callers that query by week index are
+         * always consistent.
+         */
+        fun weekIndexOf(uploadedAt: Long, now: Long): Int {
+            val zone = ZoneId.systemDefault()
+            val uploadedDate = Instant.ofEpochMilli(uploadedAt).atZone(zone).toLocalDate()
+            val nowDate = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+            val thisMonday = nowDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            val uploadedMonday = uploadedDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            return ((thisMonday.toEpochDay() - uploadedMonday.toEpochDay()) / 7L).toInt()
+        }
     }
 }
 

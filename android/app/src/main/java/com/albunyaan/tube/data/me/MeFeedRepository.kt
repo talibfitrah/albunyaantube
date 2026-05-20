@@ -35,10 +35,6 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
-import java.time.DayOfWeek
-import java.time.Instant
-import java.time.ZoneId
-import java.time.temporal.TemporalAdjusters
 
 /**
  * Orchestrates per-channel feed fetches for subscribed channels.
@@ -385,19 +381,9 @@ class MeFeedRepository @Inject constructor(
         // The most recent uploadedAt determines the EARLIEST non-empty bucket.
         val newest = rows.maxOfOrNull { it.uploadedAt ?: 0L } ?: return@withContext null
         if (newest <= 0L) return@withContext null
-        // Use ISO week boundaries to match WeekBucket.forIndex. Rolling 7-day
-        // arithmetic (ageMs / WEEK_MS) diverges from ISO weeks: a video from
-        // last Thursday is < 7 days old (rolling → week 0) but falls in the
-        // previous ISO week (ISO → week 1). observeWeek uses WeekBucket.forIndex,
-        // so returning the wrong index here means observeWeek(hit).first()
-        // returns null and loadedWeekIndices never grows → blank Me feed.
-        val zone = ZoneId.systemDefault()
-        val newestDate = Instant.ofEpochMilli(newest).atZone(zone).toLocalDate()
-        val nowDate = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-        val thisMonday = nowDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-        val newestMonday = newestDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-        val weeksBack = ((thisMonday.toEpochDay() - newestMonday.toEpochDay()) / 7L).toInt()
-        weeksBack.coerceIn(fromIndex, maxIndex)
+        // Must use ISO week arithmetic (via WeekBucket) — rolling 7-day division
+        // diverges from ISO Monday boundaries for items late in the previous week.
+        WeekBucket.weekIndexOf(newest, now).coerceIn(fromIndex, maxIndex)
     }
 
     /**

@@ -1218,34 +1218,22 @@ class MeFeedRepositoryTest {
 
     @Test
     fun `findNextNonEmptyWeekIndex uses ISO week boundaries not rolling 7-day window`() = runTest {
-        // Regression test: a video published late in the PREVIOUS ISO week (e.g.
-        // Friday) is < 7 days old when the clock is early in THIS ISO week (e.g.
-        // Wednesday). The old rolling-arithmetic code (ageMs / WEEK_MS) classified
-        // it as week 0; observeWeek(0) then returned null (the video is not in this
-        // ISO week's [Monday, nextMonday) window), so loadedWeekIndices was never
-        // updated and the Me feed stayed blank.
+        // A video from the previous ISO Friday is 5 days old (< 7) when the clock
+        // is on Wednesday — rolling week 0, but ISO week 1.
         val baseClock = 100L * 365L * 24L * 60L * 60L * 1_000L
         clockMillis = baseClock
         repo.currentTimeMillisProvider = { clockMillis }
 
-        // Anchor to a Wednesday inside the current ISO week so the previous Friday
-        // is 5 days old — within 7 rolling days (old: week 0) but outside this
-        // ISO week (correct: week 1).
         val zone = ZoneId.systemDefault()
         val baseDate = Instant.ofEpochMilli(baseClock).atZone(zone).toLocalDate()
         val thisMonday = baseDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         val thisMondayMs = thisMonday.atStartOfDay(zone).toInstant().toEpochMilli()
-        val wednesday = thisMondayMs + 2 * 24 * 60 * 60 * 1_000L  // 2 days after Monday
-        clockMillis = wednesday
+        clockMillis = thisMondayMs + 2 * 24 * 60 * 60 * 1_000L  // Wednesday
         repo.currentTimeMillisProvider = { clockMillis }
 
         subscribe("UC1")
 
-        // Friday of the PREVIOUS ISO week: 3 days before this Monday.
-        val prevFridayMs = thisMondayMs - 3 * 24 * 60 * 60 * 1_000L
-        // Verify fixture: age is 5 days (< 7) but in the prev ISO week.
-        val ageMs = clockMillis - prevFridayMs
-        assertTrue("expected ageMs < 7 days, got $ageMs", ageMs < 7 * 24 * 60 * 60 * 1_000L)
+        val prevFridayMs = thisMondayMs - 3 * 24 * 60 * 60 * 1_000L  // Friday of prev ISO week; age=5d
 
         db.channelVideoCacheDao().upsertAll(
             listOf(
