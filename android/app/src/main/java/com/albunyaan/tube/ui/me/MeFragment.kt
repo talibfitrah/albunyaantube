@@ -3,13 +3,16 @@ package com.albunyaan.tube.ui.me
 import android.os.Bundle
 import android.view.View
 import androidx.core.os.bundleOf
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.core.view.isVisible
+import kotlinx.coroutines.isActive
+import androidx.navigation.Navigation
 import androidx.navigation.fragment.findNavController
+import androidx.navigation.navOptions
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -18,6 +21,7 @@ import androidx.work.WorkManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountState
+import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.me.ChipItem
@@ -27,7 +31,12 @@ import com.albunyaan.tube.data.me.WeekContent
 import com.albunyaan.tube.data.me.work.RefreshScheduler
 import com.albunyaan.tube.databinding.FragmentMeBinding
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
+import com.albunyaan.tube.ui.settings.NavHostIds
 import com.albunyaan.tube.util.DeviceConfig
+import com.albunyaan.tube.util.showIcons
+import com.albunyaan.tube.util.tintIcons
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -48,6 +57,7 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     // onViewCreated; role cannot change without a sign-out which recreates
     // the fragment stack, so no live observation is needed.
     @Inject lateinit var accountRepository: AccountRepository
+    @Inject lateinit var authRepository: AuthRepository
 
     @Inject lateinit var prefetchService: com.albunyaan.tube.player.StreamPrefetchService
     @Inject lateinit var playbackFeatureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
@@ -210,6 +220,13 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     // we only need to set visibility of action_suggest_content and handle clicks.
     private fun setupKebab(b: FragmentMeBinding) {
         val toolbar = b.meToolbar ?: return
+        toolbar.menu.showIcons()
+        // ic_nav_me / ic_add / ic_logout have white fillColor (designed for nav-bar
+        // itemIconTint). The overflow popup never applies itemIconTint, so tint them
+        // explicitly to colorControlNormal to match every other kebab in the app.
+        toolbar.menu.tintIcons(
+            MaterialColors.getColor(toolbar, android.R.attr.colorControlNormal, android.graphics.Color.BLACK)
+        )
         val role = viewModel.snapshotRole()
         toolbar.menu.findItem(R.id.action_suggest_content)?.isVisible =
             role.equals("moderator", ignoreCase = true) || role.equals("admin", ignoreCase = true)
@@ -229,10 +246,49 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                     true
                 }
                 R.id.action_sign_out -> {
-                    viewModel.signOut()
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(R.string.settings_account_sign_out_confirm_title)
+                        .setMessage(R.string.settings_account_sign_out_confirm_body)
+                        .setPositiveButton(R.string.settings_account_sign_out_confirm_action) { _, _ ->
+                            signOutAndNavigateToSignIn()
+                        }
+                        .setNegativeButton(R.string.settings_account_sign_out_cancel, null)
+                        .show()
                     true
                 }
                 else -> false
+            }
+        }
+    }
+
+    // Full sign-out: Firebase + local state. MeFragment lives in the inner nav
+    // (main_tabs_nav), so we grab the outer NavController to reach signInFragment.
+    private fun signOutAndNavigateToSignIn() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            authRepository.signOut()
+            // isActive guards the window between signOut() completing and the
+            // AuthStateListener firing, which can cancel this scope if the fragment
+            // is torn down concurrently.
+            if (!isActive) return@launch
+            val act = activity ?: return@launch
+            if (act.isFinishing || act.isDestroyed) return@launch
+            val outerNav = try {
+                Navigation.findNavController(act, NavHostIds.ROOT)
+            } catch (e: IllegalStateException) {
+                android.util.Log.w("MeFragment", "outer NavController unavailable during sign-out", e)
+                return@launch
+            }
+            if (outerNav.currentDestination?.id == R.id.signInFragment) return@launch
+            try {
+                outerNav.navigate(
+                    R.id.signInFragment,
+                    null,
+                    navOptions {
+                        popUpTo(R.id.app_nav_graph) { inclusive = true }
+                    },
+                )
+            } catch (e: IllegalArgumentException) {
+                android.util.Log.w("MeFragment", "destination changed before navigate() — already navigating", e)
             }
         }
     }

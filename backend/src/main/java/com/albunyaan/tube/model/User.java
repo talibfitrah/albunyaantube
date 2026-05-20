@@ -1,7 +1,6 @@
 package com.albunyaan.tube.model;
 
 import com.google.cloud.Timestamp;
-import com.google.cloud.firestore.annotation.DocumentId;
 
 /**
  * FIREBASE-MIGRATE-03: User Model (Firestore)
@@ -14,7 +13,6 @@ import com.google.cloud.firestore.annotation.DocumentId;
  */
 public class User {
 
-    @DocumentId
     private String uid; // Firebase UID
 
     private String email;
@@ -61,8 +59,8 @@ public class User {
 
     public User() {
         // F3: role MUST default to null, not "moderator".
-        // Firestore's @DocumentId path calls the no-arg ctor and then copies fields
-        // over. A document missing the "role" field used to land as role="moderator"
+        // Firestore deserialization calls the no-arg ctor then copies fields over.
+        // A document missing the "role" field used to land as role="moderator"
         // — a silent privilege grant. With null here, missing-role docs are caught
         // by the migration's null-or-blank guard and explicitly clamped to "user".
         // Code paths that read role must handle null gracefully:

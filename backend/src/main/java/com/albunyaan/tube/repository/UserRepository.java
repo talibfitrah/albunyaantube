@@ -9,6 +9,7 @@ import com.google.cloud.firestore.AggregateQuery;
 import com.google.cloud.firestore.AggregateQuerySnapshot;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
+import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.FieldPath;
@@ -112,6 +113,9 @@ public class UserRepository {
      */
     @CacheEvict(value = "userStatus", key = "#user.uid")
     public User save(User user) throws ExecutionException, InterruptedException, TimeoutException {
+        if (user.getUid() == null || user.getUid().isBlank()) {
+            throw new IllegalArgumentException("save() called with null/blank uid — would corrupt 'users/' document");
+        }
         user.touch();
 
         // Use Firebase UID as document ID
@@ -198,9 +202,8 @@ public class UserRepository {
     public Optional<User> findByUidUncached(String uid)
             throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
-        User user = docRef.get()
-                .get(timeoutProperties.getRead(), TimeUnit.SECONDS)
-                .toObject(User.class);
+        DocumentSnapshot snap = docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+        User user = hydrate(snap);
         return Optional.ofNullable(user).map(User::copy);
     }
 
@@ -225,7 +228,7 @@ public class UserRepository {
     Optional<User> loadByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
         // Single document reads: use shorter timeout (2 seconds)
-        User user = docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(User.class);
+        User user = hydrate(docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS));
         return Optional.ofNullable(user);
     }
 
@@ -245,14 +248,38 @@ public class UserRepository {
                 : applicationContext.getBean(UserRepository.class);
     }
 
+    /**
+     * Backfills uid from the document ID when absent — documents written while
+     * @DocumentId was active on the uid field did not persist uid in the data.
+     * Callers that may receive non-existent snapshots must check doc.exists()
+     * before calling. hydrateAll() is safe because QueryDocumentSnapshot
+     * objects from a query are always existing documents.
+     */
+    private User hydrate(DocumentSnapshot doc) {
+        User user = doc.toObject(User.class);
+        if (user != null && (user.getUid() == null || user.getUid().isBlank())) {
+            user.setUid(doc.getId());
+        }
+        return user;
+    }
+
+    private List<User> hydrateAll(QuerySnapshot snap) {
+        List<User> users = new ArrayList<>(snap.size());
+        for (QueryDocumentSnapshot doc : snap.getDocuments()) {
+            users.add(hydrate(doc));
+        }
+        return users;
+    }
+
     public Optional<User> findByEmail(String email) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("email", email)
                 .limit(1)
                 .get();
 
-        List<User> users = query.get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(User.class);
-        return users.isEmpty() ? Optional.empty() : Optional.of(users.get(0));
+        List<QueryDocumentSnapshot> docs = query.get(timeoutProperties.getRead(), TimeUnit.SECONDS).getDocuments();
+        if (docs.isEmpty()) return Optional.empty();
+        return Optional.ofNullable(hydrate(docs.get(0)));
     }
 
     /**
@@ -264,7 +291,7 @@ public class UserRepository {
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .get();
 
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(User.class);
+        return hydrateAll(query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS));
     }
 
     /**
@@ -285,11 +312,7 @@ public class UserRepository {
                 .whereIn("status", List.of("active", "blocked", "pending_profile"))
                 .get()
                 .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<User> users = new ArrayList<>();
-        for (QueryDocumentSnapshot doc : snap.getDocuments()) {
-            users.add(doc.toObject(User.class));
-        }
-        return users;
+        return hydrateAll(snap);
     }
 
     /**
@@ -304,7 +327,7 @@ public class UserRepository {
                 .offset(offset)
                 .get();
 
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(User.class);
+        return hydrateAll(query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS));
     }
 
     /**
@@ -318,7 +341,7 @@ public class UserRepository {
                 .orderBy("displayName", Query.Direction.ASCENDING)
                 .get();
 
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(User.class);
+        return hydrateAll(query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS));
     }
 
     /**
@@ -335,7 +358,7 @@ public class UserRepository {
                 .offset(offset)
                 .get();
 
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(User.class);
+        return hydrateAll(query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS));
     }
 
     /**
@@ -343,10 +366,9 @@ public class UserRepository {
      * Returns up to {@code batchSize} users whose document ID is strictly after {@code cursor}.
      * Pass {@code cursor = null} to start from the beginning.
      *
-     * Note: uses {@link FieldPath#documentId()} rather than "uid" because the uid
-     * field is annotated {@code @DocumentId} and is therefore NOT stored as a field
-     * inside the Firestore document — only as the document ID. orderBy("uid") would
-     * find no results on any collection ordered this way.
+     * Note: uses {@link FieldPath#documentId()} rather than "uid" for stable ordering;
+     * Firestore guarantees document ID ordering across pages, whereas "uid" ordering
+     * may vary if uid is absent from some legacy documents.
      */
     public List<User> findAfter(String cursor, int batchSize)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -356,18 +378,7 @@ public class UserRepository {
         if (cursor != null) {
             q = q.startAfter(cursor);
         }
-        QuerySnapshot snap = q.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<User> users = new ArrayList<>();
-        for (QueryDocumentSnapshot doc : snap.getDocuments()) {
-            User u = doc.toObject(User.class);
-            // @DocumentId is populated by toObject(), but set explicitly as a safety net
-            // in case the mapping is skipped on partial documents.
-            if (u.getUid() == null) {
-                u.setUid(doc.getId());
-            }
-            users.add(u);
-        }
-        return users;
+        return hydrateAll(q.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS));
     }
 
     /**
@@ -410,7 +421,7 @@ public class UserRepository {
         return firestore.runTransaction(tx -> {
             com.google.cloud.firestore.DocumentSnapshot snap = tx.get(ref).get();
             if (snap.exists()) {
-                return snap.toObject(User.class);
+                return hydrate(snap);
             }
             User fresh = factory.get();
             fresh.touch();

@@ -440,11 +440,6 @@ class MeViewModel @Inject constructor(
         return (s as? AccountState.Loaded)?.role.orEmpty()
     }
 
-    /** K2: kebab "Sign out" routes here so MeFragment stays free of repo deps. */
-    fun signOut() {
-        accountRepository.signOut()
-    }
-
     companion object {
         private const val TAG = "MeViewModel"
 

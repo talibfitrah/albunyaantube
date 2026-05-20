@@ -32,11 +32,6 @@ data class WeekBucket(
     val endMs: Long,
 ) {
     companion object {
-        /** 7 days in milliseconds. Retained for legacy callers; new code should
-         *  not rely on a fixed 7-day window because DST transitions shift the
-         *  ISO week boundary by ±1 hour. */
-        const val WEEK_MS: Long = 7L * 24L * 60L * 60L * 1_000L
-
         /**
          * Hard sanity cap on weekIndex pagination. Set high enough that
          * the actual stop signal is NewPipe's
@@ -98,7 +93,7 @@ data class WeekBucket(
             val nowDate = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
             val thisMonday = nowDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
             val uploadedMonday = uploadedDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-            return ((thisMonday.toEpochDay() - uploadedMonday.toEpochDay()) / 7L).toInt()
+            return ((thisMonday.toEpochDay() - uploadedMonday.toEpochDay()) / 7L).toInt().coerceAtLeast(0)
         }
     }
 }

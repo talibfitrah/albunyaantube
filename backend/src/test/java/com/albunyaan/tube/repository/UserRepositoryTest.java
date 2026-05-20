@@ -58,6 +58,9 @@ class UserRepositoryTest {
     @Mock
     private QuerySnapshot querySnapshot;
 
+    @Mock
+    private QueryDocumentSnapshot queryDocumentSnapshot;
+
     @InjectMocks
     private UserRepository userRepository;
 
@@ -140,7 +143,9 @@ class UserRepositoryTest {
         when(query.limit(1)).thenReturn(query);
         when(query.get()).thenReturn(querySnapshotFuture);
         when(querySnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(querySnapshot);
-        when(querySnapshot.toObjects(User.class)).thenReturn(Arrays.asList(testUser));
+        when(querySnapshot.getDocuments()).thenReturn(Arrays.asList(queryDocumentSnapshot));
+        when(queryDocumentSnapshot.toObject(User.class)).thenReturn(testUser);
+        lenient().when(queryDocumentSnapshot.getId()).thenReturn("test-uid");
 
         // Act
         Optional<User> result = userRepository.findByEmail("test@example.com");
@@ -161,7 +166,7 @@ class UserRepositoryTest {
         when(query.limit(1)).thenReturn(query);
         when(query.get()).thenReturn(querySnapshotFuture);
         when(querySnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(querySnapshot);
-        when(querySnapshot.toObjects(User.class)).thenReturn(Arrays.asList());
+        when(querySnapshot.getDocuments()).thenReturn(Arrays.asList());
 
         // Act
         Optional<User> result = userRepository.findByEmail("nonexistent@example.com");
@@ -174,12 +179,16 @@ class UserRepositoryTest {
     void findAll_shouldReturnAllUsers() throws Exception {
         // Arrange
         User user2 = new User("test-uid-2", "test2@example.com", "Test User 2", "admin");
-        List<User> users = Arrays.asList(testUser, user2);
+        QueryDocumentSnapshot doc2 = mock(QueryDocumentSnapshot.class);
 
         when(collectionReference.orderBy("createdAt", Query.Direction.DESCENDING)).thenReturn(query);
         when(query.get()).thenReturn(querySnapshotFuture);
         when(querySnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(querySnapshot);
-        when(querySnapshot.toObjects(User.class)).thenReturn(users);
+        when(querySnapshot.getDocuments()).thenReturn(Arrays.asList(queryDocumentSnapshot, doc2));
+        when(queryDocumentSnapshot.toObject(User.class)).thenReturn(testUser);
+        lenient().when(queryDocumentSnapshot.getId()).thenReturn("test-uid");
+        when(doc2.toObject(User.class)).thenReturn(user2);
+        lenient().when(doc2.getId()).thenReturn("test-uid-2");
 
         // Act
         List<User> result = userRepository.findAll();
@@ -198,13 +207,17 @@ class UserRepositoryTest {
         // Arrange
         User admin1 = new User("admin-1", "admin1@example.com", "Admin 1", "admin");
         User admin2 = new User("admin-2", "admin2@example.com", "Admin 2", "admin");
-        List<User> admins = Arrays.asList(admin1, admin2);
+        QueryDocumentSnapshot docAdmin2 = mock(QueryDocumentSnapshot.class);
 
         when(collectionReference.whereEqualTo("role", "admin")).thenReturn(query);
         when(query.orderBy("displayName", Query.Direction.ASCENDING)).thenReturn(query);
         when(query.get()).thenReturn(querySnapshotFuture);
         when(querySnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(querySnapshot);
-        when(querySnapshot.toObjects(User.class)).thenReturn(admins);
+        when(querySnapshot.getDocuments()).thenReturn(Arrays.asList(queryDocumentSnapshot, docAdmin2));
+        when(queryDocumentSnapshot.toObject(User.class)).thenReturn(admin1);
+        lenient().when(queryDocumentSnapshot.getId()).thenReturn("admin-1");
+        when(docAdmin2.toObject(User.class)).thenReturn(admin2);
+        lenient().when(docAdmin2.getId()).thenReturn("admin-2");
 
         // Act
         List<User> result = userRepository.findByRole("admin");

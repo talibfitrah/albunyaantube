@@ -1,5 +1,6 @@
 package com.albunyaan.tube.util
 
+import android.content.res.ColorStateList
 import android.os.Build
 import android.view.Menu
 import androidx.appcompat.widget.PopupMenu
@@ -31,5 +32,15 @@ fun Menu.showIcons() {
         )
         method.isAccessible = true
         method.invoke(this, true)
+    }
+}
+
+fun Menu.tintIcons(color: Int) {
+    val tint = ColorStateList.valueOf(color)
+    for (i in 0 until size()) {
+        // mutate() isolates this Drawable instance from any shared reference
+        // (e.g. the nav-bar Me icon on Samsung Android 15) so setTintList
+        // doesn't corrupt the nav icon colour.
+        getItem(i).icon?.mutate()?.setTintList(tint)
     }
 }
