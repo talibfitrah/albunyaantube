@@ -1,0 +1,43 @@
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestContentFragment.kt
+  s_62f9b786749534::t_b713934c961119 108
+backend/src/main/java/com/albunyaan/tube/exception/GlobalExceptionHandler.java
+  s_62f9b786749534::t_15027a77643d35 275-276
+backend/src/main/java/com/albunyaan/tube/controller/YouTubeSearchController.java
+  s_62f9b786749534::t_d4f4a88c2fa6ae 56
+android/app/src/main/res/values-nl/strings.xml
+  s_62f9b786749534::t_9c28d8d066c1c6 612-614
+backend/src/test/java/com/albunyaan/tube/controller/YouTubeSearchControllerTest.java
+  s_62f9b786749534::t_ba0f46e8d4609f 98-106
+  s_62f9b786749534::t_7b525451c5d205 9-10,26-27
+android/app/src/main/res/values-ar/strings.xml
+  s_62f9b786749534::t_40c25c3a00001c 642-644
+backend/src/test/java/com/albunyaan/tube/service/YouTubeSearchServiceTest.java
+  s_62f9b786749534::t_b474fe7116db6c 364-388
+android/app/src/test/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModelTest.kt
+  s_62f9b786749534::t_f2f48a41d83ff2 494-557
+docs/architecture/api-specification.yaml
+  s_62f9b786749534::t_63e737c8201425 3171-3217
+  s_62f9b786749534::t_92c56bb0d046b7 1355-1407
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModel.kt
+  s_62f9b786749534::t_a99901b8c1c03f 49-54
+  s_62f9b786749534::t_1010d582460094 116-120
+backend/src/main/java/com/albunyaan/tube/service/YouTubeSearchService.java
+  s_62f9b786749534::t_271968053599c7 92
+  s_62f9b786749534::t_db01cd4f557148 207,211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "2babf8b6cb304b299d8d28d57ef50f6648f82fcb",
+  "prompts": {},
+  "sessions": {
+    "s_62f9b786749534": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "352167bd-fe51-4e83-a391-31aa02a7cf8d",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
