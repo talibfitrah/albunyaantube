@@ -81,17 +81,15 @@ public class YouTubeSearchService {
             NewPipeSearchClient.RawPage raw = newPipeClient.search(q, type, pageToken);
 
             List<SearchHit> hits = new ArrayList<>();
-            List<String> ids = new ArrayList<>();
 
             for (InfoItem item : raw.items()) {
                 SearchHit hit = toHit(item, type);
                 if (hit == null) continue;
                 hits.add(hit);
-                ids.add(hit.youtubeId());
             }
 
             if (!hits.isEmpty()) {
-                hits = annotateKnown(hits, ids, type);
+                hits = annotateKnown(hits, type);
             }
 
             return new YouTubeSearchResponse(hits, raw.nextPageToken());
@@ -206,12 +204,11 @@ public class YouTubeSearchService {
      * Batch-look up the given IDs in the appropriate repository and return a
      * new list of hits with {@code alreadyKnown} and {@code knownStatus} set.
      */
-    private List<SearchHit> annotateKnown(List<SearchHit> hits, List<String> ids,
-                                           YouTubeContentType type) {
+    private List<SearchHit> annotateKnown(List<SearchHit> hits, YouTubeContentType type) {
         try {
             Map<String, String> statusByYoutubeId = (type == YouTubeContentType.ALL)
                     ? fetchStatusMapMixed(hits)
-                    : fetchStatusMap(ids, type);
+                    : fetchStatusMap(hits.stream().map(SearchHit::youtubeId).collect(Collectors.toList()), type);
             List<SearchHit> annotated = new ArrayList<>(hits.size());
             for (SearchHit hit : hits) {
                 String knownStatus = statusByYoutubeId.get(hit.youtubeId());

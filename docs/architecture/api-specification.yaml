@@ -1352,6 +1352,59 @@ paths:
   # YOUTUBE INTEGRATION (Admin/Moderator)
   # ============================================================================
 
+  /admin/youtube/search:
+    get:
+      summary: Search YouTube for content (moderator tool)
+      description: >
+        Proxies a NewPipe-Extractor search and annotates each result with
+        whether it already exists in the registry and its current approval status.
+        Requires ADMIN or MODERATOR role.
+      operationId: youtubeSearch
+      tags: [YouTube]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 200
+          description: Search query or YouTube URL
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ALL, CHANNEL, PLAYLIST, VIDEO]
+            default: ALL
+          description: Content type filter (ALL returns mixed results)
+        - name: pageToken
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 2048
+          description: Opaque page token from a previous response (omit for first page)
+      responses:
+        '200':
+          description: Search results annotated with registry state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/YouTubeSearchResponse'
+        '429':
+          description: YouTube is rate-limiting this server (ReCaptcha required)
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Insufficient role (ADMIN or MODERATOR required)
+        '502':
+          description: Extraction or network failure from YouTube
+
   /admin/youtube/check-existing:
     post:
       summary: Check which YouTube IDs already exist in registry
@@ -3114,6 +3167,53 @@ components:
             type: string
           description: YouTube community post IDs to exclude
           default: []
+
+    # YouTube moderator search DTOs (backend /admin/youtube/search)
+    SearchHit:
+      type: object
+      description: A single result from the moderator YouTube search, annotated with registry state
+      required: [youtubeId, name, url, alreadyKnown, contentType]
+      properties:
+        youtubeId:
+          type: string
+          description: YouTube ID (channel ID, playlist ID, or video ID)
+        name:
+          type: string
+        url:
+          type: string
+          description: Canonical YouTube URL
+        thumbnailUrl:
+          type: string
+          nullable: true
+        secondary:
+          type: string
+          nullable: true
+          description: Subscriber count (channels) or uploader name (playlists/videos)
+        alreadyKnown:
+          type: boolean
+          description: True when this ID already exists in the Firestore registry
+        knownStatus:
+          type: string
+          nullable: true
+          description: Registry approval status (e.g. PENDING, APPROVED, REJECTED) when alreadyKnown is true
+        contentType:
+          type: string
+          enum: [CHANNEL, PLAYLIST, VIDEO]
+          description: Content type of this hit
+
+    YouTubeSearchResponse:
+      type: object
+      description: Paginated moderator YouTube search response
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchHit'
+        nextPageToken:
+          type: string
+          nullable: true
+          description: Opaque token to pass as pageToken for the next page (null on last page)
 
     # YouTube Search & Preview DTOs
     EnrichedSearchResult:

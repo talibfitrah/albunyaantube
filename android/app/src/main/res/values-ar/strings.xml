@@ -639,6 +639,9 @@
     <!-- TODO(i18n): Plan G kebab menu strings — pending Arabic translation.
          Android falls back to English from values/strings.xml until delivered. -->
 
+    <!-- Suggest content screen -->
+    <string name="suggest_type_all">الكل</string>
+
     <!-- TODO(i18n): Plan G suggest content strings — pending Arabic translation.
          Android falls back to English from values/strings.xml until delivered. -->
 

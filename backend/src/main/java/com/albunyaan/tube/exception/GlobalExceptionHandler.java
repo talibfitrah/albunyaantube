@@ -272,7 +272,8 @@ public class GlobalExceptionHandler {
     /**
      * Maps YouTube rate-limit errors from moderator search to 429 so the Android
      * client can show a "try again later" message (SearchResult.RateLimited) instead
-     * of a generic 502. Must be registered before the generic Exception handler.
+     * of a generic 502. Spring resolves this by exception type specificity over
+     * the generic Exception handler — declaration order does not matter.
      */
     @ExceptionHandler(YouTubeSearchRateLimitedException.class)
     public ResponseEntity<Object> handleYouTubeSearchRateLimited(

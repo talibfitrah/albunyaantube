@@ -105,6 +105,7 @@ class SuggestContentFragment : Fragment(R.layout.fragment_suggest_content) {
                 binding.results.post {
                     if (_binding == null) return@post
                     if (!binding.results.canScrollVertically(1)
+                        && state.items.isNotEmpty()
                         && state.nextPageToken != null
                         && !state.loadingMore
                     ) vm.loadMore()

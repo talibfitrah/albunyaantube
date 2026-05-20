@@ -491,4 +491,68 @@ class SuggestContentViewModelTest {
         verify(repo).search("isl", YouTubeContentTypeDto.ALL, "tok1")
         verify(repo, never()).search("islam", YouTubeContentTypeDto.ALL, "tok1")
     }
+
+    // ── S13: loadMore re-applies active filter on combined allItems ───────────
+
+    @Test fun `loadMore appends allItems and re-applies active filter`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        val ch1  = hit("UC1",  contentType = "CHANNEL")
+        val vid1 = hit("VID1", contentType = "VIDEO")
+        val ch2  = hit("UC2",  contentType = "CHANNEL")
+        val pl1  = hit("PL1",  contentType = "PLAYLIST")
+
+        whenever(repo.search("test", YouTubeContentTypeDto.ALL, null))
+            .thenReturn(successPage(listOf(ch1, vid1), nextPageToken = "tok1"))
+        whenever(repo.search("test", YouTubeContentTypeDto.ALL, "tok1"))
+            .thenReturn(successPage(listOf(ch2, pl1), nextPageToken = null))
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("test")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        vm.onTypeChange(YouTubeContentTypeDto.CHANNEL)
+        val afterFilter = vm.uiState.value as SuggestUiState.Results
+        assertEquals(1, afterFilter.items.size)
+        assertEquals(2, afterFilter.allItems.size)
+
+        vm.loadMore()
+        advanceUntilIdle()
+
+        val final1 = vm.uiState.value as SuggestUiState.Results
+        assertEquals(4, final1.allItems.size)
+        assertEquals(2, final1.items.size)
+        assertEquals("UC1", final1.items[0].youtubeId)
+        assertEquals("UC2", final1.items[1].youtubeId)
+        assertEquals(YouTubeContentTypeDto.CHANNEL, final1.activeFilter)
+    }
+
+    // ── S14: onTypeChange on non-Results states is a no-op ───────────────────
+
+    @Test fun `onTypeChange on non-Results state does not crash and state is unchanged`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        val vm = SuggestContentViewModel(repo)
+
+        assertTrue(vm.uiState.value is SuggestUiState.Idle)
+        vm.onTypeChange(YouTubeContentTypeDto.CHANNEL)
+        assertTrue(vm.uiState.value is SuggestUiState.Idle)
+
+        whenever(repo.search(any(), any(), anyOrNull()))
+            .thenReturn(SearchResult.Success(YouTubeSearchResponseDto(items = emptyList(), nextPageToken = null)))
+        vm.onQueryChange("nothing")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value is SuggestUiState.Empty)
+        vm.onTypeChange(YouTubeContentTypeDto.VIDEO)
+        assertTrue(vm.uiState.value is SuggestUiState.Empty)
+
+        whenever(repo.search(any(), any(), anyOrNull()))
+            .thenReturn(SearchResult.NetworkError)
+        vm.onQueryChange("error")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value is SuggestUiState.Error)
+        vm.onTypeChange(YouTubeContentTypeDto.PLAYLIST)
+        assertTrue(vm.uiState.value is SuggestUiState.Error)
+    }
 }

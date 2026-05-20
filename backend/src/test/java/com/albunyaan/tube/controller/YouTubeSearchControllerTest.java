@@ -6,6 +6,8 @@ import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.dto.YouTubeContentType;
+import com.albunyaan.tube.service.YouTubeSearchRateLimitedException;
 import com.albunyaan.tube.service.YouTubeSearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,8 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -90,5 +94,14 @@ class YouTubeSearchControllerTest {
         assertEquals(Set.of(), response.getBody().getExistingChannels());
         assertEquals(Set.of(), response.getBody().getExistingPlaylists());
         assertEquals(Set.of(), response.getBody().getExistingVideos());
+    }
+
+    @Test
+    void search_rateLimited_propagatesYouTubeSearchRateLimitedException() {
+        when(youtubeSearchService.search(any(), any(), any()))
+                .thenThrow(new YouTubeSearchRateLimitedException(60L, new RuntimeException("rate limited")));
+
+        assertThrows(YouTubeSearchRateLimitedException.class,
+                () -> controller.search("q", YouTubeContentType.ALL, null));
     }
 }

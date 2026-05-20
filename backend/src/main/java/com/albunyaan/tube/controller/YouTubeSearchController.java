@@ -53,7 +53,7 @@ public class YouTubeSearchController {
     public YouTubeSearchResponse search(
             @RequestParam @NotBlank @Size(max = 200) String q,
             @RequestParam(required = false, defaultValue = "ALL") YouTubeContentType type,
-            @RequestParam(required = false) String pageToken) {
+            @RequestParam(required = false) @Size(max = 2048) String pageToken) {
         return youtubeSearchService.search(q, type, pageToken);
     }
 

@@ -361,6 +361,32 @@ class YouTubeSearchServiceTest {
     }
 
     // =========================================================
+    // ALL type — only one content type present → other repos skipped
+    // =========================================================
+
+    @Test
+    void search_allType_withOnlyChannels_doesNotQueryPlaylistOrVideoRepos() throws Exception {
+        ChannelInfoItem chItem = mock(ChannelInfoItem.class);
+        when(chItem.getUrl()).thenReturn("https://www.youtube.com/channel/UConly");
+        when(chItem.getName()).thenReturn("Only Channel");
+        when(chItem.getSubscriberCount()).thenReturn(0L);
+        when(chItem.getThumbnails()).thenReturn(List.of());
+
+        when(newPipeClient.search("only", YouTubeContentType.ALL, null))
+                .thenReturn(new NewPipeSearchClient.RawPage(List.of(chItem), null));
+        when(gateway.extractChannelId("https://www.youtube.com/channel/UConly")).thenReturn("UConly");
+        when(channelRepository.findByYoutubeIds(List.of("UConly"))).thenReturn(Map.of());
+
+        YouTubeSearchResponse resp = svc.search("only", YouTubeContentType.ALL, null);
+
+        assertThat(resp.items()).hasSize(1);
+        assertThat(resp.items().get(0).contentType()).isEqualTo("CHANNEL");
+        verify(channelRepository).findByYoutubeIds(List.of("UConly"));
+        verify(playlistRepository, never()).findByYoutubeIds(any());
+        verify(videoRepository, never()).findByYoutubeIds(any());
+    }
+
+    // =========================================================
     // ReCaptchaException → YouTubeSearchRateLimitedException
     // =========================================================
 

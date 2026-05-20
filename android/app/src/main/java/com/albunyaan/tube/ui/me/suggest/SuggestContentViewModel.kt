@@ -46,7 +46,12 @@ class SuggestContentViewModel @Inject constructor(
                         flow<SuggestUiState> {
                             emit(SuggestUiState.Loading)
                             val result = mapSearchResult(repo.search(searchQuery, searchType, null), searchType, searchQuery)
-                            emit(if (result is SuggestUiState.Results && previousFilter != YouTubeContentTypeDto.ALL) {
+                            // Only carry the previous filter forward when the backend was asked for
+                            // ALL (text search). URL-resolved searches already scope to a specific
+                            // type, so applying a chip filter would silently hide all results.
+                            emit(if (result is SuggestUiState.Results
+                                && previousFilter != YouTubeContentTypeDto.ALL
+                                && searchType == YouTubeContentTypeDto.ALL) {
                                 result.copy(
                                     items = applyFilter(result.allItems, previousFilter),
                                     activeFilter = previousFilter,
@@ -108,7 +113,11 @@ class SuggestContentViewModel @Inject constructor(
         if (query.isNullOrBlank()) return emptyMap()
         return query.split("&").mapNotNull { pair ->
             val idx = pair.indexOf('=')
-            if (idx < 0) null else pair.substring(0, idx) to pair.substring(idx + 1)
+            if (idx < 0) null else {
+                val raw = pair.substring(idx + 1)
+                val decoded = try { java.net.URLDecoder.decode(raw, "UTF-8") } catch (_: Exception) { raw }
+                pair.substring(0, idx) to decoded
+            }
         }.toMap()
     }
 
