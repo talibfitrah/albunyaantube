@@ -21,6 +21,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
@@ -78,6 +79,157 @@ class SuggestContentViewModelTest {
 
         assertTrue(vm.uiState.value is SuggestUiState.Idle)
         verify(repo, never()).search(any(), any(), anyOrNull())
+    }
+
+    // ── URL parsing ────────────────────────────────────────────────────────────
+
+    @Test fun `youtu-be short URL extracts video ID`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        whenever(repo.search("dQw4w9WgXcQ", YouTubeContentTypeDto.VIDEO, null))
+            .thenReturn(successPage(listOf(hit("dQw4w9WgXcQ", contentType = "VIDEO"))))
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("https://youtu.be/dQw4w9WgXcQ")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value as SuggestUiState.Results
+        assertEquals(YouTubeContentTypeDto.VIDEO, state.searchType)
+        verify(repo).search("dQw4w9WgXcQ", YouTubeContentTypeDto.VIDEO, null)
+    }
+
+    @Test fun `youtube watch URL extracts video ID`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        whenever(repo.search("abc123", YouTubeContentTypeDto.VIDEO, null))
+            .thenReturn(successPage(listOf(hit("abc123", contentType = "VIDEO"))))
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("https://www.youtube.com/watch?v=abc123")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value as SuggestUiState.Results
+        assertEquals(YouTubeContentTypeDto.VIDEO, state.searchType)
+        verify(repo).search("abc123", YouTubeContentTypeDto.VIDEO, null)
+    }
+
+    @Test fun `youtube playlist URL extracts playlist ID`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        whenever(repo.search("PLxxx", YouTubeContentTypeDto.PLAYLIST, null))
+            .thenReturn(successPage(listOf(hit("PLxxx", contentType = "PLAYLIST"))))
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("https://www.youtube.com/playlist?list=PLxxx")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value as SuggestUiState.Results
+        assertEquals(YouTubeContentTypeDto.PLAYLIST, state.searchType)
+        verify(repo).search("PLxxx", YouTubeContentTypeDto.PLAYLIST, null)
+    }
+
+    @Test fun `youtube channel URL extracts channel ID`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        whenever(repo.search("UCq2abc", YouTubeContentTypeDto.CHANNEL, null))
+            .thenReturn(successPage(listOf(hit("UCq2abc", contentType = "CHANNEL"))))
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("https://www.youtube.com/channel/UCq2abc")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value as SuggestUiState.Results
+        assertEquals(YouTubeContentTypeDto.CHANNEL, state.searchType)
+        verify(repo).search("UCq2abc", YouTubeContentTypeDto.CHANNEL, null)
+    }
+
+    @Test fun `youtube shorts URL extracts video ID`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        whenever(repo.search("shortsId1", YouTubeContentTypeDto.VIDEO, null))
+            .thenReturn(successPage(listOf(hit("shortsId1", contentType = "VIDEO"))))
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("https://www.youtube.com/shorts/shortsId1")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value as SuggestUiState.Results
+        assertEquals(YouTubeContentTypeDto.VIDEO, state.searchType)
+        verify(repo).search("shortsId1", YouTubeContentTypeDto.VIDEO, null)
+    }
+
+    @Test fun `youtube handle URL extracts handle as channel search`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        whenever(repo.search("@IslamicChannel", YouTubeContentTypeDto.CHANNEL, null))
+            .thenReturn(successPage(listOf(hit("UC123", contentType = "CHANNEL"))))
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("https://www.youtube.com/@IslamicChannel")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value as SuggestUiState.Results
+        assertEquals(YouTubeContentTypeDto.CHANNEL, state.searchType)
+        verify(repo).search("@IslamicChannel", YouTubeContentTypeDto.CHANNEL, null)
+    }
+
+    @Test fun `plain text query falls through to ALL search`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        whenever(repo.search("quran recitation", YouTubeContentTypeDto.ALL, null))
+            .thenReturn(successPage())
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("quran recitation")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value as SuggestUiState.Results
+        assertEquals(YouTubeContentTypeDto.ALL, state.searchType)
+        verify(repo).search("quran recitation", YouTubeContentTypeDto.ALL, null)
+    }
+
+    @Test fun `malformed URL falls through to ALL text search`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        whenever(repo.search("https://not-youtube.com/xyz", YouTubeContentTypeDto.ALL, null))
+            .thenReturn(successPage())
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("https://not-youtube.com/xyz")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        verify(repo).search("https://not-youtube.com/xyz", YouTubeContentTypeDto.ALL, null)
+    }
+
+    // ── activeFilter preserved across new queries ──────────────────────────────
+
+    @Test fun `active CHANNEL filter is preserved when query changes`() = runTest(dispatcher) {
+        val repo: YouTubeSearchRepository = mock()
+        val mixed = listOf(
+            hit("UC1", contentType = "CHANNEL"),
+            hit("VID1", contentType = "VIDEO"),
+        )
+        whenever(repo.search(any(), eq(YouTubeContentTypeDto.ALL), eq(null)))
+            .thenReturn(successPage(mixed))
+
+        val vm = SuggestContentViewModel(repo)
+        vm.onQueryChange("quran")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        // Switch to CHANNEL filter
+        vm.onTypeChange(YouTubeContentTypeDto.CHANNEL)
+        assertEquals(YouTubeContentTypeDto.CHANNEL, (vm.uiState.value as SuggestUiState.Results).activeFilter)
+
+        // Type a new query — filter should be preserved in results
+        vm.onQueryChange("quran tafsir")
+        advanceTimeBy(310L)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value as SuggestUiState.Results
+        assertEquals(YouTubeContentTypeDto.CHANNEL, state.activeFilter)
+        assertEquals(1, state.items.size)
+        assertEquals("UC1", state.items[0].youtubeId)
     }
 
     // ── S3: text query → ALL type search ─────────────────────────────────────

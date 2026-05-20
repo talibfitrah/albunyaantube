@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.schabi.newpipe.extractor.Image;
 import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem;
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 
@@ -298,6 +299,80 @@ class YouTubeSearchServiceTest {
         YouTubeSearchResponse resp = svc.search("q", YouTubeContentType.VIDEO, null);
 
         assertThat(resp.nextPageToken()).isEqualTo("https://page2token");
+    }
+
+    // =========================================================
+    // ALL type — fans out annotation to all three repos
+    // =========================================================
+
+    @Test
+    void search_allType_fansOutAnnotationToAllThreeRepos() throws Exception {
+        ChannelInfoItem chItem = mock(ChannelInfoItem.class);
+        when(chItem.getUrl()).thenReturn("https://www.youtube.com/channel/UCmix");
+        when(chItem.getName()).thenReturn("Mix Channel");
+        when(chItem.getSubscriberCount()).thenReturn(0L);
+        when(chItem.getThumbnails()).thenReturn(List.of());
+
+        PlaylistInfoItem plItem = mock(PlaylistInfoItem.class);
+        when(plItem.getUrl()).thenReturn("https://www.youtube.com/playlist?list=PLmix");
+        when(plItem.getName()).thenReturn("Mix Playlist");
+        when(plItem.getUploaderName()).thenReturn("Mix Channel");
+        when(plItem.getThumbnails()).thenReturn(List.of());
+
+        StreamInfoItem vidItem = mock(StreamInfoItem.class);
+        when(vidItem.getUrl()).thenReturn("https://www.youtube.com/watch?v=mixvid1");
+        when(vidItem.getName()).thenReturn("Mix Video");
+        when(vidItem.getUploaderName()).thenReturn("Mix Channel");
+        when(vidItem.getThumbnails()).thenReturn(List.of());
+
+        when(newPipeClient.search("mix", YouTubeContentType.ALL, null))
+                .thenReturn(new NewPipeSearchClient.RawPage(List.of(chItem, plItem, vidItem), null));
+        when(gateway.extractChannelId("https://www.youtube.com/channel/UCmix")).thenReturn("UCmix");
+        when(gateway.extractPlaylistId("https://www.youtube.com/playlist?list=PLmix")).thenReturn("PLmix");
+        when(gateway.extractVideoId("https://www.youtube.com/watch?v=mixvid1")).thenReturn("mixvid1");
+
+        Channel knownChannel = new Channel();
+        knownChannel.setYoutubeId("UCmix");
+        knownChannel.setStatus("APPROVED");
+        when(channelRepository.findByYoutubeIds(List.of("UCmix"))).thenReturn(Map.of("UCmix", knownChannel));
+        when(playlistRepository.findByYoutubeIds(List.of("PLmix"))).thenReturn(Map.of());
+        when(videoRepository.findByYoutubeIds(List.of("mixvid1"))).thenReturn(Map.of());
+
+        YouTubeSearchResponse resp = svc.search("mix", YouTubeContentType.ALL, null);
+
+        assertThat(resp.items()).hasSize(3);
+
+        SearchHit chHit = resp.items().stream().filter(h -> "UCmix".equals(h.youtubeId())).findFirst().orElseThrow();
+        assertThat(chHit.alreadyKnown()).isTrue();
+        assertThat(chHit.knownStatus()).isEqualTo("APPROVED");
+        assertThat(chHit.contentType()).isEqualTo("CHANNEL");
+
+        SearchHit plHit = resp.items().stream().filter(h -> "PLmix".equals(h.youtubeId())).findFirst().orElseThrow();
+        assertThat(plHit.alreadyKnown()).isFalse();
+        assertThat(plHit.contentType()).isEqualTo("PLAYLIST");
+
+        SearchHit vidHit = resp.items().stream().filter(h -> "mixvid1".equals(h.youtubeId())).findFirst().orElseThrow();
+        assertThat(vidHit.alreadyKnown()).isFalse();
+        assertThat(vidHit.contentType()).isEqualTo("VIDEO");
+
+        verify(channelRepository).findByYoutubeIds(List.of("UCmix"));
+        verify(playlistRepository).findByYoutubeIds(List.of("PLmix"));
+        verify(videoRepository).findByYoutubeIds(List.of("mixvid1"));
+    }
+
+    // =========================================================
+    // ReCaptchaException → YouTubeSearchRateLimitedException
+    // =========================================================
+
+    @Test
+    void search_reCaptchaException_throwsRateLimitedWithRetryAfter60() throws Exception {
+        when(newPipeClient.search(any(), any(), any()))
+                .thenThrow(new ReCaptchaException("rate limited", "https://youtube.com"));
+
+        assertThatThrownBy(() -> svc.search("q", YouTubeContentType.CHANNEL, null))
+                .isInstanceOf(YouTubeSearchRateLimitedException.class)
+                .satisfies(ex -> assertThat(((YouTubeSearchRateLimitedException) ex).getRetryAfterSec())
+                        .isEqualTo(60L));
     }
 
     // =========================================================

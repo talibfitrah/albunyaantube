@@ -17,7 +17,7 @@ class MySubmissionsRepositoryTest {
             override suspend fun mySubmissions(status: String?, cursor: String?, limit: Int) =
                 Response.success(CursorPageDto<PendingApprovalDto>(emptyList(), null))
 
-            override suspend fun submitChannel(body: SubmitChannelRequest): Response<PendingApprovalDto> {
+            override suspend fun submitChannel(body: SubmitChannelRequest): Response<Void> {
                 val rb = "".toResponseBody("application/json".toMediaType())
                 return Response.error(
                     rb,
@@ -50,21 +50,8 @@ class MySubmissionsRepositoryTest {
             override suspend fun mySubmissions(status: String?, cursor: String?, limit: Int) =
                 Response.success(CursorPageDto<PendingApprovalDto>(emptyList(), null))
 
-            override suspend fun submitChannel(body: SubmitChannelRequest): Response<PendingApprovalDto> =
-                Response.success(
-                    PendingApprovalDto(
-                        id = "x",
-                        type = "channel",
-                        entityId = body.youtubeId,
-                        title = null,
-                        category = null,
-                        submittedAt = 0L,
-                        submittedBy = "uid",
-                        submittedByDisplayName = null,
-                        submittedByEmail = null,
-                        status = "PENDING"
-                    )
-                )
+            override suspend fun submitChannel(body: SubmitChannelRequest): Response<Void> =
+                Response.success(null)
 
             override suspend fun submitPlaylist(body: SubmitPlaylistRequest) = error("n/a")
             override suspend fun submitVideo(body: SubmitVideoRequest) = error("n/a")
@@ -113,7 +100,7 @@ class MySubmissionsRepositoryTest {
             override suspend fun mySubmissions(status: String?, cursor: String?, limit: Int) =
                 Response.success(CursorPageDto<PendingApprovalDto>(emptyList(), null))
 
-            override suspend fun submitChannel(body: SubmitChannelRequest): Response<PendingApprovalDto> {
+            override suspend fun submitChannel(body: SubmitChannelRequest): Response<Void> {
                 val rb = "".toResponseBody("application/json".toMediaType())
                 return Response.error(
                     rb,
