@@ -22,8 +22,10 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * B6: Server-side YouTube search for moderators.
@@ -36,6 +38,7 @@ import java.util.Map;
 public class YouTubeSearchService {
 
     private static final Logger logger = LoggerFactory.getLogger(YouTubeSearchService.class);
+    private static final long RATE_LIMIT_RETRY_AFTER_SEC = 60L;
 
     private final NewPipeSearchClient newPipeClient;
     private final ChannelRepository channelRepository;
@@ -106,7 +109,7 @@ public class YouTubeSearchService {
             // of a generic 502.
             logger.warn("YouTubeSearchService.search rate-limited [q={}, type={}]: {}",
                     q, type, e.getMessage());
-            throw new YouTubeSearchRateLimitedException(60L, e);
+            throw new YouTubeSearchRateLimitedException(RATE_LIMIT_RETRY_AFTER_SEC, e);
         } catch (Exception e) {
             logger.warn("YouTubeSearchService.search failed [q={}, type={}, page={}]: {}",
                     q, type, pageToken, e.getMessage());
@@ -232,14 +235,14 @@ public class YouTubeSearchService {
      * its appropriate repository, then merge into a single id→status map.
      */
     private Map<String, String> fetchStatusMapMixed(List<SearchHit> hits) throws Exception {
-        List<String> channelIds  = hits.stream().filter(h -> "CHANNEL".equals(h.contentType()))
-                .map(SearchHit::youtubeId).collect(java.util.stream.Collectors.toList());
-        List<String> playlistIds = hits.stream().filter(h -> "PLAYLIST".equals(h.contentType()))
-                .map(SearchHit::youtubeId).collect(java.util.stream.Collectors.toList());
-        List<String> videoIds    = hits.stream().filter(h -> "VIDEO".equals(h.contentType()))
-                .map(SearchHit::youtubeId).collect(java.util.stream.Collectors.toList());
+        List<String> channelIds  = hits.stream().filter(h -> YouTubeContentType.CHANNEL.name().equals(h.contentType()))
+                .map(SearchHit::youtubeId).collect(Collectors.toList());
+        List<String> playlistIds = hits.stream().filter(h -> YouTubeContentType.PLAYLIST.name().equals(h.contentType()))
+                .map(SearchHit::youtubeId).collect(Collectors.toList());
+        List<String> videoIds    = hits.stream().filter(h -> YouTubeContentType.VIDEO.name().equals(h.contentType()))
+                .map(SearchHit::youtubeId).collect(Collectors.toList());
 
-        Map<String, String> result = new java.util.HashMap<>();
+        Map<String, String> result = new HashMap<>();
         if (!channelIds.isEmpty())  result.putAll(fetchStatusMap(channelIds,  YouTubeContentType.CHANNEL));
         if (!playlistIds.isEmpty()) result.putAll(fetchStatusMap(playlistIds, YouTubeContentType.PLAYLIST));
         if (!videoIds.isEmpty())    result.putAll(fetchStatusMap(videoIds,    YouTubeContentType.VIDEO));
@@ -255,7 +258,7 @@ public class YouTubeSearchService {
             case CHANNEL -> {
                 Map<String, Channel> found = channelRepository.findByYoutubeIds(ids);
                 yield found.entrySet().stream()
-                        .collect(java.util.stream.Collectors.toMap(
+                        .collect(Collectors.toMap(
                                 Map.Entry::getKey,
                                 e -> e.getValue().getStatus() != null ? e.getValue().getStatus() : "UNKNOWN"
                         ));
@@ -263,7 +266,7 @@ public class YouTubeSearchService {
             case PLAYLIST -> {
                 Map<String, Playlist> found = playlistRepository.findByYoutubeIds(ids);
                 yield found.entrySet().stream()
-                        .collect(java.util.stream.Collectors.toMap(
+                        .collect(Collectors.toMap(
                                 Map.Entry::getKey,
                                 e -> e.getValue().getStatus() != null ? e.getValue().getStatus() : "UNKNOWN"
                         ));
@@ -271,7 +274,7 @@ public class YouTubeSearchService {
             case VIDEO -> {
                 Map<String, Video> found = videoRepository.findByYoutubeIds(ids);
                 yield found.entrySet().stream()
-                        .collect(java.util.stream.Collectors.toMap(
+                        .collect(Collectors.toMap(
                                 Map.Entry::getKey,
                                 e -> e.getValue().getStatus() != null ? e.getValue().getStatus() : "UNKNOWN"
                         ));

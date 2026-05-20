@@ -1,6 +1,5 @@
 package com.albunyaan.tube.ui.me.suggest
 
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.data.search.SearchResult
@@ -42,9 +41,17 @@ class SuggestContentViewModel @Inject constructor(
                         flowOf<SuggestUiState>(SuggestUiState.Idle)
                     } else {
                         val (searchType, searchQuery) = resolveQuery(q)
+                        val previousFilter = (_uiState.value as? SuggestUiState.Results)?.activeFilter
+                            ?: YouTubeContentTypeDto.ALL
                         flow<SuggestUiState> {
                             emit(SuggestUiState.Loading)
-                            emit(mapSearchResult(repo.search(searchQuery, searchType, null), searchType, searchQuery))
+                            val result = mapSearchResult(repo.search(searchQuery, searchType, null), searchType, searchQuery)
+                            emit(if (result is SuggestUiState.Results && previousFilter != YouTubeContentTypeDto.ALL) {
+                                result.copy(
+                                    items = applyFilter(result.allItems, previousFilter),
+                                    activeFilter = previousFilter,
+                                )
+                            } else result)
                         }
                     }
                 }
@@ -64,29 +71,45 @@ class SuggestContentViewModel @Inject constructor(
         val trimmed = input.trim()
         if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return null
         return try {
-            val uri = Uri.parse(trimmed)
+            val uri = java.net.URI(trimmed)
             val host = uri.host ?: return null
             when {
-                host == "youtu.be" ->
-                    uri.lastPathSegment?.takeIf { it.isNotBlank() }
-                        ?.let { YouTubeContentTypeDto.VIDEO to it }
-                host.contains("youtube.com") -> {
-                    val v    = uri.getQueryParameter("v")
-                    val list = uri.getQueryParameter("list")
-                    val segs = uri.pathSegments ?: emptyList()
+                host == "youtu.be" -> {
+                    val id = uri.path?.trimStart('/')?.takeIf { it.isNotBlank() }
+                    id?.let { YouTubeContentTypeDto.VIDEO to it }
+                }
+                host == "youtube.com" || host.endsWith(".youtube.com") -> {
+                    val params = parseQueryParams(uri.rawQuery)
+                    val segs   = uri.path?.split("/")?.filter { it.isNotBlank() } ?: emptyList()
+                    val v      = params["v"]
+                    val list   = params["list"]
                     val channelIdx = segs.indexOf("channel")
                     val channelId  = if (channelIdx >= 0 && channelIdx + 1 < segs.size)
                         segs[channelIdx + 1] else null
+                    val shortsIdx = segs.indexOf("shorts")
+                    val shortsId  = if (shortsIdx >= 0 && shortsIdx + 1 < segs.size)
+                        segs[shortsIdx + 1] else null
+                    val handle = segs.firstOrNull { it.startsWith("@") }
                     when {
                         v != null         -> YouTubeContentTypeDto.VIDEO    to v
                         list != null      -> YouTubeContentTypeDto.PLAYLIST to list
                         channelId != null -> YouTubeContentTypeDto.CHANNEL  to channelId
+                        shortsId != null  -> YouTubeContentTypeDto.VIDEO    to shortsId
+                        handle != null    -> YouTubeContentTypeDto.CHANNEL  to handle
                         else              -> null
                     }
                 }
                 else -> null
             }
         } catch (_: Exception) { null }
+    }
+
+    private fun parseQueryParams(query: String?): Map<String, String> {
+        if (query.isNullOrBlank()) return emptyMap()
+        return query.split("&").mapNotNull { pair ->
+            val idx = pair.indexOf('=')
+            if (idx < 0) null else pair.substring(0, idx) to pair.substring(idx + 1)
+        }.toMap()
     }
 
     private fun mapSearchResult(

@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import com.albunyaan.tube.service.YouTubeSearchRateLimitedException;
 
 /**
  * Global exception handler for all controllers.
@@ -273,9 +274,9 @@ public class GlobalExceptionHandler {
      * client can show a "try again later" message (SearchResult.RateLimited) instead
      * of a generic 502. Must be registered before the generic Exception handler.
      */
-    @ExceptionHandler(com.albunyaan.tube.service.YouTubeSearchRateLimitedException.class)
+    @ExceptionHandler(YouTubeSearchRateLimitedException.class)
     public ResponseEntity<Object> handleYouTubeSearchRateLimited(
-            com.albunyaan.tube.service.YouTubeSearchRateLimitedException ex, WebRequest request) {
+            YouTubeSearchRateLimitedException ex, WebRequest request) {
         logger.warn("YouTube search rate-limited: {}", ex.getMessage());
 
         Map<String, Object> body = new LinkedHashMap<>();
