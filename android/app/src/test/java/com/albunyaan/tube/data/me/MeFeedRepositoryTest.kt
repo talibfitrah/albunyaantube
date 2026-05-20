@@ -30,7 +30,11 @@ import org.junit.runner.RunWith
 import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31])
@@ -1210,6 +1214,73 @@ class MeFeedRepositoryTest {
         assertNotNull(seenPage)
         assertEquals("https://yt/continuation/X", seenPage!!.url)
         assertEquals(mapOf("CONSENT" to "YES+9"), seenPage.cookies)
+    }
+
+    @Test
+    fun `findNextNonEmptyWeekIndex uses ISO week boundaries not rolling 7-day window`() = runTest {
+        // Regression test: a video published late in the PREVIOUS ISO week (e.g.
+        // Friday) is < 7 days old when the clock is early in THIS ISO week (e.g.
+        // Wednesday). The old rolling-arithmetic code (ageMs / WEEK_MS) classified
+        // it as week 0; observeWeek(0) then returned null (the video is not in this
+        // ISO week's [Monday, nextMonday) window), so loadedWeekIndices was never
+        // updated and the Me feed stayed blank.
+        val baseClock = 100L * 365L * 24L * 60L * 60L * 1_000L
+        clockMillis = baseClock
+        repo.currentTimeMillisProvider = { clockMillis }
+
+        // Anchor to a Wednesday inside the current ISO week so the previous Friday
+        // is 5 days old — within 7 rolling days (old: week 0) but outside this
+        // ISO week (correct: week 1).
+        val zone = ZoneId.systemDefault()
+        val baseDate = Instant.ofEpochMilli(baseClock).atZone(zone).toLocalDate()
+        val thisMonday = baseDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val thisMondayMs = thisMonday.atStartOfDay(zone).toInstant().toEpochMilli()
+        val wednesday = thisMondayMs + 2 * 24 * 60 * 60 * 1_000L  // 2 days after Monday
+        clockMillis = wednesday
+        repo.currentTimeMillisProvider = { clockMillis }
+
+        subscribe("UC1")
+
+        // Friday of the PREVIOUS ISO week: 3 days before this Monday.
+        val prevFridayMs = thisMondayMs - 3 * 24 * 60 * 60 * 1_000L
+        // Verify fixture: age is 5 days (< 7) but in the prev ISO week.
+        val ageMs = clockMillis - prevFridayMs
+        assertTrue("expected ageMs < 7 days, got $ageMs", ageMs < 7 * 24 * 60 * 60 * 1_000L)
+
+        db.channelVideoCacheDao().upsertAll(
+            listOf(
+                ChannelVideoCache(
+                    videoId = "vFriday",
+                    channelId = "UC1",
+                    channelName = "name-UC1",
+                    title = "title-vFriday",
+                    thumbnailUrl = null,
+                    durationSeconds = null,
+                    viewCount = null,
+                    uploadedAt = prevFridayMs,
+                    isShort = false,
+                    fetchedAt = clockMillis,
+                )
+            )
+        )
+
+        // Must return week 1 (the prev ISO week), not week 0.
+        val weekIdx = repo.findNextNonEmptyWeekIndex(fromIndex = 0)
+        assertEquals(
+            "video from prev ISO Friday should be in week 1 (ISO), not week 0 (rolling)",
+            1, weekIdx
+        )
+
+        // observeWeek(0) must find nothing — the video is not in this ISO week.
+        assertNull(
+            "observeWeek(0) should return null for a video from the previous ISO week",
+            repo.observeWeek(0).first()
+        )
+        // observeWeek(1) must find the video.
+        assertNotNull(
+            "observeWeek(1) should return the video from the previous ISO week",
+            repo.observeWeek(1).first()
+        )
     }
 
     /**
