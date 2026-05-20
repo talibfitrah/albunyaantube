@@ -5,7 +5,18 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:fitsSystemWindows="true">
+    android:background="@color/background_gray">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorSurface"
+        android:elevation="@dimen/elevation_sm"
+        app:navigationIcon="?attr/homeAsUpIndicator"
+        app:title="@string/me_kebab_suggest_content"
+        app:titleTextAppearance="@style/TextAppearance.MaterialComponents.Headline6"
+        app:titleTextColor="?attr/colorOnSurface" />
 
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/searchBarLayout"

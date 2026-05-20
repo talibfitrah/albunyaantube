@@ -9,6 +9,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -40,6 +41,8 @@ class SuggestContentFragment : Fragment(R.layout.fragment_suggest_content) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         _binding = FragmentSuggestContentBinding.bind(view)
+
+        binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
 
         val cols = resources.getInteger(R.integer.suggest_grid_columns)
         binding.results.layoutManager =
