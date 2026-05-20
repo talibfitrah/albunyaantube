@@ -1,0 +1,32 @@
+backend/src/main/java/com/albunyaan/tube/service/YouTubeSearchService.java
+  s_ea285fe7d43fed::t_bf81bd512bc81b 261,269,277
+  s_ea285fe7d43fed::t_c4749f23bd51b3 112
+  s_ea285fe7d43fed::t_49fdc9fca31338 25,28
+  s_ea285fe7d43fed::t_3e1607b4a42e48 41
+  s_ea285fe7d43fed::t_46fcad2df577c9 238-243,245
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModel.kt
+  s_ea285fe7d43fed::t_3b5fb342543e44 44-45,48-54
+  s_ea285fe7d43fed::t_58d69a61971f64 81,89-92,97-98
+  s_ea285fe7d43fed::t_7b5722f907ddac 74,77-80,82-85,107-112
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestContentFragment.kt
+  s_ea285fe7d43fed::t_a91afe7b35e64e 72
+backend/src/main/java/com/albunyaan/tube/exception/GlobalExceptionHandler.java
+  s_ea285fe7d43fed::t_38aa2c6de8fa3a 277,279
+  s_ea285fe7d43fed::t_a391bd58e7d621 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "75c53d030f3f6f3fd897f78c4046dd4713907333",
+  "prompts": {},
+  "sessions": {
+    "s_ea285fe7d43fed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d1f56bd-1b38-4f1c-8cd3-6d3f174646b7",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
