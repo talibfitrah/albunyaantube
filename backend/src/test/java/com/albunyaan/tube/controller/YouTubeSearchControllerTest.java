@@ -18,13 +18,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -57,10 +58,15 @@ class YouTubeSearchControllerTest {
 
     @Test
     void checkExisting_returnsExistingIdsByType() throws Exception {
-        when(channelRepository.findByYoutubeId("UC1")).thenReturn(Optional.of(mock(Channel.class)));
-        when(channelRepository.findByYoutubeId("UC2")).thenReturn(Optional.empty());
-        when(playlistRepository.findByYoutubeId("PL1")).thenReturn(Optional.of(mock(Playlist.class)));
-        when(videoRepository.findByYoutubeId("VID1")).thenReturn(Optional.of(mock(Video.class)));
+        Channel ch = mock(Channel.class);
+        Playlist pl = mock(Playlist.class);
+        Video vid = mock(Video.class);
+        when(channelRepository.findByYoutubeIds(List.of("UC1", "UC2")))
+                .thenReturn(Map.of("UC1", ch));
+        when(playlistRepository.findByYoutubeIds(List.of("PL1")))
+                .thenReturn(Map.of("PL1", pl));
+        when(videoRepository.findByYoutubeIds(List.of("VID1")))
+                .thenReturn(Map.of("VID1", vid));
 
         YouTubeSearchController.ExistingContentRequest request =
                 new YouTubeSearchController.ExistingContentRequest();
@@ -79,7 +85,11 @@ class YouTubeSearchControllerTest {
     }
 
     @Test
-    void checkExisting_treatsNullIdListsAsEmpty() {
+    void checkExisting_treatsNullIdListsAsEmpty() throws Exception {
+        when(channelRepository.findByYoutubeIds(anyList())).thenReturn(Map.of());
+        when(playlistRepository.findByYoutubeIds(anyList())).thenReturn(Map.of());
+        when(videoRepository.findByYoutubeIds(anyList())).thenReturn(Map.of());
+
         YouTubeSearchController.ExistingContentRequest request =
                 new YouTubeSearchController.ExistingContentRequest();
         request.setChannelIds(null);

@@ -28,6 +28,12 @@ class SuggestContentFragment : Fragment(R.layout.fragment_suggest_content) {
     private val binding get() = _binding!!
     private val vm: SuggestContentViewModel by viewModels()
 
+    // Tracks consecutive auto-load attempts when chip filter hides all visible items,
+    // so we page forward to find matching content without looping indefinitely.
+    private var emptyFilterAutofillCount = 0
+    // Deduplicates transient Snackbars across repeatOnLifecycle re-subscriptions.
+    private var shownSnackbarKey: String? = null
+
     private val adapter by lazy {
         SuggestResultsAdapter { hit ->
             if (hit.alreadyKnown && hit.knownStatus in setOf("APPROVED", "PENDING")) {
@@ -90,6 +96,8 @@ class SuggestContentFragment : Fragment(R.layout.fragment_suggest_content) {
         binding.emptyState.visibility = if (state is SuggestUiState.Empty) View.VISIBLE else View.GONE
         when (state) {
             is SuggestUiState.Idle, is SuggestUiState.Loading -> {
+                emptyFilterAutofillCount = 0
+                shownSnackbarKey = null
                 adapter.submitList(emptyList())
             }
             is SuggestUiState.Empty -> {
@@ -101,20 +109,41 @@ class SuggestContentFragment : Fragment(R.layout.fragment_suggest_content) {
             }
             is SuggestUiState.Results -> {
                 adapter.submitList(state.items)
-                // Autofill: if all items fit on screen without scrolling, trigger loadMore once
-                binding.results.post {
-                    if (_binding == null) return@post
-                    if (!binding.results.canScrollVertically(1)
-                        && state.items.isNotEmpty()
-                        && state.nextPageToken != null
-                        && !state.loadingMore
-                    ) vm.loadMore()
+                if (state.items.isEmpty() && state.nextPageToken != null && !state.loadingMore) {
+                    // Filter hides all visible items but more pages exist — auto-page forward
+                    // to find matching content, capped at 3 consecutive attempts per query.
+                    if (emptyFilterAutofillCount < 3) {
+                        emptyFilterAutofillCount++
+                        vm.loadMore()
+                    }
+                } else {
+                    if (state.items.isNotEmpty()) emptyFilterAutofillCount = 0
+                    // Standard scroll-based autofill for large screens where all items fit without scrolling.
+                    binding.results.post {
+                        if (_binding == null) return@post
+                        if (!binding.results.canScrollVertically(1)
+                            && state.nextPageToken != null
+                            && !state.loadingMore
+                        ) vm.loadMore()
+                    }
                 }
             }
-            is SuggestUiState.Error ->
-                Snackbar.make(binding.root, state.message, Snackbar.LENGTH_LONG).show()
-            is SuggestUiState.RateLimited ->
-                Snackbar.make(binding.root, R.string.suggest_rate_limited, Snackbar.LENGTH_LONG).show()
+            is SuggestUiState.Error -> {
+                val msg = if (state.formatArg != null) getString(state.messageRes, state.formatArg)
+                          else getString(state.messageRes)
+                val key = "error:$msg"
+                if (key != shownSnackbarKey) {
+                    shownSnackbarKey = key
+                    Snackbar.make(binding.root, msg, Snackbar.LENGTH_LONG).show()
+                }
+            }
+            is SuggestUiState.RateLimited -> {
+                val key = "rate_limited:${state.retryAfterSec}"
+                if (key != shownSnackbarKey) {
+                    shownSnackbarKey = key
+                    Snackbar.make(binding.root, R.string.suggest_rate_limited, Snackbar.LENGTH_LONG).show()
+                }
+            }
         }
     }
 

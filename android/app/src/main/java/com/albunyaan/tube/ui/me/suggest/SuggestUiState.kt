@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.me.suggest
 
+import androidx.annotation.StringRes
 import com.albunyaan.tube.data.search.dto.SearchHitDto
 import com.albunyaan.tube.data.search.dto.YouTubeContentTypeDto
 
@@ -24,6 +25,6 @@ sealed class SuggestUiState {
         val loadingMore: Boolean = false
     ) : SuggestUiState()
     object Empty : SuggestUiState()
-    data class Error(val message: String) : SuggestUiState()
+    data class Error(@StringRes val messageRes: Int, val formatArg: String? = null) : SuggestUiState()
     data class RateLimited(val retryAfterSec: Long) : SuggestUiState()
 }

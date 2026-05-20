@@ -98,19 +98,19 @@ public class YouTubeSearchService {
             // Preserve the thread's interrupt flag for cooperative
             // cancellation; surface to the client as 502.
             Thread.currentThread().interrupt();
-            logger.warn("YouTubeSearchService.search interrupted [q={}, type={}]: {}",
-                    q, type, e.getMessage());
+            logger.warn("YouTubeSearchService.search interrupted [type={}]: {}",
+                    type, e.getMessage());
             throw new YouTubeSearchException("Search interrupted", e);
         } catch (ReCaptchaException e) {
             // YouTube is actively rate-limiting this IP. Surface as 429 so
             // the Android client shows a "try again later" message instead
             // of a generic 502.
-            logger.warn("YouTubeSearchService.search rate-limited [q={}, type={}]: {}",
-                    q, type, e.getMessage());
+            logger.warn("YouTubeSearchService.search rate-limited [type={}]: {}",
+                    type, e.getMessage());
             throw new YouTubeSearchRateLimitedException(RATE_LIMIT_RETRY_AFTER_SEC, e);
         } catch (Exception e) {
-            logger.warn("YouTubeSearchService.search failed [q={}, type={}, page={}]: {}",
-                    q, type, pageToken, e.getMessage());
+            logger.warn("YouTubeSearchService.search failed [type={}, page={}]: {}",
+                    type, pageToken, e.getMessage());
             throw new YouTubeSearchException("Search failed: " + e.getMessage(), e);
         }
     }
@@ -151,7 +151,12 @@ public class YouTubeSearchService {
         }
 
         long subs = ch.getSubscriberCount();
-        String secondary = (subs >= 0) ? formatSubscribers(subs) : null;
+        String secondary = null;
+        if (subs >= 0) {
+            if (subs >= 1_000_000) secondary = (subs / 1_000_000) + "M";
+            else if (subs >= 1_000) secondary = (subs / 1_000) + "K";
+            else secondary = String.valueOf(subs);
+        }
 
         return new SearchHit(id, ch.getName(), url, thumbnailUrl(ch.getThumbnails()),
                 secondary, false, null, "CHANNEL");
@@ -194,12 +199,6 @@ public class YouTubeSearchService {
         return thumbnails.get(0).getUrl();
     }
 
-    private String formatSubscribers(long count) {
-        if (count >= 1_000_000) return (count / 1_000_000) + "M";
-        if (count >= 1_000) return (count / 1_000) + "K";
-        return String.valueOf(count);
-    }
-
     /**
      * Batch-look up the given IDs in the appropriate repository and return a
      * new list of hits with {@code alreadyKnown} and {@code knownStatus} set.
@@ -232,12 +231,12 @@ public class YouTubeSearchService {
      * its appropriate repository, then merge into a single id→status map.
      */
     private Map<String, String> fetchStatusMapMixed(List<SearchHit> hits) throws Exception {
-        List<String> channelIds  = hits.stream().filter(h -> YouTubeContentType.CHANNEL.name().equals(h.contentType()))
-                .map(SearchHit::youtubeId).collect(Collectors.toList());
-        List<String> playlistIds = hits.stream().filter(h -> YouTubeContentType.PLAYLIST.name().equals(h.contentType()))
-                .map(SearchHit::youtubeId).collect(Collectors.toList());
-        List<String> videoIds    = hits.stream().filter(h -> YouTubeContentType.VIDEO.name().equals(h.contentType()))
-                .map(SearchHit::youtubeId).collect(Collectors.toList());
+        Map<String, List<String>> byType = hits.stream()
+                .collect(Collectors.groupingBy(SearchHit::contentType,
+                        Collectors.mapping(SearchHit::youtubeId, Collectors.toList())));
+        List<String> channelIds  = byType.getOrDefault(YouTubeContentType.CHANNEL.name(),  List.of());
+        List<String> playlistIds = byType.getOrDefault(YouTubeContentType.PLAYLIST.name(), List.of());
+        List<String> videoIds    = byType.getOrDefault(YouTubeContentType.VIDEO.name(),    List.of());
 
         Map<String, String> result = new HashMap<>();
         if (!channelIds.isEmpty())  result.putAll(fetchStatusMap(channelIds,  YouTubeContentType.CHANNEL));

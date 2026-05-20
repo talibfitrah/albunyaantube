@@ -2,6 +2,7 @@ package com.albunyaan.tube.ui.me.suggest
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.albunyaan.tube.R
 import com.albunyaan.tube.data.search.SearchResult
 import com.albunyaan.tube.data.search.YouTubeSearchRepository
 import com.albunyaan.tube.data.search.dto.SearchHitDto
@@ -83,7 +84,8 @@ class SuggestContentViewModel @Inject constructor(
                     val id = uri.path?.trimStart('/')?.takeIf { it.isNotBlank() }
                     id?.let { YouTubeContentTypeDto.VIDEO to it }
                 }
-                host == "youtube.com" || host.endsWith(".youtube.com") -> {
+                host == "youtube.com" || host == "youtube-nocookie.com"
+                        || host.endsWith(".youtube.com") || host.endsWith(".youtube-nocookie.com") -> {
                     val params = parseQueryParams(uri.rawQuery)
                     val segs   = uri.path?.split("/")?.filter { it.isNotBlank() } ?: emptyList()
                     val v      = params["v"]
@@ -138,10 +140,10 @@ class SuggestContentViewModel @Inject constructor(
                 query = q,
             )
         }
-        SearchResult.Forbidden       -> SuggestUiState.Error("Not allowed")
+        SearchResult.Forbidden       -> SuggestUiState.Error(R.string.suggest_error_not_allowed)
         is SearchResult.RateLimited  -> SuggestUiState.RateLimited(r.retryAfterSec)
-        SearchResult.NetworkError    -> SuggestUiState.Error("Network error")
-        is SearchResult.Unknown      -> SuggestUiState.Error("Server error ${r.code}")
+        SearchResult.NetworkError    -> SuggestUiState.Error(R.string.suggest_error_network)
+        is SearchResult.Unknown      -> SuggestUiState.Error(R.string.suggest_error_server, r.code.toString())
     }
 
     private fun applyFilter(items: List<SearchHitDto>, filter: YouTubeContentTypeDto): List<SearchHitDto> =

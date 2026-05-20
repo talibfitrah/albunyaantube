@@ -742,6 +742,9 @@
     <string name="suggest_error_generic">Couldn\'t search. Try again.</string>
     <string name="suggest_rate_limited">Search rate-limited. Try again shortly.</string>
     <string name="suggest_loading_more">Loading more…</string>
+    <string name="suggest_error_not_allowed">Not allowed</string>
+    <string name="suggest_error_network">Network error</string>
+    <string name="suggest_error_server">Server error %1$s</string>
     <string name="me_kebab_sign_out">Sign out</string>
 
     <!-- SubmitContentBottomSheet -->

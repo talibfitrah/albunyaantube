@@ -606,13 +606,26 @@
     <!-- TODO(i18n): Plan G profile strings — pending Dutch translation.
          Android falls back to English from values/strings.xml until delivered. -->
 
+
     <!-- TODO(i18n): Plan G kebab menu strings — pending Dutch translation.
          Android falls back to English from values/strings.xml until delivered. -->
+    <string name="me_kebab_suggest_content">Inhoud voorstellen</string>
 
     <!-- Suggest content screen -->
     <string name="suggest_type_all">Alles</string>
-
-    <!-- TODO(i18n): Plan G suggest content strings — pending Dutch translation.
-         Android falls back to English from values/strings.xml until delivered. -->
+    <string name="suggest_type_channels">Kanalen</string>
+    <string name="suggest_type_playlists">Afspeellijsten</string>
+    <string name="suggest_type_videos">Video\'s</string>
+    <string name="suggest_already_in_registry">Al in het register</string>
+    <string name="suggest_already_pending">Al in afwachting van beoordeling</string>
+    <string name="suggest_already_rejected">Eerder afgewezen</string>
+    <string name="suggest_empty_results">Geen resultaten voor "%1$s"</string>
+    <string name="suggest_search_hint">Zoek op YouTube…</string>
+    <string name="suggest_error_generic">Zoeken mislukt. Probeer het opnieuw.</string>
+    <string name="suggest_rate_limited">Zoekopdracht tijdelijk beperkt. Probeer het binnenkort opnieuw.</string>
+    <string name="suggest_loading_more">Meer laden…</string>
+    <string name="suggest_error_not_allowed">Niet toegestaan</string>
+    <string name="suggest_error_network">Netwerkfout</string>
+    <string name="suggest_error_server">Serverfout %1$s</string>
 
 </resources>

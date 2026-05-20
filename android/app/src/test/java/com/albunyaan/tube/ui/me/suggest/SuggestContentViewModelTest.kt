@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.me.suggest
 
+import com.albunyaan.tube.R
 import com.albunyaan.tube.data.search.SearchResult
 import com.albunyaan.tube.data.search.YouTubeSearchRepository
 import com.albunyaan.tube.data.search.dto.SearchHitDto
@@ -352,9 +353,9 @@ class SuggestContentViewModelTest {
         advanceTimeBy(310L)
         advanceUntilIdle()
 
-        val state = vm.uiState.value
-        assertTrue(state is SuggestUiState.Error)
-        assertEquals("Not allowed", (state as SuggestUiState.Error).message)
+        val state = vm.uiState.value as SuggestUiState.Error
+        assertEquals(R.string.suggest_error_not_allowed, state.messageRes)
+        assertEquals(null, state.formatArg)
     }
 
     // ── S8: NetworkError ──────────────────────────────────────────────────────
@@ -369,9 +370,9 @@ class SuggestContentViewModelTest {
         advanceTimeBy(310L)
         advanceUntilIdle()
 
-        val state = vm.uiState.value
-        assertTrue(state is SuggestUiState.Error)
-        assertEquals("Network error", (state as SuggestUiState.Error).message)
+        val state = vm.uiState.value as SuggestUiState.Error
+        assertEquals(R.string.suggest_error_network, state.messageRes)
+        assertEquals(null, state.formatArg)
     }
 
     // ── S9: Unknown server error ──────────────────────────────────────────────
@@ -386,9 +387,9 @@ class SuggestContentViewModelTest {
         advanceTimeBy(310L)
         advanceUntilIdle()
 
-        val state = vm.uiState.value
-        assertTrue(state is SuggestUiState.Error)
-        assertEquals("Server error 503", (state as SuggestUiState.Error).message)
+        val state = vm.uiState.value as SuggestUiState.Error
+        assertEquals(R.string.suggest_error_server, state.messageRes)
+        assertEquals("503", state.formatArg)
     }
 
     // ── S10: loadMore — appends items ─────────────────────────────────────────

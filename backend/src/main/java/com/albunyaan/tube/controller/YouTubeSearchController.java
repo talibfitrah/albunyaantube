@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -66,41 +65,11 @@ public class YouTubeSearchController {
     @PostMapping("/check-existing")
     public ResponseEntity<ExistingContentResponse> checkExisting(@RequestBody ExistingContentRequest request) {
         try {
-            Set<String> existingChannels = new HashSet<>();
-            Set<String> existingPlaylists = new HashSet<>();
-            Set<String> existingVideos = new HashSet<>();
-
-            for (String ytId : request.getChannelIds()) {
-                try {
-                    if (channelRepository.findByYoutubeId(ytId).isPresent()) {
-                        existingChannels.add(ytId);
-                    }
-                } catch (Exception e) {
-                    logger.warn("Failed to check channel existence for {}: {}", ytId, e.getMessage());
-                }
-            }
-
-            for (String ytId : request.getPlaylistIds()) {
-                try {
-                    if (playlistRepository.findByYoutubeId(ytId).isPresent()) {
-                        existingPlaylists.add(ytId);
-                    }
-                } catch (Exception e) {
-                    logger.warn("Failed to check playlist existence for {}: {}", ytId, e.getMessage());
-                }
-            }
-
-            for (String ytId : request.getVideoIds()) {
-                try {
-                    if (videoRepository.findByYoutubeId(ytId).isPresent()) {
-                        existingVideos.add(ytId);
-                    }
-                } catch (Exception e) {
-                    logger.warn("Failed to check video existence for {}: {}", ytId, e.getMessage());
-                }
-            }
-
-            return ResponseEntity.ok(new ExistingContentResponse(existingChannels, existingPlaylists, existingVideos));
+            return ResponseEntity.ok(new ExistingContentResponse(
+                    channelRepository.findByYoutubeIds(request.getChannelIds()).keySet(),
+                    playlistRepository.findByYoutubeIds(request.getPlaylistIds()).keySet(),
+                    videoRepository.findByYoutubeIds(request.getVideoIds()).keySet()
+            ));
         } catch (Exception e) {
             return ResponseEntity.status(500).build();
         }
