@@ -37,7 +37,11 @@ class SuggestContentViewModelTest {
 
     // ── helpers ────────────────────────────────────────────────────────────────
 
-    private fun hit(id: String = "UC1", name: String = "Channel $id") = SearchHitDto(
+    private fun hit(
+        id: String = "UC1",
+        name: String = "Channel $id",
+        contentType: String = "CHANNEL",
+    ) = SearchHitDto(
         youtubeId = id,
         name = name,
         url = "https://youtube.com/channel/$id",
@@ -45,6 +49,7 @@ class SuggestContentViewModelTest {
         secondary = null,
         alreadyKnown = false,
         knownStatus = null,
+        contentType = contentType,
     )
 
     private fun successPage(
@@ -75,11 +80,11 @@ class SuggestContentViewModelTest {
         verify(repo, never()).search(any(), any(), anyOrNull())
     }
 
-    // ── S3: query → debounce → Results ────────────────────────────────────────
+    // ── S3: text query → ALL type search ─────────────────────────────────────
 
-    @Test fun `query change after debounce calls repo and emits Results`() = runTest(dispatcher) {
+    @Test fun `query change after debounce calls repo with ALL type and emits Results`() = runTest(dispatcher) {
         val repo: YouTubeSearchRepository = mock()
-        whenever(repo.search("islam", YouTubeContentTypeDto.CHANNEL, null))
+        whenever(repo.search("islam", YouTubeContentTypeDto.ALL, null))
             .thenReturn(successPage())
 
         val vm = SuggestContentViewModel(repo)
@@ -92,14 +97,15 @@ class SuggestContentViewModelTest {
         val results = state as SuggestUiState.Results
         assertEquals(1, results.items.size)
         assertEquals("UC1", results.items[0].youtubeId)
-        assertEquals(YouTubeContentTypeDto.CHANNEL, results.type)
+        assertEquals(YouTubeContentTypeDto.ALL, results.activeFilter)
+        assertEquals(YouTubeContentTypeDto.ALL, results.searchType)
         assertFalse(results.loadingMore)
-        verify(repo, times(1)).search("islam", YouTubeContentTypeDto.CHANNEL, null)
+        verify(repo, times(1)).search("islam", YouTubeContentTypeDto.ALL, null)
     }
 
     @Test fun `rapid typing only fires one search after debounce settles`() = runTest(dispatcher) {
         val repo: YouTubeSearchRepository = mock()
-        whenever(repo.search("isl", YouTubeContentTypeDto.CHANNEL, null))
+        whenever(repo.search("isl", YouTubeContentTypeDto.ALL, null))
             .thenReturn(successPage())
 
         val vm = SuggestContentViewModel(repo)
@@ -113,7 +119,7 @@ class SuggestContentViewModelTest {
 
         // Only the settled value "isl" should have fired
         verify(repo, times(1)).search(any(), any(), anyOrNull())
-        verify(repo, times(1)).search("isl", YouTubeContentTypeDto.CHANNEL, null)
+        verify(repo, times(1)).search("isl", YouTubeContentTypeDto.ALL, null)
     }
 
     // ── S4: empty results → Empty ──────────────────────────────────────────────
@@ -131,32 +137,38 @@ class SuggestContentViewModelTest {
         assertTrue(vm.uiState.value is SuggestUiState.Empty)
     }
 
-    // ── S5: type change re-triggers search ────────────────────────────────────
+    // ── S5: type chip changes filter locally — no new backend call ────────────
 
-    @Test fun `type change re-triggers search with same query`() = runTest(dispatcher) {
+    @Test fun `type chip change filters items locally without a new backend search`() = runTest(dispatcher) {
         val repo: YouTubeSearchRepository = mock()
-        whenever(repo.search("quran", YouTubeContentTypeDto.CHANNEL, null))
-            .thenReturn(successPage(listOf(hit("UC1"))))
-        whenever(repo.search("quran", YouTubeContentTypeDto.PLAYLIST, null))
-            .thenReturn(successPage(listOf(hit("PL1"))))
+        val mixed = listOf(
+            hit("UC1", contentType = "CHANNEL"),
+            hit("PL1", contentType = "PLAYLIST"),
+            hit("VID1", contentType = "VIDEO"),
+        )
+        whenever(repo.search("quran", YouTubeContentTypeDto.ALL, null))
+            .thenReturn(successPage(mixed))
 
         val vm = SuggestContentViewModel(repo)
         vm.onQueryChange("quran")
         advanceTimeBy(310L)
         advanceUntilIdle()
 
-        // First result: CHANNEL
+        // All 3 shown with ALL filter
         var state = vm.uiState.value as SuggestUiState.Results
-        assertEquals(YouTubeContentTypeDto.CHANNEL, state.type)
-        assertEquals("UC1", state.items[0].youtubeId)
+        assertEquals(3, state.items.size)
+        assertEquals(YouTubeContentTypeDto.ALL, state.activeFilter)
 
-        // Switch type → should re-search
-        vm.onTypeChange(YouTubeContentTypeDto.PLAYLIST)
-        advanceUntilIdle()
+        // Switch to CHANNEL — no new API call, only local filtering
+        vm.onTypeChange(YouTubeContentTypeDto.CHANNEL)
 
         state = vm.uiState.value as SuggestUiState.Results
-        assertEquals(YouTubeContentTypeDto.PLAYLIST, state.type)
-        assertEquals("PL1", state.items[0].youtubeId)
+        assertEquals(YouTubeContentTypeDto.CHANNEL, state.activeFilter)
+        assertEquals(1, state.items.size)
+        assertEquals("UC1", state.items[0].youtubeId)
+
+        // Still only one backend call
+        verify(repo, times(1)).search(any(), any(), anyOrNull())
     }
 
     // ── S6: 429 RateLimited ────────────────────────────────────────────────────
@@ -231,9 +243,9 @@ class SuggestContentViewModelTest {
 
     @Test fun `loadMore appends new items and updates nextPageToken`() = runTest(dispatcher) {
         val repo: YouTubeSearchRepository = mock()
-        whenever(repo.search("sunnah", YouTubeContentTypeDto.CHANNEL, null))
+        whenever(repo.search("sunnah", YouTubeContentTypeDto.ALL, null))
             .thenReturn(successPage(listOf(hit("UC1")), nextPageToken = "tok1"))
-        whenever(repo.search("sunnah", YouTubeContentTypeDto.CHANNEL, "tok1"))
+        whenever(repo.search("sunnah", YouTubeContentTypeDto.ALL, "tok1"))
             .thenReturn(successPage(listOf(hit("UC2")), nextPageToken = null))
 
         val vm = SuggestContentViewModel(repo)
@@ -300,13 +312,13 @@ class SuggestContentViewModelTest {
     @Test fun `loadMore uses captured Results query not latest typed value`() = runTest(dispatcher) {
         val repo: YouTubeSearchRepository = mock()
         // First search settled on "isl" — returns one item plus a page-2 token.
-        whenever(repo.search("isl", YouTubeContentTypeDto.CHANNEL, null))
+        whenever(repo.search("isl", YouTubeContentTypeDto.ALL, null))
             .thenReturn(successPage(listOf(hit("UC1")), nextPageToken = "tok1"))
         // Page-2 of the original query — what loadMore SHOULD call.
-        whenever(repo.search("isl", YouTubeContentTypeDto.CHANNEL, "tok1"))
+        whenever(repo.search("isl", YouTubeContentTypeDto.ALL, "tok1"))
             .thenReturn(successPage(listOf(hit("UC2")), nextPageToken = null))
         // Default fallback: a new debounced search for "islam" would otherwise NPE.
-        whenever(repo.search("islam", YouTubeContentTypeDto.CHANNEL, null))
+        whenever(repo.search("islam", YouTubeContentTypeDto.ALL, null))
             .thenReturn(successPage(listOf(hit("UC9")), nextPageToken = null))
 
         val vm = SuggestContentViewModel(repo)
@@ -324,7 +336,7 @@ class SuggestContentViewModelTest {
 
         // The page-2 token is bound to "isl". loadMore MUST send "isl",
         // not "islam", or the backend returns corrupted page-2 results.
-        verify(repo).search("isl", YouTubeContentTypeDto.CHANNEL, "tok1")
-        verify(repo, never()).search("islam", YouTubeContentTypeDto.CHANNEL, "tok1")
+        verify(repo).search("isl", YouTubeContentTypeDto.ALL, "tok1")
+        verify(repo, never()).search("islam", YouTubeContentTypeDto.ALL, "tok1")
     }
 }

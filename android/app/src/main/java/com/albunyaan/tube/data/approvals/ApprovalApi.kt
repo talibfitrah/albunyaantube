@@ -14,11 +14,11 @@ interface ApprovalApi {
     ): Response<CursorPageDto<PendingApprovalDto>>
 
     @POST("api/admin/registry/channels")
-    suspend fun submitChannel(@Body body: SubmitChannelRequest): Response<PendingApprovalDto>
+    suspend fun submitChannel(@Body body: SubmitChannelRequest): Response<Void>
 
     @POST("api/admin/registry/playlists")
-    suspend fun submitPlaylist(@Body body: SubmitPlaylistRequest): Response<PendingApprovalDto>
+    suspend fun submitPlaylist(@Body body: SubmitPlaylistRequest): Response<Void>
 
     @POST("api/admin/registry/videos")
-    suspend fun submitVideo(@Body body: SubmitVideoRequest): Response<PendingApprovalDto>
+    suspend fun submitVideo(@Body body: SubmitVideoRequest): Response<Void>
 }

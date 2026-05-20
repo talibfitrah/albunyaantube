@@ -49,12 +49,19 @@
         app:selectionRequired="true">
 
         <com.google.android.material.chip.Chip
+            android:id="@+id/chipAll"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/suggest_type_all"
+            android:checked="true" />
+
+        <com.google.android.material.chip.Chip
             android:id="@+id/chipChannel"
             style="@style/Widget.Material3.Chip.Filter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/suggest_type_channels"
-            android:checked="true" />
+            android:text="@string/suggest_type_channels" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/chipPlaylist"

@@ -34,6 +34,7 @@ public class NewPipeSearchClient {
      */
     public RawPage search(String query, YouTubeContentType type, String pageToken) throws Exception {
         List<String> filters = switch (type) {
+            case ALL      -> List.of();
             case CHANNEL  -> List.of("channels");
             case PLAYLIST -> List.of("playlists");
             case VIDEO    -> List.of("videos");

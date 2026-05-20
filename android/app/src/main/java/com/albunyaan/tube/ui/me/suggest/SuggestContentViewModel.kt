@@ -1,9 +1,11 @@
 package com.albunyaan.tube.ui.me.suggest
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.data.search.SearchResult
 import com.albunyaan.tube.data.search.YouTubeSearchRepository
+import com.albunyaan.tube.data.search.dto.SearchHitDto
 import com.albunyaan.tube.data.search.dto.YouTubeContentTypeDto
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -11,7 +13,6 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
@@ -27,23 +28,23 @@ class SuggestContentViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val query = MutableStateFlow("")
-    private val type  = MutableStateFlow(YouTubeContentTypeDto.CHANNEL)
 
     private val _uiState = MutableStateFlow<SuggestUiState>(SuggestUiState.Idle)
     val uiState: StateFlow<SuggestUiState> = _uiState.asStateFlow()
 
     init {
-        // flatMapLatest cancels the in-flight repo.search when a new
-        // (query, type) pair arrives, avoiding stale-then-fresh flicker.
+        // Only query changes drive backend searches. Type changes are applied
+        // client-side by onTypeChange() without hitting the network.
         viewModelScope.launch {
-            combine(query.debounce(300L).distinctUntilChanged(), type) { q, t -> q to t }
-                .flatMapLatest { (q, t) ->
+            query.debounce(300L).distinctUntilChanged()
+                .flatMapLatest { q ->
                     if (q.isBlank()) {
                         flowOf<SuggestUiState>(SuggestUiState.Idle)
                     } else {
+                        val (searchType, searchQuery) = resolveQuery(q)
                         flow<SuggestUiState> {
                             emit(SuggestUiState.Loading)
-                            emit(mapSearchResult(repo.search(q, t, null), t, q))
+                            emit(mapSearchResult(repo.search(searchQuery, searchType, null), searchType, searchQuery))
                         }
                     }
                 }
@@ -51,49 +52,103 @@ class SuggestContentViewModel @Inject constructor(
         }
     }
 
+    /**
+     * If the input looks like a YouTube URL, extract the content type and ID
+     * and use those for a targeted backend search. Otherwise search as-is with
+     * type=ALL so the server returns mixed results that chips can filter locally.
+     */
+    private fun resolveQuery(q: String): Pair<YouTubeContentTypeDto, String> =
+        parseYouTubeUrl(q) ?: (YouTubeContentTypeDto.ALL to q)
+
+    private fun parseYouTubeUrl(input: String): Pair<YouTubeContentTypeDto, String>? {
+        val trimmed = input.trim()
+        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return null
+        return try {
+            val uri = Uri.parse(trimmed)
+            val host = uri.host ?: return null
+            when {
+                host == "youtu.be" ->
+                    uri.lastPathSegment?.takeIf { it.isNotBlank() }
+                        ?.let { YouTubeContentTypeDto.VIDEO to it }
+                host.contains("youtube.com") -> {
+                    val v    = uri.getQueryParameter("v")
+                    val list = uri.getQueryParameter("list")
+                    val segs = uri.pathSegments ?: emptyList()
+                    val channelIdx = segs.indexOf("channel")
+                    val channelId  = if (channelIdx >= 0 && channelIdx + 1 < segs.size)
+                        segs[channelIdx + 1] else null
+                    when {
+                        v != null         -> YouTubeContentTypeDto.VIDEO    to v
+                        list != null      -> YouTubeContentTypeDto.PLAYLIST to list
+                        channelId != null -> YouTubeContentTypeDto.CHANNEL  to channelId
+                        else              -> null
+                    }
+                }
+                else -> null
+            }
+        } catch (_: Exception) { null }
+    }
+
     private fun mapSearchResult(
         r: SearchResult,
-        t: YouTubeContentTypeDto,
+        searchType: YouTubeContentTypeDto,
         q: String,
     ): SuggestUiState = when (r) {
-        is SearchResult.Success ->
-            if (r.page.items.isEmpty()) SuggestUiState.Empty
+        is SearchResult.Success -> {
+            val allItems = r.page.items
+            if (allItems.isEmpty()) SuggestUiState.Empty
             else SuggestUiState.Results(
-                items = r.page.items,
+                items = allItems,
+                allItems = allItems,
+                activeFilter = YouTubeContentTypeDto.ALL,
                 nextPageToken = r.page.nextPageToken,
-                type = t,
+                searchType = searchType,
                 query = q,
             )
+        }
         SearchResult.Forbidden       -> SuggestUiState.Error("Not allowed")
         is SearchResult.RateLimited  -> SuggestUiState.RateLimited(r.retryAfterSec)
         SearchResult.NetworkError    -> SuggestUiState.Error("Network error")
         is SearchResult.Unknown      -> SuggestUiState.Error("Server error ${r.code}")
     }
 
+    private fun applyFilter(items: List<SearchHitDto>, filter: YouTubeContentTypeDto): List<SearchHitDto> =
+        if (filter == YouTubeContentTypeDto.ALL) items
+        else items.filter { it.contentType == filter.name }
+
     fun onQueryChange(q: String) { query.value = q }
-    fun onTypeChange(t: YouTubeContentTypeDto) { type.value = t }
+
+    fun onTypeChange(t: YouTubeContentTypeDto) {
+        val current = _uiState.value as? SuggestUiState.Results ?: return
+        _uiState.value = current.copy(
+            items = applyFilter(current.allItems, t),
+            activeFilter = t,
+        )
+    }
 
     fun loadMore() {
         val current = _uiState.value as? SuggestUiState.Results ?: return
         if (current.loadingMore || current.nextPageToken == null) return
         _uiState.value = current.copy(loadingMore = true)
         viewModelScope.launch {
-            // Pair the token with its originating query, not the latest
-            // typed text — server treats pageToken as opaque-but-bound.
-            val r = repo.search(current.query, current.type, current.nextPageToken)
-            // After the suspend, flatMapLatest may have moved on to a new
-            // generation. Only apply if we're still on the same one.
+            val r = repo.search(current.query, current.searchType, current.nextPageToken)
+            // After suspend, confirm we're still on the same generation.
             val latest = _uiState.value as? SuggestUiState.Results ?: return@launch
             if (latest.query != current.query
-                    || latest.type != current.type
+                    || latest.searchType != current.searchType
                     || latest.nextPageToken != current.nextPageToken) {
                 return@launch
             }
             _uiState.value = when (r) {
-                is SearchResult.Success -> latest.copy(
-                    items = latest.items + r.page.items,
-                    nextPageToken = r.page.nextPageToken,
-                    loadingMore = false)
+                is SearchResult.Success -> {
+                    val newAllItems = latest.allItems + r.page.items
+                    latest.copy(
+                        items = applyFilter(newAllItems, latest.activeFilter),
+                        allItems = newAllItems,
+                        nextPageToken = r.page.nextPageToken,
+                        loadingMore = false,
+                    )
+                }
                 else -> latest.copy(loadingMore = false)
             }
         }

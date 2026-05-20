@@ -730,6 +730,7 @@
     <string name="me_kebab_suggest_content">Suggest content</string>
 
     <!-- Suggest content screen -->
+    <string name="suggest_type_all">All</string>
     <string name="suggest_type_channels">Channels</string>
     <string name="suggest_type_playlists">Playlists</string>
     <string name="suggest_type_videos">Videos</string>

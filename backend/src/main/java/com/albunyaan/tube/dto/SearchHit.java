@@ -18,5 +18,6 @@ public record SearchHit(
         String thumbnailUrl,
         String secondary,
         boolean alreadyKnown,
-        String knownStatus
+        String knownStatus,
+        String contentType
 ) {}

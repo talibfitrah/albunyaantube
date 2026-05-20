@@ -69,9 +69,10 @@ class SuggestContentFragment : Fragment(R.layout.fragment_suggest_content) {
 
         binding.typeChips.setOnCheckedStateChangeListener { _, ids ->
             val type = when (ids.firstOrNull()) {
+                R.id.chipChannel  -> YouTubeContentTypeDto.CHANNEL
                 R.id.chipPlaylist -> YouTubeContentTypeDto.PLAYLIST
                 R.id.chipVideo    -> YouTubeContentTypeDto.VIDEO
-                else               -> YouTubeContentTypeDto.CHANNEL
+                else              -> YouTubeContentTypeDto.ALL
             }
             vm.onTypeChange(type)
         }

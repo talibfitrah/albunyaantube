@@ -11,7 +11,8 @@ data class SearchHitDto(
     @Json(name = "thumbnailUrl") val thumbnailUrl: String? = null,
     @Json(name = "secondary")    val secondary: String? = null,
     @Json(name = "alreadyKnown") val alreadyKnown: Boolean = false,
-    @Json(name = "knownStatus")  val knownStatus: String? = null
+    @Json(name = "knownStatus")  val knownStatus: String? = null,
+    @Json(name = "contentType")  val contentType: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -20,4 +21,4 @@ data class YouTubeSearchResponseDto(
     @Json(name = "nextPageToken") val nextPageToken: String? = null
 )
 
-enum class YouTubeContentTypeDto { CHANNEL, PLAYLIST, VIDEO }
+enum class YouTubeContentTypeDto { ALL, CHANNEL, PLAYLIST, VIDEO }

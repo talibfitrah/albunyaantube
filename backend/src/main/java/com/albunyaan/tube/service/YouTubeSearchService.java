@@ -123,6 +123,12 @@ public class YouTubeSearchService {
     private SearchHit toHit(InfoItem item, YouTubeContentType type) {
         try {
             return switch (type) {
+                case ALL -> {
+                    if (item instanceof ChannelInfoItem)  yield channelHit(item);
+                    if (item instanceof PlaylistInfoItem) yield playlistHit(item);
+                    if (item instanceof StreamInfoItem)   yield videoHit(item);
+                    yield null;
+                }
                 case CHANNEL  -> channelHit(item);
                 case PLAYLIST -> playlistHit(item);
                 case VIDEO    -> videoHit(item);
@@ -147,7 +153,7 @@ public class YouTubeSearchService {
         String secondary = (subs >= 0) ? formatSubscribers(subs) : null;
 
         return new SearchHit(id, ch.getName(), url, thumbnailUrl(ch.getThumbnails()),
-                secondary, false, null);
+                secondary, false, null, "CHANNEL");
     }
 
     private SearchHit playlistHit(InfoItem item) {
@@ -161,7 +167,7 @@ public class YouTubeSearchService {
         }
 
         return new SearchHit(id, pl.getName(), url, thumbnailUrl(pl.getThumbnails()),
-                pl.getUploaderName(), false, null);
+                pl.getUploaderName(), false, null, "PLAYLIST");
     }
 
     private SearchHit videoHit(InfoItem item) {
@@ -175,7 +181,7 @@ public class YouTubeSearchService {
         }
 
         return new SearchHit(id, sv.getName(), url, thumbnailUrl(sv.getThumbnails()),
-                sv.getUploaderName(), false, null);
+                sv.getUploaderName(), false, null, "VIDEO");
     }
 
     /**
@@ -200,13 +206,15 @@ public class YouTubeSearchService {
     private List<SearchHit> annotateKnown(List<SearchHit> hits, List<String> ids,
                                            YouTubeContentType type) {
         try {
-            Map<String, String> statusByYoutubeId = fetchStatusMap(ids, type);
+            Map<String, String> statusByYoutubeId = (type == YouTubeContentType.ALL)
+                    ? fetchStatusMapMixed(hits)
+                    : fetchStatusMap(ids, type);
             List<SearchHit> annotated = new ArrayList<>(hits.size());
             for (SearchHit hit : hits) {
                 String knownStatus = statusByYoutubeId.get(hit.youtubeId());
                 if (knownStatus != null) {
                     annotated.add(new SearchHit(hit.youtubeId(), hit.name(), hit.url(),
-                            hit.thumbnailUrl(), hit.secondary(), true, knownStatus));
+                            hit.thumbnailUrl(), hit.secondary(), true, knownStatus, hit.contentType()));
                 } else {
                     annotated.add(hit);
                 }
@@ -217,6 +225,25 @@ public class YouTubeSearchService {
             logger.warn("Registry annotation failed for type={}: {}", type, e.getMessage());
             return hits;
         }
+    }
+
+    /**
+     * For ALL-type searches: group hits by contentType and look up each group in
+     * its appropriate repository, then merge into a single id→status map.
+     */
+    private Map<String, String> fetchStatusMapMixed(List<SearchHit> hits) throws Exception {
+        List<String> channelIds  = hits.stream().filter(h -> "CHANNEL".equals(h.contentType()))
+                .map(SearchHit::youtubeId).collect(java.util.stream.Collectors.toList());
+        List<String> playlistIds = hits.stream().filter(h -> "PLAYLIST".equals(h.contentType()))
+                .map(SearchHit::youtubeId).collect(java.util.stream.Collectors.toList());
+        List<String> videoIds    = hits.stream().filter(h -> "VIDEO".equals(h.contentType()))
+                .map(SearchHit::youtubeId).collect(java.util.stream.Collectors.toList());
+
+        Map<String, String> result = new java.util.HashMap<>();
+        if (!channelIds.isEmpty())  result.putAll(fetchStatusMap(channelIds,  YouTubeContentType.CHANNEL));
+        if (!playlistIds.isEmpty()) result.putAll(fetchStatusMap(playlistIds, YouTubeContentType.PLAYLIST));
+        if (!videoIds.isEmpty())    result.putAll(fetchStatusMap(videoIds,    YouTubeContentType.VIDEO));
+        return result;
     }
 
     /**
@@ -249,6 +276,7 @@ public class YouTubeSearchService {
                                 e -> e.getValue().getStatus() != null ? e.getValue().getStatus() : "UNKNOWN"
                         ));
             }
+            case ALL -> throw new IllegalArgumentException("ALL not valid in per-type lookup");
         };
     }
 }
