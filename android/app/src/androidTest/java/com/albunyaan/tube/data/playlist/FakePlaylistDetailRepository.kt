@@ -137,6 +137,8 @@ class FakePlaylistDetailRepository : PlaylistDetailRepository {
         )
     }
 
+    override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? = null
+
     companion object {
         fun createDefaultHeader(
             id: String = "PLtest123",

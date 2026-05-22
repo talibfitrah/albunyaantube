@@ -235,6 +235,8 @@ class PlayerViewModelAvailabilityGateTest {
             itemOffset: Int,
         ): PlaylistPage<com.albunyaan.tube.data.playlist.PlaylistItem> =
             PlaylistPage(emptyList(), null)
+
+        override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? = null
     }
 
     private class FakePrefetchService : StreamPrefetchService {

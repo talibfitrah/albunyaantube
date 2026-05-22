@@ -815,6 +815,8 @@ class PlayerViewModelPlaylistPagingTest {
                 PlaylistPage(emptyList(), null)
             }
         }
+
+        override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? = null
     }
 
     // Use the real ExtractionRateLimiter - it's already designed to allow most requests by default

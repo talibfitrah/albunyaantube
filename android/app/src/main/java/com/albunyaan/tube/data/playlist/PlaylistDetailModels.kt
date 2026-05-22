@@ -31,7 +31,15 @@ data class PlaylistHeader(
      * never offers a tap path into uncurated channel content.
      * Fail-closed default: stays false during the async backend check and on errors.
      */
-    val isChannelLinkable: Boolean = false
+    val isChannelLinkable: Boolean = false,
+    /**
+     * Raw uploader URL as NewPipe gave it. Carried alongside [channelId] so the
+     * async linkability resolver can canonicalize `/@handle`, `/c/name`, or
+     * `/user/name` URLs to a UC id off the header critical path. Without this,
+     * the registry HEAD lookup (which keys on UC ids) silently 404s for any
+     * playlist whose uploader uses the modern handle format.
+     */
+    val parentChannelUrl: String? = null,
 )
 
 /**

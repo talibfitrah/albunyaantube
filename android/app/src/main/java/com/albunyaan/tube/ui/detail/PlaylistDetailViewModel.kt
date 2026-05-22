@@ -137,13 +137,20 @@ class PlaylistDetailViewModel @AssistedInject constructor(
                 // the channel-name view stays hidden (fail-closed default) until this returns
                 // true, which prevents standalone playlists from ever exposing a tap path
                 // into the uncurated parent channel. See PlaylistHeader.isChannelLinkable.
-                val parentChannelId = header.channelId?.takeIf { it.isNotBlank() }
-                if (parentChannelId != null) {
+                // Channel linkability resolution runs entirely async so the
+                // header renders without waiting on NewPipe channel-page fetches
+                // for /@handle, /c/name, or /user/name uploader URLs.
+                if (!header.channelId.isNullOrBlank() || !header.parentChannelUrl.isNullOrBlank()) {
                     // Cancel any prior gate check from a previous loadHeader so a
                     // stale `approved=true` result cannot land on top of a fresh
                     // `approved=false` (admin un-approval race).
                     channelLinkabilityJob?.cancel()
-                    channelLinkabilityJob = launch { resolveChannelLinkability(parentChannelId) }
+                    channelLinkabilityJob = launch {
+                        resolveChannelLinkability(
+                            rawChannelId = header.channelId,
+                            parentChannelUrl = header.parentChannelUrl
+                        )
+                    }
                 }
 
                 // Auto-load items after header success
@@ -158,18 +165,31 @@ class PlaylistDetailViewModel @AssistedInject constructor(
 
     /**
      * Check whether the playlist's parent channel is approved in our registry.
-     * On success (channel is approved): flips [PlaylistHeader.isChannelLinkable] to true
-     * so the fragment can show the channel name as a tappable link.
-     * On failure (404, 410, network error, any thrown exception): leaves the flag
-     * false — fail-closed. The curation intent is "don't expose uncurated channels",
-     * so we'd rather hide a legitimate link than ever surface an uncurated one.
+     * Runs entirely off the header critical path:
+     *  1. If [rawChannelId] is already a canonical UC id, use it directly.
+     *  2. Otherwise resolve [parentChannelUrl] to a UC id via NewPipe (cached).
+     *  3. With the canonical id in hand, check the registry HEAD gate.
+     *  4. On approval, copy the header with the canonical id AND
+     *     [PlaylistHeader.isChannelLinkable] flipped true so the fragment can
+     *     show the channel name as a tappable link that navigates to the
+     *     correct UC-keyed ChannelDetailFragment.
+     *
+     * On any failure (resolution null, 404, 410, network error, exception):
+     * the flag stays false — fail-closed. The curation intent is "don't expose
+     * uncurated channels", so we'd rather hide a legitimate link than ever
+     * surface an uncurated one.
      */
-    private suspend fun resolveChannelLinkability(parentChannelId: String) {
-        val isApproved = try {
-            contentService.isInApprovedRegistry(
-                AvailabilityCheckType.CHANNEL,
-                parentChannelId
-            )
+    private suspend fun resolveChannelLinkability(
+        rawChannelId: String?,
+        parentChannelUrl: String?,
+    ) {
+        // Step 1: canonicalize. Skip the resolver for already-UC ids.
+        val canonicalId = try {
+            if (rawChannelId != null && CANONICAL_CHANNEL_ID_REGEX.matches(rawChannelId)) {
+                rawChannelId
+            } else {
+                repository.resolveCanonicalChannelId(parentChannelUrl)
+            }
         } catch (ce: CancellationException) {
             // Scope cancellation (ViewModel cleared, user navigated away, or
             // a newer loadHeader cancelled us) must propagate so structured
@@ -177,15 +197,38 @@ class PlaylistDetailViewModel @AssistedInject constructor(
             throw ce
         } catch (e: Exception) {
             if (BuildConfig.DEBUG) {
-                Log.w(TAG, "Channel linkability check failed for $parentChannelId; defaulting to hidden", e)
+                Log.w(TAG, "Canonical channel id resolution failed for $parentChannelUrl", e)
+            }
+            return
+        } ?: return // No canonical id → channel link cannot be shown.
+
+        // Step 2: backend registry gate.
+        val isApproved = try {
+            contentService.isInApprovedRegistry(
+                AvailabilityCheckType.CHANNEL,
+                canonicalId
+            )
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            if (BuildConfig.DEBUG) {
+                Log.w(TAG, "Channel linkability check failed for $canonicalId; defaulting to hidden", e)
             }
             return
         }
         if (!isApproved) return
+
+        // Step 3: commit the canonical id + flip the link flag atomically,
+        // but only if the header is still showing the playlist we resolved for.
         val current = _headerState.value
-        if (current is HeaderState.Success && current.header.channelId == parentChannelId) {
+        if (current is HeaderState.Success &&
+            current.header.parentChannelUrl == parentChannelUrl
+        ) {
             _headerState.value = HeaderState.Success(
-                current.header.copy(isChannelLinkable = true)
+                current.header.copy(
+                    channelId = canonicalId,
+                    isChannelLinkable = true
+                )
             )
         }
     }
@@ -617,6 +660,11 @@ class PlaylistDetailViewModel @AssistedInject constructor(
         private const val PAGINATION_THRESHOLD = 5 // Trigger pagination when 5 items from end
         private const val MAX_DOWNLOAD_ITEMS_CAP = 500 // Max items to download in a playlist
         private const val PAGINATION_DELAY_MS = 500L // Delay between pages when collecting for download
+        // Canonical YouTube channel ids are 24 characters: "UC" + 22 of
+        // [A-Za-z0-9_-]. Same definition lives in NewPipePlaylistDetailRepository;
+        // duplicated here to avoid an inter-layer dependency on the repository's
+        // constant.
+        private val CANONICAL_CHANNEL_ID_REGEX = Regex("^UC[A-Za-z0-9_-]{22}$")
     }
 }
 

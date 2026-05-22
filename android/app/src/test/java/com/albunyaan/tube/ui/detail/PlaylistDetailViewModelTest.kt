@@ -31,7 +31,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -46,6 +48,12 @@ import java.util.concurrent.atomic.AtomicLong
  * - Rate limiting for pagination
  * - Download state aggregation
  */
+// A real-shape canonical YouTube channel id (UC + 22 chars) for tests that
+// need the channel-linkability gate to match `CANONICAL_CHANNEL_ID_REGEX`.
+// The shorter "UCtest123" placeholder used elsewhere in this file is kept
+// for tests that never exercise the gate path.
+private const val CANONICAL_UC_ID = "UCAAAAAAAAAAAAAAAAAAAAAA"
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31])
@@ -350,6 +358,8 @@ class PlaylistDetailViewModelTest {
                     )
                 }
             }
+
+            override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? = null
         }
 
         val viewModel = PlaylistDetailViewModel(
@@ -448,6 +458,8 @@ class PlaylistDetailViewModelTest {
                     )
                 }
             }
+
+            override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? = null
         }
 
         // Create ViewModel with tracking repository
@@ -666,9 +678,10 @@ class PlaylistDetailViewModelTest {
         val mockContentService: ContentService = mock()
         whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLstand"))
             .thenReturn(true)
-        whenever(mockContentService.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCtest123"))
+        whenever(mockContentService.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, CANONICAL_UC_ID))
             .thenReturn(false)
-        fakeRepository.headerResponse = createTestHeader("PLstand", "Standalone Playlist")
+        fakeRepository.headerResponse =
+            createTestHeader("PLstand", "Standalone Playlist").copy(channelId = CANONICAL_UC_ID)
         fakeRepository.itemsResponse = PlaylistPage(emptyList(), null)
 
         val vm = createViewModel(playlistId = "PLstand", contentService = mockContentService)
@@ -684,9 +697,10 @@ class PlaylistDetailViewModelTest {
         val mockContentService: ContentService = mock()
         whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLcur"))
             .thenReturn(true)
-        whenever(mockContentService.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCtest123"))
+        whenever(mockContentService.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, CANONICAL_UC_ID))
             .thenReturn(true)
-        fakeRepository.headerResponse = createTestHeader("PLcur", "Curated Playlist")
+        fakeRepository.headerResponse =
+            createTestHeader("PLcur", "Curated Playlist").copy(channelId = CANONICAL_UC_ID)
         fakeRepository.itemsResponse = PlaylistPage(emptyList(), null)
 
         val vm = createViewModel(playlistId = "PLcur", contentService = mockContentService)
@@ -697,14 +711,74 @@ class PlaylistDetailViewModelTest {
         assertEquals(true, (state as PlaylistDetailViewModel.HeaderState.Success).header.isChannelLinkable)
     }
 
+    /**
+     * The async-resolution architecture for handle URLs (commits f2ae62de + follow-up):
+     * uploaderUrl is non-canonical (`/@handle`), so PlaylistHeader.channelId starts as
+     * "myhandle". The ViewModel must call repository.resolveCanonicalChannelId to obtain
+     * the UC id BEFORE the registry HEAD call, then copy the canonical id into the
+     * header alongside isChannelLinkable=true. Without this, the gate keys on a handle
+     * string and silently 404s for legitimately approved channels.
+     */
+    @Test
+    fun `isChannelLinkable resolves canonical channel id from handle URL before gate check`() = runTest {
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLhandle"))
+            .thenReturn(true)
+        whenever(mockContentService.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, CANONICAL_UC_ID))
+            .thenReturn(true)
+        fakeRepository.headerResponse = createTestHeader("PLhandle", "Handle Playlist").copy(
+            channelId = "myhandle", // non-canonical
+            parentChannelUrl = "https://www.youtube.com/@myhandle"
+        )
+        fakeRepository.itemsResponse = PlaylistPage(emptyList(), null)
+        fakeRepository.canonicalChannelIdResponse = CANONICAL_UC_ID
+
+        val vm = createViewModel(playlistId = "PLhandle", contentService = mockContentService)
+        advanceUntilIdle()
+
+        val state = vm.headerState.value
+        assertTrue(state is PlaylistDetailViewModel.HeaderState.Success)
+        val header = (state as PlaylistDetailViewModel.HeaderState.Success).header
+        assertEquals(
+            "Resolver must be invoked exactly once for the handle URL",
+            1, fakeRepository.canonicalResolveCallCount
+        )
+        assertEquals("channelId must be rewritten to canonical UC id on approval", CANONICAL_UC_ID, header.channelId)
+        assertEquals(true, header.isChannelLinkable)
+    }
+
+    @Test
+    fun `isChannelLinkable stays false when canonical resolution returns null`() = runTest {
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLgone"))
+            .thenReturn(true)
+        // Backend gate must NOT be called when resolution fails.
+        fakeRepository.headerResponse = createTestHeader("PLgone", "Deleted Channel Playlist").copy(
+            channelId = "deletedhandle",
+            parentChannelUrl = "https://www.youtube.com/@deletedhandle"
+        )
+        fakeRepository.itemsResponse = PlaylistPage(emptyList(), null)
+        fakeRepository.canonicalChannelIdResponse = null // resolver fails
+
+        val vm = createViewModel(playlistId = "PLgone", contentService = mockContentService)
+        advanceUntilIdle()
+
+        val state = vm.headerState.value
+        assertTrue(state is PlaylistDetailViewModel.HeaderState.Success)
+        assertEquals(false, (state as PlaylistDetailViewModel.HeaderState.Success).header.isChannelLinkable)
+        verify(mockContentService, org.mockito.kotlin.never())
+            .isInApprovedRegistry(eq(AvailabilityCheckType.CHANNEL), org.mockito.kotlin.any())
+    }
+
     @Test
     fun `isChannelLinkable stays false when registry check throws`() = runTest {
         val mockContentService: ContentService = mock()
         whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLerr"))
             .thenReturn(true)
-        whenever(mockContentService.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCtest123"))
+        whenever(mockContentService.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, CANONICAL_UC_ID))
             .thenThrow(RuntimeException("network down"))
-        fakeRepository.headerResponse = createTestHeader("PLerr", "Network Error Playlist")
+        fakeRepository.headerResponse =
+            createTestHeader("PLerr", "Network Error Playlist").copy(channelId = CANONICAL_UC_ID)
         fakeRepository.itemsResponse = PlaylistPage(emptyList(), null)
 
         val vm = createViewModel(playlistId = "PLerr", contentService = mockContentService)
@@ -804,6 +878,13 @@ class PlaylistDetailViewModelTest {
             itemsError?.let { throw it }
             // Return items with nextItemOffset calculated from itemOffset
             return itemsResponse.copy(nextItemOffset = itemOffset + itemsResponse.items.size)
+        }
+
+        var canonicalChannelIdResponse: String? = null
+        var canonicalResolveCallCount = 0
+        override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? {
+            canonicalResolveCallCount++
+            return canonicalChannelIdResponse
         }
     }
 

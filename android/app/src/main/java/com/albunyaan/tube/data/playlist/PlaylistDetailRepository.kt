@@ -43,4 +43,27 @@ interface PlaylistDetailRepository {
         page: Page?,
         itemOffset: Int = 1
     ): PlaylistPage<PlaylistItem>
+
+    /**
+     * Resolve a NewPipe uploader URL to its canonical UC... channel ID.
+     *
+     * Required because NewPipe returns uploader URLs in several forms
+     * (`/channel/UC...`, `/@handle`, `/c/name`, `/user/name`). Only the
+     * first is directly a UC id; the others must be resolved via a
+     * NewPipe channel-page fetch. The registry HEAD lookup keys on UC
+     * ids, so non-canonical strings silently 404 the gate.
+     *
+     * Implementations should:
+     * - Return the UC id immediately for canonical URLs (no network).
+     * - For non-canonical URLs, perform a NewPipe `ChannelInfo.getInfo`
+     *   fetch off the header critical path.
+     * - Cache successful resolutions (canonical ids are effectively
+     *   immutable per channel).
+     * - Return null on unresolvable URLs (the caller treats null as
+     *   "channel link stays hidden").
+     *
+     * @param uploaderUrl Raw URL from NewPipe, may be null/blank.
+     * @return Canonical UC channel ID, or null if unresolvable.
+     */
+    suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String?
 }

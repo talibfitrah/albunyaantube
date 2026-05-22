@@ -353,6 +353,8 @@ class PlayerViewModelPrefetchTtlTest {
             if (currentPageIndex >= pages.size) return PlaylistPage(emptyList(), null)
             return pages[currentPageIndex++]
         }
+
+        override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? = null
     }
 
     private class FakePrefetchService : StreamPrefetchService {
