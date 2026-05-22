@@ -13,7 +13,8 @@
         android:paddingBottom="@dimen/spacing_sm"
         android:text="@string/me_favorites"
         android:textAlignment="viewStart"
-        android:textAppearance="?attr/textAppearanceTitleMedium"
+        android:textSize="@dimen/text_section_title"
+        android:textStyle="bold"
         android:textColor="?attr/colorOnSurface" />
 
     <androidx.recyclerview.widget.RecyclerView

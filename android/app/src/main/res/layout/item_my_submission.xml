@@ -2,68 +2,173 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="16dp"
+    android:paddingStart="@dimen/spacing_md"
+    android:paddingEnd="@dimen/spacing_sm"
+    android:paddingTop="@dimen/spacing_sm"
+    android:paddingBottom="@dimen/spacing_sm"
     android:background="?attr/selectableItemBackground">
 
-    <View
-        android:id="@+id/statusStrip"
-        android:layout_width="4dp"
-        android:layout_height="0dp"
-        android:background="@color/my_submission_status_pending"
+    <com.google.android.material.imageview.ShapeableImageView
+        android:id="@+id/thumbnail"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:scaleType="centerCrop"
+        android:background="?attr/colorSurfaceVariant"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.Albunyaan.RoundedThumbnail"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        tools:src="@drawable/ic_launcher_movie" />
 
+    <!-- Big, fully-colored status pill with icon — much higher prominence than the
+         old 4dp strip + small text. White text on a status-tinted rounded background. -->
     <TextView
         android:id="@+id/statusBadge"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:textAppearance="?attr/textAppearanceLabelSmall"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toEndOf="@id/statusStrip" />
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:paddingStart="10dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:background="@drawable/bg_submission_status_pill"
+        android:drawablePadding="6dp"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:gravity="center_vertical"
+        app:drawableStartCompat="@drawable/ic_status_clock"
+        app:drawableTint="@android:color/white"
+        app:layout_constraintTop_toTopOf="@id/thumbnail"
+        app:layout_constraintStart_toEndOf="@id/thumbnail"
+        tools:text="Awaiting review" />
+
+    <!-- Use app:tint (AppCompatImageButton) so the Samsung Android 15 tint-resolution
+         quirk documented in CLAUDE.md doesn't render this invisible. The same memory
+         that flagged ic_stat_* / @android:drawable for nav bars applies to icon-only
+         buttons that rely on a runtime tint. -->
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:id="@+id/overflowButton"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:src="@drawable/ic_more_vert"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/my_submissions_actions_content_description"
+        android:scaleType="centerInside"
+        app:tint="?android:attr/textColorSecondary"
+        app:layout_constraintTop_toTopOf="@id/thumbnail"
+        app:layout_constraintBottom_toBottomOf="@id/thumbnail"
+        app:layout_constraintEnd_toEndOf="parent" />
 
     <TextView
         android:id="@+id/submittedAt"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:layout_marginEnd="@dimen/spacing_xs"
         android:textAppearance="?attr/textAppearanceLabelSmall"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        android:textColor="?android:attr/textColorSecondary"
+        android:gravity="end|center_vertical"
+        app:layout_constraintTop_toTopOf="@id/statusBadge"
+        app:layout_constraintBottom_toBottomOf="@id/statusBadge"
+        app:layout_constraintStart_toEndOf="@id/statusBadge"
+        app:layout_constraintEnd_toStartOf="@id/overflowButton"
+        tools:text="8 hours ago" />
 
     <TextView
         android:id="@+id/title"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:layout_marginStart="16dp"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:layout_marginTop="6dp"
         android:textAppearance="?attr/textAppearanceTitleMedium"
+        android:textStyle="bold"
+        android:maxLines="2"
+        android:ellipsize="end"
         app:layout_constraintTop_toBottomOf="@id/statusBadge"
-        app:layout_constraintStart_toEndOf="@id/statusStrip"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintStart_toEndOf="@id/thumbnail"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="Long meaningful title of the content goes here" />
 
     <TextView
         android:id="@+id/typeAndCategory"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:layout_marginTop="2dp"
         android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?android:attr/textColorSecondary"
         app:layout_constraintTop_toBottomOf="@id/title"
-        app:layout_constraintStart_toEndOf="@id/statusStrip"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintStart_toEndOf="@id/thumbnail"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="Channel · History — Documentaries" />
+
+    <TextView
+        android:id="@+id/identifiers"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:layout_marginTop="2dp"
+        android:textAppearance="?attr/textAppearanceLabelSmall"
+        android:textColor="?android:attr/textColorTertiary"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:maxLines="1"
+        android:ellipsize="middle"
+        app:layout_constraintTop_toBottomOf="@id/typeAndCategory"
+        app:layout_constraintStart_toEndOf="@id/thumbnail"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="yt:jPPzvuDIr1w · id:6U6P9Vp8HqnOVMr7b46Y" />
+
+    <!-- Submitter's own "why" message, only shown if present. Distinguishable from
+         the admin's reviewNote below by label color and label text. -->
+    <TextView
+        android:id="@+id/submitterNoteLabel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:layout_marginTop="6dp"
+        android:textAppearance="?attr/textAppearanceLabelSmall"
+        android:textColor="?attr/colorPrimary"
+        android:textStyle="bold"
+        android:text="@string/my_submissions_submitter_note_label"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/identifiers"
+        app:layout_constraintStart_toEndOf="@id/thumbnail"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:visibility="visible" />
+
+    <TextView
+        android:id="@+id/submitterNote"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:layout_marginTop="2dp"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?android:attr/textColorPrimary"
+        android:maxLines="3"
+        android:ellipsize="end"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/submitterNoteLabel"
+        app:layout_constraintStart_toEndOf="@id/thumbnail"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:visibility="visible"
+        tools:text="I think this channel produces excellent content on Islamic history." />
 
     <TextView
         android:id="@+id/reviewNote"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:layout_marginStart="16dp"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:layout_marginTop="6dp"
         android:textAppearance="?attr/textAppearanceBodySmall"
         android:textStyle="italic"
         android:visibility="gone"
-        app:layout_constraintTop_toBottomOf="@id/typeAndCategory"
-        app:layout_constraintStart_toEndOf="@id/statusStrip"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintTop_toBottomOf="@id/submitterNote"
+        app:layout_constraintStart_toEndOf="@id/thumbnail"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:visibility="visible"
+        tools:text="Please add Arabic subtitles before resubmitting." />
 </androidx.constraintlayout.widget.ConstraintLayout>

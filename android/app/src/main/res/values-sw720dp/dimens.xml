@@ -4,8 +4,8 @@
 
     <!-- Navigation (TV/Large Tablets - optimized for 10-foot viewing) -->
     <dimen name="bottom_nav_height">0dp</dimen>
-    <!-- Cubic R7 P2 — safe bottom padding for Me-tab cards on TV. See values/dimens.xml. -->
-    <dimen name="me_card_bottom_clearance">24dp</dimen>
+    <!-- TV/large tablet: navigation is on the side rail, no bottom nav. -->
+    <dimen name="list_padding_bottom_above_nav">16dp</dimen>
     <dimen name="navigation_rail_width">96dp</dimen>  <!-- Wider rail for TV D-pad navigation -->
 
     <!-- Shorts action rail: no bottom nav, but overlay needs clearance. -->

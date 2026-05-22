@@ -1,5 +1,6 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.SubmitterNoteUpdateRequest;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
@@ -32,6 +33,25 @@ public class RegistryController {
 
     private static final Set<String> VALID_STATUSES = Set.of("APPROVED", "PENDING", "REJECTED");
 
+    /** Statuses where a submitter is still allowed to edit/delete their own row. */
+    private static final Set<String> SUBMITTER_OWNED_STATUSES = Set.of("PENDING", "REQUEST_CHANGES");
+
+    /** Server-side cap on submitterNote so users can't blow up Firestore docs with megabyte essays. */
+    static final int MAX_SUBMITTER_NOTE_LEN = 1000;
+    // Cubic R5 P1: original broader range [​-‏‪-‮⁠-⁯﻿]
+    // also stripped U+200C ZWNJ, U+200D ZWJ, U+200E LRM, U+200F RLM — all LEGITIMATE
+    // characters required by Arabic/Persian joining and bidi rendering and by emoji ZWJ
+    // sequences. Stripping them corrupted Arabic content (an Arabic-first app).
+    //
+    // Narrowed to actual spoofing / invisible-content chars only:
+    //   U+200B  ZWSP        — invisible space, content spoofing
+    //   U+202A-E LRE/RLE/PDF/LRO/RLO — bidi overrides, RTL/LTR rendering hijack
+    //   U+2060  WJ          — word joiner, invisible
+    //   U+FEFF  BOM/ZWNBSP  — should never appear mid-string
+    // Compile once, not on every call (cubic R3 P2).
+    private static final java.util.regex.Pattern ZW_BIDI_CONTROLS =
+            java.util.regex.Pattern.compile("[\\u200B\\u202A-\\u202E\\u2060\\uFEFF]");
+
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
@@ -56,6 +76,38 @@ public class RegistryController {
         this.publicContentCacheService = publicContentCacheService;
         this.sortOrderService = sortOrderService;
         this.workspaceExclusionsCache = workspaceExclusionsCache;
+    }
+
+    /**
+     * Trim, blank-to-null, and length-check a submitter note coming in from the wire.
+     *
+     * @throws IllegalArgumentException when the trimmed value exceeds {@link #MAX_SUBMITTER_NOTE_LEN}
+     */
+    static String sanitizeSubmitterNote(String raw) {
+        if (raw == null) return null;
+        // Cubic R4 P2: reject impossibly-long payloads BEFORE running the regex, so
+        // a multi-hundred-KB body of bidi/zero-width junk doesn't waste CPU on a
+        // full-string scan only to be rejected at the length check below. 4× cap
+        // is generous enough that legitimate Unicode payloads (e.g. emoji surrogate
+        // pairs that strip() doesn't shrink) still pass through.
+        if (raw.length() > MAX_SUBMITTER_NOTE_LEN * 4) {
+            throw new IllegalArgumentException("submitterNote impossibly long: " + raw.length());
+        }
+        // strip() (Java 11+) handles Unicode whitespace (NBSP U+00A0, etc.) but NOT
+        // ZWSP / bidi-override controls (see ZW_BIDI_CONTROLS above for the exact
+        // narrowed range — ZWNJ/ZWJ/LRM/RLM are preserved for Arabic). Without scrubbing:
+        //   (a) a "note" of pure ZWNJ/ZWJ/BOM bypasses the empty-check as a non-null
+        //       string of invisible garbage that admin reviewers can't see;
+        //   (b) RLO (U+202E) injected anywhere in the note will hijack RTL/LTR
+        //       rendering of surrounding admin UI text — a spoofing vector.
+        // Scrub the disallowed range, then re-strip so any whitespace they were
+        // masking collapses to empty correctly.
+        String stripped = ZW_BIDI_CONTROLS.matcher(raw.strip()).replaceAll("").strip();
+        if (stripped.isEmpty()) return null;
+        if (stripped.length() > MAX_SUBMITTER_NOTE_LEN) {
+            throw new IllegalArgumentException("submitterNote exceeds max length " + MAX_SUBMITTER_NOTE_LEN);
+        }
+        return stripped;
     }
 
     /**
@@ -156,6 +208,24 @@ public class RegistryController {
                     ex.setApprovalMetadata(null);
                     ex.setUpdatedAt(com.google.cloud.Timestamp.now());
                     if (channel.getCategoryIds() != null) ex.setCategoryIds(channel.getCategoryIds());
+                    // Only overwrite submitterNote if the resubmit body explicitly provided a NON-EMPTY one.
+                    // null OR "" on the body means "I'm not touching the note" (gstack R6 P2: many
+                    // HTTP clients always send the key with "" rather than omitting it; the prior
+                    // null-only check silently wiped the existing note for those clients). The
+                    // PATCH .../submitter-note endpoint is the authoritative way to clear it.
+                    // Cubic R4 P2: sanitize first, then decide. sanitize collapses
+                    // whitespace + zero-width + bidi-override chars to null, so the
+                    // null-check below correctly treats all "no real content" payloads
+                    // as "don't touch" — no special-case isBlank() / isEmpty() needed.
+                    String sanitizedChannelNote;
+                    try {
+                        sanitizedChannelNote = sanitizeSubmitterNote(channel.getSubmitterNote());
+                    } catch (IllegalArgumentException tooLong) {
+                        return ResponseEntity.badRequest().build();
+                    }
+                    if (sanitizedChannelNote != null) {
+                        ex.setSubmitterNote(sanitizedChannelNote);
+                    }
                     // Cubic R5 P1: optimistic concurrency. Two concurrent resubmits,
                     // or a resubmit racing an admin's `requestChanges` retry, would
                     // otherwise silently overwrite each other. `saveIfStatus` runs
@@ -185,6 +255,11 @@ public class RegistryController {
         channel.setLastValidatedAt(null);
         channel.setDisplayOrder(null);
         channel.setSubmittedBy(user.getUid());
+        try {
+            channel.setSubmitterNote(sanitizeSubmitterNote(channel.getSubmitterNote()));
+        } catch (IllegalArgumentException tooLong) {
+            return ResponseEntity.badRequest().build();
+        }
 
         String status = normalizeStatusAndApprovedBy(user, channel.getStatus(),
                 channel::setStatus, channel::setApprovedBy);
@@ -290,6 +365,85 @@ public class RegistryController {
     }
 
     /**
+     * Submitter-owned: update the free-text "why I'm suggesting this" note on a row the
+     * caller submitted while it's still PENDING or REQUEST_CHANGES. APPROVED/REJECTED rows
+     * are immutable from the submitter's side — admin already adjudicated them.
+     */
+    @PatchMapping("/channels/{id}/submitter-note")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<Void> updateChannelSubmitterNote(
+            @PathVariable String id,
+            @RequestBody SubmitterNoteUpdateRequest request,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        Channel existing = channelRepository.findById(id).orElse(null);
+        if (existing == null) return ResponseEntity.notFound().build();
+        if (!user.getUid().equals(existing.getSubmittedBy())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        String expectedStatus = existing.getStatus();
+        if (!SUBMITTER_OWNED_STATUSES.contains(expectedStatus)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        try {
+            existing.setSubmitterNote(sanitizeSubmitterNote(request.getSubmitterNote()));
+        } catch (IllegalArgumentException tooLong) {
+            return ResponseEntity.badRequest().build();
+        }
+        existing.setUpdatedAt(com.google.cloud.Timestamp.now());
+        // Cubic R3 P1: TOCTOU — between the status check above and the save, an admin
+        // could approve/reject the row. saveIfStatus runs the write inside a Firestore
+        // transaction that re-asserts the status, so a concurrent adjudication is
+        // surfaced as 409 instead of silently overwriting an APPROVED/REJECTED row.
+        try {
+            channelRepository.saveIfStatus(existing, expectedStatus);
+        } catch (IllegalStateException raced) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        auditLogService.log("channel_submitter_note_updated", "channel", id, user);
+        // Cubic R5 P1: returning Channel here serializes a body that has the
+        // submitterNote stripped (@JsonProperty WRITE_ONLY). Use 204 No Content to
+        // avoid handing the caller a body where the field they just set is null.
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Submitter-owned: delete a row the caller submitted while it's still PENDING or
+     * REQUEST_CHANGES. APPROVED/REJECTED rows must be removed through the admin DELETE.
+     */
+    @DeleteMapping("/channels/{id}/submission")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<Void> deleteOwnChannelSubmission(
+            @PathVariable String id,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        Channel existing = channelRepository.findById(id).orElse(null);
+        if (existing == null) return ResponseEntity.notFound().build();
+        if (!user.getUid().equals(existing.getSubmittedBy())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (!SUBMITTER_OWNED_STATUSES.contains(existing.getStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        // Cubic R3 P1: TOCTOU — re-assert the status inside a transaction so a row that
+        // an admin approves mid-flight isn't silently deleted out from under the public
+        // cache. Cubic R3 P2: SUBMITTER_OWNED_STATUSES is {PENDING, REQUEST_CHANGES},
+        // neither of which is ever served by PublicContentCacheService — so the cache
+        // evict here is unnecessary work for every user on every self-delete. Removed.
+        try {
+            channelRepository.deleteByIdIfStatusIn(id, SUBMITTER_OWNED_STATUSES);
+        } catch (IllegalStateException raced) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        } catch (IllegalArgumentException vanished) {
+            // Cubic R4 P2: row was deleted between findById and the transaction (e.g.
+            // admin DELETE racing submitter DELETE). Surface as 404, not 500.
+            return ResponseEntity.notFound().build();
+        }
+        auditLogService.log("channel_submission_deleted", "channel", id, user);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * Get all playlists in registry
      *
      * @param limit Maximum number of playlists to return (default: 100)
@@ -355,6 +509,16 @@ public class RegistryController {
                     ex.setApprovalMetadata(null);
                     ex.setUpdatedAt(com.google.cloud.Timestamp.now());
                     if (playlist.getCategoryIds() != null) ex.setCategoryIds(playlist.getCategoryIds());
+                    // Cubic R4 P2: sanitize first; see channel resubmit above.
+                    String sanitizedPlaylistNote;
+                    try {
+                        sanitizedPlaylistNote = sanitizeSubmitterNote(playlist.getSubmitterNote());
+                    } catch (IllegalArgumentException tooLong) {
+                        return ResponseEntity.badRequest().build();
+                    }
+                    if (sanitizedPlaylistNote != null) {
+                        ex.setSubmitterNote(sanitizedPlaylistNote);
+                    }
                     // Cubic R5 P1: see channel resubmit path — optimistic concurrency.
                     try {
                         playlistRepository.saveIfStatus(ex, "REQUEST_CHANGES");
@@ -376,6 +540,11 @@ public class RegistryController {
         playlist.setLastValidatedAt(null);
         playlist.setDisplayOrder(null);
         playlist.setSubmittedBy(user.getUid());
+        try {
+            playlist.setSubmitterNote(sanitizeSubmitterNote(playlist.getSubmitterNote()));
+        } catch (IllegalArgumentException tooLong) {
+            return ResponseEntity.badRequest().build();
+        }
 
         String playlistStatus = normalizeStatusAndApprovedBy(user, playlist.getStatus(),
                 playlist::setStatus, playlist::setApprovedBy);
@@ -476,6 +645,67 @@ public class RegistryController {
         playlistRepository.deleteById(id);
         publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("playlist_deleted_from_registry", "playlist", id, user);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Submitter-owned: see {@link #updateChannelSubmitterNote(String, SubmitterNoteUpdateRequest, FirebaseUserDetails)}. */
+    @PatchMapping("/playlists/{id}/submitter-note")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<Void> updatePlaylistSubmitterNote(
+            @PathVariable String id,
+            @RequestBody SubmitterNoteUpdateRequest request,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        Playlist existing = playlistRepository.findById(id).orElse(null);
+        if (existing == null) return ResponseEntity.notFound().build();
+        if (!user.getUid().equals(existing.getSubmittedBy())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        String expectedStatus = existing.getStatus();
+        if (!SUBMITTER_OWNED_STATUSES.contains(expectedStatus)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        try {
+            existing.setSubmitterNote(sanitizeSubmitterNote(request.getSubmitterNote()));
+        } catch (IllegalArgumentException tooLong) {
+            return ResponseEntity.badRequest().build();
+        }
+        existing.setUpdatedAt(com.google.cloud.Timestamp.now());
+        // Cubic R3 P1: TOCTOU — saveIfStatus re-asserts the status atomically.
+        try {
+            playlistRepository.saveIfStatus(existing, expectedStatus);
+        } catch (IllegalStateException raced) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        auditLogService.log("playlist_submitter_note_updated", "playlist", id, user);
+        // Cubic R5 P1: 204 No Content — see channel endpoint.
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Submitter-owned: see {@link #deleteOwnChannelSubmission(String, FirebaseUserDetails)}. */
+    @DeleteMapping("/playlists/{id}/submission")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<Void> deleteOwnPlaylistSubmission(
+            @PathVariable String id,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        Playlist existing = playlistRepository.findById(id).orElse(null);
+        if (existing == null) return ResponseEntity.notFound().build();
+        if (!user.getUid().equals(existing.getSubmittedBy())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (!SUBMITTER_OWNED_STATUSES.contains(existing.getStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        // Cubic R3 P1+P2: TOCTOU-safe delete, drop unnecessary public cache evict.
+        try {
+            playlistRepository.deleteByIdIfStatusIn(id, SUBMITTER_OWNED_STATUSES);
+        } catch (IllegalStateException raced) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        } catch (IllegalArgumentException vanished) {
+            return ResponseEntity.notFound().build();
+        }
+        auditLogService.log("playlist_submission_deleted", "playlist", id, user);
         return ResponseEntity.noContent().build();
     }
 
@@ -641,6 +871,16 @@ public class RegistryController {
                     ex.setApprovalMetadata(null);
                     ex.setUpdatedAt(com.google.cloud.Timestamp.now());
                     if (video.getCategoryIds() != null) ex.setCategoryIds(video.getCategoryIds());
+                    // Cubic R4 P2: sanitize first; see channel resubmit above.
+                    String sanitizedVideoNote;
+                    try {
+                        sanitizedVideoNote = sanitizeSubmitterNote(video.getSubmitterNote());
+                    } catch (IllegalArgumentException tooLong) {
+                        return ResponseEntity.badRequest().build();
+                    }
+                    if (sanitizedVideoNote != null) {
+                        ex.setSubmitterNote(sanitizedVideoNote);
+                    }
                     // Cubic R5 P1: see channel resubmit path — optimistic concurrency.
                     try {
                         videoRepository.saveIfStatus(ex, "REQUEST_CHANGES");
@@ -662,6 +902,11 @@ public class RegistryController {
         video.setLastValidatedAt(null);
         video.setDisplayOrder(null);
         video.setSubmittedBy(user.getUid());
+        try {
+            video.setSubmitterNote(sanitizeSubmitterNote(video.getSubmitterNote()));
+        } catch (IllegalArgumentException tooLong) {
+            return ResponseEntity.badRequest().build();
+        }
 
         String videoStatus = normalizeStatusAndApprovedBy(user, video.getStatus(),
                 video::setStatus, video::setApprovedBy);
@@ -762,6 +1007,67 @@ public class RegistryController {
         videoRepository.deleteById(id);
         publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("video_deleted_from_registry", "video", id, user);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Submitter-owned: see {@link #updateChannelSubmitterNote(String, SubmitterNoteUpdateRequest, FirebaseUserDetails)}. */
+    @PatchMapping("/videos/{id}/submitter-note")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<Void> updateVideoSubmitterNote(
+            @PathVariable String id,
+            @RequestBody SubmitterNoteUpdateRequest request,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        Video existing = videoRepository.findById(id).orElse(null);
+        if (existing == null) return ResponseEntity.notFound().build();
+        if (!user.getUid().equals(existing.getSubmittedBy())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        String expectedStatus = existing.getStatus();
+        if (!SUBMITTER_OWNED_STATUSES.contains(expectedStatus)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        try {
+            existing.setSubmitterNote(sanitizeSubmitterNote(request.getSubmitterNote()));
+        } catch (IllegalArgumentException tooLong) {
+            return ResponseEntity.badRequest().build();
+        }
+        existing.setUpdatedAt(com.google.cloud.Timestamp.now());
+        // Cubic R3 P1: TOCTOU — saveIfStatus re-asserts the status atomically.
+        try {
+            videoRepository.saveIfStatus(existing, expectedStatus);
+        } catch (IllegalStateException raced) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        auditLogService.log("video_submitter_note_updated", "video", id, user);
+        // Cubic R5 P1: 204 No Content — see channel endpoint.
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Submitter-owned: see {@link #deleteOwnChannelSubmission(String, FirebaseUserDetails)}. */
+    @DeleteMapping("/videos/{id}/submission")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<Void> deleteOwnVideoSubmission(
+            @PathVariable String id,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        Video existing = videoRepository.findById(id).orElse(null);
+        if (existing == null) return ResponseEntity.notFound().build();
+        if (!user.getUid().equals(existing.getSubmittedBy())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (!SUBMITTER_OWNED_STATUSES.contains(existing.getStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        // Cubic R3 P1+P2: TOCTOU-safe delete, drop unnecessary public cache evict.
+        try {
+            videoRepository.deleteByIdIfStatusIn(id, SUBMITTER_OWNED_STATUSES);
+        } catch (IllegalStateException raced) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        } catch (IllegalArgumentException vanished) {
+            return ResponseEntity.notFound().build();
+        }
+        auditLogService.log("video_submission_deleted", "video", id, user);
         return ResponseEntity.noContent().build();
     }
 }

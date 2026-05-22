@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="?attr/colorSurfaceVariant">
+    android:background="@color/background_gray">
 
     <!-- Toolbar -->
     <com.google.android.material.appbar.MaterialToolbar
@@ -44,7 +44,7 @@
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/spacing_md"
+                android:layout_marginBottom="@dimen/spacing_lg"
                 app:cardBackgroundColor="?attr/colorSurface"
                 app:cardCornerRadius="@dimen/corner_radius_medium"
                 app:cardElevation="0dp">
@@ -52,14 +52,14 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/spacing_md">
+                    android:orientation="vertical">
 
-                    <!-- Downloads list placeholder -->
+                    <!-- Downloads list -->
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/downloadsRecyclerView"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:padding="@dimen/spacing_md"
                         android:nestedScrollingEnabled="false"/>
 
                     <!-- Empty state -->
@@ -101,20 +101,24 @@
 
                     </LinearLayout>
 
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/divider_thickness"
+                        android:background="?attr/colorOutlineVariant"
+                        android:layout_marginStart="@dimen/spacing_lg"/>
+
                     <!-- Storage info -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:layout_marginTop="@dimen/spacing_md"
-                        android:padding="@dimen/spacing_sm"
-                        android:background="?attr/colorSurfaceVariant">
+                        android:padding="@dimen/spacing_md">
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/downloads_storage_used"
-                            android:textSize="@dimen/text_body"
+                            android:textSize="@dimen/text_subtitle"
                             android:textColor="?attr/colorOnSurface"
                             android:textAlignment="viewStart"
                             android:textStyle="bold"/>
@@ -123,7 +127,7 @@
                             android:id="@+id/storageText"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_xs"
+                            android:layout_marginTop="@dimen/spacing_xxs"
                             android:text="@string/downloads_storage_calculating"
                             android:textSize="@dimen/text_body"
                             android:textColor="?attr/colorOnSurfaceVariant"
@@ -133,7 +137,7 @@
                             android:id="@+id/storageProgress"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_xs"
+                            android:layout_marginTop="@dimen/spacing_sm"
                             style="?android:attr/progressBarStyleHorizontal"
                             android:progress="0"
                             android:max="100"
@@ -173,7 +177,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
-                        android:background="?attr/colorSurfaceVariant"
+                        android:background="?attr/colorOutlineVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <!-- Recently Watched -->
@@ -182,7 +186,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
-                        android:background="?attr/colorSurfaceVariant"
+                        android:background="?attr/colorOutlineVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <!-- History -->

@@ -320,6 +320,34 @@ public class ChannelRepository {
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
+    /**
+     * Atomically delete a channel only if its current status is in {@code expectedStatuses}.
+     * Used by submitter-owned delete to close the TOCTOU window between status read and
+     * delete (cubic R3 P1): a row that an admin approves mid-flight will fail the inner
+     * status check and surface as IllegalStateException → 409 to the caller.
+     */
+    public void deleteByIdIfStatusIn(String id, java.util.Set<String> expectedStatuses)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (id == null || expectedStatuses == null || expectedStatuses.isEmpty()) {
+            throw new IllegalArgumentException("id and non-empty expectedStatuses required");
+        }
+        DocumentReference docRef = getCollection().document(id);
+        firestore.runTransaction(transaction -> {
+            DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+            if (!snapshot.exists()) {
+                throw new IllegalArgumentException("Channel not found: " + id);
+            }
+            String currentStatus = snapshot.getString("status");
+            if (currentStatus == null || !expectedStatuses.contains(currentStatus)) {
+                throw new IllegalStateException(
+                        "Cannot delete channel " + id +
+                        ": status " + currentStatus + " not in " + expectedStatuses);
+            }
+            transaction.delete(docRef);
+            return null;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
+
     public List<Channel> findAll() throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .orderBy("createdAt", Query.Direction.DESCENDING)

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
 import com.google.cloud.firestore.annotation.Exclude;
@@ -72,6 +73,18 @@ public class Channel {
     private Timestamp updatedAt;
     private String submittedBy; // Firebase UID of moderator/admin
     private String approvedBy;  // Firebase UID of admin (if approved)
+
+    /**
+     * Optional free-text note from the submitter ("why I'm suggesting this").
+     * Shown to admins in the approval queue. Server-enforced max length: 1000 chars.
+     *
+     * WRITE_ONLY: PublicContentService.getChannelDetails returns this entity raw on
+     * /api/v1/channels/{id}, which is permitAll. Without this, every approved channel's
+     * private "context for the admin" note would be public. Admin-side reads still go
+     * through PendingApprovalDto, which has its own surface for this field.
+     */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String submitterNote;
 
     /**
      * Approval metadata (BACKEND-APPR-01)
@@ -315,6 +328,14 @@ public class Channel {
 
     public void setApprovedBy(String approvedBy) {
         this.approvedBy = approvedBy;
+    }
+
+    public String getSubmitterNote() {
+        return submitterNote;
+    }
+
+    public void setSubmitterNote(String submitterNote) {
+        this.submitterNote = submitterNote;
     }
 
     public void touch() {

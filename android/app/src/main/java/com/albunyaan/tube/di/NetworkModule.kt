@@ -67,6 +67,7 @@ object NetworkModule {
     fun provideMoshi(): Moshi {
         return Moshi.Builder()
             .add(OffsetDateTimeAdapter())
+            .add(com.albunyaan.tube.data.approvals.dto.FirestoreTimestampAdapter())
             .addLast(KotlinJsonAdapterFactory())
             .build()
     }

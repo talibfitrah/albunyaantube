@@ -99,14 +99,13 @@ public class ApprovalController {
     /**
      * GET /api/admin/approvals/my-submissions
      *
-     * List the authenticated user's own submissions filtered by status.
-     * Available to both admins and moderators.
+     * List the authenticated user's own submissions. Available to both admins and moderators.
      *
      * Query params:
-     * - status: PENDING|APPROVED|REJECTED (default PENDING)
+     * - status: PENDING|APPROVED|REJECTED|REQUEST_CHANGES|ALL (omit or "ALL" returns every status; single-page, no cursor)
      * - type: CHANNEL|PLAYLIST|VIDEO (optional)
-     * - limit: page size (default 20)
-     * - cursor: pagination cursor (optional)
+     * - limit: page size (default 20, max 100)
+     * - cursor: pagination cursor — only honoured when an explicit single status is provided
      */
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     @GetMapping("/my-submissions")

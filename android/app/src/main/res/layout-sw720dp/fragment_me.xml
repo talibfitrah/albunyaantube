@@ -1,32 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/meRoot"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background_gray">
 
-    <com.google.android.material.appbar.AppBarLayout
-        android:id="@+id/meAppBar"
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/meToolbar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="?attr/colorSurface">
-
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/meToolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="?attr/colorSurface"
-            app:title="@string/nav_me"
-            app:titleTextColor="?attr/colorOnSurface"
-            app:menu="@menu/menu_me_kebab" />
-    </com.google.android.material.appbar.AppBarLayout>
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorSurface"
+        android:elevation="@dimen/elevation_sm"
+        app:title="@string/nav_me"
+        app:titleTextAppearance="@style/TextAppearance.MaterialComponents.Headline6"
+        app:titleTextColor="?attr/colorOnSurface"
+        app:menu="@menu/menu_me_kebab" />
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/meSwipeRefresh"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+        android:layout_height="match_parent">
 
         <FrameLayout
             android:layout_width="match_parent"
@@ -37,7 +32,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
-                android:paddingBottom="0dp"
+                android:paddingBottom="@dimen/bottom_nav_height"
                 android:paddingHorizontal="@dimen/spacing_md" />
 
             <include
@@ -47,4 +42,4 @@
         </FrameLayout>
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+</LinearLayout>

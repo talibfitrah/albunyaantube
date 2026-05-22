@@ -362,10 +362,11 @@ public class ApprovalService {
             String cursor) throws ExecutionException, InterruptedException, TimeoutException {
 
         int pageSize = Math.min((limit != null && limit > 0) ? limit : 20, 100);
-        String normalizedStatus = (status != null) ? status.toUpperCase() : "PENDING";
-        if (!VALID_STATUSES.contains(normalizedStatus)) {
-            String safe = (status != null && status.length() > 20) ? status.substring(0, 20) + "..." : String.valueOf(status);
-            throw new IllegalArgumentException("Invalid status: " + safe + ". Must be one of: PENDING, APPROVED, REJECTED");
+        boolean allStatuses = (status == null || status.isEmpty() || "ALL".equalsIgnoreCase(status));
+        String normalizedStatus = allStatuses ? null : status.toUpperCase();
+        if (!allStatuses && !VALID_STATUSES.contains(normalizedStatus)) {
+            String safe = (status.length() > 20) ? status.substring(0, 20) + "..." : status;
+            throw new IllegalArgumentException("Invalid status: " + safe + ". Must be one of: PENDING, APPROVED, REJECTED, REQUEST_CHANGES, ALL");
         }
 
         // Validate type parameter if provided
@@ -375,6 +376,10 @@ public class ApprovalService {
                 String safeType = type.length() > 20 ? type.substring(0, 20) + "..." : type;
                 throw new IllegalArgumentException("Invalid type: " + safeType + ". Must be one of: CHANNEL, PLAYLIST, VIDEO");
             }
+        }
+
+        if (allStatuses) {
+            return getMySubmissionsAllStatuses(submittedBy, type, pageSize);
         }
 
         if ("CHANNEL".equalsIgnoreCase(type)) {
@@ -387,6 +392,45 @@ public class ApprovalService {
 
         // Mixed: merge channels, playlists, and videos
         return getSubmissionsMixed(submittedBy, normalizedStatus, pageSize, cursor);
+    }
+
+    // When no explicit status is requested (the Android "My Submissions" default),
+    // fan out across PENDING / APPROVED / REJECTED / REQUEST_CHANGES so users see
+    // every item they ever submitted, not just pending ones. Returns up to pageSize
+    // entries sorted by submittedAt desc; no cursor — the My Submissions list is
+    // single-page in the client.
+    private CursorPageDto<PendingApprovalDto> getMySubmissionsAllStatuses(
+            String submittedBy, String type, int pageSize)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<PendingApprovalDto> merged = new ArrayList<>();
+        for (String s : List.of("PENDING", "APPROVED", "REJECTED", "REQUEST_CHANGES")) {
+            CursorPageDto<PendingApprovalDto> page;
+            if ("CHANNEL".equalsIgnoreCase(type)) {
+                page = getSubmissionChannelsOnly(submittedBy, s, pageSize, null);
+            } else if ("PLAYLIST".equalsIgnoreCase(type)) {
+                page = getSubmissionPlaylistsOnly(submittedBy, s, pageSize, null);
+            } else if ("VIDEO".equalsIgnoreCase(type)) {
+                page = getSubmissionVideosOnly(submittedBy, s, pageSize, null);
+            } else {
+                page = getSubmissionsMixed(submittedBy, s, pageSize, null);
+            }
+            merged.addAll(page.getData());
+        }
+        merged.sort((a, b) -> {
+            Timestamp aT = a.getSubmittedAt();
+            Timestamp bT = b.getSubmittedAt();
+            if (aT == null && bT == null) return 0;
+            if (aT == null) return 1;
+            if (bT == null) return -1;
+            return bT.compareTo(aT);
+        });
+        if (merged.size() > pageSize) {
+            merged = new ArrayList<>(merged.subList(0, pageSize));
+        }
+        CursorPageDto<PendingApprovalDto> response = new CursorPageDto<>();
+        response.setData(merged);
+        response.setPageInfo(new CursorPageDto.PageInfo(null));
+        return response;
     }
 
     private CursorPageDto<PendingApprovalDto> getSubmissionChannelsOnly(
@@ -865,13 +909,24 @@ public class ApprovalService {
     // Private helper methods
 
     private PendingApprovalDto channelToApprovalDto(Channel channel) {
+        // Cubic R4 P1 (TOCTOU + perf): enrichIfMissing was called here on every list
+        // read. It did a blocking NewPipe scrape + unconditional Firestore save with
+        // no transactional status check — admin approvals racing with enrichment would
+        // be silently reverted, AND a 100-row admin queue with stale data could time
+        // out. Submission-time prefetch (channel.setName(prefetchedName) in submit*)
+        // already populates these fields for new rows; legacy rows that pre-date the
+        // prefetch can be backfilled by a one-shot migration or a future explicit
+        // admin "refresh metadata" action. Read path no longer triggers backfill.
         PendingApprovalDto dto = new PendingApprovalDto();
         dto.setId(channel.getId());
         dto.setType("CHANNEL");
         dto.setEntityId(channel.getId());
         dto.setTitle(channel.getName());
+        dto.setThumbnailUrl(channel.getThumbnailUrl());
+        dto.setYoutubeId(channel.getYoutubeId());
         dto.setSubmittedAt(channel.getCreatedAt());
         dto.setSubmittedBy(channel.getSubmittedBy());
+        dto.setSubmitterNote(channel.getSubmitterNote());
 
         // Enrich with submitter details
         if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
@@ -898,12 +953,11 @@ public class ApprovalService {
         }
 
         // Add metadata
-        if (channel.getYoutubeId() != null) {
-            dto.addMetadata("youtubeId", channel.getYoutubeId());
-        }
-        if (channel.getThumbnailUrl() != null) {
-            dto.addMetadata("thumbnailUrl", channel.getThumbnailUrl());
-        }
+        // youtubeId is the top-level DTO field (set above via dto.setYoutubeId);
+        // don't duplicate to metadata — same drift risk as thumbnailUrl.
+        // thumbnailUrl is set as a top-level DTO field above (dto.setThumbnailUrl).
+        // Don't duplicate it into the metadata map — frontend and Android both read
+        // the top-level field and a dual-source would drift on partial updates.
         if (channel.getDescription() != null) {
             dto.addMetadata("description", channel.getDescription());
         }
@@ -918,13 +972,17 @@ public class ApprovalService {
     }
 
     private PendingApprovalDto playlistToApprovalDto(Playlist playlist) {
+        // Cubic R4 P1: read path no longer triggers backfill. See channelToApprovalDto.
         PendingApprovalDto dto = new PendingApprovalDto();
         dto.setId(playlist.getId());
         dto.setType("PLAYLIST");
         dto.setEntityId(playlist.getId());
         dto.setTitle(playlist.getTitle());
+        dto.setThumbnailUrl(playlist.getThumbnailUrl());
+        dto.setYoutubeId(playlist.getYoutubeId());
         dto.setSubmittedAt(playlist.getCreatedAt());
         dto.setSubmittedBy(playlist.getSubmittedBy());
+        dto.setSubmitterNote(playlist.getSubmitterNote());
 
         // Enrich with submitter details
         if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
@@ -951,12 +1009,8 @@ public class ApprovalService {
         }
 
         // Add metadata
-        if (playlist.getYoutubeId() != null) {
-            dto.addMetadata("youtubeId", playlist.getYoutubeId());
-        }
-        if (playlist.getThumbnailUrl() != null) {
-            dto.addMetadata("thumbnailUrl", playlist.getThumbnailUrl());
-        }
+        // youtubeId is the top-level DTO field; don't duplicate to metadata.
+        // thumbnailUrl is set as a top-level DTO field above; don't duplicate to metadata.
         if (playlist.getDescription() != null) {
             dto.addMetadata("description", playlist.getDescription());
         }
@@ -968,13 +1022,17 @@ public class ApprovalService {
     }
 
     private PendingApprovalDto videoToApprovalDto(Video video) {
+        // Cubic R4 P1: read path no longer triggers backfill. See channelToApprovalDto.
         PendingApprovalDto dto = new PendingApprovalDto();
         dto.setId(video.getId());
         dto.setType("VIDEO");
         dto.setEntityId(video.getId());
         dto.setTitle(video.getTitle());
+        dto.setThumbnailUrl(video.getThumbnailUrl());
+        dto.setYoutubeId(video.getYoutubeId());
         dto.setSubmittedAt(video.getCreatedAt());
         dto.setSubmittedBy(video.getSubmittedBy());
+        dto.setSubmitterNote(video.getSubmitterNote());
 
         // Enrich with submitter details
         if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
@@ -1001,12 +1059,8 @@ public class ApprovalService {
         }
 
         // Add metadata
-        if (video.getYoutubeId() != null) {
-            dto.addMetadata("youtubeId", video.getYoutubeId());
-        }
-        if (video.getThumbnailUrl() != null) {
-            dto.addMetadata("thumbnailUrl", video.getThumbnailUrl());
-        }
+        // youtubeId is the top-level DTO field; don't duplicate to metadata.
+        // thumbnailUrl is set as a top-level DTO field above; don't duplicate to metadata.
         if (video.getDescription() != null) {
             dto.addMetadata("description", video.getDescription());
         }

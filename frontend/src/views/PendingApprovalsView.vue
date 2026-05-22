@@ -143,6 +143,14 @@
           </div>
         </div>
 
+        <!-- Free-text "why I'm suggesting this" note from the submitter. Surfaces on
+             every card (admin queue AND moderator's My Submissions) so admins get
+             the context the submitter wanted them to have. -->
+        <div v-if="item.submitterNote" class="submitter-note">
+          <span class="meta-label">{{ t('approvals.submitterNote') }}:</span>
+          <p>{{ item.submitterNote }}</p>
+        </div>
+
         <!-- Rejection/Review info for moderator view -->
         <div v-if="isModeratorView && (item.rejectionReason || item.reviewNotes)" class="review-info">
           <div v-if="item.rejectionReason" class="review-detail">
@@ -818,6 +826,23 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.submitter-note {
+  padding: 0.875rem 1.5rem;
+  background: var(--color-brand-soft, var(--color-surface-alt));
+  border-top: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-brand);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.submitter-note p {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .review-detail {

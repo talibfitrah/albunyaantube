@@ -33,6 +33,12 @@ class MySubmissionsRepositoryTest {
 
             override suspend fun submitPlaylist(body: SubmitPlaylistRequest) = error("n/a")
             override suspend fun submitVideo(body: SubmitVideoRequest) = error("n/a")
+            override suspend fun editChannelSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun editPlaylistSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun editVideoSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun deleteChannelSubmission(id: String) = error("n/a")
+            override suspend fun deletePlaylistSubmission(id: String) = error("n/a")
+            override suspend fun deleteVideoSubmission(id: String) = error("n/a")
         }
         val repo = MySubmissionsRepository(api)
 
@@ -55,6 +61,12 @@ class MySubmissionsRepositoryTest {
 
             override suspend fun submitPlaylist(body: SubmitPlaylistRequest) = error("n/a")
             override suspend fun submitVideo(body: SubmitVideoRequest) = error("n/a")
+            override suspend fun editChannelSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun editPlaylistSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun editVideoSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun deleteChannelSubmission(id: String) = error("n/a")
+            override suspend fun deletePlaylistSubmission(id: String) = error("n/a")
+            override suspend fun deleteVideoSubmission(id: String) = error("n/a")
         }
         val repo = MySubmissionsRepository(api)
 
@@ -84,6 +96,12 @@ class MySubmissionsRepositoryTest {
             override suspend fun submitChannel(body: SubmitChannelRequest) = error("n/a")
             override suspend fun submitPlaylist(body: SubmitPlaylistRequest) = error("n/a")
             override suspend fun submitVideo(body: SubmitVideoRequest) = error("n/a")
+            override suspend fun editChannelSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun editPlaylistSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun editVideoSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun deleteChannelSubmission(id: String) = error("n/a")
+            override suspend fun deletePlaylistSubmission(id: String) = error("n/a")
+            override suspend fun deleteVideoSubmission(id: String) = error("n/a")
         }
         val repo = MySubmissionsRepository(api)
 
@@ -115,6 +133,12 @@ class MySubmissionsRepositoryTest {
 
             override suspend fun submitPlaylist(body: SubmitPlaylistRequest) = error("n/a")
             override suspend fun submitVideo(body: SubmitVideoRequest) = error("n/a")
+            override suspend fun editChannelSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun editPlaylistSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun editVideoSubmitterNote(id: String, body: SubmitterNoteUpdateRequest) = error("n/a")
+            override suspend fun deleteChannelSubmission(id: String) = error("n/a")
+            override suspend fun deletePlaylistSubmission(id: String) = error("n/a")
+            override suspend fun deleteVideoSubmission(id: String) = error("n/a")
         }
         val repo = MySubmissionsRepository(api)
 

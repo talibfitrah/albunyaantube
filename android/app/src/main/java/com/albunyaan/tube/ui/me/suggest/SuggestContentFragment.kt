@@ -39,8 +39,11 @@ class SuggestContentFragment : Fragment(R.layout.fragment_suggest_content) {
             if (hit.alreadyKnown && hit.knownStatus in setOf("APPROVED", "PENDING")) {
                 Snackbar.make(binding.root, R.string.suggest_already_in_registry, Snackbar.LENGTH_SHORT).show()
             } else {
-                SubmitContentBottomSheet.newInstance(prefillUrl = hit.url)
-                    .show(childFragmentManager, SubmitContentBottomSheet.TAG)
+                SubmitContentBottomSheet.newInstance(
+                    prefillUrl = hit.url,
+                    prefillName = hit.name,
+                    prefillThumbnailUrl = hit.thumbnailUrl,
+                ).show(childFragmentManager, SubmitContentBottomSheet.TAG)
             }
         }
     }

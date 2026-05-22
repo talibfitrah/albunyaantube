@@ -1,5 +1,6 @@
 package com.albunyaan.tube.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
 import com.google.cloud.firestore.annotation.IgnoreExtraProperties;
@@ -82,6 +83,10 @@ public class Video {
     private Timestamp updatedAt;
     private String submittedBy;
     private String approvedBy;
+
+    /** See Channel.submitterNote for the WRITE_ONLY rationale. */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String submitterNote;
 
     /**
      * Approval metadata (reviewer info, notes, rejection reason).
@@ -185,6 +190,14 @@ public class Video {
 
     public void setApprovedBy(String approvedBy) {
         this.approvedBy = approvedBy;
+    }
+
+    public String getSubmitterNote() {
+        return submitterNote;
+    }
+
+    public void setSubmitterNote(String submitterNote) {
+        this.submitterNote = submitterNote;
     }
 
     public String getTitle() {

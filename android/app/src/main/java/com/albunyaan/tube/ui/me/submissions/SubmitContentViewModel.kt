@@ -65,14 +65,27 @@ class SubmitContentViewModel @Inject constructor(
         }
     }
 
-    fun submit(parsed: ParsedYouTubeUrl, categoryId: String) {
+    fun submit(
+        parsed: ParsedYouTubeUrl,
+        categoryId: String,
+        prefetchedName: String? = null,
+        prefetchedThumbnailUrl: String? = null,
+        submitterNote: String? = null,
+    ) {
         if (_submitting.value) return
         _submitting.value = true
+        val trimmedNote = submitterNote?.trim()?.takeIf { it.isNotEmpty() }
         viewModelScope.launch {
             val result = when (parsed.type) {
-                DetectedContentType.CHANNEL -> repo.submitChannel(parsed.youtubeId, listOf(categoryId))
-                DetectedContentType.PLAYLIST -> repo.submitPlaylist(parsed.youtubeId, listOf(categoryId))
-                DetectedContentType.VIDEO -> repo.submitVideo(parsed.youtubeId, listOf(categoryId))
+                DetectedContentType.CHANNEL -> repo.submitChannel(
+                    parsed.youtubeId, listOf(categoryId), prefetchedName, prefetchedThumbnailUrl, trimmedNote,
+                )
+                DetectedContentType.PLAYLIST -> repo.submitPlaylist(
+                    parsed.youtubeId, listOf(categoryId), prefetchedName, prefetchedThumbnailUrl, trimmedNote,
+                )
+                DetectedContentType.VIDEO -> repo.submitVideo(
+                    parsed.youtubeId, listOf(categoryId), prefetchedName, prefetchedThumbnailUrl, trimmedNote,
+                )
             }
             _submitting.value = false
             result.fold(

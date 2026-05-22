@@ -5,6 +5,11 @@
           android:title="@string/me_kebab_profile"
           android:icon="@drawable/ic_nav_me"
           app:showAsAction="never"/>
+    <item android:id="@+id/action_my_submissions"
+          android:title="@string/my_submissions_title"
+          android:icon="@drawable/ic_inbox"
+          android:visible="false"
+          app:showAsAction="never"/>
     <item android:id="@+id/action_suggest_content"
           android:title="@string/me_kebab_suggest_content"
           android:icon="@drawable/ic_add"

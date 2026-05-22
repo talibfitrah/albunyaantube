@@ -450,6 +450,30 @@ public class VideoRepository {
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
+    /** TOCTOU-safe delete (cubic R3 P1). See ChannelRepository#deleteByIdIfStatusIn. */
+    public void deleteByIdIfStatusIn(String id, java.util.Set<String> expectedStatuses)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (id == null || expectedStatuses == null || expectedStatuses.isEmpty()) {
+            throw new IllegalArgumentException("id and non-empty expectedStatuses required");
+        }
+        com.google.cloud.firestore.DocumentReference docRef = getCollection().document(id);
+        firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot =
+                    transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+            if (!snapshot.exists()) {
+                throw new IllegalArgumentException("Video not found: " + id);
+            }
+            String currentStatus = snapshot.getString("status");
+            if (currentStatus == null || !expectedStatuses.contains(currentStatus)) {
+                throw new IllegalStateException(
+                        "Cannot delete video " + id +
+                        ": status " + currentStatus + " not in " + expectedStatuses);
+            }
+            transaction.delete(docRef);
+            return null;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
+
     /**
      * Find all videos with a safe default limit to prevent unbounded queries.
      * Uses the configured default-max-results to prevent timeout and memory issues.

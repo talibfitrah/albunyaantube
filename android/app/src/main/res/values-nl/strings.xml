@@ -628,4 +628,44 @@
     <string name="suggest_error_network">Netwerkfout</string>
     <string name="suggest_error_server">Serverfout %1$s</string>
 
+    <!-- My Submissions / Submit Content (auto-translated; review for tone) -->
+    <string name="my_submissions_title">Mijn voorstellen</string>
+    <string name="my_submissions_empty">Nog geen voorstellen. Tik op + om inhoud voor te stellen.</string>
+    <string name="my_submissions_status_pending">Wacht op beoordeling</string>
+    <string name="my_submissions_status_approved">Goedgekeurd</string>
+    <string name="my_submissions_status_rejected">Afgewezen</string>
+    <string name="my_submissions_status_request_changes">Wijzigingen gevraagd</string>
+    <string name="my_submissions_action_edit_note">Bericht bewerken</string>
+    <string name="my_submissions_action_delete">Voorstel verwijderen</string>
+    <string name="my_submissions_actions_content_description">Meer acties</string>
+    <string name="my_submissions_submitter_note_label">Jouw bericht</string>
+    <string name="my_submissions_delete_confirm_title">Dit voorstel verwijderen?</string>
+    <string name="my_submissions_delete_confirm_message">Het wordt verwijderd en de beoordelaar ziet het niet meer.</string>
+    <string name="my_submissions_delete_confirm_button">Verwijderen</string>
+    <string name="my_submissions_delete_success">Voorstel verwijderd</string>
+    <string name="my_submissions_edit_success">Bericht opgeslagen</string>
+    <string name="my_submissions_already_reviewed">Al beoordeeld — dit kan niet meer worden gewijzigd.</string>
+    <string name="my_submissions_action_failed">Kon dat niet voltooien. Probeer het opnieuw.</string>
+    <string name="edit_submission_sheet_title">Bericht bewerken</string>
+    <string name="edit_submission_sheet_subtitle">Werk de optionele notitie bij die beoordelaars zien.</string>
+    <string name="edit_submission_save_button">Opslaan</string>
+    <string name="my_submissions_submit_cta">Inhoud voorstellen</string>
+    <string name="my_submissions_error">Kon voorstellen niet laden</string>
+    <string name="my_submissions_title_placeholder">Titel laden…</string>
+    <string name="submit_content_sheet_title">Inhoud voorstellen</string>
+    <string name="submit_content_url_hint">YouTube-URL (kanaal, afspeellijst of video)</string>
+    <string name="submit_content_category_hint">Categorie</string>
+    <string name="submit_content_submit_button">Indienen ter beoordeling</string>
+    <string name="submit_content_invalid_url">Kon die URL niet herkennen. Plak een YouTube-kanaal, afspeellijst of videolink.</string>
+    <string name="submit_content_pick_category">Kies een categorie</string>
+    <string name="submit_content_success">Ingediend ter beoordeling</string>
+    <string name="submit_content_rate_limited">Dagelijkse indieningslimiet bereikt. Probeer het over %1$s opnieuw.</string>
+    <string name="submit_content_error_generic">Kon niet indienen. Probeer het opnieuw.</string>
+    <string name="submit_content_conflict">Staat al in het register.</string>
+    <string name="submit_content_detected_channel">Herkend: Kanaal</string>
+    <string name="submit_content_detected_playlist">Herkend: Afspeellijst</string>
+    <string name="submit_content_detected_video">Herkend: Video</string>
+    <string name="submit_content_note_hint">Bericht aan beoordelaars (optioneel)</string>
+    <string name="submit_content_note_helper">Waarom stel je dit voor? Dit helpt de beheerder sneller te beoordelen.</string>
+
 </resources>

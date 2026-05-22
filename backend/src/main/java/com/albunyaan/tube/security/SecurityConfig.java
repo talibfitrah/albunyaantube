@@ -95,6 +95,12 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/admin/categories/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/admin/categories/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/admin/categories/**").hasRole("ADMIN")
+                        // Self-service: a moderator OR admin can delete THEIR OWN
+                        // submission via the registry's submitter-owned endpoint.
+                        // The controller enforces ownership + status whitelist.
+                        // This must precede the broad DELETE /api/admin/** rule below.
+                        .requestMatchers(HttpMethod.DELETE, "/api/admin/registry/*/*/submission")
+                                .hasAnyRole("ADMIN", "MODERATOR")
                         .requestMatchers(HttpMethod.DELETE, "/api/admin/**").hasRole("ADMIN")
 
                         // Moderator and Admin endpoints

@@ -658,4 +658,44 @@
     <string name="suggest_error_network">خطأ في الشبكة</string>
     <string name="suggest_error_server">خطأ في الخادم %1$s</string>
 
+    <!-- My Submissions / Submit Content (auto-translated; review for tone) -->
+    <string name="my_submissions_title">إرسالاتي</string>
+    <string name="my_submissions_empty">لا توجد إرسالات بعد. اضغط + لاقتراح محتوى للمكتبة.</string>
+    <string name="my_submissions_status_pending">في انتظار المراجعة</string>
+    <string name="my_submissions_status_approved">موافق عليه</string>
+    <string name="my_submissions_status_rejected">مرفوض</string>
+    <string name="my_submissions_status_request_changes">تم طلب تعديلات</string>
+    <string name="my_submissions_action_edit_note">تعديل الرسالة</string>
+    <string name="my_submissions_action_delete">حذف الإرسال</string>
+    <string name="my_submissions_actions_content_description">المزيد من الإجراءات</string>
+    <string name="my_submissions_submitter_note_label">رسالتك</string>
+    <string name="my_submissions_delete_confirm_title">حذف هذا الإرسال؟</string>
+    <string name="my_submissions_delete_confirm_message">سيتم حذفه ولن يراه المراجع بعد الآن.</string>
+    <string name="my_submissions_delete_confirm_button">حذف</string>
+    <string name="my_submissions_delete_success">تم حذف الإرسال</string>
+    <string name="my_submissions_edit_success">تم حفظ الرسالة</string>
+    <string name="my_submissions_already_reviewed">تمت المراجعة — لا يمكن تغيير هذا بعد الآن.</string>
+    <string name="my_submissions_action_failed">تعذّر إتمام ذلك. حاول مجددًا.</string>
+    <string name="edit_submission_sheet_title">تعديل الرسالة</string>
+    <string name="edit_submission_sheet_subtitle">حدّث الملاحظة الاختيارية الظاهرة للمراجعين.</string>
+    <string name="edit_submission_save_button">حفظ</string>
+    <string name="my_submissions_submit_cta">اقتراح محتوى</string>
+    <string name="my_submissions_error">تعذّر تحميل الإرسالات</string>
+    <string name="my_submissions_title_placeholder">جارٍ تحميل العنوان…</string>
+    <string name="submit_content_sheet_title">اقتراح محتوى</string>
+    <string name="submit_content_url_hint">رابط يوتيوب (قناة، قائمة تشغيل، أو فيديو)</string>
+    <string name="submit_content_category_hint">الفئة</string>
+    <string name="submit_content_submit_button">إرسال للمراجعة</string>
+    <string name="submit_content_invalid_url">تعذّر التعرف على هذا الرابط. الصق رابط قناة أو قائمة أو فيديو من يوتيوب.</string>
+    <string name="submit_content_pick_category">اختر فئة</string>
+    <string name="submit_content_success">تم الإرسال للمراجعة</string>
+    <string name="submit_content_rate_limited">وصلت إلى الحد اليومي للإرسال. أعد المحاولة بعد %1$s.</string>
+    <string name="submit_content_error_generic">تعذّر الإرسال. حاول مجددًا.</string>
+    <string name="submit_content_conflict">موجود مسبقًا في السجل.</string>
+    <string name="submit_content_detected_channel">تم التعرف: قناة</string>
+    <string name="submit_content_detected_playlist">تم التعرف: قائمة تشغيل</string>
+    <string name="submit_content_detected_video">تم التعرف: فيديو</string>
+    <string name="submit_content_note_hint">رسالة للمراجعين (اختياري)</string>
+    <string name="submit_content_note_helper">لماذا تقترح هذا؟ يساعد ذلك المسؤول على المراجعة بشكل أسرع.</string>
+
 </resources>

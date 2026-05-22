@@ -66,7 +66,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
-                        android:background="@color/background_gray"
+                        android:background="?attr/colorOutlineVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <!-- Theme -->
@@ -106,7 +106,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
-                        android:background="@color/background_gray"
+                        android:background="?attr/colorOutlineVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <include
@@ -145,7 +145,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
-                        android:background="@color/background_gray"
+                        android:background="?attr/colorOutlineVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <!-- Background Play -->
@@ -184,7 +184,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
-                        android:background="@color/background_gray"
+                        android:background="?attr/colorOutlineVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <!-- WiFi Only Downloads -->
@@ -193,7 +193,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
-                        android:background="@color/background_gray"
+                        android:background="?attr/colorOutlineVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <!-- Storage Location -->
@@ -202,7 +202,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
-                        android:background="@color/background_gray"
+                        android:background="?attr/colorOutlineVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <!-- Storage Quota -->
@@ -211,7 +211,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
-                        android:background="@color/background_gray"
+                        android:background="?attr/colorOutlineVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <!-- Clear Downloads -->

@@ -63,6 +63,17 @@ public class PendingApprovalDto {
     private String status;
 
     /**
+     * Lifted from metadata so clients can render the thumbnail/avatar without
+     * digging into the dynamic metadata map.
+     */
+    private String thumbnailUrl;
+
+    /**
+     * Underlying YouTube ID — clients show this small for identification.
+     */
+    private String youtubeId;
+
+    /**
      * Rejection reason (if rejected)
      */
     private String rejectionReason;
@@ -71,6 +82,12 @@ public class PendingApprovalDto {
      * Review notes from the admin (if approved or rejected)
      */
     private String reviewNotes;
+
+    /**
+     * Optional free-text note from the submitter — "why I'm suggesting this".
+     * Shown to admins in the approval queue and to the submitter in My Submissions.
+     */
+    private String submitterNote;
 
     /**
      * Additional metadata (subscribers, video count, etc.)
@@ -177,6 +194,30 @@ public class PendingApprovalDto {
 
     public void setReviewNotes(String reviewNotes) {
         this.reviewNotes = reviewNotes;
+    }
+
+    public String getSubmitterNote() {
+        return submitterNote;
+    }
+
+    public void setSubmitterNote(String submitterNote) {
+        this.submitterNote = submitterNote;
+    }
+
+    public String getThumbnailUrl() {
+        return thumbnailUrl;
+    }
+
+    public void setThumbnailUrl(String thumbnailUrl) {
+        this.thumbnailUrl = thumbnailUrl;
+    }
+
+    public String getYoutubeId() {
+        return youtubeId;
+    }
+
+    public void setYoutubeId(String youtubeId) {
+        this.youtubeId = youtubeId;
     }
 
     public Map<String, Object> getMetadata() {

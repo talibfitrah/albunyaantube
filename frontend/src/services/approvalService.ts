@@ -23,6 +23,8 @@ export interface PendingApproval {
   categories: string[];
   submittedAt: string;
   submittedBy: string;
+  /** Optional free-text note the submitter attached at submit time or via edit. */
+  submitterNote?: string;
 }
 
 /**
@@ -85,16 +87,27 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
   return {
     id: dto.id || '',
     type: contentType,
-    youtubeId: getString('youtubeId'),
+    // Read from the top-level DTO field (canonical) with metadata as fallback for
+    // any in-flight responses serialized before the dual-write cleanup landed.
+    youtubeId: (dto as unknown as { youtubeId?: string }).youtubeId || getString('youtubeId'),
     title: dto.title || '',
     description: getString('description'),
-    thumbnailUrl: getString('thumbnailUrl'),
+    // thumbnailUrl is the canonical DTO field — read it from the top level, not the
+    // metadata map. The metadata copy was a transition artifact and would drift if a
+    // backend writer updated one source and not the other.
+    thumbnailUrl: dto.thumbnailUrl || '',
     channelTitle: getString('channelTitle'),
     subscriberCount,
     videoCount,
     categories,
     submittedAt: dto.submittedAt || new Date().toISOString(),
-    submittedBy: dto.submittedBy || ''
+    submittedBy: dto.submittedBy || '',
+    // The generated DTO type doesn't yet include submitterNote (OpenAPI spec hasn't
+    // been regenerated). Read it via index access so runtime works without a
+    // regen-and-commit step holding up the feature.
+    submitterNote:
+      ((dto as unknown as Record<string, unknown>)['submitterNote'] as string | undefined) ||
+      undefined
   };
 }
 

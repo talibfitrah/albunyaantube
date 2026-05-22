@@ -704,12 +704,27 @@
     <!-- My Submissions (Plan E T10) -->
     <string name="my_submissions_title">My Submissions</string>
     <string name="my_submissions_empty">No submissions yet. Tap + to suggest content for the library.</string>
-    <string name="my_submissions_status_pending">Pending</string>
+    <string name="my_submissions_status_pending">Awaiting review</string>
     <string name="my_submissions_status_approved">Approved</string>
     <string name="my_submissions_status_rejected">Rejected</string>
     <string name="my_submissions_status_request_changes">Changes requested</string>
+    <string name="my_submissions_action_edit_note">Edit message</string>
+    <string name="my_submissions_action_delete">Delete submission</string>
+    <string name="my_submissions_actions_content_description">More actions</string>
+    <string name="my_submissions_submitter_note_label">Your message</string>
+    <string name="my_submissions_delete_confirm_title">Delete this submission?</string>
+    <string name="my_submissions_delete_confirm_message">It will be removed and the reviewer will no longer see it.</string>
+    <string name="my_submissions_delete_confirm_button">Delete</string>
+    <string name="my_submissions_delete_success">Submission deleted</string>
+    <string name="my_submissions_edit_success">Message saved</string>
+    <string name="my_submissions_already_reviewed">Already reviewed — can\'t change this anymore.</string>
+    <string name="my_submissions_action_failed">Couldn\'t complete that. Try again.</string>
+    <string name="edit_submission_sheet_title">Edit message</string>
+    <string name="edit_submission_sheet_subtitle">Update the optional note shown to reviewers.</string>
+    <string name="edit_submission_save_button">Save</string>
     <string name="my_submissions_submit_cta">Suggest content</string>
     <string name="my_submissions_error">Could not load submissions</string>
+    <string name="my_submissions_title_placeholder">Loading title…</string>
 
     <!-- Profile (Plan G P3) -->
     <string name="profile_title">Profile</string>
@@ -761,4 +776,6 @@
     <string name="submit_content_detected_channel">Detected: Channel</string>
     <string name="submit_content_detected_playlist">Detected: Playlist</string>
     <string name="submit_content_detected_video">Detected: Video</string>
+    <string name="submit_content_note_hint">Message to reviewers (optional)</string>
+    <string name="submit_content_note_helper">Why are you suggesting this? Helps the admin review faster.</string>
 </resources>

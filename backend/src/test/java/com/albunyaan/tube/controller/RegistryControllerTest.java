@@ -1,5 +1,6 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.SubmitterNoteUpdateRequest;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.repository.ChannelRepository;
@@ -733,6 +734,299 @@ class RegistryControllerTest {
         registryController.addVideo(vid, adminUser);
         assertEquals("APPROVED", vid.getStatus());
         assertEquals("admin-uid", vid.getApprovedBy());
+    }
+
+    // ===== submitterNote sanitization on POST =====
+
+    @Test
+    void addChannel_blankSubmitterNote_storedAsNull() throws Exception {
+        Channel ch = new Channel("UC-blank-note");
+        ch.setName("X");
+        ch.setSubmitterNote("   \n  "); // blanks only
+        when(channelRepository.findByYoutubeId("UC-blank-note")).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        registryController.addChannel(ch, moderatorUser);
+
+        assertNull(ch.getSubmitterNote(), "blank-only notes should be normalised to null");
+    }
+
+    @Test
+    void addChannel_submitterNoteTooLong_returns400() throws Exception {
+        Channel ch = new Channel("UC-long-note");
+        ch.setName("X");
+        ch.setSubmitterNote("x".repeat(RegistryController.MAX_SUBMITTER_NOTE_LEN + 1));
+        when(channelRepository.findByYoutubeId("UC-long-note")).thenReturn(Optional.empty());
+
+        ResponseEntity<Channel> resp = registryController.addChannel(ch, moderatorUser);
+
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    @Test
+    void addChannel_validSubmitterNote_isTrimmedAndStored() throws Exception {
+        Channel ch = new Channel("UC-trimmed");
+        ch.setName("X");
+        ch.setSubmitterNote("  hello world  ");
+        when(channelRepository.findByYoutubeId("UC-trimmed")).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        registryController.addChannel(ch, moderatorUser);
+
+        assertEquals("hello world", ch.getSubmitterNote());
+    }
+
+    @Test
+    void addChannel_resubmitAfterRequestChanges_preservesExistingNote_whenBodyHasNoNote() throws Exception {
+        Channel existing = new Channel("UC-resub-keep");
+        existing.setId("rsk-1");
+        existing.setStatus("REQUEST_CHANGES");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        existing.setSubmitterNote("my earlier note that should survive");
+        when(channelRepository.findByYoutubeId("UC-resub-keep")).thenReturn(Optional.of(existing));
+        when(channelRepository.saveIfStatus(any(Channel.class), eq("REQUEST_CHANGES"))).thenAnswer(inv -> inv.getArgument(0));
+
+        Channel resubmit = new Channel("UC-resub-keep");
+        resubmit.setName("Y");
+        resubmit.setSubmitterNote(null); // client did not retype the note
+
+        ResponseEntity<Channel> resp = registryController.addChannel(resubmit, moderatorUser);
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals("PENDING", existing.getStatus());
+        assertEquals("my earlier note that should survive", existing.getSubmitterNote(),
+            "resubmit body without a note must not wipe the previously-stored note");
+    }
+
+    @Test
+    void addChannel_resubmitAfterRequestChanges_overwritesNote_whenBodyHasNote() throws Exception {
+        Channel existing = new Channel("UC-resub-update");
+        existing.setId("rsu-1");
+        existing.setStatus("REQUEST_CHANGES");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        existing.setSubmitterNote("old note");
+        when(channelRepository.findByYoutubeId("UC-resub-update")).thenReturn(Optional.of(existing));
+        when(channelRepository.saveIfStatus(any(Channel.class), eq("REQUEST_CHANGES"))).thenAnswer(inv -> inv.getArgument(0));
+
+        Channel resubmit = new Channel("UC-resub-update");
+        resubmit.setName("Y");
+        resubmit.setSubmitterNote("updated note text");
+
+        registryController.addChannel(resubmit, moderatorUser);
+
+        assertEquals("updated note text", existing.getSubmitterNote());
+    }
+
+    // ===== PATCH /channels/{id}/submitter-note =====
+
+    @Test
+    void updateChannelSubmitterNote_happyPath_pendingOwnedByCaller() throws Exception {
+        Channel existing = new Channel("UC-own");
+        existing.setId("c-1");
+        existing.setStatus("PENDING");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        when(channelRepository.findById("c-1")).thenReturn(Optional.of(existing));
+        // Cubic R3 P1: controller uses saveIfStatus to close the TOCTOU window.
+        when(channelRepository.saveIfStatus(any(Channel.class), eq("PENDING"))).thenAnswer(inv -> inv.getArgument(0));
+
+        SubmitterNoteUpdateRequest body = new SubmitterNoteUpdateRequest();
+        body.setSubmitterNote("Halal history channel — well-researched.");
+
+        ResponseEntity<Void> resp = registryController.updateChannelSubmitterNote("c-1", body, moderatorUser);
+
+        assertEquals(HttpStatus.NO_CONTENT, resp.getStatusCode());
+        assertEquals("Halal history channel — well-researched.", existing.getSubmitterNote());
+        verify(channelRepository).saveIfStatus(existing, "PENDING");
+        verify(auditLogService).log(eq("channel_submitter_note_updated"), eq("channel"), eq("c-1"), eq(moderatorUser));
+    }
+
+    @Test
+    void updateChannelSubmitterNote_returns403_whenCallerIsNotSubmitter() throws Exception {
+        Channel existing = new Channel("UC-other");
+        existing.setId("c-2");
+        existing.setStatus("PENDING");
+        existing.setSubmittedBy("someone-else-uid");
+        when(channelRepository.findById("c-2")).thenReturn(Optional.of(existing));
+
+        SubmitterNoteUpdateRequest body = new SubmitterNoteUpdateRequest();
+        body.setSubmitterNote("tampering attempt");
+
+        ResponseEntity<Void> resp = registryController.updateChannelSubmitterNote("c-2", body, moderatorUser);
+
+        assertEquals(HttpStatus.FORBIDDEN, resp.getStatusCode());
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    @Test
+    void updateChannelSubmitterNote_returns409_whenAlreadyApproved() throws Exception {
+        Channel existing = new Channel("UC-approved");
+        existing.setId("c-3");
+        existing.setStatus("APPROVED");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        when(channelRepository.findById("c-3")).thenReturn(Optional.of(existing));
+
+        SubmitterNoteUpdateRequest body = new SubmitterNoteUpdateRequest();
+        body.setSubmitterNote("too late");
+
+        ResponseEntity<Void> resp = registryController.updateChannelSubmitterNote("c-3", body, moderatorUser);
+
+        assertEquals(HttpStatus.CONFLICT, resp.getStatusCode());
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    @Test
+    void updateChannelSubmitterNote_returns409_whenAlreadyRejected() throws Exception {
+        Channel existing = new Channel("UC-rejected");
+        existing.setId("c-4");
+        existing.setStatus("REJECTED");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        when(channelRepository.findById("c-4")).thenReturn(Optional.of(existing));
+
+        SubmitterNoteUpdateRequest body = new SubmitterNoteUpdateRequest();
+        body.setSubmitterNote("appeal");
+
+        ResponseEntity<Void> resp = registryController.updateChannelSubmitterNote("c-4", body, moderatorUser);
+
+        assertEquals(HttpStatus.CONFLICT, resp.getStatusCode());
+    }
+
+    @Test
+    void updateChannelSubmitterNote_allowsEditing_whenRequestChanges() throws Exception {
+        Channel existing = new Channel("UC-rc");
+        existing.setId("c-5");
+        existing.setStatus("REQUEST_CHANGES");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        when(channelRepository.findById("c-5")).thenReturn(Optional.of(existing));
+        when(channelRepository.saveIfStatus(any(Channel.class), eq("REQUEST_CHANGES"))).thenAnswer(inv -> inv.getArgument(0));
+
+        SubmitterNoteUpdateRequest body = new SubmitterNoteUpdateRequest();
+        body.setSubmitterNote("Added Arabic subtitles as requested");
+
+        ResponseEntity<Void> resp = registryController.updateChannelSubmitterNote("c-5", body, moderatorUser);
+
+        assertEquals(HttpStatus.NO_CONTENT, resp.getStatusCode());
+        assertEquals("Added Arabic subtitles as requested", existing.getSubmitterNote());
+    }
+
+    @Test
+    void updateChannelSubmitterNote_returns404_whenMissing() throws Exception {
+        when(channelRepository.findById("missing")).thenReturn(Optional.empty());
+
+        SubmitterNoteUpdateRequest body = new SubmitterNoteUpdateRequest();
+        body.setSubmitterNote("anything");
+
+        ResponseEntity<Void> resp = registryController.updateChannelSubmitterNote("missing", body, moderatorUser);
+
+        assertEquals(HttpStatus.NOT_FOUND, resp.getStatusCode());
+    }
+
+    @Test
+    void updateChannelSubmitterNote_returns400_whenTooLong() throws Exception {
+        Channel existing = new Channel("UC-pending");
+        existing.setId("c-6");
+        existing.setStatus("PENDING");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        when(channelRepository.findById("c-6")).thenReturn(Optional.of(existing));
+
+        SubmitterNoteUpdateRequest body = new SubmitterNoteUpdateRequest();
+        body.setSubmitterNote("x".repeat(RegistryController.MAX_SUBMITTER_NOTE_LEN + 1));
+
+        ResponseEntity<Void> resp = registryController.updateChannelSubmitterNote("c-6", body, moderatorUser);
+
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    @Test
+    void updateChannelSubmitterNote_blankClearsTheNote() throws Exception {
+        Channel existing = new Channel("UC-clear");
+        existing.setId("c-7");
+        existing.setStatus("PENDING");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        existing.setSubmitterNote("previous note");
+        when(channelRepository.findById("c-7")).thenReturn(Optional.of(existing));
+        when(channelRepository.saveIfStatus(any(Channel.class), eq("PENDING"))).thenAnswer(inv -> inv.getArgument(0));
+
+        SubmitterNoteUpdateRequest body = new SubmitterNoteUpdateRequest();
+        body.setSubmitterNote("   "); // blanks only
+
+        ResponseEntity<Void> resp = registryController.updateChannelSubmitterNote("c-7", body, moderatorUser);
+
+        assertEquals(HttpStatus.NO_CONTENT, resp.getStatusCode());
+        assertNull(existing.getSubmitterNote(), "blank submission should clear the note");
+    }
+
+    // ===== DELETE /channels/{id}/submission =====
+
+    @Test
+    void deleteOwnChannelSubmission_happyPath_pendingOwnedByCaller() throws Exception {
+        Channel existing = new Channel("UC-del");
+        existing.setId("d-1");
+        existing.setStatus("PENDING");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        when(channelRepository.findById("d-1")).thenReturn(Optional.of(existing));
+
+        ResponseEntity<Void> resp = registryController.deleteOwnChannelSubmission("d-1", moderatorUser);
+
+        assertEquals(HttpStatus.NO_CONTENT, resp.getStatusCode());
+        // Cubic R3 P1+P2: controller now uses TOCTOU-safe delete and no longer evicts
+        // the public cache for submitter-owned (PENDING/REQUEST_CHANGES) rows that
+        // never appear in the public cache.
+        verify(channelRepository).deleteByIdIfStatusIn(eq("d-1"), any());
+        verify(publicContentCacheService, never()).evictPublicContentCaches();
+        verify(auditLogService).log(eq("channel_submission_deleted"), eq("channel"), eq("d-1"), eq(moderatorUser));
+    }
+
+    @Test
+    void deleteOwnChannelSubmission_returns403_whenCallerIsNotSubmitter() throws Exception {
+        Channel existing = new Channel("UC-del-403");
+        existing.setId("d-2");
+        existing.setStatus("PENDING");
+        existing.setSubmittedBy("someone-else-uid");
+        when(channelRepository.findById("d-2")).thenReturn(Optional.of(existing));
+
+        ResponseEntity<Void> resp = registryController.deleteOwnChannelSubmission("d-2", moderatorUser);
+
+        assertEquals(HttpStatus.FORBIDDEN, resp.getStatusCode());
+        verify(channelRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void deleteOwnChannelSubmission_returns409_whenAlreadyApproved() throws Exception {
+        Channel existing = new Channel("UC-del-409");
+        existing.setId("d-3");
+        existing.setStatus("APPROVED");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        when(channelRepository.findById("d-3")).thenReturn(Optional.of(existing));
+
+        ResponseEntity<Void> resp = registryController.deleteOwnChannelSubmission("d-3", moderatorUser);
+
+        assertEquals(HttpStatus.CONFLICT, resp.getStatusCode());
+        verify(channelRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void deleteOwnChannelSubmission_returns404_whenMissing() throws Exception {
+        when(channelRepository.findById("nope")).thenReturn(Optional.empty());
+
+        ResponseEntity<Void> resp = registryController.deleteOwnChannelSubmission("nope", moderatorUser);
+
+        assertEquals(HttpStatus.NOT_FOUND, resp.getStatusCode());
+    }
+
+    @Test
+    void deleteOwnChannelSubmission_allowed_whenRequestChanges() throws Exception {
+        Channel existing = new Channel("UC-del-rc");
+        existing.setId("d-4");
+        existing.setStatus("REQUEST_CHANGES");
+        existing.setSubmittedBy(moderatorUser.getUid());
+        when(channelRepository.findById("d-4")).thenReturn(Optional.of(existing));
+
+        ResponseEntity<Void> resp = registryController.deleteOwnChannelSubmission("d-4", moderatorUser);
+
+        assertEquals(HttpStatus.NO_CONTENT, resp.getStatusCode());
+        verify(channelRepository).deleteByIdIfStatusIn(eq("d-4"), any());
     }
 }
 

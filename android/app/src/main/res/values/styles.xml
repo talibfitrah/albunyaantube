@@ -126,6 +126,12 @@
         <item name="cornerSizeBottomRight">0dp</item>
     </style>
 
+    <!-- Small rounded thumbnail (list rows, 8dp corner). -->
+    <style name="ShapeAppearance.Albunyaan.RoundedThumbnail" parent="ShapeAppearance.MaterialComponents.SmallComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
     <!-- Channel Detail Typography -->
     <style name="TextAppearance.Channel.Title" parent="TextAppearance.Material3.HeadlineSmall">
         <item name="android:textSize">@dimen/text_headline</item>

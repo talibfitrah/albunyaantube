@@ -138,7 +138,17 @@ class SubmitContentBottomSheet : BottomSheetDialogFragment() {
         binding.submitButton.setOnClickListener {
             val parsed = parsedUrl ?: return@setOnClickListener
             val catId = selectedCategoryId ?: return@setOnClickListener
-            viewModel.submit(parsed, catId)
+            // When launched from SuggestContentFragment we already have the YouTube
+            // title + thumbnail from the search result — pass them through so the
+            // record is enriched at write-time and the moderator queue / My
+            // Submissions screen can render real metadata immediately.
+            viewModel.submit(
+                parsed = parsed,
+                categoryId = catId,
+                prefetchedName = arguments?.getString(ARG_PREFILL_NAME),
+                prefetchedThumbnailUrl = arguments?.getString(ARG_PREFILL_THUMB),
+                submitterNote = binding.submitterNoteInput.text?.toString(),
+            )
         }
 
         // Prefill URL if launched from SuggestContentFragment
@@ -188,11 +198,19 @@ class SubmitContentBottomSheet : BottomSheetDialogFragment() {
         const val TAG = "SubmitContentBottomSheet"
 
         private const val ARG_PREFILL_URL = "prefill_url"
+        private const val ARG_PREFILL_NAME = "prefill_name"
+        private const val ARG_PREFILL_THUMB = "prefill_thumb"
 
-        fun newInstance(prefillUrl: String? = null): SubmitContentBottomSheet {
+        fun newInstance(
+            prefillUrl: String? = null,
+            prefillName: String? = null,
+            prefillThumbnailUrl: String? = null,
+        ): SubmitContentBottomSheet {
             return SubmitContentBottomSheet().apply {
                 arguments = android.os.Bundle().apply {
                     if (prefillUrl != null) putString(ARG_PREFILL_URL, prefillUrl)
+                    if (prefillName != null) putString(ARG_PREFILL_NAME, prefillName)
+                    if (prefillThumbnailUrl != null) putString(ARG_PREFILL_THUMB, prefillThumbnailUrl)
                 }
             }
         }

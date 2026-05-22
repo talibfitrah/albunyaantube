@@ -21,4 +21,31 @@ interface ApprovalApi {
 
     @POST("api/admin/registry/videos")
     suspend fun submitVideo(@Body body: SubmitVideoRequest): Response<Void>
+
+    @PATCH("api/admin/registry/channels/{id}/submitter-note")
+    suspend fun editChannelSubmitterNote(
+        @Path("id") id: String,
+        @Body body: SubmitterNoteUpdateRequest,
+    ): Response<Void>
+
+    @PATCH("api/admin/registry/playlists/{id}/submitter-note")
+    suspend fun editPlaylistSubmitterNote(
+        @Path("id") id: String,
+        @Body body: SubmitterNoteUpdateRequest,
+    ): Response<Void>
+
+    @PATCH("api/admin/registry/videos/{id}/submitter-note")
+    suspend fun editVideoSubmitterNote(
+        @Path("id") id: String,
+        @Body body: SubmitterNoteUpdateRequest,
+    ): Response<Void>
+
+    @DELETE("api/admin/registry/channels/{id}/submission")
+    suspend fun deleteChannelSubmission(@Path("id") id: String): Response<Void>
+
+    @DELETE("api/admin/registry/playlists/{id}/submission")
+    suspend fun deletePlaylistSubmission(@Path("id") id: String): Response<Void>
+
+    @DELETE("api/admin/registry/videos/{id}/submission")
+    suspend fun deleteVideoSubmission(@Path("id") id: String): Response<Void>
 }

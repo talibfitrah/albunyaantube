@@ -19,8 +19,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.work.WorkManager
 import com.albunyaan.tube.R
-import com.albunyaan.tube.auth.AccountRepository
-import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
@@ -53,10 +51,6 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     // an extra round-trip.
     @Inject lateinit var favoritesRepository: FavoritesRepository
 
-    // E-T12: role gate for the My Submissions entry. One-shot read at
-    // onViewCreated; role cannot change without a sign-out which recreates
-    // the fragment stack, so no live observation is needed.
-    @Inject lateinit var accountRepository: AccountRepository
     @Inject lateinit var authRepository: AuthRepository
 
     @Inject lateinit var prefetchService: com.albunyaan.tube.player.StreamPrefetchService
@@ -150,18 +144,6 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             }
         }
 
-        // E-T12: show "My Submissions" entry only for moderator/admin.
-        // Role is stable for the lifetime of this fragment (sign-out
-        // recreates the stack), so a one-shot read is sufficient.
-        val role = (accountRepository.accountState.value as? AccountState.Loaded)?.role ?: "user"
-        val showSubmissions = role == "moderator" || role == "admin"
-        b.mySubmissionsEntry?.isVisible = showSubmissions
-        b.mySubmissionsEntry?.setOnClickListener {
-            if (findNavController().currentDestination?.id == R.id.meFragment) {
-                findNavController().navigate(R.id.action_me_to_mySubmissions)
-            }
-        }
-
         // T9: SwipeRefreshLayout spinner driven by the unique-one-shot
         // worker's WorkInfo. While any of the worker's WorkInfo states is
         // not finished (ENQUEUED / RUNNING / BLOCKED), the spinner stays;
@@ -214,8 +196,6 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     }
 
     // K2: wire the kebab menu on the fragment-owned MaterialToolbar.
-    // The toolbar exists in all three layout variants (phone adds AppBarLayout
-    // in this commit; tablet/TV already had meAppBar + meToolbar).
     // app:menu="@menu/menu_me_kebab" is declared in XML so inflation is free;
     // we only need to set visibility of action_suggest_content and handle clicks.
     private fun setupKebab(b: FragmentMeBinding) {
@@ -228,14 +208,22 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             MaterialColors.getColor(toolbar, android.R.attr.colorControlNormal, android.graphics.Color.BLACK)
         )
         val role = viewModel.snapshotRole()
-        toolbar.menu.findItem(R.id.action_suggest_content)?.isVisible =
-            role.equals("moderator", ignoreCase = true) || role.equals("admin", ignoreCase = true)
+        val isModerator = role.equals("moderator", ignoreCase = true) ||
+            role.equals("admin", ignoreCase = true)
+        toolbar.menu.findItem(R.id.action_my_submissions)?.isVisible = isModerator
+        toolbar.menu.findItem(R.id.action_suggest_content)?.isVisible = isModerator
 
         toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_profile -> {
                     if (findNavController().currentDestination?.id == R.id.meFragment) {
                         findNavController().navigate(R.id.action_me_to_profile)
+                    }
+                    true
+                }
+                R.id.action_my_submissions -> {
+                    if (findNavController().currentDestination?.id == R.id.meFragment) {
+                        findNavController().navigate(R.id.action_me_to_mySubmissions)
                     }
                     true
                 }

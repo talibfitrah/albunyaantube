@@ -13,5 +13,6 @@
     android:paddingTop="@dimen/spacing_lg"
     android:paddingBottom="@dimen/spacing_sm"
     android:textAlignment="viewStart"
-    android:textAppearance="?attr/textAppearanceTitleLarge"
+    android:textSize="@dimen/text_section_title"
+    android:textStyle="bold"
     android:textColor="?attr/colorOnSurface" />

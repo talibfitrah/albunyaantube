@@ -1024,8 +1024,10 @@ class ApprovalServicePaginationTest {
         assertEquals("VIDEO", dto.getType());
         assertEquals("Test Video", dto.getTitle());
         assertNotNull(dto.getMetadata());
-        assertEquals("yt-abc123", dto.getMetadata().get("youtubeId"));
-        assertEquals("https://img.youtube.com/thumb.jpg", dto.getMetadata().get("thumbnailUrl"));
+        // Cubic R4 P2 cleanup: youtubeId + thumbnailUrl are now top-level DTO fields,
+        // not duplicated into metadata. Read from the canonical fields.
+        assertEquals("yt-abc123", dto.getYoutubeId());
+        assertEquals("https://img.youtube.com/thumb.jpg", dto.getThumbnailUrl());
         assertEquals(300, dto.getMetadata().get("durationSeconds"));
         assertEquals(10000L, dto.getMetadata().get("viewCount"));
         assertEquals("Test Channel", dto.getMetadata().get("channelTitle"));

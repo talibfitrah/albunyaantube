@@ -227,6 +227,7 @@ export const messages = {
       },
       rejectedReason: 'Reason',
       adminNotes: 'Admin notes',
+      submitterNote: 'Submitter\'s message',
       rejectDialog: {
         title: 'Reject Submission',
         reason: 'Rejection reason',
@@ -1711,6 +1712,7 @@ export const messages = {
       },
       rejectedReason: 'السبب',
       adminNotes: 'ملاحظات المسؤول',
+      submitterNote: 'رسالة المقدم',
       rejectDialog: {
         title: 'رفض الطلب',
         reason: 'سبب الرفض',
@@ -2976,6 +2978,7 @@ export const messages = {
       },
       rejectedReason: 'Reden',
       adminNotes: 'Opmerkingen beheerder',
+      submitterNote: 'Bericht van indiener',
       rejectDialog: {
         title: 'Indiening afwijzen',
         reason: 'Reden voor afwijzing',
