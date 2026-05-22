@@ -818,17 +818,20 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         binder = null
         binding = null
         hasBoundInitialPage = false
-        // Per-video flow maps grow one entry per scrolled video. The two
-        // resolution-result maps below are reactively re-populated from
-        // PlayerBinder.resolvedEvents on rebind, so clearing them on view
-        // destruction is safe. We do NOT clear [activeLanguageByVideoId]
-        // here — it records the user's last-selected audio language per
-        // video and the dialog uses it for the "checked" item state. On
-        // Fragment recreation (config change, back/forward nav) the
-        // selection memory must survive so the dialog can preselect
-        // correctly the next time the user opens it.
-        audioLanguagesByVideoId.clear()
-        subtitlesByVideoId.clear()
+        // Per-video flow maps are NOT cleared here. The previous version of
+        // this fragment cleared them on the theory that PlayerBinder's
+        // [resolvedEvents] SharedFlow would replay-and-repopulate after
+        // recreation — but the cache that backs resolvedStreamsFor is
+        // fragment-scoped (lost on rotation), and resolvedEvents replay=1
+        // only carries the most-recent emission which may be for a
+        // different video than the currently-playing one. Clearing here
+        // caused an empty audio/subtitle dialog if the user opened it
+        // immediately after a rotation. Maps grow one entry per scrolled
+        // video — session-bounded (50-100 entries in a long shorts
+        // session ≈ ~50KB), well under the cost of the empty-dialog UX
+        // bug. [activeLanguageByVideoId] specifically holds the user's
+        // language selection memory which must survive recreation so the
+        // dialog can preselect correctly.
         super.onDestroyView()
     }
 

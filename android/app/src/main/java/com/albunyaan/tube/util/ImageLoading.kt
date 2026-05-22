@@ -179,16 +179,20 @@ object ImageLoading {
         val currentUrl = urls[index]
         val imageView = this
 
+        val isTerminalAttempt = index == urls.size - 1
         load(currentUrl) {
             placeholder(placeholder)
-            // CRITICAL: also set error() so a terminal load failure surfaces
-            // the placeholder drawable instead of leaving the ImageView's
-            // previous crossfade target half-painted. Without this, recycled
-            // cells whose request was racy with another bind can render a
-            // half-faded or blank surface — perceived by users as
-            // "thumbnails are missing." Parity with [loadThumbnail] (line 73)
-            // and [loadThumbnailUrl] (line 101).
-            error(placeholder)
+            // Set error() ONLY on the terminal attempt. Coil paints the
+            // error drawable BEFORE the onError listener fires, so setting
+            // it on intermediate attempts caused a placeholder flash on
+            // every recycled cell whose first URL 404'd, even when a later
+            // URL would have succeeded. Limiting to the terminal attempt
+            // still fixes the half-painted-recycled-view symptom (line 174
+            // manual setImageResource only runs if the request tag still
+            // matches; the unconditional Coil error() paint is what
+            // backstops the stale-callback race) without the mid-chain
+            // flash.
+            if (isTerminalAttempt) error(placeholder)
             if (crossfade && index == 0) crossfade(true) // Only crossfade on first attempt
             memoryCachePolicy(CachePolicy.ENABLED)
             diskCachePolicy(CachePolicy.ENABLED)

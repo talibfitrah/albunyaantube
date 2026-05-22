@@ -40,10 +40,14 @@ object ThumbnailUrlHelper {
      * the standard quality ladder) while giving high-DPI displays a chance at
      * the high-res asset.
      *
-     * Intentionally excludes `sddefault` (already 640x480, acceptable for
-     * mid-DPI) and `maxresdefault` (the upgrade target itself).
+     * Requires a `/vi/<id>/` segment so the upgrade only fires for actual
+     * YouTube CDN thumbnails — without that anchor, a non-ytimg URL ending
+     * `/hqdefault.jpg` would get rewritten to a non-existent
+     * `/maxresdefault.jpg` and waste a network round-trip before falling
+     * back to the original. Intentionally excludes `sddefault` (already
+     * 640x480, acceptable for mid-DPI) and `maxresdefault` itself.
      */
-    private val LOW_RES_PRIMARY_REGEX = Regex("""/(?:hq|mq)?default\.(jpg|webp)""")
+    private val LOW_RES_PRIMARY_REGEX = Regex("""(/vi(?:_webp)?/[A-Za-z0-9_-]{11}/)(?:hq|mq)?default\.(jpg|webp)""")
 
     // Shorts-specific patterns (9:16 aspect ratio thumbnails)
     private val SHORTS_THUMBNAIL_PATTERNS = listOf(
@@ -80,7 +84,8 @@ object ThumbnailUrlHelper {
         primaryUrl?.takeIf { it.isNotBlank() }?.let { rawPrimary ->
             if (LOW_RES_PRIMARY_REGEX.containsMatchIn(rawPrimary)) {
                 val maxres = LOW_RES_PRIMARY_REGEX.replace(rawPrimary) { match ->
-                    "/maxresdefault.${match.groupValues[1]}"
+                    // group 1 = "/vi/<id>/" prefix preserved; group 2 = ext
+                    "${match.groupValues[1]}maxresdefault.${match.groupValues[2]}"
                 }
                 fallbacks.add(maxres)
             }

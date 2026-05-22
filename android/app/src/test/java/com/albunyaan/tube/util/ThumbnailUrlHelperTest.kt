@@ -195,16 +195,12 @@ class ThumbnailUrlHelperTest {
 
     @Test
     fun `getFallbackUrls does NOT upgrade non-ytimg primaries`() {
-        // Custom CDN URLs aren't on the YouTube quality ladder
+        // Custom CDN URLs aren't on the YouTube quality ladder; regex
+        // requires the /vi/<id>/ segment so non-ytimg URLs ending
+        // /hqdefault.jpg pass through unchanged — no wasted upgrade request.
         val primaryUrl = "https://custom.cdn.com/foo/hqdefault.jpg"
         val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
 
-        // Regex matches anywhere; this is the documented behavior — any URL
-        // whose path ends in /hqdefault.jpg gets the upgrade attempt. The
-        // upgraded URL won't load (wrong CDN), but the fallback chain
-        // immediately tries the original next, which is the same behavior as
-        // before this change. Acceptable.
-        assertEquals("https://custom.cdn.com/foo/maxresdefault.jpg", urls.first())
-        assertTrue(urls.contains(primaryUrl))
+        assertEquals(primaryUrl, urls.first())
     }
 }
