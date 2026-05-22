@@ -401,49 +401,65 @@ class NewPipePlaylistDetailRepository @Inject constructor(
      * extracted, or when the channel fetch fails. The caller treats null as
      * "no canonical id available" which keeps the registry gate fail-closed.
      */
-    override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? {
-        if (uploaderUrl.isNullOrBlank()) return null
+    override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? =
+        // Block the entire resolver on Dispatchers.IO. ChannelInfo.getInfo is a
+        // synchronous NewPipe call (OkHttp under the hood) — without this, a
+        // caller on the main thread (e.g. viewModelScope.launch which defaults
+        // to Main.immediate) would block the UI on a network round-trip.
+        // NewPipePriorityContext.with is a non-suspending try/finally over a
+        // ThreadLocal, so it does NOT switch dispatcher itself.
+        withContext(Dispatchers.IO) {
+            if (uploaderUrl.isNullOrBlank()) return@withContext null
 
-        val rawExtracted = extractChannelId(uploaderUrl) ?: return null
+            val rawExtracted = extractChannelId(uploaderUrl) ?: return@withContext null
 
-        // Fast path: /channel/UC... already canonical.
-        if (CANONICAL_CHANNEL_ID_REGEX.matches(rawExtracted)) {
-            return rawExtracted
-        }
+            // Fast path: /channel/UC... already canonical.
+            if (CANONICAL_CHANNEL_ID_REGEX.matches(rawExtracted)) {
+                return@withContext rawExtracted
+            }
 
-        // Slow path: need a NewPipe fetch to resolve handle/name → UC id.
-        // Check cache (positive and negative) first.
-        val checkedAt = System.currentTimeMillis()
-        cacheMutex.withLock {
-            channelIdCache[uploaderUrl]?.let { entry ->
-                val ttl = if (entry.value != null) CHANNEL_ID_CACHE_TTL_MILLIS
-                else CHANNEL_ID_NEGATIVE_CACHE_TTL_MILLIS
-                if (checkedAt - entry.timestamp <= ttl) {
-                    return entry.value
+            // Slow path: need a NewPipe fetch to resolve handle/name → UC id.
+            // Check cache (positive and negative) first.
+            val checkedAt = System.currentTimeMillis()
+            cacheMutex.withLock {
+                channelIdCache[uploaderUrl]?.let { entry ->
+                    val ttl = if (entry.value != null) CHANNEL_ID_CACHE_TTL_MILLIS
+                    else CHANNEL_ID_NEGATIVE_CACHE_TTL_MILLIS
+                    if (checkedAt - entry.timestamp <= ttl) {
+                        return@withContext entry.value
+                    }
                 }
             }
-        }
 
-        val resolved = try {
-            NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
-                val info = ChannelInfo.getInfo(youtubeService, uploaderUrl)
-                info.id?.takeIf { CANONICAL_CHANNEL_ID_REGEX.matches(it) }
+            val resolved = try {
+                NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+                    val info = ChannelInfo.getInfo(youtubeService, uploaderUrl)
+                    info.id?.takeIf { CANONICAL_CHANNEL_ID_REGEX.matches(it) }
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to resolve canonical channel id for $uploaderUrl", e)
+                null
             }
-        } catch (ce: CancellationException) {
-            throw ce
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to resolve canonical channel id for $uploaderUrl", e)
-            null
-        }
 
-        // Cache both positive and negative results, using fresh wall-clock
-        // captured AFTER the network so a slow scrape doesn't make entries
-        // expire prematurely.
-        cacheMutex.withLock {
-            channelIdCache[uploaderUrl] = CacheEntry(resolved, System.currentTimeMillis())
+            // Cache result with fresh wall-clock captured AFTER the network so
+            // a slow scrape doesn't make entries expire prematurely.
+            //
+            // CRITICAL: on transient NewPipe failure (resolved=null), preserve
+            // any existing positive entry even if it's past the positive TTL.
+            // Canonical UC ids are immutable per channel — once we resolved one,
+            // it stays valid indefinitely. Overwriting an expired-but-still-
+            // semantically-valid positive entry with null would hide a working
+            // channel link for the entire 5-min negative TTL on every transient
+            // YouTube outage. Negative caching exists to throttle re-fetches on
+            // PERMANENT failures, not to discard prior successful resolutions.
+            cacheMutex.withLock {
+                val toCache = resolved ?: channelIdCache[uploaderUrl]?.value
+                channelIdCache[uploaderUrl] = CacheEntry(toCache, System.currentTimeMillis())
+                toCache
+            }
         }
-        return resolved
-    }
 
     private fun PlaylistItem.toIndexItem() = StreamIndexItem(
         id = videoId, name = title, thumbnailUrl = thumbnailUrl,

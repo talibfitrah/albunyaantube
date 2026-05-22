@@ -709,6 +709,13 @@ class PlaylistDetailViewModelTest {
         val state = vm.headerState.value
         assertTrue(state is PlaylistDetailViewModel.HeaderState.Success)
         assertEquals(true, (state as PlaylistDetailViewModel.HeaderState.Success).header.isChannelLinkable)
+        // Resolver MUST be skipped when channelId is already canonical — the
+        // whole point of the regex fast-path is to avoid the NewPipe round-trip
+        // for the (overwhelmingly common) /channel/UC... URL case.
+        assertEquals(
+            "Canonical channelId must short-circuit before the resolver runs",
+            0, fakeRepository.canonicalResolveCallCount
+        )
     }
 
     /**
