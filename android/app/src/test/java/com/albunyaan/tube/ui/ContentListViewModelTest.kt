@@ -387,5 +387,7 @@ class ContentListViewModelTest {
         }
 
         override suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean = true
+
+        override suspend fun isInApprovedRegistry(type: AvailabilityCheckType, youtubeId: String): Boolean = true
     }
 }

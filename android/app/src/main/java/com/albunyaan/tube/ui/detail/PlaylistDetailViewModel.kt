@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 import com.albunyaan.tube.data.playlist.PlaylistHeader
@@ -18,6 +19,8 @@ import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Named
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -81,6 +84,12 @@ class PlaylistDetailViewModel @AssistedInject constructor(
     @Volatile
     private var clock: () -> Long = { System.currentTimeMillis() }
 
+    // Tracks the in-flight registry check so a refresh of the same playlist
+    // cancels the previous gate before launching a new one — otherwise an
+    // older "approved=true" result could land AFTER a newer "approved=false"
+    // and silently re-expose an un-approved channel until the next reload.
+    private var channelLinkabilityJob: Job? = null
+
     @VisibleForTesting
     fun setClockForTesting(clock: () -> Long) {
         this.clock = clock
@@ -124,6 +133,19 @@ class PlaylistDetailViewModel @AssistedInject constructor(
                 _headerState.value = HeaderState.Success(header)
                 Log.d(TAG, "Header loaded: ${header.title}")
 
+                // Resolve channel linkability in the background. Header is already rendered;
+                // the channel-name view stays hidden (fail-closed default) until this returns
+                // true, which prevents standalone playlists from ever exposing a tap path
+                // into the uncurated parent channel. See PlaylistHeader.isChannelLinkable.
+                val parentChannelId = header.channelId?.takeIf { it.isNotBlank() }
+                if (parentChannelId != null) {
+                    // Cancel any prior gate check from a previous loadHeader so a
+                    // stale `approved=true` result cannot land on top of a fresh
+                    // `approved=false` (admin un-approval race).
+                    channelLinkabilityJob?.cancel()
+                    channelLinkabilityJob = launch { resolveChannelLinkability(parentChannelId) }
+                }
+
                 // Auto-load items after header success
                 loadInitial()
             } catch (e: Exception) {
@@ -131,6 +153,40 @@ class PlaylistDetailViewModel @AssistedInject constructor(
                 _headerState.value = HeaderState.Error(errorMsg)
                 Log.e(TAG, errorMsg, e)
             }
+        }
+    }
+
+    /**
+     * Check whether the playlist's parent channel is approved in our registry.
+     * On success (channel is approved): flips [PlaylistHeader.isChannelLinkable] to true
+     * so the fragment can show the channel name as a tappable link.
+     * On failure (404, 410, network error, any thrown exception): leaves the flag
+     * false — fail-closed. The curation intent is "don't expose uncurated channels",
+     * so we'd rather hide a legitimate link than ever surface an uncurated one.
+     */
+    private suspend fun resolveChannelLinkability(parentChannelId: String) {
+        val isApproved = try {
+            contentService.isInApprovedRegistry(
+                AvailabilityCheckType.CHANNEL,
+                parentChannelId
+            )
+        } catch (ce: CancellationException) {
+            // Scope cancellation (ViewModel cleared, user navigated away, or
+            // a newer loadHeader cancelled us) must propagate so structured
+            // concurrency works and we don't write to a stale ViewModel.
+            throw ce
+        } catch (e: Exception) {
+            if (BuildConfig.DEBUG) {
+                Log.w(TAG, "Channel linkability check failed for $parentChannelId; defaulting to hidden", e)
+            }
+            return
+        }
+        if (!isApproved) return
+        val current = _headerState.value
+        if (current is HeaderState.Success && current.header.channelId == parentChannelId) {
+            _headerState.value = HeaderState.Success(
+                current.header.copy(isChannelLinkable = true)
+            )
         }
     }
 

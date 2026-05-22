@@ -525,17 +525,25 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
                 }
             }
 
-            // Channel name (clickable)
-            if (!header.channelName.isNullOrEmpty()) {
-                channelName.text = header.channelName
+            // Channel name (clickable) — only shown when the parent channel is APPROVED
+            // in our registry. Standalone playlists (whose parent channel is intentionally
+            // not curated) hide this entirely so users can't navigate into uncurated
+            // content via the link. See PlaylistHeader.isChannelLinkable.
+            //
+            // `isChannelLinkable=true` implies channelId is non-blank — the ViewModel
+            // only launches the registry check when channelId.isNotBlank() — so a
+            // separate null/blank guard on channelId here would be dead defense.
+            val cid = header.channelId
+            val cname = header.channelName
+            if (header.isChannelLinkable && !cname.isNullOrEmpty() && cid != null) {
+                channelName.text = cname
                 channelName.isVisible = true
                 channelName.setOnClickListener {
-                    header.channelId?.let { channelId ->
-                        navigateToChannel(channelId, header.channelName)
-                    }
+                    navigateToChannel(cid, cname)
                 }
             } else {
                 channelName.isVisible = false
+                channelName.setOnClickListener(null)
             }
 
             // Metadata (video count + duration)

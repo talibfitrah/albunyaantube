@@ -656,6 +656,87 @@ class PlaylistDetailViewModelTest {
             callCountBefore, fakeRepository.itemsCallCount)
     }
 
+    // ── Channel Linkability Tests ──────────────────────────────────────────────
+    // Standalone playlists (parent channel not in approved registry) must never
+    // expose a tap path into the uncurated channel. PlaylistHeader.isChannelLinkable
+    // gates the fragment's channel-name view; default false is fail-closed.
+
+    @Test
+    fun `isChannelLinkable stays false when parent channel is not in approved registry`() = runTest {
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLstand"))
+            .thenReturn(true)
+        whenever(mockContentService.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCtest123"))
+            .thenReturn(false)
+        fakeRepository.headerResponse = createTestHeader("PLstand", "Standalone Playlist")
+        fakeRepository.itemsResponse = PlaylistPage(emptyList(), null)
+
+        val vm = createViewModel(playlistId = "PLstand", contentService = mockContentService)
+        advanceUntilIdle()
+
+        val state = vm.headerState.value
+        assertTrue(state is PlaylistDetailViewModel.HeaderState.Success)
+        assertEquals(false, (state as PlaylistDetailViewModel.HeaderState.Success).header.isChannelLinkable)
+    }
+
+    @Test
+    fun `isChannelLinkable flips to true when parent channel is in approved registry`() = runTest {
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLcur"))
+            .thenReturn(true)
+        whenever(mockContentService.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCtest123"))
+            .thenReturn(true)
+        fakeRepository.headerResponse = createTestHeader("PLcur", "Curated Playlist")
+        fakeRepository.itemsResponse = PlaylistPage(emptyList(), null)
+
+        val vm = createViewModel(playlistId = "PLcur", contentService = mockContentService)
+        advanceUntilIdle()
+
+        val state = vm.headerState.value
+        assertTrue(state is PlaylistDetailViewModel.HeaderState.Success)
+        assertEquals(true, (state as PlaylistDetailViewModel.HeaderState.Success).header.isChannelLinkable)
+    }
+
+    @Test
+    fun `isChannelLinkable stays false when registry check throws`() = runTest {
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLerr"))
+            .thenReturn(true)
+        whenever(mockContentService.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCtest123"))
+            .thenThrow(RuntimeException("network down"))
+        fakeRepository.headerResponse = createTestHeader("PLerr", "Network Error Playlist")
+        fakeRepository.itemsResponse = PlaylistPage(emptyList(), null)
+
+        val vm = createViewModel(playlistId = "PLerr", contentService = mockContentService)
+        advanceUntilIdle()
+
+        val state = vm.headerState.value
+        assertTrue(state is PlaylistDetailViewModel.HeaderState.Success)
+        // Fail-closed: a thrown exception must NOT enable the link, since the curation
+        // intent is to avoid exposing uncurated channels under any uncertainty.
+        assertEquals(false, (state as PlaylistDetailViewModel.HeaderState.Success).header.isChannelLinkable)
+    }
+
+    @Test
+    fun `registry check skipped when header has no channelId`() = runTest {
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLnoch"))
+            .thenReturn(true)
+        // Header with null channelId — NewPipe couldn't extract one.
+        fakeRepository.headerResponse = createTestHeader("PLnoch", "No Channel").copy(channelId = null)
+        fakeRepository.itemsResponse = PlaylistPage(emptyList(), null)
+
+        val vm = createViewModel(playlistId = "PLnoch", contentService = mockContentService)
+        advanceUntilIdle()
+
+        val state = vm.headerState.value
+        assertTrue(state is PlaylistDetailViewModel.HeaderState.Success)
+        assertEquals(false, (state as PlaylistDetailViewModel.HeaderState.Success).header.isChannelLinkable)
+        // Mockito will fail this verification if isInApprovedRegistry was called.
+        org.mockito.kotlin.verify(mockContentService, org.mockito.kotlin.never())
+            .isInApprovedRegistry(org.mockito.kotlin.any(), org.mockito.kotlin.any())
+    }
+
     @Test
     fun `retryInitial without prior loadHeader settled blocks NewPipe when playlist archived`() = runTest {
         // Simulates the retry-button race: the UI calls loadHeader(forceRefresh=true) AND

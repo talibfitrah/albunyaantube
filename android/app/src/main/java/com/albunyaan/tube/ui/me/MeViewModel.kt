@@ -387,14 +387,18 @@ class MeViewModel @Inject constructor(
     ): MeFeedState {
         if (channels.isEmpty() && playlists.isEmpty()) return MeFeedState.Empty
 
-        val chips = buildList(capacity = channels.size + playlists.size) {
-            channels.forEach {
-                add(ChipItem.Channel(it.channelId, it.name, it.avatarUrl, it.channelUrl))
-            }
-            playlists.forEach {
-                add(ChipItem.Playlist(it.playlistId, it.name, it.thumbnailUrl, it.playlistUrl))
-            }
-        }
+        // Merge subscribed channels and saved playlists into a single chip list sorted
+        // by when each item was added (newest first). Without this, channels and
+        // playlists were segregated and a freshly saved playlist landed at the end
+        // of the list — visually leftmost in RTL — pushed off-screen by existing
+        // channel chips. Sorting by timestamp puts the most recent add at position 0,
+        // which is rightmost (the most visible position) in RTL layout.
+        val chips: List<ChipItem> = (
+            channels.map { it.subscribedAt to ChipItem.Channel(it.channelId, it.name, it.avatarUrl, it.channelUrl) } +
+            playlists.map { it.savedAt to ChipItem.Playlist(it.playlistId, it.name, it.thumbnailUrl, it.playlistUrl) }
+        )
+            .sortedByDescending { it.first }
+            .map { it.second }
 
         val scoped = if (filterId == null) cached else cached.filter { it.channelId == filterId }
         val shorts = scoped.asSequence().filter { it.isShort }.map { it.toUi() }.toList()

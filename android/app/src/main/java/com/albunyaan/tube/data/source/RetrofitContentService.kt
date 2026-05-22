@@ -118,4 +118,23 @@ class RetrofitContentService(
             else -> throw retrofit2.HttpException(response)
         }
     }
+
+    override suspend fun isInApprovedRegistry(type: AvailabilityCheckType, youtubeId: String): Boolean {
+        return try {
+            val response = when (type) {
+                AvailabilityCheckType.CHANNEL -> api.checkChannelAvailable(youtubeId)
+                AvailabilityCheckType.PLAYLIST -> api.checkPlaylistAvailable(youtubeId)
+                AvailabilityCheckType.VIDEO -> api.checkVideoAvailable(youtubeId)
+            }
+            response.isSuccessful
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            // Coroutine scope cancellation (ViewModel cleared / user navigated
+            // away) must propagate so structured concurrency works. The broad
+            // catch below would otherwise swallow it and the caller would
+            // proceed to write into a cleared ViewModel.
+            throw ce
+        } catch (e: Exception) {
+            false
+        }
+    }
 }

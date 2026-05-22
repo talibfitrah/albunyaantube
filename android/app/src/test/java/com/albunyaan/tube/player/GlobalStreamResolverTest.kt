@@ -934,6 +934,11 @@ class GlobalStreamResolverTest {
             return availability[youtubeId] ?: true
         }
 
+        override suspend fun isInApprovedRegistry(
+            type: AvailabilityCheckType,
+            youtubeId: String,
+        ): Boolean = availability[youtubeId] ?: true
+
         override suspend fun fetchContent(
             type: ContentType,
             cursor: String?,

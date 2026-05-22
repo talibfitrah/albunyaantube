@@ -39,4 +39,19 @@ interface ContentService {
      * (e.g., offline scenarios) or fail-closed.
      */
     suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean
+
+    /**
+     * Returns true ONLY when the id is registered AND APPROVED in our backend
+     * (HTTP 2xx). Returns false on 404 (not in registry, e.g. parent channel of
+     * a standalone playlist), 410 (admin-blocked), or any other status. Returns
+     * false on transport errors — callers that use this to gate exposing
+     * uncurated content (e.g., the parent-channel link on a standalone playlist)
+     * should fail-closed to honour the curation intent.
+     *
+     * Distinct from [verifyAvailable], which fails-open on 404 so unregistered
+     * downstream content (a video whose parent isn't separately registered) can
+     * still resolve via NewPipe. This method's semantic is the inverse: prove
+     * approval before exposing a lateral discovery surface.
+     */
+    suspend fun isInApprovedRegistry(type: AvailabilityCheckType, youtubeId: String): Boolean
 }

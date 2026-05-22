@@ -195,4 +195,10 @@ class FakeContentService : ContentService {
 
     override suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean =
         true // Fake never simulates archived content; tests that need that should mock ContentService directly.
+
+    override suspend fun isInApprovedRegistry(type: AvailabilityCheckType, youtubeId: String): Boolean =
+        // Fail-closed default so a future ViewModel test that forgets to override
+        // this method cannot accidentally pass while the real gate is broken.
+        // Tests that need `true` (channel is approved) must mock ContentService.
+        false
 }
