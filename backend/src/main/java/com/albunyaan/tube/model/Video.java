@@ -40,6 +40,11 @@ public class Video {
     private String thumbnailUrl;
     private Integer durationSeconds;
     private Long viewCount;
+    /**
+     * BULK-01: STANDARD (regular video, default) or LIVE (livestream).
+     * Null on legacy docs; getter returns null and consumers treat null as STANDARD.
+     */
+    private VideoType videoType;
     private Timestamp uploadedAt;
     private String channelId;
     private String channelTitle;
@@ -247,6 +252,14 @@ public class Video {
 
     public void setViewCount(Long viewCount) {
         this.viewCount = viewCount;
+    }
+
+    public VideoType getVideoType() {
+        return videoType;
+    }
+
+    public void setVideoType(VideoType videoType) {
+        this.videoType = videoType;
     }
 
     public Timestamp getUploadedAt() {
