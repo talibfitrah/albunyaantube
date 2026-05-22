@@ -10,7 +10,13 @@ import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
 import com.albunyaan.tube.player.StreamRequestTelemetry
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -87,6 +93,27 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 return size > MAX_CACHE_SIZE
             }
         }
+
+    /**
+     * Single-flight in-flight resolutions keyed by channelId. When two callers
+     * miss the cache concurrently for the same channel, the second one awaits
+     * the first's [Deferred] instead of firing a duplicate NewPipe channel-
+     * page fetch. The deferred runs on [channelInfoScope] so caller
+     * cancellation doesn't kill an in-flight fetch that another caller is
+     * awaiting. Mirrors the pattern proven in
+     * [com.albunyaan.tube.data.playlist.NewPipePlaylistDetailRepository.inflightResolutions]
+     * (commits 736c9127, 0a157e08, d1431358) — same identity-checked cleanup.
+     * All access must be protected by [cacheMutex].
+     */
+    private val inflightChannelInfo: MutableMap<String, Deferred<ChannelInfo>> = mutableMapOf()
+
+    /**
+     * Long-lived supervisor scope for in-flight channel-info fetches. The
+     * repository is `@Singleton`, so this scope outlives any ViewModel.
+     * Individual fetch failures do not cancel sibling fetches (SupervisorJob).
+     */
+    private val channelInfoScope: CoroutineScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override suspend fun getChannelHeader(channelId: String, forceRefresh: Boolean): ChannelHeader {
         return withContext(Dispatchers.IO) {
@@ -377,16 +404,25 @@ class NewPipeChannelDetailRepository @Inject constructor(
     }
 
     /**
-     * Fetches channel info with caching support.
+     * Fetches channel info with caching + single-flight dedup support.
+     *
+     * Three-stage lookup: (1) check the TTL'd cache under the mutex; (2) on
+     * miss, check the in-flight map and ride on an existing fetch if one
+     * exists; (3) otherwise schedule a fresh fetch on [channelInfoScope] and
+     * register it in the in-flight map under the mutex. Cubic R3 finding:
+     * before this change, two concurrent callers on a cold cache for the
+     * same channel both hit NewPipe and the second write clobbered the
+     * first. The LRU bound (100 channels) amplified the wasted-work cost
+     * because eviction made cold misses more likely.
      */
     private suspend fun getChannelInfo(channelId: String, forceRefresh: Boolean): ChannelInfo {
         return withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-
-            // Check cache unless force refresh
+            // Fast-path cache hit (skip when caller wants a fresh fetch).
             if (!forceRefresh) {
                 val hit = cacheMutex.withLock {
-                    channelInfoCache[channelId]?.takeIf { now - it.timestamp <= CACHE_TTL_MILLIS }
+                    channelInfoCache[channelId]?.takeIf {
+                        System.currentTimeMillis() - it.timestamp <= CACHE_TTL_MILLIS
+                    }
                 }
                 if (hit != null) {
                     Log.d(TAG, "Cache hit for channel: $channelId")
@@ -394,42 +430,77 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 }
             }
 
-            Log.d(TAG, "Fetching channel info for: $channelId")
-            try {
-                // Mark this NewPipe path as VISIBLE_INTERACTIVE so the
-                // [com.albunyaan.tube.data.extractor.RateLimitedDownloader]
-                // cooldown gate sees the priority context. The token bucket
-                // bypasses for VISIBLE_INTERACTIVE — see
-                // [com.albunyaan.tube.data.extractor.GlobalNewPipeRateLimiter].
-                // NewPipePriorityContext.with takes a non-suspend lambda, so
-                // the suspending cacheMutex.withLock write is hoisted out
-                // after the fetch returns.
-                val info = retryNewPipeRateLimiterTimeout("channel header $channelId") {
-                    NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
-                        val handler = createChannelLinkHandler(channelId)
-                            ?: throw ExtractionException("Invalid channel ID: $channelId")
+            // Cache miss (or force). Single-flight: if another coroutine is
+            // already fetching this channel, await its deferred. Otherwise
+            // schedule a new fetch on the long-lived scope so caller
+            // cancellation doesn't abort an in-flight fetch that another
+            // caller might be awaiting.
+            val deferred = cacheMutex.withLock {
+                val existing = inflightChannelInfo[channelId]
+                if (existing != null && !existing.isCompleted) {
+                    Log.d(TAG, "Joining in-flight channel-info fetch for $channelId")
+                    existing
+                } else {
+                    channelInfoScope.async {
+                        // Capture our own Job so the finally block can remove
+                        // our own entry without stomping a newer Deferred a
+                        // concurrent caller may have registered after we
+                        // complete. isCompleted-only check would not work —
+                        // the finally fires before async marks the deferred
+                        // completed, so the entry would leak.
+                        val self = currentCoroutineContext()[Job]
+                        try {
+                            fetchAndCacheChannelInfo(channelId)
+                        } finally {
+                            cacheMutex.withLock {
+                                if (inflightChannelInfo[channelId] === self) {
+                                    inflightChannelInfo.remove(channelId)
+                                }
+                            }
+                        }
+                    }.also { inflightChannelInfo[channelId] = it }
+                }
+            }
+            deferred.await()
+        }
+    }
 
-                        val extractor = youtubeService.getChannelExtractor(handler)
-                        extractor.fetchPage()
-                        ChannelInfo.getInfo(extractor)
-                    }
+    /**
+     * Performs the NewPipe channel-page fetch and writes the result to
+     * [channelInfoCache]. Runs inside [getChannelInfo]'s single-flight
+     * async. Marks the NewPipe call as VISIBLE_INTERACTIVE so the
+     * [com.albunyaan.tube.data.extractor.RateLimitedDownloader] cooldown
+     * gate sees the priority context (the token bucket bypasses for
+     * VISIBLE_INTERACTIVE — see
+     * [com.albunyaan.tube.data.extractor.GlobalNewPipeRateLimiter]).
+     * Cache write is re-stamped with current time so a multi-second
+     * NewPipe call doesn't back-date the TTL by its own duration.
+     */
+    private suspend fun fetchAndCacheChannelInfo(channelId: String): ChannelInfo {
+        Log.d(TAG, "Fetching channel info for: $channelId")
+        try {
+            val info = retryNewPipeRateLimiterTimeout("channel header $channelId") {
+                NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
+                    val handler = createChannelLinkHandler(channelId)
+                        ?: throw ExtractionException("Invalid channel ID: $channelId")
+
+                    val extractor = youtubeService.getChannelExtractor(handler)
+                    extractor.fetchPage()
+                    ChannelInfo.getInfo(extractor)
                 }
-                cacheMutex.withLock {
-                    // Re-stamp after the fetch returns so a multi-second
-                    // NewPipe call doesn't back-date the TTL by its own
-                    // duration.
-                    channelInfoCache[channelId] = CacheEntry(info, System.currentTimeMillis())
-                }
-                Log.d(TAG, "Cached channel info for: $channelId with ${info.tabs.size} tabs")
-                info
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to fetch channel info for $channelId", e)
-                when (e) {
-                    is IOException, is ExtractionException -> throw e
-                    else -> throw ExtractionException("Failed to fetch channel", e)
-                }
+            }
+            cacheMutex.withLock {
+                channelInfoCache[channelId] = CacheEntry(info, System.currentTimeMillis())
+            }
+            Log.d(TAG, "Cached channel info for: $channelId with ${info.tabs.size} tabs")
+            return info
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to fetch channel info for $channelId", e)
+            when (e) {
+                is IOException, is ExtractionException -> throw e
+                else -> throw ExtractionException("Failed to fetch channel", e)
             }
         }
     }
