@@ -9,7 +9,11 @@ import com.albunyaan.tube.data.index.IndexRepository
 import com.albunyaan.tube.data.index.StreamIndexItem
 import com.albunyaan.tube.download.DownloadPolicy
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -85,6 +89,28 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                 return size > MAX_CHANNEL_ID_CACHE_SIZE
             }
         }
+
+    /**
+     * In-flight resolutions keyed by uploader URL. Single-flight pattern: when
+     * two callers ask for the same URL on a cold cache, the second caller awaits
+     * the first's [Deferred] instead of firing a duplicate NewPipe channel-page
+     * fetch. The deferred is started on [resolutionScope] (independent of any
+     * caller's scope) so that a caller cancellation cannot kill an in-flight
+     * fetch that another caller is awaiting — OkHttp wouldn't honour the
+     * interrupt anyway, so the fetch would continue but its result would be
+     * discarded without single-flight.
+     * All access must be protected by [cacheMutex].
+     */
+    private val inflightResolutions: MutableMap<String, Deferred<String?>> = mutableMapOf()
+
+    /**
+     * Long-lived supervisor scope for in-flight resolution fetches. Singleton
+     * lifetime — the repository itself is `@Singleton`, so this scope outlives
+     * any ViewModel. Independent failures on individual fetches do not cancel
+     * sibling fetches (SupervisorJob).
+     */
+    private val resolutionScope: CoroutineScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override suspend fun getHeader(
         playlistId: String,
@@ -401,14 +427,14 @@ class NewPipePlaylistDetailRepository @Inject constructor(
      * extracted, or when the channel fetch fails. The caller treats null as
      * "no canonical id available" which keeps the registry gate fail-closed.
      */
-    override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? =
+    override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? {
         // Block the entire resolver on Dispatchers.IO. ChannelInfo.getInfo is a
         // synchronous NewPipe call (OkHttp under the hood) — without this, a
         // caller on the main thread (e.g. viewModelScope.launch which defaults
         // to Main.immediate) would block the UI on a network round-trip.
         // NewPipePriorityContext.with is a non-suspending try/finally over a
         // ThreadLocal, so it does NOT switch dispatcher itself.
-        withContext(Dispatchers.IO) {
+        return withContext(Dispatchers.IO) {
             if (uploaderUrl.isNullOrBlank()) return@withContext null
 
             val rawExtracted = extractChannelId(uploaderUrl) ?: return@withContext null
@@ -419,9 +445,10 @@ class NewPipePlaylistDetailRepository @Inject constructor(
             }
 
             // Slow path: need a NewPipe fetch to resolve handle/name → UC id.
-            // Check cache (positive and negative) first.
+            // Check cache (positive and negative) first; if cache miss, join
+            // any in-flight resolution for the same URL or start a new one.
             val checkedAt = System.currentTimeMillis()
-            cacheMutex.withLock {
+            val deferred: Deferred<String?> = cacheMutex.withLock {
                 channelIdCache[uploaderUrl]?.let { entry ->
                     val ttl = if (entry.value != null) CHANNEL_ID_CACHE_TTL_MILLIS
                     else CHANNEL_ID_NEGATIVE_CACHE_TTL_MILLIS
@@ -429,37 +456,68 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                         return@withContext entry.value
                     }
                 }
-            }
-
-            val resolved = try {
-                NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
-                    val info = ChannelInfo.getInfo(youtubeService, uploaderUrl)
-                    info.id?.takeIf { CANONICAL_CHANNEL_ID_REGEX.matches(it) }
+                // Cache miss. If another caller is already resolving this URL,
+                // ride on their deferred (single-flight). Otherwise schedule a
+                // fresh fetch on the resolution scope so it survives caller
+                // cancellation — and remember the deferred so concurrent
+                // callers can find it.
+                val existing = inflightResolutions[uploaderUrl]
+                if (existing != null && !existing.isCompleted) {
+                    existing
+                } else {
+                    resolutionScope.async {
+                        try {
+                            fetchAndCacheCanonicalChannelId(uploaderUrl)
+                        } finally {
+                            cacheMutex.withLock {
+                                // Only remove our own entry; do not stomp on a
+                                // newer in-flight that might have replaced it.
+                                if (inflightResolutions[uploaderUrl]?.isCompleted == true) {
+                                    inflightResolutions.remove(uploaderUrl)
+                                }
+                            }
+                        }
+                    }.also { inflightResolutions[uploaderUrl] = it }
                 }
-            } catch (ce: CancellationException) {
-                throw ce
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to resolve canonical channel id for $uploaderUrl", e)
-                null
             }
-
-            // Cache result with fresh wall-clock captured AFTER the network so
-            // a slow scrape doesn't make entries expire prematurely.
-            //
-            // CRITICAL: on transient NewPipe failure (resolved=null), preserve
-            // any existing positive entry even if it's past the positive TTL.
-            // Canonical UC ids are immutable per channel — once we resolved one,
-            // it stays valid indefinitely. Overwriting an expired-but-still-
-            // semantically-valid positive entry with null would hide a working
-            // channel link for the entire 5-min negative TTL on every transient
-            // YouTube outage. Negative caching exists to throttle re-fetches on
-            // PERMANENT failures, not to discard prior successful resolutions.
-            cacheMutex.withLock {
-                val toCache = resolved ?: channelIdCache[uploaderUrl]?.value
-                channelIdCache[uploaderUrl] = CacheEntry(toCache, System.currentTimeMillis())
-                toCache
-            }
+            deferred.await()
         }
+    }
+
+    /**
+     * Performs the actual NewPipe channel-page fetch and writes the result to
+     * [channelIdCache]. Runs on the [resolutionScope] (Dispatchers.IO) inside
+     * [resolveCanonicalChannelId]'s single-flight `async`. Only called when a
+     * cache lookup missed and no in-flight resolution exists yet.
+     *
+     * CRITICAL: on transient NewPipe failure (resolved=null), preserve any
+     * existing positive entry even if it's past the positive TTL. Canonical UC
+     * ids are immutable per channel — once we resolved one, it stays valid
+     * indefinitely. Overwriting an expired-but-still-semantically-valid
+     * positive entry with null would hide a working channel link for the
+     * entire 5-min negative TTL on every transient YouTube outage. Negative
+     * caching exists to throttle re-fetches on PERMANENT failures, not to
+     * discard prior successful resolutions.
+     */
+    private suspend fun fetchAndCacheCanonicalChannelId(uploaderUrl: String): String? {
+        val resolved = try {
+            NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+                val info = ChannelInfo.getInfo(youtubeService, uploaderUrl)
+                info.id?.takeIf { CANONICAL_CHANNEL_ID_REGEX.matches(it) }
+            }
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to resolve canonical channel id for $uploaderUrl", e)
+            null
+        }
+        // Cache result with fresh wall-clock captured AFTER the network.
+        return cacheMutex.withLock {
+            val toCache = resolved ?: channelIdCache[uploaderUrl]?.value
+            channelIdCache[uploaderUrl] = CacheEntry(toCache, System.currentTimeMillis())
+            toCache
+        }
+    }
 
     private fun PlaylistItem.toIndexItem() = StreamIndexItem(
         id = videoId, name = title, thumbnailUrl = thumbnailUrl,
