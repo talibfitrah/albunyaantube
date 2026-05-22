@@ -58,6 +58,41 @@ public class BulkSubmissionService {
         return new BulkPreviewResponse(rows);
     }
 
+    public BulkSubmitResponse submit(BulkSubmitRequest req, String actorUid, boolean isAdmin) {
+        long start = System.currentTimeMillis();
+        // Role-based status normalization: moderators always PENDING; admin defaults PENDING but can pass APPROVED.
+        String resolvedStatus = isAdmin
+                ? (req.status() == null || req.status().isBlank() ? "PENDING" : req.status().toUpperCase(java.util.Locale.ROOT))
+                : "PENDING";
+
+        List<SubmitResult> results = new ArrayList<>(req.rows().size());
+        int added = 0, failed = 0;
+
+        for (SubmitRow row : req.rows()) {
+            try {
+                String registryId = switch (row.detectedType()) {
+                    case CHANNEL  -> writer.writeChannel(row.metadata(), row.categoryIds(), resolvedStatus, actorUid, isAdmin);
+                    case PLAYLIST -> writer.writePlaylist(row.metadata(), row.categoryIds(), resolvedStatus, actorUid, isAdmin);
+                    case VIDEO    -> writer.writeVideo(row.metadata(),
+                            row.videoType() != null ? row.videoType() : VideoType.STANDARD,
+                            row.categoryIds(), resolvedStatus, actorUid, isAdmin);
+                    default       -> throw new IllegalStateException("Unsupported detectedType in bulk submit: " + row.detectedType());
+                };
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), registryId, SubmitStatus.ADDED, null));
+                added++;
+            } catch (Exception e) {
+                log.warn("bulk-submit row failed: rowIndex={} url={} reason={}", row.rowIndex(), row.originalUrl(), e.getMessage());
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null, SubmitStatus.FAILED, "WRITE_ERROR"));
+                failed++;
+            }
+        }
+
+        log.info("bulk-submit actorUid={} rowCount={} added={} failed={} durationMs={}",
+                actorUid, req.rows().size(), added, failed, System.currentTimeMillis() - start);
+
+        return new BulkSubmitResponse(req.rows().size(), added, failed, results);
+    }
+
     private PreviewRow buildRow(int rowIndex, String originalUrl, RegistryDuplicateChecker.Batch batch) {
         try {
             YouTubeUrlParseResult parsed = parser.parse(originalUrl);
