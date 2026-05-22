@@ -420,8 +420,20 @@ class NewPipeChannelDetailRepository @Inject constructor(
             // Fast-path cache hit (skip when caller wants a fresh fetch).
             if (!forceRefresh) {
                 val hit = cacheMutex.withLock {
-                    channelInfoCache[channelId]?.takeIf {
-                        System.currentTimeMillis() - it.timestamp <= CACHE_TTL_MILLIS
+                    val entry = channelInfoCache[channelId]
+                    when {
+                        entry == null -> null
+                        System.currentTimeMillis() - entry.timestamp > CACHE_TTL_MILLIS -> {
+                            // Stale. LinkedHashMap.get() with accessOrder=true
+                            // just moved this entry to MRU; drop it so the
+                            // stale value doesn't push valid entries out of
+                            // the LRU window before the refresh writes a
+                            // fresh entry (or fails, in which case the stale
+                            // value was useless to keep anyway).
+                            channelInfoCache.remove(channelId)
+                            null
+                        }
+                        else -> entry
                     }
                 }
                 if (hit != null) {
