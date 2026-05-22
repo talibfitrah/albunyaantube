@@ -1,13 +1,23 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.YouTubeContentType;
+import com.albunyaan.tube.dto.registry.PreviewErrorCode;
+import com.albunyaan.tube.dto.registry.PreviewMetadata;
+import com.albunyaan.tube.model.VideoType;
+import org.schabi.newpipe.extractor.Image;
 import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.ListExtractor;
 import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.StreamingService;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
+import org.schabi.newpipe.extractor.exceptions.AccountTerminatedException;
+import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException;
+import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
+import org.schabi.newpipe.extractor.exceptions.GeographicRestrictionException;
 import org.schabi.newpipe.extractor.exceptions.ParsingException;
+import org.schabi.newpipe.extractor.exceptions.PrivateContentException;
 import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
@@ -16,6 +26,7 @@ import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubePlaylist
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeStreamLinkHandlerFactory;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
+import org.schabi.newpipe.extractor.stream.StreamType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +37,7 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -34,6 +46,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
 
 /**
  * P2-T3: YouTube Gateway
@@ -264,7 +277,7 @@ public class YouTubeGateway {
      * Create a search extractor with content-type filters.
      * Valid filter values: "videos", "channels", "playlists" (see YoutubeSearchQueryHandlerFactory).
      */
-    public SearchExtractor createSearchExtractor(String query, java.util.List<String> contentFilters)
+    public SearchExtractor createSearchExtractor(String query, List<String> contentFilters)
             throws ExtractionException {
         return youtube.getSearchExtractor(query, contentFilters, "");
     }
@@ -624,5 +637,123 @@ public class YouTubeGateway {
      */
     public CompletableFuture<Void> runAsync(Runnable runnable) {
         return CompletableFuture.runAsync(runnable, executorService);
+    }
+
+    // -------------------------------------------------------------------------
+    // BULK-01 (T5) — single dispatch for the bulk preview pipeline
+    // -------------------------------------------------------------------------
+
+    /**
+     * Fetch metadata for one item by detected type, mapping all NewPipe exceptions
+     * to {@link com.albunyaan.tube.dto.registry.PreviewErrorCode} values.
+     *
+     * <p>The existing per-type methods ({@code fetchChannelInfo}, {@code fetchPlaylistInfo},
+     * {@code fetchStreamInfo}) accept a YouTube ID, so {@code youtubeId} is passed to them;
+     * {@code normalizedUrl} is carried through only for future logging or callers that need it.
+     */
+    public PreviewFetchResult fetchByDetectedType(
+            YouTubeContentType type,
+            String youtubeId,
+            String normalizedUrl) {
+        logger.debug("BULK-01: fetching {} youtubeId={} normalizedUrl={}", type, youtubeId, normalizedUrl);
+        try {
+            return switch (type) {
+                case CHANNEL  -> mapChannel(fetchChannelInfo(youtubeId), youtubeId);
+                case PLAYLIST -> mapPlaylist(fetchPlaylistInfo(youtubeId), youtubeId);
+                case VIDEO    -> mapVideo(fetchStreamInfo(youtubeId), youtubeId);
+                default       -> PreviewFetchResult.error(PreviewErrorCode.UNSUPPORTED_TYPE);
+            };
+        } catch (AccountTerminatedException e) {
+            return PreviewFetchResult.error(PreviewErrorCode.CHANNEL_TERMINATED);
+        } catch (PrivateContentException e) {
+            return PreviewFetchResult.error(PreviewErrorCode.PRIVATE_CONTENT);
+        } catch (AgeRestrictedContentException e) {
+            return PreviewFetchResult.error(PreviewErrorCode.AGE_RESTRICTED);
+        } catch (GeographicRestrictionException e) {
+            return PreviewFetchResult.error(PreviewErrorCode.GEO_RESTRICTED);
+        } catch (ContentNotAvailableException e) {
+            return PreviewFetchResult.error(PreviewErrorCode.CONTENT_NOT_AVAILABLE);
+        } catch (ExtractionException e) {
+            return PreviewFetchResult.error(PreviewErrorCode.NEWPIPE_PARSING_ERROR);
+        } catch (IOException e) {
+            return PreviewFetchResult.error(PreviewErrorCode.NETWORK_ERROR);
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof IOException) {
+                return PreviewFetchResult.error(PreviewErrorCode.NETWORK_ERROR);
+            }
+            return PreviewFetchResult.error(PreviewErrorCode.NEWPIPE_PARSING_ERROR);
+        }
+    }
+
+    private PreviewFetchResult mapChannel(
+            ChannelInfo info, String youtubeId) {
+        var m = new PreviewMetadata(
+                youtubeId,
+                info.getName(),
+                pickThumb(info.getAvatars()),
+                null, null,
+                info.getSubscriberCount() == -1L ? null : info.getSubscriberCount(),
+                null, null, null);
+        return PreviewFetchResult.ok(m, null);
+    }
+
+    private PreviewFetchResult mapPlaylist(
+            PlaylistInfo info, String youtubeId) {
+        var m = new PreviewMetadata(
+                youtubeId,
+                info.getName(),
+                pickThumb(info.getThumbnails()),
+                info.getUploaderName(),
+                deriveChannelIdFromUrl(info.getUploaderUrl()),
+                null,
+                info.getStreamCount() == -1L ? null : info.getStreamCount(),
+                null, null);
+        return PreviewFetchResult.ok(m, null);
+    }
+
+    private PreviewFetchResult mapVideo(
+            StreamInfo info, String youtubeId) {
+        VideoType vt =
+                (info.getStreamType() == StreamType.LIVE_STREAM
+                 || info.getStreamType() == StreamType.AUDIO_LIVE_STREAM)
+                ? VideoType.LIVE
+                : VideoType.STANDARD;
+
+        Long duration = (vt == VideoType.LIVE && info.getDuration() == 0)
+                ? null : info.getDuration();
+
+        var m = new PreviewMetadata(
+                youtubeId,
+                info.getName(),
+                pickThumb(info.getThumbnails()),
+                info.getUploaderName(),
+                deriveChannelIdFromUrl(info.getUploaderUrl()),
+                null, null,
+                duration,
+                info.getViewCount() == -1L ? null : info.getViewCount());
+        return PreviewFetchResult.ok(m, vt);
+    }
+
+    private static String pickThumb(List<Image> imgs) {
+        if (imgs == null || imgs.isEmpty()) return null;
+        return imgs.stream()
+                .filter(i -> i.getEstimatedResolutionLevel()
+                        == Image.ResolutionLevel.HIGH)
+                .findFirst()
+                .or(() -> imgs.stream()
+                        .filter(i -> i.getEstimatedResolutionLevel()
+                                == Image.ResolutionLevel.MEDIUM)
+                        .findFirst())
+                .or(() -> imgs.stream().findFirst())
+                .map(Image::getUrl)
+                .orElse(null);
+    }
+
+    private static String deriveChannelIdFromUrl(String uploaderUrl) {
+        if (uploaderUrl == null) return null;
+        var m = Pattern
+                .compile("/channel/(UC[a-zA-Z0-9_-]{22})")
+                .matcher(uploaderUrl);
+        return m.find() ? m.group(1) : null;
     }
 }
