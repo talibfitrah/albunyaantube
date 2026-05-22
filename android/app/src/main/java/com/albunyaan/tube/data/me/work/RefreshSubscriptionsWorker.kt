@@ -96,6 +96,12 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
                     // thousand rows for typical use.
                     try {
                         channelVideoCacheDao.pruneUnsubscribed()
+                    } catch (ce: CancellationException) {
+                        // Re-throw cancellation — required for structured
+                        // concurrency. If withTimeout fired while the prune
+                        // was running, swallowing this would let refresh
+                        // proceed past the worker's deadline.
+                        throw ce
                     } catch (t: Throwable) {
                         Log.w(TAG, "pruneUnsubscribed failed", t)
                     }
