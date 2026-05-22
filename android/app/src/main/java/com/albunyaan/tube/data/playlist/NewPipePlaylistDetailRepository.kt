@@ -12,8 +12,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -466,13 +468,20 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     existing
                 } else {
                     resolutionScope.async {
+                        // Capture the Deferred-as-Job for our own coroutine so
+                        // the finally block can remove our own entry from the
+                        // in-flight map without stomping on a newer Deferred
+                        // that a concurrent caller might have registered.
+                        // (Checking `isCompleted` would not work: at the time
+                        // `finally` runs, the Deferred's body has not yet
+                        // returned, so its `isCompleted` is still false — the
+                        // entry would leak forever.)
+                        val self = currentCoroutineContext()[Job]
                         try {
                             fetchAndCacheCanonicalChannelId(uploaderUrl)
                         } finally {
                             cacheMutex.withLock {
-                                // Only remove our own entry; do not stomp on a
-                                // newer in-flight that might have replaced it.
-                                if (inflightResolutions[uploaderUrl]?.isCompleted == true) {
+                                if (inflightResolutions[uploaderUrl] === self) {
                                     inflightResolutions.remove(uploaderUrl)
                                 }
                             }
