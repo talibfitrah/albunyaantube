@@ -76,6 +76,29 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
         try {
             return try {
                 withTimeout(WORKER_TIMEOUT_MS) {
+                    // Cache hygiene first: drop rows for channels the user
+                    // has unsubscribed from. Running this BEFORE the refresh
+                    // means the refresh path operates on a clean baseline —
+                    // refreshing a channel only to immediately prune its
+                    // rows is wasted I/O. Wrapped in try/catch so a hygiene
+                    // failure (Room session abort, etc.) never demotes a
+                    // successful refresh to Result.retry. The DAO call uses
+                    // a single parameterised DELETE — atomic per SQLite
+                    // statement.
+                    //
+                    // Time-based prune intentionally NOT called here. A 90-
+                    // day cutoff would silently wipe cache rows for channels
+                    // that have hit deep-page EOF; MeFeedRepository.fillWeek-
+                    // IfNeeded cannot backfill those (deepPageUrl=null), so
+                    // the user would see weeks vanish on scroll-back. Table
+                    // size is bounded in practice by
+                    // subscribed_channels × deep-paged-depth — a few
+                    // thousand rows for typical use.
+                    try {
+                        channelVideoCacheDao.pruneUnsubscribed()
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "pruneUnsubscribed failed", t)
+                    }
                     repository.refresh(force = force, perTickBudget = budget)
                     // Me-tab playlist videos: fetched after the channel
                     // refresh so the combined NewPipe load stays bounded
@@ -85,19 +108,6 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
                     // No-op when the playlist deps weren't injected
                     // (test fixtures only).
                     repository.refreshPlaylistVideos()
-                    // Cache hygiene: bound channel_video_cache size so it
-                    // does not grow unbounded across years of use. Both
-                    // prunes are cheap (single DELETE each, indexed by
-                    // channelId / uploadedAt). They were previously dead
-                    // code — pruneUnsubscribed was defined in the DAO but
-                    // never invoked. Run on every tick because the cost
-                    // of running a no-op DELETE is negligible compared to
-                    // the cost of a bloated table slowing every Me-feed
-                    // query.
-                    channelVideoCacheDao.pruneUnsubscribed()
-                    channelVideoCacheDao.pruneOlderThan(
-                        System.currentTimeMillis() - CACHE_RETENTION_MS
-                    )
                 }
                 success = true
                 Result.success()
@@ -146,14 +156,5 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
          * slow networks without ever burning OS-level wakelocks.
          */
         val WORKER_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(8L)
-
-        /**
-         * Retention window for channel_video_cache rows. Anything older
-         * than this is pruned on each refresh tick. The Me-feed UI only
-         * surfaces week buckets within the recent window, and the deep
-         * paginator backfills older weeks on demand — so anything beyond
-         * 90 days is heap weight with no user-visible value.
-         */
-        val CACHE_RETENTION_MS = TimeUnit.DAYS.toMillis(90L)
     }
 }

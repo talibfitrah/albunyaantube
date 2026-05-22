@@ -82,7 +82,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
      * [cacheMutex].
      */
     private val channelInfoCache: MutableMap<String, CacheEntry<ChannelInfo>> =
-        object : LinkedHashMap<String, CacheEntry<ChannelInfo>>(MAX_CACHE_SIZE, 0.75f, false) {
+        object : LinkedHashMap<String, CacheEntry<ChannelInfo>>(MAX_CACHE_SIZE, 0.75f, /* accessOrder = */ true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CacheEntry<ChannelInfo>>): Boolean {
                 return size > MAX_CACHE_SIZE
             }
