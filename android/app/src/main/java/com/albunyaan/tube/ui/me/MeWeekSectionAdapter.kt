@@ -207,13 +207,18 @@ class MeWeekSectionAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: MeFeedVideo) {
             binding.shortTitle.text = item.title
-            // ANDROID-PERSONAL-03 round 8 [field-bug]: cached URL is
-            // hqdefault.jpg (480x360) which looks pixelated on high-DPI
-            // displays. Pass primaryUrl=null so the helper builds the full
-            // YouTube fallback chain (maxresdefault → sddefault → hqdefault →
-            // mqdefault → default), starting from the highest quality.
+            // The helper prepends primaryUrl, then walks the YouTube quality
+            // ladder (maxresdefault → sddefault → hqdefault → mqdefault →
+            // default). Passing the NewPipe-extracted [item.thumbnailUrl]
+            // when available gives Coil a working CDN path on the very first
+            // attempt; if NewPipe gave us nothing the helper still builds the
+            // full chain. Earlier code passed primaryUrl=null to dodge a
+            // pixelated cached URL, but that turned every cell into a 10+
+            // URL request storm against i.ytimg.com that — once amplified by
+            // many subscribed channels across days — was triggering YouTube
+            // CDN rate-limiting, leaving every cell on the grey placeholder.
             binding.shortThumbnail.loadYouTubeThumbnail(
-                primaryUrl = null,
+                primaryUrl = item.thumbnailUrl,
                 videoId = item.videoId,
                 isShort = true,
                 placeholder = R.drawable.thumbnail_placeholder,
@@ -258,13 +263,12 @@ class MeWeekSectionAdapter(
             binding.videoTitle.text = item.title
             binding.videoMeta.text = buildMeta(item)
 
-            // ANDROID-PERSONAL-03 round 8 [field-bug]: cached URL is
-            // hqdefault.jpg (480x360) which looks pixelated on high-DPI
-            // displays. Pass primaryUrl=null so the helper builds the full
-            // YouTube fallback chain (maxresdefault → sddefault → hqdefault →
-            // mqdefault → default), starting from the highest quality.
+            // See ShortVH.bind for the rationale — pass primaryUrl from the
+            // cached row so the first network request hits the URL NewPipe
+            // extracted (often a working CDN host), not a maxresdefault.jpg
+            // request that may 404 and trigger the full fallback storm.
             binding.videoThumbnail.loadYouTubeThumbnail(
-                primaryUrl = null,
+                primaryUrl = item.thumbnailUrl,
                 videoId = item.videoId,
                 isShort = false,
                 placeholder = R.drawable.thumbnail_placeholder,

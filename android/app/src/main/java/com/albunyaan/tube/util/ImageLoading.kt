@@ -181,6 +181,14 @@ object ImageLoading {
 
         load(currentUrl) {
             placeholder(placeholder)
+            // CRITICAL: also set error() so a terminal load failure surfaces
+            // the placeholder drawable instead of leaving the ImageView's
+            // previous crossfade target half-painted. Without this, recycled
+            // cells whose request was racy with another bind can render a
+            // half-faded or blank surface — perceived by users as
+            // "thumbnails are missing." Parity with [loadThumbnail] (line 73)
+            // and [loadThumbnailUrl] (line 101).
+            error(placeholder)
             if (crossfade && index == 0) crossfade(true) // Only crossfade on first attempt
             memoryCachePolicy(CachePolicy.ENABLED)
             diskCachePolicy(CachePolicy.ENABLED)

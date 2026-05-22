@@ -12,6 +12,8 @@ import com.albunyaan.tube.player.StreamRequestTelemetry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.ServiceList
@@ -29,7 +31,6 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
 import java.io.IOException
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -63,8 +64,29 @@ class NewPipeChannelDetailRepository @Inject constructor(
     private val youtubeService = ServiceList.YouTube
     private val channelLinkHandlerFactory = YoutubeChannelLinkHandlerFactory.getInstance()
 
-    // In-memory cache for channel info (header + tabs)
-    private val channelInfoCache = ConcurrentHashMap<String, CacheEntry<ChannelInfo>>()
+    /**
+     * Mutex guarding [channelInfoCache]. Required because the cache is a
+     * LinkedHashMap (not thread-safe) with side-effecting eviction via
+     * [LinkedHashMap.removeEldestEntry].
+     */
+    private val cacheMutex = Mutex()
+
+    /**
+     * In-memory cache for channel info (header + tabs). Bounded LRU — without
+     * this bound a long-running session that opens many distinct channels
+     * (Me-tab subscriptions, "see more" taps, search results) accumulates
+     * hundreds of kilobytes of [ChannelInfo] (tabs, banners, avatars,
+     * description) per channel, which the user observes as multi-day slowdown
+     * even after the 30-min TTL because stale entries are only checked on
+     * read, never proactively evicted. All access must be protected by
+     * [cacheMutex].
+     */
+    private val channelInfoCache: MutableMap<String, CacheEntry<ChannelInfo>> =
+        object : LinkedHashMap<String, CacheEntry<ChannelInfo>>(MAX_CACHE_SIZE, 0.75f, false) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CacheEntry<ChannelInfo>>): Boolean {
+                return size > MAX_CACHE_SIZE
+            }
+        }
 
     override suspend fun getChannelHeader(channelId: String, forceRefresh: Boolean): ChannelHeader {
         return withContext(Dispatchers.IO) {
@@ -146,7 +168,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
         // playlist items. Use 3-tier detection (NewPipe flag OR /shorts/ URL
         // OR <=180s duration) to filter shorts client-side.
         val keptForCache = mutableListOf<StreamInfoItem>()
-        var resolvedChannelName: String? = channelInfoCache[channelId]?.value?.name
+        var resolvedChannelName: String? = cacheMutex.withLock { channelInfoCache[channelId]?.value?.name }
         val result = withContext(Dispatchers.IO) {
             // Fast path: a UC-prefixed channelId can derive its UU upload
             // playlist URL directly, so we skip the upfront getChannelInfo
@@ -362,11 +384,12 @@ class NewPipeChannelDetailRepository @Inject constructor(
 
             // Check cache unless force refresh
             if (!forceRefresh) {
-                channelInfoCache[channelId]?.let { entry ->
-                    if (now - entry.timestamp <= CACHE_TTL_MILLIS) {
-                        Log.d(TAG, "Cache hit for channel: $channelId")
-                        return@withContext entry.value
-                    }
+                val hit = cacheMutex.withLock {
+                    channelInfoCache[channelId]?.takeIf { now - it.timestamp <= CACHE_TTL_MILLIS }
+                }
+                if (hit != null) {
+                    Log.d(TAG, "Cache hit for channel: $channelId")
+                    return@withContext hit.value
                 }
             }
 
@@ -377,22 +400,24 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 // cooldown gate sees the priority context. The token bucket
                 // bypasses for VISIBLE_INTERACTIVE — see
                 // [com.albunyaan.tube.data.extractor.GlobalNewPipeRateLimiter].
-                retryNewPipeRateLimiterTimeout("channel header $channelId") {
+                // NewPipePriorityContext.with takes a non-suspend lambda, so
+                // the suspending cacheMutex.withLock write is hoisted out
+                // after the fetch returns.
+                val info = retryNewPipeRateLimiterTimeout("channel header $channelId") {
                     NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
                         val handler = createChannelLinkHandler(channelId)
                             ?: throw ExtractionException("Invalid channel ID: $channelId")
 
                         val extractor = youtubeService.getChannelExtractor(handler)
                         extractor.fetchPage()
-                        val info = ChannelInfo.getInfo(extractor)
-
-                        // Cache the result
-                        channelInfoCache[channelId] = CacheEntry(info, now)
-                        Log.d(TAG, "Cached channel info for: $channelId with ${info.tabs.size} tabs")
-
-                        info
+                        ChannelInfo.getInfo(extractor)
                     }
                 }
+                cacheMutex.withLock {
+                    channelInfoCache[channelId] = CacheEntry(info, now)
+                }
+                Log.d(TAG, "Cached channel info for: $channelId with ${info.tabs.size} tabs")
+                info
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -773,6 +798,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
     companion object {
         private const val TAG = "ChannelDetailRepo"
         private const val CACHE_TTL_MILLIS = 30 * 60 * 1000L // 30 minutes
+        private const val MAX_CACHE_SIZE = 100 // Maximum cached channels — caps heap footprint
         private const val RATE_LIMIT_RETRY_ATTEMPTS = 2
         private const val RATE_LIMIT_RETRY_DELAY_MS = 1_000L
         private val UCID_REGEX = Regex("/channel/(UC[A-Za-z0-9_-]+)")

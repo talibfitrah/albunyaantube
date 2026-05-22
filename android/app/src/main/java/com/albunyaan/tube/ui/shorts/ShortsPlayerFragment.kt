@@ -152,6 +152,25 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     /** True while the user is actively dragging the scrubber; suppresses the ticker overwrite. */
     private var isScrubbing = false
 
+    /**
+     * Stall-watchdog listener. Held as a field so [onDestroyView] can call
+     * [androidx.media3.common.Player.removeListener] — without that, every
+     * Fragment recreation (config change, back-and-forward nav) leaves the
+     * prior listener attached to the VM-owned player, pinning the dead
+     * Fragment + its view tree + a duplicate handler that fires on every
+     * BUFFERING transition. Many hours of shorts use leak many copies.
+     */
+    private val stallListener = object : androidx.media3.common.Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == androidx.media3.common.Player.STATE_BUFFERING) {
+                timeBarHandler.removeCallbacks(stallRecoveryRunnable)
+                timeBarHandler.postDelayed(stallRecoveryRunnable, STALL_RECOVERY_MS)
+            } else {
+                timeBarHandler.removeCallbacks(stallRecoveryRunnable)
+            }
+        }
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val bnd = FragmentShortsPlayerBinding.bind(view)
@@ -177,16 +196,9 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         // a fresh stream resolve. Common cause is expired progressive URLs
         // returning 403 mid-segment. Mirrors the recovery intent of the main
         // player's PlaybackRecoveryManager without hauling in its full machinery.
-        viewModel.player.addListener(object : androidx.media3.common.Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == androidx.media3.common.Player.STATE_BUFFERING) {
-                    timeBarHandler.removeCallbacks(stallRecoveryRunnable)
-                    timeBarHandler.postDelayed(stallRecoveryRunnable, STALL_RECOVERY_MS)
-                } else {
-                    timeBarHandler.removeCallbacks(stallRecoveryRunnable)
-                }
-            }
-        })
+        // Listener is held as the [stallListener] field so onDestroyView can
+        // remove it — see field-level KDoc for the leak this prevents.
+        viewModel.player.addListener(stallListener)
         binder = localBinder
 
         val pagerAdapter = ShortsPagerAdapter(
@@ -794,11 +806,25 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         // cancelScope() aborts any in-flight bind resolution so a late-arriving
         // stream doesn't mutate the still-alive (VM-owned) player after the
         // fragment view is gone. Do NOT call release() — VM owns the player.
+        // CRITICAL: removeListener BEFORE clearing binder — otherwise the
+        // VM-owned player retains a strong ref to this Fragment instance
+        // (via the listener's captured timeBarHandler / stallRecoveryRunnable
+        // / mpdRegistry refs), pinning the entire view tree across Fragment
+        // recreations.
+        viewModel.player.removeListener(stallListener)
+        timeBarHandler.removeCallbacks(stallRecoveryRunnable)
         binder?.detach()
         binder?.cancelScope()
         binder = null
         binding = null
         hasBoundInitialPage = false
+        // Per-video flow maps grow one entry per scrolled video. The
+        // ViewModel owns the per-video state that survives Fragment
+        // recreation; these per-fragment maps can be cleared on view
+        // destruction without losing user-facing state.
+        audioLanguagesByVideoId.clear()
+        activeLanguageByVideoId.clear()
+        subtitlesByVideoId.clear()
         super.onDestroyView()
     }
 
