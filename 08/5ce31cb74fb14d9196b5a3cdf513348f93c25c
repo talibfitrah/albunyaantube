@@ -1,0 +1,21 @@
+backend/src/test/java/com/albunyaan/tube/service/RegistrySubmissionWriterTest.java
+  s_1a004b5f0406e1::t_6fe3c2fdb7a514 1-139
+backend/src/main/java/com/albunyaan/tube/service/RegistrySubmissionWriter.java
+  s_1a004b5f0406e1::t_cfc2fc3e90d15b 1-177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "085ce31cb74fb14d9196b5a3cdf513348f93c25c",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
