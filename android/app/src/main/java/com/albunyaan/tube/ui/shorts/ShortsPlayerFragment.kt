@@ -818,12 +818,16 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         binder = null
         binding = null
         hasBoundInitialPage = false
-        // Per-video flow maps grow one entry per scrolled video. The
-        // ViewModel owns the per-video state that survives Fragment
-        // recreation; these per-fragment maps can be cleared on view
-        // destruction without losing user-facing state.
+        // Per-video flow maps grow one entry per scrolled video. The two
+        // resolution-result maps below are reactively re-populated from
+        // PlayerBinder.resolvedEvents on rebind, so clearing them on view
+        // destruction is safe. We do NOT clear [activeLanguageByVideoId]
+        // here — it records the user's last-selected audio language per
+        // video and the dialog uses it for the "checked" item state. On
+        // Fragment recreation (config change, back/forward nav) the
+        // selection memory must survive so the dialog can preselect
+        // correctly the next time the user opens it.
         audioLanguagesByVideoId.clear()
-        activeLanguageByVideoId.clear()
         subtitlesByVideoId.clear()
         super.onDestroyView()
     }

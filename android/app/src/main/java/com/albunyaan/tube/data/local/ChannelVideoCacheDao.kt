@@ -85,22 +85,6 @@ interface ChannelVideoCacheDao {
     )
     suspend fun pruneUnsubscribed()
 
-    /**
-     * Drop cache rows whose `uploadedAt` falls before the supplied cutoff.
-     * The Me-feed UI only ever displays week-bucketed content within the
-     * recent window, so rows older than the cutoff are pure heap/disk
-     * weight — they slow Room invalidations, inflate the table, and
-     * provide no user-visible value.
-     *
-     * Rows with `uploadedAt = null` (rare — playlist refresh path where
-     * upload date is unknown) are preserved so a missing date never
-     * causes silent data loss.
-     */
-    @Query(
-        """DELETE FROM channel_video_cache
-           WHERE uploadedAt IS NOT NULL AND uploadedAt < :cutoffMs"""
-    )
-    suspend fun pruneOlderThan(cutoffMs: Long)
 
     /**
      * Per-week observation that also includes videos linked from saved

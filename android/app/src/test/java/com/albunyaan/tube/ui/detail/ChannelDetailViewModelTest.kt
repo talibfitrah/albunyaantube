@@ -1215,10 +1215,6 @@ class ChannelDetailViewModelTest {
             // no-op for tests
         }
 
-        override suspend fun pruneOlderThan(cutoffMs: Long) {
-            // no-op for tests
-        }
-
         override suspend fun countForChannels(channelIds: List<String>): Int = 0
 
         override suspend fun oldestPerChannel(channelIds: List<String>): List<ChannelOldest> =
