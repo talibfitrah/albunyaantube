@@ -1194,9 +1194,6 @@ class ChannelDetailViewModelTest {
             // no-op for tests
         }
 
-        override fun observeRecent(minUploadedAt: Long): Flow<List<ChannelVideoCache>> =
-            throw NotImplementedError("not exercised by ChannelDetailViewModel tests")
-
         override fun observeRecentForChannels(
             channelIds: List<String>,
             minUploadedAt: Long,
@@ -1215,6 +1212,10 @@ class ChannelDetailViewModelTest {
         }
 
         override suspend fun pruneUnsubscribed() {
+            // no-op for tests
+        }
+
+        override suspend fun pruneOlderThan(cutoffMs: Long) {
             // no-op for tests
         }
 

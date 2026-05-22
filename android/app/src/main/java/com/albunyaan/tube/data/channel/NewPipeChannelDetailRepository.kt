@@ -227,8 +227,9 @@ class NewPipeChannelDetailRepository @Inject constructor(
             }
         }
         // Persist kept videos to local cache so the next channel open can paint
-        // from disk before NewPipe responds. upsertAll preserves deep-paged
-        // history (replaceForChannel would wipe Me-tab cache for this channel).
+        // from disk before NewPipe responds. Use upsertAll — never
+        // delete-then-insert — so deep-paged Me-tab history for this channel
+        // is preserved.
         if (keptForCache.isNotEmpty()) {
             val name = resolvedChannelName ?: channelId
             val now = System.currentTimeMillis()

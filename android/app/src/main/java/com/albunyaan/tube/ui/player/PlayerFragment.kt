@@ -76,7 +76,6 @@ import com.albunyaan.tube.player.MediaSourceResult
 import com.albunyaan.tube.player.PlaybackRecoveryManager
 import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.player.StreamRequestTelemetry
-import com.albunyaan.tube.player.StreamUrlRefreshManager
 import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import javax.inject.Inject
@@ -97,7 +96,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     @Inject lateinit var metadataManager: MediaSessionMetadataManager
     @Inject lateinit var streamTelemetry: StreamRequestTelemetry
-    @Inject lateinit var streamUrlRefreshManager: StreamUrlRefreshManager
     @Inject lateinit var hlsPoisonRegistry: com.albunyaan.tube.player.HlsPoisonRegistry
     @Inject lateinit var multiRepFactory: com.albunyaan.tube.player.MultiRepSyntheticDashMediaSourceFactory
     @Inject lateinit var coldStartQualityChooser: com.albunyaan.tube.player.ColdStartQualityChooser

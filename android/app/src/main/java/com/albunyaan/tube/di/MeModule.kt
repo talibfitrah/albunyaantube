@@ -17,10 +17,6 @@ import kotlinx.coroutines.Dispatchers
  *
  * Binds the ATOM-backed feed fetcher (default per spec §4.1) and provides
  * the named IO dispatcher used by MeFeedRepository for off-main-thread work.
- *
- * The legacy NewPipeChannelFeedFetcher remains in the codebase as the
- * rollback path per spec §10 — it is no longer bound by default but still
- * compiles against the v3 [ChannelFeedFetcher] interface.
  */
 @Module
 @InstallIn(SingletonComponent::class)

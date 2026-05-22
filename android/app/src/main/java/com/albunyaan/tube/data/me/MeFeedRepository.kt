@@ -625,11 +625,11 @@ class MeFeedRepository @Inject constructor(
                     )
                 }
                 if (cacheRows.isNotEmpty()) {
-                    // Use upsertAll, NOT replaceForChannel — replaceForChannel
-                    // would wipe ATOM's most-recent rows. We're appending
+                    // Use upsertAll, never delete-then-insert. We're appending
                     // older history; primary-key REPLACE handles overlap
                     // (same videoId from ATOM as from NewPipe → keeps the
-                    // newer fetch's metadata).
+                    // newer fetch's metadata) without wiping ATOM's
+                    // most-recent rows.
                     cache.upsertAll(cacheRows)
                 }
                 val nextUrl = result.nextPage?.url ?: DEEP_PAGE_EOF_SENTINEL
@@ -1016,9 +1016,9 @@ class MeFeedRepository @Inject constructor(
                     // legitimately empty (dormant / unsubscribed-from-uploads /
                     // first-fetch-with-no-uploads). T9: error → 0, empty++.
                     //
-                    // Round 8 [field-bug]: do NOT call replaceForChannel —
-                    // that would wipe any deep-paged history. ATOM emptiness
-                    // is about the most-recent 15 uploads only; older deep-
+                    // Round 8 [field-bug]: do NOT wipe the cache here — that
+                    // would lose any deep-paged history. ATOM emptiness is
+                    // about the most-recent 15 uploads only; older deep-
                     // paged rows remain valid. Skipping the wipe means a
                     // dormant channel keeps showing the user's prior scroll
                     // history until they unsubscribe.
@@ -1052,12 +1052,13 @@ class MeFeedRepository @Inject constructor(
                     return
                 }
 
-                // Round 8 [field-bug]: changed from replaceForChannel to
-                // upsertAll so ATOM does NOT wipe deep-paged history.
-                // ATOM returns the 15 most-recent uploads; if those overlap
-                // with deep-paged rows by videoId, REPLACE updates them with
-                // ATOM's fresher metadata (title/thumbnail/views). Older
-                // deep-paged rows survive untouched.
+                // Round 8 [field-bug]: ATOM writes go through upsertAll —
+                // never delete-then-insert — so deep-paged history is not
+                // wiped. ATOM returns the 15 most-recent uploads; if those
+                // overlap with deep-paged rows by videoId, primary-key
+                // REPLACE updates them with ATOM's fresher metadata
+                // (title/thumbnail/views). Older deep-paged rows survive
+                // untouched.
                 cache.upsertAll(items)
                 refreshStateDao.upsert(
                     (previous ?: ChannelFeedRefreshState(

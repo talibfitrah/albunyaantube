@@ -29,7 +29,6 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.StreamRequestTelemetry
-import com.albunyaan.tube.player.StreamUrlRefreshManager
 import javax.inject.Singleton
 
 /**
@@ -51,15 +50,6 @@ object NetworkModule {
     @Singleton
     fun provideStreamRequestTelemetry(): StreamRequestTelemetry {
         return StreamRequestTelemetry()
-    }
-
-    @Provides
-    @Singleton
-    fun provideStreamUrlRefreshManager(
-        telemetry: StreamRequestTelemetry,
-        rateLimiter: ExtractionRateLimiter
-    ): StreamUrlRefreshManager {
-        return StreamUrlRefreshManager(telemetry, rateLimiter)
     }
 
     @Provides

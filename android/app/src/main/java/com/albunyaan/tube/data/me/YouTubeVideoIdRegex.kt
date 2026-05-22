@@ -12,11 +12,10 @@ internal object YouTubeVideoIdRegex {
      *   https://music.youtube.com/watch?v=<id>
      *   //www.youtube.com/watch?v=<id>                     (protocol-relative)
      *
-     * Used by [ChannelDeepPaginator] and the rollback fetcher
-     * [NewPipeChannelFeedFetcher]; covered by YouTubeVideoIdRegexTest.
+     * Used by [ChannelDeepPaginator]; covered by YouTubeVideoIdRegexTest.
      * An empty/unmatched id is treated by callers as a drop signal — the
-     * fetcher's caller filters those rows to avoid Room primary-key
-     * collisions on REPLACE.
+     * caller filters those rows to avoid Room primary-key collisions on
+     * REPLACE.
      */
     internal val VIDEO_ID_REGEX =
         Regex("""(?:[?&]v=|youtu\.be/|/shorts/|/embed/|/watch/)([A-Za-z0-9_-]{11})""")
