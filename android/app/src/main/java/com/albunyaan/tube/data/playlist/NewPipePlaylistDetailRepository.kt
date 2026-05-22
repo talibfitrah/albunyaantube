@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.channel.ChannelInfo
 import org.schabi.newpipe.extractor.exceptions.ExtractionException
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubePlaylistLinkHandlerFactory
@@ -62,6 +63,23 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     Log.d(TAG, "Evicting oldest cache entry: ${eldest.key}")
                 }
                 return shouldRemove
+            }
+        }
+
+    /**
+     * Cache for uploader-URL → canonical UC channel ID resolutions. Keyed by the
+     * raw uploader URL NewPipe gives us; valued by the canonical "UC..." ID.
+     * Non-canonical URL forms (/@handle, /c/name, /user/name) require a NewPipe
+     * channel-page fetch to discover the underlying UC ID; we cache the result
+     * with a 24h TTL because canonical IDs are effectively immutable. Successful
+     * resolutions only — null results are left uncached so a transient NewPipe
+     * failure does not lock the channel link off until the entry expires.
+     * All access must be protected by [cacheMutex].
+     */
+    private val channelIdCache: MutableMap<String, CacheEntry<String>> =
+        object : LinkedHashMap<String, CacheEntry<String>>(MAX_CHANNEL_ID_CACHE_SIZE, 0.75f, false) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CacheEntry<String>>): Boolean {
+                return size > MAX_CHANNEL_ID_CACHE_SIZE
             }
         }
 
@@ -258,7 +276,7 @@ class NewPipePlaylistDetailRepository @Inject constructor(
 
     // Extension functions to map NewPipe types to domain models
 
-    private fun PlaylistInfo.toPlaylistHeader(
+    private suspend fun PlaylistInfo.toPlaylistHeader(
         category: String?,
         excluded: Boolean,
         downloadPolicy: DownloadPolicy
@@ -268,7 +286,14 @@ class NewPipePlaylistDetailRepository @Inject constructor(
             title = name,
             thumbnailUrl = thumbnails.chooseBestUrl(),
             bannerUrl = banners.chooseBestUrl(),
-            channelId = uploaderUrl?.let { extractChannelId(it) },
+            // Resolve uploaderUrl to a canonical UC channel ID. NewPipe gives us
+            // /@handle, /c/name, or /user/name URLs for many channels — and the
+            // raw substring after those prefixes is NOT a UC id, so the backend
+            // registry HEAD lookup (findByYoutubeId) would 404 for legitimately
+            // approved channels and the channel-link gate would silently stay
+            // closed. Resolution does the extra channel-page fetch only for
+            // non-canonical URL forms; results cache for 24h.
+            channelId = resolveCanonicalChannelId(uploaderUrl),
             channelName = uploaderName,
             itemCount = streamCount.takeIf { it >= 0 },
             totalDurationSeconds = null, // Not directly available from PlaylistInfo
@@ -337,6 +362,67 @@ class NewPipePlaylistDetailRepository @Inject constructor(
         }
     }
 
+    /**
+     * Resolve an uploader URL to a canonical UC... channel ID.
+     *
+     * `/channel/UC...` URLs already yield a canonical ID and short-circuit
+     * without network. `/@handle`, `/c/name`, `/user/name` URLs cannot be
+     * mapped to a UC id offline — YouTube performs the mapping server-side —
+     * so we fetch the channel page via NewPipe and read the canonical id off
+     * the resulting [ChannelInfo]. Successful resolutions cache for 24h
+     * (canonical ids are effectively immutable per channel). Null results
+     * are not cached so a transient NewPipe failure does not lock the channel
+     * link off until the cache entry expires.
+     *
+     * Returns null when the URL is null/blank, when no candidate id can be
+     * extracted, or when the channel fetch fails. The caller treats null as
+     * "no canonical id available" which keeps the registry gate fail-closed.
+     */
+    private suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? {
+        if (uploaderUrl.isNullOrBlank()) return null
+
+        val rawExtracted = extractChannelId(uploaderUrl) ?: return null
+
+        // Fast path: /channel/UC... already canonical.
+        if (CANONICAL_CHANNEL_ID_REGEX.matches(rawExtracted)) {
+            return rawExtracted
+        }
+
+        // Slow path: need a NewPipe fetch to resolve handle/name → UC id.
+        val now = System.currentTimeMillis()
+        cacheMutex.withLock {
+            channelIdCache[uploaderUrl]?.let { entry ->
+                if (now - entry.timestamp <= CHANNEL_ID_CACHE_TTL_MILLIS) {
+                    return entry.value
+                }
+            }
+        }
+
+        val resolved = try {
+            NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+                val info = ChannelInfo.getInfo(youtubeService, uploaderUrl)
+                // Prefer id when it is already canonical; otherwise reparse the
+                // canonical URL the extractor returned. Either should yield a
+                // UC... id after fetchPage normalised the channel page.
+                info.id?.takeIf { CANONICAL_CHANNEL_ID_REGEX.matches(it) }
+                    ?: info.url?.let { extractChannelId(it) }
+                        ?.takeIf { CANONICAL_CHANNEL_ID_REGEX.matches(it) }
+            }
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to resolve canonical channel id for $uploaderUrl", e)
+            null
+        }
+
+        if (resolved != null) {
+            cacheMutex.withLock {
+                channelIdCache[uploaderUrl] = CacheEntry(resolved, now)
+            }
+        }
+        return resolved
+    }
+
     private fun PlaylistItem.toIndexItem() = StreamIndexItem(
         id = videoId, name = title, thumbnailUrl = thumbnailUrl,
         uploaderName = channelName, channelId = channelId,
@@ -349,5 +435,11 @@ class NewPipePlaylistDetailRepository @Inject constructor(
         private const val TAG = "PlaylistDetailRepo"
         private const val CACHE_TTL_MILLIS = 30 * 60 * 1000L // 30 minutes
         private const val MAX_CACHE_SIZE = 100 // Maximum cached playlists
+        // Canonical YouTube channel ids are 24 characters: "UC" + 22 of
+        // [A-Za-z0-9_-]. We reject anything else so handles/names cannot
+        // accidentally satisfy the registry HEAD lookup.
+        private val CANONICAL_CHANNEL_ID_REGEX = Regex("^UC[A-Za-z0-9_-]{22}$")
+        private const val CHANNEL_ID_CACHE_TTL_MILLIS = 24 * 60 * 60 * 1000L // 24 hours
+        private const val MAX_CHANNEL_ID_CACHE_SIZE = 200
     }
 }
