@@ -1,0 +1,43 @@
+backend/src/main/java/com/albunyaan/tube/dto/registry/BulkSubmitResponse.java
+  s_1a004b5f0406e1::t_24a7a2326aade4 1-11
+backend/src/main/java/com/albunyaan/tube/dto/registry/SubmitStatus.java
+  s_1a004b5f0406e1::t_a4bdeef73105c7 1-7
+backend/src/main/java/com/albunyaan/tube/dto/registry/SubmitResult.java
+  s_1a004b5f0406e1::t_13bdb8f25f9331 8-9
+  s_1a004b5f0406e1::t_c1617ef6723b63 1-7,10
+backend/src/main/java/com/albunyaan/tube/dto/registry/PreviewError.java
+  s_1a004b5f0406e1::t_5852f986215993 1-8
+backend/src/main/java/com/albunyaan/tube/dto/registry/BulkPreviewResponse.java
+  s_1a004b5f0406e1::t_a5c75c7004470d 1-6
+backend/src/main/java/com/albunyaan/tube/dto/registry/RowStatus.java
+  s_1a004b5f0406e1::t_09cc34ec40a9a7 1-9
+backend/src/main/java/com/albunyaan/tube/dto/registry/PreviewMetadata.java
+  s_1a004b5f0406e1::t_a8a9095acaefe6 1-14
+backend/src/main/java/com/albunyaan/tube/dto/registry/SubmitRow.java
+  s_1a004b5f0406e1::t_f1876f58e82305 1-14,16-19
+  s_1a004b5f0406e1::t_df458546ad96a1 15
+backend/src/main/java/com/albunyaan/tube/dto/registry/BulkPreviewRequest.java
+  s_1a004b5f0406e1::t_a1ba847809822c 1-11
+backend/src/main/java/com/albunyaan/tube/dto/registry/PreviewErrorCode.java
+  s_1a004b5f0406e1::t_df6b9e8e5eb3d5 1-17
+backend/src/main/java/com/albunyaan/tube/dto/registry/PreviewRow.java
+  s_1a004b5f0406e1::t_946cc57069fc86 1-18
+backend/src/main/java/com/albunyaan/tube/dto/registry/BulkSubmitRequest.java
+  s_1a004b5f0406e1::t_347349a5374ab3 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "33b5b8e628db2d259f9574b48d580315d3712f6e",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": null
+    }
+  }
+}
