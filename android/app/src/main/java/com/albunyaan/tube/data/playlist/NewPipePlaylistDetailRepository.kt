@@ -291,7 +291,8 @@ class NewPipePlaylistDetailRepository @Inject constructor(
             viewCount = viewCount.takeIf { it >= 0 },
             publishedTime = textualUploadDate,
             channelId = uploaderUrl?.let { extractChannelId(it) },
-            channelName = uploaderName
+            channelName = uploaderName,
+            uploadedAtMillis = uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli(),
         )
     }
 

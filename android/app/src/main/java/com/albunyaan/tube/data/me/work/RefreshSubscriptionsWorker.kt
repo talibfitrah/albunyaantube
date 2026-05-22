@@ -75,6 +75,14 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
             return try {
                 withTimeout(WORKER_TIMEOUT_MS) {
                     repository.refresh(force = force, perTickBudget = budget)
+                    // Me-tab playlist videos: fetched after the channel
+                    // refresh so the combined NewPipe load stays bounded
+                    // by the shared semaphore inside MeFeedRepository and
+                    // the network spike happens in a single visible
+                    // burst rather than spread across two parallel jobs.
+                    // No-op when the playlist deps weren't injected
+                    // (test fixtures only).
+                    repository.refreshPlaylistVideos()
                 }
                 success = true
                 Result.success()

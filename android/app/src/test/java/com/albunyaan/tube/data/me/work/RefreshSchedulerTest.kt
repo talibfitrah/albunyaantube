@@ -76,6 +76,7 @@ class RefreshSchedulerTest {
             refreshState = db.channelFeedRefreshStateDao(),
             accountRepository = FakeAccountRepository(),
             syncManager = mock(),
+            playlistLinks = db.playlistVideoLinkDao(),
         )
         scheduler = RefreshScheduler(
             ctx = ctx,

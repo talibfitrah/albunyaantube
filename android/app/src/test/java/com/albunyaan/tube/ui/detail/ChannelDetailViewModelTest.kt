@@ -1190,6 +1190,10 @@ class ChannelDetailViewModelTest {
             lastUpsert = rows
         }
 
+        override suspend fun insertIgnoreAll(rows: List<ChannelVideoCache>) {
+            // no-op for tests
+        }
+
         override fun observeRecent(minUploadedAt: Long): Flow<List<ChannelVideoCache>> =
             throw NotImplementedError("not exercised by ChannelDetailViewModel tests")
 
@@ -1218,5 +1222,18 @@ class ChannelDetailViewModelTest {
 
         override suspend fun oldestPerChannel(channelIds: List<String>): List<ChannelOldest> =
             emptyList()
+
+        override fun observeRangeForChannelsOrPlaylists(
+            channelIds: List<String>,
+            playlistIds: List<String>,
+            fromMs: Long,
+            toMs: Long,
+        ): Flow<List<ChannelVideoCache>> =
+            throw NotImplementedError("not exercised by ChannelDetailViewModel tests")
+
+        override suspend fun countForChannelsOrPlaylists(
+            channelIds: List<String>,
+            playlistIds: List<String>,
+        ): Int = 0
     }
 }

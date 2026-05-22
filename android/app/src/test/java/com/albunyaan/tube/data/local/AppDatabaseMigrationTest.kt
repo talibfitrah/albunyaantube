@@ -153,7 +153,7 @@ class AppDatabaseMigrationTest {
         // MIGRATION_8_9 — both are additive ALTER ADD COLUMN steps and leave
         // the v6→v7 assertions below intact.
         val roomDb = Room.databaseBuilder(context, AppDatabase::class.java, dbFile.absolutePath)
-            .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+            .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
             .allowMainThreadQueries()
             .build()
 

@@ -2,6 +2,8 @@ package com.albunyaan.tube.ui.me
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
@@ -12,6 +14,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.me.ChipItem
 import com.albunyaan.tube.databinding.ItemMeChipsRowBinding
 import com.albunyaan.tube.databinding.ItemMeChipBinding
+import com.google.android.material.color.MaterialColors
 
 /**
  * Renders the horizontal row of subscribed-channel / saved-playlist chips
@@ -131,6 +134,35 @@ class MeChipsAdapter(
                 binding.chipAvatar.load(R.drawable.thumbnail_placeholder) {
                     transformations(CircleCropTransformation())
                 }
+            }
+            // Visual distinction: playlist chips get a tinted background,
+            // a colorPrimary stroke, and an inline play-stack icon
+            // between the avatar and the label. Channel chips keep the
+            // default surface background and gray outline with no extra
+            // icon. Three cues stacked so the chip type reads at a
+            // glance even when scrolling fast.
+            val ctx = binding.root.context
+            val isPlaylist = item is ChipItem.Playlist
+            binding.chipPlaylistIcon.isVisible = isPlaylist
+            if (isPlaylist) {
+                binding.chipRoot.setCardBackgroundColor(
+                    ContextCompat.getColor(ctx, R.color.playlist_chip_bg)
+                )
+                binding.chipRoot.strokeColor = MaterialColors.getColor(
+                    binding.chipRoot,
+                    com.google.android.material.R.attr.colorPrimary,
+                )
+            } else {
+                binding.chipRoot.setCardBackgroundColor(
+                    MaterialColors.getColor(
+                        binding.chipRoot,
+                        com.google.android.material.R.attr.colorSurface,
+                    )
+                )
+                binding.chipRoot.strokeColor = MaterialColors.getColor(
+                    binding.chipRoot,
+                    com.google.android.material.R.attr.colorOutlineVariant,
+                )
             }
             binding.chipRoot.isCheckable = true
             binding.chipRoot.isChecked = isSelected

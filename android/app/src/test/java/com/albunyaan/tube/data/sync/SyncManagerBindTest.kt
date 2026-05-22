@@ -45,6 +45,7 @@ class SyncManagerBindTest {
             db.favoriteVideoDao(),
             db.syncStateDao(),
             db.accountBindingDao(),
+            db.playlistVideoLinkDao(),
         )
     }
 

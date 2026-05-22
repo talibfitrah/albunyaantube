@@ -66,6 +66,7 @@ class MeViewModelTest {
             refreshState = db.channelFeedRefreshStateDao(),
             accountRepository = FakeAccountRepository(),
             syncManager = mock(),
+            playlistLinks = db.playlistVideoLinkDao(),
         )
         feed = MeFeedRepository(
             subscriptions = subs,

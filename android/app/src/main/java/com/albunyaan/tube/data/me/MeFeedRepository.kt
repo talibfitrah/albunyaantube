@@ -6,7 +6,11 @@ import com.albunyaan.tube.data.local.ChannelFeedRefreshState
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.data.local.PlaylistVideoLink
+import com.albunyaan.tube.data.local.PlaylistVideoLinkDao
+import com.albunyaan.tube.data.local.SavedPlaylist
 import com.albunyaan.tube.data.local.SubscribedChannel
+import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import com.squareup.moshi.JsonAdapter
 import com.squareup.moshi.Moshi
@@ -22,6 +26,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -71,6 +76,13 @@ class MeFeedRepository @Inject constructor(
     // — fillWeekIfNeeded then becomes a no-op.
     private val deepPaginator: ChannelDeepPaginator? = null,
     moshi: Moshi? = null,
+    // Me-tab playlist videos: nullable so existing test fixtures that
+    // exercise only the subscribed-channel path keep compiling without
+    // having to wire a fake PlaylistDetailRepository. When either is
+    // null, [refreshPlaylistVideos] is a no-op and the union-aware feed
+    // queries fall back to the channel-only paths.
+    private val playlistRepository: PlaylistDetailRepository? = null,
+    private val playlistVideoLinkDao: PlaylistVideoLinkDao? = null,
 ) {
 
     /**
@@ -251,9 +263,13 @@ class MeFeedRepository @Inject constructor(
         weekIndex: Int,
         filterChannelId: String? = null,
     ): Flow<WeekContent?> =
-        subscriptions.observeSubscribedChannels()
-            .flatMapLatest<List<SubscribedChannel>, WeekContent?> { subs ->
-                if (subs.isEmpty()) {
+        combine(
+            subscriptions.observeSubscribedChannels(),
+            subscriptions.observeSavedPlaylists(),
+        ) { subs, playlists -> subs to playlists }
+            .flatMapLatest<Pair<List<SubscribedChannel>, List<SavedPlaylist>>, WeekContent?> { (subs, playlists) ->
+                // No subscriptions AND no saved playlists → nothing to show.
+                if (subs.isEmpty() && playlists.isEmpty()) {
                     flowOf<WeekContent?>(null)
                 } else {
                     // ANDROID-PERSONAL-03 / Bug 1: when [filterChannelId] is
@@ -264,7 +280,7 @@ class MeFeedRepository @Inject constructor(
                     // set — silently dropping a stale filter prevents a
                     // ghost-channel chip (unsubscribed mid-flow) from
                     // surfacing items that shouldn't be visible.
-                    val channelIds = if (filterChannelId != null) {
+                    val channelIds: List<String> = if (filterChannelId != null) {
                         if (subs.any { it.channelId == filterChannelId }) {
                             listOf(filterChannelId)
                         } else {
@@ -277,10 +293,26 @@ class MeFeedRepository @Inject constructor(
                             .map { it.channelId }
                             .toList()
                     }
+                    // Channel filter is channel-only by design — a chip tap
+                    // scopes to that channel's uploads and explicitly does
+                    // NOT pull in unrelated playlist videos that happen to
+                    // be from the same creator. The union path only runs
+                    // for the unfiltered view.
+                    val playlistIds: List<String> =
+                        if (filterChannelId == null) playlists.map { it.playlistId } else emptyList()
                     val bucket = WeekBucket.forIndex(weekIndex, currentTimeMillis())
                     flow<WeekContent?> {
-                        cache.observeRangeForChannels(channelIds, bucket.startMs, bucket.endMs)
-                            .collect { rows ->
+                        val rowsFlow = if (playlistIds.isEmpty()) {
+                            cache.observeRangeForChannels(channelIds, bucket.startMs, bucket.endMs)
+                        } else {
+                            cache.observeRangeForChannelsOrPlaylists(
+                                channelIds,
+                                playlistIds,
+                                bucket.startMs,
+                                bucket.endMs,
+                            )
+                        }
+                        rowsFlow.collect { rows ->
                                 val shorts = rows.asSequence()
                                     .filter { it.isShort }
                                     .map { it.toUi() }
@@ -352,7 +384,11 @@ class MeFeedRepository @Inject constructor(
         if (fromIndex > maxIndex) return@withContext null
         val now = currentTimeMillis()
         val all = subscriptions.getSubscribedChannels()
-        if (all.isEmpty()) return@withContext null
+        // Playlist videos only count toward the unfiltered scan — a channel
+        // chip filters strictly to channel uploads.
+        val playlists: List<SavedPlaylist> =
+            if (filterChannelId == null) subscriptions.getSavedPlaylists() else emptyList()
+        if (all.isEmpty() && playlists.isEmpty()) return@withContext null
         // ANDROID-PERSONAL-03 / Bug 1: when filtering, scope the scan to the
         // single channel. If the filter target is no longer subscribed
         // (race), return null so the caller treats it as "no content".
@@ -369,14 +405,21 @@ class MeFeedRepository @Inject constructor(
                 .map { it.channelId }
                 .toList()
         }
+        val playlistIds = playlists.map { it.playlistId }
         // Pull the full window: from start-of-maxIndex+1 to start-of-fromIndex.
         // Items uploaded inside that range are exactly the ones whose week
         // bucket falls in [fromIndex, maxIndex].
         val windowEnd = WeekBucket.forIndex(fromIndex, now).endMs   // most recent
         val windowStart = WeekBucket.forIndex(maxIndex, now).startMs // oldest
-        val rows = cache
-            .observeRangeForChannels(channelIds, windowStart, windowEnd)
-            .first()
+        val rows = if (playlistIds.isEmpty()) {
+            cache
+                .observeRangeForChannels(channelIds, windowStart, windowEnd)
+                .first()
+        } else {
+            cache
+                .observeRangeForChannelsOrPlaylists(channelIds, playlistIds, windowStart, windowEnd)
+                .first()
+        }
         if (rows.isEmpty()) return@withContext null
         // The most recent uploadedAt determines the EARLIEST non-empty bucket.
         val newest = rows.maxOfOrNull { it.uploadedAt ?: 0L } ?: return@withContext null
@@ -397,7 +440,9 @@ class MeFeedRepository @Inject constructor(
      */
     suspend fun countCachedRowsForFilter(filterChannelId: String?): Int = withContext(ioDispatcher) {
         val all = subscriptions.getSubscribedChannels()
-        if (all.isEmpty()) return@withContext 0
+        val playlists: List<SavedPlaylist> =
+            if (filterChannelId == null) subscriptions.getSavedPlaylists() else emptyList()
+        if (all.isEmpty() && playlists.isEmpty()) return@withContext 0
         val channelIds = if (filterChannelId != null) {
             if (all.any { it.channelId == filterChannelId }) listOf(filterChannelId) else return@withContext 0
         } else {
@@ -407,11 +452,16 @@ class MeFeedRepository @Inject constructor(
                 .map { it.channelId }
                 .toList()
         }
+        val playlistIds = playlists.map { it.playlistId }
         // ANDROID-PERSONAL-03 round 8 review [P1]: SQL COUNT(*) instead of
         // materialising every row through Room's converter just to call
         // `.size`. Fires up to 60× per loadNextWeek call, so the constant
         // factor matters on power-user caches (~3000 rows).
-        cache.countForChannels(channelIds)
+        if (playlistIds.isEmpty()) {
+            cache.countForChannels(channelIds)
+        } else {
+            cache.countForChannelsOrPlaylists(channelIds, playlistIds)
+        }
     }
 
     suspend fun fillWeekIfNeeded(weekIndex: Int): Unit = withContext(ioDispatcher) {
@@ -1059,6 +1109,105 @@ class MeFeedRepository @Inject constructor(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Fetch the first page of each saved playlist via NewPipe and upsert
+     * the resulting videos into [cache] alongside [PlaylistVideoLink] rows
+     * pointing at them. After this completes, the unfiltered Me-tab feed
+     * surfaces playlist content alongside subscribed-channel uploads,
+     * bucketed by the video's own upload date (Path A — no per-app
+     * "first seen in playlist" tracking).
+     *
+     * No-op when [playlistRepository] or [playlistVideoLinkDao] are not
+     * injected (test fixtures only wire the channel path).
+     *
+     * Concurrency: each playlist fetch acquires the same [semaphore] used
+     * by the channel refresh path so the combined NewPipe load stays
+     * bounded at [MAX_CONCURRENT]. Per-index [STAGGER_MS] delay matches
+     * the channel-refresh pattern. Per-playlist failures are logged and
+     * skipped — never abort the batch.
+     */
+    suspend fun refreshPlaylistVideos(): Unit = withContext(ioDispatcher) {
+        val repo = playlistRepository ?: return@withContext
+        val linkDao = playlistVideoLinkDao ?: return@withContext
+        val saved = subscriptions.getSavedPlaylists()
+        if (saved.isEmpty()) return@withContext
+
+        coroutineScope {
+            saved.mapIndexed { index, playlist ->
+                async {
+                    if (index > 0) delay(index * STAGGER_MS)
+                    semaphore.withPermit {
+                        refreshSinglePlaylist(repo, linkDao, playlist)
+                    }
+                }
+            }.awaitAll()
+        }
+    }
+
+    private suspend fun refreshSinglePlaylist(
+        repo: PlaylistDetailRepository,
+        linkDao: PlaylistVideoLinkDao,
+        playlist: SavedPlaylist,
+    ) {
+        try {
+            val page = withTimeout(PER_CHANNEL_TIMEOUT_MS) {
+                repo.getItems(playlist.playlistId, page = null, itemOffset = 1)
+            }
+            val withTimestamp = page.items.filter { it.uploadedAtMillis != null }
+            if (withTimestamp.isEmpty()) {
+                linkDao.replaceForPlaylist(playlist.playlistId, emptyList())
+                return
+            }
+            val now = currentTimeMillis()
+            val cacheRows = withTimestamp.map { item ->
+                ChannelVideoCache(
+                    videoId = item.videoId,
+                    channelId = item.channelId.orEmpty(),
+                    channelName = item.channelName.orEmpty(),
+                    title = item.title,
+                    thumbnailUrl = item.thumbnailUrl,
+                    durationSeconds = item.durationSeconds?.toLong(),
+                    viewCount = item.viewCount,
+                    uploadedAt = item.uploadedAtMillis,
+                    // NewPipe doesn't expose a definitive isShort flag on
+                    // playlist entries — duration < 60s is the heuristic.
+                    isShort = item.durationSeconds?.let { it in 1..59 } ?: false,
+                    fetchedAt = now,
+                )
+            }
+            val links = withTimestamp.map { item ->
+                PlaylistVideoLink(
+                    playlistId = playlist.playlistId,
+                    videoId = item.videoId,
+                )
+            }
+            // Insert-only on the cache: a video already populated by the
+            // channel-refresh path keeps the authoritative channelId /
+            // channelName / isShort metadata. Playlist refresh only adds
+            // videos the channel path hasn't seen.
+            cache.insertIgnoreAll(cacheRows)
+            linkDao.replaceForPlaylist(playlist.playlistId, links)
+        } catch (ce: CancellationException) {
+            // The inner withTimeout above throws TimeoutCancellationException
+            // (a subclass of CancellationException) when a single playlist
+            // exceeds PER_CHANNEL_TIMEOUT_MS. Propagating that would abort
+            // the whole refreshPlaylistVideos batch via async/awaitAll —
+            // contradicting the per-playlist isolation contract. Re-throw
+            // only when the outer scope is actually being cancelled.
+            if (!currentCoroutineContext().isActive) throw ce
+            if (BuildConfig.DEBUG) {
+                Log.w(TAG, "refreshSinglePlaylist(${playlist.playlistId}): timeout")
+            }
+        } catch (t: Throwable) {
+            if (BuildConfig.DEBUG) {
+                Log.w(
+                    TAG,
+                    "refreshSinglePlaylist(${playlist.playlistId}): failed — ${t.message}"
+                )
             }
         }
     }

@@ -7,6 +7,7 @@ import com.albunyaan.tube.auth.currentUid
 import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.data.local.PlaylistVideoLinkDao
 import com.albunyaan.tube.data.local.SavedPlaylist
 import com.albunyaan.tube.data.local.SavedPlaylistDao
 import com.albunyaan.tube.data.local.SubscribedChannel
@@ -27,6 +28,7 @@ class SubscriptionRepository @Inject constructor(
     private val refreshState: ChannelFeedRefreshStateDao,
     private val accountRepository: AccountRepository,
     private val syncManager: SyncManager,
+    private val playlistLinks: PlaylistVideoLinkDao,
 ) {
     // Cubic R5 P0 #5 — flow factories must rescope on accountState changes.
     //
@@ -56,6 +58,14 @@ class SubscriptionRepository @Inject constructor(
     // One-shot read — uid is captured at call time, no Flow rescoping needed.
     suspend fun getSubscribedChannels(): List<SubscribedChannel> =
         channels.getAll(uid = accountRepository.currentUid())
+
+    // One-shot read of saved playlists for the current account. Used by
+    // [MeFeedRepository.refreshPlaylistVideos] which iterates playlists
+    // and fetches each one's content via NewPipe — a snapshot is enough
+    // since the worker re-runs on schedule and picks up new playlists on
+    // the next tick.
+    suspend fun getSavedPlaylists(): List<SavedPlaylist> =
+        playlists.getAll(uid = accountRepository.currentUid())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun isChannelSubscribed(id: String): Flow<Boolean> =
@@ -111,7 +121,15 @@ class SubscriptionRepository @Inject constructor(
 
     suspend fun unsavePlaylist(playlistId: String) {
         val uid = accountRepository.currentUid()
-        playlists.softDelete(uid = uid, id = playlistId)
+        db.withTransaction {
+            playlists.softDelete(uid = uid, id = playlistId)
+            // Drop the playlist's video links so the Me-feed union query
+            // immediately stops returning its videos. Without this, the
+            // links linger as orphans pointing at a soft-deleted playlist
+            // and the read paths' deleted=0 filter on saved_playlists is
+            // the only thing keeping them invisible.
+            playlistLinks.deleteForPlaylist(playlistId)
+        }
         syncManager.pushDirtyAsync(uid)
     }
 }

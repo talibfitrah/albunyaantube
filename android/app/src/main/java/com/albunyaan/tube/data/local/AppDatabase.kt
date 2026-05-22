@@ -23,6 +23,10 @@ import androidx.room.RoomDatabase
  * v8: Plan D account sync — adds user_id/updated_at/deleted/dirty columns to
  *     subscribed_channels, saved_playlists, favorite_videos; creates
  *     sync_state and account_binding tables. See [MIGRATION_7_8].
+ * v10: Me-tab playlist videos — adds playlist_video_link table to map
+ *      saved playlists to the videos they contain, so playlist content
+ *      can be unioned into the weekly Me feed alongside channel uploads.
+ *      See [MIGRATION_9_10].
  */
 @Database(
     entities = [
@@ -34,8 +38,9 @@ import androidx.room.RoomDatabase
         FollowedChannel::class,
         SyncStateEntity::class,
         AccountBindingEntity::class,
+        PlaylistVideoLink::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -47,6 +52,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun followedChannelDao(): FollowedChannelDao
     abstract fun syncStateDao(): SyncStateDao
     abstract fun accountBindingDao(): AccountBindingDao
+    abstract fun playlistVideoLinkDao(): PlaylistVideoLinkDao
 
     companion object {
         const val DATABASE_NAME = "albunyaan_tube_db"

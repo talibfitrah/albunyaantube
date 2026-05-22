@@ -24,7 +24,14 @@ data class PlaylistHeader(
     // Albunyaan metadata passed via nav args
     val category: String?,
     val excluded: Boolean,
-    val downloadPolicy: DownloadPolicy
+    val downloadPolicy: DownloadPolicy,
+    /**
+     * True only when the playlist's parent channel is APPROVED in the registry.
+     * Standalone playlists (parent not in registry) keep this false so the UI
+     * never offers a tap path into uncurated channel content.
+     * Fail-closed default: stays false during the async backend check and on errors.
+     */
+    val isChannelLinkable: Boolean = false
 )
 
 /**
@@ -40,7 +47,15 @@ data class PlaylistItem(
     val viewCount: Long?,
     val publishedTime: String?,
     val channelId: String?,
-    val channelName: String?
+    val channelName: String?,
+    /**
+     * Epoch-ms upload timestamp parsed from NewPipe's DateWrapper. Used by
+     * the Me-tab feed to bucket playlist videos into the same weekly view
+     * as subscribed-channel uploads. Null when NewPipe omits the parsed
+     * date (in which case the video can't be week-bucketed and falls out
+     * of the Me feed for now).
+     */
+    val uploadedAtMillis: Long? = null,
 )
 
 /**

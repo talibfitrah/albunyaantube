@@ -36,6 +36,7 @@ class SyncManager @Inject constructor(
     private val favorites: FavoriteVideoDao,
     private val syncState: SyncStateDao,
     private val binding: AccountBindingDao,
+    private val playlistLinks: PlaylistVideoLinkDao,
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -116,6 +117,11 @@ class SyncManager @Inject constructor(
                     subs.wipeForUid(b.user_id)
                     playlists.wipeForUid(b.user_id)
                     favorites.wipeForUid(b.user_id)
+                    // Drop orphaned playlist→video links left behind by
+                    // the playlists.wipeForUid above. Without this, link
+                    // rows for the wiped account's playlists linger and
+                    // pin metadata in channel_video_cache.
+                    playlistLinks.pruneOrphans()
                     syncState.clearForUid(b.user_id)
                     binding.clear()
                     binding.upsert(AccountBindingEntity(uid, System.currentTimeMillis(), false))

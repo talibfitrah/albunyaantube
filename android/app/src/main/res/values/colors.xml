@@ -11,6 +11,12 @@
     <color name="surfaceVariant">@color/surface_variant</color>
     <color name="onPrimary">#FFFFFFFF</color>
 
+    <!-- Me-tab playlist chip distinction (vs subscribed-channel chips).
+         Subtler than filter_chip_selected_bg so a non-selected playlist
+         chip never looks "selected", but saturated enough to read at a
+         glance against the white surface. -->
+    <color name="playlist_chip_bg">#D8EFE3</color>
+
     <!-- Filter chip palette (Phase 6) -->
     <color name="filter_chip_default_bg">#FFEFF4F2</color>
     <color name="filter_chip_default_text">#FF275E4B</color>

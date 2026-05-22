@@ -30,7 +30,8 @@ class PushDirtyTest {
         db = Room.inMemoryDatabaseBuilder(ctx, AppDatabase::class.java).allowMainThreadQueries().build()
         api = FakeSyncApi()
         sm = SyncManager(api, db, db.subscribedChannelDao(), db.savedPlaylistDao(),
-                         db.favoriteVideoDao(), db.syncStateDao(), db.accountBindingDao())
+                         db.favoriteVideoDao(), db.syncStateDao(), db.accountBindingDao(),
+                         db.playlistVideoLinkDao())
     }
     @After fun tearDown() = db.close()
 

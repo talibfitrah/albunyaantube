@@ -60,6 +60,7 @@ class MeFeedRepositoryTest {
             refreshState = db.channelFeedRefreshStateDao(),
             accountRepository = FakeAccountRepository(),
             syncManager = mock(),
+            playlistLinks = db.playlistVideoLinkDao(),
         )
         fetcher = RecordingFetcher()
         repo = MeFeedRepository(

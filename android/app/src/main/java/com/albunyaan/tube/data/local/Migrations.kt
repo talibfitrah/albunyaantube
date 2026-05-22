@@ -367,3 +367,36 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
         db.execSQL("ALTER TABLE sync_state ADD COLUMN last_doc_id TEXT DEFAULT NULL")
     }
 }
+
+/**
+ * MIGRATION_9_10 — Me-tab playlist videos.
+ *
+ * Adds the `playlist_video_link` table: a many-to-many mapping between
+ * saved playlists and the videos they contain, so [MeFeedRepository]
+ * can union playlist videos into the same weekly-bucketed feed as
+ * subscribed-channel uploads. Metadata for the videos themselves lives
+ * in `channel_video_cache` keyed by videoId; playlist refresh upserts
+ * those rows alongside the link rows here.
+ *
+ * Schema mirrors what Room generates for the @Entity declaration
+ * (composite PK on playlistId+videoId, indexes on each column).
+ */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS playlist_video_link (
+                playlistId TEXT NOT NULL,
+                videoId TEXT NOT NULL,
+                PRIMARY KEY (playlistId, videoId)
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_playlist_video_link_playlistId ON playlist_video_link(playlistId)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_playlist_video_link_videoId ON playlist_video_link(videoId)"
+        )
+    }
+}

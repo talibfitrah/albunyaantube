@@ -78,6 +78,18 @@ interface ChannelVideoCacheDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rows: List<ChannelVideoCache>)
 
+    /**
+     * Insert-only path used by the playlist refresh. The channel refresh
+     * is the source of truth for video metadata (channelId, channelName,
+     * isShort), so a playlist whose [PlaylistVideoLink] points at a video
+     * already cached by a subscribed-channel upload must not overwrite
+     * the channel-refresh row with the playlist-side data (which lacks
+     * channelId for some YouTube playlists and uses a duration-only
+     * `isShort` heuristic).
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoreAll(rows: List<ChannelVideoCache>)
+
     @Query("DELETE FROM channel_video_cache WHERE channelId = :channelId")
     suspend fun deleteForChannel(channelId: String)
 
@@ -92,6 +104,47 @@ interface ChannelVideoCacheDao {
            WHERE channelId NOT IN (SELECT channelId FROM subscribed_channels)"""
     )
     suspend fun pruneUnsubscribed()
+
+    /**
+     * Per-week observation that also includes videos linked from saved
+     * playlists, not just those uploaded by subscribed channels. Used by
+     * [com.albunyaan.tube.data.me.MeFeedRepository.observeWeek] when no
+     * channel filter is active — chip-filtered views still use the
+     * channel-scoped [observeRangeForChannels] so a channel filter does
+     * not accidentally surface playlist videos from other creators.
+     */
+    @Query(
+        """SELECT * FROM channel_video_cache
+           WHERE uploadedAt IS NOT NULL
+             AND uploadedAt >= :fromMs
+             AND uploadedAt < :toMs
+             AND (
+               channelId IN (:channelIds)
+               OR videoId IN (SELECT videoId FROM playlist_video_link WHERE playlistId IN (:playlistIds))
+             )
+           ORDER BY uploadedAt DESC"""
+    )
+    fun observeRangeForChannelsOrPlaylists(
+        channelIds: List<String>,
+        playlistIds: List<String>,
+        fromMs: Long,
+        toMs: Long,
+    ): Flow<List<ChannelVideoCache>>
+
+    /**
+     * Union row count for both subscribed channels and saved playlists.
+     * Mirrors [countForChannels] but for the unfiltered Me-feed path that
+     * needs progress signalling across both sources.
+     */
+    @Query(
+        """SELECT COUNT(*) FROM channel_video_cache
+           WHERE channelId IN (:channelIds)
+              OR videoId IN (SELECT videoId FROM playlist_video_link WHERE playlistId IN (:playlistIds))"""
+    )
+    suspend fun countForChannelsOrPlaylists(
+        channelIds: List<String>,
+        playlistIds: List<String>,
+    ): Int
 
     /**
      * Total cached row count for the given channels. Used by the Me-tab
