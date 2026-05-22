@@ -1,6 +1,12 @@
 package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.dto.SubmitterNoteUpdateRequest;
+import com.albunyaan.tube.dto.registry.BulkPreviewRequest;
+import com.albunyaan.tube.dto.registry.BulkPreviewResponse;
+import com.albunyaan.tube.dto.registry.BulkSubmitRequest;
+import com.albunyaan.tube.dto.registry.BulkSubmitResponse;
+import com.albunyaan.tube.service.BulkSubmissionService;
+import jakarta.validation.Valid;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
@@ -59,6 +65,7 @@ public class RegistryController {
     private final PublicContentCacheService publicContentCacheService;
     private final SortOrderService sortOrderService;
     private final com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache;
+    private final BulkSubmissionService bulkSubmissionService;
 
     public RegistryController(
             ChannelRepository channelRepository,
@@ -67,7 +74,8 @@ public class RegistryController {
             AuditLogService auditLogService,
             PublicContentCacheService publicContentCacheService,
             SortOrderService sortOrderService,
-            com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache
+            com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache,
+            BulkSubmissionService bulkSubmissionService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -76,6 +84,7 @@ public class RegistryController {
         this.publicContentCacheService = publicContentCacheService;
         this.sortOrderService = sortOrderService;
         this.workspaceExclusionsCache = workspaceExclusionsCache;
+        this.bulkSubmissionService = bulkSubmissionService;
     }
 
     /**
@@ -1069,6 +1078,34 @@ public class RegistryController {
         }
         auditLogService.log("video_submission_deleted", "video", id, user);
         return ResponseEntity.noContent().build();
+    }
+
+    // -------------------------------------------------------------------------
+    // BULK-01 (T9) — bulk preview + submit
+    // -------------------------------------------------------------------------
+
+    /**
+     * BULK-01 (T9) — bulk preview. Validates ≤25 URLs, fans out NewPipe metadata fetches,
+     * returns one row per URL with detected type + metadata + status (OK / DUPLICATE / ERROR).
+     */
+    @PostMapping("/bulk/preview")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<BulkPreviewResponse> bulkPreview(
+            @RequestBody @Valid BulkPreviewRequest req) {
+        return ResponseEntity.ok(bulkSubmissionService.preview(req));
+    }
+
+    /**
+     * BULK-01 (T9) — bulk submit. Takes the OK rows from a prior preview + resolved categories,
+     * writes Firestore docs via {@link com.albunyaan.tube.service.RegistrySubmissionWriter},
+     * returns per-row results.
+     */
+    @PostMapping("/bulk/submit")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<BulkSubmitResponse> bulkSubmit(
+            @RequestBody @Valid BulkSubmitRequest req,
+            @AuthenticationPrincipal FirebaseUserDetails user) {
+        return ResponseEntity.ok(bulkSubmissionService.submit(req, user.getUid(), user.isAdmin()));
     }
 }
 
