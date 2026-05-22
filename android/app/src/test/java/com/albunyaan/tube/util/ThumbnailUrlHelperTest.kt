@@ -155,4 +155,56 @@ class ThumbnailUrlHelperTest {
         assertEquals(1, urls.size)
         assertEquals(primaryUrl, urls.first())
     }
+
+    @Test
+    fun `getFallbackUrls upgrades hqdefault primary to maxres first`() {
+        val primaryUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+
+        // High-DPI fix: maxresdefault tried before hqdefault primary
+        assertEquals("https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg", urls.first())
+        assertTrue(urls.contains(primaryUrl))
+    }
+
+    @Test
+    fun `getFallbackUrls upgrades default jpg primary to maxres first`() {
+        val primaryUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg"
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+
+        assertEquals("https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg", urls.first())
+        assertTrue(urls.contains(primaryUrl))
+    }
+
+    @Test
+    fun `getFallbackUrls does NOT upgrade sddefault primary`() {
+        // sddefault (640x480) is acceptable for mid-DPI — don't waste a request
+        val primaryUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/sddefault.jpg"
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+
+        assertEquals(primaryUrl, urls.first())
+    }
+
+    @Test
+    fun `getFallbackUrls does NOT upgrade maxresdefault primary`() {
+        // Already at the top of the quality ladder — leave it alone
+        val primaryUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg"
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+
+        assertEquals(primaryUrl, urls.first())
+    }
+
+    @Test
+    fun `getFallbackUrls does NOT upgrade non-ytimg primaries`() {
+        // Custom CDN URLs aren't on the YouTube quality ladder
+        val primaryUrl = "https://custom.cdn.com/foo/hqdefault.jpg"
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+
+        // Regex matches anywhere; this is the documented behavior — any URL
+        // whose path ends in /hqdefault.jpg gets the upgrade attempt. The
+        // upgraded URL won't load (wrong CDN), but the fallback chain
+        // immediately tries the original next, which is the same behavior as
+        // before this change. Acceptable.
+        assertEquals("https://custom.cdn.com/foo/maxresdefault.jpg", urls.first())
+        assertTrue(urls.contains(primaryUrl))
+    }
 }

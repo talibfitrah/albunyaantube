@@ -32,6 +32,19 @@ object ThumbnailUrlHelper {
         "default"
     )
 
+    /**
+     * Low-resolution YouTube CDN thumbnail patterns. When the NewPipe-extracted
+     * primary URL matches this, it is upgraded to maxresdefault as the first
+     * attempt — the original low-res URL stays in the chain as the immediate
+     * fallback. This keeps the request count bounded (at most 2 attempts before
+     * the standard quality ladder) while giving high-DPI displays a chance at
+     * the high-res asset.
+     *
+     * Intentionally excludes `sddefault` (already 640x480, acceptable for
+     * mid-DPI) and `maxresdefault` (the upgrade target itself).
+     */
+    private val LOW_RES_PRIMARY_REGEX = Regex("""/(?:hq|mq)?default\.(jpg|webp)""")
+
     // Shorts-specific patterns (9:16 aspect ratio thumbnails)
     private val SHORTS_THUMBNAIL_PATTERNS = listOf(
         // Shorts may use different CDN patterns
@@ -58,8 +71,21 @@ object ThumbnailUrlHelper {
     ): List<String> {
         val fallbacks = mutableListOf<String>()
 
-        // Add primary URL first if valid
-        primaryUrl?.takeIf { it.isNotBlank() }?.let { fallbacks.add(it) }
+        // Add primary URL first if valid. When the primary matches a low-res
+        // YouTube CDN pattern (e.g. hqdefault.jpg = 480x360 — pixelated on
+        // high-DPI), prepend the maxresdefault variant before it. Average
+        // case: maxres succeeds = 1 high-res request. Worst case: maxres
+        // 404s = 2 requests with the original as fallback. Bounded — never
+        // walks the full 10-URL ladder for cached low-res primaries.
+        primaryUrl?.takeIf { it.isNotBlank() }?.let { rawPrimary ->
+            if (LOW_RES_PRIMARY_REGEX.containsMatchIn(rawPrimary)) {
+                val maxres = LOW_RES_PRIMARY_REGEX.replace(rawPrimary) { match ->
+                    "/maxresdefault.${match.groupValues[1]}"
+                }
+                fallbacks.add(maxres)
+            }
+            fallbacks.add(rawPrimary)
+        }
 
         // Extract video ID if not provided, validating against expected pattern
         val id = videoId?.takeIf { it.length == 11 && VIDEO_ID_PATTERN.matches(it) }
