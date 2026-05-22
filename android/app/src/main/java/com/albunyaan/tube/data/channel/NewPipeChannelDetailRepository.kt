@@ -415,7 +415,10 @@ class NewPipeChannelDetailRepository @Inject constructor(
                     }
                 }
                 cacheMutex.withLock {
-                    channelInfoCache[channelId] = CacheEntry(info, now)
+                    // Re-stamp after the fetch returns so a multi-second
+                    // NewPipe call doesn't back-date the TTL by its own
+                    // duration.
+                    channelInfoCache[channelId] = CacheEntry(info, System.currentTimeMillis())
                 }
                 Log.d(TAG, "Cached channel info for: $channelId with ${info.tabs.size} tabs")
                 info
