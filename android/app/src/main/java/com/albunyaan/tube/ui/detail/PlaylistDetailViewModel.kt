@@ -147,6 +147,7 @@ class PlaylistDetailViewModel @AssistedInject constructor(
                     channelLinkabilityJob?.cancel()
                     channelLinkabilityJob = launch {
                         resolveChannelLinkability(
+                            headerSnapshot = header,
                             rawChannelId = header.channelId,
                             parentChannelUrl = header.parentChannelUrl
                         )
@@ -178,8 +179,17 @@ class PlaylistDetailViewModel @AssistedInject constructor(
      * the flag stays false — fail-closed. The curation intent is "don't expose
      * uncurated channels", so we'd rather hide a legitimate link than ever
      * surface an uncurated one.
+     *
+     * [headerSnapshot] is the [PlaylistHeader] instance this resolution was
+     * started for. The final writeback only fires if [_headerState] still
+     * holds that same instance (`===` identity check), which prevents a stale
+     * resolver from overwriting the wrong header. Comparing on
+     * [PlaylistHeader.parentChannelUrl] alone would collapse to `null == null`
+     * across two `forceRefresh` calls whose uploader URL changed, and J1's
+     * canonical id could land on J2's freshly-loaded header.
      */
     private suspend fun resolveChannelLinkability(
+        headerSnapshot: PlaylistHeader,
         rawChannelId: String?,
         parentChannelUrl: String?,
     ) {
@@ -219,11 +229,14 @@ class PlaylistDetailViewModel @AssistedInject constructor(
         if (!isApproved) return
 
         // Step 3: commit the canonical id + flip the link flag atomically,
-        // but only if the header is still showing the playlist we resolved for.
+        // but only if the header is still the exact instance we resolved for.
+        // Snapshot identity (`===`) is the right guard here: any subsequent
+        // loadHeader (forceRefresh or otherwise) emits a fresh PlaylistHeader
+        // instance, so this check fails cleanly when a newer header is in
+        // play, regardless of whether the new header happens to share the
+        // same channelId / parentChannelUrl values.
         val current = _headerState.value
-        if (current is HeaderState.Success &&
-            current.header.parentChannelUrl == parentChannelUrl
-        ) {
+        if (current is HeaderState.Success && current.header === headerSnapshot) {
             _headerState.value = HeaderState.Success(
                 current.header.copy(
                     channelId = canonicalId,
