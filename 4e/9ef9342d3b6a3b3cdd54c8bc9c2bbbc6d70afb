@@ -1,0 +1,46 @@
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPrefetchTtlTest.kt
+  s_38612edddfcfde::t_55304ddd4f7f31 356-357
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPlaylistPagingTest.kt
+  s_38612edddfcfde::t_d5329e54e8a4f9 818-819
+android/app/src/androidTest/java/com/albunyaan/tube/data/playlist/FakePlaylistDetailRepository.kt
+  s_38612edddfcfde::t_a76bb5ae14444a 140-141
+android/app/src/main/java/com/albunyaan/tube/data/playlist/PlaylistDetailRepository.kt
+  s_38612edddfcfde::t_6633c6357f5547 46-68
+android/app/src/main/java/com/albunyaan/tube/data/playlist/PlaylistDetailModels.kt
+  s_38612edddfcfde::t_f7116597bcc4cd 34-42
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelAvailabilityGateTest.kt
+  s_38612edddfcfde::t_36a4ac3a3e2a39 238-239
+android/app/src/main/java/com/albunyaan/tube/data/playlist/NewPipePlaylistDetailRepository.kt
+  s_38612edddfcfde::t_6543e52ce754cb 465-469
+  s_38612edddfcfde::t_aebb82737fa6e2 385-398,404,415-416,419-421,439-443
+  s_38612edddfcfde::t_cb3740e0930808 71-79,82-84
+  s_38612edddfcfde::t_c135a2dc9c7fcb 282,292-298,306-310
+  s_38612edddfcfde::t_f5553b84677f17 358-361,363-367,369-372
+android/app/src/main/java/com/albunyaan/tube/ui/detail/PlaylistDetailViewModel.kt
+  s_38612edddfcfde::t_a0af0357e60382 168-180,182-205,209,215,220-222,224-226,228-231
+  s_38612edddfcfde::t_406b8cd51813aa 140-143,148-153
+  s_38612edddfcfde::t_1c52878c7b535e 663-667
+android/app/src/test/java/com/albunyaan/tube/ui/detail/PlaylistDetailViewModelTest.kt
+  s_38612edddfcfde::t_cd367127011c65 34,36
+  s_38612edddfcfde::t_f52ea771bb14e4 51-56
+  s_38612edddfcfde::t_9668a259dee326 882-888
+  s_38612edddfcfde::t_8d37b4a8d27c30 681,683-684,700,702-703,714-772,778,780-781
+  s_38612edddfcfde::t_badaab0d1182dc 361-362
+  s_38612edddfcfde::t_4d1165a35fe6fb 461-462
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "4e9ef9342d3b6a3b3cdd54c8bc9c2bbbc6d70afb",
+  "prompts": {},
+  "sessions": {
+    "s_38612edddfcfde": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "621e21cc-ea7e-4c5f-bc31-1f93f48b1cae",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
