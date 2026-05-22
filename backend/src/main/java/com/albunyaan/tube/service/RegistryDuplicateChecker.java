@@ -6,9 +6,9 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -34,7 +34,7 @@ public class RegistryDuplicateChecker {
         this.videos = videos;
     }
 
-    /** Create a new per-batch memoizing lookup context. Not thread-safe; one per preview call. */
+    /** Create a new per-batch memoizing lookup context. Thread-safe; can be shared across worker threads. */
     public Batch newBatch() {
         return new Batch();
     }
@@ -43,14 +43,11 @@ public class RegistryDuplicateChecker {
     public record ExistingMatch(String registryId, String status) {}
 
     /**
-     * Per-batch memoizing view over the three repositories.
-     * <p>
-     * Not thread-safe — each preview call must obtain its own {@link Batch} via
-     * {@link RegistryDuplicateChecker#newBatch()}.
+     * Per-batch memoizing view. Thread-safe via ConcurrentHashMap so multiple worker threads can share one batch.
      */
     public final class Batch {
 
-        private final Map<String, Optional<ExistingMatch>> cache = new HashMap<>();
+        private final Map<String, Optional<ExistingMatch>> cache = new ConcurrentHashMap<>();
 
         private Batch() {}
 
