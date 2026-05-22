@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.albunyaan.tube.data.local.ChannelVideoCacheDao
 import com.albunyaan.tube.data.me.MeFeedRepository
 import com.albunyaan.tube.data.me.MeRefreshTelemetry
 import dagger.assisted.Assisted
@@ -45,6 +46,7 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val repository: MeFeedRepository,
     private val telemetry: MeRefreshTelemetry,
+    private val channelVideoCacheDao: ChannelVideoCacheDao,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -83,6 +85,19 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
                     // No-op when the playlist deps weren't injected
                     // (test fixtures only).
                     repository.refreshPlaylistVideos()
+                    // Cache hygiene: bound channel_video_cache size so it
+                    // does not grow unbounded across years of use. Both
+                    // prunes are cheap (single DELETE each, indexed by
+                    // channelId / uploadedAt). They were previously dead
+                    // code — pruneUnsubscribed was defined in the DAO but
+                    // never invoked. Run on every tick because the cost
+                    // of running a no-op DELETE is negligible compared to
+                    // the cost of a bloated table slowing every Me-feed
+                    // query.
+                    channelVideoCacheDao.pruneUnsubscribed()
+                    channelVideoCacheDao.pruneOlderThan(
+                        System.currentTimeMillis() - CACHE_RETENTION_MS
+                    )
                 }
                 success = true
                 Result.success()
@@ -131,5 +146,14 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
          * slow networks without ever burning OS-level wakelocks.
          */
         val WORKER_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(8L)
+
+        /**
+         * Retention window for channel_video_cache rows. Anything older
+         * than this is pruned on each refresh tick. The Me-feed UI only
+         * surfaces week buckets within the recent window, and the deep
+         * paginator backfills older weeks on demand — so anything beyond
+         * 90 days is heap weight with no user-visible value.
+         */
+        val CACHE_RETENTION_MS = TimeUnit.DAYS.toMillis(90L)
     }
 }
