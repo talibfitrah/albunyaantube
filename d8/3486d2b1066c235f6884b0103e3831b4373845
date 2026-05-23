@@ -1,0 +1,20 @@
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_1a004b5f0406e1::t_7ded32efabe6b8 193-195
+  s_1a004b5f0406e1::t_d74ebbbbc7d60e 121-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "d83486d2b1066c235f6884b0103e3831b4373845",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
