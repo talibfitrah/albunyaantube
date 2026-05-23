@@ -20,6 +20,7 @@ class ChannelVideoCacheDaoTest {
     private lateinit var db: AppDatabase
     private lateinit var cache: ChannelVideoCacheDao
     private lateinit var channels: SubscribedChannelDao
+    private lateinit var playlistLinks: PlaylistVideoLinkDao
 
     @Before
     fun setUp() {
@@ -29,6 +30,7 @@ class ChannelVideoCacheDaoTest {
         ).allowMainThreadQueries().build()
         cache = db.channelVideoCacheDao()
         channels = db.subscribedChannelDao()
+        playlistLinks = db.playlistVideoLinkDao()
     }
 
     @After
@@ -64,5 +66,27 @@ class ChannelVideoCacheDaoTest {
 
         assertEquals(listOf("vA"), cache.getForChannel("UC1").map { it.videoId })
         assertTrue(cache.getForChannel("UC2").isEmpty())
+    }
+
+    @Test
+    fun `pruneUnsubscribed keeps playlist-linked videos from non-subscribed channels`() = runTest {
+        // UC1 subscribed; UC2 not subscribed but its video is in a saved playlist.
+        channels.upsert(SubscribedChannel("UC1", "u", "A", null, 0L))
+        cache.upsertAll(
+            listOf(
+                row("vA", "UC1", 1L),   // subscribed channel upload — keep
+                row("vB", "UC2", 2L),   // not subscribed, but linked from saved playlist — keep
+                row("vC", "UC2", 3L),   // not subscribed, not playlist-linked — drop
+            )
+        )
+        // Saved playlist PL1 references vB but not vC.
+        playlistLinks.upsertAll(listOf(PlaylistVideoLink("PL1", "vB")))
+
+        cache.pruneUnsubscribed()
+
+        // vA + vB survive (subscribed channel + playlist-linked).
+        // vC dropped (neither subscribed nor playlist-linked).
+        assertEquals(listOf("vA"), cache.getForChannel("UC1").map { it.videoId })
+        assertEquals(listOf("vB"), cache.getForChannel("UC2").map { it.videoId })
     }
 }

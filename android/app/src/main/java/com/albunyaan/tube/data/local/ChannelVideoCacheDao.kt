@@ -79,9 +79,24 @@ interface ChannelVideoCacheDao {
     @Query("DELETE FROM channel_video_cache WHERE channelId = :channelId")
     suspend fun deleteForChannel(channelId: String)
 
+    /**
+     * Delete cache rows whose owning channel is no longer subscribed AND
+     * which are not referenced by any saved playlist. Without the second
+     * predicate, a playlist video uploaded by a non-subscribed channel
+     * (very common — playlists curate across creators) would be wiped on
+     * every worker tick, then re-inserted only if the subsequent
+     * `refreshPlaylistVideos()` call succeeds. A transient network failure
+     * between prune and playlist-refresh leaves the saved-playlist feed
+     * empty until the next worker tick.
+     *
+     * `playlist_video_link` rows are cleaned up when the user un-saves a
+     * playlist (see PlaylistVideoLinkDao.deleteForPlaylist), so this
+     * predicate stays correct as playlists are added or removed.
+     */
     @Query(
         """DELETE FROM channel_video_cache
-           WHERE channelId NOT IN (SELECT channelId FROM subscribed_channels)"""
+           WHERE channelId NOT IN (SELECT channelId FROM subscribed_channels)
+             AND videoId NOT IN (SELECT videoId FROM playlist_video_link)"""
     )
     suspend fun pruneUnsubscribed()
 
