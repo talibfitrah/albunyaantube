@@ -52,27 +52,47 @@ public class SubmissionRateLimiter {
      * own write quota — empty-uid sneaking past defeated the cap.
      */
     public Long tryAcquire(String uid) {
+        return tryAcquire(uid, 1);
+    }
+
+    /**
+     * Atomically consume {@code count} slots from the per-uid budget. Returns
+     * null when all {@code count} slots were granted; otherwise returns
+     * seconds until the oldest hit ages out. Failure is all-or-nothing —
+     * no slots are taken if {@code count} would exceed the per-uid {@link #LIMIT}.
+     *
+     * <p>Used by the bulk-submit path so a {@code POST /bulk/submit} with
+     * {@code N} rows consumes {@code N} budget slots, not 1. Without this,
+     * one bulk HTTP call consumed only one slot from the 50/24h budget while
+     * fanning out 25 Firestore writes, giving the bulk path a 25x effective
+     * throughput vs single-add (Stage 1 P1 / Stage 2 H3 in the post-Plan-G
+     * 7-stage review).
+     */
+    public Long tryAcquire(String uid, int count) {
         if (uid == null || uid.isBlank()) {
             throw new IllegalArgumentException("tryAcquire requires a non-blank uid");
         }
+        if (count < 1) {
+            throw new IllegalArgumentException("count must be >= 1, got " + count);
+        }
         Instant now = clock.instant();
         Instant cutoff = now.minus(WINDOW);
-        // Use the cache's atomic compute so the mutation happens under the cache's
-        // bucket lock for this uid. The previous `cache.get(uid, factory)` followed
-        // by `synchronized (dq)` raced with Caffeine eviction: if the cache evicted
-        // the entry between the get() and the synchronized block, the next caller
-        // for the same uid got a fresh empty deque while this thread mutated the
-        // orphan — two concurrent callers each see "under limit" against
-        // independent deques and the per-uid 50/24h cap leaks.
+        // Atomic compute — see single-arg overload for the eviction-race
+        // rationale.
         Long[] retryAfter = new Long[]{null};
         hits.asMap().compute(uid, (key, existing) -> {
             Deque<Instant> dq = existing != null ? existing : new ArrayDeque<>();
             while (!dq.isEmpty() && dq.peekFirst().isBefore(cutoff)) dq.pollFirst();
-            if (dq.size() >= LIMIT) {
-                Instant oldest = dq.peekFirst();
+            if (dq.size() + count > LIMIT) {
+                // All-or-nothing: leave the deque untouched. retry-after is
+                // computed from the oldest existing slot when the deque is
+                // non-empty, else from `now` (degenerate path — count > LIMIT
+                // is rejected by SubmitRow.@Size validation, but keep the
+                // math defensive).
+                Instant oldest = dq.isEmpty() ? now : dq.peekFirst();
                 retryAfter[0] = oldest.plus(WINDOW).getEpochSecond() - now.getEpochSecond();
             } else {
-                dq.addLast(now);
+                for (int i = 0; i < count; i++) dq.addLast(now);
             }
             return dq;
         });

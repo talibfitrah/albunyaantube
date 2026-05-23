@@ -35,13 +35,15 @@ public class BulkSubmissionService {
     private final PublicContentCacheService publicContentCacheService;
     private final SortOrderService sortOrderService;
     private final com.albunyaan.tube.repository.CategoryRepository categoryRepository;
+    private final SubmissionRateLimiter submissionRateLimiter;
 
     public BulkSubmissionService(YouTubeUrlParser parser, YouTubeGateway gateway,
                                   RegistryDuplicateChecker dedupe, RegistrySubmissionWriter writer,
                                   @Qualifier("bulkPreviewExecutor") ExecutorService bulkPreviewExecutor,
                                   PublicContentCacheService publicContentCacheService,
                                   SortOrderService sortOrderService,
-                                  com.albunyaan.tube.repository.CategoryRepository categoryRepository) {
+                                  com.albunyaan.tube.repository.CategoryRepository categoryRepository,
+                                  SubmissionRateLimiter submissionRateLimiter) {
         this.parser = parser;
         this.gateway = gateway;
         this.dedupe = dedupe;
@@ -50,6 +52,7 @@ public class BulkSubmissionService {
         this.publicContentCacheService = publicContentCacheService;
         this.sortOrderService = sortOrderService;
         this.categoryRepository = categoryRepository;
+        this.submissionRateLimiter = submissionRateLimiter;
     }
 
     public BulkPreviewResponse preview(BulkPreviewRequest req) {
@@ -125,6 +128,26 @@ public class BulkSubmissionService {
                 throw new org.springframework.web.server.ResponseStatusException(
                         org.springframework.http.HttpStatus.BAD_REQUEST,
                         "detectedType ALL is not supported in bulk submit");
+            }
+        }
+
+        // Row-count-aware rate-limit consumption. The
+        // SubmissionRateLimitInterceptor already consumed 1 slot per HTTP call
+        // by the time we get here. Consume (rows.size() - 1) MORE slots so
+        // a 25-row bulk submit counts as 25 hits against the 50/24h per-uid
+        // budget instead of 1 — without this, the bulk path was 25× faster
+        // to exhaust than single-add (Stage 1 P1 / Stage 2 H3).
+        //
+        // The interceptor's 1 slot is sunk on rejection here; no refund
+        // mechanism exists on this limiter (acceptable cost of 1 slot per
+        // rejected bulk submit).
+        int extraSlotsNeeded = req.rows().size() - 1;
+        if (extraSlotsNeeded > 0) {
+            Long retryAfter = submissionRateLimiter.tryAcquire(actorUid, extraSlotsNeeded);
+            if (retryAfter != null) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
+                        "Daily submission limit reached. Retry after " + retryAfter + " seconds.");
             }
         }
 

@@ -29,6 +29,7 @@ class BulkSubmissionServiceSubmitTest {
     private RegistryDuplicateChecker.Batch lateBatch;
     private com.albunyaan.tube.repository.CategoryRepository categoryRepository;
     private YouTubeGateway gateway;
+    private SubmissionRateLimiter submissionRateLimiter;
     private BulkSubmissionService svc;
 
     @BeforeEach
@@ -65,6 +66,11 @@ class BulkSubmissionServiceSubmitTest {
             );
         });
 
+        // Default: rate-limiter grants all slots (returns null). Tests for the
+        // 429 path override this.
+        submissionRateLimiter = mock(SubmissionRateLimiter.class);
+        when(submissionRateLimiter.tryAcquire(any(), anyInt())).thenReturn(null);
+
         svc = new BulkSubmissionService(
                 new YouTubeUrlParser(),                          // real parser for round-trip metadata validation
                 gateway,
@@ -73,7 +79,8 @@ class BulkSubmissionServiceSubmitTest {
                 Executors.newFixedThreadPool(2),
                 mock(PublicContentCacheService.class),
                 mock(SortOrderService.class),
-                categoryRepository);
+                categoryRepository,
+                submissionRateLimiter);
     }
 
     @Test
@@ -301,6 +308,67 @@ class BulkSubmissionServiceSubmitTest {
         assertEquals(0, resp.added());
         assertEquals(1, resp.failed());
         assertEquals("AGE_RESTRICTED", resp.results().get(0).errorCode());
+        verifyNoInteractions(writer);
+    }
+
+    @Test
+    void bulkSubmit_consumesRowCountMinusOneExtraSlotsFromLimiter() throws Exception {
+        when(writer.writeChannel(any(), any(), any(), any(), anyBoolean())).thenReturn("doc-c-1");
+
+        var rows = List.of(
+                new SubmitRow(0, "https://www.youtube.com/channel/UC1AXFkgsw1L7xaCfnd5JJOw",
+                        YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata("UC1AXFkgsw1L7xaCfnd5JJOw", "C0", null, null, null, null, null, null, null),
+                        List.of("cat-1")),
+                new SubmitRow(1, "https://www.youtube.com/channel/UC2BCDEFGHIJKLMNOPQRSTUv",
+                        YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata("UC2BCDEFGHIJKLMNOPQRSTUv", "C1", null, null, null, null, null, null, null),
+                        List.of("cat-1")),
+                new SubmitRow(2, "https://www.youtube.com/channel/UC3ZZZZZZZZZZZZZZZZZZZZv",
+                        YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata("UC3ZZZZZZZZZZZZZZZZZZZZv", "C2", null, null, null, null, null, null, null),
+                        List.of("cat-1"))
+        );
+        svc.submit(new BulkSubmitRequest(rows, "PENDING"), "admin-uid", true);
+
+        // Interceptor already consumed 1 slot; service consumes the remaining
+        // (3 - 1) = 2 to make total consumption equal to row count.
+        verify(submissionRateLimiter).tryAcquire("admin-uid", 2);
+    }
+
+    @Test
+    void bulkSubmit_singleRow_doesNotConsumeExtraSlots() throws Exception {
+        when(writer.writeChannel(any(), any(), any(), any(), anyBoolean())).thenReturn("doc-c-1");
+
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "C", null, null, null, null, null, null, null),
+                List.of("cat-1"));
+        svc.submit(new BulkSubmitRequest(List.of(row), "PENDING"), "admin-uid", true);
+
+        // rows.size() - 1 = 0, so tryAcquire is not called from the service
+        // (the interceptor already handled the single slot).
+        verify(submissionRateLimiter, never()).tryAcquire(any(), anyInt());
+    }
+
+    @Test
+    void bulkSubmit_rateLimited_throws429() {
+        // Limiter says retry in 60 seconds — extra-slot acquisition fails.
+        when(submissionRateLimiter.tryAcquire(any(), anyInt())).thenReturn(60L);
+
+        var rows = List.of(
+                new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata(CHANNEL_ID, "C", null, null, null, null, null, null, null),
+                        List.of("cat-1")),
+                new SubmitRow(1, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata(CHANNEL_ID, "C", null, null, null, null, null, null, null),
+                        List.of("cat-1"))
+        );
+        var req = new BulkSubmitRequest(rows, "PENDING");
+
+        var ex = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> svc.submit(req, "admin-uid", true));
+        assertEquals(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, ex.getStatusCode());
+        // Writer must never have been called once rate-limited.
         verifyNoInteractions(writer);
     }
 

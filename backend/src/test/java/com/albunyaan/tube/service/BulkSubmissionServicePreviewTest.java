@@ -35,7 +35,8 @@ class BulkSubmissionServicePreviewTest {
                 Executors.newFixedThreadPool(2),
                 mock(PublicContentCacheService.class),
                 mock(SortOrderService.class),
-                mock(com.albunyaan.tube.repository.CategoryRepository.class));
+                mock(com.albunyaan.tube.repository.CategoryRepository.class),
+                mock(SubmissionRateLimiter.class));
     }
 
     @Test
