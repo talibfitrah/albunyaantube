@@ -523,7 +523,7 @@ function startProgressPolling() {
   pollImportProgress()
 
   // Then poll every 500ms for smoother progress updates
-  progressPollingInterval = window.setInterval(() => {
+  progressPollingInterval = setInterval(() => {
     pollImportProgress()
   }, 500)
 }
