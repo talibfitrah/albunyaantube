@@ -86,6 +86,30 @@ public class BulkSubmissionService {
         int added = 0, failed = 0;
 
         for (SubmitRow row : req.rows()) {
+            // BULK-01 security (Group C) — verify client-supplied metadata.youtubeId + detectedType
+            // round-trip from row.originalUrl. Prevents tampered submit bodies pointing at a
+            // different entity than the moderator previewed (mass assignment via metadata).
+            YouTubeUrlParseResult parsed = parser.parse(row.originalUrl());
+            if (parsed.errorCode() != null) {
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
+                        SubmitStatus.FAILED, "INVALID_URL"));
+                failed++;
+                continue;
+            }
+            if (parsed.type() != row.detectedType()) {
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
+                        SubmitStatus.FAILED, "TYPE_MISMATCH"));
+                failed++;
+                continue;
+            }
+            if (row.metadata() == null
+                    || !java.util.Objects.equals(parsed.youtubeId(), row.metadata().youtubeId())) {
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
+                        SubmitStatus.FAILED, "YOUTUBE_ID_MISMATCH"));
+                failed++;
+                continue;
+            }
+
             try {
                 String registryId = switch (row.detectedType()) {
                     case CHANNEL  -> writer.writeChannel(row.metadata(), row.categoryIds(), resolvedStatus, actorUid, isAdmin);

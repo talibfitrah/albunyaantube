@@ -37,6 +37,36 @@ import java.util.function.Consumer;
 @Service
 public class RegistrySubmissionWriter {
 
+    /**
+     * BULK-01 security (Group D) — YouTube CDN allowlist for thumbnail URLs.
+     * Client-supplied metadata.thumbnailUrl is not re-fetched by the backend, so a
+     * crafted submit body could point at any host (XSS via SVG, pixel-tracking,
+     * cookie-stealing endpoints). Restrict to known-good YouTube/Google image CDNs.
+     */
+    private static final java.util.Set<String> ALLOWED_THUMBNAIL_HOSTS = java.util.Set.of(
+            "i.ytimg.com", "img.youtube.com", "i9.ytimg.com",
+            "yt3.googleusercontent.com", "yt3.ggpht.com",
+            "lh3.googleusercontent.com"
+    );
+
+    /**
+     * BULK-01 security: reject thumbnailUrl pointing to non-YouTube CDN hosts.
+     * Returns null (no thumbnail) for unsafe URLs; the UI falls back to a placeholder.
+     */
+    private static String sanitizeThumbnailUrl(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            java.net.URI uri = new java.net.URI(raw);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (host == null || scheme == null) return null;
+            if (!"https".equalsIgnoreCase(scheme)) return null;
+            return ALLOWED_THUMBNAIL_HOSTS.contains(host.toLowerCase(java.util.Locale.ROOT)) ? raw : null;
+        } catch (java.net.URISyntaxException e) {
+            return null;
+        }
+    }
+
     private final ChannelRepository channels;
     private final PlaylistRepository playlists;
     private final VideoRepository videos;
@@ -66,7 +96,7 @@ public class RegistrySubmissionWriter {
             throws ExecutionException, InterruptedException, TimeoutException {
         Channel c = new Channel(meta.youtubeId());
         c.setName(meta.title());
-        c.setThumbnailUrl(meta.thumbnailUrl());
+        c.setThumbnailUrl(sanitizeThumbnailUrl(meta.thumbnailUrl()));
         if (meta.subscribers() != null) {
             c.setSubscribers(meta.subscribers());
         }
@@ -96,7 +126,7 @@ public class RegistrySubmissionWriter {
             throws ExecutionException, InterruptedException, TimeoutException {
         Playlist p = new Playlist(meta.youtubeId());
         p.setTitle(meta.title());
-        p.setThumbnailUrl(meta.thumbnailUrl());
+        p.setThumbnailUrl(sanitizeThumbnailUrl(meta.thumbnailUrl()));
         if (meta.itemCount() != null) {
             p.setItemCount(meta.itemCount().intValue());
         }
@@ -126,7 +156,7 @@ public class RegistrySubmissionWriter {
             throws ExecutionException, InterruptedException, TimeoutException {
         Video v = new Video(meta.youtubeId());
         v.setTitle(meta.title());
-        v.setThumbnailUrl(meta.thumbnailUrl());
+        v.setThumbnailUrl(sanitizeThumbnailUrl(meta.thumbnailUrl()));
         if (meta.durationSeconds() != null) {
             v.setDurationSeconds(meta.durationSeconds().intValue());
         }
