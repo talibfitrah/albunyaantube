@@ -1349,6 +1349,71 @@ paths:
           description: Status toggled
 
   # ============================================================================
+  # BULK SUBMISSION (Admin/Moderator)
+  # ============================================================================
+
+  /admin/registry/bulk/preview:
+    post:
+      summary: Dry-run bulk URL submission — validate and resolve up to 25 URLs
+      description: >
+        Accepts a list of YouTube URLs (videos, channels, playlists) and a set of
+        default category IDs. Resolves each URL via NewPipe, checks for duplicates,
+        and returns a per-row preview with metadata, detected type, and any errors.
+        Does NOT write to Firestore. Requires ADMIN or MODERATOR role.
+      operationId: registryBulkPreview
+      tags: [Registry]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkPreviewRequest'
+      responses:
+        '200':
+          description: Preview results (one entry per submitted URL)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkPreviewResponse'
+        '400':
+          description: Validation error (e.g. empty URL list, too many URLs)
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /admin/registry/bulk/submit:
+    post:
+      summary: Commit a previewed batch of URLs into the registry
+      description: >
+        Writes each row from a prior preview into Firestore. Only rows with
+        status OK should be submitted; DUPLICATE/ERROR rows are silently
+        skipped with status FAILED. The optional `status` field defaults to
+        PENDING; only ADMIN role may set it to APPROVED.
+        Requires ADMIN or MODERATOR role.
+      operationId: registryBulkSubmit
+      tags: [Registry]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkSubmitRequest'
+      responses:
+        '200':
+          description: Submit results with per-row outcomes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkSubmitResponse'
+        '400':
+          description: Validation error (e.g. empty row list, too many rows)
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  # ============================================================================
   # YOUTUBE INTEGRATION (Admin/Moderator)
   # ============================================================================
 
@@ -3132,6 +3197,10 @@ components:
           type: integer
           nullable: true
           description: Integer sort order. Lower values appear first. Null until explicitly set.
+        videoType:
+          $ref: '#/components/schemas/VideoType'
+          nullable: true
+          description: STANDARD for regular videos, LIVE for live streams. Null on legacy docs treated as STANDARD.
 
     ExcludedItems:
       type: object
@@ -4233,6 +4302,263 @@ components:
           type: object
           nullable: true
           description: Additional error context (optional)
+
+
+    # ===========================================================================
+    # BULK SUBMISSION — BULK-01
+    # ===========================================================================
+
+    VideoType:
+      type: string
+      enum: [STANDARD, LIVE]
+      description: >
+        Distinguishes live YouTube videos (LIVE) from regular videos (STANDARD).
+        Null on legacy Video documents is treated as STANDARD.
+
+    BulkPreviewRequest:
+      type: object
+      required: [urls, defaultCategoryIds]
+      properties:
+        urls:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            type: string
+            minLength: 1
+          description: YouTube URLs to preview (videos, channels, playlists). Max 25.
+        defaultCategoryIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+          description: Category IDs to pre-assign to every row (user may override per-row before submit).
+
+    BulkPreviewResponse:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreviewRow'
+          description: One entry per submitted URL, in submission order.
+
+    PreviewRow:
+      type: object
+      required: [rowIndex, originalUrl, status]
+      properties:
+        rowIndex:
+          type: integer
+          description: Zero-based position in the submitted URL list.
+        originalUrl:
+          type: string
+          description: The URL exactly as submitted.
+        normalizedUrl:
+          type: string
+          nullable: true
+          description: Canonical URL after parsing (e.g. https://www.youtube.com/watch?v=ID).
+        detectedType:
+          type: string
+          enum: [VIDEO, CHANNEL, PLAYLIST]
+          nullable: true
+          description: Content type inferred from the URL structure.
+        videoType:
+          $ref: '#/components/schemas/VideoType'
+          nullable: true
+          description: STANDARD or LIVE. Populated only when detectedType is VIDEO.
+        metadata:
+          $ref: '#/components/schemas/PreviewMetadata'
+          nullable: true
+          description: NewPipe metadata snapshot. Null when status is ERROR.
+        status:
+          $ref: '#/components/schemas/RowStatus'
+        duplicateOf:
+          type: string
+          nullable: true
+          description: Registry document ID of the existing entry (set when status is DUPLICATE or DUPLICATE_REJECTED).
+        duplicateStatus:
+          type: string
+          nullable: true
+          description: Approval status of the duplicate entry (e.g. APPROVED, PENDING, REJECTED).
+        error:
+          $ref: '#/components/schemas/PreviewError'
+          nullable: true
+          description: Error detail. Null unless status is ERROR.
+
+    PreviewMetadata:
+      type: object
+      description: Sparse NewPipe metadata snapshot. Fields are populated based on detected content type.
+      properties:
+        youtubeId:
+          type: string
+          nullable: true
+          description: YouTube video/channel/playlist ID.
+        title:
+          type: string
+          nullable: true
+          description: Title of the content.
+        thumbnailUrl:
+          type: string
+          nullable: true
+          description: Best available thumbnail URL.
+        channelName:
+          type: string
+          nullable: true
+          description: Channel name (populated for videos and playlists).
+        channelId:
+          type: string
+          nullable: true
+          description: YouTube channel ID (populated for videos and playlists).
+        subscribers:
+          type: integer
+          format: int64
+          nullable: true
+          description: Subscriber count (populated for channels; -1 if unavailable).
+        itemCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: Video count (populated for channels and playlists).
+        durationSeconds:
+          type: integer
+          format: int64
+          nullable: true
+          description: Duration in seconds (populated for videos).
+        viewCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: View count (populated for videos).
+
+    RowStatus:
+      type: string
+      enum: [OK, DUPLICATE, DUPLICATE_REJECTED, ERROR]
+      description: >
+        OK — ready to submit; DUPLICATE — already in registry with non-rejected status;
+        DUPLICATE_REJECTED — exists but was rejected (may re-submit); ERROR — URL could not be resolved.
+
+    PreviewError:
+      type: object
+      required: [code, messageKey]
+      properties:
+        code:
+          $ref: '#/components/schemas/PreviewErrorCode'
+        messageKey:
+          type: string
+          description: i18n message key (e.g. contentSearch.bulk.errors.NOT_YOUTUBE_URL).
+
+    PreviewErrorCode:
+      type: string
+      enum:
+        - UNSUPPORTED_SHORTS
+        - UNSUPPORTED_TYPE
+        - NOT_YOUTUBE_URL
+        - CONTENT_NOT_AVAILABLE
+        - PRIVATE_CONTENT
+        - AGE_RESTRICTED
+        - GEO_RESTRICTED
+        - CHANNEL_TERMINATED
+        - NEWPIPE_PARSING_ERROR
+        - NETWORK_ERROR
+        - DUPLICATE
+        - DUPLICATE_REJECTED
+      description: Machine-readable error code for a failed preview row.
+
+    BulkSubmitRequest:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            $ref: '#/components/schemas/SubmitRow'
+          description: Rows to write. Should contain only rows with status OK from the prior preview.
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+          nullable: true
+          description: >
+            Override approval status for all submitted items. Defaults to PENDING.
+            Only ADMIN role may set APPROVED; MODERATOR requests with APPROVED are rejected with 403.
+
+    SubmitRow:
+      type: object
+      required: [rowIndex, originalUrl, detectedType, metadata, categoryIds]
+      properties:
+        rowIndex:
+          type: integer
+          description: Zero-based row index matching the original preview response.
+        originalUrl:
+          type: string
+          minLength: 1
+          description: Original URL from the preview request.
+        detectedType:
+          type: string
+          enum: [VIDEO, CHANNEL, PLAYLIST]
+          description: Content type from the preview response. Must not be null.
+        videoType:
+          $ref: '#/components/schemas/VideoType'
+          nullable: true
+          description: STANDARD or LIVE. Required when detectedType is VIDEO, null otherwise.
+        metadata:
+          $ref: '#/components/schemas/PreviewMetadata'
+          description: Metadata from the preview response (must not be null).
+        categoryIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+          description: Category IDs to assign to this item (user-confirmed, may differ from defaultCategoryIds).
+
+    BulkSubmitResponse:
+      type: object
+      required: [totalSubmitted, added, failed, results]
+      properties:
+        totalSubmitted:
+          type: integer
+          description: Total number of rows processed.
+        added:
+          type: integer
+          description: Number of rows successfully written to Firestore.
+        failed:
+          type: integer
+          description: Number of rows that failed to write.
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmitResult'
+          description: Per-row outcome in submission order.
+
+    SubmitResult:
+      type: object
+      required: [rowIndex, originalUrl, status]
+      properties:
+        rowIndex:
+          type: integer
+          description: Zero-based row index matching the submit request.
+        originalUrl:
+          type: string
+          description: Original URL from the submit request.
+        registryId:
+          type: string
+          nullable: true
+          description: Firestore document ID of the newly created registry entry. Null when status is FAILED.
+        status:
+          $ref: '#/components/schemas/SubmitStatus'
+        errorCode:
+          type: string
+          nullable: true
+          description: Error code string when status is FAILED (e.g. WRITE_ERROR). Null on success.
+
+    SubmitStatus:
+      type: string
+      enum: [ADDED, FAILED]
+      description: Outcome of a single row in a bulk submit.
 
   responses:
     UnauthorizedError:
