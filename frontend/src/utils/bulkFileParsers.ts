@@ -37,6 +37,12 @@ export async function parseCsv(file: File): Promise<string[]> {
   return new Promise<string[]>((resolve, reject) => {
     Papa.parse<string[]>(text, {
       skipEmptyLines: true,
+      // Pre-parse cap. Without `preview`, PapaParse materialises every
+      // row before our post-parse `urls.length > MAX_URLS` check — a
+      // 999 KB CSV of millions of single-byte rows passes the file-size
+      // gate and pegs the main thread. preview=MAX_URLS+2 (header +
+      // MAX_URLS data + 1 over-cap detection row) bounds work.
+      preview: MAX_URLS + 2,
       complete: (result) => {
         const rows = result.data
         if (rows.length === 0) {
@@ -48,7 +54,10 @@ export async function parseCsv(file: File): Promise<string[]> {
           reject(new Error('CSV must have a single column named "URL"'))
           return
         }
-        if (header[0].trim().toLowerCase() !== 'url') {
+        // Strip BOM that Excel adds to UTF-8 CSV exports — without this,
+        // the documented Excel-author roundtrip fails the header check.
+        const headerName = header[0].replace(/^﻿/, '').trim().toLowerCase()
+        if (headerName !== 'url') {
           reject(new Error('CSV must have a URL header in row 1'))
           return
         }
@@ -95,7 +104,12 @@ export async function parseExcel(file: File): Promise<string[]> {
   ensureFileSize(file)
   const { read, utils } = await import('@e965/xlsx')
   const buf = await readFileAsArrayBuffer(file)
-  const wb = read(buf, { type: 'array' })
+  // Pre-parse cap on XLSX rows. A 1 MB malicious xlsx (XML-bomb /
+  // pathological row count) can expand to hundreds of MB inside SheetJS
+  // if every row is materialised before the post-parse `urls.length >
+  // MAX_URLS` check. `sheetRows: MAX_URLS + 2` (header + MAX_URLS + 1
+  // for over-cap detection) bounds SheetJS work.
+  const wb = read(buf, { type: 'array', sheetRows: MAX_URLS + 2 })
   if (wb.SheetNames.length === 0) throw new Error('Empty workbook')
   const sheet = wb.Sheets[wb.SheetNames[0]]
   const rows = utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false })
