@@ -1,0 +1,116 @@
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_bacebd909fa5bc::t_b927e6f710d7fa 17,24,33
+  s_bacebd909fa5bc::t_1bb8dd8114612a 228
+  s_bacebd909fa5bc::t_1818f2c3e7680e 62
+  s_bacebd909fa5bc::t_4890373d438ae7 162
+  s_bacebd909fa5bc::t_13d6b097eab4ae 262
+  s_bacebd909fa5bc::t_adeb4c61fa1db5 118
+  s_bacebd909fa5bc::t_d26d92b4ecd40d 138
+  s_bacebd909fa5bc::t_0cea48fdfedfe9 290
+  s_bacebd909fa5bc::t_c3df98a1a57073 197
+  s_bacebd909fa5bc::t_45095316a8de82 130
+  s_bacebd909fa5bc::t_b4424fa85e8722 300
+  s_bacebd909fa5bc::t_09a4f88d0b97cb 245
+  s_bacebd909fa5bc::t_1d43adfbbb45f7 25-26
+backend/src/main/java/com/albunyaan/tube/service/RegistrySubmissionWriter.java
+  s_bacebd909fa5bc::t_0098b807866d2e 20,53
+  s_bacebd909fa5bc::t_1d43adfbbb45f7 21,119
+  s_bacebd909fa5bc::t_7035cb24fd2474 41
+backend/src/main/java/com/albunyaan/tube/service/PreviewFetchResult.java
+  s_bacebd909fa5bc::t_0098b807866d2e 8
+backend/src/main/java/com/albunyaan/tube/service/RegistryDuplicateChecker.java
+  s_bacebd909fa5bc::t_0098b807866d2e 16
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_bacebd909fa5bc::t_1d43adfbbb45f7 54,57,63,148,151,290,311,354-355
+  s_bacebd909fa5bc::t_7035cb24fd2474 645,660
+backend/src/main/java/com/albunyaan/tube/model/VideoType.java
+  s_bacebd909fa5bc::t_a4ab7ea1eb8ee5 4
+backend/src/test/java/com/albunyaan/tube/integration/BulkSubmissionIT.java
+  s_bacebd909fa5bc::t_8d0afa7f7f8fe4 29
+backend/src/test/java/com/albunyaan/tube/service/RegistrySubmissionWriterTest.java
+  s_bacebd909fa5bc::t_8d0afa7f7f8fe4 25
+backend/src/main/java/com/albunyaan/tube/dto/registry/BulkPreviewResponse.java
+  s_bacebd909fa5bc::t_7035cb24fd2474 5
+backend/src/main/java/com/albunyaan/tube/dto/registry/BulkPreviewRequest.java
+  s_bacebd909fa5bc::t_7035cb24fd2474 8
+backend/src/main/java/com/albunyaan/tube/dto/registry/BulkSubmitResponse.java
+  s_bacebd909fa5bc::t_7035cb24fd2474 5
+backend/src/test/java/com/albunyaan/tube/service/YouTubeUrlParserTest.java
+  s_bacebd909fa5bc::t_8d0afa7f7f8fe4 57
+frontend/src/utils/bulkFileParsers.ts
+  s_bacebd909fa5bc::t_1066875b2ec313 91
+frontend/src/components/contentSearch/bulk/BulkInputView.vue
+  s_bacebd909fa5bc::t_2cfab9406b09c9 22
+backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
+  s_bacebd909fa5bc::t_7035cb24fd2474 1084
+  s_bacebd909fa5bc::t_0098b807866d2e 1088,1099
+  s_bacebd909fa5bc::t_1d43adfbbb45f7 33
+backend/src/main/java/com/albunyaan/tube/dto/registry/RowStatus.java
+  s_bacebd909fa5bc::t_0098b807866d2e 3
+frontend/src/components/contentSearch/bulk/useCategoryPicker.ts
+  s_bacebd909fa5bc::t_9dcb903b5e4180 15-26
+frontend/src/components/contentSearch/bulk/BulkFileDropzone.vue
+  s_bacebd909fa5bc::t_45aeeace93df07 9
+  s_bacebd909fa5bc::t_a29ac4c22e18d1 29
+backend/src/main/java/com/albunyaan/tube/dto/registry/SubmitResult.java
+  s_bacebd909fa5bc::t_0098b807866d2e 3
+frontend/src/components/contentSearch/bulk/BulkRowCategoryEditor.vue
+  s_bacebd909fa5bc::t_7ca25025ce5d2e 4,20
+  s_bacebd909fa5bc::t_7b4f886c571bdf 42
+backend/src/main/java/com/albunyaan/tube/service/YouTubeUrlParser.java
+  s_bacebd909fa5bc::t_7019704c66e9a6 103
+  s_bacebd909fa5bc::t_83863c53c349cf 68,79,86
+  s_bacebd909fa5bc::t_c1e822109caff0 95
+  s_bacebd909fa5bc::t_7035cb24fd2474 106
+  s_bacebd909fa5bc::t_0098b807866d2e 13
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServiceSubmitTest.java
+  s_bacebd909fa5bc::t_8d0afa7f7f8fe4 37,117
+backend/src/main/java/com/albunyaan/tube/dto/registry/BulkSubmitRequest.java
+  s_bacebd909fa5bc::t_7035cb24fd2474 8
+backend/src/main/java/com/albunyaan/tube/dto/registry/PreviewError.java
+  s_bacebd909fa5bc::t_0098b807866d2e 3
+frontend/src/services/bulkSubmissionService.ts
+  s_bacebd909fa5bc::t_4bd7b9d372537f 9
+backend/src/main/java/com/albunyaan/tube/config/WebConfig.java
+  s_bacebd909fa5bc::t_a4ab7ea1eb8ee5 77
+backend/src/main/java/com/albunyaan/tube/model/Video.java
+  s_bacebd909fa5bc::t_a4ab7ea1eb8ee5 44
+backend/src/main/java/com/albunyaan/tube/dto/registry/SubmitRow.java
+  s_bacebd909fa5bc::t_0098b807866d2e 10
+frontend/src/components/contentSearch/bulk/BulkDefaultCategoriesPicker.vue
+  s_bacebd909fa5bc::t_7a03a461b17714 43
+  s_bacebd909fa5bc::t_fb143653987e2a 4,15
+backend/src/main/java/com/albunyaan/tube/config/BulkExecutorConfig.java
+  s_bacebd909fa5bc::t_7035cb24fd2474 14
+  s_bacebd909fa5bc::t_0098b807866d2e 11
+backend/src/main/java/com/albunyaan/tube/service/YouTubeUrlParseResult.java
+  s_bacebd909fa5bc::t_f66bb8b40d8020 7,16-17,21
+backend/src/main/java/com/albunyaan/tube/dto/registry/PreviewMetadata.java
+  s_bacebd909fa5bc::t_7035cb24fd2474 3
+backend/src/main/java/com/albunyaan/tube/dto/registry/PreviewErrorCode.java
+  s_bacebd909fa5bc::t_7035cb24fd2474 8
+  s_bacebd909fa5bc::t_0098b807866d2e 3,23
+backend/src/main/java/com/albunyaan/tube/dto/registry/SubmitStatus.java
+  s_bacebd909fa5bc::t_0098b807866d2e 3
+frontend/src/stores/bulkSubmissionStore.ts
+  s_bacebd909fa5bc::t_1c481039c1ab5d 27
+  s_bacebd909fa5bc::t_6e1099b0eab54d 78-79
+backend/src/main/java/com/albunyaan/tube/dto/registry/PreviewRow.java
+  s_bacebd909fa5bc::t_0098b807866d2e 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "ed8889c06172d95129856c1fb1c76d82b1744f4c",
+  "prompts": {},
+  "sessions": {
+    "s_bacebd909fa5bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bdd81a28-dc7f-4d1b-98fa-8222d7824790",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
