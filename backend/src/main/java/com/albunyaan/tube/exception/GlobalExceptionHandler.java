@@ -293,6 +293,29 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handle BulkSubmissionRateLimitedException (429) — emits the same
+     * JSON envelope and Retry-After header shape as
+     * {@code SubmissionRateLimitInterceptor} so the bulk-submit frontend
+     * toast logic reads retry-after consistently across single-add and
+     * bulk paths.
+     */
+    @ExceptionHandler(com.albunyaan.tube.service.BulkSubmissionRateLimitedException.class)
+    public ResponseEntity<Object> handleBulkSubmissionRateLimited(
+            com.albunyaan.tube.service.BulkSubmissionRateLimitedException ex, WebRequest request) {
+        logger.warn("Bulk submission rate-limited: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "RATE_LIMIT");
+        body.put("retryAfterSeconds", ex.getRetryAfterSec());
+        body.put("message", "Daily submission limit reached. Try again later.");
+
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSec()))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(body);
+    }
+
+    /**
      * Handle all other exceptions (500)
      */
     @ExceptionHandler(Exception.class)

@@ -145,9 +145,12 @@ public class BulkSubmissionService {
         if (extraSlotsNeeded > 0) {
             Long retryAfter = submissionRateLimiter.tryAcquire(actorUid, extraSlotsNeeded);
             if (retryAfter != null) {
-                throw new org.springframework.web.server.ResponseStatusException(
-                        org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
-                        "Daily submission limit reached. Retry after " + retryAfter + " seconds.");
+                // Custom exception (not ResponseStatusException) so the
+                // 429 response carries the same shape as the
+                // SubmissionRateLimitInterceptor's body
+                // ({"code":"RATE_LIMIT","retryAfterSeconds":N,...}) plus a
+                // Retry-After header — frontend toast logic reads both.
+                throw new BulkSubmissionRateLimitedException(retryAfter);
             }
         }
 

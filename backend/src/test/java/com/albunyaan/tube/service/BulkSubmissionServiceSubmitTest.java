@@ -435,9 +435,13 @@ class BulkSubmissionServiceSubmitTest {
         );
         var req = new BulkSubmitRequest(rows, "PENDING");
 
-        var ex = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+        // Custom BulkSubmissionRateLimitedException, not ResponseStatusException —
+        // GlobalExceptionHandler turns it into a 429 with the
+        // {"code":"RATE_LIMIT","retryAfterSeconds":N,...} shape + Retry-After
+        // header to match the single-add interceptor response.
+        var ex = assertThrows(BulkSubmissionRateLimitedException.class,
                 () -> svc.submit(req, "admin-uid", true));
-        assertEquals(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, ex.getStatusCode());
+        assertEquals(60L, ex.getRetryAfterSec());
         // Writer must never have been called once rate-limited.
         verifyNoInteractions(writer);
     }
