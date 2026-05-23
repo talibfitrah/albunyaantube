@@ -34,12 +34,12 @@ class BulkSubmissionServiceSubmitTest {
         writer = mock(RegistrySubmissionWriter.class);
         dedupe = mock(RegistryDuplicateChecker.class);
         lateBatch = mock(RegistryDuplicateChecker.Batch.class);
-        // BULK-01 (Group G) late-dedupe always returns "no existing" for these tests
+        // late-dedupe always returns "no existing" for these tests
         when(dedupe.newBatch()).thenReturn(lateBatch);
         when(lateBatch.findExisting(any(), any())).thenReturn(Optional.empty());
 
         svc = new BulkSubmissionService(
-                new YouTubeUrlParser(),                          // real parser for Group C round-trip validation
+                new YouTubeUrlParser(),                          // real parser for round-trip metadata validation
                 mock(YouTubeGateway.class),
                 dedupe,
                 writer,
@@ -114,14 +114,14 @@ class BulkSubmissionServiceSubmitTest {
                 List.of("cat-1"));
         var req = new BulkSubmitRequest(List.of(row), "REJECTED");
 
-        // BULK-01 (Group B): REJECTED must not be settable via bulk path.
+        // REJECTED must not be settable via bulk path.
         assertThrows(org.springframework.web.server.ResponseStatusException.class,
                 () -> svc.submit(req, "admin-uid", true));
     }
 
     @Test
     void metadataYoutubeIdMismatch_failsRow_withYoutubeIdMismatch() {
-        // URL parses to CHANNEL_ID, but metadata declares a different youtubeId — Group C tampering check
+        // URL parses to CHANNEL_ID, but metadata declares a different youtubeId — tampering check
         var tamperedRow = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
                 new PreviewMetadata("UCevilevilevilevilevilev", "Ch", null, null, null, null, null, null, null),
                 List.of("cat-1"));
@@ -134,7 +134,7 @@ class BulkSubmissionServiceSubmitTest {
 
     @Test
     void detectedTypeMismatch_failsRow_withTypeMismatch() {
-        // URL parses to CHANNEL but row claims VIDEO — Group C type-mismatch check
+        // URL parses to CHANNEL but row claims VIDEO — type-mismatch check
         var tamperedRow = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.VIDEO, VideoType.STANDARD,
                 new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
                 List.of("cat-1"));

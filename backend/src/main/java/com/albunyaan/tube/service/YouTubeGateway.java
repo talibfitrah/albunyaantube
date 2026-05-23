@@ -351,7 +351,7 @@ public class YouTubeGateway {
     /**
      * Get channel URL from channel ID
      *
-     * Note: We use /channel/ format directly because NewPipeExtractor's
+     * Note: we use /channel/ format directly because NewPipeExtractor's
      * YoutubeChannelLinkHandlerFactory.getUrl() incorrectly generates /c/ URLs
      * for channel IDs (UCxxxx), which YouTube's API rejects with 404.
      */
@@ -642,7 +642,7 @@ public class YouTubeGateway {
     }
 
     // -------------------------------------------------------------------------
-    // BULK-01 (T5) — single dispatch for the bulk preview pipeline
+    // single dispatch for the bulk preview pipeline
     // -------------------------------------------------------------------------
 
     /**
@@ -657,7 +657,7 @@ public class YouTubeGateway {
             YouTubeContentType type,
             String youtubeId,
             String normalizedUrl) {
-        logger.debug("BULK-01: fetching {} youtubeId={} normalizedUrl={}", type, youtubeId, normalizedUrl);
+        logger.debug("fetching {} youtubeId={} normalizedUrl={}", type, youtubeId, normalizedUrl);
         try {
             return switch (type) {
                 case CHANNEL  -> mapChannel(fetchChannelInfo(youtubeId), youtubeId);

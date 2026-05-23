@@ -14,26 +14,23 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
 
-/**
- * BULK-01 (T7) — orchestrator for the bulk URL submission preview pipeline.
- * Submit method lands in T8.
- */
+/** Orchestrator for the bulk URL submission preview + submit pipeline. */
 @Service
 public class BulkSubmissionService {
 
     private static final Logger log = LoggerFactory.getLogger(BulkSubmissionService.class);
 
     /**
-     * BULK-01 security — admin-allowed statuses for bulk submit.
-     * Mass-assignment defense: only PENDING/APPROVED accepted; REJECTED must go through
-     * the per-row approval queue UI so it carries proper rejection metadata + audit trail.
+     * Mass-assignment defense for the admin status pass-through: only PENDING/APPROVED
+     * accepted; REJECTED must go through the per-row approval queue UI so it carries
+     * proper rejection metadata + audit trail.
      */
     private static final java.util.Set<String> ADMIN_VALID_STATUSES = java.util.Set.of("PENDING", "APPROVED");
 
     private final YouTubeUrlParser parser;
     private final YouTubeGateway gateway;
     private final RegistryDuplicateChecker dedupe;
-    private final RegistrySubmissionWriter writer;   // null in T7; required by T8
+    private final RegistrySubmissionWriter writer;
     private final ExecutorService bulkPreviewExecutor;
     private final PublicContentCacheService publicContentCacheService;
     private final SortOrderService sortOrderService;
@@ -62,7 +59,7 @@ public class BulkSubmissionService {
             futures.add(CompletableFuture.supplyAsync(() -> buildRow(rowIndex, url, batch), bulkPreviewExecutor));
         }
 
-        // BULK-01 (Group J): cap the whole batch at 180s so a hung NewPipe call
+        // Cap the whole batch at 180s so a hung NewPipe call
         // can't pin a worker thread indefinitely (the bulkPreviewExecutor only
         // has 5 threads — 5 stuck calls = endpoint dead). Per-future timeouts
         // are stronger but require restructuring the join; this batch cap
@@ -118,7 +115,7 @@ public class BulkSubmissionService {
             resolvedStatus = "PENDING";
         }
 
-        // BULK-01 (Fix 2): reject ALL before the row loop so we return 400,
+        // Reject ALL before the row loop so we return 400,
         // not 500 from the switch default arm.
         for (SubmitRow row : req.rows()) {
             if (row.detectedType() == YouTubeContentType.ALL) {
@@ -130,7 +127,7 @@ public class BulkSubmissionService {
 
         List<SubmitResult> results = new ArrayList<>(req.rows().size());
         int added = 0, failed = 0;
-        // BULK-01 security (Group G): per-submit dedupe batch closes the
+        // Per-submit dedupe batch closes the
         // preview→submit window where a second moderator could land the same
         // youtubeId after the first moderator previewed but before they
         // submitted. Not a full Firestore transaction, but closes the
@@ -138,7 +135,7 @@ public class BulkSubmissionService {
         RegistryDuplicateChecker.Batch lateBatch = dedupe.newBatch();
 
         for (SubmitRow row : req.rows()) {
-            // BULK-01 security (Group C) — verify client-supplied metadata.youtubeId + detectedType
+            // Verify client-supplied metadata.youtubeId + detectedType
             // round-trip from row.originalUrl. Prevents tampered submit bodies pointing at a
             // different entity than the moderator previewed (mass assignment via metadata).
             YouTubeUrlParseResult parsed = parser.parse(row.originalUrl());
@@ -162,7 +159,7 @@ public class BulkSubmissionService {
                 continue;
             }
 
-            // BULK-01 security (Group G): late dedupe check immediately before write.
+            // Late dedupe check immediately before write.
             // Closes the preview→submit window where a parallel submit landed the
             // same youtubeId. Costs one Firestore read per row but is small relative
             // to the write that follows.
@@ -197,7 +194,7 @@ public class BulkSubmissionService {
                 results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), registryId, SubmitStatus.ADDED, null));
                 added++;
 
-                // BULK-01 (Group H): when a bulk row lands APPROVED, mirror the
+                // When a bulk row lands APPROVED, mirror the
                 // single-add controller path's side effects so the new row is
                 // immediately visible to the public API and sortable in its
                 // categories. APPROVED-only — PENDING rows don't appear in
@@ -228,7 +225,7 @@ public class BulkSubmissionService {
             }
         }
 
-        // BULK-01 (Group H): one cache eviction after the batch (not per-row)
+        // One cache eviction after the batch (not per-row)
         // so the public-content cache picks up all new APPROVED rows in one
         // sweep. Skip if nothing landed APPROVED.
         if (added > 0 && "APPROVED".equals(resolvedStatus)) {
@@ -245,7 +242,7 @@ public class BulkSubmissionService {
         return new BulkSubmitResponse(req.rows().size(), added, failed, results);
     }
 
-    /** BULK-01 (Group J): synth-row for previews that didn't complete inside the 180s batch budget. */
+    /** Synth-row for previews that didn't complete inside the 180s batch budget. */
     private static PreviewRow timeoutRow(int rowIndex, String originalUrl) {
         return new PreviewRow(rowIndex, originalUrl, null, null, null, RowStatus.ERROR, null, null,
                 PreviewError.of(PreviewErrorCode.NETWORK_ERROR));
@@ -262,7 +259,7 @@ public class BulkSubmissionService {
             Optional<RegistryDuplicateChecker.ExistingMatch> existing =
                     batch.findExisting(parsed.type(), parsed.youtubeId());
 
-            // BULK-01 security (Group G): treat ANY non-REJECTED existing row as a duplicate.
+            // Treat ANY non-REJECTED existing row as a duplicate.
             // Previously only PENDING/APPROVED were caught — REQUEST_CHANGES (a real status
             // per RegistryController.VALID_STATUSES) and any future status string would
             // fall through and silently create a duplicate Firestore doc.
@@ -290,7 +287,7 @@ public class BulkSubmissionService {
                     RowStatus.OK, null, null, null);
         } catch (Exception e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            // BULK-01 (Group K): RegistryDuplicateChecker wraps Firestore errors
+            // RegistryDuplicateChecker wraps Firestore errors
             // as IllegalStateException with "Registry lookup failed for ..." prefix.
             // Surface those distinctly so on-call doesn't chase NewPipe when the
             // real cause is Firestore unavailability.
@@ -300,7 +297,7 @@ public class BulkSubmissionService {
             PreviewErrorCode code = isFirestore
                     ? PreviewErrorCode.INTERNAL_ERROR
                     : PreviewErrorCode.NEWPIPE_PARSING_ERROR;
-            log.warn("BULK-01: buildRow rowIndex={} url={} {} exception: {}",
+            log.warn("buildRow rowIndex={} url={} {} exception: {}",
                     rowIndex, originalUrl, isFirestore ? "Firestore" : "NewPipe", e.toString());
             return new PreviewRow(rowIndex, originalUrl, null, null, null, RowStatus.ERROR, null, null,
                     PreviewError.of(code));

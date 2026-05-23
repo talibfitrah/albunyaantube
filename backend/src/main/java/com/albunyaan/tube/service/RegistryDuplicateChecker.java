@@ -13,7 +13,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
 /**
- * BULK-01 (T4) — looks up whether a given (type, youtubeId) already exists in the registry.
+ * Looks up whether a given (type, youtubeId) already exists in the registry.
  * <p>
  * Provides a per-batch {@link Batch} object that memoizes lookups so the same youtubeId
  * isn't queried twice in one preview call. Each call to {@link #newBatch()} produces an

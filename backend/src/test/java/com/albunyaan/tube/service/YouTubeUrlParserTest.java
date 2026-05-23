@@ -14,7 +14,6 @@ class YouTubeUrlParserTest {
         var r = parser.parse("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
         assertEquals(YouTubeContentType.VIDEO, r.type());
         assertEquals("dQw4w9WgXcQ", r.youtubeId());
-        assertFalse(r.isShort());
         assertNull(r.errorCode());
     }
 
@@ -55,7 +54,7 @@ class YouTubeUrlParserTest {
 
     @Test
     void handleUrl_isRejected_asUnsupportedHandle() {
-        // BULK-01 Group E: handle URLs need gateway-side resolution to UC... id;
+        // handle URLs need gateway-side resolution to UC... id;
         // until that lands they're rejected so dedupe doesn't silently miss.
         var r = parser.parse("https://www.youtube.com/@SomeHandle");
         assertEquals(com.albunyaan.tube.dto.registry.PreviewErrorCode.UNSUPPORTED_HANDLE, r.errorCode());

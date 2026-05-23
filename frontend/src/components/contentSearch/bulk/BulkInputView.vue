@@ -19,8 +19,7 @@ function onPastedUrlsUpdate(raw: string) {
   store.parsedUrls = parsePastedUrls(raw)
 }
 
-function onFileParsed(urls: string[], fileName: string) {
-  store.uploadedFileName = fileName
+function onFileParsed(urls: string[]) {
   store.parsedUrls = urls
   store.pastedUrls = urls.join('\n')
   dropzoneError.value = null

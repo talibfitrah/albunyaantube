@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 
-/** BULK-01 (T3) — one row in the bulk submit request, returned from a prior preview. */
+/** One row in the bulk submit request, returned from a prior preview. */
 public record SubmitRow(
         int rowIndex,
         @NotBlank String originalUrl,

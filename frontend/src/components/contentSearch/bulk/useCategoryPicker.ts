@@ -12,6 +12,18 @@ export function invalidateCategoryCache() {
   cachedPromise = null
 }
 
+/** Return the next selection after toggling `id`'s membership in `current`. */
+export function toggleCategoryId(current: readonly string[], id: string): string[] {
+  return current.includes(id)
+    ? current.filter((x) => x !== id)
+    : [...current, id]
+}
+
+/** Display label for a category — name preferred, id as fallback. */
+export function categoryDisplayName(cat: { id: string; name: string }): string {
+  return cat.name || cat.id
+}
+
 function flatten(nodes: any[]): FlatCategory[] {
   const out: FlatCategory[] = []
   const walk = (ns: any[]) => {

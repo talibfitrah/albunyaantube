@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useCategoryPicker } from './useCategoryPicker'
+import { useCategoryPicker, toggleCategoryId, categoryDisplayName } from './useCategoryPicker'
 
 const props = defineProps<{ modelValue: string[] }>()
 const emit = defineEmits<{
@@ -17,13 +17,7 @@ onMounted(load)
 const selected = ref<string[]>([...props.modelValue])
 
 function toggle(id: string) {
-  selected.value = selected.value.includes(id)
-    ? selected.value.filter((x) => x !== id)
-    : [...selected.value, id]
-}
-
-function displayName(cat: { id: string; name: string }): string {
-  return cat.name || cat.id
+  selected.value = toggleCategoryId(selected.value, id)
 }
 </script>
 
@@ -45,7 +39,7 @@ function displayName(cat: { id: string; name: string }): string {
           :class="selected.includes(cat.id) ? 'btn-primary' : 'btn-outline-secondary'"
           @click="toggle(cat.id)"
         >
-          {{ displayName(cat) }}
+          {{ categoryDisplayName(cat) }}
         </button>
         <span v-if="flatCategories.length === 0" class="text-muted small">
           {{ t('contentSearch.bulk.input.categoriesEmpty') }}

@@ -22,7 +22,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * BULK-01 (T6) — characterisation tests for {@link RegistrySubmissionWriter}.
+ * Characterisation tests for {@link RegistrySubmissionWriter}.
  * Verifies the role-aware status normalisation + per-type field mapping that
  * both the bulk-submit pipeline and any future single-add rewire will rely on.
  */

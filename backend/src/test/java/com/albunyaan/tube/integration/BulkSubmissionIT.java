@@ -26,7 +26,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * BULK-01 (T10) — Integration tests for bulk preview + submit endpoints.
+ * Integration tests for bulk preview + submit endpoints.
  *
  * Tests the full controller → service → Firestore-writer wiring.
  * YouTubeGateway is mocked via @MockBean so NewPipe is never called over the network.

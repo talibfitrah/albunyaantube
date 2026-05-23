@@ -6,7 +6,7 @@ import { parseCsv, parseExcel, parseJson } from '@/utils/bulkFileParsers'
 const { t } = useI18n()
 
 const emit = defineEmits<{
-  (e: 'parsed', urls: string[], fileName: string): void
+  (e: 'parsed', urls: string[]): void
   (e: 'error', message: string): void
 }>()
 
@@ -26,7 +26,7 @@ async function handleFile(file: File) {
     } else {
       throw new Error(t('contentSearch.bulk.input.unsupportedFileType'))
     }
-    emit('parsed', urls, file.name)
+    emit('parsed', urls)
   } catch (e) {
     emit('error', (e as Error).message)
   }
