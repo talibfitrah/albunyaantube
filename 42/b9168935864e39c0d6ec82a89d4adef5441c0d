@@ -1,0 +1,29 @@
+frontend/src/components/contentSearch/bulk/BulkRowCategoryEditor.vue
+  s_1a004b5f0406e1::t_7b9d603d618ad8 1-91
+frontend/src/locales/messages.ts
+  s_1a004b5f0406e1::t_46baced06c7fb8 152-167
+  s_1a004b5f0406e1::t_eda397e70828b8 1671-1686
+  s_1a004b5f0406e1::t_3bfc564b3cd49e 2971-2986
+frontend/src/components/contentSearch/bulk/BulkPreviewTable.vue
+  s_1a004b5f0406e1::t_969ee1e3816a2d 1-66
+frontend/tests/BulkPreviewTable.spec.ts
+  s_1a004b5f0406e1::t_360ee026bd00b3 1-111
+frontend/src/components/contentSearch/bulk/BulkPreviewRow.vue
+  s_1a004b5f0406e1::t_b78ac7684cb277 1-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "42b9168935864e39c0d6ec82a89d4adef5441c0d",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
