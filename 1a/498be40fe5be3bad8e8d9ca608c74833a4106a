@@ -1,0 +1,24 @@
+backend/src/main/java/com/albunyaan/tube/service/YouTubeUrlParser.java
+  s_b050c26eb2be76::t_798955c6b3b672 63-72
+  s_b050c26eb2be76::t_16e99de5be0fae 39-48
+backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
+  s_b050c26eb2be76::t_c84ec2c03969c9 993-1002,1008-1009
+  s_b050c26eb2be76::t_84469d53038eb7 616-625,632-633
+  s_b050c26eb2be76::t_e9e2a5b8360705 312-325,332-333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "1a498be40fe5be3bad8e8d9ca608c74833a4106a",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
