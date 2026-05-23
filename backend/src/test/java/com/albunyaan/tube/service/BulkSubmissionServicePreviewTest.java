@@ -30,8 +30,11 @@ class BulkSubmissionServicePreviewTest {
         dedupe = mock(RegistryDuplicateChecker.class);
         batch = mock(RegistryDuplicateChecker.Batch.class);
         when(dedupe.newBatch()).thenReturn(batch);
-        // The submit-time writer is null here — T7 only tests preview
-        svc = new BulkSubmissionService(parser, gateway, dedupe, null, Executors.newFixedThreadPool(2));
+        // The submit-time writer + side-effect services are unused in preview tests
+        svc = new BulkSubmissionService(parser, gateway, dedupe, null,
+                Executors.newFixedThreadPool(2),
+                mock(PublicContentCacheService.class),
+                mock(SortOrderService.class));
     }
 
     @Test

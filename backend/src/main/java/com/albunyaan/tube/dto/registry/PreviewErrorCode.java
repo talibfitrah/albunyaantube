@@ -19,6 +19,12 @@ public enum PreviewErrorCode {
     CHANNEL_TERMINATED,
     NEWPIPE_PARSING_ERROR,
     NETWORK_ERROR,
+    /**
+     * BULK-01 (Group K): backend-side failure unrelated to NewPipe parsing
+     * (Firestore unavailability, etc.). Distinct so on-call doesn't chase
+     * upstream YouTube extraction when the real cause is internal.
+     */
+    INTERNAL_ERROR,
     DUPLICATE,
     DUPLICATE_REJECTED
 }
