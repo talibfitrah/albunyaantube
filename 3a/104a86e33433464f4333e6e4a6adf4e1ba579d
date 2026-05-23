@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/data/me/MeFeedRepository.kt
+  s_b050c26eb2be76::t_39d7b0c810c4a2 1206-1214,1218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "3a104a86e33433464f4333e6e4a6adf4e1ba579d",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
