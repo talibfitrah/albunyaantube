@@ -1,0 +1,8 @@
+package com.albunyaan.tube.dto.registry;
+
+/** BULK-01 (T3) — error envelope with code + i18n message key. */
+public record PreviewError(PreviewErrorCode code, String messageKey) {
+    public static PreviewError of(PreviewErrorCode code) {
+        return new PreviewError(code, "contentSearch.bulk.errors." + code.name());
+    }
+}

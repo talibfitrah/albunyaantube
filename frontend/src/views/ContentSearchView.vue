@@ -5,6 +5,34 @@
       <p>{{ t('contentSearch.subtitle') }}</p>
     </header>
 
+    <!-- Tab navigation -->
+    <ul class="nav nav-tabs content-search-tabs">
+      <li class="nav-item">
+        <button
+          type="button"
+          class="nav-link"
+          :class="{ active: activeTab === 'search' }"
+          @click="activeTab = 'search'"
+        >
+          {{ t('contentSearch.searchTabLabel') }}
+        </button>
+      </li>
+      <li class="nav-item">
+        <button
+          type="button"
+          class="nav-link"
+          :class="{ active: activeTab === 'bulk' }"
+          @click="activeTab = 'bulk'"
+        >
+          {{ t('contentSearch.bulk.tabLabel') }}
+        </button>
+      </li>
+    </ul>
+
+    <BulkSubmissionTab v-show="activeTab === 'bulk'" class="tab-content mt-3" />
+
+    <div v-show="activeTab === 'search'">
+
     <!-- Search Bar -->
     <div class="search-bar">
       <div class="search-input-wrapper">
@@ -148,6 +176,7 @@
       @close="isPreviewOpen = false"
     />
 
+    </div><!-- end v-show="activeTab === 'search'" -->
   </div>
 </template>
 
@@ -165,9 +194,11 @@ import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
+import BulkSubmissionTab from '@/components/contentSearch/bulk/BulkSubmissionTab.vue';
 import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
 
 const { t } = useI18n();
+const activeTab = ref<'search' | 'bulk'>('search');
 const authStore = useAuthStore();
 
 const searchQuery = ref('');

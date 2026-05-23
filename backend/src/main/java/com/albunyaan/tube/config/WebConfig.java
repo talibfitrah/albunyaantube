@@ -73,7 +73,14 @@ public class WebConfig implements WebMvcConfigurer {
                         .addPathPatterns(
                                 "/api/admin/registry/channels",
                                 "/api/admin/registry/playlists",
-                                "/api/admin/registry/videos"
+                                "/api/admin/registry/videos",
+                                // BULK-01 security (Group I): bulk preview/submit
+                                // share the same 50/24h per-uid budget so a moderator
+                                // can't fan out 50 bulk batches of 25 URLs each = 1250
+                                // writes/day via the bulk path while the single-add
+                                // path is correctly throttled.
+                                "/api/admin/registry/bulk/preview",
+                                "/api/admin/registry/bulk/submit"
                         )
         );
         profileUpdateInterceptorProvider.ifAvailable(interceptor ->
