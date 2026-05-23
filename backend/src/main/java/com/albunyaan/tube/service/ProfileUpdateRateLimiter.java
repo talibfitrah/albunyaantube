@@ -12,13 +12,13 @@ import java.util.Deque;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Plan G B5 — per-uid sliding-window rate limiter for profile updates.
+ * Per-uid sliding-window rate limiter for profile updates.
  * 10 updates per hour. In-memory only; will not survive process restart
  * (acceptable for pre-release scale; migrate to Redis if multi-instance).
  *
  * <p>Mirrors {@link SubmissionRateLimiter} exactly: Caffeine cache for
  * automatic eviction of cold uids, atomic {@code compute} to close the
- * eviction-race window documented in Plan E.
+ * eviction-race window between contains-check and add.
  */
 @Component
 public class ProfileUpdateRateLimiter {

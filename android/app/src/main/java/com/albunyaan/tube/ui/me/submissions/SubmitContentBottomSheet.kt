@@ -12,6 +12,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.me.YouTubeVideoIdRegex
 import com.albunyaan.tube.databinding.BottomSheetSubmitContentBinding
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.snackbar.Snackbar
@@ -170,13 +171,9 @@ class SubmitContentBottomSheet : BottomSheetDialogFragment() {
         val url = input.trim()
         if (url.isEmpty()) return null
 
-        // youtu.be/<id> → video
-        val short = Pattern.compile("""youtu\.be/([A-Za-z0-9_-]{11})""").matcher(url)
-        if (short.find()) return ParsedYouTubeUrl(DetectedContentType.VIDEO, short.group(1)!!)
-
-        // youtube.com/watch?v=<id> → video
-        val watch = Pattern.compile("""[?&]v=([A-Za-z0-9_-]{11})""").matcher(url)
-        if (watch.find()) return ParsedYouTubeUrl(DetectedContentType.VIDEO, watch.group(1)!!)
+        // Video: youtu.be/<id>, ?v=<id>, /shorts/<id>, /embed/<id>, /watch/<id>
+        val video = YouTubeVideoIdRegex.VIDEO_ID_REGEX.find(url)
+        if (video != null) return ParsedYouTubeUrl(DetectedContentType.VIDEO, video.groupValues[1])
 
         // youtube.com/playlist?list=<id> → playlist
         val list = Pattern.compile("""[?&]list=([A-Za-z0-9_-]{10,})""").matcher(url)

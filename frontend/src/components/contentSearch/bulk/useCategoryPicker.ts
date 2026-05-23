@@ -7,11 +7,6 @@ interface FlatCategory { id: string; name: string }
 // NOTE: invalidate if the admin edits the category tree elsewhere in the session (separate ticket).
 let cachedPromise: Promise<FlatCategory[]> | null = null
 
-/** Reset the module-level cache. Call in test beforeEach to prevent cross-test leakage. */
-export function invalidateCategoryCache() {
-  cachedPromise = null
-}
-
 /** Return the next selection after toggling `id`'s membership in `current`. */
 export function toggleCategoryId(current: readonly string[], id: string): string[] {
   return current.includes(id)

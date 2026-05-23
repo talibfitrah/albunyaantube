@@ -16,8 +16,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * FIREBASE-MIGRATE-04: Audit Log Service
- *
  * Service for logging admin actions asynchronously.
  */
 @Service

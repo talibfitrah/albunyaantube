@@ -12,12 +12,12 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Plans E + G — wires rate-limit interceptors.
+ * Wires rate-limit interceptors.
  *
  * <ul>
- *   <li>Plan E: {@link SubmissionRateLimitInterceptor} on admin registry POSTs
+ *   <li>{@link SubmissionRateLimitInterceptor} on admin registry POSTs
  *       (50 submissions / 24h per uid).
- *   <li>Plan G B5: {@link ProfileUpdateRateLimitInterceptor} on
+ *   <li>{@link ProfileUpdateRateLimitInterceptor} on
  *       PUT /api/account/profile (10 updates / hour per uid).
  * </ul>
  *
@@ -44,7 +44,7 @@ public class WebConfig implements WebMvcConfigurer {
         this.profileUpdateInterceptorProvider = profileUpdateInterceptorProvider;
     }
 
-    // ── Plan E ────────────────────────────────────────────────────────────────
+    // ── Submission rate limiter ───────────────────────────────────────────────
 
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(SubmissionRateLimiter.class)
@@ -54,7 +54,7 @@ public class WebConfig implements WebMvcConfigurer {
         return new SubmissionRateLimitInterceptor(limiter, json);
     }
 
-    // ── Plan G B5 ─────────────────────────────────────────────────────────────
+    // ── Profile update rate limiter ───────────────────────────────────────────
 
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(ProfileUpdateRateLimiter.class)
