@@ -4097,6 +4097,10 @@ components:
           type: string
         category:
           type: string
+        thumbnailUrl:
+          type: string
+          nullable: true
+          description: Cover image / avatar URL surfaced by the approval queue UI
         submittedAt:
           type: string
           format: date-time
