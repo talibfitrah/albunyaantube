@@ -1,8 +1,5 @@
 package com.albunyaan.tube.ui.me.profile
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelStore
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.auth.AccountStatus
@@ -35,17 +32,9 @@ import org.mockito.kotlin.whenever
 class ProfileViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
-    // Owns every ProfileViewModel created by makeVm() so tearDown can cancel
-    // their viewModelScope before resetMain. Without this, the init {}
-    // accountState collector outlives the test, gets orphaned on a dead
-    // dispatcher, and surfaces as UncaughtExceptionsBeforeTest in the next test.
-    private val viewModelStore = ViewModelStore()
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
-    @After fun tearDown() {
-        viewModelStore.clear()
-        Dispatchers.resetMain()
-    }
+    @After fun tearDown() { Dispatchers.resetMain() }
 
     // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -83,29 +72,13 @@ class ProfileViewModelTest {
         return repo
     }
 
-    /**
-     * Create a ProfileViewModel owned by [viewModelStore] so tearDown can
-     * cancel its viewModelScope. Use this instead of the raw constructor.
-     */
-    private fun makeVm(
-        accountRepo: AccountRepository,
-        updateRepo: AccountUpdateRepository,
-    ): ProfileViewModel {
-        val factory = object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                ProfileViewModel(accountRepo, updateRepo) as T
-        }
-        return ViewModelProvider(viewModelStore, factory)[ProfileViewModel::class.java]
-    }
-
     // ── P1: load → Editing ────────────────────────────────────────────────────
 
     @Test fun `load transitions to Editing with values from AccountState`() = runTest(dispatcher) {
         val accountRepo = makeAccountRepo()
         val updateRepo: AccountUpdateRepository = mock()
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
 
         val state = vm.uiState.value
         assertTrue(state is ProfileUiState.Editing)
@@ -121,7 +94,7 @@ class ProfileViewModelTest {
         whenever(accountRepo.accountState).thenReturn(MutableStateFlow(AccountState.Loading))
         val updateRepo: AccountUpdateRepository = mock()
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
 
         assertTrue(vm.uiState.value is ProfileUiState.Loading)
     }
@@ -129,7 +102,7 @@ class ProfileViewModelTest {
     // ── P2: draft mutations ────────────────────────────────────────────────────
 
     @Test fun `onDisplayNameChange updates draft and sets isDirty`() = runTest(dispatcher) {
-        val vm = makeVm(makeAccountRepo(), mock())
+        val vm = ProfileViewModel(makeAccountRepo(), mock())
 
         vm.onDisplayNameChange("Bob")
 
@@ -140,7 +113,7 @@ class ProfileViewModelTest {
     }
 
     @Test fun `onDateOfBirthChange updates draft`() = runTest(dispatcher) {
-        val vm = makeVm(makeAccountRepo(), mock())
+        val vm = ProfileViewModel(makeAccountRepo(), mock())
 
         vm.onDateOfBirthChange("2000-06-01")
 
@@ -154,7 +127,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.NetworkError)
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -170,7 +143,7 @@ class ProfileViewModelTest {
 
     @Test fun `save does nothing when not dirty`() = runTest(dispatcher) {
         val updateRepo: AccountUpdateRepository = mock()
-        val vm = makeVm(makeAccountRepo(), updateRepo)
+        val vm = ProfileViewModel(makeAccountRepo(), updateRepo)
 
         vm.save()
         advanceUntilIdle()
@@ -187,7 +160,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.Success(response))
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -206,7 +179,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.Success(fakeResponse(displayName = "Bob")))
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.onDisplayNameChange("Bob")  // only name changed; DOB unchanged
         vm.save()
         advanceUntilIdle()
@@ -225,7 +198,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.AgeIneligible)
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -240,7 +213,7 @@ class ProfileViewModelTest {
         val accountRepo = makeAccountRepo()
         val updateRepo: AccountUpdateRepository = mock()
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.confirmAgeIneligibleSignOut()
 
         verify(accountRepo).signOut()
@@ -254,7 +227,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.RateLimited(retryAfterSec = 60L))
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -274,7 +247,7 @@ class ProfileViewModelTest {
         whenever(updateRepo.updateProfile(any()))
             .thenReturn(ProfileUpdateResult.ValidationFailed("displayName", "Name too short"))
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.onDisplayNameChange("B")
         vm.save()
         advanceUntilIdle()
@@ -292,7 +265,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.NetworkError)
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -309,7 +282,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.Unknown(code = 503))
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -328,7 +301,7 @@ class ProfileViewModelTest {
         // suspend that never completes inline — use a real answer but check call count
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.NetworkError)
 
-        val vm = makeVm(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo)
         vm.onDisplayNameChange("Bob")
         // First save
         vm.save()

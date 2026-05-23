@@ -15,12 +15,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
+import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import java.time.LocalDate
@@ -58,6 +60,12 @@ class MeViewModelSnapshotRoleTest {
         }
         val feed = mock<MeFeedRepository>().also { f ->
             whenever(f.observeFeed()).thenReturn(flowOf(emptyList()))
+            // MeViewModel.init kicks off loadNextWeek, which hits the deep-page
+            // loop and calls countCachedRowsForFilter (suspend, returns Int).
+            // Mockito's default null unboxes to NPE — surfaces in the next
+            // test's runTest as UncaughtExceptionsBeforeTest. Stub to 0 so the
+            // loop's rowsAfter == rowsBefore check breaks out immediately.
+            runBlocking { whenever(f.countCachedRowsForFilter(any())).thenReturn(0) }
         }
         val favs = StubFavoritesRepository()
         return MeViewModel(subs, feed, favs, accountRepo)
