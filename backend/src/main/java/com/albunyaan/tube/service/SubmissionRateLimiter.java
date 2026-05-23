@@ -93,12 +93,12 @@ public class SubmissionRateLimiter {
             Deque<Instant> dq = existing != null ? existing : new ArrayDeque<>();
             while (!dq.isEmpty() && dq.peekFirst().isBefore(cutoff)) dq.pollFirst();
             if (dq.size() + count > LIMIT) {
-                // All-or-nothing: leave the deque untouched. retry-after is
-                // computed from the oldest existing slot when the deque is
-                // non-empty, else from `now` (degenerate path — count > LIMIT
-                // is rejected by SubmitRow.@Size validation, but keep the
-                // math defensive).
-                Instant oldest = dq.isEmpty() ? now : dq.peekFirst();
+                // All-or-nothing: leave the deque untouched. retry-after
+                // computed from the oldest existing slot. The deque is
+                // guaranteed non-empty here — `dq.size() + count > LIMIT`
+                // with `count >= 1` and `count <= LIMIT` (validator above)
+                // implies `dq.size() >= 1`.
+                Instant oldest = dq.peekFirst();
                 retryAfter[0] = oldest.plus(WINDOW).getEpochSecond() - now.getEpochSecond();
             } else {
                 for (int i = 0; i < count; i++) dq.addLast(now);

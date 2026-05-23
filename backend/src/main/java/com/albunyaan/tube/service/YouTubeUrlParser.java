@@ -53,7 +53,7 @@ public class YouTubeUrlParser {
 
         String host = uri.getHost();
         if (host == null) return YouTubeUrlParseResult.error(PreviewErrorCode.NOT_YOUTUBE_URL);
-        host = host.toLowerCase();
+        host = host.toLowerCase(java.util.Locale.ROOT);
 
         if (host.equals("music.youtube.com")) return YouTubeUrlParseResult.error(PreviewErrorCode.UNSUPPORTED_TYPE);
         if (!YOUTUBE_HOSTS.contains(host)) return YouTubeUrlParseResult.error(PreviewErrorCode.NOT_YOUTUBE_URL);

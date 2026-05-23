@@ -2,6 +2,24 @@ import { defineStore } from 'pinia'
 import { i18n } from '../main'
 import type { components } from '../generated/api/schema'
 import { bulkSubmissionService } from '../services/bulkSubmissionService'
+import type { AxiosError } from 'axios'
+
+/**
+ * Extract a user-facing message from an axios / generic error. Backend
+ * structured error envelopes (e.g. 429 RATE_LIMIT, validation errors)
+ * carry the message in `response.data.message`; axios surfaces only its
+ * connection-level message ("Network Error", "timeout exceeded") on the
+ * `Error.message` field. Falling back to the structured body first
+ * preserves backend-formatted messaging (cubic R2 finding #4).
+ */
+function extractErrorMessage(e: unknown): string {
+  if (e && typeof e === 'object') {
+    const ax = e as AxiosError<{ message?: string }>
+    const fromBody = ax.response?.data?.message
+    if (typeof fromBody === 'string' && fromBody.length > 0) return fromBody
+  }
+  return (e as Error)?.message ?? 'Unknown error'
+}
 
 type PreviewRow      = components['schemas']['PreviewRow']
 type BulkSubmitResponse = components['schemas']['BulkSubmitResponse']
@@ -60,7 +78,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
         this.previewRows = resp.rows ?? []
         this.phase = 'PREVIEW'
       } catch (e) {
-        this.error = (e as Error).message
+        this.error = extractErrorMessage(e)
         this.phase = 'INPUT'
       }
     },
@@ -106,7 +124,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
         this.submitResult = resp
         this.phase = 'RESULT'
       } catch (e) {
-        this.error = (e as Error).message
+        this.error = extractErrorMessage(e)
         this.phase = 'PREVIEW'
       }
     },
