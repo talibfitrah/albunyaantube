@@ -28,6 +28,7 @@ class BulkSubmissionServiceSubmitTest {
     private RegistryDuplicateChecker dedupe;
     private RegistryDuplicateChecker.Batch lateBatch;
     private com.albunyaan.tube.repository.CategoryRepository categoryRepository;
+    private YouTubeGateway gateway;
     private BulkSubmissionService svc;
 
     @BeforeEach
@@ -49,9 +50,24 @@ class BulkSubmissionServiceSubmitTest {
             // forces this checked-exception swallow in the test scaffold.
         }
 
+        // Default: gateway.fetchByDetectedType returns a successful authoritative
+        // metadata that echoes the youtubeId/type passed in. Individual tests can
+        // override to simulate fetch errors or to verify the writer received the
+        // *authoritative* metadata rather than the client-supplied row.metadata().
+        gateway = mock(YouTubeGateway.class);
+        when(gateway.fetchByDetectedType(any(), any(), any())).thenAnswer(inv -> {
+            YouTubeContentType type = inv.getArgument(0);
+            String id = inv.getArgument(1);
+            return PreviewFetchResult.ok(
+                    new PreviewMetadata(id, "Authoritative", "https://i.ytimg.com/auth.jpg",
+                            "AuthChannel", "UCauth", 999L, null, null, null),
+                    type == YouTubeContentType.VIDEO ? VideoType.STANDARD : null
+            );
+        });
+
         svc = new BulkSubmissionService(
                 new YouTubeUrlParser(),                          // real parser for round-trip metadata validation
-                mock(YouTubeGateway.class),
+                gateway,
                 dedupe,
                 writer,
                 Executors.newFixedThreadPool(2),
@@ -80,6 +96,13 @@ class BulkSubmissionServiceSubmitTest {
 
     @Test
     void admin_submitVideo_honorsApproved() throws Exception {
+        // VideoType is now sourced from the gateway's authoritative fetch, not row.videoType().
+        // Override the default stub so the gateway claims this video is LIVE.
+        when(gateway.fetchByDetectedType(eq(YouTubeContentType.VIDEO), eq(VIDEO_ID), any()))
+                .thenReturn(PreviewFetchResult.ok(
+                        new PreviewMetadata(VIDEO_ID, "Live Vid", "https://i.ytimg.com/t.jpg",
+                                "Ch", CHANNEL_ID, null, null, null, 50L),
+                        VideoType.LIVE));
         when(writer.writeVideo(any(), eq(VideoType.LIVE), any(), eq("APPROVED"), eq("admin-uid"), eq(true))).thenReturn("doc-v-1");
 
         var row = new SubmitRow(0, VIDEO_URL,
@@ -229,6 +252,74 @@ class BulkSubmissionServiceSubmitTest {
         // Writer must not have been called when any categoryId is bogus —
         // ensures the entity's categoryIds list never contains a phantom ID.
         verify(writer, never()).writeChannel(any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void clientCraftedMetadata_overriddenByAuthoritativeFetch() throws Exception {
+        // Trust boundary: the writer must receive the metadata that GATEWAY (NewPipe)
+        // returned, never the metadata the moderator's client put in row.metadata.
+        // Without re-fetch in submit, a moderator could preview a legitimate URL then
+        // craft (title, subscribers, channelName, thumbnailUrl) values that flow into
+        // the public feed after admin approval — a public-facing-data spoofing attack.
+        PreviewMetadata trustedFromGateway = new PreviewMetadata(
+                CHANNEL_ID, "Real Channel", "https://i.ytimg.com/real.jpg",
+                null, null, 100L, null, null, null);
+        when(gateway.fetchByDetectedType(eq(YouTubeContentType.CHANNEL), eq(CHANNEL_ID), any()))
+                .thenReturn(PreviewFetchResult.ok(trustedFromGateway, null));
+        when(writer.writeChannel(any(), any(), any(), any(), anyBoolean())).thenReturn("doc-c-1");
+
+        PreviewMetadata spoofedFromClient = new PreviewMetadata(
+                CHANNEL_ID, "<SPOOFED MUST NEVER LAND>", "https://attacker.example/track.gif",
+                null, null, 999_999_999L, null, null, null);
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                spoofedFromClient, List.of("cat-1"));
+        var req = new BulkSubmitRequest(List.of(row), "PENDING");
+
+        svc.submit(req, "admin-uid", true);
+
+        // Writer must receive the gateway's authoritative metadata.
+        verify(writer).writeChannel(eq(trustedFromGateway), any(), any(), any(), anyBoolean());
+        // And must NOT receive the spoofed client metadata.
+        verify(writer, never()).writeChannel(eq(spoofedFromClient), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void fetchError_failsRow_withErrorCodeFromGateway() {
+        // Gateway claims the video is age-restricted; submit must propagate the
+        // error code (not the writer) and never write.
+        when(gateway.fetchByDetectedType(any(), any(), any()))
+                .thenReturn(PreviewFetchResult.error(
+                        com.albunyaan.tube.dto.registry.PreviewErrorCode.AGE_RESTRICTED));
+
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
+                List.of("cat-1"));
+        var req = new BulkSubmitRequest(List.of(row), "PENDING");
+
+        var resp = svc.submit(req, "admin-uid", true);
+
+        assertEquals(0, resp.added());
+        assertEquals(1, resp.failed());
+        assertEquals("AGE_RESTRICTED", resp.results().get(0).errorCode());
+        verifyNoInteractions(writer);
+    }
+
+    @Test
+    void fetchThrows_failsRow_withFetchError() {
+        when(gateway.fetchByDetectedType(any(), any(), any()))
+                .thenThrow(new RuntimeException("NewPipe timeout"));
+
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
+                List.of("cat-1"));
+        var req = new BulkSubmitRequest(List.of(row), "PENDING");
+
+        var resp = svc.submit(req, "admin-uid", true);
+
+        assertEquals(0, resp.added());
+        assertEquals(1, resp.failed());
+        assertEquals("FETCH_ERROR", resp.results().get(0).errorCode());
+        verifyNoInteractions(writer);
     }
 
     @Test

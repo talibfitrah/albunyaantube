@@ -228,12 +228,46 @@ public class BulkSubmissionService {
                 continue;
             }
 
+            // Re-fetch authoritative metadata from NewPipe rather than trust
+            // the client-supplied row.metadata. Without this, the preview
+            // path's NewPipe call is the trust boundary, but submit accepted
+            // any title/channelName/subscribers/viewCount/thumbnailUrl the
+            // client sent back. A moderator could spoof public-facing fields
+            // by previewing a legitimate URL then crafting metadata around
+            // its youtubeId; after admin approval the spoofed values
+            // appeared in the public feed.
+            //
+            // Cost: one NewPipe HTTP call per row in the submit critical
+            // path (sequential with the dedupe + write). Caller should
+            // expect 25-row submits to take ~30-60s. Parallelising via
+            // bulkPreviewExecutor is a follow-up optimisation.
+            PreviewFetchResult authoritative;
+            try {
+                authoritative = gateway.fetchByDetectedType(
+                        parsed.type(), parsed.youtubeId(), parsed.normalizedUrl());
+            } catch (RuntimeException fetchErr) {
+                log.warn("bulk-submit authoritative fetch failed rowIndex={} url={} reason={}",
+                        row.rowIndex(), row.originalUrl(), fetchErr.getMessage());
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
+                        SubmitStatus.FAILED, "FETCH_ERROR"));
+                failed++;
+                continue;
+            }
+            if (authoritative.errorCode() != null) {
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
+                        SubmitStatus.FAILED, authoritative.errorCode().name()));
+                failed++;
+                continue;
+            }
+            PreviewMetadata trustedMetadata = authoritative.metadata();
+            VideoType trustedVideoType = authoritative.videoType();
+
             try {
                 String registryId = switch (row.detectedType()) {
-                    case CHANNEL  -> writer.writeChannel(row.metadata(), row.categoryIds(), resolvedStatus, actorUid, isAdmin);
-                    case PLAYLIST -> writer.writePlaylist(row.metadata(), row.categoryIds(), resolvedStatus, actorUid, isAdmin);
-                    case VIDEO    -> writer.writeVideo(row.metadata(),
-                            row.videoType() != null ? row.videoType() : VideoType.STANDARD,
+                    case CHANNEL  -> writer.writeChannel(trustedMetadata, row.categoryIds(), resolvedStatus, actorUid, isAdmin);
+                    case PLAYLIST -> writer.writePlaylist(trustedMetadata, row.categoryIds(), resolvedStatus, actorUid, isAdmin);
+                    case VIDEO    -> writer.writeVideo(trustedMetadata,
+                            trustedVideoType != null ? trustedVideoType : VideoType.STANDARD,
                             row.categoryIds(), resolvedStatus, actorUid, isAdmin);
                     default       -> throw new org.springframework.web.server.ResponseStatusException(
                             org.springframework.http.HttpStatus.BAD_REQUEST,
