@@ -1,0 +1,19 @@
+android/app/src/debug/res/xml/network_security_config.xml
+  s_f48602fb6a6ef1::t_022fb8afe634fe 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "52a1770e73f735907b77be4b0d472996327b12f0",
+  "prompts": {},
+  "sessions": {
+    "s_f48602fb6a6ef1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6f15b1bd-8e08-4495-a5d0-1ad7e321c033",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
