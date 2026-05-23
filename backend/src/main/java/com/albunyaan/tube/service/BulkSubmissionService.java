@@ -97,7 +97,7 @@ public class BulkSubmissionService {
         try {
             YouTubeUrlParseResult parsed = parser.parse(originalUrl);
             if (parsed.errorCode() != null) {
-                return new PreviewRow(rowIndex, originalUrl, null, null, null, null, RowStatus.ERROR, null, null,
+                return new PreviewRow(rowIndex, originalUrl, null, null, null, RowStatus.ERROR, null, null,
                         PreviewError.of(parsed.errorCode()));
             }
 
@@ -106,30 +106,30 @@ public class BulkSubmissionService {
 
             if (existing.isPresent()
                     && ("PENDING".equals(existing.get().status()) || "APPROVED".equals(existing.get().status()))) {
-                return new PreviewRow(rowIndex, originalUrl, parsed.normalizedUrl(), parsed.type(), null, null,
+                return new PreviewRow(rowIndex, originalUrl, parsed.type(), null, null,
                         RowStatus.DUPLICATE, existing.get().registryId(), existing.get().status(),
                         PreviewError.of(PreviewErrorCode.DUPLICATE));
             }
 
             PreviewFetchResult fetch = gateway.fetchByDetectedType(parsed.type(), parsed.youtubeId(), parsed.normalizedUrl());
             if (fetch.errorCode() != null) {
-                return new PreviewRow(rowIndex, originalUrl, parsed.normalizedUrl(), parsed.type(), null, null,
+                return new PreviewRow(rowIndex, originalUrl, parsed.type(), null, null,
                         RowStatus.ERROR, null, null, PreviewError.of(fetch.errorCode()));
             }
 
             if (existing.isPresent() && "REJECTED".equals(existing.get().status())) {
-                return new PreviewRow(rowIndex, originalUrl, parsed.normalizedUrl(), parsed.type(),
+                return new PreviewRow(rowIndex, originalUrl, parsed.type(),
                         fetch.videoType(), fetch.metadata(),
                         RowStatus.DUPLICATE_REJECTED, existing.get().registryId(), "REJECTED",
                         PreviewError.of(PreviewErrorCode.DUPLICATE_REJECTED));
             }
 
-            return new PreviewRow(rowIndex, originalUrl, parsed.normalizedUrl(), parsed.type(),
+            return new PreviewRow(rowIndex, originalUrl, parsed.type(),
                     fetch.videoType(), fetch.metadata(),
                     RowStatus.OK, null, null, null);
         } catch (Exception e) {
             log.warn("BULK-01: buildRow rowIndex={} url={} unexpected exception: {}", rowIndex, originalUrl, e.toString());
-            return new PreviewRow(rowIndex, originalUrl, null, null, null, null, RowStatus.ERROR, null, null,
+            return new PreviewRow(rowIndex, originalUrl, null, null, null, RowStatus.ERROR, null, null,
                     PreviewError.of(PreviewErrorCode.NEWPIPE_PARSING_ERROR));
         }
     }

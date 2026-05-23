@@ -7,7 +7,6 @@ import com.albunyaan.tube.model.VideoType;
 public record PreviewRow(
         int rowIndex,
         String originalUrl,
-        String normalizedUrl,
         YouTubeContentType detectedType,
         VideoType videoType,
         PreviewMetadata metadata,

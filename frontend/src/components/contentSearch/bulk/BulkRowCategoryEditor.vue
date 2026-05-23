@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getAllCategories } from '@/services/categoryService'
-import type { Category } from '@/services/categoryService'
+import { useCategoryPicker } from './useCategoryPicker'
 
 const props = defineProps<{ modelValue: string[] }>()
 const emit = defineEmits<{
@@ -12,31 +11,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const flatCategories = ref<Category[]>([])
+const { flatCategories, isLoading, load } = useCategoryPicker()
+onMounted(load)
+
 const selected = ref<string[]>([...props.modelValue])
-const isLoading = ref(false)
-
-function flattenCategories(cats: Category[]): Category[] {
-  const result: Category[] = []
-  function walk(list: Category[]) {
-    for (const c of list) {
-      result.push(c)
-      if (c.subcategories?.length) walk(c.subcategories)
-    }
-  }
-  walk(cats)
-  return result
-}
-
-onMounted(async () => {
-  isLoading.value = true
-  try {
-    const tree = await getAllCategories()
-    flatCategories.value = flattenCategories(tree)
-  } finally {
-    isLoading.value = false
-  }
-})
 
 function toggle(id: string) {
   selected.value = selected.value.includes(id)
@@ -44,8 +22,8 @@ function toggle(id: string) {
     : [...selected.value, id]
 }
 
-function displayName(cat: Category): string {
-  return cat.name ?? cat.label ?? cat.id
+function displayName(cat: { id: string; name: string }): string {
+  return cat.name || cat.id
 }
 </script>
 

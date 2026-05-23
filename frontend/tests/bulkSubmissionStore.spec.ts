@@ -27,7 +27,7 @@ describe('bulkSubmissionStore', () => {
 
   it('runPreview transitions LOADING → PREVIEW and stores rows', async () => {
     mockedPreview.mockResolvedValue({
-      rows: [{ rowIndex: 0, originalUrl: 'u', normalizedUrl: 'u', detectedType: 'VIDEO',
+      rows: [{ rowIndex: 0, originalUrl: 'u', detectedType: 'VIDEO',
               videoType: 'STANDARD', metadata: { youtubeId: 'x', title: 't' } as any,
               status: 'OK', duplicateOf: null, duplicateStatus: null, error: null } as any],
     })
@@ -40,7 +40,7 @@ describe('bulkSubmissionStore', () => {
     await p
     expect(s.phase).toBe('PREVIEW')
     expect(s.previewRows.length).toBe(1)
-    expect(mockedPreview).toHaveBeenCalledWith({ urls: ['u'], defaultCategoryIds: ['cat-1'] })
+    expect(mockedPreview).toHaveBeenCalledWith({ urls: ['u'] })
   })
 
   it('setRowCategories overrides the resolved categoryIds for a single row', () => {

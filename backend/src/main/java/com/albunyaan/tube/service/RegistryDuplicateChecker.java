@@ -73,7 +73,7 @@ public class RegistryDuplicateChecker {
                             .map(p -> new ExistingMatch(p.getId(), p.getStatus()));
                     case VIDEO    -> videos.findByYoutubeId(youtubeId)
                             .map(v -> new ExistingMatch(v.getId(), v.getStatus()));
-                    case ALL      -> Optional.empty(); // ALL is a search filter, not a content type
+                    case ALL      -> throw new IllegalStateException("ALL is not a content type for duplicate checks: " + type);
                 };
             } catch (ExecutionException | InterruptedException | TimeoutException e) {
                 if (e instanceof InterruptedException) {

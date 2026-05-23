@@ -4321,7 +4321,7 @@ components:
 
     BulkPreviewRequest:
       type: object
-      required: [urls, defaultCategoryIds]
+      required: [urls]
       properties:
         urls:
           type: array
@@ -4331,13 +4331,6 @@ components:
             type: string
             minLength: 1
           description: YouTube URLs to preview (videos, channels, playlists). Max 25.
-        defaultCategoryIds:
-          type: array
-          minItems: 1
-          items:
-            type: string
-            minLength: 1
-          description: Category IDs to pre-assign to every row (user may override per-row before submit).
 
     BulkPreviewResponse:
       type: object
@@ -4359,10 +4352,6 @@ components:
         originalUrl:
           type: string
           description: The URL exactly as submitted.
-        normalizedUrl:
-          type: string
-          nullable: true
-          description: Canonical URL after parsing (e.g. https://www.youtube.com/watch?v=ID).
         detectedType:
           type: string
           enum: [VIDEO, CHANNEL, PLAYLIST]

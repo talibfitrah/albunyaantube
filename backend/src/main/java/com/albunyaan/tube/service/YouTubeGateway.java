@@ -69,6 +69,8 @@ import java.util.regex.Pattern;
 public class YouTubeGateway {
 
     private static final Logger logger = LoggerFactory.getLogger(YouTubeGateway.class);
+    private static final Pattern CHANNEL_ID_FROM_URL =
+            Pattern.compile("/channel/(UC[a-zA-Z0-9_-]{22})");
     private final ExecutorService executorService;
 
     private final StreamingService youtube;
@@ -661,7 +663,7 @@ public class YouTubeGateway {
                 case CHANNEL  -> mapChannel(fetchChannelInfo(youtubeId), youtubeId);
                 case PLAYLIST -> mapPlaylist(fetchPlaylistInfo(youtubeId), youtubeId);
                 case VIDEO    -> mapVideo(fetchStreamInfo(youtubeId), youtubeId);
-                default       -> PreviewFetchResult.error(PreviewErrorCode.UNSUPPORTED_TYPE);
+                default       -> throw new IllegalStateException("Unexpected YouTubeContentType in fetchByDetectedType: " + type);
             };
         } catch (AccountTerminatedException e) {
             return PreviewFetchResult.error(PreviewErrorCode.CHANNEL_TERMINATED);
@@ -751,9 +753,7 @@ public class YouTubeGateway {
 
     private static String deriveChannelIdFromUrl(String uploaderUrl) {
         if (uploaderUrl == null) return null;
-        var m = Pattern
-                .compile("/channel/(UC[a-zA-Z0-9_-]{22})")
-                .matcher(uploaderUrl);
+        var m = CHANNEL_ID_FROM_URL.matcher(uploaderUrl);
         return m.find() ? m.group(1) : null;
     }
 }

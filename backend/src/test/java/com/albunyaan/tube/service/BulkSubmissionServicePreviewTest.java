@@ -42,7 +42,7 @@ class BulkSubmissionServicePreviewTest {
                         new PreviewMetadata("dQw4w9WgXcQ", "Rick Astley", "thumb.jpg", "Rick", "UC1", null, null, 213L, 1000L),
                         VideoType.STANDARD));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), List.of("cat-1"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
         var resp = svc.preview(req);
 
         assertEquals(1, resp.rows().size());
@@ -56,7 +56,7 @@ class BulkSubmissionServicePreviewTest {
 
     @Test
     void shortsUrl_returnsUnsupportedShortsError() {
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/shorts/abcdefghijk"), List.of("cat-1"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/shorts/abcdefghijk"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.ERROR, resp.rows().get(0).status());
@@ -69,7 +69,7 @@ class BulkSubmissionServicePreviewTest {
         when(batch.findExisting(eq(YouTubeContentType.VIDEO), eq("dQw4w9WgXcQ")))
                 .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("existing-doc", "PENDING")));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), List.of("cat-1"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.DUPLICATE, resp.rows().get(0).status());
@@ -86,7 +86,7 @@ class BulkSubmissionServicePreviewTest {
                         new PreviewMetadata("dQw4w9WgXcQ", "Some Vid", "thumb.jpg", null, null, null, null, null, null),
                         VideoType.STANDARD));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), List.of("cat-1"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.DUPLICATE_REJECTED, resp.rows().get(0).status());
@@ -100,7 +100,7 @@ class BulkSubmissionServicePreviewTest {
         when(gateway.fetchByDetectedType(any(), any(), any()))
                 .thenReturn(PreviewFetchResult.error(PreviewErrorCode.CONTENT_NOT_AVAILABLE));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), List.of("cat-1"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.ERROR, resp.rows().get(0).status());
@@ -120,8 +120,7 @@ class BulkSubmissionServicePreviewTest {
                         "https://www.youtube.com/watch?v=AAAAAAAAAAA",   // index 0, OK
                         "https://www.youtube.com/shorts/BBBBBBBBBBB",     // index 1, ERROR
                         "https://www.youtube.com/watch?v=CCCCCCCCCCC"     // index 2, OK
-                ),
-                List.of("cat-1"));
+                ));
         var resp = svc.preview(req);
 
         assertEquals(3, resp.rows().size());
@@ -139,7 +138,7 @@ class BulkSubmissionServicePreviewTest {
         when(gateway.fetchByDetectedType(any(), any(), any()))
                 .thenThrow(new RuntimeException("unexpected bug"));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=AAAAAAAAAAA"), List.of("cat-1"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=AAAAAAAAAAA"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.ERROR, resp.rows().get(0).status());

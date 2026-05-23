@@ -90,8 +90,7 @@ class BulkSubmissionIT extends BaseIntegrationTest {
         var previewReq = new BulkPreviewRequest(
                 List.of(
                         "https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx",
-                        "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"),
-                List.of("cat-1"));
+                        "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"));
 
         mvc.perform(post("/api/admin/registry/bulk/preview")
                         .header("Authorization", "Bearer fake-mod-token")
@@ -166,8 +165,7 @@ class BulkSubmissionIT extends BaseIntegrationTest {
         stubAuthAs("user-uid", "user");
 
         var req = new BulkPreviewRequest(
-                List.of("https://www.youtube.com/watch?v=AAAAAAAAAAA"),
-                List.of("cat-1"));
+                List.of("https://www.youtube.com/watch?v=AAAAAAAAAAA"));
 
         mvc.perform(post("/api/admin/registry/bulk/preview")
                         .header("Authorization", "Bearer fake-user-token")
@@ -187,7 +185,7 @@ class BulkSubmissionIT extends BaseIntegrationTest {
         for (int i = 0; i < 26; i++) {
             twentySix.add("https://www.youtube.com/watch?v=AAAAAAAAAAA");
         }
-        var req = new BulkPreviewRequest(twentySix, List.of("cat-1"));
+        var req = new BulkPreviewRequest(twentySix);
 
         mvc.perform(post("/api/admin/registry/bulk/preview")
                         .header("Authorization", "Bearer fake-admin-token")

@@ -57,7 +57,6 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       try {
         const resp = await bulkSubmissionService.previewBulk({
           urls: this.parsedUrls,
-          defaultCategoryIds: this.defaultCategoryIds,
         })
         this.previewRows = resp.rows ?? []
         this.phase = 'PREVIEW'
