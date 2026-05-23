@@ -1,0 +1,21 @@
+backend/src/main/java/com/albunyaan/tube/service/RegistryDuplicateChecker.java
+  s_b050c26eb2be76::t_5f4f6bf1fd0db7 72-80,83-84
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_b050c26eb2be76::t_321161248ea37f 281-287
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "c55838487f108d3b55e572927b2629c2d7c18843",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
