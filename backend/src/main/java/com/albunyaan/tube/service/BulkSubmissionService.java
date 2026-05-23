@@ -23,6 +23,13 @@ public class BulkSubmissionService {
 
     private static final Logger log = LoggerFactory.getLogger(BulkSubmissionService.class);
 
+    /**
+     * BULK-01 security — admin-allowed statuses for bulk submit.
+     * Mass-assignment defense: only PENDING/APPROVED accepted; REJECTED must go through
+     * the per-row approval queue UI so it carries proper rejection metadata + audit trail.
+     */
+    private static final java.util.Set<String> ADMIN_VALID_STATUSES = java.util.Set.of("PENDING", "APPROVED");
+
     private final YouTubeUrlParser parser;
     private final YouTubeGateway gateway;
     private final RegistryDuplicateChecker dedupe;
@@ -61,9 +68,19 @@ public class BulkSubmissionService {
     public BulkSubmitResponse submit(BulkSubmitRequest req, String actorUid, boolean isAdmin) {
         long start = System.currentTimeMillis();
         // Role-based status normalization: moderators always PENDING; admin defaults PENDING but can pass APPROVED.
-        String resolvedStatus = isAdmin
-                ? (req.status() == null || req.status().isBlank() ? "PENDING" : req.status().toUpperCase(java.util.Locale.ROOT))
-                : "PENDING";
+        String resolvedStatus;
+        if (isAdmin && req.status() != null && !req.status().isBlank()) {
+            String upper = req.status().toUpperCase(java.util.Locale.ROOT);
+            if (!ADMIN_VALID_STATUSES.contains(upper)) {
+                // Mass-assignment defense: reject crafted status values (REJECTED, REQUEST_CHANGES, etc.).
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.BAD_REQUEST,
+                        "status must be one of: " + ADMIN_VALID_STATUSES);
+            }
+            resolvedStatus = upper;
+        } else {
+            resolvedStatus = "PENDING";
+        }
 
         List<SubmitResult> results = new ArrayList<>(req.rows().size());
         int added = 0, failed = 0;
