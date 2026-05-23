@@ -1,0 +1,23 @@
+.bulk-alert {
+  padding: 0.875rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid;
+  font-size: 0.9375rem;
+}
+
+.bulk-alert-compact {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.bulk-alert-warning {
+  background: var(--color-warning-soft);
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.bulk-alert-danger {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+  color: var(--color-danger-strong);
+}

@@ -4,6 +4,7 @@ import { createI18n } from 'vue-i18n';
 import App from './App.vue';
 import router from './router';
 import './assets/main.css';
+import './styles/bulk-alert.css';
 import { messages } from './locales/messages';
 import { useAuthStore } from './stores/auth';
 import { usePreferencesStore } from './stores/preferences';

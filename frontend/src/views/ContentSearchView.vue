@@ -6,30 +6,30 @@
     </header>
 
     <!-- Tab navigation -->
-    <ul class="nav nav-tabs content-search-tabs">
-      <li class="nav-item">
-        <button
-          type="button"
-          class="nav-link"
-          :class="{ active: activeTab === 'search' }"
-          @click="activeTab = 'search'"
-        >
-          {{ t('contentSearch.searchTabLabel') }}
-        </button>
-      </li>
-      <li class="nav-item">
-        <button
-          type="button"
-          class="nav-link"
-          :class="{ active: activeTab === 'bulk' }"
-          @click="activeTab = 'bulk'"
-        >
-          {{ t('contentSearch.bulk.tabLabel') }}
-        </button>
-      </li>
-    </ul>
+    <div class="content-search-tabs" role="tablist">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'search'"
+        class="content-search-tab"
+        :class="{ active: activeTab === 'search' }"
+        @click="activeTab = 'search'"
+      >
+        {{ t('contentSearch.searchTabLabel') }}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'bulk'"
+        class="content-search-tab"
+        :class="{ active: activeTab === 'bulk' }"
+        @click="activeTab = 'bulk'"
+      >
+        {{ t('contentSearch.bulk.tabLabel') }}
+      </button>
+    </div>
 
-    <BulkSubmissionTab v-show="activeTab === 'bulk'" class="tab-content mt-3" />
+    <BulkSubmissionTab v-show="activeTab === 'bulk'" class="tab-content" />
 
     <div v-show="activeTab === 'search'">
 
@@ -553,6 +553,42 @@ async function loadMoreResults() {
   font-weight: 700;
   color: var(--color-text-primary);
   letter-spacing: -0.02em;
+}
+
+.content-search-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  width: fit-content;
+}
+
+.content-search-tab {
+  padding: 0.625rem 1.5rem;
+  background: transparent;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: all 0.2s ease;
+}
+
+.content-search-tab:hover:not(.active) {
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+
+.content-search-tab.active {
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+}
+
+.tab-content {
+  margin-top: 0.5rem;
 }
 
 .search-header p {
