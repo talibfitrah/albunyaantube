@@ -29,6 +29,12 @@
     <string name="bootstrap_error_invalid_name">Please tell us your name (1–40 characters)</string>
     <string name="bootstrap_error_invalid_dob">Please choose your date of birth</string>
     <string name="bootstrap_error_save_failed">Couldn\’t save your profile — try again</string>
+    <string name="bootstrap_password_explainer">Set a password so you can also sign in to the dashboard from a browser later.</string>
+    <string name="bootstrap_password_label">Password</string>
+    <string name="bootstrap_password_confirm_label">Confirm password</string>
+    <string name="bootstrap_error_invalid_password">Password must be at least 8 characters</string>
+    <string name="bootstrap_error_password_mismatch">Passwords don\’t match</string>
+    <string name="bootstrap_error_password_set_failed">Couldn\’t set your password — try a different one</string>
 
     <!-- Plan C T12: D12 — splash error on failed /me fetch -->
     <string name="splash_couldnt_connect">Couldn\'t connect — please sign in again.</string>

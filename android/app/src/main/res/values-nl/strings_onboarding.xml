@@ -29,6 +29,12 @@
     <string name="bootstrap_error_invalid_name">Please tell us your name (1–40 characters)</string>
     <string name="bootstrap_error_invalid_dob">Please choose your date of birth</string>
     <string name="bootstrap_error_save_failed">Couldn\'t save your profile — try again</string>
+    <string name="bootstrap_password_explainer">Stel een wachtwoord in zodat je later ook vanuit een browser kunt inloggen op het dashboard.</string>
+    <string name="bootstrap_password_label">Wachtwoord</string>
+    <string name="bootstrap_password_confirm_label">Bevestig wachtwoord</string>
+    <string name="bootstrap_error_invalid_password">Wachtwoord moet minstens 8 tekens bevatten</string>
+    <string name="bootstrap_error_password_mismatch">Wachtwoorden komen niet overeen</string>
+    <string name="bootstrap_error_password_set_failed">Kon je wachtwoord niet instellen — probeer een ander wachtwoord</string>
 
     <!-- Plan C T12: D12 — splash error on failed /me fetch (English placeholder — human translation pending) -->
     <string name="splash_couldnt_connect">Couldn\'t connect — please sign in again.</string>

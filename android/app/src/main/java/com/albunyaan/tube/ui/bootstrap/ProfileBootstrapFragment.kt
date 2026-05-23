@@ -17,6 +17,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -50,6 +51,11 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
     private lateinit var displayNameField: TextInputEditText
     private lateinit var dobLayout: TextInputLayout
     private lateinit var dobField: TextInputEditText
+    private lateinit var passwordExplainer: View
+    private lateinit var passwordLayout: TextInputLayout
+    private lateinit var passwordField: TextInputEditText
+    private lateinit var passwordConfirmLayout: TextInputLayout
+    private lateinit var passwordConfirmField: TextInputEditText
     private lateinit var submitButton: MaterialButton
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -72,6 +78,16 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         )
 
         viewModel.seedDisplayName(firebaseAuth.currentUser?.displayName.orEmpty())
+
+        // Path B (bidirectional auth): if the user signed in via Google
+        // (or any non-password provider) we prompt for a password so we
+        // can attach the password provider after the profile saves. If
+        // the user already has a password provider, hide the fields —
+        // they already use email/password and don't need another one.
+        val providers = firebaseAuth.currentUser?.providerData
+            ?.map { it.providerId }
+            .orEmpty()
+        viewModel.setPasswordRequirement(EmailAuthProvider.PROVIDER_ID !in providers)
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -103,6 +119,11 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         displayNameField = v.findViewById(R.id.displayNameField)
         dobLayout = v.findViewById(R.id.dobLayout)
         dobField = v.findViewById(R.id.dobField)
+        passwordExplainer = v.findViewById(R.id.passwordExplainer)
+        passwordLayout = v.findViewById(R.id.passwordLayout)
+        passwordField = v.findViewById(R.id.passwordField)
+        passwordConfirmLayout = v.findViewById(R.id.passwordConfirmLayout)
+        passwordConfirmField = v.findViewById(R.id.passwordConfirmField)
         submitButton = v.findViewById(R.id.submitButton)
     }
 
@@ -112,6 +133,20 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
                 viewModel.onDisplayNameChanged(s?.toString().orEmpty())
+            }
+        })
+        passwordField.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                viewModel.onPasswordChanged(s?.toString().orEmpty())
+            }
+        })
+        passwordConfirmField.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                viewModel.onPasswordConfirmChanged(s?.toString().orEmpty())
             }
         })
         dobField.setOnClickListener { openDatePicker() }
@@ -154,15 +189,35 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         }
         dobField.setText(state.dateOfBirth?.format(DateTimeFormatter.ISO_LOCAL_DATE).orEmpty())
         submitButton.isEnabled = !state.isLoading
+
+        // Password section visibility is driven entirely by the
+        // passwordRequired flag (set on entry from providerData). Don't
+        // mutate text-field contents here — the user types in them.
+        val passwordVisibility = if (state.passwordRequired) View.VISIBLE else View.GONE
+        passwordExplainer.visibility = passwordVisibility
+        passwordLayout.visibility = passwordVisibility
+        passwordConfirmLayout.visibility = passwordVisibility
+
         displayNameLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_NAME }
             ?.let { getString(R.string.bootstrap_error_invalid_name) }
         dobLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_DOB }
             ?.let { getString(R.string.bootstrap_error_invalid_dob) }
+        passwordLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_PASSWORD }
+            ?.let { getString(R.string.bootstrap_error_invalid_password) }
+        passwordConfirmLayout.error = state.error?.takeIf { it == BootstrapError.PASSWORD_MISMATCH }
+            ?.let { getString(R.string.bootstrap_error_password_mismatch) }
         // SAVE_FAILED: shown by dobLayout clearing both field errors so the user
         // understands the problem isn't their input. A future pass can add a Snackbar.
         if (state.error == BootstrapError.SAVE_FAILED) {
             displayNameLayout.error = null
             dobLayout.error = getString(R.string.bootstrap_error_save_failed)
+        }
+        if (state.error == BootstrapError.PASSWORD_SET_FAILED) {
+            // Profile is already saved backend-side. Password attach
+            // failed — surface on the password field so the user knows
+            // to retry that step. profileSaved guards against a duplicate
+            // completeProfile call on retry.
+            passwordLayout.error = getString(R.string.bootstrap_error_password_set_failed)
         }
     }
 

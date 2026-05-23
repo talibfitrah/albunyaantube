@@ -29,6 +29,12 @@
     <string name="bootstrap_error_invalid_name">Please tell us your name (1–40 characters)</string>
     <string name="bootstrap_error_invalid_dob">Please choose your date of birth</string>
     <string name="bootstrap_error_save_failed">Couldn\'t save your profile — try again</string>
+    <string name="bootstrap_password_explainer">عيّن كلمة مرور لتتمكن لاحقًا من تسجيل الدخول إلى لوحة التحكم من المتصفح أيضًا.</string>
+    <string name="bootstrap_password_label">كلمة المرور</string>
+    <string name="bootstrap_password_confirm_label">تأكيد كلمة المرور</string>
+    <string name="bootstrap_error_invalid_password">يجب أن تتكون كلمة المرور من 8 أحرف على الأقل</string>
+    <string name="bootstrap_error_password_mismatch">كلمتا المرور غير متطابقتين</string>
+    <string name="bootstrap_error_password_set_failed">تعذّر تعيين كلمة المرور — جرّب كلمة أخرى</string>
 
     <!-- Plan C T12: D12 — splash error on failed /me fetch (English placeholder — human translation pending) -->
     <string name="splash_couldnt_connect">Couldn\'t connect — please sign in again.</string>

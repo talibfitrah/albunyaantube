@@ -81,6 +81,72 @@
                 tools:hint="@string/bootstrap_dob_hint" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!--
+          Password section — shown only for Google-signed-in users with no
+          password provider yet. Setting a password attaches the password
+          provider so the same email can also sign in to the admin
+          dashboard via email/password (Android side of bidirectional
+          auth; web side handles password→Google via account linking).
+        -->
+        <TextView
+            android:id="@+id/passwordExplainer"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:text="@string/bootstrap_password_explainer"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textAlignment="viewStart"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/dobLayout"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/passwordLayout"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_sm"
+            android:hint="@string/bootstrap_password_label"
+            android:visibility="gone"
+            app:passwordToggleEnabled="true"
+            app:layout_constraintTop_toBottomOf="@id/passwordExplainer"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/passwordField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textPassword"
+                android:textAlignment="viewStart"
+                android:imeOptions="actionNext"
+                android:autofillHints="newPassword" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/passwordConfirmLayout"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_sm"
+            android:hint="@string/bootstrap_password_confirm_label"
+            android:visibility="gone"
+            app:passwordToggleEnabled="true"
+            app:layout_constraintTop_toBottomOf="@id/passwordLayout"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/passwordConfirmField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textPassword"
+                android:textAlignment="viewStart"
+                android:imeOptions="actionDone"
+                android:autofillHints="newPassword" />
+        </com.google.android.material.textfield.TextInputLayout>
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/submitButton"
             style="@style/Widget.Material3.Button"
@@ -88,7 +154,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/spacing_lg"
             android:text="@string/bootstrap_submit_button"
-            app:layout_constraintTop_toBottomOf="@id/dobLayout"
+            app:layout_constraintTop_toBottomOf="@id/passwordConfirmLayout"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />
 

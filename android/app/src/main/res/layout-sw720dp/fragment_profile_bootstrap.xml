@@ -85,8 +85,69 @@
                     android:textAlignment="viewStart"
                     android:focusable="false"
                     android:cursorVisible="false"
-                    android:nextFocusDown="@id/submitButton"
+                    android:nextFocusDown="@id/passwordField"
                     tools:hint="@string/bootstrap_dob_hint" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:id="@+id/passwordExplainer"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="@string/bootstrap_password_explainer"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textAlignment="viewStart"
+                android:visibility="gone"
+                app:layout_constraintTop_toBottomOf="@id/dobLayout"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/passwordLayout"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:hint="@string/bootstrap_password_label"
+                android:visibility="gone"
+                app:passwordToggleEnabled="true"
+                app:layout_constraintTop_toBottomOf="@id/passwordExplainer"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/passwordField"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textPassword"
+                    android:textAlignment="viewStart"
+                    android:imeOptions="actionNext"
+                    android:autofillHints="newPassword"
+                    android:nextFocusDown="@id/passwordConfirmField" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/passwordConfirmLayout"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:hint="@string/bootstrap_password_confirm_label"
+                android:visibility="gone"
+                app:passwordToggleEnabled="true"
+                app:layout_constraintTop_toBottomOf="@id/passwordLayout"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/passwordConfirmField"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textPassword"
+                    android:textAlignment="viewStart"
+                    android:imeOptions="actionDone"
+                    android:autofillHints="newPassword"
+                    android:nextFocusDown="@id/submitButton" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.button.MaterialButton
@@ -96,7 +157,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_lg"
                 android:text="@string/bootstrap_submit_button"
-                app:layout_constraintTop_toBottomOf="@id/dobLayout"
+                app:layout_constraintTop_toBottomOf="@id/passwordConfirmLayout"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent" />
 

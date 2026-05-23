@@ -4,6 +4,7 @@ import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.auth.AccountStatus
 import com.albunyaan.tube.auth.AgeIneligibleError
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,7 @@ class ProfileBootstrapViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: AccountRepository
+    private lateinit var firebaseAuth: FirebaseAuth
     private lateinit var viewModel: ProfileBootstrapViewModel
 
     @Before
@@ -32,7 +34,12 @@ class ProfileBootstrapViewModelTest {
         Dispatchers.setMain(dispatcher)
         repository = mock()
         whenever(repository.accountState).thenReturn(MutableStateFlow(AccountState.NotSignedIn))
-        viewModel = ProfileBootstrapViewModel(repository)
+        // Path B: ViewModel needs FirebaseAuth to call updatePassword when
+        // passwordRequired is true. None of the existing tests exercise
+        // that path (they all leave passwordRequired=false), so the mock
+        // only needs to satisfy the constructor.
+        firebaseAuth = mock()
+        viewModel = ProfileBootstrapViewModel(repository, firebaseAuth)
     }
 
     @After fun tearDown() { Dispatchers.resetMain() }
