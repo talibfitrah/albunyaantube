@@ -34,12 +34,14 @@ public class BulkSubmissionService {
     private final ExecutorService bulkPreviewExecutor;
     private final PublicContentCacheService publicContentCacheService;
     private final SortOrderService sortOrderService;
+    private final com.albunyaan.tube.repository.CategoryRepository categoryRepository;
 
     public BulkSubmissionService(YouTubeUrlParser parser, YouTubeGateway gateway,
                                   RegistryDuplicateChecker dedupe, RegistrySubmissionWriter writer,
                                   @Qualifier("bulkPreviewExecutor") ExecutorService bulkPreviewExecutor,
                                   PublicContentCacheService publicContentCacheService,
-                                  SortOrderService sortOrderService) {
+                                  SortOrderService sortOrderService,
+                                  com.albunyaan.tube.repository.CategoryRepository categoryRepository) {
         this.parser = parser;
         this.gateway = gateway;
         this.dedupe = dedupe;
@@ -47,6 +49,7 @@ public class BulkSubmissionService {
         this.bulkPreviewExecutor = bulkPreviewExecutor;
         this.publicContentCacheService = publicContentCacheService;
         this.sortOrderService = sortOrderService;
+        this.categoryRepository = categoryRepository;
     }
 
     public BulkPreviewResponse preview(BulkPreviewRequest req) {
@@ -133,6 +136,12 @@ public class BulkSubmissionService {
         // submitted. Not a full Firestore transaction, but closes the
         // sequential-submit race.
         RegistryDuplicateChecker.Batch lateBatch = dedupe.newBatch();
+        // Per-submit cache of category-id existence so a 25-row batch
+        // sharing the same categoryIds doesn't re-query the same IDs
+        // 25 times. Bounded by the SubmitRow max=10 cap × 25 rows = 250
+        // unique IDs worst case.
+        java.util.Set<String> validCategoryIds = new java.util.HashSet<>();
+        java.util.Set<String> invalidCategoryIds = new java.util.HashSet<>();
 
         for (SubmitRow row : req.rows()) {
             // Verify client-supplied metadata.youtubeId + detectedType
@@ -176,6 +185,45 @@ public class BulkSubmissionService {
                         row.rowIndex(), row.originalUrl(), dedupeErr.getMessage());
                 results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
                         SubmitStatus.FAILED, "INTERNAL_ERROR"));
+                failed++;
+                continue;
+            }
+
+            // Existence-validate each categoryId. Without this, a moderator
+            // could fan out (max 10 per row × 25 rows = 250) writes to
+            // arbitrary category docs via SortOrderService.addContentToCategory
+            // when status=APPROVED, or pollute the entity's categoryIds list
+            // with non-existent IDs when status=PENDING (later breaks the
+            // category filter in the admin UI).
+            String invalidCategoryId = null;
+            for (String cid : row.categoryIds()) {
+                if (validCategoryIds.contains(cid)) continue;
+                if (invalidCategoryIds.contains(cid)) {
+                    invalidCategoryId = cid;
+                    break;
+                }
+                try {
+                    if (categoryRepository.existsById(cid)) {
+                        validCategoryIds.add(cid);
+                    } else {
+                        invalidCategoryIds.add(cid);
+                        invalidCategoryId = cid;
+                        break;
+                    }
+                } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException ex) {
+                    log.warn("bulk-submit category existence check failed rowIndex={} categoryId={} reason={}",
+                            row.rowIndex(), cid, ex.getMessage());
+                    invalidCategoryId = cid;
+                    break;
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    invalidCategoryId = cid;
+                    break;
+                }
+            }
+            if (invalidCategoryId != null) {
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
+                        SubmitStatus.FAILED, "INVALID_CATEGORY"));
                 failed++;
                 continue;
             }

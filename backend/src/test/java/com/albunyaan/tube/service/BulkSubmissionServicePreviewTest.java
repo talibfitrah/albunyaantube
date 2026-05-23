@@ -34,7 +34,8 @@ class BulkSubmissionServicePreviewTest {
         svc = new BulkSubmissionService(parser, gateway, dedupe, null,
                 Executors.newFixedThreadPool(2),
                 mock(PublicContentCacheService.class),
-                mock(SortOrderService.class));
+                mock(SortOrderService.class),
+                mock(com.albunyaan.tube.repository.CategoryRepository.class));
     }
 
     @Test

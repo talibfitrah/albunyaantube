@@ -15,5 +15,8 @@ public record SubmitRow(
         /** Null when {@code detectedType} != VIDEO; STANDARD or LIVE otherwise. */
         VideoType videoType,
         @NotNull PreviewMetadata metadata,
-        @Size(min = 1) List<@NotBlank String> categoryIds
+        // Upper bound prevents a moderator from fanning out 25 rows × N
+        // categoryIds into N × 25 sortOrder writes per HTTP call (Firestore
+        // quota exhaustion). 10 matches typical single-add UI selection caps.
+        @Size(min = 1, max = 10) List<@NotBlank String> categoryIds
 ) {}

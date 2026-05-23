@@ -27,6 +27,7 @@ class BulkSubmissionServiceSubmitTest {
     private RegistrySubmissionWriter writer;
     private RegistryDuplicateChecker dedupe;
     private RegistryDuplicateChecker.Batch lateBatch;
+    private com.albunyaan.tube.repository.CategoryRepository categoryRepository;
     private BulkSubmissionService svc;
 
     @BeforeEach
@@ -38,6 +39,16 @@ class BulkSubmissionServiceSubmitTest {
         when(dedupe.newBatch()).thenReturn(lateBatch);
         when(lateBatch.findExisting(any(), any())).thenReturn(Optional.empty());
 
+        // Default: every categoryId looked up by the service exists.
+        // Individual tests override this to exercise the INVALID_CATEGORY path.
+        categoryRepository = mock(com.albunyaan.tube.repository.CategoryRepository.class);
+        try {
+            when(categoryRepository.existsById(any())).thenReturn(true);
+        } catch (Exception ignored) {
+            // mockito stub setup can't actually throw — the throws clause on existsById
+            // forces this checked-exception swallow in the test scaffold.
+        }
+
         svc = new BulkSubmissionService(
                 new YouTubeUrlParser(),                          // real parser for round-trip metadata validation
                 mock(YouTubeGateway.class),
@@ -45,7 +56,8 @@ class BulkSubmissionServiceSubmitTest {
                 writer,
                 Executors.newFixedThreadPool(2),
                 mock(PublicContentCacheService.class),
-                mock(SortOrderService.class));
+                mock(SortOrderService.class),
+                categoryRepository);
     }
 
     @Test
@@ -196,5 +208,56 @@ class BulkSubmissionServiceSubmitTest {
         verify(lateBatch).markAsExisting(YouTubeContentType.CHANNEL, CHANNEL_ID, "doc-c-1", "PENDING");
         // Writer called exactly once — the second row was rejected before write.
         verify(writer, times(1)).writeChannel(any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void invalidCategoryId_failsRow_withInvalidCategoryErrorCode() throws Exception {
+        when(categoryRepository.existsById("cat-real")).thenReturn(true);
+        when(categoryRepository.existsById("cat-fake")).thenReturn(false);
+
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
+                List.of("cat-real", "cat-fake"));   // mix of valid + invalid
+        var req = new BulkSubmitRequest(List.of(row), "PENDING");
+
+        var resp = svc.submit(req, "admin-uid", true);
+
+        assertEquals(0, resp.added());
+        assertEquals(1, resp.failed());
+        assertEquals(SubmitStatus.FAILED, resp.results().get(0).status());
+        assertEquals("INVALID_CATEGORY", resp.results().get(0).errorCode());
+        // Writer must not have been called when any categoryId is bogus —
+        // ensures the entity's categoryIds list never contains a phantom ID.
+        verify(writer, never()).writeChannel(any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void categoryExistenceCached_acrossRows_minimizesRepoCalls() throws Exception {
+        when(categoryRepository.existsById("cat-shared")).thenReturn(true);
+        when(writer.writeChannel(any(), any(), eq("PENDING"), eq("admin-uid"), eq(true)))
+                .thenReturn("doc-c-1", "doc-c-2", "doc-c-3");
+
+        // Three rows with three different channel IDs but all sharing the same categoryId.
+        // The first row's lookup populates the per-batch cache; rows 2-3 hit the cache.
+        var rows = List.of(
+                new SubmitRow(0, "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw",
+                        YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata("UCuAXFkgsw1L7xaCfnd5JJOw", "C0", null, null, null, null, null, null, null),
+                        List.of("cat-shared")),
+                new SubmitRow(1, "https://www.youtube.com/channel/UCABCDEFGHIJKLMNOPQRSTUv",
+                        YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata("UCABCDEFGHIJKLMNOPQRSTUv", "C1", null, null, null, null, null, null, null),
+                        List.of("cat-shared")),
+                new SubmitRow(2, "https://www.youtube.com/channel/UCZZZZZZZZZZZZZZZZZZZZZv",
+                        YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata("UCZZZZZZZZZZZZZZZZZZZZZv", "C2", null, null, null, null, null, null, null),
+                        List.of("cat-shared"))
+        );
+        svc.submit(new BulkSubmitRequest(rows, "PENDING"), "admin-uid", true);
+
+        // existsById queried exactly once for the shared categoryId — proves the
+        // per-submit dedupe cache works and a 25-row × 10-categoryId batch doesn't
+        // hammer Firestore with 250 redundant lookups.
+        verify(categoryRepository, times(1)).existsById("cat-shared");
     }
 }
