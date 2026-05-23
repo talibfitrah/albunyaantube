@@ -32,11 +32,27 @@ interface ContentService {
     suspend fun fetchSubcategories(parentId: String): List<Category>
 
     /**
-     * Returns true if the content is currently available (not archived, rejected,
-     * or otherwise hidden). Returns false on a 404 from the backend (the public
-     * detail endpoints use 404 to signal archive/unavailable state).
-     * Throws on transport errors so the caller can decide whether to fail-open
-     * (e.g., offline scenarios) or fail-closed.
+     * Playback availability gate. Returns:
+     *  - true on HTTP 2xx (id is registered AND APPROVED).
+     *  - true on HTTP 404 (NOT in registry — fail-open so NewPipe can resolve
+     *    downstream content like a channel-sourced video whose parent isn't
+     *    separately registered, or a PENDING channel whose review hasn't
+     *    landed yet; the admin curation gate runs separately via
+     *    [isInApprovedRegistry] for surfaces that need fail-closed semantics).
+     *  - false on HTTP 410 (admin-explicitly-blocked — hard stop, never
+     *    fail-open; backend uses 410 for REJECTED status and for
+     *    validationStatus = ARCHIVED/UNAVAILABLE).
+     *  - false on any other non-2xx (defence-in-depth).
+     *  - false on transport errors (treated as "can't verify → fail-closed
+     *    so we don't accidentally play admin-blocked content during a brief
+     *    network blip"). For surfaces that should fail-open on transport
+     *    errors instead (e.g. fully-offline playback of cached content), the
+     *    caller is responsible for its own error handling above this method.
+     *
+     * Pairs with [isInApprovedRegistry] (inverse semantics on 404):
+     * verifyAvailable gates PLAYBACK (must not play admin-blocked content);
+     * isInApprovedRegistry gates DISCOVERY-LINKS (must not surface
+     * uncurated lateral navigation).
      */
     suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean
 
