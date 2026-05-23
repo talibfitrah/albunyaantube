@@ -309,13 +309,28 @@ public class RegistryController {
             return ResponseEntity.notFound().build();
         }
 
+        // Validate status against VALID_STATUSES before persisting. Without
+        // this, an admin (or someone holding a compromised admin token)
+        // could PUT `status="PWNED"` or `""` and the row would escape
+        // status-based filters (getChannelsByStatus) + the public content
+        // pipeline. POST + bulk paths already validate; aligning PUT.
+        if (channel.getStatus() != null) {
+            String upperStatus = channel.getStatus().toUpperCase(java.util.Locale.ROOT);
+            if (!VALID_STATUSES.contains(upperStatus)
+                    && !"REQUEST_CHANGES".equals(upperStatus)) {
+                return ResponseEntity.badRequest().build();
+            }
+            channel.setStatus(upperStatus);
+        }
+
         // Update fields
         existing.setName(channel.getName());
         existing.setDescription(channel.getDescription());
         existing.setCategoryIds(channel.getCategoryIds());
         existing.setExcludedItems(channel.getExcludedItems());
         existing.setStatus(channel.getStatus());
-        existing.setThumbnailUrl(channel.getThumbnailUrl());
+        existing.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
+                .sanitizeThumbnailUrl(channel.getThumbnailUrl()));
         existing.setSubscribers(channel.getSubscribers());
         existing.setVideoCount(channel.getVideoCount());
 
@@ -598,13 +613,24 @@ public class RegistryController {
             return ResponseEntity.notFound().build();
         }
 
+        // See updateChannel — status allowlist validation.
+        if (playlist.getStatus() != null) {
+            String upperStatus = playlist.getStatus().toUpperCase(java.util.Locale.ROOT);
+            if (!VALID_STATUSES.contains(upperStatus)
+                    && !"REQUEST_CHANGES".equals(upperStatus)) {
+                return ResponseEntity.badRequest().build();
+            }
+            playlist.setStatus(upperStatus);
+        }
+
         // Update fields
         existing.setTitle(playlist.getTitle());
         existing.setDescription(playlist.getDescription());
         existing.setCategoryIds(playlist.getCategoryIds());
         existing.setExcludedVideoIds(playlist.getExcludedVideoIds());
         existing.setStatus(playlist.getStatus());
-        existing.setThumbnailUrl(playlist.getThumbnailUrl());
+        existing.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
+                .sanitizeThumbnailUrl(playlist.getThumbnailUrl()));
         existing.setItemCount(playlist.getItemCount());
 
         Playlist updated = playlistRepository.save(existing);
@@ -964,12 +990,23 @@ public class RegistryController {
             return ResponseEntity.notFound().build();
         }
 
+        // See updateChannel — status allowlist validation.
+        if (video.getStatus() != null) {
+            String upperStatus = video.getStatus().toUpperCase(java.util.Locale.ROOT);
+            if (!VALID_STATUSES.contains(upperStatus)
+                    && !"REQUEST_CHANGES".equals(upperStatus)) {
+                return ResponseEntity.badRequest().build();
+            }
+            video.setStatus(upperStatus);
+        }
+
         // Update fields
         existing.setTitle(video.getTitle());
         existing.setDescription(video.getDescription());
         existing.setCategoryIds(video.getCategoryIds());
         existing.setStatus(video.getStatus());
-        existing.setThumbnailUrl(video.getThumbnailUrl());
+        existing.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
+                .sanitizeThumbnailUrl(video.getThumbnailUrl()));
         existing.setDurationSeconds(video.getDurationSeconds());
         existing.setViewCount(video.getViewCount());
 

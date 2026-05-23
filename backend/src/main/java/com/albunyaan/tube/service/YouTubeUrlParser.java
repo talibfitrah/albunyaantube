@@ -36,7 +36,16 @@ public class YouTubeUrlParser {
     private static String sanitize(String raw) {
         if (raw == null) return "";
         return raw
-                .replaceAll("[\\u200B-\\u200F\\u202A-\\u202E\\u2060\\uFEFF]", "")
+                // Narrowed range matching RegistryController.ZW_BIDI_CONTROLS:
+                //   U+200B   ZWSP      invisible space, content spoofing
+                //   U+202A-E LRE/RLE/PDF/LRO/RLO bidi overrides, RTL/LTR hijack
+                //   U+2060   WJ        word joiner, invisible
+                //   U+FEFF   BOM       byte-order mark
+                // Excluded (legitimate Arabic/Persian + emoji ZWJ sequences):
+                //   U+200C ZWNJ, U+200D ZWJ, U+200E LRM, U+200F RLM
+                // The prior broader range [​-‏‪-‮⁠﻿]
+                // corrupted Arabic URLs (an Arabic-first app).
+                .replaceAll("[\\u200B\\u202A-\\u202E\\u2060\\uFEFF]", "")
                 .trim();
     }
 
@@ -51,6 +60,16 @@ public class YouTubeUrlParser {
             return YouTubeUrlParseResult.error(PreviewErrorCode.NOT_YOUTUBE_URL);
         }
 
+        // Reject non-http(s) schemes. Without this, `ftp://www.youtube.com/...`,
+        // `javascript://www.youtube.com/...`, etc. pass to canonicalWatchUrl which
+        // rewrites them to https — safe for the canonical URL but the originalUrl
+        // is stored verbatim and rendered in the admin UI, so unbounded schemes
+        // leaked an attack-surface affordance.
+        String scheme = uri.getScheme();
+        if (scheme == null
+                || !(scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("http"))) {
+            return YouTubeUrlParseResult.error(PreviewErrorCode.NOT_YOUTUBE_URL);
+        }
         String host = uri.getHost();
         if (host == null) return YouTubeUrlParseResult.error(PreviewErrorCode.NOT_YOUTUBE_URL);
         host = host.toLowerCase(java.util.Locale.ROOT);
