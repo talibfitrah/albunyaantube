@@ -59,8 +59,9 @@ describe('BulkPreviewTable', () => {
     ]
     const wrapper = mountTable()
     const small = wrapper.find('small').text()
-    // 2 valid (OK + DUPLICATE_REJECTED), 1 duplicate, 1 error
-    expect(small).toContain('2')
+    // 1 valid (only OK — cubic R1 fix removed DUPLICATE_REJECTED from
+    // valid counting since runSubmit drops them), 2 duplicate
+    // (DUPLICATE + DUPLICATE_REJECTED), 1 error.
     expect(small).toContain('1')
   })
 
@@ -91,12 +92,16 @@ describe('BulkPreviewTable', () => {
     expect(submitBtn!.attributes('disabled')).toBeUndefined()
   })
 
-  it('DUPLICATE_REJECTED is counted as valid', () => {
+  it('DUPLICATE_REJECTED does NOT count as valid (Submit disabled)', () => {
+    // Cubic R1 finding: counting DUPLICATE_REJECTED as valid enabled
+    // the Submit button for a batch that runSubmit then refused as "No
+    // valid rows to submit" — stuck UX state. Re-submission of rejected
+    // items must go through the admin approval queue, not the bulk path.
     const store = useBulkSubmissionStore()
     store.previewRows = [{ ...okRow(0), status: 'DUPLICATE_REJECTED' }]
     const wrapper = mountTable()
     const submitBtn = wrapper.findAll('button').find((b) => b.text() === 'Submit')
-    expect(submitBtn!.attributes('disabled')).toBeUndefined()
+    expect(submitBtn!.attributes('disabled')).toBeDefined()
   })
 
   it('back button sets phase to INPUT', async () => {

@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { i18n } from '../main'
 import type { components } from '../generated/api/schema'
 import { bulkSubmissionService } from '../services/bulkSubmissionService'
 
@@ -47,7 +48,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
   actions: {
     async runPreview() {
       if (this.parsedUrls.length === 0 || this.defaultCategoryIds.length === 0) {
-        this.error = 'URLs and at least one default category required'
+        this.error = i18n.global.t('contentSearch.bulk.input.urlsAndCategoriesRequired')
         return
       }
       this.phase = 'LOADING'
@@ -84,10 +85,14 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       // the existing doc back to PENDING with proper provenance.
       const submittable = this.previewRows.filter((r) => r.status === 'OK')
       if (submittable.length === 0) {
-        this.error = 'No valid rows to submit'
+        this.error = i18n.global.t('contentSearch.bulk.preview.noValidRowsToSubmit')
         return
       }
       this.phase = 'LOADING'
+      // Clear stale error from a prior failed submit so the RESULT phase
+      // doesn't carry forward a misleading message when the next attempt
+      // succeeds.
+      this.error = null
       const rows: SubmitRow[] = submittable.map((r) => ({
         rowIndex: r.rowIndex!,
         originalUrl: r.originalUrl!,

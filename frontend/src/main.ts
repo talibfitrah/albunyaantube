@@ -16,7 +16,10 @@ app.use(pinia);
 const preferencesStore = usePreferencesStore(pinia);
 const startingLocale = preferencesStore.initialize();
 
-const i18n = createI18n({
+// Exported so non-component code (e.g. Pinia stores) can call
+// `i18n.global.t(key)` directly without taking a `useI18n()` setup
+// dependency.
+export const i18n = createI18n({
   legacy: false,
   locale: startingLocale,
   fallbackLocale: 'en',

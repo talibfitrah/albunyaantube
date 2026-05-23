@@ -8,7 +8,13 @@ const { t } = useI18n()
 const store = useBulkSubmissionStore()
 
 const counts = computed(() => ({
-  valid: store.previewRows.filter((r) => r.status === 'OK' || r.status === 'DUPLICATE_REJECTED')
+  // Count only OK rows — DUPLICATE_REJECTED rows are dropped from the
+  // submittable set in bulkSubmissionStore.runSubmit (re-using a rejected
+  // youtubeId would create a second Firestore doc; admins must re-approve
+  // via the queue UI). Counting them as "valid" enabled the Submit button
+  // for batches that contained only DUPLICATE_REJECTED rows, which then
+  // failed with "no valid rows to submit" on click — a stuck UX state.
+  valid: store.previewRows.filter((r) => r.status === 'OK')
     .length,
   duplicate: store.previewRows.filter((r) => r.status === 'DUPLICATE').length,
   error: store.previewRows.filter((r) => r.status === 'ERROR').length,

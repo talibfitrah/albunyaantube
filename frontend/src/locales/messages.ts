@@ -151,8 +151,10 @@ export const messages = {
           categoriesRequired: 'Select at least one default category',
           formatHelpButton: 'File format guide',
           parseButton: 'Preview',
+          urlsAndCategoriesRequired: 'URLs and at least one default category required',
         },
         preview: {
+          noValidRowsToSubmit: 'No valid rows to submit',
           validCount: 'valid',
           duplicateCount: 'duplicate',
           errorCount: 'error',
@@ -1705,8 +1707,10 @@ export const messages = {
           categoriesRequired: 'اختر فئة افتراضية واحدة على الأقل',
           formatHelpButton: 'دليل تنسيق الملف',
           parseButton: 'معاينة',
+          urlsAndCategoriesRequired: 'الروابط وفئة افتراضية واحدة على الأقل مطلوبة',
         },
         preview: {
+          noValidRowsToSubmit: 'لا توجد صفوف صالحة للإرسال',
           validCount: 'صالح',
           duplicateCount: 'مكرر',
           errorCount: 'خطأ',
@@ -3040,8 +3044,10 @@ export const messages = {
           categoriesRequired: 'Selecteer minimaal één standaardcategorie',
           formatHelpButton: 'Bestandsformaatgids',
           parseButton: 'Voorbeeld bekijken',
+          urlsAndCategoriesRequired: 'URLs en minimaal één standaardcategorie zijn vereist',
         },
         preview: {
+          noValidRowsToSubmit: 'Geen geldige rijen om in te dienen',
           validCount: 'geldig',
           duplicateCount: 'duplicaat',
           errorCount: 'fout',
