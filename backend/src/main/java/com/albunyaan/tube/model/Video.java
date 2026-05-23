@@ -41,7 +41,7 @@ public class Video {
     private Integer durationSeconds;
     private Long viewCount;
     /**
-     * BULK-01: STANDARD (regular video, default) or LIVE (livestream).
+     * STANDARD (regular video, default) or LIVE (livestream).
      * Null on legacy docs; getter returns null and consumers treat null as STANDARD.
      */
     private VideoType videoType;

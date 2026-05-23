@@ -1,6 +1,6 @@
 package com.albunyaan.tube.dto.registry;
 
-/** BULK-01 (T3) — per-row outcome of bulk submit. */
+/** Per-row outcome of bulk submit. */
 public record SubmitResult(
         int rowIndex,
         String originalUrl,

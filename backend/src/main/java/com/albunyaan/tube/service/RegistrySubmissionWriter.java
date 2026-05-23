@@ -17,8 +17,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 /**
- * BULK-01 (T6) — single source of truth for "write a fresh registry doc from
- * NewPipe-extracted preview metadata + admin-resolved categories + actor role".
+ * Single source of truth for "write a fresh registry doc from
+ * newPipe-extracted preview metadata + admin-resolved categories + actor role".
  *
  * <p>Consumed by the bulk-submit pipeline (T7/T8). For the legacy single-add
  * endpoints in {@link com.albunyaan.tube.controller.RegistryController}, the
@@ -38,7 +38,7 @@ import java.util.function.Consumer;
 public class RegistrySubmissionWriter {
 
     /**
-     * BULK-01 security (Group D) — YouTube CDN allowlist for thumbnail URLs.
+     * YouTube CDN allowlist for thumbnail URLs.
      * Client-supplied metadata.thumbnailUrl is not re-fetched by the backend, so a
      * crafted submit body could point at any host (XSS via SVG, pixel-tracking,
      * cookie-stealing endpoints). Restrict to known-good YouTube/Google image CDNs.
@@ -50,7 +50,7 @@ public class RegistrySubmissionWriter {
     );
 
     /**
-     * BULK-01 security: reject thumbnailUrl pointing to non-YouTube CDN hosts.
+     * Reject thumbnailUrl pointing to non-YouTube CDN hosts.
      * Returns null (no thumbnail) for unsafe URLs; the UI falls back to a placeholder.
      */
     private static String sanitizeThumbnailUrl(String raw) {
@@ -116,7 +116,7 @@ public class RegistrySubmissionWriter {
      * <p>Note: {@code meta.channelId()} and {@code meta.channelName()} are
      * carried in the metadata for downstream display but are not stored on the
      * {@link Playlist} entity (no setters exist) — this matches the existing
-     * Firestore schema.
+     * firestore schema.
      */
     public String writePlaylist(PreviewMetadata meta,
                                 List<String> categoryIds,

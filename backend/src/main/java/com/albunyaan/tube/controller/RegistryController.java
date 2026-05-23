@@ -30,7 +30,7 @@ import java.util.concurrent.ExecutionException;
 /**
  * BACKEND-REG-01: Registry Management Controller
  *
- * Endpoints for managing channels and playlists in the registry.
+ * endpoints for managing channels and playlists in the registry.
  * Provides CRUD operations for the master list of approved content.
  */
 @RestController
@@ -1081,11 +1081,11 @@ public class RegistryController {
     }
 
     // -------------------------------------------------------------------------
-    // BULK-01 (T9) — bulk preview + submit
+    // bulk preview + submit
     // -------------------------------------------------------------------------
 
     /**
-     * BULK-01 (T9) — bulk preview. Validates ≤25 URLs, fans out NewPipe metadata fetches,
+     * Bulk preview. Validates ≤25 URLs, fans out NewPipe metadata fetches,
      * returns one row per URL with detected type + metadata + status (OK / DUPLICATE / ERROR).
      */
     @PostMapping("/bulk/preview")
@@ -1096,7 +1096,7 @@ public class RegistryController {
     }
 
     /**
-     * BULK-01 (T9) — bulk submit. Takes the OK rows from a prior preview + resolved categories,
+     * Bulk submit. Takes the OK rows from a prior preview + resolved categories,
      * writes Firestore docs via {@link com.albunyaan.tube.service.RegistrySubmissionWriter},
      * returns per-row results.
      */

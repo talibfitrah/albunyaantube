@@ -6,9 +6,7 @@ type BulkPreviewResponse = components['schemas']['BulkPreviewResponse']
 type BulkSubmitRequest   = components['schemas']['BulkSubmitRequest']
 type BulkSubmitResponse  = components['schemas']['BulkSubmitResponse']
 
-/**
- * BULK-01 (T13) — API client for the bulk submission endpoints.
- */
+/** API client for the bulk submission endpoints. */
 export const bulkSubmissionService = {
   async previewBulk(req: BulkPreviewRequest): Promise<BulkPreviewResponse> {
     const { data } = await apiClient.post<BulkPreviewResponse>('/api/admin/registry/bulk/preview', req)

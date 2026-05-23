@@ -10,7 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * BULK-01 (T2) — regex-only YouTube URL classifier. No network calls.
+ * Regex-only YouTube URL classifier. No network calls.
  * NewPipe handle/c/user → UC... resolution happens later in {@link YouTubeGateway}.
  */
 @Service
@@ -65,7 +65,7 @@ public class YouTubeUrlParser {
         if (host.equals("youtu.be")) {
             String id = path.replaceFirst("^/", "").replaceFirst("/.*$", "");
             if (id.matches("[a-zA-Z0-9_-]{11}")) {
-                return YouTubeUrlParseResult.ok(YouTubeContentType.VIDEO, id, canonicalWatchUrl(id), false);
+                return YouTubeUrlParseResult.ok(YouTubeContentType.VIDEO, id, canonicalWatchUrl(id));
             }
             return YouTubeUrlParseResult.error(PreviewErrorCode.NOT_YOUTUBE_URL);
         }
@@ -76,14 +76,14 @@ public class YouTubeUrlParser {
         Matcher liveM = LIVE_PATH.matcher(path);
         if (liveM.matches()) {
             String id = liveM.group(1);
-            return YouTubeUrlParseResult.ok(YouTubeContentType.VIDEO, id, canonicalWatchUrl(id), false);
+            return YouTubeUrlParseResult.ok(YouTubeContentType.VIDEO, id, canonicalWatchUrl(id));
         }
 
         if (path.equals("/watch") || path.equals("/watch/")) {
             Matcher vM = WATCH_V_PARAM.matcher(rawQuery);
             if (vM.find()) {
                 String id = vM.group(1);
-                return YouTubeUrlParseResult.ok(YouTubeContentType.VIDEO, id, canonicalWatchUrl(id), false);
+                return YouTubeUrlParseResult.ok(YouTubeContentType.VIDEO, id, canonicalWatchUrl(id));
             }
             return YouTubeUrlParseResult.error(PreviewErrorCode.NOT_YOUTUBE_URL);
         }
@@ -92,7 +92,7 @@ public class YouTubeUrlParser {
             Matcher pM = PLAYLIST_LIST_PARAM.matcher(rawQuery);
             if (pM.find()) {
                 String id = pM.group(1);
-                return YouTubeUrlParseResult.ok(YouTubeContentType.PLAYLIST, id, canonicalPlaylistUrl(id), false);
+                return YouTubeUrlParseResult.ok(YouTubeContentType.PLAYLIST, id, canonicalPlaylistUrl(id));
             }
             return YouTubeUrlParseResult.error(PreviewErrorCode.UNSUPPORTED_TYPE);
         }
@@ -100,10 +100,10 @@ public class YouTubeUrlParser {
         Matcher chM = CHANNEL_UC_PATH.matcher(path);
         if (chM.matches()) {
             String id = chM.group(1);
-            return YouTubeUrlParseResult.ok(YouTubeContentType.CHANNEL, id, canonicalChannelUrl(id), false);
+            return YouTubeUrlParseResult.ok(YouTubeContentType.CHANNEL, id, canonicalChannelUrl(id));
         }
 
-        // BULK-01 security (Group E): handle/c/user URLs need NewPipe to resolve
+        // handle/c/user URLs need NewPipe to resolve
         // them to a canonical UC... ID before dedupe + gateway lookup will work.
         // Without that resolution path: (a) dedupe.findByYoutubeId("@handle")
         // misses the real UC record, allowing the same channel to be re-submitted;

@@ -34,7 +34,7 @@ class BulkSubmissionServiceSubmitTest {
         writer = mock(RegistrySubmissionWriter.class);
         dedupe = mock(RegistryDuplicateChecker.class);
         lateBatch = mock(RegistryDuplicateChecker.Batch.class);
-        // BULK-01 (Group G) late-dedupe always returns "no existing" for these tests
+        // late-dedupe always returns "no existing" for these tests
         when(dedupe.newBatch()).thenReturn(lateBatch);
         when(lateBatch.findExisting(any(), any())).thenReturn(Optional.empty());
 
@@ -114,7 +114,7 @@ class BulkSubmissionServiceSubmitTest {
                 List.of("cat-1"));
         var req = new BulkSubmitRequest(List.of(row), "REJECTED");
 
-        // BULK-01 (Group B): REJECTED must not be settable via bulk path.
+        // REJECTED must not be settable via bulk path.
         assertThrows(org.springframework.web.server.ResponseStatusException.class,
                 () -> svc.submit(req, "admin-uid", true));
     }

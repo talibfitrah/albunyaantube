@@ -5,7 +5,7 @@ import com.albunyaan.tube.dto.registry.PreviewMetadata;
 import com.albunyaan.tube.model.VideoType;
 
 /**
- * BULK-01 (T5) — result of fetching one URL's metadata through NewPipe.
+ * Result of fetching one URL's metadata through NewPipe.
  * Either {@code metadata} is non-null (success) or {@code errorCode} is non-null (failure).
  */
 public record PreviewFetchResult(

@@ -16,7 +16,6 @@ interface PreviewRowDraft extends PreviewRow {
 interface State {
   phase: Phase
   pastedUrls: string
-  uploadedFileName: string | null
   parsedUrls: string[]
   defaultCategoryIds: string[]
   previewRows: PreviewRowDraft[]
@@ -25,7 +24,7 @@ interface State {
 }
 
 /**
- * BULK-01 (T14) — Pinia state machine for the bulk URL submission flow.
+ * Pinia state machine for the bulk URL submission flow.
  *
  * Phase transitions:
  *   INPUT → LOADING → PREVIEW   (runPreview success)
@@ -38,7 +37,6 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
   state: (): State => ({
     phase: 'INPUT',
     pastedUrls: '',
-    uploadedFileName: null,
     parsedUrls: [],
     defaultCategoryIds: [],
     previewRows: [],
@@ -77,8 +75,8 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
     },
 
     async runSubmit() {
-      // BULK-01 security (Group F): DUPLICATE_REJECTED rows are dropped from
-      // submittable. Reusing a previously-rejected youtubeId via the bulk path
+      // DUPLICATE_REJECTED rows are dropped from submittable.
+      // Reusing a previously-rejected youtubeId via the bulk path
       // would create a second Firestore doc (the writer always inserts fresh,
       // never updates the existing rejected doc), and the legacy rejection
       // metadata + audit trail would be silently shadowed. Resubmission of
@@ -111,7 +109,6 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
     reset() {
       this.phase = 'INPUT'
       this.pastedUrls = ''
-      this.uploadedFileName = null
       this.parsedUrls = []
       this.defaultCategoryIds = []
       this.previewRows = []

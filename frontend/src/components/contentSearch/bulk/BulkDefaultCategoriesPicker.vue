@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useCategoryPicker } from './useCategoryPicker'
+import { useCategoryPicker, toggleCategoryId, categoryDisplayName } from './useCategoryPicker'
 
 const { t } = useI18n()
 
@@ -12,14 +12,7 @@ const { flatCategories, isLoading, loadError, load } = useCategoryPicker()
 onMounted(load)
 
 function toggle(id: string) {
-  const next = props.modelValue.includes(id)
-    ? props.modelValue.filter((x) => x !== id)
-    : [...props.modelValue, id]
-  emit('update:modelValue', next)
-}
-
-function displayName(cat: { id: string; name: string }): string {
-  return cat.name || cat.id
+  emit('update:modelValue', toggleCategoryId(props.modelValue, id))
 }
 </script>
 
@@ -47,7 +40,7 @@ function displayName(cat: { id: string; name: string }): string {
         :class="modelValue.includes(cat.id) ? 'btn-primary' : 'btn-outline-secondary'"
         @click="toggle(cat.id)"
       >
-        {{ displayName(cat) }}
+        {{ categoryDisplayName(cat) }}
       </button>
       <span v-if="flatCategories.length === 0" class="text-muted small">
         {{ t('contentSearch.bulk.input.categoriesEmpty') }}

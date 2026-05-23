@@ -88,7 +88,7 @@ export async function parseJson(file: File): Promise<string[]> {
 }
 
 /**
- * BULK-01 (T12) — Excel parser is lazy-loaded so SheetJS (~600 KB) doesn't bloat the main bundle.
+ * Excel parser is lazy-loaded so SheetJS (~600 KB) doesn't bloat the main bundle.
  * Only loads when the admin actually uses Excel upload.
  */
 export async function parseExcel(file: File): Promise<string[]> {
