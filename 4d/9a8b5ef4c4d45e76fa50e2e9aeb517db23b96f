@@ -1,0 +1,30 @@
+frontend/tests/bulkFileParsers.spec.ts
+  s_1a004b5f0406e1::t_a01ba9bb1c2a1a 1-78
+frontend/package-lock.json
+  ai_agent 3,9,13,18,27,2222-2231,2599-2607,2842-2854,2985-2993,3052-3063,3654-3662,4899-4904,5560-5571,7452-7469,7577-7595
+frontend/src/utils/bulkFileParsers.ts
+  s_1a004b5f0406e1::t_1b384befb515cc 73
+  s_1a004b5f0406e1::t_62f70510cd1bb2 97
+  s_1a004b5f0406e1::t_34fae64592ec7f 1-12,34-35,37-72,74-96,98-125
+  s_1a004b5f0406e1::t_422f3cddfbf694 13-33,36
+frontend/package.json
+  s_1a004b5f0406e1::t_0ed8072b53b91c 20,25,34
+frontend/src/views/BulkImportExportView.vue
+  s_1a004b5f0406e1::t_b6449d3d2eeaad 526
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "4d9a8b5ef4c4d45e76fa50e2e9aeb517db23b96f",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
