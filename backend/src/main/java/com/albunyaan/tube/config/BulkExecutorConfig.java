@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Shared 5-thread pool for bulk preview metadata fan-out.
  * Singleton bean; lifecycle managed by Spring.
  *
- * <p>named daemon threads so a thread-dump during
+ * <p>Named daemon threads so a thread-dump during
  * incident triage identifies bulk-preview work distinctly, and so a hung pool
  * doesn't block JVM shutdown.
  */

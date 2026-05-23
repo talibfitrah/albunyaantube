@@ -39,7 +39,7 @@ class BulkSubmissionServiceSubmitTest {
         when(lateBatch.findExisting(any(), any())).thenReturn(Optional.empty());
 
         svc = new BulkSubmissionService(
-                new YouTubeUrlParser(),                          // real parser for Group C round-trip validation
+                new YouTubeUrlParser(),                          // real parser for round-trip metadata validation
                 mock(YouTubeGateway.class),
                 dedupe,
                 writer,
@@ -121,7 +121,7 @@ class BulkSubmissionServiceSubmitTest {
 
     @Test
     void metadataYoutubeIdMismatch_failsRow_withYoutubeIdMismatch() {
-        // URL parses to CHANNEL_ID, but metadata declares a different youtubeId — Group C tampering check
+        // URL parses to CHANNEL_ID, but metadata declares a different youtubeId — tampering check
         var tamperedRow = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
                 new PreviewMetadata("UCevilevilevilevilevilev", "Ch", null, null, null, null, null, null, null),
                 List.of("cat-1"));
@@ -134,7 +134,7 @@ class BulkSubmissionServiceSubmitTest {
 
     @Test
     void detectedTypeMismatch_failsRow_withTypeMismatch() {
-        // URL parses to CHANNEL but row claims VIDEO — Group C type-mismatch check
+        // URL parses to CHANNEL but row claims VIDEO — type-mismatch check
         var tamperedRow = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.VIDEO, VideoType.STANDARD,
                 new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
                 List.of("cat-1"));

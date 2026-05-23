@@ -18,9 +18,9 @@ import java.util.function.Consumer;
 
 /**
  * Single source of truth for "write a fresh registry doc from
- * newPipe-extracted preview metadata + admin-resolved categories + actor role".
+ * NewPipe-extracted preview metadata + admin-resolved categories + actor role".
  *
- * <p>Consumed by the bulk-submit pipeline (T7/T8). For the legacy single-add
+ * <p>Consumed by the bulk-submit pipeline. For the legacy single-add
  * endpoints in {@link com.albunyaan.tube.controller.RegistryController}, the
  * controller-level handlers continue to manage their own entity assembly because
  * the request body carries fields beyond what {@link PreviewMetadata} models
@@ -116,7 +116,7 @@ public class RegistrySubmissionWriter {
      * <p>Note: {@code meta.channelId()} and {@code meta.channelName()} are
      * carried in the metadata for downstream display but are not stored on the
      * {@link Playlist} entity (no setters exist) — this matches the existing
-     * firestore schema.
+     * Firestore schema.
      */
     public String writePlaylist(PreviewMetadata meta,
                                 List<String> categoryIds,

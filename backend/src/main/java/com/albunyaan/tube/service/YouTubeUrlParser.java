@@ -109,7 +109,7 @@ public class YouTubeUrlParser {
         // misses the real UC record, allowing the same channel to be re-submitted;
         // (b) gateway.fetchChannelInfo("@handle") fails (the gateway expects
         // a UC ID and falls back to a malformed URL). Until the gateway can
-        // resolve from URL (tracked in plan-doc follow-up Group E full impl),
+        // resolve from URL (tracked in plan-doc follow-up),
         // reject these URLs with UNSUPPORTED_HANDLE so the moderator knows
         // to paste the /channel/UC... canonical form.
         if (HANDLE_PATH.matcher(path).matches()

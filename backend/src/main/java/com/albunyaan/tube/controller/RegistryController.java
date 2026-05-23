@@ -30,7 +30,7 @@ import java.util.concurrent.ExecutionException;
 /**
  * BACKEND-REG-01: Registry Management Controller
  *
- * endpoints for managing channels and playlists in the registry.
+ * Endpoints for managing channels and playlists in the registry.
  * Provides CRUD operations for the master list of approved content.
  */
 @RestController

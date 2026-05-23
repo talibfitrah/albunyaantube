@@ -51,16 +51,16 @@ import java.util.regex.Pattern;
 /**
  * P2-T3: YouTube Gateway
  *
- * low-level abstraction over NewPipeExtractor that shields callers from
+ * Low-level abstraction over NewPipeExtractor that shields callers from
  * library-specific details and version differences.
  *
- * this class:
+ * This class:
  * - Manages the StreamingService and link handler factories
  * - Provides direct access to NewPipe objects (ChannelInfo, PlaylistInfo, etc.)
  * - Handles pagination encoding/decoding
  * - Manages the executor service for batch operations
  *
- * does NOT:
+ * Does NOT:
  * - Apply caching (handled by orchestrators)
  * - Map to DTOs (handled by orchestrators)
  * - Apply business logic
@@ -145,10 +145,10 @@ public class YouTubeGateway {
      * Check if circuit breaker allows requests.
      * Throws IOException if circuit is open or probe already in progress.
      *
-     * when in HALF_OPEN state, only ONE request is allowed to proceed as the probe.
+     * When in HALF_OPEN state, only ONE request is allowed to proceed as the probe.
      * This method atomically acquires the probe permit to ensure single-probe semantics.
      *
-     * logic flow:
+     * Logic flow:
      * 1. Call isOpen() first - handles OPEN state cooldown and transitions OPEN→HALF_OPEN
      * 2. If isOpen() returns true:
      *    - If state is HALF_OPEN, it means a probe is already in progress → specific message
@@ -287,7 +287,7 @@ public class YouTubeGateway {
     /**
      * Fetch the initial page for a search extractor.
      *
-     * intentionally does NOT check the validation circuit breaker — that breaker
+     * Intentionally does NOT check the validation circuit breaker — that breaker
      * governs background batch jobs (channel/video/playlist validation). Blocking
      * interactive moderator search because a nightly validation run hit a rate limit
      * is a poor trade-off. Rate-limit errors from search still get recorded via
@@ -308,7 +308,7 @@ public class YouTubeGateway {
     /**
      * Get a specific page from a search extractor (pagination).
      *
-     * same reasoning as {@link #fetchSearchPage}: no circuit-breaker check for
+     * Same reasoning as {@link #fetchSearchPage}: no circuit-breaker check for
      * interactive search. Rate-limit errors are still recorded.
      */
     public ListExtractor.InfoItemsPage<InfoItem> getSearchPage(SearchExtractor extractor, Page page)
@@ -351,8 +351,8 @@ public class YouTubeGateway {
     /**
      * Get channel URL from channel ID
      *
-     * note: We use /channel/ format directly because NewPipeExtractor's
-     * youtubeChannelLinkHandlerFactory.getUrl() incorrectly generates /c/ URLs
+     * Note: we use /channel/ format directly because NewPipeExtractor's
+     * YoutubeChannelLinkHandlerFactory.getUrl() incorrectly generates /c/ URLs
      * for channel IDs (UCxxxx), which YouTube's API rejects with 404.
      */
     public String getChannelUrl(String channelId) throws ExtractionException {
