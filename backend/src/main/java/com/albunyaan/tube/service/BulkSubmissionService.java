@@ -278,6 +278,13 @@ public class BulkSubmissionService {
             // path (sequential with the dedupe + write). Caller should
             // expect 25-row submits to take ~30-60s. Parallelising via
             // bulkPreviewExecutor is a follow-up optimisation.
+            //
+            // Latent risk (Stage 6 finding F2, deferred): unlike preview
+            // there is no global batch timeout here, so a slow/hung NewPipe
+            // can pin the Tomcat thread for the worst-case row × per-call-
+            // timeout product. Per-uid rate limiter (50/24h) dampens this,
+            // but a parallel-submit refactor should add a batch cap mirroring
+            // preview's 180s allOf().get(...).
             PreviewFetchResult authoritative;
             try {
                 authoritative = gateway.fetchByDetectedType(

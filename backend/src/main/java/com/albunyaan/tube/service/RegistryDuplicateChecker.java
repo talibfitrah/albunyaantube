@@ -69,9 +69,19 @@ public class RegistryDuplicateChecker {
          * in the same batch return it as a duplicate. Closes the intra-batch race where two
          * rows with the same {@code (type, youtubeId)} both passed the initial lookup
          * (memoized empty Optional) and both wrote a Firestore doc.
+         *
+         * <p>Uses {@code compute} (not {@code put}) so a parallel
+         * {@link #findExisting}'s in-flight {@code computeIfAbsent} for the same key
+         * cannot land after this call and clobber the marker with
+         * {@code Optional.empty()}. Today's only caller is the
+         * single-threaded BulkSubmissionService.submit row loop where the
+         * race window is zero, but the {@code compute} form makes the API
+         * contract match the thread-safety claim in the class javadoc so a
+         * future parallel-submit refactor won't silently regress dedupe.
          */
         public void markAsExisting(YouTubeContentType type, String youtubeId, String registryId, String status) {
-            cache.put(cacheKey(type, youtubeId), Optional.of(new ExistingMatch(registryId, status)));
+            Optional<ExistingMatch> marker = Optional.of(new ExistingMatch(registryId, status));
+            cache.compute(cacheKey(type, youtubeId), (k, prev) -> marker);
         }
 
         private Optional<ExistingMatch> queryOnce(YouTubeContentType type, String youtubeId) {
