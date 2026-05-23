@@ -1203,11 +1203,19 @@ class MeFeedRepository @Inject constructor(
             if (BuildConfig.DEBUG) {
                 Log.w(TAG, "refreshSinglePlaylist(${playlist.playlistId}): timeout")
             }
-        } catch (t: Throwable) {
+        } catch (e: Exception) {
+            // Narrowed from `Throwable` to `Exception` (cubic R1 finding):
+            // Throwable would swallow `Error` subclasses (OutOfMemoryError,
+            // StackOverflowError, LinkageError) that should propagate up
+            // and bring the process down. Inside async { ... } an Error
+            // masquerading as a per-playlist failure can corrupt JVM
+            // state without surfacing. `Exception` covers the legitimate
+            // per-playlist failure modes (IOException, ParsingException,
+            // NewPipe extraction errors) while letting Errors bubble.
             if (BuildConfig.DEBUG) {
                 Log.w(
                     TAG,
-                    "refreshSinglePlaylist(${playlist.playlistId}): failed — ${t.message}"
+                    "refreshSinglePlaylist(${playlist.playlistId}): failed — ${e.message}"
                 )
             }
         }
