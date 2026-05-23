@@ -1,0 +1,32 @@
+frontend/src/components/contentSearch/bulk/BulkDefaultCategoriesPicker.vue
+  s_1a004b5f0406e1::t_8c7b7c0373408e 1-91
+frontend/tests/BulkInputView.spec.ts
+  s_1a004b5f0406e1::t_784716d085d904 1-2,4-6,8-25,29,31-38,40-127
+  s_1a004b5f0406e1::t_c40d51e2dd13fb 3,7,26-28,30,39
+frontend/src/components/contentSearch/bulk/BulkFileDropzone.vue
+  s_1a004b5f0406e1::t_44f1997907e509 1-68
+frontend/src/components/contentSearch/bulk/BulkUrlPasteField.vue
+  s_1a004b5f0406e1::t_9b21bb84471ebe 1-34
+frontend/src/components/contentSearch/bulk/BulkInputView.vue
+  s_1a004b5f0406e1::t_00adc2fe56bb4c 1-85
+frontend/src/locales/messages.ts
+  s_1a004b5f0406e1::t_51a5b86b732769 2921-2939
+  s_1a004b5f0406e1::t_92b287b8691b7e 1637-1655
+  s_1a004b5f0406e1::t_51d89b50ff82e0 134-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "10455adff62c3ccd136851866b1ffe45da11fe7b",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
