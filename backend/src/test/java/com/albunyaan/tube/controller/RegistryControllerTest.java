@@ -1030,6 +1030,28 @@ class RegistryControllerTest {
     }
 
     @Test
+    void addChannel_thumbnailUrl_withUserinfo_nulledBeforeSave() throws Exception {
+        // Cubic R3 finding #8: `https://attacker@i.ytimg.com/...` has
+        // URI.getHost() == "i.ytimg.com" which passes the allowlist, but
+        // userinfo gets persisted into Firestore and rendered to admins
+        // in the registry UI. Browser ignores userinfo on <img src> so
+        // SSRF/exfil is benign at fetch time — purely a data-hygiene fix.
+        Channel newChannel = new Channel("UC-tn-userinfo");
+        newChannel.setName("Tn Userinfo");
+        newChannel.setThumbnailUrl("https://attacker.example@i.ytimg.com/vi/x/hqdefault.jpg");
+        when(channelRepository.findByYoutubeId("UC-tn-userinfo")).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        registryController.addChannel(newChannel, adminUser);
+
+        // Even though i.ytimg.com is on the allowlist, the userinfo
+        // component should disqualify the URL — the sanitiser returns null
+        // so the stored Channel doc never carries the attacker host.
+        assertNull(newChannel.getThumbnailUrl(),
+                "URI with userinfo must be nulled — userinfo persists into Firestore otherwise");
+    }
+
+    @Test
     void addChannel_thumbnailUrl_rejectedByAllowlist_nulledBeforeSave() throws Exception {
         // Single-add must enforce the same thumbnail-host allowlist as the
         // bulk path. An attacker-hosted thumbnailUrl (or any host outside

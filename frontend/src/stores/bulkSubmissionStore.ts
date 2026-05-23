@@ -91,6 +91,13 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
 
     removeRow(rowIndex: number) {
       this.previewRows = this.previewRows.filter((r) => r.rowIndex !== rowIndex)
+      // If the user has emptied the preview list, bounce back to INPUT
+      // so the layout shows the paste/dropzone again. Without this, the
+      // table renders empty in PREVIEW phase, Submit is disabled by
+      // counts.valid === 0, and the only escape is the back button.
+      if (this.previewRows.length === 0) {
+        this.phase = 'INPUT'
+      }
     },
 
     async runSubmit() {

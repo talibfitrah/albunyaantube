@@ -89,6 +89,13 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
     type: contentType,
     // Read from the top-level DTO field (canonical) with metadata as fallback for
     // any in-flight responses serialized before the dual-write cleanup landed.
+    // Backend PendingApprovalDto carries youtubeId at the top level but
+    // the OpenAPI spec (and therefore generated schema.ts) hasn't been
+    // regenerated to include it — the cast keeps callers off the
+    // metadata-map fallback for the canonical case while waiting for the
+    // schema regen. Drop the cast once `./scripts/generate-openapi-dtos.sh`
+    // is re-run with the field declared on PendingApprovalDto in
+    // api-specification.yaml.
     youtubeId: (dto as unknown as { youtubeId?: string }).youtubeId || getString('youtubeId'),
     title: dto.title || '',
     description: getString('description'),

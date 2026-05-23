@@ -69,6 +69,11 @@ public class RegistrySubmissionWriter {
             String host = uri.getHost();
             if (host == null || scheme == null) return null;
             if (!"https".equalsIgnoreCase(scheme)) return null;
+            // Reject userinfo (`https://attacker@i.ytimg.com/...`). The browser
+            // ignores userinfo on `<img src>`, so SSRF is benign, but the
+            // userinfo persists into Firestore and is rendered verbatim to
+            // admins in the registry UI — not a value we want stored.
+            if (uri.getUserInfo() != null) return null;
             return ALLOWED_THUMBNAIL_HOSTS.contains(host.toLowerCase(java.util.Locale.ROOT)) ? raw : null;
         } catch (java.net.URISyntaxException e) {
             return null;

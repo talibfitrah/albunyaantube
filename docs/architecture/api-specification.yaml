@@ -4101,6 +4101,15 @@ components:
           type: string
           nullable: true
           description: Cover image / avatar URL surfaced by the approval queue UI
+        youtubeId:
+          type: string
+          nullable: true
+          description: |
+            YouTube canonical ID for the channel / playlist / video. Backend
+            writes this at the top level so the admin UI can link out without
+            digging through `metadata`. Some callers may still see this as
+            absent from older response caches during a rolling deploy — the
+            frontend falls back to `metadata.youtubeId` for that window.
         submittedAt:
           type: string
           format: date-time
