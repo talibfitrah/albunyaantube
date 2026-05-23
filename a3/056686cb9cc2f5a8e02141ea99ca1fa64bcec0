@@ -1,0 +1,27 @@
+backend/src/test/java/com/albunyaan/tube/controller/RegistryControllerTest.java
+  s_b050c26eb2be76::t_069f25742253ad 1033-1053
+frontend/src/services/approvalService.ts
+  s_b050c26eb2be76::t_2ff8eccb58a075 92-98
+frontend/src/stores/bulkSubmissionStore.ts
+  s_b050c26eb2be76::t_56ceb783a19d78 94-100
+docs/architecture/api-specification.yaml
+  s_b050c26eb2be76::t_30d846f5334dc4 4104-4112
+backend/src/main/java/com/albunyaan/tube/service/RegistrySubmissionWriter.java
+  s_b050c26eb2be76::t_bf661394f0b725 72-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "a3056686cb9cc2f5a8e02141ea99ca1fa64bcec0",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
