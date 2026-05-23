@@ -276,6 +276,13 @@ public class RegistryController {
             return ResponseEntity.badRequest().build();
         }
 
+        // Allowlist the body-supplied thumbnail host so single-add matches
+        // the bulk path's defense against attacker-hosted thumbnails
+        // (tracking pixels, SVG-XSS, off-CDN images). Null on rejection
+        // means "no thumbnail" — the UI falls back to a placeholder.
+        channel.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
+                .sanitizeThumbnailUrl(channel.getThumbnailUrl()));
+
         Channel saved = channelRepository.save(channel);
         if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
             for (String categoryId : saved.getCategoryIds()) {
@@ -560,6 +567,10 @@ public class RegistryController {
         if (playlistStatus == null) {
             return ResponseEntity.badRequest().build();
         }
+
+        // See addChannel — single-add thumbnail allowlist enforcement.
+        playlist.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
+                .sanitizeThumbnailUrl(playlist.getThumbnailUrl()));
 
         Playlist saved = playlistRepository.save(playlist);
         if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
@@ -922,6 +933,10 @@ public class RegistryController {
         if (videoStatus == null) {
             return ResponseEntity.badRequest().build();
         }
+
+        // See addChannel — single-add thumbnail allowlist enforcement.
+        video.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
+                .sanitizeThumbnailUrl(video.getThumbnailUrl()));
 
         Video saved = videoRepository.save(video);
         if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {

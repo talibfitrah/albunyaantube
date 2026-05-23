@@ -53,7 +53,15 @@ public class RegistrySubmissionWriter {
      * Reject thumbnailUrl pointing to non-YouTube CDN hosts.
      * Returns null (no thumbnail) for unsafe URLs; the UI falls back to a placeholder.
      */
-    private static String sanitizeThumbnailUrl(String raw) {
+    /**
+     * Public so single-add controller paths (addChannel/addPlaylist/addVideo)
+     * can sanitize body-supplied thumbnailUrl before save. Without this hook,
+     * single-add was the only registry write path that bypassed the
+     * thumbnail-host allowlist — moderators/admins could land arbitrary
+     * (e.g. attacker-hosted tracking-pixel or SVG-XSS) thumbnail URLs into
+     * the public feed via direct POST.
+     */
+    public static String sanitizeThumbnailUrl(String raw) {
         if (raw == null || raw.isBlank()) return null;
         try {
             java.net.URI uri = new java.net.URI(raw);

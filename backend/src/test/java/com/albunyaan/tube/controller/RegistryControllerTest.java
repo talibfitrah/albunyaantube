@@ -1028,5 +1028,68 @@ class RegistryControllerTest {
         assertEquals(HttpStatus.NO_CONTENT, resp.getStatusCode());
         verify(channelRepository).deleteByIdIfStatusIn(eq("d-4"), any());
     }
+
+    @Test
+    void addChannel_thumbnailUrl_rejectedByAllowlist_nulledBeforeSave() throws Exception {
+        // Single-add must enforce the same thumbnail-host allowlist as the
+        // bulk path. An attacker-hosted thumbnailUrl (or any host outside
+        // ytimg.com / googleusercontent.com) must be nulled before save.
+        Channel newChannel = new Channel("UC-tn-evil");
+        newChannel.setName("Tn Evil");
+        newChannel.setThumbnailUrl("https://attacker.example/track.gif");
+        when(channelRepository.findByYoutubeId("UC-tn-evil")).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        registryController.addChannel(newChannel, adminUser);
+
+        // Sanitizer returns null for non-allowlisted hosts; the channel saved
+        // to Firestore must carry null, never the attacker URL.
+        assertNull(newChannel.getThumbnailUrl(),
+                "non-allowlisted thumbnail must be nulled before save");
+    }
+
+    @Test
+    void addChannel_thumbnailUrl_allowlistedHost_preservedThroughSave() throws Exception {
+        Channel newChannel = new Channel("UC-tn-ok");
+        newChannel.setName("Tn Ok");
+        newChannel.setThumbnailUrl("https://i.ytimg.com/vi/xyz/hqdefault.jpg");
+        when(channelRepository.findByYoutubeId("UC-tn-ok")).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        registryController.addChannel(newChannel, adminUser);
+
+        // Allowlisted host passes through unchanged.
+        assertEquals("https://i.ytimg.com/vi/xyz/hqdefault.jpg", newChannel.getThumbnailUrl());
+    }
+
+    @Test
+    void addPlaylist_thumbnailUrl_rejectedByAllowlist_nulledBeforeSave() throws Exception {
+        com.albunyaan.tube.model.Playlist newPlaylist = new com.albunyaan.tube.model.Playlist("PL-tn-evil");
+        newPlaylist.setTitle("PL Evil");
+        newPlaylist.setThumbnailUrl("javascript:alert(1)");
+        when(playlistRepository.findByYoutubeId("PL-tn-evil")).thenReturn(Optional.empty());
+        when(playlistRepository.save(any(com.albunyaan.tube.model.Playlist.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        registryController.addPlaylist(newPlaylist, adminUser);
+
+        assertNull(newPlaylist.getThumbnailUrl(),
+                "javascript: scheme must be nulled — sanitizer rejects non-https");
+    }
+
+    @Test
+    void addVideo_thumbnailUrl_rejectedByAllowlist_nulledBeforeSave() throws Exception {
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("V-tn-evil");
+        newVideo.setTitle("V Evil");
+        newVideo.setThumbnailUrl("https://evil.example/track.svg");
+        when(videoRepository.findByYoutubeId("V-tn-evil")).thenReturn(Optional.empty());
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        registryController.addVideo(newVideo, adminUser);
+
+        assertNull(newVideo.getThumbnailUrl(),
+                "non-allowlisted thumbnail must be nulled before save");
+    }
 }
 
