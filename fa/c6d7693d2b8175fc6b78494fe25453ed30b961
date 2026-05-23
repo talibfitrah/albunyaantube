@@ -1,0 +1,25 @@
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionRateLimitedException.java
+  s_b050c26eb2be76::t_7d4508808882df 1-28
+backend/src/main/java/com/albunyaan/tube/exception/GlobalExceptionHandler.java
+  s_b050c26eb2be76::t_73b0a8d330156d 296-317
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_b050c26eb2be76::t_ea1ad826878e40 148-153
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServiceSubmitTest.java
+  s_b050c26eb2be76::t_dcef749cc512e8 438-442,444
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "fac6d7693d2b8175fc6b78494fe25453ed30b961",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
