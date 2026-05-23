@@ -118,6 +118,16 @@ public class BulkSubmissionService {
             resolvedStatus = "PENDING";
         }
 
+        // BULK-01 (Fix 2): reject ALL before the row loop so we return 400,
+        // not 500 from the switch default arm.
+        for (SubmitRow row : req.rows()) {
+            if (row.detectedType() == YouTubeContentType.ALL) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.BAD_REQUEST,
+                        "detectedType ALL is not supported in bulk submit");
+            }
+        }
+
         List<SubmitResult> results = new ArrayList<>(req.rows().size());
         int added = 0, failed = 0;
         // BULK-01 security (Group G): per-submit dedupe batch closes the
@@ -180,7 +190,9 @@ public class BulkSubmissionService {
                     case VIDEO    -> writer.writeVideo(row.metadata(),
                             row.videoType() != null ? row.videoType() : VideoType.STANDARD,
                             row.categoryIds(), resolvedStatus, actorUid, isAdmin);
-                    default       -> throw new IllegalStateException("Unsupported detectedType in bulk submit: " + row.detectedType());
+                    default       -> throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST,
+                            "Unsupported detectedType in bulk submit: " + row.detectedType());
                 };
                 results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), registryId, SubmitStatus.ADDED, null));
                 added++;
