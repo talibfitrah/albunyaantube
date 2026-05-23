@@ -19,6 +19,7 @@
 
         <!-- Physical device testing on local network -->
         <domain includeSubdomains="true">192.168.1.167</domain>
+        <domain includeSubdomains="true">192.168.100.4</domain>
 
         <!-- VPS for development testing (cleartext allowed in debug only) -->
         <domain includeSubdomains="true">72.60.179.47</domain>
