@@ -1,0 +1,21 @@
+frontend/tests/bulkSubmissionStore.spec.ts
+  s_1a004b5f0406e1::t_6421bd72db2203 1-91
+frontend/src/stores/bulkSubmissionStore.ts
+  s_1a004b5f0406e1::t_a387789c39e300 1-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "834c80aa0203a429530c1ef34fe180a3dc44fb65",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
