@@ -16,11 +16,12 @@ const fileInput = ref<HTMLInputElement | null>(null)
 async function handleFile(file: File) {
   try {
     let urls: string[]
-    if (file.name.endsWith('.csv')) {
+    const lname = file.name.toLowerCase()
+    if (lname.endsWith('.csv')) {
       urls = await parseCsv(file)
-    } else if (file.name.endsWith('.json')) {
+    } else if (lname.endsWith('.json')) {
       urls = await parseJson(file)
-    } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+    } else if (lname.endsWith('.xlsx') || lname.endsWith('.xls')) {
       urls = await parseExcel(file)
     } else {
       throw new Error(t('contentSearch.bulk.input.unsupportedFileType'))

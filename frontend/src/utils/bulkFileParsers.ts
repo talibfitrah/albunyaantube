@@ -93,7 +93,7 @@ export async function parseJson(file: File): Promise<string[]> {
  */
 export async function parseExcel(file: File): Promise<string[]> {
   ensureFileSize(file)
-  const { read, utils } = await import('xlsx')
+  const { read, utils } = await import('@e965/xlsx')
   const buf = await readFileAsArrayBuffer(file)
   const wb = read(buf, { type: 'array' })
   if (wb.SheetNames.length === 0) throw new Error('Empty workbook')

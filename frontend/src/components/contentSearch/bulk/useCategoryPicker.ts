@@ -4,7 +4,13 @@ import { getAllCategories } from '@/services/categoryService'
 interface FlatCategory { id: string; name: string }
 
 // Module-level cache so the API call doesn't happen twice when default picker + row editor are both mounted.
+// NOTE: invalidate if the admin edits the category tree elsewhere in the session (separate ticket).
 let cachedPromise: Promise<FlatCategory[]> | null = null
+
+/** Reset the module-level cache. Call in test beforeEach to prevent cross-test leakage. */
+export function invalidateCategoryCache() {
+  cachedPromise = null
+}
 
 function flatten(nodes: any[]): FlatCategory[] {
   const out: FlatCategory[] = []

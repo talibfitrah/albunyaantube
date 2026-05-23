@@ -61,8 +61,8 @@ const isActionable = computed(
     <td>{{ row.metadata?.channelName ?? '—' }}</td>
     <td>
       <span class="badge" :class="statusBadgeClass">{{ row.status }}</span>
-      <small v-if="row.error" class="d-block text-muted">
-        {{ t(row.error.messageKey ?? '') }}
+      <small v-if="row.error?.messageKey" class="d-block text-muted">
+        {{ t(row.error.messageKey) }}
       </small>
     </td>
     <td class="position-relative">
