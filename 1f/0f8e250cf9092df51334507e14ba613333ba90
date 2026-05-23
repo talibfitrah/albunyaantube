@@ -1,0 +1,32 @@
+backend/src/main/java/com/albunyaan/tube/service/YouTubeUrlParser.java
+  s_bacebd909fa5bc::t_67e76db4a30ea0 112
+backend/src/main/java/com/albunyaan/tube/config/BulkExecutorConfig.java
+  s_bacebd909fa5bc::t_0f084673a71da9 14
+backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
+  s_bacebd909fa5bc::t_0f084673a71da9 33
+backend/src/test/java/com/albunyaan/tube/service/RegistrySubmissionWriterTest.java
+  s_bacebd909fa5bc::t_0f084673a71da9 25
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_bacebd909fa5bc::t_0f084673a71da9 54,57,63,148,151,290,311,354-355
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServiceSubmitTest.java
+  s_bacebd909fa5bc::t_67e76db4a30ea0 42,124,137
+backend/src/main/java/com/albunyaan/tube/service/RegistrySubmissionWriter.java
+  s_bacebd909fa5bc::t_0f084673a71da9 21,119
+  s_bacebd909fa5bc::t_67e76db4a30ea0 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "1f0f8e250cf9092df51334507e14ba613333ba90",
+  "prompts": {},
+  "sessions": {
+    "s_bacebd909fa5bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bdd81a28-dc7f-4d1b-98fa-8222d7824790",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
