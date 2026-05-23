@@ -50,6 +50,21 @@ class BulkSubmissionIT extends BaseIntegrationTest {
     @MockBean
     private YouTubeGateway gateway;
 
+    /**
+     * Seed the "cat-1" category so the per-row categoryIds existence
+     * check in {@code BulkSubmissionService.submit} (added 2026-05-23 to
+     * close H2 unbounded-fan-out finding) finds a real category and
+     * rows are not rejected with INVALID_CATEGORY. Runs after the
+     * inherited {@link BaseIntegrationTest#setUpFirestore} clears the
+     * categories collection.
+     */
+    @org.junit.jupiter.api.BeforeEach
+    void seedCategory() throws Exception {
+        firestore.collection("categories").document("cat-1")
+                .set(Map.of("name", "Test Category", "slug", "test-category"))
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
     // -------------------------------------------------------------------------
     // Auth helper (copied from BulkUserActionIT pattern)
     // -------------------------------------------------------------------------

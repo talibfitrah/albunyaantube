@@ -15,8 +15,12 @@ public record SubmitRow(
         /** Null when {@code detectedType} != VIDEO; STANDARD or LIVE otherwise. */
         VideoType videoType,
         @NotNull PreviewMetadata metadata,
-        // Upper bound prevents a moderator from fanning out 25 rows × N
-        // categoryIds into N × 25 sortOrder writes per HTTP call (Firestore
-        // quota exhaustion). 10 matches typical single-add UI selection caps.
-        @Size(min = 1, max = 10) List<@NotBlank String> categoryIds
+        // @NotNull required in addition to @Size — bean-validation `@Size`
+        // skips null collections, so without @NotNull a `categoryIds: null`
+        // body would pass validation then NPE on the for-each iterator.
+        // @Size upper bound prevents a moderator from fanning out 25 rows
+        // × N categoryIds into N × 25 sortOrder writes per HTTP call
+        // (Firestore quota exhaustion). 10 matches typical single-add UI
+        // selection caps.
+        @NotNull @Size(min = 1, max = 10) List<@NotBlank String> categoryIds
 ) {}

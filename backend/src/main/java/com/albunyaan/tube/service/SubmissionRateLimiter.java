@@ -75,6 +75,15 @@ public class SubmissionRateLimiter {
         if (count < 1) {
             throw new IllegalArgumentException("count must be >= 1, got " + count);
         }
+        // Upper bound prevents a future caller from passing
+        // Integer.MAX_VALUE — `dq.size() + count` would overflow to
+        // negative, bypass the `> LIMIT` check, and the addLast loop would
+        // try to allocate 2B deque entries → OOM. Today's only caller
+        // (BulkSubmissionService.submit) is bounded by SubmitRow @Size,
+        // but defensive.
+        if (count > LIMIT) {
+            throw new IllegalArgumentException("count must be <= LIMIT=" + LIMIT + ", got " + count);
+        }
         Instant now = clock.instant();
         Instant cutoff = now.minus(WINDOW);
         // Atomic compute — see single-arg overload for the eviction-race

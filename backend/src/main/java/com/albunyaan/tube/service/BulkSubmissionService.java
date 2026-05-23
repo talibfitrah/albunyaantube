@@ -239,13 +239,18 @@ public class BulkSubmissionService {
                         invalidCategoryId = cid;
                         break;
                     }
-                } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException ex) {
+                } catch (Exception ex) {
+                    // Widened to all Exception — FirestoreException is a
+                    // RuntimeException and was previously uncaught,
+                    // propagating past the per-row try/catch and 500-ing
+                    // the entire submit instead of failing the row with
+                    // INVALID_CATEGORY. Now matches the other category-
+                    // check failure paths (fail-closed per row).
+                    if (ex instanceof InterruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
                     log.warn("bulk-submit category existence check failed rowIndex={} categoryId={} reason={}",
                             row.rowIndex(), cid, ex.getMessage());
-                    invalidCategoryId = cid;
-                    break;
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
                     invalidCategoryId = cid;
                     break;
                 }
@@ -328,7 +333,18 @@ public class BulkSubmissionService {
                         for (String categoryId : row.categoryIds()) {
                             try {
                                 sortOrderService.addContentToCategory(categoryId, registryId, typeKey);
-                            } catch (RuntimeException sortErr) {
+                            } catch (Exception sortErr) {
+                                // Widened from `RuntimeException` to all `Exception` —
+                                // SortOrderService.addContentToCategory declares checked
+                                // exceptions (ExecutionException, InterruptedException,
+                                // TimeoutException). The previous narrow catch let those
+                                // fall through to the outer Exception catch below, which
+                                // then appended a SECOND result entry (FAILED, WRITE_ERROR)
+                                // for a row that already had ADDED + markAsExisting
+                                // committed — added+failed > totalSubmitted in the response.
+                                if (sortErr instanceof InterruptedException) {
+                                    Thread.currentThread().interrupt();
+                                }
                                 log.warn("bulk-submit sortOrder add failed rowIndex={} category={} registryId={} reason={}",
                                         row.rowIndex(), categoryId, registryId, sortErr.getMessage());
                             }

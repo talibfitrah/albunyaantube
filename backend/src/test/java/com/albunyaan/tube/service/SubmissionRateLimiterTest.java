@@ -85,4 +85,16 @@ class SubmissionRateLimiterTest {
         assertThrows(IllegalArgumentException.class, () -> rl.tryAcquire("uid", 0));
         assertThrows(IllegalArgumentException.class, () -> rl.tryAcquire("uid", -1));
     }
+
+    @Test void tryAcquireCount_rejectsAboveLimit_throwsIAE() {
+        // Defensive guard against integer-overflow / 2B-slot allocation
+        // attack via Integer.MAX_VALUE. Today's only caller is bounded
+        // at 24, but the limiter must self-protect.
+        Clock fixed = Clock.fixed(Instant.parse("2026-05-12T10:00:00Z"), ZoneOffset.UTC);
+        var rl = new SubmissionRateLimiter(fixed);
+        assertThrows(IllegalArgumentException.class,
+                () -> rl.tryAcquire("uid", SubmissionRateLimiter.LIMIT + 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> rl.tryAcquire("uid", Integer.MAX_VALUE));
+    }
 }

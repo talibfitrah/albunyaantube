@@ -241,6 +241,76 @@ class BulkSubmissionServiceSubmitTest {
     }
 
     @Test
+    void existsByIdThrowsRuntimeException_failsRowAsInvalidCategory_notWholeSubmit() throws Exception {
+        // Firestore SDK can throw FirestoreException (RuntimeException) on
+        // transient errors. The previous narrow catch (only ExecutionException
+        // + TimeoutException + InterruptedException) let RuntimeException
+        // propagate past the per-row try/catch and 500 the entire submit.
+        // Now the row fails closed with INVALID_CATEGORY and the batch
+        // continues processing other rows.
+        when(categoryRepository.existsById("cat-flaky"))
+                .thenThrow(new RuntimeException("firestore transient"));
+
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
+                List.of("cat-flaky"));
+        var req = new BulkSubmitRequest(List.of(row), "PENDING");
+
+        // Service does NOT throw — the row is reported as failed.
+        var resp = svc.submit(req, "admin-uid", true);
+        assertEquals(1, resp.failed());
+        assertEquals(0, resp.added());
+        assertEquals("INVALID_CATEGORY", resp.results().get(0).errorCode());
+        verify(writer, never()).writeChannel(any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void sortOrderServiceCheckedException_doesNotDuplicateResultEntry() throws Exception {
+        // SortOrderService.addContentToCategory declares
+        // ExecutionException/InterruptedException/TimeoutException. The
+        // previous inner catch was narrow (RuntimeException), so a checked
+        // exception fell through to the outer catch which appended a SECOND
+        // result entry for the row (FAILED, WRITE_ERROR) AFTER the ADDED
+        // entry was already appended. Result: added=1, failed=1, results
+        // has 2 entries for 1 row, totalSubmitted=1 — contract violation.
+        // After widening the inner catch to all Exception, the throw is
+        // swallowed and the row keeps its single ADDED entry.
+        when(writer.writeChannel(any(), any(), eq("APPROVED"), eq("admin-uid"), eq(true)))
+                .thenReturn("doc-c-1");
+        // Use the field reference to the service's SortOrderService — we
+        // need to access it directly to stub. Construct a new service with
+        // a tracked sortOrderService.
+        var sortOrderMock = mock(SortOrderService.class);
+        doThrow(new java.util.concurrent.TimeoutException("firestore slow"))
+                .when(sortOrderMock).addContentToCategory(any(), any(), any());
+
+        var svcWithSortMock = new BulkSubmissionService(
+                new YouTubeUrlParser(),
+                gateway,
+                dedupe,
+                writer,
+                java.util.concurrent.Executors.newFixedThreadPool(2),
+                mock(PublicContentCacheService.class),
+                sortOrderMock,
+                categoryRepository,
+                submissionRateLimiter);
+
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
+                List.of("cat-1"));
+        // APPROVED so the sortOrder side-effect path runs.
+        var req = new BulkSubmitRequest(List.of(row), "APPROVED");
+
+        var resp = svcWithSortMock.submit(req, "admin-uid", true);
+
+        assertEquals(1, resp.totalSubmitted(), "exactly 1 row submitted");
+        assertEquals(1, resp.results().size(), "exactly 1 result entry — no duplicate from outer Exception catch");
+        assertEquals(1, resp.added(), "row counted as ADDED (sortOrder failure does not roll back the write)");
+        assertEquals(0, resp.failed());
+        assertEquals(SubmitStatus.ADDED, resp.results().get(0).status());
+    }
+
+    @Test
     void invalidCategoryId_failsRow_withInvalidCategoryErrorCode() throws Exception {
         when(categoryRepository.existsById("cat-real")).thenReturn(true);
         when(categoryRepository.existsById("cat-fake")).thenReturn(false);
