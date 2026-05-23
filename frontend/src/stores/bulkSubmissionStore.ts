@@ -77,9 +77,14 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
     },
 
     async runSubmit() {
-      const submittable = this.previewRows.filter(
-        (r) => r.status === 'OK' || r.status === 'DUPLICATE_REJECTED',
-      )
+      // BULK-01 security (Group F): DUPLICATE_REJECTED rows are dropped from
+      // submittable. Reusing a previously-rejected youtubeId via the bulk path
+      // would create a second Firestore doc (the writer always inserts fresh,
+      // never updates the existing rejected doc), and the legacy rejection
+      // metadata + audit trail would be silently shadowed. Resubmission of
+      // rejected items must go through the approval queue UI which updates
+      // the existing doc back to PENDING with proper provenance.
+      const submittable = this.previewRows.filter((r) => r.status === 'OK')
       if (submittable.length === 0) {
         this.error = 'No valid rows to submit'
         return

@@ -54,24 +54,23 @@ class YouTubeUrlParserTest {
     }
 
     @Test
-    void handleUrl_resolvesToChannel_withHandleAsId() {
+    void handleUrl_isRejected_asUnsupportedHandle() {
+        // BULK-01 Group E: handle URLs need gateway-side resolution to UC... id;
+        // until that lands they're rejected so dedupe doesn't silently miss.
         var r = parser.parse("https://www.youtube.com/@SomeHandle");
-        assertEquals(YouTubeContentType.CHANNEL, r.type());
-        assertEquals("@SomeHandle", r.youtubeId());
+        assertEquals(com.albunyaan.tube.dto.registry.PreviewErrorCode.UNSUPPORTED_HANDLE, r.errorCode());
     }
 
     @Test
-    void legacyCUrl_resolvesToChannel() {
+    void legacyCUrl_isRejected_asUnsupportedHandle() {
         var r = parser.parse("https://www.youtube.com/c/SomeChannel");
-        assertEquals(YouTubeContentType.CHANNEL, r.type());
-        assertEquals("SomeChannel", r.youtubeId());
+        assertEquals(com.albunyaan.tube.dto.registry.PreviewErrorCode.UNSUPPORTED_HANDLE, r.errorCode());
     }
 
     @Test
-    void legacyUserUrl_resolvesToChannel() {
+    void legacyUserUrl_isRejected_asUnsupportedHandle() {
         var r = parser.parse("https://www.youtube.com/user/SomeUser");
-        assertEquals(YouTubeContentType.CHANNEL, r.type());
-        assertEquals("SomeUser", r.youtubeId());
+        assertEquals(com.albunyaan.tube.dto.registry.PreviewErrorCode.UNSUPPORTED_HANDLE, r.errorCode());
     }
 
     @Test

@@ -103,22 +103,19 @@ public class YouTubeUrlParser {
             return YouTubeUrlParseResult.ok(YouTubeContentType.CHANNEL, id, canonicalChannelUrl(id), false);
         }
 
-        Matcher hM = HANDLE_PATH.matcher(path);
-        if (hM.matches()) {
-            String handle = hM.group(1);
-            return YouTubeUrlParseResult.ok(YouTubeContentType.CHANNEL, handle, "https://www.youtube.com/" + handle, false);
-        }
-
-        Matcher cM = LEGACY_C_PATH.matcher(path);
-        if (cM.matches()) {
-            String name = cM.group(1);
-            return YouTubeUrlParseResult.ok(YouTubeContentType.CHANNEL, name, "https://www.youtube.com/c/" + name, false);
-        }
-
-        Matcher uM = LEGACY_USER_PATH.matcher(path);
-        if (uM.matches()) {
-            String name = uM.group(1);
-            return YouTubeUrlParseResult.ok(YouTubeContentType.CHANNEL, name, "https://www.youtube.com/user/" + name, false);
+        // BULK-01 security (Group E): handle/c/user URLs need NewPipe to resolve
+        // them to a canonical UC... ID before dedupe + gateway lookup will work.
+        // Without that resolution path: (a) dedupe.findByYoutubeId("@handle")
+        // misses the real UC record, allowing the same channel to be re-submitted;
+        // (b) gateway.fetchChannelInfo("@handle") fails (the gateway expects
+        // a UC ID and falls back to a malformed URL). Until the gateway can
+        // resolve from URL (tracked in plan-doc follow-up Group E full impl),
+        // reject these URLs with UNSUPPORTED_HANDLE so the moderator knows
+        // to paste the /channel/UC... canonical form.
+        if (HANDLE_PATH.matcher(path).matches()
+                || LEGACY_C_PATH.matcher(path).matches()
+                || LEGACY_USER_PATH.matcher(path).matches()) {
+            return YouTubeUrlParseResult.error(PreviewErrorCode.UNSUPPORTED_HANDLE);
         }
 
         if (POST_PATH.matcher(path).matches()) return YouTubeUrlParseResult.error(PreviewErrorCode.UNSUPPORTED_TYPE);
