@@ -135,6 +135,12 @@ public class BulkSubmissionService {
         // youtubeId after the first moderator previewed but before they
         // submitted. Not a full Firestore transaction, but closes the
         // sequential-submit race.
+        //
+        // Cross-admin / cross-pod race remains: two parallel /bulk/submit
+        // calls for the same youtubeId can both pass findExisting and both
+        // write a doc. Documented as deferral in
+        // docs/superpowers/plans/2026-05-23-bulk-cross-admin-firestore-tx.md
+        // — closing it requires Firestore native transactions in the writer.
         RegistryDuplicateChecker.Batch lateBatch = dedupe.newBatch();
         // Per-submit cache of category-id existence so a 25-row batch
         // sharing the same categoryIds doesn't re-query the same IDs
