@@ -64,6 +64,16 @@ public class RegistryDuplicateChecker {
             return cache.computeIfAbsent(cacheKey(type, youtubeId), k -> queryOnce(type, youtubeId));
         }
 
+        /**
+         * Record a newly-written registry entry so subsequent {@link #findExisting} calls
+         * in the same batch return it as a duplicate. Closes the intra-batch race where two
+         * rows with the same {@code (type, youtubeId)} both passed the initial lookup
+         * (memoized empty Optional) and both wrote a Firestore doc.
+         */
+        public void markAsExisting(YouTubeContentType type, String youtubeId, String registryId, String status) {
+            cache.put(cacheKey(type, youtubeId), Optional.of(new ExistingMatch(registryId, status)));
+        }
+
         private Optional<ExistingMatch> queryOnce(YouTubeContentType type, String youtubeId) {
             try {
                 return switch (type) {

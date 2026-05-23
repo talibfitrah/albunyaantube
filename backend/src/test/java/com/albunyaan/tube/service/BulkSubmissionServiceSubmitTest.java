@@ -159,4 +159,42 @@ class BulkSubmissionServiceSubmitTest {
         assertEquals(1, resp.failed());
         assertEquals("DUPLICATE", resp.results().get(0).errorCode());
     }
+
+    @Test
+    void intraBatchDuplicate_secondRowFailsAsDuplicate_afterWriterPopulatesCache() throws Exception {
+        // Row 1: writer succeeds, production code calls lateBatch.markAsExisting.
+        when(writer.writeChannel(any(), any(), eq("PENDING"), eq("admin-uid"), eq(true))).thenReturn("doc-c-1");
+        // First findExisting → empty; second findExisting (after markAsExisting) → present.
+        // Mockito returns the configured values in order; the second call to the same mock
+        // method gets the second thenReturn value, simulating the cache shadow effect.
+        when(lateBatch.findExisting(eq(YouTubeContentType.CHANNEL), eq(CHANNEL_ID)))
+                .thenReturn(Optional.empty(),
+                            Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-c-1", "PENDING")));
+
+        var rows = List.of(
+                new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
+                        List.of("cat-1")),
+                new SubmitRow(1, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
+                        List.of("cat-1"))
+        );
+        var req = new BulkSubmitRequest(rows, "PENDING");
+
+        var resp = svc.submit(req, "admin-uid", true);
+
+        assertEquals(2, resp.totalSubmitted());
+        assertEquals(1, resp.added(), "row 1 should write the doc");
+        assertEquals(1, resp.failed(), "row 2 should fail as duplicate after markAsExisting");
+        assertEquals(SubmitStatus.ADDED, resp.results().get(0).status());
+        assertEquals(SubmitStatus.FAILED, resp.results().get(1).status());
+        assertEquals("DUPLICATE", resp.results().get(1).errorCode());
+
+        // Production code must have populated the batch with the just-written entry so the
+        // second row's findExisting returns the duplicate match. Without this, both rows
+        // would write Firestore docs with no unique constraint.
+        verify(lateBatch).markAsExisting(YouTubeContentType.CHANNEL, CHANNEL_ID, "doc-c-1", "PENDING");
+        // Writer called exactly once — the second row was rejected before write.
+        verify(writer, times(1)).writeChannel(any(), any(), any(), any(), anyBoolean());
+    }
 }

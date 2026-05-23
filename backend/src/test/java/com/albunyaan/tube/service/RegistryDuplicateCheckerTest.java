@@ -87,4 +87,26 @@ class RegistryDuplicateCheckerTest {
 
         verify(channels, times(2)).findByYoutubeId("UC999");
     }
+
+    @Test
+    void markAsExisting_shadowsLaterFindExisting_withoutRepoCall() throws ExecutionException, InterruptedException, TimeoutException {
+        // Repository returns empty — i.e. the row was not in Firestore before this batch.
+        when(channels.findByYoutubeId("UCnew")).thenReturn(Optional.empty());
+        var batch = checker.newBatch();
+
+        // First lookup memoizes empty.
+        assertTrue(batch.findExisting(YouTubeContentType.CHANNEL, "UCnew").isEmpty());
+
+        // Production code wrote a new doc; record it in the batch.
+        batch.markAsExisting(YouTubeContentType.CHANNEL, "UCnew", "doc-c-1", "PENDING");
+
+        // Subsequent lookup returns the just-written entry, not the stale empty.
+        var hit = batch.findExisting(YouTubeContentType.CHANNEL, "UCnew");
+        assertTrue(hit.isPresent());
+        assertEquals("doc-c-1", hit.get().registryId());
+        assertEquals("PENDING", hit.get().status());
+
+        // Repository was queried only once — the second findExisting hit the cache.
+        verify(channels, times(1)).findByYoutubeId("UCnew");
+    }
 }

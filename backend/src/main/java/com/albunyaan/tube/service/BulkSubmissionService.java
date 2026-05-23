@@ -194,6 +194,13 @@ public class BulkSubmissionService {
                 results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), registryId, SubmitStatus.ADDED, null));
                 added++;
 
+                // Populate the dedupe batch with the just-written entry so a
+                // subsequent row in the same submit request with the same
+                // (type, youtubeId) sees it as a duplicate. Without this,
+                // findExisting's memoized empty Optional lets duplicates through
+                // and both write Firestore docs with no unique constraint.
+                lateBatch.markAsExisting(row.detectedType(), parsed.youtubeId(), registryId, resolvedStatus);
+
                 // When a bulk row lands APPROVED, mirror the
                 // single-add controller path's side effects so the new row is
                 // immediately visible to the public API and sortable in its
