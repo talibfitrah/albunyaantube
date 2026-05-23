@@ -22,7 +22,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import java.time.LocalDate
@@ -61,11 +61,15 @@ class MeViewModelSnapshotRoleTest {
         val feed = mock<MeFeedRepository>().also { f ->
             whenever(f.observeFeed()).thenReturn(flowOf(emptyList()))
             // MeViewModel.init kicks off loadNextWeek, which hits the deep-page
-            // loop and calls countCachedRowsForFilter (suspend, returns Int).
-            // Mockito's default null unboxes to NPE — surfaces in the next
-            // test's runTest as UncaughtExceptionsBeforeTest. Stub to 0 so the
-            // loop's rowsAfter == rowsBefore check breaks out immediately.
-            runBlocking { whenever(f.countCachedRowsForFilter(any())).thenReturn(0) }
+            // loop and calls countCachedRowsForFilter(filter.value). filter is a
+            // StateFlow<String?> with null initial value, so the matcher must
+            // accept null — any() rejects null, use anyOrNull(). Without the
+            // stub, Mockito returns null for the boxed Integer return and
+            // Kotlin NPEs on unbox; the orphan exception surfaces in the next
+            // test's runTest as UncaughtExceptionsBeforeTest. Stubbing to 0
+            // makes the deep-page loop's rowsAfter == rowsBefore check break
+            // out immediately.
+            runBlocking { whenever(f.countCachedRowsForFilter(anyOrNull())).thenReturn(0) }
         }
         val favs = StubFavoritesRepository()
         return MeViewModel(subs, feed, favs, accountRepo)
