@@ -33,26 +33,27 @@ interface ContentService {
 
     /**
      * Playback availability gate. Returns:
-     *  - true on HTTP 2xx (id is registered AND APPROVED).
-     *  - true on HTTP 404 (NOT in registry — fail-open so NewPipe can resolve
-     *    downstream content like a channel-sourced video whose parent isn't
-     *    separately registered, or a PENDING channel whose review hasn't
-     *    landed yet; the admin curation gate runs separately via
-     *    [isInApprovedRegistry] for surfaces that need fail-closed semantics).
-     *  - false on HTTP 410 (admin-explicitly-blocked — hard stop, never
+     *  - **true** on HTTP 2xx (id is registered AND APPROVED in our backend).
+     *  - **true** on HTTP 404 (NOT in registry — fail-open so NewPipe can
+     *    resolve downstream content like a channel-sourced video whose
+     *    parent isn't separately registered, or a PENDING channel whose
+     *    review hasn't landed yet; the admin curation gate runs separately
+     *    via [isInApprovedRegistry] for surfaces that need fail-closed
+     *    semantics).
+     *  - **false** on HTTP 410 (admin-explicitly-blocked — hard stop, never
      *    fail-open; backend uses 410 for REJECTED status and for
      *    validationStatus = ARCHIVED/UNAVAILABLE).
-     *  - false on any other non-2xx (defence-in-depth).
-     *  - false on transport errors (treated as "can't verify → fail-closed
-     *    so we don't accidentally play admin-blocked content during a brief
-     *    network blip"). For surfaces that should fail-open on transport
-     *    errors instead (e.g. fully-offline playback of cached content), the
-     *    caller is responsible for its own error handling above this method.
+     *  - **throws `retrofit2.HttpException`** on any other non-2xx (500,
+     *    503, etc.) — caller decides fail-open vs fail-closed by catching.
+     *  - **throws `java.io.IOException`** on transport errors (timeout,
+     *    no connectivity, DNS) — caller decides fail-open vs fail-closed
+     *    by catching.
      *
      * Pairs with [isInApprovedRegistry] (inverse semantics on 404):
-     * verifyAvailable gates PLAYBACK (must not play admin-blocked content);
-     * isInApprovedRegistry gates DISCOVERY-LINKS (must not surface
-     * uncurated lateral navigation).
+     * verifyAvailable gates PLAYBACK (must not play admin-blocked content,
+     * is permissive about not-in-registry); isInApprovedRegistry gates
+     * DISCOVERY-LINKS (must not surface uncurated lateral navigation,
+     * is restrictive about not-in-registry).
      */
     suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean
 

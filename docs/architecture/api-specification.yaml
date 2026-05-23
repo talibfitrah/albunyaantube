@@ -4447,6 +4447,7 @@ components:
       enum:
         - UNSUPPORTED_SHORTS
         - UNSUPPORTED_TYPE
+        - UNSUPPORTED_HANDLE
         - NOT_YOUTUBE_URL
         - CONTENT_NOT_AVAILABLE
         - PRIVATE_CONTENT
@@ -4455,9 +4456,15 @@ components:
         - CHANNEL_TERMINATED
         - NEWPIPE_PARSING_ERROR
         - NETWORK_ERROR
+        - INTERNAL_ERROR
         - DUPLICATE
         - DUPLICATE_REJECTED
-      description: Machine-readable error code for a failed preview row.
+      description: |
+        Machine-readable error code for a failed preview row, and (post-Plan-G
+        2026-05-23) for failed submit rows where the gateway re-fetch returns
+        an error. Submit also emits the literal strings `INVALID_CATEGORY`,
+        `YOUTUBE_ID_MISMATCH`, `TYPE_MISMATCH`, `INVALID_URL`, `FETCH_ERROR`,
+        and `WRITE_ERROR` via SubmitResult.errorCode (free-form string).
 
     BulkSubmitRequest:
       type: object
