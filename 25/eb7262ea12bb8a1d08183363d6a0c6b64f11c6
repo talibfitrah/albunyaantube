@@ -1,0 +1,49 @@
+frontend/src/components/contentSearch/bulk/BulkInputView.vue
+  s_799e14961175c6::t_da5a53d130e669 38,42-43,50,55,58-59,62,68-71,73-82,85-159
+frontend/src/components/contentSearch/bulk/BulkFormatHelpModal.vue
+  s_799e14961175c6::t_bf6c4ab589dcb4 15-22,27-49
+  s_799e14961175c6::t_66b060566ee690 62,67
+  s_799e14961175c6::t_030306ecf40112 55-56,66,68-70,72-106,108,113,118,123,129,131,140,148,150-283
+  s_799e14961175c6::t_7224e26acc69e7 2,4,7-14,23-26,50-51,57-61,63-65
+frontend/src/main.ts
+  s_799e14961175c6::t_4fd599a2e7d198 7
+frontend/src/components/contentSearch/bulk/BulkSubmissionTab.vue
+  s_799e14961175c6::t_4b2e306e8fe53f 15,19-21,31-65
+frontend/src/components/contentSearch/bulk/BulkUrlPasteField.vue
+  s_799e14961175c6::t_6ca7222d218bef 17,22,29,35-82
+frontend/src/components/contentSearch/bulk/BulkDefaultCategoriesPicker.vue
+  s_799e14961175c6::t_73a337817fd17d 21,23,26,30,34,39-40,45,50-53,58-116
+frontend/src/components/contentSearch/bulk/BulkResultSummary.vue
+  s_799e14961175c6::t_82ccbc87cd1209 15-17,19,21,28-29,32,38-131
+frontend/src/components/contentSearch/bulk/BulkFileDropzone.vue
+  s_799e14961175c6::t_ee52757f30fa25 50-51,56,64,67,70-121
+frontend/src/components/contentSearch/bulk/BulkPreviewTable.vue
+  s_799e14961175c6::t_ac94c2ca639e8b 155-162
+  s_799e14961175c6::t_2ab7d4dc23879e 26-33,38,47-72,75-154,163-193
+frontend/src/components/contentSearch/bulk/BulkRowCategoryEditor.vue
+  s_799e14961175c6::t_4bb79bb8a4b710 25-55,59-160
+frontend/src/styles/bulk-alert.css
+  s_799e14961175c6::t_1f160c0abc4cc2 1-23
+frontend/src/components/contentSearch/bulk/BulkPreviewRow.vue
+  s_799e14961175c6::t_ad63f07dcf37e9 57-58,63-64,68,72,88,97-182
+  s_799e14961175c6::t_335e9e1ae3d5ae 34-39
+frontend/src/views/ContentSearchView.vue
+  s_799e14961175c6::t_c3a22515393854 9-30,32
+  s_799e14961175c6::t_c952365a54ba12 558-593
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "25eb7262ea12bb8a1d08183363d6a0c6b64f11c6",
+  "prompts": {},
+  "sessions": {
+    "s_799e14961175c6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e55a1d5b-675c-49bc-9aa3-6e8226f1fca0",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
