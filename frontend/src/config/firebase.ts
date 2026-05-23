@@ -5,7 +5,7 @@
  * Service account credentials are NOT used here - only public Firebase config.
  */
 import { initializeApp } from 'firebase/app';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, connectAuthEmulator, GoogleAuthProvider } from 'firebase/auth';
 
 // Firebase configuration from project settings
 // Replace these values with your actual Firebase project config
@@ -23,6 +23,13 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase Authentication
 export const auth = getAuth(app);
+
+// Google OAuth provider. Used for "Sign in with Google" on the admin login
+// screen. Access is gated by the role custom claim: a Google sign-in that
+// resolves to an email with no admin/moderator provisioning is rejected and
+// the user is signed out (see authStore.loginWithGoogle).
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 // Connect to Auth Emulator in development (optional)
 if (import.meta.env.DEV && import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true') {

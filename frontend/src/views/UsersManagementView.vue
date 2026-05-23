@@ -93,6 +93,7 @@
           <option value="all">{{ t('users.filters.roleAll') }}</option>
           <option value="ADMIN">{{ t('users.roles.admin') }}</option>
           <option value="MODERATOR">{{ t('users.roles.moderator') }}</option>
+          <option value="USER">{{ t('users.roles.user') }}</option>
         </select>
       </label>
       <label class="filter">
@@ -504,7 +505,7 @@ function reasonKey(raw: string | null | undefined): string {
   return raw != null && KNOWN_BULK_REASONS.has(raw) ? raw : 'unknown';
 }
 
-const roleOptions: AdminRole[] = ['ADMIN', 'MODERATOR'];
+const roleOptions: AdminRole[] = ['ADMIN', 'MODERATOR', 'USER'];
 
 const searchQuery = ref('');
 const activeSearch = ref('');
@@ -703,7 +704,11 @@ function clearSearch() {
 }
 
 function roleLabel(role: AdminRole) {
-  return role === 'ADMIN' ? t('users.roles.admin') : t('users.roles.moderator');
+  switch (role) {
+    case 'ADMIN': return t('users.roles.admin');
+    case 'MODERATOR': return t('users.roles.moderator');
+    case 'USER': return t('users.roles.user');
+  }
 }
 
 function statusLabel(status: AdminUserStatus) {

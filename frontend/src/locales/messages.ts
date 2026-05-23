@@ -7,7 +7,15 @@ export const messages = {
       password: 'Password',
       signIn: 'Sign in',
       signingIn: 'Signing in…',
+      signInWithGoogle: 'Sign in with Google',
+      orDivider: 'or',
       logout: 'Sign out',
+      linking: {
+        explainer: 'Account {email} uses email + password. Enter your password to link Google for future sign-ins.',
+        submit: 'Link & sign in',
+        submitting: 'Linking…',
+        cancel: 'Cancel'
+      },
       errors: {
         invalidEmail: 'Enter a valid email address.',
         passwordLength: 'Password must be at least 8 characters long.'
@@ -879,7 +887,8 @@ export const messages = {
       },
       roles: {
         admin: 'Administrator',
-        moderator: 'Moderator'
+        moderator: 'Moderator',
+        user: 'Regular user'
       },
       status: {
         active: 'Active',
@@ -1567,7 +1576,15 @@ export const messages = {
       password: 'كلمة المرور',
       signIn: 'تسجيل الدخول',
       signingIn: 'جارٍ تسجيل الدخول…',
+      signInWithGoogle: 'سجّل الدخول بحساب جوجل',
+      orDivider: 'أو',
       logout: 'تسجيل الخروج',
+      linking: {
+        explainer: 'الحساب {email} يستخدم البريد الإلكتروني وكلمة المرور. أدخل كلمة المرور لربط جوجل بعمليات تسجيل الدخول المستقبلية.',
+        submit: 'اربط وسجّل الدخول',
+        submitting: 'جارٍ الربط…',
+        cancel: 'إلغاء'
+      },
       errors: {
         invalidEmail: 'أدخل عنوان بريد إلكتروني صالح.',
         passwordLength: 'يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.'
@@ -2385,7 +2402,8 @@ export const messages = {
       },
       roles: {
         admin: 'مشرف',
-        moderator: 'مراقب'
+        moderator: 'مراقب',
+        user: 'مستخدم عادي'
       },
       status: {
         active: 'نشط',
@@ -2906,7 +2924,15 @@ export const messages = {
       password: 'Wachtwoord',
       signIn: 'Inloggen',
       signingIn: 'Bezig met inloggen…',
+      signInWithGoogle: 'Inloggen met Google',
+      orDivider: 'of',
       logout: 'Afmelden',
+      linking: {
+        explainer: 'Het account {email} gebruikt e-mail + wachtwoord. Voer je wachtwoord in om Google te koppelen voor toekomstige aanmeldingen.',
+        submit: 'Koppelen en inloggen',
+        submitting: 'Koppelen…',
+        cancel: 'Annuleren'
+      },
       errors: {
         invalidEmail: 'Voer een geldig e-mailadres in.',
         passwordLength: 'Het wachtwoord moet minstens 8 tekens bevatten.'
@@ -3722,7 +3748,8 @@ export const messages = {
       },
       roles: {
         admin: 'Beheerder',
-        moderator: 'Moderator'
+        moderator: 'Moderator',
+        user: 'Gebruiker'
       },
       status: {
         active: 'Actief',
