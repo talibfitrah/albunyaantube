@@ -38,23 +38,73 @@ jobs:
           chmod +x gradlew
           ./gradlew generateKotlinDtos
 
-      # Materialize google-services.json (gitignored). If the GOOGLE_SERVICES_JSON
-      # secret is set (base64-encoded full file), decode it. Otherwise fall back
-      # to the committed CI stub — valid format, non-functional values; sufficient
-      # for the google-services Gradle plugin to generate BuildConfig at build
-      # time. CI does not run the APK, so the non-functional values do not block
-      # unit tests (which mock FirebaseAuth) or lint.
-      - name: Materialize google-services.json
+      # Materialize google-services.json (gitignored). Main-branch builds must
+      # use the real Firebase config; a stubbed APK installs but cannot
+      # authenticate. Pull requests without access to repository secrets may
+      # still compile against the committed non-functional stub, but those APKs
+      # are not uploaded as installable artifacts below.
+      - name: Materialize google-services.json (compile-only stub)
+        if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+        run: |
+          echo "Using CI stub for compile-only checks"
+          cp app/google-services.json.ci-stub app/google-services.json
+          echo "ANDROID_FIREBASE_CONFIG=stub" >> "$GITHUB_ENV"
+
+      - name: Materialize google-services.json (main artifact)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         env:
           GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then
-            echo "Using GOOGLE_SERVICES_JSON secret"
-            printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 -d > app/google-services.json
-          else
-            echo "GOOGLE_SERVICES_JSON secret not set — using CI stub (non-functional Firebase IDs)"
-            cp app/google-services.json.ci-stub app/google-services.json
+          if [ -z "$GOOGLE_SERVICES_JSON_B64" ]; then
+            echo "GOOGLE_SERVICES_JSON secret is required for main Android builds" >&2
+            exit 1
           fi
+          echo "Using GOOGLE_SERVICES_JSON secret"
+          printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 -d > app/google-services.json
+          # Structural validation only. A whole-file SHA-256 pin breaks any
+          # time Firebase Console rewrites the JSON (key reorder, whitespace)
+          # even when the config is functionally identical; the structural
+          # checks below cover the substance: right project, right package,
+          # real API key, both OAuth clients present.
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          expected_project_id = "albunyaan-tube"
+          expected_package = "com.albunyaan.tube"
+          expected_app_id = "1:502702093037:android:a4bed108e492f0724852e4"
+
+          cfg = json.loads(Path("app/google-services.json").read_text())
+          matching = [
+              c for c in cfg.get("client", [])
+              if c.get("client_info", {}).get("android_client_info", {}).get("package_name") == expected_package
+          ]
+          api_keys = [k.get("current_key", "") for c in matching for k in c.get("api_key", [])]
+          web_oauth = [
+              o.get("client_id", "") for c in matching for o in c.get("oauth_client", [])
+              if o.get("client_type") == 3
+          ]
+          android_oauth = [
+              o for c in matching for o in c.get("oauth_client", [])
+              if o.get("client_type") == 1
+              and o.get("android_info", {}).get("package_name") == expected_package
+              and o.get("android_info", {}).get("certificate_hash", "").strip()
+          ]
+
+          if cfg.get("project_info", {}).get("project_id") != expected_project_id:
+              sys.exit("GOOGLE_SERVICES_JSON must target albunyaan-tube")
+          if not matching:
+              sys.exit("GOOGLE_SERVICES_JSON is missing the com.albunyaan.tube Android client")
+          if not any(c.get("client_info", {}).get("mobilesdk_app_id") == expected_app_id for c in matching):
+              sys.exit("GOOGLE_SERVICES_JSON has the wrong Android app id")
+          if not api_keys or any(not k.strip() or "__REPLACE" in k for k in api_keys):
+              sys.exit("GOOGLE_SERVICES_JSON is missing a real Android API key")
+          if not web_oauth or any(not cid.strip() or "__REPLACE" in cid for cid in web_oauth):
+              sys.exit("GOOGLE_SERVICES_JSON is missing the web OAuth client required for Google sign-in")
+          if not android_oauth:
+              sys.exit("GOOGLE_SERVICES_JSON is missing the Android OAuth client required for Google sign-in")
+          PY
+          echo "ANDROID_FIREBASE_CONFIG=real" >> "$GITHUB_ENV"
 
       - name: Build debug APK (canonical)
         run: ./gradlew assembleDebug
@@ -80,11 +130,52 @@ jobs:
             android/app/build/reports/
             android/app/build/test-results/
 
+      - name: Validate APK artifact
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && env.ANDROID_FIREBASE_CONFIG == 'real' }}
+        run: |
+          mapfile -t apks < <(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | sort)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            printf 'Expected exactly one debug APK, found %s:\n' "${#apks[@]}" >&2
+            printf '%s\n' "${apks[@]}" >&2
+            exit 1
+          fi
+          values_file="app/build/generated/res/processDebugGoogleServices/values/values.xml"
+          if [ ! -f "$values_file" ]; then
+            echo "Generated Firebase debug resources are missing" >&2
+            exit 1
+          fi
+          # Verify the google-services plugin actually generated correct values
+          # from the secret-supplied google-services.json. We do NOT verify the
+          # APK signing cert against Firebase's registered SHA-1: the CI debug
+          # keystore is regenerated per runner (no stable cert), so that check
+          # would block every main push. Release APKs are signed locally and
+          # uploaded to GitHub Releases out of band — Firebase SHA-1 alignment
+          # is verified there manually before publishing.
+          python3 - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          values = {
+              item.attrib.get("name"): (item.text or "").strip()
+              for item in ET.parse("app/build/generated/res/processDebugGoogleServices/values/values.xml").getroot()
+          }
+          if values.get("project_id") != "albunyaan-tube":
+              sys.exit("Generated Firebase resources have the wrong project id")
+          if values.get("google_app_id") != "1:502702093037:android:a4bed108e492f0724852e4":
+              sys.exit("Generated Firebase resources have the wrong app id")
+          if not values.get("google_api_key") or "__REPLACE" in values.get("google_api_key", ""):
+              sys.exit("Generated Firebase resources are missing a real API key")
+          if not values.get("default_web_client_id", "").endswith(".apps.googleusercontent.com"):
+              sys.exit("Generated Firebase resources are missing the web OAuth client")
+          PY
+          echo "ANDROID_APK_ARTIFACT=android/${apks[0]}" >> "$GITHUB_ENV"
+
       - name: Upload APK
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && env.ANDROID_FIREBASE_CONFIG == 'real' }}
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.ANDROID_APK_ARTIFACT }}
           retention-days: 7
 
       - name: Upload lint report
