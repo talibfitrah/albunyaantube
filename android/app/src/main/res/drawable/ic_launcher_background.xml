@@ -5,7 +5,8 @@
     android:viewportHeight="108"
     android:viewportWidth="108"
     xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Solid white background for adaptive icon -->
-    <path android:fillColor="#FFFFFF"
+    <!-- Transparent adaptive-icon background: foreground sits directly on the
+         launcher's masked shape so no white frame/circle leaks behind the logo. -->
+    <path android:fillColor="#00000000"
           android:pathData="M0,0h108v108h-108z"/>
 </vector>

@@ -218,17 +218,7 @@ function cancelLink() {
   display: grid;
   place-items: center;
   padding: 2rem 1rem;
-  background: linear-gradient(135deg, #123d32 0%, #16835a 100%);
-  position: relative;
-}
-
-.auth-shell::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 20% 30%, rgba(47, 161, 114, 0.2) 0%, transparent 60%),
-    radial-gradient(circle at 80% 70%, rgba(22, 131, 90, 0.15) 0%, transparent 50%);
-  pointer-events: none;
+  background: transparent;
 }
 
 .panel {
@@ -236,12 +226,10 @@ function cancelLink() {
   background: var(--color-surface);
   padding: 3rem 2.5rem;
   border-radius: 1rem;
-  box-shadow: 0 24px 64px -16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 16px 48px -20px rgba(18, 61, 50, 0.18);
   display: flex;
   flex-direction: column;
   gap: 2rem;
-  position: relative;
-  z-index: 1;
 }
 
 header h1 {

@@ -13,6 +13,7 @@
     android:layout_height="match_parent"
     android:fillViewport="true"
     android:fitsSystemWindows="true"
+    android:background="?android:attr/colorBackground"
     tools:context="com.albunyaan.tube.ui.auth.SignInFragment">
 
     <FrameLayout
@@ -33,7 +34,7 @@
                 android:layout_width="128dp"
                 android:layout_height="128dp"
                 android:layout_marginBottom="@dimen/spacing_md"
-                android:src="@mipmap/ic_launcher_round"
+                android:src="@drawable/albunyaantube_logo"
                 android:contentDescription="@string/app_name"/>
 
             <TextView

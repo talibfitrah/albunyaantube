@@ -154,7 +154,7 @@
                 android:id="@+id/submitButton"
                 style="@style/Widget.Material3.Button"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="@dimen/auth_button_height"
                 android:layout_marginTop="@dimen/spacing_lg"
                 android:text="@string/bootstrap_submit_button"
                 app:layout_constraintTop_toBottomOf="@id/passwordConfirmLayout"
