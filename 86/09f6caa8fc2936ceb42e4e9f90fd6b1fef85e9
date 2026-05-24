@@ -1,0 +1,21 @@
+android/app/src/main/res/layout-sw600dp/fragment_sign_in.xml
+  ai_agent 16,37
+android/app/src/main/res/layout-sw720dp/fragment_sign_in.xml
+  ai_agent 20,41
+android/app/src/main/res/drawable/ic_launcher_background.xml
+  ai_agent 8-10
+android/app/src/main/res/layout/fragment_sign_in.xml
+  ai_agent 20,37
+android/app/src/main/res/layout-sw600dp/fragment_profile_bootstrap.xml
+  ai_agent 150
+android/app/src/main/res/layout-sw720dp/fragment_profile_bootstrap.xml
+  ai_agent 157
+android/app/src/main/res/layout/fragment_profile_bootstrap.xml
+  ai_agent 154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "8609f6caa8fc2936ceb42e4e9f90fd6b1fef85e9",
+  "prompts": {}
+}
