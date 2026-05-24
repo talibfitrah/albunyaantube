@@ -31,11 +31,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -109,6 +105,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     @Inject lateinit var bufferPolicy: AdaptiveBufferPolicy
     @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
     @Inject lateinit var simpleCache: SimpleCache
+    @Inject lateinit var cachedHttpDataSourceFactory: com.albunyaan.tube.player.CachedHttpDataSourceFactory
     @Inject lateinit var neverFreezeTrackSelectionFactory: com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory
 
     private var binding: FragmentPlayerBinding? = null
@@ -1519,23 +1516,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
 
-    private fun cachedProgressiveMediaSourceFactory(): ProgressiveMediaSource.Factory {
-        val httpFactory: DataSource.Factory = if (featureFlags.isCronetEnabled) {
-            cronetDataSourceFactory.createForAndroidUA()
-        } else {
-            DefaultHttpDataSource.Factory()
-                .setUserAgent(com.albunyaan.tube.util.HttpConstants.YOUTUBE_USER_AGENT)
-                .setConnectTimeoutMs(15_000)
-                .setReadTimeoutMs(20_000)
-                .setAllowCrossProtocolRedirects(true)
-        }
-        val upstreamFactory = DefaultDataSource.Factory(requireContext(), httpFactory)
-        val cachedFactory = CacheDataSource.Factory()
-            .setCache(simpleCache)
-            .setUpstreamDataSourceFactory(upstreamFactory)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        return ProgressiveMediaSource.Factory(cachedFactory)
-    }
+    private fun cachedProgressiveMediaSourceFactory(): ProgressiveMediaSource.Factory =
+        ProgressiveMediaSource.Factory(cachedHttpDataSourceFactory.create())
 
     /**
      * Handle seamless live stream URL refresh without stopping playback.
