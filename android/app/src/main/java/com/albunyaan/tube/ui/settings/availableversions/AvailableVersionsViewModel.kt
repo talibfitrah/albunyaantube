@@ -21,6 +21,10 @@ import javax.inject.Inject
  * [ReleaseCatalogCache.summaries] and assigns a [RowState] to each release relative to
  * the currently installed build.
  *
+ * Row state is determined by semver comparison via [UpdateChecker.isNewerVersion]:
+ * a release whose version string is newer than the installed build is [RowState.Newer];
+ * an exact match is [RowState.Current]; anything older is [RowState.Older].
+ *
  * The Hilt-injected constructor takes only [ReleaseCatalogCache]. The secondary
  * constructor is for unit tests, which supply the installed version and locale
  * directly instead of relying on BuildConfig / Locale.getDefault().
@@ -58,18 +62,12 @@ class AvailableVersionsViewModel @Inject constructor(
             try {
                 val releases = catalog.list(limit = 5)
                 val summaries = catalog.summaries()
-                // Find the index of the installed version in the list. Releases are returned
-                // newest-first by the GitHub API, so everything before the installed row is
-                // Newer and everything after is Older. isNewerVersion is used as a secondary
-                // heuristic for versions that don't appear in the list (shouldn't happen in
-                // practice but guards the Current-not-found case).
-                val installedIdx = releases.indexOfFirst { it.versionName == installedVersionName }
-                _rows.value = releases.mapIndexed { idx, info ->
+                _rows.value = releases.map { info ->
                     ReleaseRow(
                         info = info,
                         publishedAt = null, // Task 7 will thread publishedAt through UpdateInfo
                         localizedSummary = summaries.summaryFor(info.versionName, locale),
-                        state = computeState(info.versionName, idx, installedIdx),
+                        state = computeState(info.versionName, installedVersionName),
                     )
                 }
             } finally {
@@ -78,19 +76,9 @@ class AvailableVersionsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Assigns row state based on list position (primary) and semver comparison (fallback).
-     *
-     * List position is authoritative because GitHub returns releases newest-first.
-     * Items appearing before the installed entry are Newer; items after are Older.
-     * When the installed version is absent from the list, we fall back to
-     * [UpdateChecker.isNewerVersion] — this covers the edge case where the running
-     * build pre-dates all listed releases.
-     */
-    private fun computeState(remote: String, idx: Int, installedIdx: Int): RowState = when {
-        remote == installedVersionName -> RowState.Current
-        installedIdx >= 0 -> if (idx < installedIdx) RowState.Newer else RowState.Older
-        UpdateChecker.isNewerVersion(remote, installedVersionName) -> RowState.Newer
+    private fun computeState(remote: String, installed: String): RowState = when {
+        remote == installed -> RowState.Current
+        UpdateChecker.isNewerVersion(remote, installed) -> RowState.Newer
         else -> RowState.Older
     }
 }

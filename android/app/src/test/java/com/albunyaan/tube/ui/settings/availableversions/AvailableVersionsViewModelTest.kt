@@ -32,16 +32,16 @@ class AvailableVersionsViewModelTest {
 
     @Test
     fun `merges releases with summaries and assigns row state by installed version`() = runTest {
-        val newer = info("99.0.0-beta.1")
-        val current = info("INSTALLED_VERSION")
-        val older = info("0.0.1")
+        val newer = info("1.0.0-beta.15")
+        val current = info("1.0.0-beta.14")
+        val older = info("1.0.0-beta.13")
         val cache = mock<ReleaseCatalogCache> {
             onBlocking { list(any()) } doReturn listOf(newer, current, older)
             onBlocking { summaries() } doReturn ReleaseSummaries(
-                mapOf("99.0.0-beta.1" to mapOf("en" to "Future release."))
+                mapOf("1.0.0-beta.15" to mapOf("en" to "Future release."))
             )
         }
-        val vm = AvailableVersionsViewModel(cache, installedVersionName = "INSTALLED_VERSION", locale = "en")
+        val vm = AvailableVersionsViewModel(cache, installedVersionName = "1.0.0-beta.14", locale = "en")
         vm.load()
         advanceUntilIdle()
 
