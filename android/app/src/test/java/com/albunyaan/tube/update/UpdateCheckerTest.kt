@@ -6,6 +6,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.doReturn
@@ -152,6 +153,7 @@ class UpdateCheckerTest {
         server.enqueue(MockResponse().setBody("""
             [
               {"tag_name":"v1.0.0-beta.14","name":"beta-14","body":"","prerelease":true,
+               "published_at":"2026-05-24T10:00:00Z",
                "assets":[{"name":"app.apk","browser_download_url":"https://example/14.apk","size":1024,"content_type":"application/vnd.android.package-archive"}]},
               {"tag_name":"v1.0.0-beta.13","name":"beta-13","body":"","prerelease":true,
                "assets":[{"name":"app.apk","browser_download_url":"https://example/13.apk","size":1024,"content_type":"application/vnd.android.package-archive"}]},
@@ -175,6 +177,8 @@ class UpdateCheckerTest {
         assertEquals("1.0.0-beta.14", info[0].versionName)
         assertEquals("1.0.0-beta.13", info[1].versionName)
         assertEquals("1.0.0-beta.11", info[2].versionName)
+        assertEquals(java.time.Instant.parse("2026-05-24T10:00:00Z"), info[0].publishedAt)
+        assertNull(info[1].publishedAt)  // beta-13 has no published_at in this fixture
         server.shutdown()
     }
 

@@ -23,7 +23,8 @@ data class UpdateInfo(
     val releaseName: String,
     val releaseNotes: String,
     val apkUrl: String,
-    val apkSizeBytes: Long
+    val apkSizeBytes: Long,
+    val publishedAt: java.time.Instant? = null,   // null when GitHub omits it
 )
 
 @JsonClass(generateAdapter = true)
@@ -32,7 +33,8 @@ internal data class GithubReleaseDto(
     val name: String?,
     val body: String?,
     val prerelease: Boolean,
-    val assets: List<GithubAssetDto>
+    val assets: List<GithubAssetDto>,
+    val published_at: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -54,7 +56,8 @@ internal data class GithubReleaseListItemDto(
     val name: String?,
     val body: String?,
     val prerelease: Boolean,
-    val assets: List<GithubAssetDto> = emptyList()
+    val assets: List<GithubAssetDto> = emptyList(),
+    val published_at: String? = null,
 )
 
 /**
@@ -123,7 +126,10 @@ class UpdateChecker @Inject constructor(
                     releaseName = release.name ?: release.tag_name,
                     releaseNotes = release.body.orEmpty(),
                     apkUrl = apkAsset.browser_download_url,
-                    apkSizeBytes = apkAsset.size
+                    apkSizeBytes = apkAsset.size,
+                    publishedAt = release.published_at?.let {
+                        runCatching { java.time.Instant.parse(it) }.getOrNull()
+                    },
                 )
             }
         }
@@ -175,7 +181,10 @@ class UpdateChecker @Inject constructor(
                             releaseName = release.name ?: release.tag_name,
                             releaseNotes = release.body.orEmpty(),
                             apkUrl = apk.browser_download_url,
-                            apkSizeBytes = apk.size
+                            apkSizeBytes = apk.size,
+                            publishedAt = release.published_at?.let {
+                                runCatching { java.time.Instant.parse(it) }.getOrNull()
+                            },
                         )
                     }
                     .take(limit)

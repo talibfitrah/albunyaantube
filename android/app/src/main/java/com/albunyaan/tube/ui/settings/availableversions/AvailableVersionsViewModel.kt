@@ -65,7 +65,7 @@ class AvailableVersionsViewModel @Inject constructor(
                 _rows.value = releases.map { info ->
                     ReleaseRow(
                         info = info,
-                        publishedAt = null, // Task 7 will thread publishedAt through UpdateInfo
+                        publishedAt = info.publishedAt,
                         localizedSummary = summaries.summaryFor(info.versionName, locale),
                         state = computeState(info.versionName, installedVersionName),
                     )
