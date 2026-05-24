@@ -3,6 +3,23 @@
 All notable changes to FitrahTube. Versions are tagged on the `develop` branch
 during the beta program.
 
+## [Unreleased]
+
+### Android
+
+- **Update prompt now appears before the sign-in screen.** The "new version
+  available" dialog reliably surfaces during the splash on cold start instead
+  of racing the sign-in screen. Beta-13 users on devices that recreated the
+  activity at launch (theme/locale verification) could land on the sign-in
+  screen without ever being notified of beta-14; the splash now gates routing
+  on the dialog so the prompt is in front of the user before they can sign in.
+- **In-app update reliably applies on Samsung One UI.** After the user taps
+  Install, the app process exits cleanly ~2 s after the system installer
+  takes over so Samsung's aggressive process retention cannot restore the
+  prior DEX on next launch (which previously made the install appear to do
+  nothing). If the user backs out of the system installer the kill is
+  skipped, so an unintentional cancel doesn't yank them out of the app.
+
 ## [1.0.0-beta.14] - 2026-05-24
 
 ### Android
