@@ -695,4 +695,12 @@
     <string name="submit_content_note_hint">رسالة للمراجعين (اختياري)</string>
     <string name="submit_content_note_helper">لماذا تقترح هذا؟ يساعد ذلك المسؤول على المراجعة بشكل أسرع.</string>
 
+    <!-- ANDROID-VERSIONS-01 -->
+    <string name="settings_available_updates">التحديثات المتاحة</string>
+    <string name="available_versions_install">تثبيت</string>
+    <string name="available_versions_installed">مثبت</string>
+    <string name="available_versions_downgrade_deferred">الرجوع لإصدار أقدم غير متاح</string>
+    <string name="available_versions_downgrade_snackbar">الرجوع إلى الإصدارات القديمة غير مدعوم بعد. سيأتي في تحديث لاحق.</string>
+    <string name="available_versions_empty">لا توجد إصدارات متاحة حالياً. حاول مرة أخرى لاحقاً.</string>
+
 </resources>

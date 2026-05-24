@@ -775,4 +775,12 @@
     <string name="submit_content_detected_video">Detected: Video</string>
     <string name="submit_content_note_hint">Message to reviewers (optional)</string>
     <string name="submit_content_note_helper">Why are you suggesting this? Helps the admin review faster.</string>
+
+    <!-- ANDROID-VERSIONS-01: Available Updates screen -->
+    <string name="settings_available_updates">Available updates</string>
+    <string name="available_versions_install">Install</string>
+    <string name="available_versions_installed">Installed</string>
+    <string name="available_versions_downgrade_deferred">Downgrade not available</string>
+    <string name="available_versions_downgrade_snackbar">Downgrading older versions isn\'t supported yet. Coming in a future update.</string>
+    <string name="available_versions_empty">No releases available right now. Try again later.</string>
 </resources>

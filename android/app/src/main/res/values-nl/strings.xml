@@ -665,4 +665,13 @@
     <string name="submit_content_note_hint">Bericht aan beoordelaars (optioneel)</string>
     <string name="submit_content_note_helper">Waarom stel je dit voor? Dit helpt de beheerder sneller te beoordelen.</string>
 
+    <!-- ANDROID-VERSIONS-01 -->
+    <string name="settings_available_updates">Beschikbare updates</string>
+    <string name="available_versions_install">Installeren</string>
+    <string name="available_versions_installed">Geïnstalleerd</string>
+    <string name="available_versions_downgrade_deferred">Downgrade niet beschikbaar</string>
+    <string name="available_versions_downgrade_snackbar">Downgraden naar oudere versies wordt nog niet ondersteund. Komt in een toekomstige update.</string>
+    <string name="available_versions_empty">Geen releases beschikbaar op dit moment. Probeer het later opnieuw.</string>
+
 </resources>
+
