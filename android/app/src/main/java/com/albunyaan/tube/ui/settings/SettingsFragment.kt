@@ -38,6 +38,9 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
     @Inject
     lateinit var updatePromptFlow: com.albunyaan.tube.update.UpdatePromptFlow
 
+    @Inject
+    lateinit var installSource: com.albunyaan.tube.update.InstallSource
+
     /** Plan B (ANDROID-AUTH-01) T6: source of truth for sign-out + Account section visibility. */
     @Inject
     lateinit var authRepository: AuthRepository
@@ -373,6 +376,20 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
             view.findViewById<View>(R.id.updateCheckItem)?.setOnClickListener {
                 val activity = activity ?: return@setOnClickListener
                 updatePromptFlow.runCheck(activity, viewLifecycleOwner)
+            }
+
+            // ANDROID-VERSIONS-01: Available updates row — hidden on Play Store installs
+            val availableVersionsRow = view.findViewById<View>(R.id.availableVersionsItem)
+            val availableVersionsDivider = view.findViewById<View>(R.id.availableVersionsDivider)
+            if (installSource.isPlayStore()) {
+                availableVersionsRow?.visibility = View.GONE
+                availableVersionsDivider?.visibility = View.GONE
+            } else {
+                availableVersionsRow?.setOnClickListener {
+                    if (findNavController().currentDestination?.id == R.id.settingsFragment) {
+                        findNavController().navigate(R.id.action_settingsFragment_to_availableVersionsFragment)
+                    }
+                }
             }
 
             // Toggle switches - handle state changes
