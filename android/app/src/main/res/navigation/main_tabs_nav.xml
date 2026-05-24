@@ -188,6 +188,11 @@
             android:id="@+id/action_settingsFragment_to_aboutFragment"
             app:destination="@id/aboutFragment"/>
         <action
+            android:id="@+id/action_settingsFragment_to_availableVersionsFragment"
+            app:destination="@id/availableVersionsFragment"
+            app:launchSingleTop="true"
+            app:popUpTo="@id/settingsFragment" />
+        <action
             android:id="@+id/action_settingsFragment_to_downloadsFragment"
             app:destination="@id/downloadsFragment"
             app:launchSingleTop="true"
@@ -203,6 +208,11 @@
         android:id="@+id/aboutFragment"
         android:name="com.albunyaan.tube.ui.settings.AboutFragment"
         android:label="About" />
+
+    <fragment
+        android:id="@+id/availableVersionsFragment"
+        android:name="com.albunyaan.tube.ui.settings.availableversions.AvailableVersionsFragment"
+        android:label="@string/settings_available_updates" />
 
     <fragment
         android:id="@+id/searchFragment"
