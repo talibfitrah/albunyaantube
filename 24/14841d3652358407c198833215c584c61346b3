@@ -1,0 +1,21 @@
+android/app/src/main/java/com/albunyaan/tube/update/ReleaseSummaryFetcher.kt
+  s_0f79e29c020bf2::t_acfefd2fac2407 1-76
+android/app/src/test/java/com/albunyaan/tube/update/ReleaseSummaryFetcherTest.kt
+  s_0f79e29c020bf2::t_f3816d12f558f6 1-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "2414841d3652358407c198833215c584c61346b3",
+  "prompts": {},
+  "sessions": {
+    "s_0f79e29c020bf2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cfd3c5cf-780d-4107-8a54-b5cfe02ce86b",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
