@@ -94,11 +94,16 @@ class RefreshSchedulerTest {
         // Cancel and drain WorkManager before closing the in-memory DB / Robolectric
         // context. Otherwise constraint trackers can keep running on WM.task-*
         // threads and surface as UncaughtExceptionsBeforeTest in the next test.
-        runCatching {
+        // Only IllegalStateException is expected (WorkManager not initialized
+        // in a torn-down Robolectric sandbox); anything else surfaces as a real
+        // test failure rather than vanishing into runCatching.
+        try {
             val workManager = WorkManager.getInstance(ctx)
             workManager.cancelAllWork().result.get()
             workManager.pruneWork().result.get()
             WorkManagerTestInitHelper.closeWorkDatabase()
+        } catch (_: IllegalStateException) {
+            // WorkManager already torn down by a prior test; nothing to drain.
         }
         db.close()
     }

@@ -22,6 +22,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.doReturn
 import org.robolectric.annotation.Config
 
 /**
@@ -157,7 +158,17 @@ class PlayerBinderTest {
         repo: PlayerRepository,
         ops: PlayerBinder.PlayerOps = RecordingPlayerOps(),
         attach: PlayerBinder.PlayerViewAttach = RecordingAttach()
-    ) = PlayerBinder(repo, ops, attach)
+    ) = PlayerBinder(
+        repo,
+        ops,
+        attach,
+        // Stub create() so any code path that drops into the progressive
+        // fallback (e.g. buildProgressiveSource) gets a non-null DataSource
+        // factory instead of NPEing on Mockito's null default.
+        org.mockito.kotlin.mock<com.albunyaan.tube.player.CachedHttpDataSourceFactory> {
+            on { create() } doReturn org.mockito.kotlin.mock()
+        },
+    )
 
     @Test
     fun rapidBind_dropsStaleResolveWithoutTouchingPlayer() = runTest(dispatcher) {
@@ -310,10 +321,14 @@ class PlayerBinderTest {
     }
 
     @Test
-    fun bind_afterCancelScope_throwsIllegalStateException() = runTest(dispatcher) {
-        // CodeRabbit guard: silent reuse of a torn-down binder previously
-        // resulted in an inert no-op (scope.cancel makes future launch{} do
-        // nothing). The check() now surfaces the misuse loudly.
+    fun bind_afterCancelScope_isSilentNoOp() = runTest(dispatcher) {
+        // bindInternal previously threw IllegalStateException when called
+        // after cancelScope to surface programmer error loudly. The behaviour
+        // was changed to an early-return after a P2 review finding: a
+        // late-arriving callback (e.g. a ViewPager scroll posted on the main
+        // queue during onDestroyView teardown) hitting bind() is a benign
+        // race, not a misuse worth crashing the host activity. This test
+        // now pins the no-op contract.
         val ops = RecordingPlayerOps()
         val attach = RecordingAttach()
         val repo = TestPlayerRepository()
@@ -322,12 +337,18 @@ class PlayerBinderTest {
         binder.cancelScope()
 
         val view: PlayerView = org.mockito.kotlin.mock()
-        try {
-            binder.bind(view, "Q")
-            org.junit.Assert.fail("Expected IllegalStateException after cancelScope")
-        } catch (_: IllegalStateException) {
-            // expected
-        }
+        binder.bind(view, "Q")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(
+            "bind after cancelScope must not attach the view",
+            attach.events.any { it.attached }
+        )
+        assertFalse("bind after cancelScope must not touch player", ops.calls.contains("stop"))
+        assertFalse(
+            "bind after cancelScope must not run setMediaSource",
+            ops.calls.contains("setMediaSource")
+        )
     }
 
     @Test
