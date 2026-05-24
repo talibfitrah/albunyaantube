@@ -1,0 +1,19 @@
+android/app/src/test/java/com/albunyaan/tube/update/InstallSourceTest.kt
+  s_0f79e29c020bf2::t_78128db5130e55 49-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "2c94d4411257f8994f6fea7baa850565bee0b08c",
+  "prompts": {},
+  "sessions": {
+    "s_0f79e29c020bf2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cfd3c5cf-780d-4107-8a54-b5cfe02ce86b",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
