@@ -60,6 +60,38 @@ class UpdatePromptFlowTest {
         verify(catalog, times(1)).latest()
     }
 
+    @Test
+    fun `showUpdateDialogAndAwait accepts non-latest UpdateInfo and returns once splashPromptDismissed`() = runTest {
+        // Contract widening: the picker passes UpdateInfo for releases that are NOT
+        // necessarily the absolute latest from GitHub. The method has always taken
+        // UpdateInfo as a parameter — this test locks that arbitrary instances are
+        // accepted, by routing through the splashPromptDismissed short-circuit (the
+        // only path that doesn't need a live Activity to drive the AlertDialog).
+        val catalog = mock<ReleaseCatalogCache> {
+            onBlocking { latest() } doReturn null
+        }
+        val flow = UpdatePromptFlow(mock(), mock(), catalog)
+        flipSplashPromptDismissed(flow, true)
+
+        val nonLatest = UpdateInfo(
+            versionName = "1.0.0-beta.13",  // one behind the running build, hypothetically
+            releaseName = "beta-13",
+            releaseNotes = "",
+            apkUrl = "https://example/test.apk",
+            apkSizeBytes = 1024L,
+            publishedAt = null,
+        )
+
+        // No assertion needed beyond "this returns without throwing." If the method
+        // started rejecting non-latest UpdateInfo (e.g. by adding a `require(info ==
+        // catalog.latest())` guard), it would throw here and fail.
+        flow.showUpdateDialogAndAwait(
+            activity = mock(),
+            lifecycleOwner = mock(),
+            info = nonLatest,
+        )
+    }
+
     private fun updateInfo() = UpdateInfo(
         versionName = "1.0.0-beta.14",
         releaseName = "v1.0.0-beta.14",
