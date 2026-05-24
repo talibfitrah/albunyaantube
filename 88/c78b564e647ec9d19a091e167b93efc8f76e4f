@@ -1,0 +1,25 @@
+android/app/src/main/java/com/albunyaan/tube/auth/FirebaseAuthInterceptor.kt
+  s_498ee1a0343c4c::t_5303360ce91383 69-75
+  s_498ee1a0343c4c::t_e3cd30d37a77ed 53-67,77-81
+  s_498ee1a0343c4c::t_0a2689bcaab9c3 45-52,68,76,82,84-87
+  s_498ee1a0343c4c::t_50b11fe7a13db6 3-4,11
+android/app/src/test/java/com/albunyaan/tube/auth/FirebaseAuthInterceptorTest.kt
+  s_498ee1a0343c4c::t_8ba284f90c11fc 34-37,39
+  s_498ee1a0343c4c::t_12647639681b40 77-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "88c78b564e647ec9d19a091e167b93efc8f76e4f",
+  "prompts": {},
+  "sessions": {
+    "s_498ee1a0343c4c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bc23ad20-edbb-4ba0-b6db-d678c020ec34",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
