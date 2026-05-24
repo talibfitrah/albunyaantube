@@ -31,8 +31,12 @@ class FirebaseAuthInterceptorTest {
         server = MockWebServer().apply { start() }
         firebaseAuth = mock()
         user = mock()
+        // MockWebServer binds to localhost — point apiHost at it so the host-
+        // scope check passes and the existing signing-path tests still exercise
+        // the Bearer-attach logic. The new third-party-host test below spins up
+        // a SECOND server with a different (mocked) URL to assert pass-through.
         client = OkHttpClient.Builder()
-            .addInterceptor(FirebaseAuthInterceptor(firebaseAuth))
+            .addInterceptor(FirebaseAuthInterceptor(firebaseAuth).apply { apiHost = server.hostName })
             .build()
     }
 
@@ -68,6 +72,32 @@ class FirebaseAuthInterceptorTest {
         client.newCall(Request.Builder().url(server.url("/x")).build()).execute().close()
 
         assertEquals("Bearer ey-fresh", server.takeRequest().getHeader("Authorization"))
+    }
+
+    /**
+     * Regression: the shared OkHttpClient runs this interceptor on EVERY
+     * request, including third-party hosts (GitHub releases API, raw.github
+     * usercontent.com for releases-meta.json). Pre-fix the Firebase JWT
+     * leaked there and GitHub returned 401, leaving the Available Updates
+     * screen empty. The host-scope check must skip non-API hosts entirely
+     * — no token fetch, no Authorization header — so signed-in users still
+     * load releases from GitHub.
+     */
+    @Test fun `request to non-API host is passed through unsigned even when signed in`() {
+        val fresh = tokenResult("ey-fresh")
+        whenever(firebaseAuth.currentUser).thenReturn(user)
+        whenever(user.getIdToken(false)).thenReturn(Tasks.forResult(fresh))
+        // apiHost points at a host the request URL won't match (server.hostName
+        // is localhost; api.example.com is not). Same client/server fixture —
+        // just retargeting the scope so the localhost request is "off-domain".
+        val scopedClient = OkHttpClient.Builder()
+            .addInterceptor(FirebaseAuthInterceptor(firebaseAuth).apply { apiHost = "api.example.com" })
+            .build()
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        scopedClient.newCall(Request.Builder().url(server.url("/x")).build()).execute().close()
+
+        assertNull(server.takeRequest().getHeader("Authorization"))
     }
 
     @Test fun `null token bypasses header attach`() {

@@ -1,11 +1,14 @@
 package com.albunyaan.tube.auth
 
+import androidx.annotation.VisibleForTesting
+import com.albunyaan.tube.BuildConfig
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
@@ -39,7 +42,49 @@ class FirebaseAuthInterceptor @Inject constructor(
     private val auth: FirebaseAuth,
 ) : Interceptor {
 
+    /**
+     * Host that the Firebase Bearer is allowed to leak to. Computed once from
+     * [BuildConfig.API_BASE_URL] (the backend the token is actually for). Any
+     * request whose URL host does NOT match this is passed through unsigned —
+     * stops the token leaking to third parties (api.github.com, raw.githubuser
+     * content.com, image CDNs, etc.) which would otherwise return 401 because
+     * a Firebase JWT means nothing to them. Overridable in tests so unit tests
+     * targeting MockWebServer (localhost) still exercise the signing path.
+     *
+     * Scope is per-HOST, not per-origin: [HttpUrl.host] strips the port and
+     * scheme, so `http://10.0.2.2:8080` and `http://10.0.2.2:9090` both match.
+     * Treat as intentional — one machine, two services on different ports
+     * share the trust boundary in this app's deployment model. If a colocated
+     * service on a different port ever ships in production, narrow the check
+     * to host+port at that point.
+     *
+     * Fail-fast on malformed URL: if [BuildConfig.API_BASE_URL] is set without
+     * a scheme (e.g. `10.0.2.2:8080/` in local.properties), [toHttpUrlOrNull]
+     * returns null. Pre-fix that silently produced `apiHost = ""`, which never
+     * matches any real request → the interceptor stops attaching Bearer to
+     * EVERY endpoint and the whole authenticated surface 401s with no obvious
+     * cause. Crashing at init makes the misconfig visible immediately (cubic
+     * R1 P2).
+     */
+    // @Volatile: production sets this once during Hilt singleton construction
+    // (single-threaded, happens-before via class init), but tests reassign it
+    // from the test thread before sharing the interceptor with the OkHttp
+    // dispatcher pool. @Volatile makes the publication explicit so a Kotlin/JIT
+    // reordering doesn't surface a stale value on the dispatcher thread
+    // (cubic R3 P3 defensive).
+    @Volatile
+    @VisibleForTesting
+    internal var apiHost: String = BuildConfig.API_BASE_URL.toHttpUrlOrNull()?.host
+        ?: error(
+            "BuildConfig.API_BASE_URL is not a valid URL: '${BuildConfig.API_BASE_URL}'. " +
+                "Check local.properties — the value must include a scheme (http:// or https://)."
+        )
+
     override fun intercept(chain: Interceptor.Chain): Response {
+        // Host scope: never attach the Bearer to anything but our backend.
+        if (chain.request().url.host != apiHost) {
+            return chain.proceed(chain.request())
+        }
         val user = auth.currentUser ?: return chain.proceed(chain.request())
 
         // Defensive: if Firebase throws during token fetch (network blip mid
