@@ -69,6 +69,22 @@ class AvailableVersionsViewModelTest {
     }
 
     @Test
+    fun `Arabic locale with English-only summary falls back to English`() = runTest {
+        val release = info("1.0.0-beta.14")
+        val cache = mock<ReleaseCatalogCache> {
+            onBlocking { list(any()) } doReturn listOf(release)
+            onBlocking { summaries() } doReturn ReleaseSummaries(
+                mapOf("1.0.0-beta.14" to mapOf("en" to "Only English."))
+            )
+        }
+        val vm = AvailableVersionsViewModel(cache, installedVersionName = "1.0.0-beta.14", locale = "ar")
+        vm.load()
+        advanceUntilIdle()
+
+        assertEquals("Only English.", vm.rows.value.single().localizedSummary)
+    }
+
+    @Test
     fun `empty release list produces empty rows - not error state`() = runTest {
         val cache = mock<ReleaseCatalogCache> {
             onBlocking { list(any()) } doReturn emptyList()

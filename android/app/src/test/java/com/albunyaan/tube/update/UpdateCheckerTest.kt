@@ -183,6 +183,33 @@ class UpdateCheckerTest {
     }
 
     @Test
+    fun `listReleases filters out pre-releases when running build is stable`() = runTest {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("""
+            [
+              {"tag_name":"v1.0.0-beta.15","name":"beta-15","body":"","prerelease":true,
+               "assets":[{"name":"app.apk","browser_download_url":"https://example/15.apk","size":1024,"content_type":"application/vnd.android.package-archive"}]},
+              {"tag_name":"v1.0.0","name":"stable","body":"","prerelease":false,
+               "assets":[{"name":"app.apk","browser_download_url":"https://example/stable.apk","size":1024,"content_type":"application/vnd.android.package-archive"}]}
+            ]
+        """.trimIndent()))
+        server.start()
+
+        val checker = UpdateChecker(
+            okHttpClient = OkHttpClient(),
+            installSource = mock { on { isPlayStore() } doReturn false }
+        )
+        checker.apiBaseUrlForTest = server.url("/").toString()
+        checker.currentVersionForTest = "1.0.0"  // stable, no '-' suffix
+
+        val info = checker.listReleases(limit = 5).getOrThrow()
+        assertEquals(1, info.size)
+        assertEquals("1.0.0", info[0].versionName)  // beta-15 dropped, only stable kept
+
+        server.shutdown()
+    }
+
+    @Test
     fun `listReleases returns empty on Play Store install`() = runTest {
         val checker = UpdateChecker(
             okHttpClient = OkHttpClient(),

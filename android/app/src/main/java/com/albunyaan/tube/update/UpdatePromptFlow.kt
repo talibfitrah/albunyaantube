@@ -63,20 +63,25 @@ class UpdatePromptFlow @Inject constructor(
     private val downloadMutex = Mutex()
 
     /**
-     * Process-scoped guard so the splash gate prompts at most once per cold start
+     * Process-scoped guard so an update prompt fires at most once per cold start
      * AFTER the user has actually acted on the dialog. Cleared at process death.
      *
-     * Set ONLY by a user-driven dismissal (Later, Install, back-button, outside-tap on
-     * the live dialog). Lifecycle-driven teardown (rotation, theme change) clears the
-     * dialog's dismiss listener *before* calling `dismiss()` so the cleanup path
-     * leaves this flag false — that way the recreated SplashFragment can re-show
-     * the dialog instead of silently swallowing it (round-2 code-reviewer C1).
+     * Set by a user-driven dismissal from EITHER entry point (splash gate or picker
+     * → install path). The name reflects the actual job: "an update prompt has fired
+     * in this process; don't re-prompt." Both splash and picker set this on real user
+     * action so a picker Install that precedes the splash gate check does not re-show
+     * the dialog on the same cold start.
+     *
+     * Lifecycle-driven teardown (rotation, theme change) clears the dialog's dismiss
+     * listener *before* calling `dismiss()` so the cleanup path leaves this flag false
+     * — that way the recreated SplashFragment can re-show the dialog instead of
+     * silently swallowing it (round-2 code-reviewer C1).
      *
      * Manual checks from Settings bypass this — they call [runCheck] directly, which
      * is intentional user-initiated re-check.
      */
     @Volatile
-    private var splashPromptDismissed = false
+    private var promptDismissedThisProcess = false
 
     /**
      * Manual "Check for updates" entry point from Settings. Always surfaces a result toast
@@ -104,7 +109,7 @@ class UpdatePromptFlow @Inject constructor(
      * screen reuses the same network call without an extra roundtrip.
      */
     suspend fun checkForUpdate(): UpdateInfo? {
-        if (splashPromptDismissed) return null
+        if (promptDismissedThisProcess) return null
         return withTimeoutOrNull(CHECK_TIMEOUT_MS) { catalog.latest() }
     }
 
@@ -117,14 +122,14 @@ class UpdatePromptFlow @Inject constructor(
      * Once the user has acted on the dialog the suspend is a no-op for the rest of the
      * process (idempotent per cold start). Lifecycle teardown (rotation, theme change)
      * tears down the dialog without marking it as dismissed so the recreated SplashFragment
-     * can re-show it — the `splashPromptDismissed` doc explains the contract.
+     * can re-show it — the `promptDismissedThisProcess` doc explains the contract.
      */
     suspend fun showUpdateDialogAndAwait(
         activity: Activity,
         lifecycleOwner: LifecycleOwner,
         info: UpdateInfo
     ): Unit = suspendCancellableCoroutine { cont ->
-        if (splashPromptDismissed) {
+        if (promptDismissedThisProcess) {
             if (cont.isActive) cont.resume(Unit)
             return@suspendCancellableCoroutine
         }
@@ -137,20 +142,20 @@ class UpdatePromptFlow @Inject constructor(
                 // dismiss is dispatched. Wins the race against a simultaneous
                 // activity destroy that would otherwise clear the dismiss listener
                 // before the queued dismiss message could fire (cubic round-2 P2).
-                splashPromptDismissed = true
+                promptDismissedThisProcess = true
             },
             onDismissed = {
                 // Fallback for back-button / outside-tap dismissals (no button handler
                 // to fire onUserAction). Also idempotently re-sets the flag after a
                 // button-driven dismiss — same value, no-op.
-                splashPromptDismissed = true
+                promptDismissedThisProcess = true
                 if (cont.isActive) cont.resume(Unit)
             },
         )
         if (dialog == null) {
             // Activity finishing — couldn't show the dialog. Resume cont so the splash
-            // can route on, but leave splashPromptDismissed false so the next cold start
-            // with a live activity gets another chance to prompt.
+            // can route on, but leave promptDismissedThisProcess false so the next cold
+            // start with a live activity gets another chance to prompt.
             if (cont.isActive) cont.resume(Unit)
             return@suspendCancellableCoroutine
         }
@@ -160,11 +165,11 @@ class UpdatePromptFlow @Inject constructor(
             // and must run on main. When we are already on main (the lifecycle case),
             // run synchronously — posting opens a narrow window where the current main
             // message could deliver a queued user-tap dismiss before our listener-clear
-            // runs, flipping splashPromptDismissed prematurely (cubic P3). When we are
+            // runs, flipping promptDismissedThisProcess prematurely (cubic P3). When we are
             // off-main, posting is the only safe option.
             //
             // The dismiss listener is dropped BEFORE dismissing so lifecycle-driven teardown
-            // does not flip splashPromptDismissed — the user never saw the dialog dismiss
+            // does not flip promptDismissedThisProcess — the user never saw the dialog dismiss
             // on their own terms, the system tore it down (round-2 code-reviewer C1).
             val cleanup = {
                 dialog.setOnDismissListener(null)

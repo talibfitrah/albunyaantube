@@ -74,6 +74,9 @@ class UpdateChecker @Inject constructor(
     @VisibleForTesting
     internal var apiBaseUrlForTest: String? = null   // production callers MUST NOT set this
 
+    @VisibleForTesting
+    internal var currentVersionForTest: String? = null  // production callers MUST NOT set this
+
     private val moshi: Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val adapter = moshi.adapter(GithubReleaseDto::class.java)
     private val listAdapter = moshi.adapter<List<GithubReleaseListItemDto>>(
@@ -168,8 +171,8 @@ class UpdateChecker @Inject constructor(
                 }
                 val body = response.body?.string() ?: return@use emptyList<UpdateInfo>()
                 val list = listAdapter.fromJson(body) ?: return@use emptyList<UpdateInfo>()
-                // TODO(ANDROID-VERSIONS-01 Task 15): test the stable-channel filter path
-                val currentIsPrerelease = BuildConfig.VERSION_NAME.contains('-')
+                val currentVersion = currentVersionForTest ?: BuildConfig.VERSION_NAME
+                val currentIsPrerelease = currentVersion.contains('-')
                 list.asSequence()
                     .filterNot { it.prerelease && !currentIsPrerelease }
                     .mapNotNull { release ->

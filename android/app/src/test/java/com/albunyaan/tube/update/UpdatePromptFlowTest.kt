@@ -39,7 +39,7 @@ class UpdatePromptFlowTest {
     }
 
     @Test
-    fun `checkForUpdate short-circuits to null once splashPromptDismissed is set`() = runTest {
+    fun `checkForUpdate short-circuits to null once promptDismissedThisProcess is set`() = runTest {
         val info = updateInfo()
         val catalog = mock<ReleaseCatalogCache> {
             onBlocking { latest() } doReturn info
@@ -50,10 +50,10 @@ class UpdatePromptFlowTest {
         // First call hits the catalog.
         flow.checkForUpdate()
 
-        // Simulate "user dismissed the splash prompt this process" — reflectively flip the
+        // Simulate "user dismissed the prompt this process" — reflectively flip the
         // guard. The public API for that path requires a real Activity context, so we
         // exercise the gating logic directly via reflection.
-        flipSplashPromptDismissed(flow, true)
+        flipPromptDismissedThisProcess(flow, true)
 
         assertNull(flow.checkForUpdate())
         // Catalog was only queried once across the two calls.
@@ -61,17 +61,17 @@ class UpdatePromptFlowTest {
     }
 
     @Test
-    fun `showUpdateDialogAndAwait accepts non-latest UpdateInfo and returns once splashPromptDismissed`() = runTest {
+    fun `showUpdateDialogAndAwait accepts non-latest UpdateInfo and returns once promptDismissedThisProcess`() = runTest {
         // Contract widening: the picker passes UpdateInfo for releases that are NOT
         // necessarily the absolute latest from GitHub. The method has always taken
         // UpdateInfo as a parameter — this test locks that arbitrary instances are
-        // accepted, by routing through the splashPromptDismissed short-circuit (the
+        // accepted, by routing through the promptDismissedThisProcess short-circuit (the
         // only path that doesn't need a live Activity to drive the AlertDialog).
         val catalog = mock<ReleaseCatalogCache> {
             onBlocking { latest() } doReturn null
         }
         val flow = UpdatePromptFlow(mock(), mock(), catalog)
-        flipSplashPromptDismissed(flow, true)
+        flipPromptDismissedThisProcess(flow, true)
 
         val nonLatest = UpdateInfo(
             versionName = "1.0.0-beta.13",  // one behind the running build, hypothetically
@@ -100,8 +100,8 @@ class UpdatePromptFlowTest {
         apkSizeBytes = 1_024L,
     )
 
-    private fun flipSplashPromptDismissed(flow: UpdatePromptFlow, value: Boolean) {
-        val field = UpdatePromptFlow::class.java.getDeclaredField("splashPromptDismissed")
+    private fun flipPromptDismissedThisProcess(flow: UpdatePromptFlow, value: Boolean) {
+        val field = UpdatePromptFlow::class.java.getDeclaredField("promptDismissedThisProcess")
         field.isAccessible = true
         field.setBoolean(flow, value)
     }
