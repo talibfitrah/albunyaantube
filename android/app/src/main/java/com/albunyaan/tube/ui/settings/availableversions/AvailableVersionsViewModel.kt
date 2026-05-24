@@ -65,7 +65,6 @@ class AvailableVersionsViewModel @Inject constructor(
                 _rows.value = releases.map { info ->
                     ReleaseRow(
                         info = info,
-                        publishedAt = info.publishedAt,
                         localizedSummary = summaries.summaryFor(info.versionName, locale),
                         state = computeState(info.versionName, installedVersionName),
                     )

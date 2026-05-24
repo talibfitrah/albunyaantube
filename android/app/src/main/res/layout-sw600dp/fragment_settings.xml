@@ -262,8 +262,35 @@
                 app:cardCornerRadius="@dimen/corner_radius_medium"
                 app:cardElevation="0dp">
 
-                <!-- Support Center -->
-                <include layout="@layout/settings_item_support"/>
+                <!-- MaterialCardView extends FrameLayout; wrap so rows stack vertically. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <!-- Support Center -->
+                    <include layout="@layout/settings_item_support"/>
+
+                    <View
+                        android:id="@+id/availableVersionsDivider"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/divider_thickness"
+                        android:background="?attr/colorOutlineVariant"
+                        android:layout_marginStart="@dimen/spacing_lg"/>
+
+                    <!-- ANDROID-VERSIONS-01: Available updates -->
+                    <include layout="@layout/settings_item_available_versions"/>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/divider_thickness"
+                        android:background="?attr/colorOutlineVariant"
+                        android:layout_marginStart="@dimen/spacing_lg"/>
+
+                    <!-- ANDROID-MULTI-01 Issue 3: Check for updates -->
+                    <include layout="@layout/settings_item_update_check"/>
+
+                </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>
 

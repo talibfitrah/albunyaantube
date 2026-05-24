@@ -46,13 +46,14 @@ class AvailableVersionsAdapter(
         private val version: TextView = view.findViewById(R.id.version)
         private val dateLine: TextView = view.findViewById(R.id.dateLine)
         private val summary: TextView = view.findViewById(R.id.summary)
+        private val downgradeNote: TextView = view.findViewById(R.id.downgradeNote)
         private val action: MaterialButton = view.findViewById(R.id.action)
         private val installedChip: Chip = view.findViewById(R.id.installedChip)
 
         fun bind(row: ReleaseRow) {
             version.text = "v${row.info.versionName}"
 
-            dateLine.text = row.publishedAt?.let {
+            dateLine.text = row.info.publishedAt?.let {
                 DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)
                     .withLocale(Locale.getDefault())
                     .withZone(ZoneId.systemDefault())
@@ -67,6 +68,7 @@ class AvailableVersionsAdapter(
                 RowState.Newer -> {
                     action.visibility = View.VISIBLE
                     installedChip.visibility = View.GONE
+                    downgradeNote.visibility = View.GONE
                     action.text = itemView.context.getString(R.string.available_versions_install)
                     action.isEnabled = true
                     action.setOnClickListener { onInstallClick(row) }
@@ -76,12 +78,14 @@ class AvailableVersionsAdapter(
                 RowState.Current -> {
                     action.visibility = View.GONE
                     installedChip.visibility = View.VISIBLE
+                    downgradeNote.visibility = View.GONE
                     itemView.setOnClickListener(null)
                     itemView.isClickable = false
                 }
                 RowState.Older -> {
                     action.visibility = View.GONE
                     installedChip.visibility = View.GONE
+                    downgradeNote.visibility = View.VISIBLE
                     itemView.isClickable = true
                     itemView.setOnClickListener { onOlderClick(row) }
                 }

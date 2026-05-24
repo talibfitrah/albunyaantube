@@ -1,15 +1,14 @@
 package com.albunyaan.tube.update
 
-import java.time.Instant
-
 /**
  * One row in the Available Updates screen. Carries the full UpdateInfo so the
  * future downgrade flow (out of scope today) can drive uninstall + reinstall
  * without a re-fetch.
+ *
+ * Published date is accessed via [info.publishedAt] — no need to duplicate it here.
  */
 data class ReleaseRow(
     val info: UpdateInfo,
-    val publishedAt: Instant?,
     val localizedSummary: String?,
     val state: RowState
 )

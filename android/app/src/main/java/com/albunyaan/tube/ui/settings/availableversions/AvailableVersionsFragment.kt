@@ -60,7 +60,11 @@ class AvailableVersionsFragment : Fragment(R.layout.fragment_available_versions)
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
-                    viewModel.rows.collect { adapter.submitList(it) }
+                    viewModel.rows.collect { rows ->
+                        adapter.submitList(rows)
+                        view.findViewById<View>(R.id.emptyState)?.visibility =
+                            if (rows.isEmpty() && !viewModel.loading.value) View.VISIBLE else View.GONE
+                    }
                 }
                 launch {
                     viewModel.loading.collect {

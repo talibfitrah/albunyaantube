@@ -55,6 +55,21 @@
             app:layout_constraintTop_toBottomOf="@id/dateLine"
             tools:text="Splash-gate update prompt + Samsung post-install self-kill." />
 
+        <TextView
+            android:id="@+id/downgradeNote"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_sm"
+            android:textSize="@dimen/text_caption"
+            android:textStyle="italic"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:text="@string/available_versions_downgrade_deferred"
+            android:textAlignment="viewStart"
+            android:visibility="gone"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/summary" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/action"
             style="@style/Widget.Material3.Button.TonalButton"
