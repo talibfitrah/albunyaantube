@@ -9,7 +9,6 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
-import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -50,7 +49,8 @@ import javax.inject.Singleton
 @Singleton
 class UpdatePromptFlow @Inject constructor(
     private val checker: UpdateChecker,
-    private val installer: ApkInstaller
+    private val installer: ApkInstaller,
+    private val catalog: ReleaseCatalogCache
 ) {
 
     /**
@@ -79,17 +79,6 @@ class UpdatePromptFlow @Inject constructor(
     private var splashPromptDismissed = false
 
     /**
-     * Cached GitHub probe so rotation / theme / locale changes during the splash window
-     * do not each hit the API — anonymous GitHub limit is 60 req/h per IP, and a user
-     * rapidly toggling system settings can otherwise blow the budget for the whole NAT
-     * (cubic round-2 P2). TTL matches the GitHub release page's typical edit cadence.
-     * Manual checks from Settings bypass via [runCheck] → [UpdateChecker.checkForUpdate]
-     * directly.
-     */
-    @Volatile
-    private var cachedProbe: Pair<UpdateInfo?, Long>? = null
-
-    /**
      * Manual "Check for updates" entry point from Settings. Always surfaces a result toast
      * ("no update available" or "check failed") because the user explicitly asked. Splash
      * cold-start uses [checkForUpdate] + [showUpdateDialogAndAwait] instead.
@@ -110,22 +99,13 @@ class UpdatePromptFlow @Inject constructor(
      * Bounded check used by the splash gate. Returns the [UpdateInfo] or null on no-update,
      * network failure, or timeout — splash never wants to stall cold start waiting on GitHub.
      * Short-circuits to null once the user has dismissed the prompt this process so a
-     * second splash from a rotation/recreate does not re-hit GitHub. A 5-minute probe
-     * cache absorbs rapid configuration changes during the splash window.
+     * second splash from a rotation/recreate does not re-hit GitHub. The 5-minute TTL
+     * and shared snapshot are owned by [ReleaseCatalogCache] so the Available Updates
+     * screen reuses the same network call without an extra roundtrip.
      */
     suspend fun checkForUpdate(): UpdateInfo? {
         if (splashPromptDismissed) return null
-        cachedProbe?.let { (info, at) ->
-            if (SystemClock.elapsedRealtime() - at < PROBE_CACHE_TTL_MS) return info
-        }
-        val info = withTimeoutOrNull(CHECK_TIMEOUT_MS) { checker.checkForUpdate().getOrNull() }
-        // Cache successes only — a transient cold-start network failure should not
-        // sticky a "no update available" for 5 minutes across every config change
-        // (cubic round-3 P2).
-        if (info != null) {
-            cachedProbe = info to SystemClock.elapsedRealtime()
-        }
-        return info
+        return withTimeoutOrNull(CHECK_TIMEOUT_MS) { catalog.latest() }
     }
 
     /**
@@ -392,10 +372,6 @@ class UpdatePromptFlow @Inject constructor(
          * stall cold start on a flaky network. The check runs in parallel with splash
          * animations (≈2.7 s), so this typically resolves before we need the result. */
         private const val CHECK_TIMEOUT_MS = 2_000L
-
-        /** How long the GitHub probe result stays cached. Bounds the worst-case API call
-         * count to ≤12 per hour even under aggressive rotation/theme toggling. */
-        private const val PROBE_CACHE_TTL_MS = 5 * 60_000L
 
         /** Hand-off window before we kill the process so the system installer Activity
          * has time to take focus. Empirically 2 s covers slow OEM launchers. */
