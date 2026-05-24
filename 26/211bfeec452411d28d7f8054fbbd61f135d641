@@ -1,0 +1,25 @@
+docs/superpowers/plans/2026-05-24-version-picker.md
+  s_0f79e29c020bf2::t_00656703e186ab 657
+  s_0f79e29c020bf2::t_d6d0b8c841d599 1-656,658-1894
+docs/superpowers/specs/2026-05-24-version-picker-design.md
+  s_0f79e29c020bf2::t_92f3858653167d 121
+  s_0f79e29c020bf2::t_704c03b857d82c 70-82
+  s_0f79e29c020bf2::t_708e9cecccaac0 159
+  s_0f79e29c020bf2::t_710123ed9c891d 1-69,83-120,122-158,160-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "26211bfeec452411d28d7f8054fbbd61f135d641",
+  "prompts": {},
+  "sessions": {
+    "s_0f79e29c020bf2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cfd3c5cf-780d-4107-8a54-b5cfe02ce86b",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
