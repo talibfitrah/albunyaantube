@@ -71,6 +71,46 @@ When responding, structure your review with clear headings such as:
 
 ---
 
+## Mandatory Post-Coding Review Pipeline
+
+After **any coding work that changes repository files**, Codex must run the project
+7-stage review pipeline before treating the work as complete. This applies to
+backend, frontend, Android, scripts, docs that affect implementation, and config
+changes.
+
+Use the pipeline already referenced by `CLAUDE.md` / Superpowers:
+
+1. **Baseline**: inspect `git status`, identify the changed files, and run the
+   relevant unit/integration/build checks for the touched platform.
+2. **Code reviewer**: run a cold code-review pass over the diff against the
+   appropriate base branch, prioritizing bugs/security/correctness.
+3. **Security review**: run the `cso`/security-focused review when the change
+   touches auth, permissions, network input, storage, admin paths, parsers,
+   external URLs, secrets, billing, or other trust boundaries.
+4. **Adversarial challenge**: run a second-opinion challenge pass, preferably
+   Codex challenge or the closest available agent/tool fallback.
+5. **Consolidate findings**: merge findings, remove duplicates, classify
+   severity, and decide what must be fixed before completion.
+6. **Patch and re-review**: fix all Critical/Important/actionable findings and
+   re-run targeted checks/review until they are closed.
+7. **gstack /review + Cubic**: run gstack `/review`, then run Cubic as the
+   final review stage. Cubic replaced CodeRabbit for this project on
+   2026-05-15. Use `cubic review --base <base-sha> --json` or
+   `cubic review -b <base-sha> -j` from the repo root. Cubic is stochastic:
+   each run can surface a new slice of findings, so do not treat one clean-ish
+   run as conclusive. Default exit rule: after fixing each batch, re-run Cubic
+   until **two consecutive rounds show no new P0/P1 findings**. If the user sets
+   a narrower severity or cycle bar, follow that explicit bar and report it.
+   P0/P1 findings block completion unless fixed or documented as pre-existing /
+   architectural deferrals with a concrete follow-up plan. P2 defaults to fix
+   unless scope is narrowed; P3 is judgment-based.
+
+If a stage cannot run because a tool, credential, PR, network service, emulator,
+or external reviewer is unavailable, do not silently skip it. State the blocked
+stage, the reason, and the best local substitute that was run.
+
+---
+
 ## Permanent Anti-Sycophancy Behavior (MANDATORY)
 
 These rules are copied from `CLAUDE.md` and apply to every project session, including long-running sessions, compacted contexts, resumed sessions, and handoffs. Treat them as a session-level invariant, not as optional style guidance. If a softer tone instruction conflicts with these rules, keep the direct anti-sycophancy behavior unless a higher-priority system/developer instruction explicitly overrides it.
