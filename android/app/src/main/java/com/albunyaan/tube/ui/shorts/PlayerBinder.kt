@@ -154,7 +154,7 @@ class PlayerBinder private constructor(
     }
 
     private var boundView: PlayerView? = null
-    private var ttlWatcher: com.albunyaan.tube.player.MpdTtlWatcher? = null
+    @Volatile private var ttlWatcher: com.albunyaan.tube.player.MpdTtlWatcher? = null
 
     /**
      * Force captions to land at the bottom of the frame regardless of the
@@ -264,7 +264,14 @@ class PlayerBinder private constructor(
         // queue during onDestroyView teardown) hitting this path is a benign
         // race, not a programmer error worth crashing the host activity over.
         if (scopeCancelled) {
-            android.util.Log.d("PlayerBinder", "bind ignored after cancelScope (videoId=$videoId)")
+            // Surface at WARN so production telemetry catches a real misuse
+            // (e.g. a fragment that stores the binder reference and re-binds
+            // after teardown). The expected late-callback path is benign but
+            // we still want a signal — silent no-ops are debugging traps.
+            android.util.Log.w(
+                "PlayerBinder",
+                "bind ignored after cancelScope (videoId=$videoId) — late-callback race or stale binder reuse"
+            )
             return
         }
         val myGen = generation.incrementAndGet()
