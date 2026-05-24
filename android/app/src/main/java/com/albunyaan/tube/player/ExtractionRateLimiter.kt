@@ -350,6 +350,9 @@ class ExtractionRateLimiter @Inject constructor() {
         synchronized(globalAttemptTimestamps) {
             globalAttemptTimestamps.clear()
         }
+        synchronized(globalProactiveTtlRefreshAttemptTimestamps) {
+            globalProactiveTtlRefreshAttemptTimestamps.clear()
+        }
         Log.d(TAG, "Cleared all rate limit state")
     }
 
@@ -446,6 +449,13 @@ class ExtractionRateLimiter @Inject constructor() {
             synchronized(record) {
                 record.attemptTimestamps.all { it < staleThreshold }
             }
+        }
+
+        // Trim the proactive bucket on the same cadence — checkGlobalLimit
+        // only trims it on the proactive code path, so a session that runs
+        // purely auto-recover / manual extractions would never collect it.
+        synchronized(globalProactiveTtlRefreshAttemptTimestamps) {
+            globalProactiveTtlRefreshAttemptTimestamps.removeAll { now - it > GLOBAL_WINDOW_MS }
         }
 
         Log.d(TAG, "Cleanup complete: ${perVideoRecords.size} video records remaining")

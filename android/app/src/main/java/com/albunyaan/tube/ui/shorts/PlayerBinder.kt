@@ -209,7 +209,7 @@ class PlayerBinder private constructor(
      * because [scope] is permanently dead — preventing silent failures where
      * a fragment caller mistakenly re-uses a torn-down binder.
      */
-    private var scopeCancelled: Boolean = false
+    @Volatile private var scopeCancelled: Boolean = false
 
     private val _failureEvents = MutableSharedFlow<String>(
         extraBufferCapacity = 4,
