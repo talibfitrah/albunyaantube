@@ -45,7 +45,7 @@ beforeEach(() => {
 describe('BulkInputView', () => {
   it('Parse button is disabled when store has no URLs and no categories', () => {
     const wrapper = mountView()
-    const btn = wrapper.find('button.btn-primary')
+    const btn = wrapper.find('button.bulk-btn-primary')
     expect(btn.attributes('disabled')).toBeDefined()
   })
 
@@ -55,7 +55,7 @@ describe('BulkInputView', () => {
     store.defaultCategoryIds = []
     const wrapper = mountView()
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('button.btn-primary').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button.bulk-btn-primary').attributes('disabled')).toBeDefined()
   })
 
   it('Parse button is disabled when categories present but no URLs', async () => {
@@ -64,7 +64,7 @@ describe('BulkInputView', () => {
     store.defaultCategoryIds = ['cat-1']
     const wrapper = mountView()
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('button.btn-primary').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button.bulk-btn-primary').attributes('disabled')).toBeDefined()
   })
 
   it('Parse button is enabled when 1–25 URLs and ≥1 category', async () => {
@@ -73,7 +73,7 @@ describe('BulkInputView', () => {
     store.defaultCategoryIds = ['cat-1']
     const wrapper = mountView()
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('button.btn-primary').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('button.bulk-btn-primary').attributes('disabled')).toBeUndefined()
   })
 
   it('Parse button is enabled with exactly 25 URLs and ≥1 category', async () => {
@@ -85,7 +85,7 @@ describe('BulkInputView', () => {
     store.defaultCategoryIds = ['cat-1']
     const wrapper = mountView()
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('button.btn-primary').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('button.bulk-btn-primary').attributes('disabled')).toBeUndefined()
   })
 
   it('Parse button is disabled when > 25 URLs even with categories', async () => {
@@ -97,12 +97,12 @@ describe('BulkInputView', () => {
     store.defaultCategoryIds = ['cat-1']
     const wrapper = mountView()
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('button.btn-primary').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button.bulk-btn-primary').attributes('disabled')).toBeDefined()
   })
 
   it('clicking the format help button emits showFormatHelp', async () => {
     const wrapper = mountView()
-    await wrapper.find('button.btn-link').trigger('click')
+    await wrapper.find('button.bulk-help-link').trigger('click')
     expect(wrapper.emitted('showFormatHelp')).toBeTruthy()
   })
 
@@ -111,7 +111,7 @@ describe('BulkInputView', () => {
     store.error = 'Something went wrong'
     const wrapper = mountView()
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.alert-danger').text()).toContain('Something went wrong')
+    expect(wrapper.find('.bulk-alert-danger').text()).toContain('Something went wrong')
   })
 
   it('clicking Parse button calls store.runPreview', async () => {
@@ -121,7 +121,7 @@ describe('BulkInputView', () => {
     const spy = vi.spyOn(store, 'runPreview').mockResolvedValue(undefined)
     const wrapper = mountView()
     await wrapper.vm.$nextTick()
-    await wrapper.find('button.btn-primary').trigger('click')
+    await wrapper.find('button.bulk-btn-primary').trigger('click')
     expect(spy).toHaveBeenCalledOnce()
   })
 })

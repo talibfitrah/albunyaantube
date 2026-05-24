@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "com.albunyaan"
-version = "1.0.0-beta.5"
+version = "1.0.0-beta.13"
 java.sourceCompatibility = JavaVersion.VERSION_17
 
 repositories {

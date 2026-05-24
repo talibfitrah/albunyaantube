@@ -3,6 +3,29 @@
 All notable changes to FitrahTube. Versions are tagged on the `develop` branch
 during the beta program.
 
+## [1.0.0-beta.13] - 2026-05-24
+
+### Android
+
+- **Playback starts faster and stays quieter during recovery.** Automatic
+  retries no longer expose attempt counters to users. Shorts keep the current
+  video visible while fresh streams resolve, and fallback playback now reuses
+  the cached Cronet/Media3 pipeline instead of dropping to an uncached path.
+- **Shorts refreshes the right video.** Force-refresh now tracks the bound
+  short instead of refreshing the last cached stream entry after several swipes.
+- **Long sessions get fewer avoidable stream refreshes.** Synthetic DASH MPDs
+  live longer, proactive refreshes use their own rate-limit lane, and the
+  Media3 cache is larger on capable devices.
+- **Playback dependency refresh.** Media3 moves to 1.10.1, which includes the
+  upstream HLS crash fix that made the earlier 1.10.0 upgrade unsafe.
+
+### Admin Dashboard
+
+- **Dependency security refresh.** Production frontend dependencies are patched
+  and the dashboard ships with a clean npm audit.
+
+[1.0.0-beta.13]: https://github.com/talibfitrah/albunyaantube/releases/tag/v1.0.0-beta.13
+
 ## [1.0.0-beta.12] - 2026-05-03
 
 ### Android

@@ -66,7 +66,7 @@ describe('BulkSubmissionTab', () => {
     store.phase = 'LOADING'
     const wrapper = mountTab()
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.spinner-border').exists()).toBe(true)
+    expect(wrapper.find('.spinner').exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'BulkInputView' }).exists()).toBe(false)
   })
 

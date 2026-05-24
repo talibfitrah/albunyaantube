@@ -58,11 +58,11 @@ describe('BulkPreviewTable', () => {
       { ...okRow(3), status: 'ERROR' },
     ]
     const wrapper = mountTable()
-    const small = wrapper.find('small').text()
+    const counts = wrapper.find('.bulk-preview-counts').text()
     // 1 valid (only OK — cubic R1 fix removed DUPLICATE_REJECTED from
     // valid counting since runSubmit drops them), 2 duplicate
     // (DUPLICATE + DUPLICATE_REJECTED), 1 error.
-    expect(small).toContain('1')
+    expect(counts).toContain('1')
   })
 
   it('removeRow drops row from rendered table', async () => {
