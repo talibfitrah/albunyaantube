@@ -82,4 +82,48 @@ class ReleaseCatalogCacheTest {
         verify(checker, times(1)).listReleases(any())
         verify(summaries, times(1)).load()
     }
+
+    @Test
+    fun `Result_failure from listReleases does not cache - next call retries`() = runTest {
+        val checker = mock<UpdateChecker> {
+            // First call fails (simulating an IOException), second call succeeds.
+            onBlocking { listReleases(any()) }
+                .doReturn(Result.failure(java.io.IOException("offline")))
+                .doReturn(Result.success(listOf(release14)))
+        }
+        val summaries = mock<ReleaseSummaryFetcher> {
+            onBlocking { load() } doReturn ReleaseSummaries(emptyMap())
+        }
+        val cache = ReleaseCatalogCache(checker, summaries).apply { clock = { 0L } }
+
+        val firstResult = cache.list()
+        val secondResult = cache.list()
+
+        // First attempt returned empty (failure), second returned the cached success.
+        assertEquals(emptyList<UpdateInfo>(), firstResult)
+        assertEquals(listOf(release14), secondResult)
+
+        // Critical: failure must not have cached. Both attempts hit the network.
+        verify(checker, times(2)).listReleases(any())
+        // summaries.load() should only fire on the successful attempt.
+        verify(summaries, times(1)).load()
+    }
+
+    @Test
+    fun `entry exactly at TTL boundary is treated as expired`() = runTest {
+        var now = 0L
+        val checker = mock<UpdateChecker> {
+            onBlocking { listReleases(any()) } doReturn Result.success(listOf(release14))
+        }
+        val summaries = mock<ReleaseSummaryFetcher> {
+            onBlocking { load() } doReturn ReleaseSummaries(emptyMap())
+        }
+        val cache = ReleaseCatalogCache(checker, summaries).apply { clock = { now } }
+
+        cache.list()
+        now += ReleaseCatalogCache.TTL_MS   // exactly at boundary
+        cache.list()
+
+        verify(checker, times(2)).listReleases(any())
+    }
 }

@@ -67,7 +67,11 @@ class ReleaseCatalogCache @Inject constructor(
         return loadMutex.withLock {
             // Double-check: another coroutine may have just refreshed.
             snapshot.get()?.takeIf { clock() - it.capturedAtMs < TTL_MS }?.let { return@withLock it }
-            val releases = checker.listReleases(limit = 5).getOrNull() ?: emptyList()
+            // Cubic round-3 contract (preserved across the cache refactor): a transient
+            // cold-start network failure must NOT sticky a "no update" result for the
+            // full TTL. Only a successful fetch (even one yielding an empty list) gets
+            // cached. Result.failure → we return null so the next call retries fresh.
+            val releases = checker.listReleases(limit = 5).getOrNull() ?: return@withLock null
             val sums = summaries.load()
             val fresh = Snapshot(clock(), releases, sums)
             snapshot.set(fresh)
