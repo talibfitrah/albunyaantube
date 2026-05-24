@@ -1,8 +1,15 @@
 package com.albunyaan.tube.update
 
+import kotlinx.coroutines.test.runTest
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
 
 /**
  * Unit tests for [UpdateChecker.isNewerVersion].
@@ -137,5 +144,46 @@ class UpdateCheckerTest {
         assertTrue(UpdateChecker.isNewerVersion("1.0.1+build.1", "1.0.0"))
         assertTrue(UpdateChecker.isNewerVersion("1.0.1", "1.0.0+build.99"))
         assertTrue(UpdateChecker.isNewerVersion("1.0.0-rc.1+sha.x", "1.0.0-beta.9+sha.y"))
+    }
+
+    @Test
+    fun `listReleases returns up to limit releases sorted newest-first with APK assets only`() = runTest {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("""
+            [
+              {"tag_name":"v1.0.0-beta.14","name":"beta-14","body":"","prerelease":true,
+               "assets":[{"name":"app.apk","browser_download_url":"https://example/14.apk","size":1024,"content_type":"application/vnd.android.package-archive"}]},
+              {"tag_name":"v1.0.0-beta.13","name":"beta-13","body":"","prerelease":true,
+               "assets":[{"name":"app.apk","browser_download_url":"https://example/13.apk","size":1024,"content_type":"application/vnd.android.package-archive"}]},
+              {"tag_name":"v1.0.0-beta.12","name":"beta-12","body":"","prerelease":true,
+               "assets":[]},
+              {"tag_name":"v1.0.0-beta.11","name":"beta-11","body":"","prerelease":true,
+               "assets":[{"name":"app.apk","browser_download_url":"https://example/11.apk","size":1024,"content_type":"application/vnd.android.package-archive"}]}
+            ]
+        """.trimIndent()))
+        server.start()
+
+        val checker = UpdateChecker(
+            okHttpClient = OkHttpClient(),
+            installSource = mock { on { isPlayStore() } doReturn false }
+        )
+        val result = checker.listReleases(limit = 5, baseUrlOverride = server.url("/").toString())
+
+        val info = result.getOrThrow()
+        assertEquals(3, info.size)  // beta-12 dropped (no APK asset)
+        assertEquals("1.0.0-beta.14", info[0].versionName)
+        assertEquals("1.0.0-beta.13", info[1].versionName)
+        assertEquals("1.0.0-beta.11", info[2].versionName)
+        server.shutdown()
+    }
+
+    @Test
+    fun `listReleases returns empty on Play Store install`() = runTest {
+        val checker = UpdateChecker(
+            okHttpClient = OkHttpClient(),
+            installSource = mock { on { isPlayStore() } doReturn true }
+        )
+        val result = checker.listReleases(limit = 5)
+        assertTrue(result.getOrThrow().isEmpty())
     }
 }

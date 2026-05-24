@@ -4,6 +4,7 @@ import android.util.Log
 import com.albunyaan.tube.BuildConfig
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -42,6 +43,20 @@ internal data class GithubAssetDto(
 )
 
 /**
+ * DTO for a single entry in the GitHub releases *list* endpoint (`GET /repos/{owner}/{repo}/releases`).
+ * Kept separate from [GithubReleaseDto] (which targets the single-release endpoint) so the two
+ * can evolve independently — Task 7 will add `published_at` here without touching [GithubReleaseDto].
+ */
+@JsonClass(generateAdapter = true)
+internal data class GithubReleaseListItemDto(
+    val tag_name: String,
+    val name: String?,
+    val body: String?,
+    val prerelease: Boolean,
+    val assets: List<GithubAssetDto>
+)
+
+/**
  * Polls the GitHub releases REST endpoint for the repo's latest release, compares the
  * tag against [BuildConfig.VERSION_NAME], and returns an [UpdateInfo] only if a strictly
  * newer version is published AND it ships an `.apk` asset. No side effects: callers
@@ -54,6 +69,9 @@ class UpdateChecker @Inject constructor(
 ) {
     private val moshi: Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val adapter = moshi.adapter(GithubReleaseDto::class.java)
+    private val listAdapter = moshi.adapter<List<GithubReleaseListItemDto>>(
+        Types.newParameterizedType(List::class.java, GithubReleaseListItemDto::class.java)
+    )
 
     suspend fun checkForUpdate(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         if (installSource.isPlayStore()) {
@@ -107,10 +125,60 @@ class UpdateChecker @Inject constructor(
         }
     }
 
+    /**
+     * Returns up to [limit] most-recent releases (newest first) that ship an APK asset.
+     * Filters out Play Store installs, releases without an APK, and (when the running
+     * build is stable) pre-releases — matching the rules in [checkForUpdate]. Failure
+     * to reach GitHub returns Result.failure; an empty list is a successful state.
+     *
+     * [baseUrlOverride] exists for tests — production callers must not pass it.
+     */
+    suspend fun listReleases(
+        limit: Int = 5,
+        baseUrlOverride: String? = null
+    ): Result<List<UpdateInfo>> = withContext(Dispatchers.IO) {
+        if (installSource.isPlayStore()) return@withContext Result.success(emptyList())
+        runCatching {
+            val base = baseUrlOverride ?: "https://api.github.com/"
+            val url = "${base.trimEnd('/')}/repos/$GITHUB_REPO/releases?per_page=$limit"
+            val request = Request.Builder()
+                .url(url)
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "GitHub releases API returned HTTP ${response.code}")
+                    return@use emptyList<UpdateInfo>()
+                }
+                val body = response.body?.string() ?: return@use emptyList<UpdateInfo>()
+                val list = listAdapter.fromJson(body) ?: return@use emptyList<UpdateInfo>()
+                val currentIsPrerelease = BuildConfig.VERSION_NAME.contains('-')
+                list.asSequence()
+                    .filterNot { it.prerelease && !currentIsPrerelease }
+                    .mapNotNull { release ->
+                        val apk = release.assets.firstOrNull {
+                            it.name.endsWith(".apk", ignoreCase = true)
+                        } ?: return@mapNotNull null
+                        UpdateInfo(
+                            versionName = release.tag_name.removePrefix("v").removePrefix("V"),
+                            releaseName = release.name ?: release.tag_name,
+                            releaseNotes = release.body.orEmpty(),
+                            apkUrl = apk.browser_download_url,
+                            apkSizeBytes = apk.size
+                        )
+                    }
+                    .take(limit)
+                    .toList()
+            }
+        }
+    }
+
     companion object {
         private const val TAG = "UpdateChecker"
+        private const val GITHUB_REPO = "talibfitrah/albunyaantube"
         private const val RELEASES_URL =
-            "https://api.github.com/repos/talibfitrah/albunyaantube/releases/latest"
+            "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 
         /**
          * True iff [remote] is strictly greater than [current] in semver-2.0.0-ish order.
