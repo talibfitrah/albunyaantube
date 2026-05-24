@@ -1,98 +1,126 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  Per-version row inside the Available Updates card. Mirrors the Settings row
+  style (settings_item_support.xml etc.): library_icon_size circular icon on the
+  start, primary text (text_subtitle), secondary text (text_caption), and a
+  state-dependent right-side affordance (Install button | Installed chip | none).
+  No per-item card — the parent MaterialCardView in fragment_available_versions
+  provides the card look, matching how Settings groups multiple rows in one card.
+-->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="@dimen/spacing_sm"
-    app:cardBackgroundColor="?attr/colorSurface"
-    app:cardCornerRadius="@dimen/corner_radius_medium"
-    app:cardElevation="0dp">
+    android:padding="@dimen/spacing_md"
+    android:background="?attr/selectableItemBackground">
 
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:layout_width="match_parent"
+    <ImageView
+        android:id="@+id/icon"
+        android:layout_width="@dimen/library_icon_size"
+        android:layout_height="@dimen/library_icon_size"
+        android:padding="@dimen/spacing_sm"
+        android:src="@drawable/ic_update"
+        android:background="@drawable/onboarding_icon_bg"
+        android:contentDescription="@null"
+        app:tint="?attr/colorPrimary"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/version"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:padding="@dimen/spacing_md">
+        android:layout_marginStart="@dimen/spacing_md"
+        android:textSize="@dimen/text_subtitle"
+        android:textStyle="bold"
+        android:textColor="?attr/colorOnSurface"
+        android:textAlignment="viewStart"
+        app:layout_constraintStart_toEndOf="@id/icon"
+        app:layout_constraintEnd_toStartOf="@id/affordanceBarrier"
+        app:layout_constraintTop_toTopOf="@id/icon"
+        tools:text="v1.0.0-beta.14" />
 
-        <TextView
-            android:id="@+id/version"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:textStyle="bold"
-            android:textSize="@dimen/text_subtitle"
-            android:textColor="?attr/colorOnSurface"
-            android:textAlignment="viewStart"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/action"
-            app:layout_constraintTop_toTopOf="parent"
-            tools:text="v1.0.0-beta.14" />
+    <TextView
+        android:id="@+id/dateLine"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginTop="@dimen/spacing_xs"
+        android:textSize="@dimen/text_caption"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textAlignment="viewStart"
+        app:layout_constraintStart_toEndOf="@id/icon"
+        app:layout_constraintEnd_toStartOf="@id/affordanceBarrier"
+        app:layout_constraintTop_toBottomOf="@id/version"
+        tools:text="May 24, 2026" />
 
-        <TextView
-            android:id="@+id/dateLine"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_xs"
-            android:textSize="@dimen/text_caption"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:textAlignment="viewStart"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/action"
-            app:layout_constraintTop_toBottomOf="@id/version"
-            tools:text="May 24, 2026" />
+    <TextView
+        android:id="@+id/summary"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginTop="@dimen/spacing_sm"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:textSize="@dimen/text_body"
+        android:textColor="?attr/colorOnSurface"
+        android:textAlignment="viewStart"
+        app:layout_constraintStart_toEndOf="@id/icon"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/dateLine"
+        tools:text="Splash-gate update prompt + Samsung post-install self-kill." />
 
-        <TextView
-            android:id="@+id/summary"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_sm"
-            android:maxLines="2"
-            android:ellipsize="end"
-            android:textSize="@dimen/text_body"
-            android:textColor="?attr/colorOnSurface"
-            android:textAlignment="viewStart"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/dateLine"
-            tools:text="Splash-gate update prompt + Samsung post-install self-kill." />
+    <TextView
+        android:id="@+id/downgradeNote"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginTop="@dimen/spacing_sm"
+        android:textSize="@dimen/text_caption"
+        android:textStyle="italic"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:text="@string/available_versions_downgrade_deferred"
+        android:textAlignment="viewStart"
+        android:visibility="gone"
+        app:layout_constraintStart_toEndOf="@id/icon"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/summary" />
 
-        <TextView
-            android:id="@+id/downgradeNote"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_sm"
-            android:textSize="@dimen/text_caption"
-            android:textStyle="italic"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:text="@string/available_versions_downgrade_deferred"
-            android:textAlignment="viewStart"
-            android:visibility="gone"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/summary" />
+    <!--
+      Right-side affordance barrier: keeps the version/date text out from under
+      the Install button or Installed chip (only one is visible at a time, both
+      pinned to the parent end). Older rows hide both → barrier collapses and
+      text expands full-width.
+    -->
+    <androidx.constraintlayout.widget.Barrier
+        android:id="@+id/affordanceBarrier"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:barrierDirection="start"
+        app:constraint_referenced_ids="action,installedChip" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/action"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/available_versions_install"
-            android:visibility="gone"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="@id/version"
-            app:layout_constraintBottom_toBottomOf="@id/dateLine" />
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/action"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/available_versions_install"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/version"
+        app:layout_constraintBottom_toBottomOf="@id/dateLine" />
 
-        <com.google.android.material.chip.Chip
-            android:id="@+id/installedChip"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/available_versions_installed"
-            android:clickable="false"
-            android:focusable="false"
-            android:visibility="gone"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="@id/version"
-            app:layout_constraintBottom_toBottomOf="@id/dateLine" />
+    <com.google.android.material.chip.Chip
+        android:id="@+id/installedChip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/available_versions_installed"
+        android:clickable="false"
+        android:focusable="false"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/version"
+        app:layout_constraintBottom_toBottomOf="@id/dateLine" />
 
-    </androidx.constraintlayout.widget.ConstraintLayout>
-
-</com.google.android.material.card.MaterialCardView>
+</androidx.constraintlayout.widget.ConstraintLayout>
