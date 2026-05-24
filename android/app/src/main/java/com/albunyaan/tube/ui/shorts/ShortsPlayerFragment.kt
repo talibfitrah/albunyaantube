@@ -73,6 +73,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     @Inject lateinit var probationChecker: com.albunyaan.tube.player.HlsProbationChecker
     @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
     @Inject lateinit var simpleCache: SimpleCache
+    @Inject lateinit var cachedHttpDataSourceFactory: com.albunyaan.tube.player.CachedHttpDataSourceFactory
 
     private val viewModel: ShortsPlayerViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -132,21 +133,29 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
 
     /** Time bar driver: periodically mirrors player.currentPosition into the active page's DefaultTimeBar. */
     private val timeBarHandler = Handler(Looper.getMainLooper())
+    /**
+     * Snapshot of the short id that was visible when the BUFFERING state
+     * began. The watchdog reads this — not the live pager position — so a
+     * stall on short A whose 6 s runnable fires after the user swipes to B
+     * does NOT force-refresh B. PlayerBinder.forceRefreshCurrent also
+     * re-validates with expectedVideoId, giving a second line of defence.
+     */
+    private var pendingStalledVideoId: String? = null
     private val stallRecoveryRunnable = Runnable {
         // Only trigger if the player is still buffering (state may have changed
         // between scheduling and firing).
-        if (viewModel.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING) {
-            // Invalidate any cached MPD for the current video before forcing a
-            // fresh re-resolve, so the new resolution doesn't hit a stale entry.
-            val currentPos = binding?.shortsPager?.currentItem
-            if (currentPos != null) {
-                val currentVideoId = viewModel.items.value.getOrNull(currentPos)?.id
-                if (currentVideoId != null) {
-                    mpdRegistry.unregisterBoth(currentVideoId)
-                }
-            }
-            binder?.forceRefreshCurrent()
+        if (viewModel.player.playbackState != androidx.media3.common.Player.STATE_BUFFERING) return@Runnable
+        val stalledId = pendingStalledVideoId ?: return@Runnable
+        val currentVideoId = binding?.shortsPager?.currentItem?.let {
+            viewModel.items.value.getOrNull(it)?.id
         }
+        if (currentVideoId != stalledId) {
+            // User swiped to a different short during the 6 s window; the stall
+            // belonged to a video no longer in front of the user.
+            return@Runnable
+        }
+        mpdRegistry.unregisterBoth(stalledId)
+        binder?.forceRefreshCurrent(expectedVideoId = stalledId)
     }
     private var timeBarTicker: Runnable? = null
     /** True while the user is actively dragging the scrubber; suppresses the ticker overwrite. */
@@ -163,10 +172,20 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     private val stallListener = object : androidx.media3.common.Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == androidx.media3.common.Player.STATE_BUFFERING) {
+                // Snapshot the currently visible short id at stall start so
+                // the watchdog refreshes the right video even if the user
+                // swipes before the 6 s timer fires.
+                val currentPos = binding?.shortsPager?.currentItem
+                pendingStalledVideoId = currentPos?.let {
+                    viewModel.items.value.getOrNull(it)?.id
+                }
                 timeBarHandler.removeCallbacks(stallRecoveryRunnable)
-                timeBarHandler.postDelayed(stallRecoveryRunnable, STALL_RECOVERY_MS)
+                if (pendingStalledVideoId != null) {
+                    timeBarHandler.postDelayed(stallRecoveryRunnable, STALL_RECOVERY_MS)
+                }
             } else {
                 timeBarHandler.removeCallbacks(stallRecoveryRunnable)
+                pendingStalledVideoId = null
             }
         }
     }
@@ -194,9 +213,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             player = viewModel.player,
             playerRepository = playerRepository,
             mediaSourceFactory = mediaSourceFactory,
-            context = requireContext().applicationContext,
-            cronetDataSourceFactory = cronetDataSourceFactory,
-            simpleCache = simpleCache,
+            cachedHttpDataSourceFactory = cachedHttpDataSourceFactory,
             mpdRegistry = mpdRegistry,
             featureFlags = playbackFeatureFlags
         )

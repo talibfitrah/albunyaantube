@@ -70,6 +70,15 @@ class ExtractionRateLimiter @Inject constructor() {
         /** Reserved budget for planned MPD TTL refreshes. Separate from reactive recovery. */
         private const val PROACTIVE_TTL_REFRESH_RESERVED_ATTEMPTS = 2
 
+        /**
+         * Global cap on proactive TTL refreshes across ALL videos per minute.
+         * Per-video has its own 2-per-5min cap, but on a feed of N shorts each
+         * could fire 2 refreshes — without this aggregate ceiling there is no
+         * upper bound on extractor calls from the proactive lane, which can
+         * trip NewPipe's IP-rate limits during heavy browsing.
+         */
+        private const val MAX_PROACTIVE_REFRESHES_GLOBAL_PER_MINUTE = 10
+
         /** Base backoff delay for exponential backoff */
         private const val BACKOFF_BASE_MS = 2_000L
 
@@ -111,6 +120,14 @@ class ExtractionRateLimiter @Inject constructor() {
 
     private val perVideoRecords = ConcurrentHashMap<String, ExtractionRecord>()
     private val globalAttemptTimestamps = mutableListOf<Long>()
+
+    /**
+     * Separate global accounting for the proactive TTL refresh lane. Tracked
+     * independently of [globalAttemptTimestamps] so proactive refreshes don't
+     * compete with manual/prefetch budgets, but a global ceiling still bounds
+     * total extractor calls from this lane across all videos.
+     */
+    private val globalProactiveTtlRefreshAttemptTimestamps = mutableListOf<Long>()
     @Volatile
     private var lastCleanupTime = 0L
 
@@ -275,11 +292,23 @@ class ExtractionRateLimiter @Inject constructor() {
             }
         }
 
-        // Record global attempt - recovery lanes are excluded to prevent planned
-        // or reactive playback repairs from starving foreground playback.
-        if (kind != RequestKind.AUTO_RECOVERY && kind != RequestKind.PROACTIVE_TTL_REFRESH) {
-            synchronized(globalAttemptTimestamps) {
-                globalAttemptTimestamps.add(now)
+        // Record global attempt by lane.
+        // AUTO_RECOVERY: not recorded — bypasses limits AND accounting because
+        //   its volume is naturally bounded by playback failures.
+        // PROACTIVE_TTL_REFRESH: recorded in its own counter so the global cap
+        //   on this lane (MAX_PROACTIVE_REFRESHES_GLOBAL_PER_MINUTE) is enforced.
+        // MANUAL / PREFETCH: recorded in shared counter for the user-facing limit.
+        when (kind) {
+            RequestKind.AUTO_RECOVERY -> { /* intentionally not counted */ }
+            RequestKind.PROACTIVE_TTL_REFRESH -> {
+                synchronized(globalProactiveTtlRefreshAttemptTimestamps) {
+                    globalProactiveTtlRefreshAttemptTimestamps.add(now)
+                }
+            }
+            RequestKind.MANUAL, RequestKind.PREFETCH -> {
+                synchronized(globalAttemptTimestamps) {
+                    globalAttemptTimestamps.add(now)
+                }
             }
         }
 
@@ -359,9 +388,29 @@ class ExtractionRateLimiter @Inject constructor() {
      * @return RateLimitResult.Allowed or Blocked
      */
     private fun checkGlobalLimit(now: Long, kind: RequestKind): RateLimitResult {
-        // Playback repair lanes bypass global limits so foreground playback is not stranded.
-        if (kind == RequestKind.AUTO_RECOVERY || kind == RequestKind.PROACTIVE_TTL_REFRESH) {
-            Log.d(TAG, "$kind bypasses global rate limit check")
+        // AUTO_RECOVERY bypasses ALL global accounting — reactive recovery must
+        // never be blocked, and its volume is naturally bounded by failures.
+        if (kind == RequestKind.AUTO_RECOVERY) {
+            Log.d(TAG, "AUTO_RECOVERY bypasses global rate limit check")
+            return RateLimitResult.Allowed
+        }
+
+        // PROACTIVE_TTL_REFRESH has its own global ceiling — separate budget so
+        // it doesn't compete with manual/prefetch, but bounded so a feed of N
+        // shorts can't fan out to N×2 unaccounted extractor calls.
+        if (kind == RequestKind.PROACTIVE_TTL_REFRESH) {
+            synchronized(globalProactiveTtlRefreshAttemptTimestamps) {
+                globalProactiveTtlRefreshAttemptTimestamps.removeAll { now - it > GLOBAL_WINDOW_MS }
+                if (globalProactiveTtlRefreshAttemptTimestamps.size >= MAX_PROACTIVE_REFRESHES_GLOBAL_PER_MINUTE) {
+                    val oldestInWindow = globalProactiveTtlRefreshAttemptTimestamps.minOrNull() ?: now
+                    val retryAfter = oldestInWindow + GLOBAL_WINDOW_MS - now
+                    Log.w(TAG, "Global proactive TTL refresh ceiling reached")
+                    return RateLimitResult.Blocked(
+                        "global proactive TTL refresh limit ($MAX_PROACTIVE_REFRESHES_GLOBAL_PER_MINUTE per minute)",
+                        retryAfter.coerceAtLeast(0L)
+                    )
+                }
+            }
             return RateLimitResult.Allowed
         }
 

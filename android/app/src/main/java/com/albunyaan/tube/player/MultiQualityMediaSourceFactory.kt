@@ -79,7 +79,12 @@ class MultiQualityMediaSourceFactory(
     private val mpdRegistry: SyntheticDashMpdRegistry? = null,
     private val probationChecker: HlsProbationChecker? = null,
     private val cronetDataSourceFactory: CronetDataSourceFactory? = null,
-    private val simpleCache: SimpleCache? = null
+    /**
+     * Required. The single Hilt-provided [SimpleCache] singleton. Non-nullable
+     * because Media3 holds an exclusive SQLite lock on the cache directory —
+     * a second instance against the same path corrupts the index.
+     */
+    private val simpleCache: SimpleCache,
 ) {
 
     // Standard data source for progressive/DASH (Android User-Agent)
@@ -135,15 +140,16 @@ class MultiQualityMediaSourceFactory(
         hlsHttpDataSourceFactory
     )
 
-    // Cache factory to enable HTTP response caching for faster subsequent loads
+    // Cache factory to enable HTTP response caching for faster subsequent loads.
+    // [simpleCache] is the single Hilt-provided instance — see constructor KDoc.
     private val cacheDataSourceFactory: DataSource.Factory = CacheDataSource.Factory()
-        .setCache(simpleCache ?: getOrCreateCache(context))
+        .setCache(simpleCache)
         .setUpstreamDataSourceFactory(dataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     // HLS-specific cache factory with iOS User-Agent
     private val hlsCacheDataSourceFactory: DataSource.Factory = CacheDataSource.Factory()
-        .setCache(simpleCache ?: getOrCreateCache(context))
+        .setCache(simpleCache)
         .setUpstreamDataSourceFactory(hlsDataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
@@ -164,30 +170,6 @@ class MultiQualityMediaSourceFactory(
          * separate audio+video streams.
          */
         private const val FALLBACK_INITIAL_QUALITY_HEIGHT = 480
-
-        private var simpleCache: SimpleCache? = null
-
-        @Synchronized
-        private fun getOrCreateCache(context: Context): SimpleCache {
-            if (simpleCache == null) {
-                val cacheDir = java.io.File(context.cacheDir, "media3")
-                val databaseProvider = StandaloneDatabaseProvider(context)
-                // 100MB cache for video chunks
-                val evictor = LeastRecentlyUsedCacheEvictor(100 * 1024 * 1024L)
-                simpleCache = SimpleCache(cacheDir, evictor, databaseProvider)
-            }
-            return simpleCache!!
-        }
-
-        /**
-         * Releases the cache and clears references to prevent memory leaks.
-         * Should be called from the Application lifecycle (e.g., in onTerminate).
-         */
-        @Synchronized
-        fun releaseCache() {
-            simpleCache?.release()
-            simpleCache = null
-        }
     }
 
     /**

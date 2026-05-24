@@ -1,13 +1,8 @@
 package com.albunyaan.tube.ui.shorts
 
-import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.datasource.cache.CacheDataSource
-import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 // (Player import retained for REPEAT_MODE_ONE constant)
 import androidx.media3.exoplayer.source.MediaSource
@@ -18,9 +13,8 @@ import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.AudioTrackKind
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
-import com.albunyaan.tube.player.CronetDataSourceFactory
+import com.albunyaan.tube.player.CachedHttpDataSourceFactory
 import com.albunyaan.tube.player.PlayerRepository
-import com.albunyaan.tube.util.HttpConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -82,9 +76,12 @@ class PlayerBinder private constructor(
      * superclass chain doesn't need to be loaded.
      */
     private val attach: PlayerViewAttach,
-    private val context: Context? = null,
-    private val cronetDataSourceFactory: CronetDataSourceFactory? = null,
-    private val simpleCache: SimpleCache? = null,
+    /**
+     * Single source of truth for the cached HTTP transport. Non-null in
+     * production; tests pass a Mockito mock since the JVM unit-test path
+     * does not exercise progressive fallback.
+     */
+    private val cachedHttpDataSourceFactory: CachedHttpDataSourceFactory,
     private val mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry? = null,
     private val featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags? = null
 ) {
@@ -94,9 +91,7 @@ class PlayerBinder private constructor(
         player: ExoPlayer,
         playerRepository: PlayerRepository,
         mediaSourceFactory: com.albunyaan.tube.player.MultiQualityMediaSourceFactory,
-        context: Context,
-        cronetDataSourceFactory: CronetDataSourceFactory,
-        simpleCache: SimpleCache,
+        cachedHttpDataSourceFactory: CachedHttpDataSourceFactory,
         mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry? = null,
         featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags? = null
     ) : this(
@@ -107,9 +102,7 @@ class PlayerBinder private constructor(
         attach = PlayerViewAttach { view, attached ->
             if (attached) view.player = player else view.player = null
         },
-        context = context.applicationContext,
-        cronetDataSourceFactory = cronetDataSourceFactory,
-        simpleCache = simpleCache,
+        cachedHttpDataSourceFactory = cachedHttpDataSourceFactory,
         mpdRegistry = mpdRegistry,
         featureFlags = featureFlags
     )
@@ -118,8 +111,9 @@ class PlayerBinder private constructor(
     internal constructor(
         playerRepository: PlayerRepository,
         ops: PlayerOps,
-        attach: PlayerViewAttach
-    ) : this(null, playerRepository, null, ops, attach)
+        attach: PlayerViewAttach,
+        cachedHttpDataSourceFactory: CachedHttpDataSourceFactory,
+    ) : this(null, playerRepository, null, ops, attach, cachedHttpDataSourceFactory)
 
     /**
      * Minimal surface of player mutations needed for testing the rapid-swipe
@@ -265,8 +259,13 @@ class PlayerBinder private constructor(
         forceRefresh: Boolean,
         resetPlayerBeforeResolve: Boolean
     ) {
-        check(!scopeCancelled) {
-            "PlayerBinder.bind called after cancelScope; binder must not be reused"
+        // Early-return rather than throw if cancelScope has already run.
+        // A late-arriving callback (e.g. ViewPager scroll posted on the main
+        // queue during onDestroyView teardown) hitting this path is a benign
+        // race, not a programmer error worth crashing the host activity over.
+        if (scopeCancelled) {
+            android.util.Log.d("PlayerBinder", "bind ignored after cancelScope (videoId=$videoId)")
+            return
         }
         val myGen = generation.incrementAndGet()
         boundSourceChannelId = sourceChannelId
@@ -296,6 +295,14 @@ class PlayerBinder private constructor(
             playerOps.stop()
             playerOps.clearMediaItems()
         }
+
+        // Cancel the prior TTL watcher BEFORE launching the new resolve. The
+        // watcher is otherwise only cancelled inside prepareAndPlay (after
+        // setMediaSource) — if the prior coroutine is cancelled mid-resolve,
+        // that cancellation line never runs and the stale watcher can fire
+        // forceRefreshCurrent on top of the in-flight rebind.
+        ttlWatcher?.cancel()
+        ttlWatcher = null
 
         bindJob = scope.launch {
             prepareAndPlay(videoId, myGen, sourceChannelId, forceRefresh)
@@ -348,9 +355,20 @@ class PlayerBinder private constructor(
      * BUFFERING state has lasted longer than the threshold — typical cause
      * is an expired progressive URL.
      */
-    fun forceRefreshCurrent() {
+    fun forceRefreshCurrent(expectedVideoId: String? = null) {
         val view = boundView ?: return
         val currentVideoId = boundVideoId ?: return
+        // Skip if the watchdog or TTL watcher was scheduled for a different
+        // short (rapid swipe race). Without this, a stall on short A whose
+        // 6s watchdog runnable fires after the user has swiped to B would
+        // force-refresh B — wrong video, wasted extraction budget.
+        if (expectedVideoId != null && expectedVideoId != currentVideoId) {
+            android.util.Log.d(
+                "PlayerBinder",
+                "forceRefreshCurrent skipped: expected=$expectedVideoId, current=$currentVideoId"
+            )
+            return
+        }
         bindInternal(
             view,
             currentVideoId,
@@ -438,7 +456,10 @@ class PlayerBinder private constructor(
             ttlWatcher = com.albunyaan.tube.player.MpdTtlWatcher(
                 videoId = videoId,
                 registry = mpdRegistry,
-                onRefreshNeeded = { forceRefreshCurrent() }
+                // Pass expectedVideoId so the watcher firing at 90% TTL only
+                // refreshes if this short is still bound — protects against
+                // late-firing watchers from a video the user already swiped past.
+                onRefreshNeeded = { forceRefreshCurrent(expectedVideoId = videoId) }
             ).also { it.start(scope) }
         }
     }
@@ -486,23 +507,8 @@ class PlayerBinder private constructor(
         return null
     }
 
-    private fun buildFallbackDataSourceFactory(): DataSource.Factory {
-        val httpFactory = if (featureFlags?.isCronetEnabled == true && cronetDataSourceFactory != null) {
-            cronetDataSourceFactory.createForAndroidUA()
-        } else {
-            DefaultHttpDataSource.Factory()
-                .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
-                .setConnectTimeoutMs(15_000)
-                .setReadTimeoutMs(20_000)
-                .setAllowCrossProtocolRedirects(true)
-        }
-        val upstreamFactory = context?.let { DefaultDataSource.Factory(it, httpFactory) } ?: httpFactory
-        val cache = simpleCache ?: return upstreamFactory
-        return CacheDataSource.Factory()
-            .setCache(cache)
-            .setUpstreamDataSourceFactory(upstreamFactory)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-    }
+    private fun buildFallbackDataSourceFactory(): DataSource.Factory =
+        cachedHttpDataSourceFactory.create()
 
     private fun chooseProgressiveTrack(
         tracks: List<VideoTrack>,
@@ -659,13 +665,17 @@ class PlayerBinder private constructor(
      * the player after the fragment view is gone.
      */
     fun cancelScope() {
+        // Set the cancelled flag FIRST so any concurrent bind() call from a
+        // posted runnable (e.g. on the same Main thread re-entering during
+        // onDestroyView) trips the check at the top of bindInternal before
+        // it can stomp the now-empty fields.
+        scopeCancelled = true
         ttlWatcher?.cancel()
         ttlWatcher = null
         scope.cancel()
         bindJob = null
         boundVideoId = null
         boundSourceChannelId = null
-        scopeCancelled = true
     }
 
 

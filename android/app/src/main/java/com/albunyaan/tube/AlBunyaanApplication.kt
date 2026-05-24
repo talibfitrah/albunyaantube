@@ -258,12 +258,14 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
 
-        // Release ExoPlayer cache when system is under moderate or higher memory pressure
-        // This ensures cache cleanup actually runs in production (unlike onTerminate)
-        // 60 == ComponentCallbacks2.TRIM_MEMORY_MODERATE (constant deprecated in API 34)
+        // Media3 cache is no longer released on memory pressure: it was previously
+        // tied to MultiQualityMediaSourceFactory's static SimpleCache singleton,
+        // which has been removed. The DI-provided SimpleCache is the sole instance
+        // and lives for the process lifetime — releasing it from onTrimMemory
+        // would risk SQLite index-lock errors on extractor calls still in flight.
+        // Process death handles cleanup.
         if (level >= 60) {
-            com.albunyaan.tube.player.MultiQualityMediaSourceFactory.releaseCache()
-            Log.d(TAG, "Cache released due to memory pressure (level: $level)")
+            Log.d(TAG, "Memory trim level $level — Media3 cache retained (DI-owned singleton)")
         }
 
         // Clear stream URL cache only when process kill is imminent (level 80+).
