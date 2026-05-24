@@ -3,6 +3,46 @@
 All notable changes to FitrahTube. Versions are tagged on the `develop` branch
 during the beta program.
 
+## [1.0.0-beta.14] - 2026-05-24
+
+### Android
+
+- **Sign-in screen logo no longer shows a white square.** The sign-in and
+  sign-up form (phone, tablet, TV) now displays the transparent splash logo
+  on top of the surface, instead of the launcher icon (which had a baked-in
+  white square that clashed with dark themes and surface tints).
+- **Adaptive launcher icon background is transparent.** The launcher mark now
+  sits directly on the OEM mask shape — no white frame leaking behind it on
+  Samsung One UI 6.1, Pixel Launcher, or third-party launchers.
+- **Auth buttons keep a consistent height across device sizes.** Profile
+  bootstrap submit button now uses the `auth_button_height` token on phone,
+  tablet, and TV, matching the sign-in button.
+- **Sign-in surface respects the active theme.** Sign-in scroll background
+  now binds `?android:colorBackground` instead of inheriting from the
+  parent, so light/dark mode and surface tints render correctly.
+- **Playback hardening follow-up.** Logs swallowed extraction errors so
+  silent fallbacks are diagnosable, and the MPD TTL watcher now fires
+  unconditionally (single-shot timer cannot re-arm after a paused-state
+  skip, so we trust generation guards downstream).
+- **Watchdog race fix in Shorts.** Stall recovery now verifies the video
+  still bound at refresh time matches the one that began buffering, so a
+  fast swipe past a stalled short does not refresh the wrong stream.
+
+### Admin Dashboard
+
+- **Sign-in panel simplified.** Removed the green gradient backdrop and the
+  vignette pseudo-element; the panel now sits on the application surface
+  with a softer shadow, which matches the rest of the admin UI.
+
+### Infra
+
+- **CI Firebase config materialization hardened.** Main-branch builds now
+  fail fast if the `GOOGLE_SERVICES_JSON` secret is missing or structurally
+  invalid (wrong project, missing API key, missing OAuth client). PRs
+  continue to compile against the non-functional stub.
+
+[1.0.0-beta.14]: https://github.com/talibfitrah/albunyaantube/releases/tag/v1.0.0-beta.14
+
 ## [1.0.0-beta.13] - 2026-05-24
 
 ### Android
