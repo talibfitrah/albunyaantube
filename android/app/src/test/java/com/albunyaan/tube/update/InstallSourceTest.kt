@@ -46,4 +46,34 @@ class InstallSourceTest {
 
         assertFalse(InstallSource(ctx).isPlayStore())
     }
+
+    // --- Legacy path (API 26-29): getInstallerPackageName ---
+
+    @Test
+    @Config(sdk = [Build.VERSION_CODES.Q])
+    @Suppress("DEPRECATION")
+    fun `isPlayStore returns true when legacy installer is com_android_vending`() {
+        val pm = mock<PackageManager>()
+        whenever(pm.getInstallerPackageName("pkg")).thenReturn("com.android.vending")
+        val ctx = mock<Context> {
+            whenever(it.packageName).thenReturn("pkg")
+            whenever(it.packageManager).thenReturn(pm)
+        }
+
+        assertTrue(InstallSource(ctx).isPlayStore())
+    }
+
+    @Test
+    @Config(sdk = [Build.VERSION_CODES.Q])
+    @Suppress("DEPRECATION")
+    fun `isPlayStore returns false when legacy installer is null`() {
+        val pm = mock<PackageManager>()
+        whenever(pm.getInstallerPackageName("pkg")).thenReturn(null)
+        val ctx = mock<Context> {
+            whenever(it.packageName).thenReturn("pkg")
+            whenever(it.packageManager).thenReturn(pm)
+        }
+
+        assertFalse(InstallSource(ctx).isPlayStore())
+    }
 }
