@@ -372,7 +372,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
             // ANDROID-MULTI-01 Issue 3: manual update check
             view.findViewById<View>(R.id.updateCheckItem)?.setOnClickListener {
                 val activity = activity ?: return@setOnClickListener
-                updatePromptFlow.runCheck(activity, viewLifecycleOwner, manual = true)
+                updatePromptFlow.runCheck(activity, viewLifecycleOwner)
             }
 
             // Toggle switches - handle state changes

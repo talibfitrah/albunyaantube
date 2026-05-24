@@ -51,19 +51,6 @@ class MainActivity : AppCompatActivity() {
     private var startupTheme: String? = null
     private var startupLocale: String? = null
 
-    companion object {
-        /**
-         * Process-scoped flag so the silent app-start update check in [onStart] runs
-         * at most once per process. An instance field would reset on every Activity
-         * recreation (rotation, dark-mode toggle, locale change, system-initiated
-         * recreation), resulting in a GitHub API hit on every recreation. Volatile
-         * because onStart can arrive on different threads across recreations.
-         * CodeRabbit #1 / superpowers:code-reviewer I3.
-         */
-        @Volatile
-        private var updateCheckRunForThisProcess = false
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         // Apply stored locale and theme before super.onCreate to ensure proper settings
         // These use timeouts to avoid blocking cold start - values may be defaults if DataStore was slow
@@ -412,29 +399,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    @javax.inject.Inject
-    lateinit var updatePromptFlow: com.albunyaan.tube.update.UpdatePromptFlow
-
     /** Plan B (ANDROID-AUTH-01) T6: source of the 403 BLOCKED/DELETED stream from interceptors. */
     @Inject
     lateinit var authRepository: AuthRepository
-
-    override fun onStart() {
-        super.onStart()
-        // ANDROID-MULTI-01 Issue 3: silent app-start update check, run at most once per
-        // process so a user who multitasks between apps is not spammed. The check itself
-        // is already throttled by the GitHub API's caching headers; we bias toward
-        // never-interrupting on the no-update path by passing manual=false.
-        //
-        // Flag lives in the companion object (CodeRabbit #1 / code-reviewer I3) — an
-        // instance field would reset to false on every Activity recreate (theme/locale
-        // change, rotation, system-initiated recreation), which defeats the "once per
-        // process" intent.
-        if (!updateCheckRunForThisProcess) {
-            updateCheckRunForThisProcess = true
-            updatePromptFlow.runCheck(this, this, manual = false)
-        }
-    }
 
     override fun onDestroy() {
         // Clean up any pending navigation listener to prevent leaks

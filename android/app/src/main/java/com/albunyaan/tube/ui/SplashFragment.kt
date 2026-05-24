@@ -21,6 +21,8 @@ import com.albunyaan.tube.auth.AccountStatus
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.sync.SyncManager
 import com.albunyaan.tube.preferences.SettingsPreferences
+import com.albunyaan.tube.update.UpdateInfo
+import com.albunyaan.tube.update.UpdatePromptFlow
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Deferred
@@ -68,6 +70,8 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
 
     /** Plan D T26: bind is fired in background once uid is confirmed. */
     @Inject lateinit var syncManager: SyncManager
+
+    @Inject lateinit var updatePromptFlow: UpdatePromptFlow
 
     /** Track running animators for cleanup on fragment destruction */
     private val runningAnimators = mutableListOf<Animator>()
@@ -118,8 +122,22 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
                 }
             }
 
-            // Check if this is a deep link launch - if so, skip splash entirely
+            // GitHub update probe — runs in parallel with the splash animation, bounded by
+            // [UpdatePromptFlow.checkForUpdate]'s own timeout so a slow network can't stall
+            // cold start. Null result means "no update / failed / timed out" — splash continues
+            // routing unchanged. Non-null result triggers the gating dialog before routing
+            // so the user sees the prompt *before* the sign-in screen.
+            val updateInfoDeferred: Deferred<UpdateInfo?> = async {
+                updatePromptFlow.checkForUpdate()
+            }
+
+            // Check if this is a deep link launch - if so, skip splash entirely.
+            // Deep-link launches deliberately skip the update prompt — the user tapped
+            // a link expecting content, not a "new version available" dialog. Cancelling
+            // the deferred frees the OkHttp connection; the prompt fires on the next
+            // non-deep-link cold start. (code-reviewer I2.)
             if (isDeepLinkLaunch()) {
+                updateInfoDeferred.cancel()
                 routeAfterSplash(onboardingDeferred.await(), accountStatusDeferred.await())
                 return@launch
             }
@@ -179,11 +197,27 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             // Phase 5: Hold for a moment, then navigate
             delay(POST_ANIMATION_DELAY)
 
-            // Await both deferred values (should already be available from parallel fetch)
+            // Await update first so a slow accountStatusDeferred (auth retry against a slow
+             // backend) cannot stall the gating dialog — the prompt should front the sign-in
+             // screen as soon as the network probe returns (cubic round-4 P2).
+            awaitUpdatePromptIfAvailable(updateInfoDeferred.await())
             val onboardingCompleted = onboardingDeferred.await()
             val accountStatus = accountStatusDeferred.await()
             routeAfterSplash(onboardingCompleted, accountStatus)
         }
+    }
+
+    /**
+     * Block routing on the update dialog when a newer release is available. The dialog
+     * is shown on the activity (not the fragment view) and the download/install coroutine
+     * is bound to the activity lifecycle — both must survive the splash→signIn navigation
+     * that fires once the user dismisses the dialog. Passing viewLifecycleOwner here would
+     * cancel the in-flight APK download the moment splash gets popped.
+     */
+    private suspend fun awaitUpdatePromptIfAvailable(info: UpdateInfo?) {
+        if (info == null || !isAdded) return
+        val host = activity ?: return
+        updatePromptFlow.showUpdateDialogAndAwait(host, host, info)
     }
 
     /** Routing logic in [SplashRouter] so it's unit-testable in isolation. */
