@@ -1,6 +1,7 @@
 package com.albunyaan.tube.update
 
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import com.albunyaan.tube.BuildConfig
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
@@ -53,7 +54,7 @@ internal data class GithubReleaseListItemDto(
     val name: String?,
     val body: String?,
     val prerelease: Boolean,
-    val assets: List<GithubAssetDto>
+    val assets: List<GithubAssetDto> = emptyList()
 )
 
 /**
@@ -67,6 +68,9 @@ class UpdateChecker @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val installSource: InstallSource
 ) {
+    @VisibleForTesting
+    internal var apiBaseUrlForTest: String? = null   // production callers MUST NOT set this
+
     private val moshi: Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val adapter = moshi.adapter(GithubReleaseDto::class.java)
     private val listAdapter = moshi.adapter<List<GithubReleaseListItemDto>>(
@@ -128,18 +132,23 @@ class UpdateChecker @Inject constructor(
     /**
      * Returns up to [limit] most-recent releases (newest first) that ship an APK asset.
      * Filters out Play Store installs, releases without an APK, and (when the running
-     * build is stable) pre-releases — matching the rules in [checkForUpdate]. Failure
-     * to reach GitHub returns Result.failure; an empty list is a successful state.
+     * build is stable) pre-releases — matching the rules in [checkForUpdate].
      *
-     * [baseUrlOverride] exists for tests — production callers must not pass it.
+     * Failure semantics:
+     *  - HTTP non-2xx, missing/empty response body, and Moshi `null` parse → return
+     *    `Result.success(emptyList())`. Callers cannot distinguish these from "no
+     *    releases exist." The Available Updates screen renders an empty state for
+     *    both cases; a future task will surface a "Couldn't refresh" subtitle.
+     *  - Thrown exceptions inside the network or parse path (IOException, SocketTimeoutException,
+     *    Moshi JsonDataException on a malformed but non-null body) propagate as `Result.failure`.
+     *  - Play Store installs short-circuit to `Result.success(emptyList())` before the network call.
      */
     suspend fun listReleases(
-        limit: Int = 5,
-        baseUrlOverride: String? = null
+        limit: Int = 5
     ): Result<List<UpdateInfo>> = withContext(Dispatchers.IO) {
         if (installSource.isPlayStore()) return@withContext Result.success(emptyList())
         runCatching {
-            val base = baseUrlOverride ?: "https://api.github.com/"
+            val base = apiBaseUrlForTest ?: "https://api.github.com/"
             val url = "${base.trimEnd('/')}/repos/$GITHUB_REPO/releases?per_page=$limit"
             val request = Request.Builder()
                 .url(url)
@@ -153,6 +162,7 @@ class UpdateChecker @Inject constructor(
                 }
                 val body = response.body?.string() ?: return@use emptyList<UpdateInfo>()
                 val list = listAdapter.fromJson(body) ?: return@use emptyList<UpdateInfo>()
+                // TODO(ANDROID-VERSIONS-01 Task 15): test the stable-channel filter path
                 val currentIsPrerelease = BuildConfig.VERSION_NAME.contains('-')
                 list.asSequence()
                     .filterNot { it.prerelease && !currentIsPrerelease }

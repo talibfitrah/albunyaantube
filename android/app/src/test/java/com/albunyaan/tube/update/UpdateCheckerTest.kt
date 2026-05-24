@@ -167,7 +167,8 @@ class UpdateCheckerTest {
             okHttpClient = OkHttpClient(),
             installSource = mock { on { isPlayStore() } doReturn false }
         )
-        val result = checker.listReleases(limit = 5, baseUrlOverride = server.url("/").toString())
+        checker.apiBaseUrlForTest = server.url("/").toString()
+        val result = checker.listReleases(limit = 5)
 
         val info = result.getOrThrow()
         assertEquals(3, info.size)  // beta-12 dropped (no APK asset)
