@@ -1511,6 +1511,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         ttlWatcher = com.albunyaan.tube.player.MpdTtlWatcher(
             videoId = streamId,
             registry = mpdRegistry,
+            // Fires regardless of playWhenReady. A skip-when-paused variant was
+            // considered to avoid a rare 1-frame play-state stomp race in
+            // forceRefreshCurrentStreamInternal — but because MpdTtlWatcher is
+            // single-shot, skipping leaves no later opportunity to refresh, so a
+            // user pausing through 90% TTL and resuming hours later would get a
+            // visible reactive 403 stall on the first segment. Refreshing during
+            // pause is the lesser evil for this app's perf-focused UX.
             onRefreshNeeded = { viewModel.forceRefreshForProactiveTtl() }
         ).also { it.start(viewLifecycleOwner.lifecycleScope) }
     }
@@ -2840,6 +2847,18 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         } else {
             selection.resolved
         }
+        // TODO(perf-pipeline): quality switch + MPD older than ~50% TTL can build
+        // a new representation from URLs that were embedded into the cached MPD at
+        // bind time. With MPD TTL = 15 min and CDN signed-URL lifetime ~6 h, this is
+        // a non-issue in most regions. In regions where YouTube shortens signed-URL
+        // TTL (occasional CDN events), a quality switch ~12 min in can 403 on the
+        // first chunk fetch with the new representation. Reactive
+        // `handle403OrHttpError` recovers automatically (one stall, then fresh URLs).
+        // The clean fix is a re-resolve via forceRefreshCurrentStreamInternal before
+        // the factory call when `mpdRegistry.getEntry(streamId).registeredAtMs` is
+        // older than `MPD_TTL_MS / 2` — but it requires threading the resume position
+        // through the resolve, so deferred until we observe the regional 403s in
+        // telemetry.
         val mediaSourceResult = try {
             val result = mediaSourceFactory.createMediaSourceWithType(
                 resolved = resolvedForFactory,

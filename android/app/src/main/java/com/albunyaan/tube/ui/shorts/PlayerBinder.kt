@@ -386,6 +386,11 @@ class PlayerBinder private constructor(
     ) {
         val resolved: ResolvedStreams? = runCatching {
             playerRepository.resolveStreams(videoId, forceRefresh = forceRefresh, sourceChannelId = sourceChannelId)
+        }.onFailure { error ->
+            android.util.Log.w(
+                "PlayerBinder",
+                "resolveStreams failed for $videoId (forceRefresh=$forceRefresh): ${error.javaClass.simpleName} ${error.message}"
+            )
         }.getOrNull()
 
         // Discard if a newer bind has superseded this one.
@@ -432,6 +437,11 @@ class PlayerBinder private constructor(
                     forceProgressive = false,     // prefer adaptive
                     videoId = videoId
                 )
+            }.onFailure { error ->
+                android.util.Log.w(
+                    "PlayerBinder",
+                    "createMediaSourceWithType failed for $videoId — falling back to progressive: ${error.javaClass.simpleName} ${error.message}"
+                )
             }.getOrNull()
         }
         val source = adaptive?.source ?: buildProgressiveSource(effectiveResolved)
@@ -456,9 +466,16 @@ class PlayerBinder private constructor(
             ttlWatcher = com.albunyaan.tube.player.MpdTtlWatcher(
                 videoId = videoId,
                 registry = mpdRegistry,
-                // Pass expectedVideoId so the watcher firing at 90% TTL only
-                // refreshes if this short is still bound — protects against
-                // late-firing watchers from a video the user already swiped past.
+                // expectedVideoId: the watcher firing at 90% TTL only refreshes
+                // if this short is still bound — protects against late-firing
+                // watchers from a video the user already swiped past.
+                //
+                // The refresh fires regardless of playWhenReady. A skip-when-
+                // paused variant was considered to avoid a rare play-state
+                // stomp race during resume, but MpdTtlWatcher is single-shot
+                // so a skip leaves no later opportunity to refresh — a user
+                // pausing through 90% TTL and resuming later would then get
+                // a visible reactive 403 stall on the first segment.
                 onRefreshNeeded = { forceRefreshCurrent(expectedVideoId = videoId) }
             ).also { it.start(scope) }
         }
@@ -565,6 +582,11 @@ class PlayerBinder private constructor(
                     forceProgressive = false,
                     videoId = videoId
                 )
+            }.onFailure { error ->
+                android.util.Log.w(
+                    "PlayerBinder",
+                    "audio-track swap createMediaSourceWithType failed for $videoId: ${error.javaClass.simpleName} ${error.message}"
+                )
             }.getOrNull()
         }
         val source = adaptive?.source ?: buildProgressiveSource(filtered, qualityCapHeight = null) ?: return
@@ -618,6 +640,11 @@ class PlayerBinder private constructor(
                     selectionOrigin = origin,
                     forceProgressive = false,
                     videoId = videoId
+                )
+            }.onFailure { error ->
+                android.util.Log.w(
+                    "PlayerBinder",
+                    "quality-switch createMediaSourceWithType failed for $videoId (cap=$cap): ${error.javaClass.simpleName} ${error.message}"
                 )
             }.getOrNull()
         }
