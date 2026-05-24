@@ -1,0 +1,27 @@
+backend/build.gradle.kts
+  s_43dfb8dc8c3e6a::t_74198e4a56a7d9 13
+CHANGELOG.md
+  s_43dfb8dc8c3e6a::t_0f696e28d5ed30 6-45
+android/app/build.gradle.kts
+  s_43dfb8dc8c3e6a::t_efdbf25da648f8 39-40
+frontend/package.json
+  s_43dfb8dc8c3e6a::t_20502916baca50 3
+frontend/package-lock.json
+  ai_agent 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "c81f43e0afb3ced9cd1e8698253f8f2bb78897fc",
+  "prompts": {},
+  "sessions": {
+    "s_43dfb8dc8c3e6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c20d370f-4c72-40f4-99e5-b18195a5843c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
