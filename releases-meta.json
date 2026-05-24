@@ -1,0 +1,27 @@
+{
+  "1.0.0-beta.14": {
+    "en": "Splash-gate update prompt + Samsung post-install self-kill.",
+    "ar": "موجه التحديث على شاشة البداية + إنهاء العملية على سامسونج بعد التثبيت.",
+    "nl": "Update-prompt op het splashscherm + zelf-afsluiten na installatie op Samsung."
+  },
+  "1.0.0-beta.13": {
+    "en": "Faster, quieter playback recovery; Shorts refresh fix; larger Media3 cache.",
+    "ar": "استعادة تشغيل أسرع وأهدأ؛ إصلاح تحديث Shorts؛ ذاكرة تخزين أكبر لـ Media3.",
+    "nl": "Sneller en stiller playback-herstel; Shorts-refresh fix; grotere Media3-cache."
+  },
+  "1.0.0-beta.12": {
+    "en": "Silent first retry + localized update dialog with changelog link.",
+    "ar": "إعادة المحاولة الأولى بصمت + مربع حوار تحديث محلي مع رابط سجل التغييرات.",
+    "nl": "Stille eerste herpoging + gelokaliseerde update-melding met changelog-link."
+  },
+  "1.0.0-beta.11": {
+    "en": "Update dialog capped at 200 dp with locale summary + full changelog link.",
+    "ar": "مربع حوار التحديث محدود بـ 200 dp مع ملخص محلي ورابط لسجل التغييرات الكامل.",
+    "nl": "Update-dialoog begrensd op 200 dp met landinstellingsamenvatting + changelog-link."
+  },
+  "1.0.0-beta.10": {
+    "en": "Real HLS crash fix: pinned Media3 to 1.9.3, eliminating the regression.",
+    "ar": "إصلاح حقيقي لتعطل HLS: تثبيت Media3 على 1.9.3 للقضاء على الانحدار.",
+    "nl": "Echte HLS-crash fix: Media3 vastgezet op 1.9.3, regressie volledig opgelost."
+  }
+}

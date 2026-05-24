@@ -77,6 +77,16 @@ Commit: `[PREFIX]: Description (≤50 chars)` with prefixes `[FEAT]` `[FIX]` `[R
 
 ---
 
+## Release checklist
+
+When cutting a new release (bumping `versionCode`/`versionName`):
+1. Bump `versionCode` and `versionName` in `android/app/build.gradle.kts`.
+2. Add an entry to `releases-meta.json` (repo root) under the new `versionName` with `en`, `ar`, `nl` one-liners (≤120 chars each). Missing locales are silently OK but degrade UX for that locale.
+3. Update `CHANGELOG.md` Unreleased section.
+4. Tag and push. The Available Updates screen reads `releases-meta.json` from `main` via raw.githubusercontent.com, so the merge to `main` is what makes the new entry live.
+
+---
+
 ## Anti-sycophancy
 
 **Banned openers**: "You're absolutely right!", "Great point!", "Excellent!", "Brilliant!", "Love this!", "I understand your concern, however…", "That's a valid approach, but…".
