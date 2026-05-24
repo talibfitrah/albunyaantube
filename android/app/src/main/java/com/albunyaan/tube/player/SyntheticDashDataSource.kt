@@ -174,10 +174,10 @@ class SyntheticDashMpdRegistry @Inject constructor() {
 
         /**
          * TTL for cached MPD entries in milliseconds.
-         * Signed URLs typically expire in 6 hours, but we use a conservative 2 minutes
-         * to avoid serving stale URLs that may fail during playback.
+         * Signed URLs are expected to outlive this window, but synthetic manifests
+         * still refresh proactively before this TTL to avoid stale embedded URLs.
          */
-        const val MPD_TTL_MS = 2 * 60 * 1000L // 2 minutes
+        const val MPD_TTL_MS = 15 * 60 * 1000L // 15 minutes
     }
 
     /**

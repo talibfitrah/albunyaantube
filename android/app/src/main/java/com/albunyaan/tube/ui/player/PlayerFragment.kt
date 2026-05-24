@@ -31,8 +31,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -1488,12 +1491,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      * Arm the proactive MPD TTL watcher for the current synthetic-DASH stream.
      *
      * The synthetic-DASH MPD generator produces manifests whose embedded CDN URLs
-     * expire — `SyntheticDashDataSource.MPD_TTL_MS` is a conservative 2-minute
+     * expire — `SyntheticDashDataSource.MPD_TTL_MS` is a conservative 15-minute
      * lower bound. Without a proactive refresh, ExoPlayer hits a 403 on the next
      * chunk fetch when URLs go stale and the user sees a visible stall while the
      * reactive recovery path (`onPlayerError → handle403OrHttpError`) re-resolves.
      *
-     * The watcher fires at 90% TTL and triggers `forceRefreshForAutoRecovery()`,
+     * The watcher fires at 90% TTL and triggers `forceRefreshForProactiveTtl()`,
      * which goes through the standard StreamState.Ready prepare path — same
      * MediaSource swap that quality switches use. Position is preserved by
      * `maybePrepareStream` via the `isQualitySwitch` branch.
@@ -1511,8 +1514,27 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         ttlWatcher = com.albunyaan.tube.player.MpdTtlWatcher(
             videoId = streamId,
             registry = mpdRegistry,
-            onRefreshNeeded = { viewModel.forceRefreshForAutoRecovery() }
+            onRefreshNeeded = { viewModel.forceRefreshForProactiveTtl() }
         ).also { it.start(viewLifecycleOwner.lifecycleScope) }
+    }
+
+
+    private fun cachedProgressiveMediaSourceFactory(): ProgressiveMediaSource.Factory {
+        val httpFactory: DataSource.Factory = if (featureFlags.isCronetEnabled) {
+            cronetDataSourceFactory.createForAndroidUA()
+        } else {
+            DefaultHttpDataSource.Factory()
+                .setUserAgent(com.albunyaan.tube.util.HttpConstants.YOUTUBE_USER_AGENT)
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(20_000)
+                .setAllowCrossProtocolRedirects(true)
+        }
+        val upstreamFactory = DefaultDataSource.Factory(requireContext(), httpFactory)
+        val cachedFactory = CacheDataSource.Factory()
+            .setCache(simpleCache)
+            .setUpstreamDataSourceFactory(upstreamFactory)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        return ProgressiveMediaSource.Factory(cachedFactory)
     }
 
     /**
@@ -1864,11 +1886,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
             StreamState.Loading -> {
-                binding.playerStatus.text = if (state.retryCount > 0) {
-                    getString(R.string.player_retrying, state.retryCount + 1, 3)
-                } else {
-                    getString(R.string.player_status_resolving)
-                }
+                binding.playerStatus.text = getString(R.string.player_status_resolving)
                 binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
@@ -1903,26 +1921,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
             is StreamState.Recovering -> {
-                // First recovery attempt is silent — most transient stalls
-                // resolve on the first retry, and surfacing "Restoring 1/5"
-                // alarms users for a hiccup they would otherwise never see.
-                // From attempt 2 onwards we show the overlay so persistent
-                // failures still get visible feedback.
-                if (streamState.attempt <= 1) {
-                    binding.playerRecoveryOverlay.visibility = View.GONE
-                    binding.playerErrorOverlay.visibility = View.GONE
-                } else {
-                    binding.playerRecoveryOverlay.visibility = View.VISIBLE
-                    binding.playerRecoveryProgress.visibility = View.VISIBLE
-                    binding.playerRecoveryMessage.text = getString(
-                        R.string.player_recovering_attempt,
-                        streamState.attempt,
-                        PlaybackRecoveryManager.MAX_RECOVERY_ATTEMPTS
-                    )
-                    binding.playerRecoveryRetryButton.visibility = View.GONE
-                    binding.playerErrorOverlay.visibility = View.GONE
-                    binding.playerStatus.text = getString(R.string.player_recovering)
-                }
+                binding.playerRecoveryOverlay.visibility = View.GONE
+                binding.playerErrorOverlay.visibility = View.GONE
+                binding.playerStatus.text = getString(R.string.player_status_resolving)
             }
             is StreamState.RecoveryExhausted -> {
                 // Show recovery overlay with retry button (exhausted state)
@@ -2028,7 +2029,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         pendingResumePlayWhenReady = wasPlayWhenReady
 
         // CRITICAL: Invalidate cached MPD before refresh to prevent reusing stale signed URLs.
-        // Without this, a refresh within TTL (2 min) can hit the MPD cache and reuse the same
+        // Without this, a refresh within the MPD TTL can hit the cache and reuse the same
         // failing URLs, causing 403 loops. This ensures the next media source build regenerates
         // the MPD with fresh URLs from the new extraction.
         mpdRegistry.unregisterBoth(currentItem.streamId)
@@ -2938,9 +2939,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 .setUri(url)
                 .setMimeType(mimeType)
                 .build()
-            val source = ProgressiveMediaSource.Factory(
-                DefaultDataSource.Factory(requireContext())
-            ).createMediaSource(mediaItem)
+            val source = cachedProgressiveMediaSourceFactory().createMediaSource(mediaItem)
             // Create a fallback MediaSourceResult for the progressive source
             MediaSourceResult(
                 source = source,
@@ -3006,8 +3005,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             preparedStreamUrl = mediaSourceResult.actualSourceUrl
 
             // Arm the proactive MPD TTL watcher (SYNTH_ADAPTIVE / SYNTHETIC_DASH
-            // only). Without this the synthetic-DASH URLs go stale at the 2-minute
-            // TTL and the user sees a visible stall while the reactive 403 recovery
+            // only). Without this the synthetic-DASH URLs can go stale before the
+            // proactive refresh window and the user sees a visible stall while reactive 403 recovery
             // path re-resolves. See armTtlWatcher KDoc.
             armTtlWatcher(streamState.streamId, mediaSourceResult.adaptiveType)
 

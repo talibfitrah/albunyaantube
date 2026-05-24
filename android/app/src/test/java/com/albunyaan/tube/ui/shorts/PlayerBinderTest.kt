@@ -74,14 +74,24 @@ class PlayerBinderTest {
      * it treats a null resolve: emit failureEvents, never touch the player.
      */
     private class TestPlayerRepository : PlayerRepository {
+        data class ResolveCall(
+            val videoId: String,
+            val forceRefresh: Boolean,
+            val sourceChannelId: String?,
+        )
+
         private val deferred = mutableMapOf<String, CompletableDeferred<ResolvedStreams?>>()
+        val calls = mutableListOf<ResolveCall>()
 
         override suspend fun resolveStreams(
             videoId: String,
             forceRefresh: Boolean,
             priority: Priority,
             sourceChannelId: String?,
-        ): ResolvedStreams? = deferred.getOrPut(videoId) { CompletableDeferred() }.await()
+        ): ResolvedStreams? {
+            calls += ResolveCall(videoId, forceRefresh, sourceChannelId)
+            return deferred.getOrPut(videoId) { CompletableDeferred() }.await()
+        }
 
         fun complete(videoId: String, result: ResolvedStreams?) {
             deferred.getOrPut(videoId) { CompletableDeferred() }.complete(result)
@@ -114,7 +124,6 @@ class PlayerBinderTest {
             playWhenReadyState = value
         }
         override fun getPlayWhenReady(): Boolean = playWhenReadyState
-        override fun release() { calls += "release" }
     }
 
     private class RecordingAttach : PlayerBinder.PlayerViewAttach {
@@ -189,6 +198,70 @@ class PlayerBinderTest {
     }
 
     @Test
+    fun forceRefreshCurrent_refreshesBoundVideoNotMostRecentCacheEntry() = runTest(dispatcher) {
+        val ops = RecordingPlayerOps()
+        val attach = RecordingAttach()
+        val repo = TestPlayerRepository()
+        val binder = newBinder(repo, ops, attach)
+
+        val viewA: PlayerView = org.mockito.kotlin.mock()
+        val viewB: PlayerView = org.mockito.kotlin.mock()
+
+        binder.bind(viewA, "A")
+        repo.complete("A", resolved("A"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        binder.bind(viewB, "B")
+        repo.complete("B", resolved("B"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue("A must be cached for the recency trap", binder.resolvedStreamsFor("A") != null)
+        binder.forceRefreshCurrent()
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(
+            "Refresh must target the bound short, not the most-recent cache entry",
+            TestPlayerRepository.ResolveCall("B", forceRefresh = true, sourceChannelId = null),
+            repo.calls.last(),
+        )
+    }
+
+    @Test
+    fun forceRefreshCurrent_keepsExistingMediaWhileResolveIsPending() = runTest(dispatcher) {
+        val ops = RecordingPlayerOps()
+        val attach = RecordingAttach()
+        val repo = TestPlayerRepository()
+        val binder = newBinder(repo, ops, attach)
+
+        val view: PlayerView = org.mockito.kotlin.mock()
+        binder.bind(view, "A")
+        repo.complete("A", resolved("A"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val stopCountBeforeRefresh = ops.calls.count { it == "stop" }
+        val clearCountBeforeRefresh = ops.calls.count { it == "clearMediaItems" }
+
+        binder.forceRefreshCurrent()
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(
+            "Force refresh must not blank the current short while new URLs resolve",
+            stopCountBeforeRefresh,
+            ops.calls.count { it == "stop" },
+        )
+        assertEquals(
+            "Force refresh must keep the existing media source until replacement is ready",
+            clearCountBeforeRefresh,
+            ops.calls.count { it == "clearMediaItems" },
+        )
+        assertEquals(
+            "Force refresh still needs to bypass the stream cache",
+            TestPlayerRepository.ResolveCall("A", forceRefresh = true, sourceChannelId = null),
+            repo.calls.last(),
+        )
+    }
+
+    @Test
     fun bindPerformsSynchronousViewAttachAndPlayerReset() = runTest(dispatcher) {
         val ops = RecordingPlayerOps()
         val attach = RecordingAttach()
@@ -210,34 +283,11 @@ class PlayerBinderTest {
         )
     }
 
-    @Test
-    fun release_cancelsPendingResolveAndSkipsPlayerApply() = runTest(dispatcher) {
-        val ops = RecordingPlayerOps()
-        val attach = RecordingAttach()
-        val repo = TestPlayerRepository()
-        val binder = newBinder(repo, ops, attach)
-
-        val view: PlayerView = org.mockito.kotlin.mock()
-        binder.bind(view, "Y")
-        binder.release()
-
-        // Complete AFTER release — the cancelled scope must swallow the result.
-        repo.complete("Y", resolved("Y"))
-        dispatcher.scheduler.advanceUntilIdle()
-
-        assertFalse(
-            "No setMediaSource after release",
-            ops.calls.contains("setMediaSource")
-        )
-        assertFalse("No prepare after release", ops.calls.contains("prepare"))
-        assertTrue("release must be forwarded to PlayerOps", ops.calls.contains("release"))
-    }
 
     @Test
     fun cancelScope_cancelsPendingResolveAndLeavesPlayerUntouched() = runTest(dispatcher) {
-        // Mirrors release_cancelsPendingResolveAndSkipsPlayerApply, but uses
-        // cancelScope() so the VM-owned player is NOT released — the binder
-        // only aborts its in-flight bind coroutine. Proves a late resolve
+        // cancelScope() aborts its in-flight bind coroutine without releasing
+        // the VM-owned player. Proves a late resolve
         // after fragment teardown cannot mutate the surviving player.
         val ops = RecordingPlayerOps()
         val attach = RecordingAttach()
@@ -257,10 +307,6 @@ class PlayerBinderTest {
             ops.calls.contains("setMediaSource")
         )
         assertFalse("No prepare after cancelScope", ops.calls.contains("prepare"))
-        assertFalse(
-            "cancelScope must NOT release the player",
-            ops.calls.contains("release")
-        )
     }
 
     @Test

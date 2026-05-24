@@ -1059,6 +1059,15 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * Force re-resolve stream URLs for planned synthetic-DASH MPD TTL refresh.
+     * This is separate from AUTO_RECOVERY so proactive refreshes do not consume
+     * the reserved error-recovery budget used after stalls or HTTP failures.
+     */
+    fun forceRefreshForProactiveTtl(): Boolean {
+        return forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.PROACTIVE_TTL_REFRESH)
+    }
+
+    /**
      * Internal implementation for force refresh with configurable request kind.
      */
     private fun forceRefreshCurrentStreamWithKind(kind: ExtractionRateLimiter.RequestKind): Boolean {

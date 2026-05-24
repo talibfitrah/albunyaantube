@@ -7,6 +7,7 @@ import androidx.work.Configuration
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
+import androidx.work.testing.WorkManagerTestInitHelper.ExecutorsMode
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.data.local.AppDatabase
@@ -61,9 +62,12 @@ class RefreshSchedulerTest {
         // type) are satisfied via WorkManagerTestInitHelper.
         val cfg = Configuration.Builder()
             .setMinimumLoggingLevel(android.util.Log.DEBUG)
-            .setExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())
             .build()
-        WorkManagerTestInitHelper.initializeTestWorkManager(ctx, cfg)
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            ctx,
+            cfg,
+            ExecutorsMode.LEGACY_OVERRIDE_WITH_SYNCHRONOUS_EXECUTORS,
+        )
 
         db = Room.inMemoryDatabaseBuilder(ctx, AppDatabase::class.java)
             .allowMainThreadQueries()
@@ -87,12 +91,16 @@ class RefreshSchedulerTest {
 
     @After
     fun tearDown() {
+        // Cancel and drain WorkManager before closing the in-memory DB / Robolectric
+        // context. Otherwise constraint trackers can keep running on WM.task-*
+        // threads and surface as UncaughtExceptionsBeforeTest in the next test.
+        runCatching {
+            val workManager = WorkManager.getInstance(ctx)
+            workManager.cancelAllWork().result.get()
+            workManager.pruneWork().result.get()
+            WorkManagerTestInitHelper.closeWorkDatabase()
+        }
         db.close()
-        // Cancel any work enqueued during the test so it doesn't leak
-        // into other tests sharing the Robolectric sandbox.
-        WorkManager.getInstance(ctx).cancelUniqueWork(
-            RefreshScheduler.UNIQUE_ONESHOT_NAME
-        )
     }
 
     private fun oneshotInfos(): List<WorkInfo> = WorkManager.getInstance(ctx)

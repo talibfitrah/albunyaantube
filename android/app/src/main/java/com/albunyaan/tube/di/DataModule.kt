@@ -1,5 +1,6 @@
 package com.albunyaan.tube.di
 
+import android.app.ActivityManager
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
@@ -69,6 +70,8 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object DataModule {
+    private const val MEDIA3_CACHE_LOW_RAM_BYTES = 256L * 1024L * 1024L
+    private const val MEDIA3_CACHE_DEFAULT_BYTES = 512L * 1024L * 1024L
 
     /**
      * Provides an application-scoped CoroutineScope for background work.
@@ -301,10 +304,19 @@ object DataModule {
     @Provides
     @Singleton
     fun provideSimpleCache(@ApplicationContext context: Context): SimpleCache {
-        val cacheDir = java.io.File(context.cacheDir, "media3")
+        val cacheDir = File(context.cacheDir, "media3")
         val dbProvider = StandaloneDatabaseProvider(context)
-        val evictor = LeastRecentlyUsedCacheEvictor(100 * 1024 * 1024L)
+        val evictor = LeastRecentlyUsedCacheEvictor(media3CacheSizeBytes(context))
         return SimpleCache(cacheDir, evictor, dbProvider)
+    }
+
+    private fun media3CacheSizeBytes(context: Context): Long {
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        return if (activityManager?.isLowRamDevice == true) {
+            MEDIA3_CACHE_LOW_RAM_BYTES
+        } else {
+            MEDIA3_CACHE_DEFAULT_BYTES
+        }
     }
 
     @OptIn(UnstableApi::class)

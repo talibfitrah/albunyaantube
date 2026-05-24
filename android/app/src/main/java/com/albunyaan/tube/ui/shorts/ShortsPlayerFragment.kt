@@ -190,7 +190,16 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             cronetDataSourceFactory,
             simpleCache = simpleCache
         )
-        val localBinder = PlayerBinder(viewModel.player, playerRepository, mediaSourceFactory, mpdRegistry, playbackFeatureFlags)
+        val localBinder = PlayerBinder(
+            player = viewModel.player,
+            playerRepository = playerRepository,
+            mediaSourceFactory = mediaSourceFactory,
+            context = requireContext().applicationContext,
+            cronetDataSourceFactory = cronetDataSourceFactory,
+            simpleCache = simpleCache,
+            mpdRegistry = mpdRegistry,
+            featureFlags = playbackFeatureFlags
+        )
 
         // Stall watchdog: if BUFFERING persists past STALL_RECOVERY_MS, force
         // a fresh stream resolve. Common cause is expired progressive URLs

@@ -198,6 +198,43 @@ class ExtractionRateLimiterTest {
         assertTrue("Auto-recovery should use reserved budget", recoveryResult is ExtractionRateLimiter.RateLimitResult.Allowed)
     }
 
+    @Test
+    fun `proactive ttl refresh does not consume regular per-video attempt budget`() {
+        val first = limiter.acquire("video1", ExtractionRateLimiter.RequestKind.PROACTIVE_TTL_REFRESH)
+        assertTrue("First proactive TTL refresh should be allowed", first is ExtractionRateLimiter.RateLimitResult.Allowed)
+
+        currentTime = 31_000L
+        val second = limiter.acquire("video1", ExtractionRateLimiter.RequestKind.PROACTIVE_TTL_REFRESH)
+        assertTrue("Second proactive TTL refresh should use its own budget", second is ExtractionRateLimiter.RateLimitResult.Allowed)
+
+        assertEquals(
+            "Planned TTL refreshes must not consume manual/recovery attempt budget",
+            0,
+            limiter.getAttemptCount("video1")
+        )
+    }
+
+    @Test
+    fun `proactive ttl refresh bypasses and does not contribute to global limit`() {
+        for (i in 1..9) {
+            val result = limiter.acquire("manual$i", ExtractionRateLimiter.RequestKind.MANUAL)
+            assertTrue("Manual request $i should be allowed", result is ExtractionRateLimiter.RateLimitResult.Allowed)
+        }
+
+        for (i in 1..3) {
+            val result = limiter.acquire("ttl$i", ExtractionRateLimiter.RequestKind.PROACTIVE_TTL_REFRESH)
+            assertTrue("Proactive TTL refresh $i should be allowed", result is ExtractionRateLimiter.RateLimitResult.Allowed)
+        }
+
+        assertEquals("Proactive TTL refresh should not add to global count", 9, limiter.getGlobalAttemptCount())
+
+        val tenthManual = limiter.acquire("manual10", ExtractionRateLimiter.RequestKind.MANUAL)
+        assertTrue("Tenth manual request should still be allowed", tenthManual is ExtractionRateLimiter.RateLimitResult.Allowed)
+
+        val blockedManual = limiter.acquire("manual11", ExtractionRateLimiter.RequestKind.MANUAL)
+        assertTrue("Eleventh manual request should be blocked globally", blockedManual is ExtractionRateLimiter.RateLimitResult.Blocked)
+    }
+
     // --- Prefetch Tests ---
 
     @Test

@@ -413,7 +413,7 @@ class SyntheticDashMpdRegistryTest {
         // Immediately after registration - should be fresh
         assertTrue(registry.isFreshWithMetadata("video1"))
 
-        // Advance to just under TTL (2 minutes - 1 second)
+        // Advance to just under the configured TTL
         advanceClock(SyntheticDashMpdRegistry.MPD_TTL_MS - 1000)
         assertTrue("Should still be fresh just before TTL expires", registry.isFreshWithMetadata("video1"))
     }
@@ -428,7 +428,7 @@ class SyntheticDashMpdRegistryTest {
             codecFamily = "H264"
         )
 
-        // Advance past TTL (2 minutes + 1 second)
+        // Advance past the configured TTL
         advanceClock(SyntheticDashMpdRegistry.MPD_TTL_MS + 1000)
 
         assertFalse("Should be stale after TTL expires", registry.isFreshWithMetadata("video1"))

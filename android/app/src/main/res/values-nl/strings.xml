@@ -561,9 +561,6 @@
     <string name="player_error_message">Er is een probleem opgetreden bij het laden van deze video. Probeer het opnieuw.</string>
     <string name="player_retry">Opnieuw proberen</string>
     <string name="player_refresh_stream">Stream vernieuwen</string>
-    <string name="player_retrying">Opnieuw proberen... (poging %1$d van %2$d)</string>
-    <string name="player_recovering">Afspelen herstellen…</string>
-    <string name="player_recovering_attempt">Herstellen… (poging %1$d van %2$d)</string>
     <string name="player_recovery_exhausted">Afspelen herstellen mislukt</string>
     <string name="player_recovery_exhausted_message">Kan afspelen niet automatisch herstellen. Probeer het opnieuw.</string>
     <string name="player_refresh_rate_limited">Wacht even voordat u opnieuw vernieuwt</string>

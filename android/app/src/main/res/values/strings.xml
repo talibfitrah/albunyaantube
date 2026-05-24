@@ -98,9 +98,6 @@
     <string name="player_error_message">There was a problem loading this video. Please try again.</string>
     <string name="player_retry">Retry</string>
     <string name="player_refresh_stream">Refresh Stream</string>
-    <string name="player_retrying">Retrying... (attempt %1$d of %2$d)</string>
-    <string name="player_recovering">Recovering playback…</string>
-    <string name="player_recovering_attempt">Recovering… (attempt %1$d of %2$d)</string>
     <string name="player_recovery_exhausted">Playback recovery failed</string>
     <string name="player_recovery_exhausted_message">Unable to recover playback automatically. Please try again.</string>
     <string name="player_refresh_rate_limited">Please wait a moment before refreshing again</string>

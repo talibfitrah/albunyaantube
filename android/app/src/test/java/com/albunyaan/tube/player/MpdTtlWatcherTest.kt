@@ -28,8 +28,9 @@ class MpdTtlWatcherTest {
 
     @Test
     fun `calls onRefreshNeeded at 90% of TTL`() = runTest {
+        val expectedRefreshDelay = (SyntheticDashMpdRegistry.MPD_TTL_MS * 0.90).toLong()
         // fakeTime stays 0 so the coroutine (lazy with StandardTestDispatcher) reads
-        // clock()=0 when it first runs inside advanceTimeBy, giving delayMs = 108_000.
+        // clock()=0 when it first runs inside advanceTimeBy.
         val fakeTime = 0L
         val registeredAt = 0L
 
@@ -48,7 +49,7 @@ class MpdTtlWatcherTest {
         )
 
         watcher.start(this)
-        advanceTimeBy(107_999L)
+        advanceTimeBy(expectedRefreshDelay - 1)
         assertEquals(0, refreshCallCount)
 
         advanceTimeBy(2L)
@@ -57,8 +58,7 @@ class MpdTtlWatcherTest {
 
     @Test
     fun `fires immediately when clock is already past 90% TTL at start time`() = runTest {
-        // delayMs = (0 + 108_000 - 200_000).coerceAtLeast(0) = 0 → no delay, fires at once.
-        val fakeTime = 200_000L
+        val fakeTime = SyntheticDashMpdRegistry.MPD_TTL_MS
         val registeredAt = 0L
 
         val entry = SyntheticDashMpdRegistry.MpdEntry(

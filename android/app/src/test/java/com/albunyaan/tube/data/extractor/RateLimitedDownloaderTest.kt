@@ -21,7 +21,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import org.junit.runner.RunWith
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
@@ -29,8 +28,6 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.wheneverBlocking
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
@@ -63,15 +60,12 @@ import java.util.concurrent.atomic.AtomicLong
  *    waiting on virtual time. Mockito 5's inline mock maker handles final
  *    Kotlin classes by default since 5.0.
  *  - The cooldown is a real [CooldownState] backed by a JVM-friendly
- *    DataStore (Robolectric provides the [android.content.Context]-free
- *    DataStore environment). We assert against persisted state directly
+ *    DataStore. We assert against persisted state directly
  *    rather than mocking — Mockito cannot mock a class with a non-null
  *    `() -> Long` field cleanly because the `$default` synthetic for
  *    `isTrippedSync` dereferences `this.now`, which mocks zero out.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [31])
 class RateLimitedDownloaderTest {
 
     private class FakeDownloader : Downloader() {

@@ -286,9 +286,13 @@ android {
         unitTests.isIncludeAndroidResources = true
 
         unitTests.all {
-            // Enforce 300s (5-minute) global test timeout per AGENTS.md policy
-            // Prevents hanging tests from blocking CI/CD
+            // Enforce 300s (5-minute) global test timeout per AGENTS.md policy.
+            // Prevent hanging tests from blocking CI/CD, and keep Robolectric-heavy
+            // full-suite runs from exhausting a long-lived Gradle test worker.
             it.timeout = Duration.ofSeconds(300)
+            it.maxHeapSize = "1024m"
+            it.forkEvery = 300
+            it.jvmArgs("-XX:TieredStopAtLevel=1")
         }
     }
 }
@@ -329,12 +333,9 @@ dependencies {
     // play-services-tasks ↔ kotlin coroutines bridge (`Task<T>.await()`).
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:$coroutinesVersion")
     // AndroidX Media3 (replaces ExoPlayer 2.x)
-    // Media3 1.10.0 introduced a regression (androidx/media#3161) that crashes
-    // HlsChunkSource.createFallbackOptions with ArrayIndexOutOfBoundsException
-    // on every HLS chunk load error. The fix is committed upstream but not
-    // yet released. Pin to 1.9.3 (last stable before the regression) until a
-    // 1.10.x patch ships.
-    val media3Version = "1.9.3"
+    // Media3 1.10.1 includes the fix for the HLS chunk-load regression
+    // tracked as androidx/media#3161, so the old 1.9.3 safety pin can move.
+    val media3Version = "1.10.1"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")

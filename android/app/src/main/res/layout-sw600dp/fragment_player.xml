@@ -177,7 +177,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/spacing_md"
-                        android:text="@string/player_recovering"
+                        android:text="@string/player_status_resolving"
                         android:textColor="@android:color/white"
                         android:textSize="@dimen/text_subtitle"
                         android:textAlignment="center" />

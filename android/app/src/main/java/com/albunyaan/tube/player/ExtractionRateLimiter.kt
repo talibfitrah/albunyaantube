@@ -27,6 +27,7 @@ import javax.inject.Singleton
  * - Per-video: Manual attempts capped at 3 per 5 minutes (auto-recovery has reserved budget)
  * - Global: Max 10 attempts per minute across all videos (auto-recovery bypasses)
  * - Auto-recovery gets 2 reserved attempts even if manual budget exhausted (may exceed manual cap)
+ * - Proactive TTL refresh has its own lane so planned MPD refreshes do not consume recovery budget
  * - Backoff: Exponential delay after repeated manual attempts (2s, 4s, 8s, 16s, 32s, capped at 60s)
  */
 @Singleton
@@ -66,6 +67,9 @@ class ExtractionRateLimiter @Inject constructor() {
         /** Reserved budget for auto-recovery (guaranteed attempts even when manual exhausted) */
         private const val AUTO_RECOVERY_RESERVED_ATTEMPTS = 2
 
+        /** Reserved budget for planned MPD TTL refreshes. Separate from reactive recovery. */
+        private const val PROACTIVE_TTL_REFRESH_RESERVED_ATTEMPTS = 2
+
         /** Base backoff delay for exponential backoff */
         private const val BACKOFF_BASE_MS = 2_000L
 
@@ -85,7 +89,9 @@ class ExtractionRateLimiter @Inject constructor() {
         /** Automatic recovery during playback failure (more lenient, must not block recovery) */
         AUTO_RECOVERY,
         /** Background prefetch for next items (lowest priority, can be skipped) */
-        PREFETCH
+        PREFETCH,
+        /** Planned synthetic-DASH MPD refresh before URL expiry (separate from error recovery) */
+        PROACTIVE_TTL_REFRESH
     }
 
     /** Tracks extraction history per video ID */
@@ -96,9 +102,11 @@ class ExtractionRateLimiter @Inject constructor() {
         var lastManualAttemptTime: Long = 0L,
         var lastAutoRecoveryAttemptTime: Long = 0L,
         var lastPrefetchAttemptTime: Long = 0L,
+        var lastProactiveTtlRefreshAttemptTime: Long = 0L,
         val manualAttemptTimestamps: MutableList<Long> = mutableListOf(),
         val autoRecoveryAttemptTimestamps: MutableList<Long> = mutableListOf(),
-        val prefetchAttemptTimestamps: MutableList<Long> = mutableListOf()
+        val prefetchAttemptTimestamps: MutableList<Long> = mutableListOf(),
+        val proactiveTtlRefreshAttemptTimestamps: MutableList<Long> = mutableListOf()
     )
 
     private val perVideoRecords = ConcurrentHashMap<String, ExtractionRecord>()
@@ -150,12 +158,14 @@ class ExtractionRateLimiter @Inject constructor() {
             record.manualAttemptTimestamps.removeAll { now - it > PER_VIDEO_WINDOW_MS }
             record.autoRecoveryAttemptTimestamps.removeAll { now - it > PER_VIDEO_WINDOW_MS }
             record.prefetchAttemptTimestamps.removeAll { now - it > PER_VIDEO_WINDOW_MS }
+            record.proactiveTtlRefreshAttemptTimestamps.removeAll { now - it > PER_VIDEO_WINDOW_MS }
 
             // Check minimum interval (per request kind)
             val lastAttemptTimeForKind = when (kind) {
                 RequestKind.MANUAL -> record.lastManualAttemptTime
                 RequestKind.AUTO_RECOVERY -> record.lastAutoRecoveryAttemptTime
                 RequestKind.PREFETCH -> record.lastPrefetchAttemptTime
+                RequestKind.PROACTIVE_TTL_REFRESH -> record.lastProactiveTtlRefreshAttemptTime
             }
             if (lastAttemptTimeForKind > 0) {
                 val timeSinceLastAttempt = now - lastAttemptTimeForKind
@@ -174,6 +184,7 @@ class ExtractionRateLimiter @Inject constructor() {
             // Check per-video limit with kind-specific handling
             val attemptsInWindow = record.attemptTimestamps.size
             val autoRecoveryAttemptsInWindow = record.autoRecoveryAttemptTimestamps.size
+            val proactiveTtlRefreshAttemptsInWindow = record.proactiveTtlRefreshAttemptTimestamps.size
 
             when (kind) {
                 RequestKind.AUTO_RECOVERY -> {
@@ -224,31 +235,49 @@ class ExtractionRateLimiter @Inject constructor() {
                         )
                     }
                 }
+                RequestKind.PROACTIVE_TTL_REFRESH -> {
+                    if (proactiveTtlRefreshAttemptsInWindow >= PROACTIVE_TTL_REFRESH_RESERVED_ATTEMPTS) {
+                        val oldestInWindow = record.proactiveTtlRefreshAttemptTimestamps.minOrNull() ?: now
+                        val retryAfter = oldestInWindow + PER_VIDEO_WINDOW_MS - now
+                        Log.w(TAG, "Proactive TTL refresh budget exhausted for $videoId")
+                        return RateLimitResult.Blocked(
+                            "proactive TTL refresh limit ($PROACTIVE_TTL_REFRESH_RESERVED_ATTEMPTS per window)",
+                            retryAfter.coerceAtLeast(0L)
+                        )
+                    }
+                }
             }
 
-            // RECORD THE ATTEMPT NOW (before extraction call)
-            record.attemptTimestamps.add(now)
-            // Only MANUAL requests increment the consecutive counter for backoff.
-            // PREFETCH/AUTO_RECOVERY should not affect manual backoff timing.
-            if (kind == RequestKind.MANUAL) {
-                record.consecutiveManualAttempts++
-                record.lastManualAttemptTime = now
-                record.manualAttemptTimestamps.add(now)
-            }
-            if (kind == RequestKind.AUTO_RECOVERY) {
-                record.lastAutoRecoveryAttemptTime = now
-                record.autoRecoveryAttemptTimestamps.add(now)
-            }
-            if (kind == RequestKind.PREFETCH) {
-                record.lastPrefetchAttemptTime = now
-                record.prefetchAttemptTimestamps.add(now)
+            // RECORD THE ATTEMPT NOW (before extraction call).
+            // PROACTIVE_TTL_REFRESH intentionally does not add to attemptTimestamps:
+            // planned MPD refreshes should not starve manual or reactive recovery.
+            when (kind) {
+                RequestKind.MANUAL -> {
+                    record.attemptTimestamps.add(now)
+                    record.consecutiveManualAttempts++
+                    record.lastManualAttemptTime = now
+                    record.manualAttemptTimestamps.add(now)
+                }
+                RequestKind.AUTO_RECOVERY -> {
+                    record.attemptTimestamps.add(now)
+                    record.lastAutoRecoveryAttemptTime = now
+                    record.autoRecoveryAttemptTimestamps.add(now)
+                }
+                RequestKind.PREFETCH -> {
+                    record.attemptTimestamps.add(now)
+                    record.lastPrefetchAttemptTime = now
+                    record.prefetchAttemptTimestamps.add(now)
+                }
+                RequestKind.PROACTIVE_TTL_REFRESH -> {
+                    record.lastProactiveTtlRefreshAttemptTime = now
+                    record.proactiveTtlRefreshAttemptTimestamps.add(now)
+                }
             }
         }
 
-        // Record global attempt - AUTO_RECOVERY is excluded to prevent recovery
-        // requests from starving manual/prefetch requests. Since AUTO_RECOVERY
-        // bypasses the global limit check, it should also not contribute to it.
-        if (kind != RequestKind.AUTO_RECOVERY) {
+        // Record global attempt - recovery lanes are excluded to prevent planned
+        // or reactive playback repairs from starving foreground playback.
+        if (kind != RequestKind.AUTO_RECOVERY && kind != RequestKind.PROACTIVE_TTL_REFRESH) {
             synchronized(globalAttemptTimestamps) {
                 globalAttemptTimestamps.add(now)
             }
@@ -319,20 +348,20 @@ class ExtractionRateLimiter @Inject constructor() {
     /**
      * Check global rate limit with kind-awareness.
      *
-     * AUTO_RECOVERY bypasses the global limit entirely to ensure playback recovery
-     * is never blocked. This is critical because:
+     * AUTO_RECOVERY and PROACTIVE_TTL_REFRESH bypass the global limit so playback
+     * repair is never blocked. This is critical because:
      * 1. Users can spam manual refresh or rapidly tap videos (exhausting global budget)
      * 2. Prefetch requests add to global pressure
      * 3. Recovery must always succeed to unstick broken playback
      *
      * @param now Current timestamp
-     * @param kind Request kind - AUTO_RECOVERY bypasses global limits
+     * @param kind Request kind - recovery lanes bypass global limits
      * @return RateLimitResult.Allowed or Blocked
      */
     private fun checkGlobalLimit(now: Long, kind: RequestKind): RateLimitResult {
-        // AUTO_RECOVERY always bypasses global limits to ensure recovery is never blocked
-        if (kind == RequestKind.AUTO_RECOVERY) {
-            Log.d(TAG, "AUTO_RECOVERY bypasses global rate limit check")
+        // Playback repair lanes bypass global limits so foreground playback is not stranded.
+        if (kind == RequestKind.AUTO_RECOVERY || kind == RequestKind.PROACTIVE_TTL_REFRESH) {
+            Log.d(TAG, "$kind bypasses global rate limit check")
             return RateLimitResult.Allowed
         }
 

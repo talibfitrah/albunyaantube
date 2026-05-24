@@ -1,8 +1,13 @@
 package com.albunyaan.tube.ui.shorts
 
+import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 // (Player import retained for REPEAT_MODE_ONE constant)
 import androidx.media3.exoplayer.source.MediaSource
@@ -13,6 +18,7 @@ import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.AudioTrackKind
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
+import com.albunyaan.tube.player.CronetDataSourceFactory
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.util.HttpConstants
 import kotlinx.coroutines.CoroutineScope
@@ -34,14 +40,10 @@ import java.util.concurrent.atomic.AtomicInteger
  * rebuild source, prepare, play" lifecycle — ShortsPlayerFragment only calls
  * [bind] on page change.
  *
- * Stream resolution uses [PlayerRepository.resolveStreams]. Because shorts are
- * short progressive clips (<= 60 s), we avoid [com.albunyaan.tube.player.MultiQualityMediaSourceFactory]'s
- * adaptive DASH/HLS machinery and build a simple [ProgressiveMediaSource]:
- *
- * 1. Prefer a muxed ([VideoTrack.isVideoOnly] == false) video track's URL — this
- *    delivers both video and audio in a single progressive stream.
- * 2. Otherwise pick the best video-only track + best audio track and merge them
- *    with [MergingMediaSource] (standard Media3 pattern).
+ * Stream resolution uses [PlayerRepository.resolveStreams]. Shorts first try the
+ * same adaptive DASH/HLS factory as the regular player. Progressive playback is
+ * only a fallback, and that fallback uses the configured Cronet/cache transport
+ * instead of a plain uncached HTTP stack.
  *
  * Resolution failures are exposed via [failureEvents] so the fragment can call
  * `vm.onPlaybackError(index)` without the binder holding a reference to the VM.
@@ -80,6 +82,9 @@ class PlayerBinder private constructor(
      * superclass chain doesn't need to be loaded.
      */
     private val attach: PlayerViewAttach,
+    private val context: Context? = null,
+    private val cronetDataSourceFactory: CronetDataSourceFactory? = null,
+    private val simpleCache: SimpleCache? = null,
     private val mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry? = null,
     private val featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags? = null
 ) {
@@ -89,6 +94,9 @@ class PlayerBinder private constructor(
         player: ExoPlayer,
         playerRepository: PlayerRepository,
         mediaSourceFactory: com.albunyaan.tube.player.MultiQualityMediaSourceFactory,
+        context: Context,
+        cronetDataSourceFactory: CronetDataSourceFactory,
+        simpleCache: SimpleCache,
         mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry? = null,
         featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags? = null
     ) : this(
@@ -99,6 +107,9 @@ class PlayerBinder private constructor(
         attach = PlayerViewAttach { view, attached ->
             if (attached) view.player = player else view.player = null
         },
+        context = context.applicationContext,
+        cronetDataSourceFactory = cronetDataSourceFactory,
+        simpleCache = simpleCache,
         mpdRegistry = mpdRegistry,
         featureFlags = featureFlags
     )
@@ -125,7 +136,6 @@ class PlayerBinder private constructor(
         fun prepare()
         fun setPlayWhenReady(value: Boolean)
         fun getPlayWhenReady(): Boolean
-        fun release()
         /** Current playback position in ms (0 if unknown). Default 0 for test fakes. */
         fun getCurrentPosition(): Long = 0L
         /** Seek to the given position. Default no-op for test fakes that don't care. */
@@ -145,7 +155,6 @@ class PlayerBinder private constructor(
         override fun prepare() = player.prepare()
         override fun setPlayWhenReady(value: Boolean) { player.playWhenReady = value }
         override fun getPlayWhenReady(): Boolean = player.playWhenReady
-        override fun release() = player.release()
         override fun getCurrentPosition(): Long = player.currentPosition
         override fun seekTo(positionMs: Long) { player.seekTo(positionMs) }
     }
@@ -231,6 +240,9 @@ class PlayerBinder private constructor(
     /** Retained across bind calls so forceRefreshCurrent can re-use the same channel context. */
     @Volatile private var boundSourceChannelId: String? = null
 
+    /** Exact currently bound short id. Do not infer this from cache recency. */
+    @Volatile private var boundVideoId: String? = null
+
     /**
      * Detach the player from any previously bound PlayerView, attach it to
      * [target], then resolve and begin playback for [videoId].
@@ -243,11 +255,22 @@ class PlayerBinder private constructor(
      * never throws) so the fragment can skip past the bad short.
      */
     fun bind(target: PlayerView, videoId: String, sourceChannelId: String? = null) {
+        bindInternal(target, videoId, sourceChannelId, forceRefresh = false, resetPlayerBeforeResolve = true)
+    }
+
+    private fun bindInternal(
+        target: PlayerView,
+        videoId: String,
+        sourceChannelId: String?,
+        forceRefresh: Boolean,
+        resetPlayerBeforeResolve: Boolean
+    ) {
         check(!scopeCancelled) {
-            "PlayerBinder.bind called after cancelScope/release; binder must not be reused"
+            "PlayerBinder.bind called after cancelScope; binder must not be reused"
         }
         val myGen = generation.incrementAndGet()
         boundSourceChannelId = sourceChannelId
+        boundVideoId = videoId
 
         // Cancel any in-flight resolve for the prior bind. The coroutine body
         // also checks myGen against generation as a second line of defence in
@@ -269,11 +292,13 @@ class PlayerBinder private constructor(
             player?.removeListener(cueRewriteListener)
             player?.addListener(cueRewriteListener)
         }
-        playerOps.stop()
-        playerOps.clearMediaItems()
+        if (resetPlayerBeforeResolve) {
+            playerOps.stop()
+            playerOps.clearMediaItems()
+        }
 
         bindJob = scope.launch {
-            prepareAndPlay(videoId, myGen, sourceChannelId)
+            prepareAndPlay(videoId, myGen, sourceChannelId, forceRefresh)
         }
     }
 
@@ -317,9 +342,6 @@ class PlayerBinder private constructor(
     fun rememberedAudioLanguage(videoId: String): String? =
         synchronized(stickyAudioLanguageByVideoId) { stickyAudioLanguageByVideoId[videoId] }
 
-    /** Set by [forceRefreshCurrent] to make the next resolve bypass the cache. */
-    @Volatile private var nextResolveForceRefresh: Boolean = false
-
     /**
      * Re-resolve the currently bound video with `forceRefresh=true` and
      * re-prepare the player. Used by the fragment's stall-watchdog when a
@@ -328,15 +350,24 @@ class PlayerBinder private constructor(
      */
     fun forceRefreshCurrent() {
         val view = boundView ?: return
-        val cached = synchronized(resolvedCache) { resolvedCache.entries.lastOrNull()?.key } ?: return
-        nextResolveForceRefresh = true
-        bind(view, cached, boundSourceChannelId)
+        val currentVideoId = boundVideoId ?: return
+        bindInternal(
+            view,
+            currentVideoId,
+            boundSourceChannelId,
+            forceRefresh = true,
+            resetPlayerBeforeResolve = false
+        )
     }
 
-    private suspend fun prepareAndPlay(videoId: String, myGen: Int, sourceChannelId: String?) {
-        val force = nextResolveForceRefresh.also { nextResolveForceRefresh = false }
+    private suspend fun prepareAndPlay(
+        videoId: String,
+        myGen: Int,
+        sourceChannelId: String?,
+        forceRefresh: Boolean
+    ) {
         val resolved: ResolvedStreams? = runCatching {
-            playerRepository.resolveStreams(videoId, forceRefresh = force, sourceChannelId = sourceChannelId)
+            playerRepository.resolveStreams(videoId, forceRefresh = forceRefresh, sourceChannelId = sourceChannelId)
         }.getOrNull()
 
         // Discard if a newer bind has superseded this one.
@@ -412,45 +443,91 @@ class PlayerBinder private constructor(
         }
     }
 
-    private fun buildProgressiveSource(resolved: ResolvedStreams): MediaSource? {
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
-            .setAllowCrossProtocolRedirects(true)
+    private fun buildProgressiveSource(
+        resolved: ResolvedStreams,
+        qualityCapHeight: Int? = SHORTS_FALLBACK_STARTUP_MAX_HEIGHT
+    ): MediaSource? {
+        val dataSourceFactory = buildFallbackDataSourceFactory()
 
-        // Prefer muxed (video+audio) progressive tracks — simplest, no merge overhead.
-        val muxed: VideoTrack? = resolved.videoTracks
-            .filter { !it.isVideoOnly && !it.url.isNullOrBlank() }
-            .maxByOrNull { it.bitrate ?: 0 }
+        // Prefer muxed (video+audio) progressive tracks. Pick a fast-start
+        // quality first; shorts can upgrade through the adaptive path when it
+        // is available, but fallback should not start at max bitrate.
+        val muxed: VideoTrack? = chooseProgressiveTrack(
+            tracks = resolved.videoTracks.filter { !it.isVideoOnly && !it.url.isNullOrBlank() },
+            qualityCapHeight = qualityCapHeight
+        )
 
         if (muxed != null) {
-            return ProgressiveMediaSource.Factory(httpFactory)
+            return ProgressiveMediaSource.Factory(dataSourceFactory)
                 .createMediaSource(MediaItem.fromUri(muxed.url))
         }
 
-        // Fall back: best video-only + best audio, merged.
-        val bestVideo: VideoTrack? = resolved.videoTracks
-            .filter { !it.url.isNullOrBlank() }
-            .maxByOrNull { it.bitrate ?: (it.height ?: 0) * 1000 }
+        val bestVideo: VideoTrack? = chooseProgressiveTrack(
+            tracks = resolved.videoTracks.filter { !it.url.isNullOrBlank() },
+            qualityCapHeight = qualityCapHeight
+        )
         val bestAudio: AudioTrack? = resolved.audioTracks
             .filter { !it.url.isNullOrBlank() }
             .maxByOrNull { it.bitrate ?: 0 }
 
         if (bestVideo != null && bestAudio != null) {
-            val videoSource = ProgressiveMediaSource.Factory(httpFactory)
+            val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                 .createMediaSource(MediaItem.fromUri(bestVideo.url))
-            val audioSource = ProgressiveMediaSource.Factory(httpFactory)
+            val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                 .createMediaSource(MediaItem.fromUri(bestAudio.url))
             return MergingMediaSource(videoSource, audioSource)
         }
 
-        // Last resort: if only a video track is available (audio muxed in but
-        // flagged video-only due to metadata glitches), play it alone.
         if (bestVideo != null) {
-            return ProgressiveMediaSource.Factory(httpFactory)
+            return ProgressiveMediaSource.Factory(dataSourceFactory)
                 .createMediaSource(MediaItem.fromUri(bestVideo.url))
         }
 
         return null
+    }
+
+    private fun buildFallbackDataSourceFactory(): DataSource.Factory {
+        val httpFactory = if (featureFlags?.isCronetEnabled == true && cronetDataSourceFactory != null) {
+            cronetDataSourceFactory.createForAndroidUA()
+        } else {
+            DefaultHttpDataSource.Factory()
+                .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(20_000)
+                .setAllowCrossProtocolRedirects(true)
+        }
+        val upstreamFactory = context?.let { DefaultDataSource.Factory(it, httpFactory) } ?: httpFactory
+        val cache = simpleCache ?: return upstreamFactory
+        return CacheDataSource.Factory()
+            .setCache(cache)
+            .setUpstreamDataSourceFactory(upstreamFactory)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+    }
+
+    private fun chooseProgressiveTrack(
+        tracks: List<VideoTrack>,
+        qualityCapHeight: Int?
+    ): VideoTrack? {
+        val playable = tracks.filter { !it.url.isNullOrBlank() }
+        val highestQuality = compareBy<VideoTrack> { trackStartupSize(it) }.thenBy { it.bitrate ?: 0 }
+        if (qualityCapHeight == null) {
+            return playable.maxWithOrNull(highestQuality)
+        }
+
+        val capped = playable.filter { track -> trackStartupSize(track) in 1..qualityCapHeight }
+        if (capped.isNotEmpty()) {
+            return capped.maxWithOrNull(highestQuality)
+        }
+
+        return playable.minWithOrNull(
+            compareBy<VideoTrack> { trackStartupSize(it).takeIf { size -> size > 0 } ?: Int.MAX_VALUE }
+                .thenBy { it.bitrate ?: Int.MAX_VALUE }
+        )
+    }
+
+    private fun trackStartupSize(track: VideoTrack): Int {
+        val dimensions = listOfNotNull(track.width, track.height).filter { it > 0 }
+        return dimensions.minOrNull() ?: track.height ?: 0
     }
 
     /**
@@ -484,7 +561,7 @@ class PlayerBinder private constructor(
                 )
             }.getOrNull()
         }
-        val source = adaptive?.source ?: buildProgressiveSource(filtered) ?: return
+        val source = adaptive?.source ?: buildProgressiveSource(filtered, qualityCapHeight = null) ?: return
 
         // Refresh cache so a subsequent download picker reflects the active
         // audio choice alongside the existing video tracks.
@@ -538,7 +615,7 @@ class PlayerBinder private constructor(
                 )
             }.getOrNull()
         }
-        val source = adaptive?.source ?: buildProgressiveSource(resolved) ?: return
+        val source = adaptive?.source ?: buildProgressiveSource(resolved, qualityCapHeight = cap) ?: return
 
         playerOps.setMediaSource(source)
         playerOps.setRepeatModeOne()
@@ -580,36 +657,23 @@ class PlayerBinder private constructor(
      * outlive the fragment. Cancelling the scope aborts any in-flight
      * [bind] resolution and prevents late-arriving resolutions from mutating
      * the player after the fragment view is gone.
-     *
-     * Distinct from [release] — this does NOT touch [playerOps.release].
      */
     fun cancelScope() {
         ttlWatcher?.cancel()
         ttlWatcher = null
         scope.cancel()
         bindJob = null
+        boundVideoId = null
+        boundSourceChannelId = null
         scopeCancelled = true
     }
 
-    /**
-     * Release the underlying player AND cancel the internal scope.
-     *
-     * Only safe to call from contexts that own the player (currently unused,
-     * since the player is owned by [ShortsPlayerViewModel]). Kept as an
-     * escape hatch for future refactors where the binder owns the player.
-     */
-    fun release() {
-        ttlWatcher?.cancel()
-        ttlWatcher = null
-        scope.cancel()
-        bindJob = null
-        scopeCancelled = true
-        detach()
-        playerOps.release()
-    }
 
     companion object {
         /** Max number of resolved-stream entries kept for the download picker. */
         private const val MAX_RESOLVED_CACHE = 8
+
+        /** Progressive fallback starts low for first frame speed, then adaptive can upgrade. */
+        private const val SHORTS_FALLBACK_STARTUP_MAX_HEIGHT = 480
     }
 }
