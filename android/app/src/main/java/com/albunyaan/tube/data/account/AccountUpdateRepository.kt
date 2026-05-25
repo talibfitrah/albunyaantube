@@ -85,7 +85,7 @@ class AccountUpdateRepository @Inject constructor(
         // Only honor known field names — guards against unrelated colons
         // (e.g. "Error: HTTP 500") being parsed as a field name.
         return when (field) {
-            "displayName", "dateOfBirth" -> field to raw.substring(sep + 2).trim()
+            "displayName", "dateOfBirth", "phoneNumber" -> field to raw.substring(sep + 2).trim()
             else -> "displayName" to raw
         }
     }
