@@ -5,6 +5,33 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.17] - 2026-05-25
+
+### Android
+
+- **In-app installer migrated to `PackageInstaller` API.** The legacy
+  `Intent.ACTION_INSTALL_PACKAGE` was deprecated in API 14 and is silently
+  dropped by some OEM-modified Androids (Huawei EMUI 9 in particular —
+  beta.15 in-app install attempts never moved `lastUpdateTime` in
+  `dumpsys`). The new path streams the APK into a `PackageInstaller` session
+  and registers a `PendingIntent` so the OS delivers an explicit
+  `STATUS_SUCCESS` / `STATUS_FAILURE_*` callback to a new
+  `InstallStatusReceiver`. Failure codes are persisted with the OS-provided
+  message so we can surface a real reason instead of a generic toast.
+- **"Last update didn't complete" banner on splash.** New
+  `LastInstallAttempt` DataStore tracks the target version + status (PENDING /
+  SUCCESS / FAILURE / ABANDONED) of the most recent in-app install. When the
+  splash detects a non-success record for the same version it's about to
+  re-offer, a toast appears before the dialog: "Last update attempt didn't
+  complete (reason). Tap Install again or try ADB sideload if it keeps
+  failing." A PENDING record older than 24 hours is auto-promoted to
+  ABANDONED on read — covers the case where the OS killed our process
+  before the callback could fire. Localized in en/ar/nl.
+- **Picker row stays in sync with reality.** When the install eventually
+  succeeds (cold start sees `BuildConfig.VERSION_NAME` matching the recorded
+  target), the LastInstallAttempt record is cleared at read time so the
+  banner never lingers after a successful update.
+
 ## [1.0.0-beta.16] - 2026-05-25
 
 ### Android

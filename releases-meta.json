@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.17": {
+    "en": "PackageInstaller migration with explicit success/failure callbacks; splash banner when last update didn't complete.",
+    "ar": "ترحيل إلى PackageInstaller مع استدعاءات نجاح/فشل واضحة؛ شريط على شاشة البداية عند فشل آخر تحديث.",
+    "nl": "Migratie naar PackageInstaller met expliciete succes-/falen-callbacks; splash-melding wanneer de laatste update niet voltooid is."
+  },
   "1.0.0-beta.16": {
     "en": "Fixes silent logout on Android 9-11 (Huawei EMUI etc.); whole picker row now installs.",
     "ar": "إصلاح تسجيل الخروج الصامت على أندرويد 9-11 (هواوي EMUI وغيرها)؛ صف منتقي التحديثات بأكمله أصبح قابلًا للنقر للتثبيت.",
