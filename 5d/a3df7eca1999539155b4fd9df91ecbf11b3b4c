@@ -1,0 +1,54 @@
+android/app/src/main/java/com/albunyaan/tube/update/InstallStatusReceiver.kt
+  ai_agent 1-220
+android/app/src/main/java/com/albunyaan/tube/di/DataModule.kt
+  ai_agent 130-148
+android/app/src/main/java/com/albunyaan/tube/update/LastInstallAttempt.kt
+  ai_agent 1-141
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  ai_agent 220-224
+android/app/src/main/res/values-nl/strings.xml
+  ai_agent 210-211
+android/app/src/main/res/values/strings.xml
+  ai_agent 230-231
+android/app/src/test/java/com/albunyaan/tube/update/UpdatePromptFlowTest.kt
+  ai_agent 35,48,73
+android/app/src/main/java/com/albunyaan/tube/update/UpdatePromptFlow.kt
+  s_f6f6a601e51753::t_af6880686b23a2 266
+  s_f6f6a601e51753::t_a8321d14b93c10 54-55
+  s_f6f6a601e51753::t_95107ed56a6e32 279,288-307
+  s_f6f6a601e51753::t_5bd539a76f8432 68-78
+  s_f6f6a601e51753::t_6abe066ec785a8 32
+  s_f6f6a601e51753::t_637825c398dc19 164,173-177,184
+  s_f6f6a601e51753::t_69894fd3e02818 165-172,178-183
+  s_f6f6a601e51753::t_c0631de86c7414 428,443-444
+  s_f6f6a601e51753::t_5f49b339b9af94 429-442
+  s_f6f6a601e51753::t_87232d4ade0303 131-145
+  s_f6f6a601e51753::t_996bcbbac91fd7 202-221
+  s_f6f6a601e51753::t_f6ea09194af4bb 453-460,464-467
+android/app/src/main/java/com/albunyaan/tube/update/ApkInstaller.kt
+  ai_agent 4,8,26-29,35-40,112-131,133-135,137-148,150,152-199,201-207
+android/app/src/main/res/values-ar/strings.xml
+  ai_agent 200-201
+android/app/src/test/java/com/albunyaan/tube/update/LastInstallAttemptTest.kt
+  ai_agent 1-179
+android/app/src/main/AndroidManifest.xml
+  ai_agent 145-156
+android/app/src/main/res/layout/dialog_update_available.xml
+  ai_agent 9,66-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "5da3df7eca1999539155b4fd9df91ecbf11b3b4c",
+  "prompts": {},
+  "sessions": {
+    "s_f6f6a601e51753": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "40a6c863-7862-4baa-b412-a2821cca49ca",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
