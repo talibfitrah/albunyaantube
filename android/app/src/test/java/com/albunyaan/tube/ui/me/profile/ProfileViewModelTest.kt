@@ -60,6 +60,7 @@ class ProfileViewModelTest {
         email = "alice@example.com",
         displayName = displayName,
         dateOfBirth = dateOfBirth,
+        phoneNumber = null,
         status = "ACTIVE",
         role = "USER",
         profileCompletedAt = null,

@@ -1,5 +1,7 @@
 package com.albunyaan.tube.ui.bootstrap
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.auth.AccountStatus
@@ -17,16 +19,20 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.mockito.kotlin.*
+import org.robolectric.RobolectricTestRunner
 
 import java.time.LocalDate
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
 class ProfileBootstrapViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: AccountRepository
     private lateinit var firebaseAuth: FirebaseAuth
+    private lateinit var ctx: Context
     private lateinit var viewModel: ProfileBootstrapViewModel
 
     @Before
@@ -39,7 +45,8 @@ class ProfileBootstrapViewModelTest {
         // that path (they all leave passwordRequired=false), so the mock
         // only needs to satisfy the constructor.
         firebaseAuth = mock()
-        viewModel = ProfileBootstrapViewModel(repository, firebaseAuth)
+        ctx = ApplicationProvider.getApplicationContext()
+        viewModel = ProfileBootstrapViewModel(repository, firebaseAuth, ctx)
     }
 
     @After fun tearDown() { Dispatchers.resetMain() }
@@ -64,7 +71,7 @@ class ProfileBootstrapViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
         assertEquals(BootstrapError.INVALID_NAME, viewModel.ui.value.error)
-        verify(repository, never()).completeProfile(any(), any())
+        verify(repository, never()).completeProfile(any(), any(), any())
     }
 
     @Test fun `submit with missing dob surfaces INVALID_DOB`() = runTest(dispatcher) {
@@ -75,14 +82,16 @@ class ProfileBootstrapViewModelTest {
     }
 
     @Test fun `submit happy path transitions to NavigateToMain`() = runTest(dispatcher) {
-        whenever(repository.completeProfile("Alice", LocalDate.of(2000, 1, 1)))
+        whenever(repository.completeProfile("Alice", LocalDate.of(2000, 1, 1), "+31612345678"))
             .thenReturn(Result.success(AccountState.Loaded(
                 uid = "uid-1", email = "a@b.com", displayName = "Alice",
-                dateOfBirth = null, phoneNumber = null,
+                dateOfBirth = null, phoneNumber = "+31612345678",
                 status = AccountStatus.ACTIVE, role = "user")))
 
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("612345678")
         viewModel.submit()
         advanceUntilIdle()
 
@@ -90,11 +99,13 @@ class ProfileBootstrapViewModelTest {
     }
 
     @Test fun `submit 422 AGE_INELIGIBLE transitions to NavigateToAgeIneligible`() = runTest(dispatcher) {
-        whenever(repository.completeProfile(any(), any()))
+        whenever(repository.completeProfile(any(), any(), any()))
             .thenReturn(Result.failure(AgeIneligibleError()))
 
         viewModel.onDisplayNameChanged("Kid")
         viewModel.onDobChanged(LocalDate.of(2020, 1, 1))
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("612345678")
         viewModel.submit()
         advanceUntilIdle()
 
@@ -102,11 +113,13 @@ class ProfileBootstrapViewModelTest {
     }
 
     @Test fun `submit network error surfaces SAVE_FAILED`() = runTest(dispatcher) {
-        whenever(repository.completeProfile(any(), any()))
+        whenever(repository.completeProfile(any(), any(), any()))
             .thenReturn(Result.failure(java.io.IOException("offline")))
 
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("612345678")
         viewModel.submit()
         advanceUntilIdle()
 
@@ -119,72 +132,110 @@ class ProfileBootstrapViewModelTest {
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
         viewModel.submit()
         advanceUntilIdle()
-        verify(repository, never()).completeProfile(any(), any())
+        verify(repository, never()).completeProfile(any(), any(), any())
     }
 
     @Test fun `isFormValid is false on initial empty state`() {
-        assertFalse(viewModel.ui.value.isFormValid)
+        assertFalse(viewModel.isFormValid)
     }
 
     @Test fun `isFormValid is false when name is blank but dob is set`() {
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
-        assertFalse(viewModel.ui.value.isFormValid)
+        assertFalse(viewModel.isFormValid)
     }
 
     @Test fun `isFormValid is false when dob is missing but name is set`() {
         viewModel.onDisplayNameChanged("Alice")
-        assertFalse(viewModel.ui.value.isFormValid)
+        assertFalse(viewModel.isFormValid)
     }
 
     @Test fun `isFormValid is false when name exceeds 40 chars`() {
         viewModel.onDisplayNameChanged("A".repeat(41))
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
-        assertFalse(viewModel.ui.value.isFormValid)
+        assertFalse(viewModel.isFormValid)
     }
 
-    @Test fun `isFormValid is true with name and dob when password not required`() {
+    @Test fun `isFormValid is true with name, dob, and phone when password not required`() {
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
-        assertTrue(viewModel.ui.value.isFormValid)
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("612345678")
+        assertTrue(viewModel.isFormValid)
     }
 
     @Test fun `isFormValid is false when passwordRequired but password missing`() {
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("612345678")
         viewModel.setPasswordRequirement(true)
-        assertFalse(viewModel.ui.value.isFormValid)
+        assertFalse(viewModel.isFormValid)
     }
 
     @Test fun `isFormValid is false when password is too short`() {
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("612345678")
         viewModel.setPasswordRequirement(true)
         viewModel.onPasswordChanged("short")
         viewModel.onPasswordConfirmChanged("short")
-        assertFalse(viewModel.ui.value.isFormValid)
+        assertFalse(viewModel.isFormValid)
     }
 
     @Test fun `isFormValid is false when passwords do not match`() {
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("612345678")
         viewModel.setPasswordRequirement(true)
         viewModel.onPasswordChanged("validpass1")
         viewModel.onPasswordConfirmChanged("validpass2")
-        assertFalse(viewModel.ui.value.isFormValid)
+        assertFalse(viewModel.isFormValid)
     }
 
     @Test fun `isFormValid is true with matching 8+ char password when required`() {
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("612345678")
         viewModel.setPasswordRequirement(true)
         viewModel.onPasswordChanged("validpass1")
         viewModel.onPasswordConfirmChanged("validpass1")
-        assertTrue(viewModel.ui.value.isFormValid)
+        assertTrue(viewModel.isFormValid)
     }
 
     @Test fun `isFormValid trims whitespace-only name as blank`() {
         viewModel.onDisplayNameChanged("   ")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
-        assertFalse(viewModel.ui.value.isFormValid)
+        assertFalse(viewModel.isFormValid)
+    }
+
+    @Test fun `submit with missing phone country surfaces INVALID_PHONE_COUNTRY`() = runTest(dispatcher) {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.onPhoneNumberChanged("612345678")
+        viewModel.submit()
+        advanceUntilIdle()
+        assertEquals(BootstrapError.INVALID_PHONE_COUNTRY, viewModel.ui.value.error)
+    }
+
+    @Test fun `submit with blank phone number surfaces INVALID_PHONE`() = runTest(dispatcher) {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.submit()
+        advanceUntilIdle()
+        assertEquals(BootstrapError.INVALID_PHONE, viewModel.ui.value.error)
+    }
+
+    @Test fun `submit with too-short national number surfaces INVALID_PHONE`() = runTest(dispatcher) {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("12345")
+        viewModel.submit()
+        advanceUntilIdle()
+        assertEquals(BootstrapError.INVALID_PHONE, viewModel.ui.value.error)
     }
 }

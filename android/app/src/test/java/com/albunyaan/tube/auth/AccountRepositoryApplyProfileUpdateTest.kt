@@ -54,6 +54,7 @@ class AccountRepositoryApplyProfileUpdateTest {
         email = "a@b.com",
         displayName = displayName,
         dateOfBirth = dateOfBirth,
+        phoneNumber = null,
         status = "active",
         role = "user",
         profileCompletedAt = null,

@@ -19,6 +19,7 @@ class AccountUpdateRepositoryTest {
             email = "test@example.com",
             displayName = displayName,
             dateOfBirth = dateOfBirth,
+            phoneNumber = null,
             status = "active",
             role = "user",
             profileCompletedAt = null,

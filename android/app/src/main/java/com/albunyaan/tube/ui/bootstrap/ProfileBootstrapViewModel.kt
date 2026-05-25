@@ -1,11 +1,14 @@
 package com.albunyaan.tube.ui.bootstrap
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AgeIneligibleError
+import com.albunyaan.tube.util.PhoneFormat
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +22,8 @@ import javax.inject.Inject
 enum class BootstrapError {
     INVALID_NAME,
     INVALID_DOB,
+    INVALID_PHONE_COUNTRY,
+    INVALID_PHONE,
     INVALID_PASSWORD,
     PASSWORD_MISMATCH,
     PASSWORD_SET_FAILED,
@@ -35,11 +40,14 @@ sealed interface BootstrapNav {
 class ProfileBootstrapViewModel @Inject constructor(
     private val accountRepository: AccountRepository,
     private val firebaseAuth: FirebaseAuth,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     data class UiState(
         val displayName: String = "",
         val dateOfBirth: LocalDate? = null,
+        val phoneCountry: String? = null,    // ISO-3166-1 alpha-2 e.g. "NL"
+        val phoneNumber: String = "",         // national-portion as typed
         val password: String = "",
         val passwordConfirm: String = "",
         /**
@@ -60,33 +68,39 @@ class ProfileBootstrapViewModel @Inject constructor(
         val profileSaved: Boolean = false,
         val isLoading: Boolean = false,
         val error: BootstrapError? = null,
-    ) {
-        /**
-         * Returns the first validation error in field-order, or null when the
-         * state is valid. Shared source of truth between [isFormValid] (button
-         * enable state) and [submit] (error-message dispatch) so the two cannot
-         * drift out of sync (cubic R2 P2).
-         */
-        fun firstValidationError(): BootstrapError? {
-            val name = displayName.trim()
-            if (name.isBlank() || name.length > 40) return BootstrapError.INVALID_NAME
-            if (dateOfBirth == null) return BootstrapError.INVALID_DOB
-            if (passwordRequired) {
-                if (password.length < MIN_PASSWORD_LENGTH) return BootstrapError.INVALID_PASSWORD
-                if (password != passwordConfirm) return BootstrapError.PASSWORD_MISMATCH
-            }
-            return null
-        }
-
-        /** Drives submit button enable state. True iff the form passes [firstValidationError]. */
-        val isFormValid: Boolean get() = firstValidationError() == null
-    }
+    )
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
     private val _nav = MutableStateFlow<BootstrapNav>(BootstrapNav.Idle)
     val nav: StateFlow<BootstrapNav> = _nav.asStateFlow()
+
+    /**
+     * Returns the first validation error in field-order, or null when the
+     * state is valid. Shared source of truth between [isFormValid] (button
+     * enable state) and [submit] (error-message dispatch) so the two cannot
+     * drift out of sync.
+     *
+     * Requires [appContext] for libphonenumber, so lives on the ViewModel
+     * rather than inside [UiState].
+     */
+    fun firstValidationError(s: UiState = _ui.value): BootstrapError? {
+        val name = s.displayName.trim()
+        if (name.isBlank() || name.length > 40) return BootstrapError.INVALID_NAME
+        if (s.dateOfBirth == null)              return BootstrapError.INVALID_DOB
+        if (s.phoneCountry.isNullOrBlank())     return BootstrapError.INVALID_PHONE_COUNTRY
+        PhoneFormat.formatE164(appContext, s.phoneCountry, s.phoneNumber)
+            ?: return BootstrapError.INVALID_PHONE
+        if (s.passwordRequired) {
+            if (s.password.length < MIN_PASSWORD_LENGTH) return BootstrapError.INVALID_PASSWORD
+            if (s.password != s.passwordConfirm)         return BootstrapError.PASSWORD_MISMATCH
+        }
+        return null
+    }
+
+    /** Drives submit button enable state. True iff the form passes [firstValidationError]. */
+    val isFormValid: Boolean get() = firstValidationError() == null
 
     fun seedDisplayName(initial: String) {
         if (_ui.value.displayName.isEmpty()) _ui.update { it.copy(displayName = initial) }
@@ -110,6 +124,14 @@ class ProfileBootstrapViewModel @Inject constructor(
         _ui.update { it.copy(dateOfBirth = d, error = null) }
     }
 
+    fun onPhoneCountryChanged(region: String) {
+        _ui.update { it.copy(phoneCountry = region, error = null) }
+    }
+
+    fun onPhoneNumberChanged(v: String) {
+        _ui.update { it.copy(phoneNumber = v, error = null) }
+    }
+
     fun onPasswordChanged(v: String) {
         _ui.update { it.copy(password = v, error = null) }
     }
@@ -131,20 +153,21 @@ class ProfileBootstrapViewModel @Inject constructor(
     fun submit() {
         val s = _ui.value
         if (s.isLoading) return  // de-dupe rapid double-taps
-        val validationError = s.firstValidationError()
+        val validationError = firstValidationError(s)
         if (validationError != null) {
             _ui.update { it.copy(error = validationError) }
             return
         }
         val name = s.displayName.trim()
         val dob = s.dateOfBirth!!  // firstValidationError() guarantees non-null
+        val phoneE164 = PhoneFormat.formatE164(appContext, s.phoneCountry!!, s.phoneNumber)!!
         _ui.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
             // Skip completeProfile if a prior submit already saved it and
             // we're only retrying the password step (which can fail
             // independently — see PASSWORD_SET_FAILED branch below).
             if (!s.profileSaved) {
-                val profileResult = accountRepository.completeProfile(name, dob)
+                val profileResult = accountRepository.completeProfile(name, dob, phoneE164)
                 profileResult.fold(
                     onSuccess = { _ui.update { it.copy(profileSaved = true) } },
                     onFailure = { e ->
