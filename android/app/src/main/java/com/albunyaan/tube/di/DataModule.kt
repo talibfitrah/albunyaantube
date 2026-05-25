@@ -127,6 +127,25 @@ object DataModule {
         }
     }
 
+    /**
+     * Owned by [com.albunyaan.tube.update.LastInstallAttempt]. Separate from
+     * settings/policy/cooldown stores so a settings rewrite cannot accidentally
+     * invalidate update telemetry, and so the file can be wiped independently
+     * by a future "reset update state" debug action without disturbing user
+     * preferences.
+     */
+    @Provides
+    @Singleton
+    @Named("updateDataStore")
+    fun provideUpdateDataStore(
+        @ApplicationContext context: Context,
+        @Named("applicationScope") scope: CoroutineScope
+    ): DataStore<Preferences> {
+        return PreferenceDataStoreFactory.create(scope = scope) {
+            File(context.filesDir, "update.preferences_pb")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideFilterManager(

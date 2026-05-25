@@ -1,9 +1,11 @@
 package com.albunyaan.tube.update
 
 import android.app.Activity
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.content.pm.Signature
 import android.net.Uri
@@ -11,7 +13,6 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.annotation.VisibleForTesting
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -22,14 +23,21 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Downloads an APK from a URL into the app's cacheDir, then hands off to the system package
- * installer via [Intent.ACTION_INSTALL_PACKAGE]. Uses FileProvider to expose the file to
- * the installer without needing `WRITE_EXTERNAL_STORAGE` permission on modern Android.
+ * Downloads an APK from a URL into the app's cacheDir, then hands off to the
+ * system package installer via the [PackageInstaller] session API. Streams the
+ * APK bytes directly into the session — FileProvider is no longer needed
+ * because the OS reads from the session, not from our content URI.
  *
  * Caller must hold [android.Manifest.permission.REQUEST_INSTALL_PACKAGES] in the manifest
  * (declared by [UpdateChecker]'s consumer module) and — on Android 8.0+ — the user must
  * have granted "install unknown apps" for this app; use [isInstallPermissionGranted] +
  * [openInstallPermissionSettings] to guide the user through granting it.
+ *
+ * The PackageInstaller commit→PendingIntent loop delivers the result (success
+ * or failure code) to [InstallStatusReceiver], which persists the outcome via
+ * [LastInstallAttempt] so the splash gate can surface "didn't complete: <reason>"
+ * instead of re-prompting silently after an OEM-rejected install (the beta.15
+ * failure mode reported on Huawei EMUI 9).
  */
 @Singleton
 class ApkInstaller @Inject constructor(
@@ -101,29 +109,102 @@ class ApkInstaller @Inject constructor(
     }
 
     /**
-     * Launches the system package installer for [apkFile]. The installer runs in its own
-     * activity; [activity] is only used to grant the URI permission and start the intent.
+     * Streams [apkFile] into a [PackageInstaller] session and commits it. The OS
+     * delivers the result asynchronously to [InstallStatusReceiver] (registered
+     * in the manifest); on Android 8+ the receiver also handles the
+     * STATUS_PENDING_USER_ACTION leg that shows the user-confirmation activity.
      *
-     * The caller MUST have already invoked [verifySigningCertMatch] (typically on the IO
-     * dispatcher — the APK parse is heavy enough to ANR if it lands on Main — cubic R2 P1).
-     * `launchInstaller` itself runs on Main so the Intent dispatch can interact with the
-     * Activity.
+     * Caller MUST have already invoked [verifySigningCertMatch] (typically on
+     * the IO dispatcher — the APK parse is heavy enough to ANR if it lands on
+     * Main — cubic R2 P1). `launchInstaller` itself spends most of its time
+     * copying the APK file into the session, which is IO-bound; ApkInstaller's
+     * caller in [UpdatePromptFlow] already runs this off Main.
+     *
+     * Why PackageInstaller and not Intent.ACTION_INSTALL_PACKAGE: the legacy
+     * intent is deprecated since API 14 and has no success/failure callback —
+     * the caller gets a fire-and-forget that may silently no-op on OEM-modified
+     * Android (observed on Huawei EMUI 9 in beta.15, where multiple in-app
+     * install attempts never moved `lastUpdateTime` in `dumpsys package`).
+     * PackageInstaller's commit→PendingIntent loop delivers an explicit
+     * STATUS_SUCCESS / STATUS_FAILURE_* so we can persist the outcome to
+     * [LastInstallAttempt] and surface a useful "didn't complete" banner on the
+     * next splash instead of just re-prompting silently.
+     *
+     * @param targetVersion the versionName we're trying to install; rides along
+     *   inside the status PendingIntent so the receiver can persist the right
+     *   target even after our process is killed by the OS during install.
      */
-    fun launchInstaller(activity: Activity, apkFile: File) {
-        val authority = "${activity.packageName}.downloads.provider"
-        val uri: Uri = FileProvider.getUriForFile(activity, authority, apkFile)
-        val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
-            putExtra(Intent.EXTRA_RETURN_RESULT, false)
-            putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, activity.packageName)
-        }
-        try {
-            activity.startActivity(intent)
+    suspend fun launchInstaller(activity: Activity, apkFile: File, targetVersion: String) {
+        val packageInstaller = activity.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        params.setAppPackageName(activity.packageName)
+        // Set size up front so PackageInstaller can validate streaming bytes
+        // against the declared total and fail fast on truncation.
+        params.setSize(apkFile.length())
+        val sessionId = try {
+            packageInstaller.createSession(params)
         } catch (t: Throwable) {
-            Log.e(TAG, "Failed to launch package installer", t)
+            Log.e(TAG, "Failed to create PackageInstaller session", t)
+            throw t
+        }
+        var session: PackageInstaller.Session? = null
+        try {
+            // openWrite + copyTo + fsync is multi-MB synchronous IO. On slow OEM
+            // flash (Huawei EMUI 9 / Samsung A-series — exactly the devices
+            // PackageInstaller migration was meant to help) this takes
+            // 200-1500 ms. The original signature accepted the caller's
+            // dispatcher; UpdatePromptFlow wrapped launchInstaller in
+            // withContext(Dispatchers.Main) so the streaming pinned the UI
+            // thread → ANR right before the system installer appeared.
+            // Pushing the streaming into Dispatchers.IO here moves the heavy
+            // work off Main regardless of how the caller invokes us (Stage 3
+            // codex review P1). The commit + close still run on IO too; both
+            // are binder-cheap and there's no benefit to ping-ponging back to
+            // Main mid-flow.
+            withContext(Dispatchers.IO) {
+                session = packageInstaller.openSession(sessionId)
+                // Stream APK bytes into the session. `base.apk` is the canonical
+                // single-APK filename PackageInstaller expects for a full install.
+                session!!.openWrite("base.apk", 0, apkFile.length()).use { out ->
+                    apkFile.inputStream().use { input ->
+                        input.copyTo(out)
+                    }
+                    session!!.fsync(out)
+                }
+                // PendingIntent → InstallStatusReceiver. FLAG_MUTABLE is required so
+                // the OS can attach EXTRA_STATUS / EXTRA_STATUS_MESSAGE / EXTRA_INTENT
+                // onto the intent before delivery. UPDATE_CURRENT keeps the same
+                // PendingIntent slot across re-launches of the same session id.
+                val statusIntent = Intent(activity, InstallStatusReceiver::class.java).apply {
+                    action = InstallStatusReceiver.ACTION_INSTALL_STATUS
+                    putExtra(InstallStatusReceiver.EXTRA_TARGET_VERSION, targetVersion)
+                    setPackage(activity.packageName)
+                }
+                val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                } else {
+                    PendingIntent.FLAG_UPDATE_CURRENT
+                }
+                val pendingIntent = PendingIntent.getBroadcast(
+                    activity,
+                    sessionId,
+                    statusIntent,
+                    pendingIntentFlags,
+                )
+                session!!.commit(pendingIntent.intentSender)
+                // commit() hands ownership of the session to the OS; we MUST close
+                // (not abandon) on the success path. abandon() in the catch below.
+                session!!.close()
+                session = null
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to commit PackageInstaller session $sessionId", t)
+            // Best-effort: ditch the half-built session so we don't leak a slot.
+            // Closing instead of abandoning here would leave it lingering.
+            // abandon() on a committed session is a documented no-op (AOSP
+            // PackageInstallerSession), so this is safe regardless of where
+            // in the flow the throw happened.
+            runCatching { session?.abandon() }
             throw t
         }
     }

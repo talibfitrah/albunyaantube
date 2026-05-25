@@ -50,7 +50,8 @@ import javax.inject.Singleton
 class UpdatePromptFlow @Inject constructor(
     private val checker: UpdateChecker,
     private val installer: ApkInstaller,
-    private val catalog: ReleaseCatalogCache
+    private val catalog: ReleaseCatalogCache,
+    private val lastInstallAttempt: LastInstallAttempt,
 ) {
 
     /**
@@ -61,6 +62,27 @@ class UpdatePromptFlow @Inject constructor(
      * still be in flight to the package installer (TOCTOU → corrupt APK handoff).
      */
     private val downloadMutex = Mutex()
+
+    /**
+     * Coalesces rapid double-taps on a picker row. The dialog flow does an
+     * async DataStore read before `dialog.show()` (10-200 ms on cold cache),
+     * and a second tap inside that window would otherwise queue a second
+     * `lifecycleScope.launch` and stack two AlertDialogs on top of each other.
+     *
+     * Why a [Mutex.tryLock] and not an [AtomicBoolean]: the lock acquire MUST
+     * happen inside the launched coroutine, so a pre-dispatch lifecycle
+     * destroy (rotation, theme change, fast nav-away) cancels the coroutine
+     * before `tryLock` runs and the lock is never acquired — no leak. A
+     * synchronous `compareAndSet` at the call site would set the flag, then
+     * the dispatched lambda would never run, and the flag would sit `true`
+     * for the life of the process killing every subsequent picker tap (Stage 3
+     * review pipeline round 3 P1).
+     *
+     * Process-singleton scope is intentional: a tap on row A locks out a tap
+     * on row B during A's snapshot read. Two stacked dialogs for two
+     * different versions would be more confusing than a 200 ms latency on B.
+     */
+    private val pickerInstallMutex = Mutex()
 
     /**
      * Process-scoped guard so an update prompt fires at most once per cold start
@@ -114,6 +136,22 @@ class UpdatePromptFlow @Inject constructor(
     }
 
     /**
+     * Returns a snapshot of the last install attempt the user made, or null when
+     * none is recorded / it was for a version that's now installed. The splash
+     * gate consults this BEFORE [checkForUpdate] so the user sees "last update
+     * didn't complete" feedback for a previously-failed attempt instead of just
+     * the standard "new version available" dialog — the symptom the Huawei
+     * Android 9 user reported on beta.15, where the install silently failed
+     * and the prompt kept re-appearing with no explanation.
+     *
+     * Returns ABANDONED for a PENDING record older than 24h (the OS never
+     * delivered the success/failure callback — most likely because the install
+     * was rejected by Knox/Auto-Blocker or the user backed out of the system
+     * installer without confirming).
+     */
+    suspend fun lastInstallStatus(): LastInstallAttempt.Snapshot? = lastInstallAttempt.snapshot()
+
+    /**
      * Manual install entry point from the Available Updates picker. Unlike
      * [showUpdateDialogAndAwait] (splash-gate), this bypasses the
      * `promptDismissedThisProcess` short-circuit because picker taps are
@@ -131,7 +169,42 @@ class UpdatePromptFlow @Inject constructor(
         // Intentional: do NOT check `promptDismissedThisProcess`. Picker taps
         // are explicit user actions and must always show the dialog.
         // showUpdateDialog (the private helper) does not consult the flag.
-        showUpdateDialog(activity, lifecycleOwner, info)
+        //
+        // Re-entrancy guard via [pickerInstallMutex]: a rapid double-tap on
+        // the picker row would otherwise queue two parallel
+        // `lifecycleScope.launch` jobs, both suspending on the DataStore
+        // read, both calling `showUpdateDialog`, both calling `dialog.show()`
+        // against the same activity → two stacked AlertDialogs. The
+        // [Mutex.tryLock] acquire happens INSIDE the coroutine so a lifecycle
+        // destroy that cancels the launch before dispatch never leaks a
+        // locked state — see the field docstring for the AtomicBoolean
+        // variant that did leak (Stage 3 review pipeline round 3 P1).
+        //
+        // Fetch the previous-attempt snapshot off Main, then render the
+        // dialog on Main with the inline warning if one applies. Same
+        // dialog plumbing as the splash gate so a retry from the picker
+        // surfaces the prior failure reason without diverging UX.
+        lifecycleOwner.lifecycleScope.launch {
+            if (!pickerInstallMutex.tryLock()) return@launch
+            try {
+                // Swallow a DataStore IOException from the snapshot read so
+                // the picker tap isn't silently no-op'd (Stage 3 P3). Manually
+                // re-throw CancellationException — runCatching catches it
+                // along with everything else (KT-40996), and lifecycleScope
+                // cancellation should propagate, not be swallowed into a
+                // null previousAttempt that then races into showUpdateDialog
+                // (Stage 1 R4 + Stage 3 R4 P3).
+                val previousAttempt = runCatching { lastInstallAttempt.snapshot() }
+                    .onFailure {
+                        if (it is CancellationException) throw it
+                        Log.w(TAG, "Failed to read last install attempt", it)
+                    }
+                    .getOrNull()
+                showUpdateDialog(activity, lifecycleOwner, info, previousAttempt)
+            } finally {
+                pickerInstallMutex.unlock()
+            }
+        }
     }
 
     /**
@@ -149,16 +222,26 @@ class UpdatePromptFlow @Inject constructor(
         activity: Activity,
         lifecycleOwner: LifecycleOwner,
         info: UpdateInfo
-    ): Unit = suspendCancellableCoroutine { cont ->
-        if (promptDismissedThisProcess) {
-            if (cont.isActive) cont.resume(Unit)
-            return@suspendCancellableCoroutine
-        }
-        val dialog = showUpdateDialog(
-            activity,
-            lifecycleOwner,
-            info,
-            onUserAction = {
+    ): Unit {
+        // Read the LastInstallAttempt snapshot off the suspend boundary BEFORE
+        // entering suspendCancellableCoroutine — the DataStore read is itself a
+        // suspend call and cannot be invoked inside the synchronous body of
+        // suspendCancellableCoroutine. The result rides into showUpdateDialog so
+        // a prior failure renders inline as an error-colored warning above the
+        // dialog body (Stage 1 review P1: a toast 50-100ms before the dialog
+        // gets swallowed by dialog focus).
+        val previousAttempt = lastInstallAttempt.snapshot()
+        suspendCancellableCoroutine<Unit> { cont ->
+            if (promptDismissedThisProcess) {
+                if (cont.isActive) cont.resume(Unit)
+                return@suspendCancellableCoroutine
+            }
+            val dialog = showUpdateDialog(
+                activity,
+                lifecycleOwner,
+                info,
+                previousAttempt,
+                onUserAction = {
                 // Fires synchronously from Later/Install click handlers BEFORE the
                 // dismiss is dispatched. Wins the race against a simultaneous
                 // activity destroy that would otherwise clear the dismiss listener
@@ -203,6 +286,7 @@ class UpdatePromptFlow @Inject constructor(
                 Handler(Looper.getMainLooper(), null).post(cleanup)
             }
         }
+        }
     }
 
     /**
@@ -215,6 +299,7 @@ class UpdatePromptFlow @Inject constructor(
         activity: Activity,
         lifecycleOwner: LifecycleOwner,
         info: UpdateInfo,
+        previousAttempt: LastInstallAttempt.Snapshot? = null,
         onUserAction: () -> Unit = {},
         onDismissed: () -> Unit = {}
     ): AlertDialog? {
@@ -223,6 +308,26 @@ class UpdatePromptFlow @Inject constructor(
             .inflate(R.layout.dialog_update_available, null)
         dialogView.findViewById<TextView>(R.id.update_version_label).text =
             activity.getString(R.string.update_version_ready, info.releaseName)
+        // Inline "previous attempt failed" line above the body, in error red,
+        // when a non-success record exists for the same target. Renders BEFORE
+        // the dialog steals focus so the user can't miss it (Stage 1 review P1
+        // — a transient toast just before the dialog read as background noise).
+        val warningView = dialogView.findViewById<TextView>(R.id.update_previous_attempt_warning)
+        if (previousAttempt != null &&
+            previousAttempt.targetVersion == info.versionName &&
+            (previousAttempt.status == LastInstallAttempt.Status.FAILURE ||
+                previousAttempt.status == LastInstallAttempt.Status.ABANDONED)
+        ) {
+            val detail = previousAttempt.failureMessage?.takeIf { it.isNotBlank() }
+            warningView.text = if (detail != null) {
+                activity.getString(R.string.update_previous_attempt_failed_with_reason, detail)
+            } else {
+                activity.getString(R.string.update_previous_attempt_failed)
+            }
+            warningView.visibility = android.view.View.VISIBLE
+        } else {
+            warningView.visibility = android.view.View.GONE
+        }
         // Body text is a generic, localized "new version available" message
         // (see R.string.update_body_generic). We deliberately do NOT render
         // the GitHub release notes inline — those are written in English and
@@ -343,11 +448,28 @@ class UpdatePromptFlow @Inject constructor(
                 withContext(Dispatchers.IO) {
                     installer.verifySigningCertMatch(activity, file)
                 }
-                withContext(Dispatchers.Main) {
-                    if (!activity.isFinishing && !activity.isDestroyed) {
-                        installer.launchInstaller(activity, file)
-                        scheduleSelfKillAfterInstall()
-                    }
+                if (!activity.isFinishing && !activity.isDestroyed) {
+                    // Record PENDING INSIDE the alive-activity guard so a
+                    // destroy between cert-verify and handoff doesn't leave a
+                    // PENDING marker for an install that never started — the
+                    // record would later promote to ABANDONED and render a
+                    // misleading "last update didn't complete" banner on the
+                    // next cold start (Stage 3 review pipeline round 2 P2).
+                    // launchInstaller is suspend and handles its own
+                    // dispatcher — it does multi-MB streaming + fsync
+                    // internally on IO, so wrapping with Dispatchers.Main here
+                    // would defeat the point. The finishing/destroyed guards
+                    // need Main-thread reads of Activity state, which is fine
+                    // inside a viewLifecycleOwner-scoped coroutine that
+                    // defaults to Main (Stage 3 review pipeline round 1 P1).
+                    lastInstallAttempt.recordPending(info.versionName)
+                    installer.launchInstaller(activity, file, info.versionName)
+                    // After launchInstaller's internal withContext(IO) returns,
+                    // we're back on the lifecycleScope's default Main.immediate
+                    // dispatcher — no wrapper needed. scheduleSelfKillAfterInstall
+                    // just posts a Runnable to a MainLooper Handler, which is
+                    // thread-safe regardless (Stage 7 cubic P3).
+                    scheduleSelfKillAfterInstall()
                 }
             } catch (ce: CancellationException) {
                 throw ce
@@ -356,9 +478,21 @@ class UpdatePromptFlow @Inject constructor(
                 // toast so the user understands the problem is signature-integrity,
                 // not network — actionable hint to re-download from a trusted source.
                 Log.e(TAG, "Signing verification failed", se)
+                // recordFailure here so a subsequent cold start surfaces a useful
+                // banner. SecurityException is thrown by verifySigningCertMatch,
+                // which runs BEFORE recordPending in normal flow — but if the
+                // throw happens after recordPending (e.g. an OEM PackageManager
+                // race during the session commit) the PENDING record would
+                // otherwise sit forever; recording FAILURE here is idempotent
+                // and corrects either case.
+                lastInstallAttempt.recordFailure(info.versionName, "signature mismatch")
                 toast(activity, R.string.update_signature_mismatch)
             } catch (t: Throwable) {
                 Log.e(TAG, "Update download/install failed", t)
+                lastInstallAttempt.recordFailure(
+                    info.versionName,
+                    t.message?.take(120) ?: t.javaClass.simpleName,
+                )
                 toast(activity, R.string.update_download_failed)
             } finally {
                 downloadMutex.unlock()

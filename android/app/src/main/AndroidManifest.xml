@@ -142,6 +142,18 @@
                 android:resource="@xml/downloads_file_paths" />
         </provider>
 
+        <!--
+          PackageInstaller status callback receiver. ApkInstaller.launchInstaller
+          targets this via a PendingIntent; the OS delivers STATUS_* broadcasts
+          here regardless of `exported="false"` because PendingIntent grants the
+          broadcaster (the system) implicit permission to fire the intent. Keep
+          unexported so no other app can spoof status updates and poison the
+          LastInstallAttempt record.
+        -->
+        <receiver
+            android:name=".update.InstallStatusReceiver"
+            android:exported="false" />
+
         <!-- Google Cast SDK configuration -->
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"

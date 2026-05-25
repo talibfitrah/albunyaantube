@@ -227,6 +227,8 @@
     <string name="update_downloading">Downloading update…</string>
     <string name="update_download_failed">Download failed. Please try again.</string>
     <string name="update_signature_mismatch">Downloaded update did not match the installed app\'s signature and was refused. Please re-download from the trusted source.</string>
+    <string name="update_previous_attempt_failed">Last update attempt didn\'t complete. Tap Install again or try ADB sideload if it keeps failing.</string>
+    <string name="update_previous_attempt_failed_with_reason">Last update attempt didn\'t complete (%1$s). Tap Install again or try ADB sideload if it keeps failing.</string>
     <string name="update_permission_title">Permission needed</string>
     <string name="update_permission_message">To install the update, allow %1$s to install apps. Tap Open settings, enable the permission, then tap Check for updates again.</string>
     <string name="update_grant_permission">Open settings</string>

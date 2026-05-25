@@ -217,6 +217,11 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
     private suspend fun awaitUpdatePromptIfAvailable(info: UpdateInfo?) {
         if (info == null || !isAdded) return
         val host = activity ?: return
+        // The "previous attempt didn't complete" warning is rendered INSIDE the
+        // dialog (see UpdatePromptFlow.showUpdateDialog → R.id.update_previous_attempt_warning).
+        // An earlier draft showed it as a toast 50-100ms before the dialog —
+        // the dialog focus swallowed the toast (Stage 1 review P1). Now the
+        // warning lives above the dialog body so the user can't miss it.
         updatePromptFlow.showUpdateDialogAndAwait(host, host, info)
     }
 

@@ -32,7 +32,7 @@ class UpdatePromptFlowTest {
             onBlocking { latest() } doReturn info
         }
 
-        val flow = UpdatePromptFlow(mock(), mock(), catalog)
+        val flow = UpdatePromptFlow(mock(), mock(), catalog, mock())
 
         assertEquals(info, flow.checkForUpdate())
         verify(catalog).latest()
@@ -45,7 +45,7 @@ class UpdatePromptFlowTest {
             onBlocking { latest() } doReturn info
         }
 
-        val flow = UpdatePromptFlow(mock(), mock(), catalog)
+        val flow = UpdatePromptFlow(mock(), mock(), catalog, mock())
 
         // First call hits the catalog.
         flow.checkForUpdate()
@@ -70,7 +70,7 @@ class UpdatePromptFlowTest {
         val catalog = mock<ReleaseCatalogCache> {
             onBlocking { latest() } doReturn null
         }
-        val flow = UpdatePromptFlow(mock(), mock(), catalog)
+        val flow = UpdatePromptFlow(mock(), mock(), catalog, mock())
         flipPromptDismissedThisProcess(flow, true)
 
         val nonLatest = UpdateInfo(

@@ -197,6 +197,8 @@
     <string name="update_downloading">جاري تنزيل التحديث…</string>
     <string name="update_download_failed">فشل تنزيل التحديث.</string>
     <string name="update_signature_mismatch">التحديث الذي تم تنزيله لم يطابق توقيع التطبيق المثبت ورُفض. يرجى إعادة التنزيل من مصدر موثوق.</string>
+    <string name="update_previous_attempt_failed">آخر محاولة تحديث لم تكتمل. اضغط تثبيت مرة أخرى، أو جرّب التثبيت عبر ADB إذا استمر الفشل.</string>
+    <string name="update_previous_attempt_failed_with_reason">آخر محاولة تحديث لم تكتمل (%1$s). اضغط تثبيت مرة أخرى، أو جرّب التثبيت عبر ADB إذا استمر الفشل.</string>
     <string name="update_permission_title">السماح بالتثبيت من هذا التطبيق</string>
     <string name="update_permission_message">لتثبيت الإصدار الجديد، امنح الإذن بتثبيت التطبيقات غير المعروفة لـ %1$s في الشاشة التالية، ثم اضغط على التحقق من التحديثات مرة أخرى.</string>
     <string name="update_grant_permission">فتح الإعدادات</string>
