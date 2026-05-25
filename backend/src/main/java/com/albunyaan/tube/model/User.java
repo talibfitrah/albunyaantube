@@ -57,6 +57,9 @@ public class User {
     // Plan C T1: profile bootstrap captures DOB; stored as Firestore Timestamp at 00:00 UTC.
     private Timestamp dateOfBirth;
 
+    /** Plan H: E.164 phone number, e.g. "+31612345678". Trust-based — no OTP. */
+    private String phoneNumber;
+
     public User() {
         // F3: role MUST default to null, not "moderator".
         // Firestore deserialization calls the no-arg ctor then copies fields over.
@@ -286,6 +289,9 @@ public class User {
     public Timestamp getDateOfBirth() { return dateOfBirth; }
     public void setDateOfBirth(Timestamp t) { this.dateOfBirth = t; }
 
+    public String getPhoneNumber() { return phoneNumber; }
+    public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
+
     /**
      * F10: return a defensive copy of this User.
      *
@@ -320,6 +326,7 @@ public class User {
         c.recoveredBy = this.recoveredBy;
         c.profileCompletedAt = this.profileCompletedAt;
         c.dateOfBirth = this.dateOfBirth;
+        c.phoneNumber = this.phoneNumber;
         return c;
     }
 }
