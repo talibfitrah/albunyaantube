@@ -1,0 +1,35 @@
+backend/src/main/java/com/albunyaan/tube/security/FirebaseUserDetails.java
+  s_e026945d130ffb::t_e36a6f7e1cd127 16
+backend/src/test/java/com/albunyaan/tube/service/BulkUserServiceTest.java
+  s_e026945d130ffb::t_ab7f51a654d039 19
+backend/src/test/java/com/albunyaan/tube/controller/CategoryControllerTest.java
+  s_e026945d130ffb::t_5857dc9146a10f 55
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerTest.java
+  s_e026945d130ffb::t_3a4545b00d3ea7 67
+backend/src/test/java/com/albunyaan/tube/controller/DownloadControllerTest.java
+  s_e026945d130ffb::t_b3344c6b779a37 24
+backend/src/test/java/com/albunyaan/tube/controller/RegistryControllerTest.java
+  s_e026945d130ffb::t_835bbda1e07354 68,71
+backend/src/test/java/com/albunyaan/tube/controller/SyncControllerTest.java
+  s_e026945d130ffb::t_ffe63098ad5433 64
+backend/src/test/java/com/albunyaan/tube/controller/UserControllerTest.java
+  s_e026945d130ffb::t_18aa6912b06fb3 59
+backend/src/test/java/com/albunyaan/tube/service/AuthServiceRevokeSessionsTest.java
+  s_e026945d130ffb::t_409c8ce043734e 19,35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "be90e66f1cc46b0636c87df450073066c3f830c1",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
