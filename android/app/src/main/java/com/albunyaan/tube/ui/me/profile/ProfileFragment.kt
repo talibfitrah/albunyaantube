@@ -99,6 +99,8 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                     if (state.draft.phoneNumber.isNullOrBlank()) R.string.profile_add
                     else R.string.profile_edit
                 )
+                binding.emailEditButton.visibility =
+                    if (state.draft.hasPasswordProvider) View.VISIBLE else View.GONE
                 binding.passwordRow.visibility =
                     if (state.draft.hasPasswordProvider) View.VISIBLE else View.GONE
                 binding.saveButton.isEnabled = state.isDirty && !state.saving

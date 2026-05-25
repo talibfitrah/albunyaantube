@@ -35,8 +35,26 @@ class ProfileViewModel @Inject constructor(
         loadFromAccount()
         viewModelScope.launch {
             accountRepository.accountState.collect { state ->
-                if (state is AccountState.Loaded && _uiState.value is ProfileUiState.Loading) {
+                if (state !is AccountState.Loaded) return@collect
+                val current = _uiState.value
+                if (current is ProfileUiState.Loading) {
                     loadFromAccount()
+                    return@collect
+                }
+                if (current is ProfileUiState.Editing) {
+                    // Reconcile the editable-from-outside fields (phoneNumber, email)
+                    // without clobbering an in-progress draft of displayName / dateOfBirth.
+                    val newOriginal = current.original.copy(
+                        phoneNumber = state.phoneNumber,
+                        emailReadOnly = state.email.orEmpty(),
+                    )
+                    val newDraft = current.draft.copy(
+                        // Phone is only changed via the EditPhone sheet (no in-screen
+                        // draft for it) — sync the draft to original.
+                        phoneNumber = state.phoneNumber,
+                        emailReadOnly = state.email.orEmpty(),
+                    )
+                    _uiState.value = current.copy(original = newOriginal, draft = newDraft)
                 }
             }
         }

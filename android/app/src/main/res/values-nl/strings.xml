@@ -716,6 +716,7 @@
     <string name="edit_password_confirm">Nieuw wachtwoord bevestigen</string>
     <string name="edit_password_update">Wachtwoord bijwerken</string>
     <string name="edit_password_updated">Wachtwoord bijgewerkt.</string>
+    <string name="edit_phone_updated">Telefoonnummer bijgewerkt.</string>
     <string name="edit_password_wrong_current">Huidig wachtwoord is onjuist</string>
     <string name="edit_password_weak">Wachtwoord moet minimaal 8 tekens bevatten</string>
     <string name="edit_password_mismatch">Wachtwoorden komen niet overeen</string>

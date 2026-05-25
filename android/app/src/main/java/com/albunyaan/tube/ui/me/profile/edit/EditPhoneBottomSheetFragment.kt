@@ -17,6 +17,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.albunyaan.tube.R
 import com.albunyaan.tube.util.PhoneFormat
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -95,7 +96,14 @@ class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.nav.collect { nav ->
-                    if (nav == EditPhoneViewModel.Nav.Done) dismiss()
+                    if (nav == EditPhoneViewModel.Nav.Done) {
+                        Snackbar.make(
+                            requireActivity().findViewById(android.R.id.content),
+                            R.string.edit_phone_updated,
+                            Snackbar.LENGTH_SHORT,
+                        ).show()
+                        dismiss()
+                    }
                 }
             }
         }

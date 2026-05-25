@@ -746,6 +746,7 @@
     <string name="edit_password_confirm">تأكيد كلمة المرور الجديدة</string>
     <string name="edit_password_update">تحديث كلمة المرور</string>
     <string name="edit_password_updated">تم تحديث كلمة المرور.</string>
+    <string name="edit_phone_updated">تم تحديث رقم الجوال.</string>
     <string name="edit_password_wrong_current">كلمة المرور الحالية غير صحيحة</string>
     <string name="edit_password_weak">يجب أن تتكون كلمة المرور من 8 أحرف على الأقل</string>
     <string name="edit_password_mismatch">كلمتا المرور غير متطابقتين</string>
