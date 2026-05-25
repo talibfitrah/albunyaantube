@@ -8,6 +8,7 @@ data class AccountMeResponseDto(
     val email: String?,
     val displayName: String?,
     val dateOfBirth: String?,
+    val phoneNumber: String?,
     val status: String,
     val role: String?,
     val profileCompletedAt: String?,
