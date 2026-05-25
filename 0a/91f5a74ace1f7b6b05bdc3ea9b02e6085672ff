@@ -1,0 +1,21 @@
+android/app/build.gradle.kts
+  s_f6f6a601e51753::t_62e22ed7b9599c 320-329
+android/app/src/main/java/com/albunyaan/tube/ui/settings/availableversions/AvailableVersionsAdapter.kt
+  s_f6f6a601e51753::t_c9ceaa438f2373 89-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "0a91f5a74ace1f7b6b05bdc3ea9b02e6085672ff",
+  "prompts": {},
+  "sessions": {
+    "s_f6f6a601e51753": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "40a6c863-7862-4baa-b412-a2821cca49ca",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
