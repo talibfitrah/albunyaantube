@@ -5,6 +5,46 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.18] - 2026-05-25
+
+### Android
+
+- **Phone number is now a mandatory field at signup.** First-run profile
+  bootstrap gains a country dropdown (populated from libphonenumber-android's
+  supported regions, display names from the device locale in en/ar/nl) and a
+  number field validated as E.164 via per-country length rules. The backend
+  re-validates with a `^\+[1-9]\d{7,14}$` regex as defence-in-depth and rejects
+  malformed input with a field-routed `ProfileValidationException`. Trust-based
+  collection — no OTP / SMS verification.
+
+- **Email verification gates email/password sign-ups.** A new
+  `EmailVerificationFragment` sits between sign-in and splash for any
+  password-provider Firebase user with `isEmailVerified=false`. The screen
+  sends a verification email on enter (deduplicated across rotations via
+  `SavedStateHandle`), surfaces a 60-second cooldown on resend, and routes
+  through the splash router only after `currentUser.reload()` reports verified.
+  Google and Microsoft sign-ins skip the gate — their tokens already carry
+  `email_verified=true`. The backend now reads the `email_verified` claim from
+  the Firebase ID token in `FirebaseUserDetails` and `POST /api/account/profile`
+  rejects unverified password-provider users with `403 EMAIL_NOT_VERIFIED`, so
+  a raw `curl` cannot bypass the client-side gate.
+
+- **Editable email, password, and phone on Personal Info.** The previously
+  read-only email row gains an Edit button (hidden for OAuth-only users until
+  a follow-up wires their re-auth path). The new password and phone rows each
+  open a Material bottom sheet with field-routed errors. Email change uses
+  Firebase's `verifyBeforeUpdateEmail`, so the current email stays valid until
+  the user clicks the verification link on the new address. Password and phone
+  use re-auth + `updatePassword` / `PUT /api/account/profile` respectively.
+
+- **Backend `PUT /api/account/profile` now requires `status=ACTIVE`.** A
+  PENDING_PROFILE user can no longer write a phone via the partial-update path
+  to skip the age gate enforced by `completeProfile`. The new `phoneNumber`
+  field follows the same field-level merge pattern as `displayName` / DOB —
+  same-value retries are idempotent (no write, no audit), and changes emit a
+  sentinel `"phoneNumber": "changed"` in the audit log (PII-safe; no raw values
+  stored).
+
 ## [1.0.0-beta.17] - 2026-05-25
 
 ### Android
