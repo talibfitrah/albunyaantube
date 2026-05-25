@@ -693,6 +693,16 @@
     <string name="edit_phone_save">Opslaan</string>
     <string name="profile_error_rate_limited_short">Te veel verzoeken. Probeer het later opnieuw.</string>
 
+    <!-- Edit email bottom sheet (Plan G T21) -->
+    <string name="edit_email_title">E-mail wijzigen</string>
+    <string name="edit_email_current_password">Huidig wachtwoord</string>
+    <string name="edit_email_new_email">Nieuwe e-mail</string>
+    <string name="edit_email_send">Bevestigingslink sturen</string>
+    <string name="edit_email_sent">Bevestigingslink verzonden naar %1$s. Klik erop om de wijziging te voltooien. Je huidige e-mail blijft tot dan actief.</string>
+    <string name="edit_email_wrong_password">Verkeerd wachtwoord</string>
+    <string name="edit_email_invalid">Geen geldig e-mailadres</string>
+    <string name="edit_email_in_use">E-mailadres is al in gebruik</string>
+
     <!-- Email verification (Plan B T5) -->
     <string name="email_verification_title">Bevestig je e-mail</string>
     <string name="email_verification_body">We hebben een bevestigingslink gestuurd naar %1$s. Klik erop en kom dan terug.</string>

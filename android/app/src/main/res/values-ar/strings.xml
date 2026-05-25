@@ -723,6 +723,16 @@
     <string name="edit_phone_save">حفظ</string>
     <string name="profile_error_rate_limited_short">عدد كبير من الطلبات. حاول لاحقًا.</string>
 
+    <!-- Edit email bottom sheet (Plan G T21) -->
+    <string name="edit_email_title">تغيير البريد الإلكتروني</string>
+    <string name="edit_email_current_password">كلمة المرور الحالية</string>
+    <string name="edit_email_new_email">البريد الإلكتروني الجديد</string>
+    <string name="edit_email_send">إرسال رابط التحقق</string>
+    <string name="edit_email_sent">تم إرسال رابط التحقق إلى %1$s. اضغط عليه لإكمال التغيير. سيظل بريدك الحالي ساريًا حتى ذلك الحين.</string>
+    <string name="edit_email_wrong_password">كلمة المرور غير صحيحة</string>
+    <string name="edit_email_invalid">عنوان بريد غير صالح</string>
+    <string name="edit_email_in_use">البريد الإلكتروني مستخدم بالفعل</string>
+
     <!-- Email verification (Plan B T5) -->
     <string name="email_verification_title">تحقق من بريدك الإلكتروني</string>
     <string name="email_verification_body">أرسلنا رابط التحقق إلى %1$s. اضغط عليه ثم عُد إلى هنا.</string>

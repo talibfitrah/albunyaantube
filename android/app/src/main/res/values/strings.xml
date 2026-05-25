@@ -821,4 +821,14 @@
     <string name="edit_phone_number">Phone number</string>
     <string name="edit_phone_save">Save</string>
     <string name="profile_error_rate_limited_short">Too many requests. Try again soon.</string>
+
+    <!-- Edit email bottom sheet (Plan G T21) -->
+    <string name="edit_email_title">Change email</string>
+    <string name="edit_email_current_password">Current password</string>
+    <string name="edit_email_new_email">New email</string>
+    <string name="edit_email_send">Send verification</string>
+    <string name="edit_email_sent">Verification link sent to %1$s. Tap it to complete the change. Your current email stays active until then.</string>
+    <string name="edit_email_wrong_password">Wrong password</string>
+    <string name="edit_email_invalid">Not a valid email</string>
+    <string name="edit_email_in_use">Email is already in use</string>
 </resources>
