@@ -716,4 +716,15 @@
     <string name="bootstrap_error_invalid_phone_country">اختر دولتك</string>
     <string name="bootstrap_error_invalid_phone">أدخل رقم جوال صحيح</string>
 
+    <!-- Email verification (Plan B T5) -->
+    <string name="email_verification_title">تحقق من بريدك الإلكتروني</string>
+    <string name="email_verification_body">أرسلنا رابط التحقق إلى %1$s. اضغط عليه ثم عُد إلى هنا.</string>
+    <string name="email_verification_check_now">لقد تحققت من بريدي</string>
+    <string name="email_verification_resend">إعادة إرسال البريد</string>
+    <string name="email_verification_use_different">استخدم بريدًا آخر</string>
+    <string name="email_verification_not_yet">لم يتم التحقق بعد. راجع بريدك (والرسائل غير المرغوب فيها).</string>
+    <string name="email_verification_rate_limited">الرجاء الانتظار قبل إعادة الإرسال.</string>
+    <string name="email_verification_last_sent">آخر إرسال قبل %1$d ثانية</string>
+    <string name="email_verification_network_error">تعذر الوصول إلى الخادم. حاول مجددًا.</string>
+
 </resources>

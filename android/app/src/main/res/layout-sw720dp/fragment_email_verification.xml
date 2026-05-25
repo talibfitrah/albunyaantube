@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:fitsSystemWindows="true"
+    android:background="?android:attr/colorBackground">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingHorizontal="@dimen/spacing_md"
+        android:paddingTop="@dimen/spacing_lg">
+
+        <FrameLayout
+            android:layout_width="720dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal">
+
+                <ImageView
+                    android:id="@+id/icon"
+                    android:layout_width="96dp"
+                    android:layout_height="96dp"
+                    android:src="@android:drawable/ic_dialog_email"
+                    android:layout_marginBottom="@dimen/spacing_md"
+                    android:contentDescription="@string/email_verification_title" />
+
+                <TextView
+                    android:id="@+id/title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/email_verification_title"
+                    android:textAppearance="?attr/textAppearanceHeadline5"
+                    android:textAlignment="center"
+                    android:layout_marginBottom="@dimen/spacing_md" />
+
+                <TextView
+                    android:id="@+id/bodyText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBody1"
+                    android:textAlignment="center"
+                    android:layout_marginBottom="@dimen/spacing_lg"
+                    tools:text="We sent a verification link to you@example.com. Tap it, then come back here." />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/checkNowButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/auth_button_height"
+                    android:text="@string/email_verification_check_now" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/resendButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/auth_button_height"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:text="@string/email_verification_resend" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/signOutButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:text="@string/email_verification_use_different" />
+
+                <TextView
+                    android:id="@+id/lastSentText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:textAlignment="center"
+                    android:layout_marginTop="@dimen/spacing_md"
+                    android:visibility="gone"
+                    tools:text="Last sent 5 seconds ago"
+                    tools:visibility="visible" />
+
+                <TextView
+                    android:id="@+id/errorText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:textColor="?attr/colorError"
+                    android:textAlignment="center"
+                    android:visibility="gone" />
+
+                <ProgressBar
+                    android:id="@+id/spinner"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_md"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </FrameLayout>
+    </LinearLayout>
+</ScrollView>

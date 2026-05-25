@@ -684,6 +684,17 @@
     <string name="auth_error_password_reset_failed">Couldn\'t send the reset email</string>
     <string name="auth_error_generic">Something went wrong</string>
 
+    <!-- Email verification (Plan B T5) -->
+    <string name="email_verification_title">Verify your email</string>
+    <string name="email_verification_body">We sent a verification link to %1$s. Tap it, then come back here.</string>
+    <string name="email_verification_check_now">I\'ve verified my email</string>
+    <string name="email_verification_resend">Resend email</string>
+    <string name="email_verification_use_different">Use a different email</string>
+    <string name="email_verification_not_yet">Still not verified. Check your inbox (and spam folder).</string>
+    <string name="email_verification_rate_limited">Please wait before resending.</string>
+    <string name="email_verification_last_sent">Last sent %1$d seconds ago</string>
+    <string name="email_verification_network_error">Couldn\'t reach the server. Try again.</string>
+
     <!-- Account-status dialogs (Plan A 403 responses) -->
     <string name="account_blocked_title">Account blocked</string>
     <string name="account_blocked_body">Your account has been blocked by an administrator. Contact support for details.</string>

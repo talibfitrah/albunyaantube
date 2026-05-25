@@ -686,5 +686,16 @@
     <string name="bootstrap_error_invalid_phone_country">Kies je land</string>
     <string name="bootstrap_error_invalid_phone">Voer een geldig mobiel nummer in</string>
 
+    <!-- Email verification (Plan B T5) -->
+    <string name="email_verification_title">Bevestig je e-mail</string>
+    <string name="email_verification_body">We hebben een bevestigingslink gestuurd naar %1$s. Klik erop en kom dan terug.</string>
+    <string name="email_verification_check_now">Ik heb mijn e-mail bevestigd</string>
+    <string name="email_verification_resend">E-mail opnieuw verzenden</string>
+    <string name="email_verification_use_different">Gebruik een ander e-mailadres</string>
+    <string name="email_verification_not_yet">Nog niet bevestigd. Check je inbox (en spam).</string>
+    <string name="email_verification_rate_limited">Wacht even voordat je opnieuw verzendt.</string>
+    <string name="email_verification_last_sent">Laatst verstuurd %1$d seconden geleden</string>
+    <string name="email_verification_network_error">Kan de server niet bereiken. Probeer opnieuw.</string>
+
 </resources>
 
