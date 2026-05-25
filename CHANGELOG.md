@@ -5,6 +5,25 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.16] - 2026-05-25
+
+### Android
+
+- **Auth subsystem now starts on pre-Android-12 devices.** Forced
+  `kotlinx-serialization-core` to 1.7.3. The transitive 1.6.x pulled in by
+  Firebase + kotlin-reflect installs a `ClassValueReferences` subclass of
+  `java.lang.ClassValue` at startup; despite Android's SDK declaring
+  ClassValue from API 26, ART only fully implements it from API 31, so on
+  Android 9–11 (Huawei EMUI especially) the class-init throws
+  `NoClassDefFoundError` inside `FirebaseApp.initializeApp`, cascading into
+  a silently-failed Firebase Auth bootstrap — the user appears "logged out"
+  with personal lists missing. 1.7.0+ added a runtime ART probe instead of
+  the bare SDK_INT check.
+- **Available Updates: tapping the row body installs.** Previously only the
+  small right-side "Install" button was clickable on newer-than-installed
+  rows; the row body registered as a no-op. Both now route to the same
+  install flow.
+
 ## [1.0.0-beta.15] - 2026-05-25
 
 ### Android
