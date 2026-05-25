@@ -10,11 +10,17 @@ public class FirebaseUserDetails {
     private final String uid;
     private final String email;
     private final String role;
+    private final boolean emailVerified;
 
     public FirebaseUserDetails(String uid, String email, String role) {
+        this(uid, email, role, true);
+    }
+
+    public FirebaseUserDetails(String uid, String email, String role, boolean emailVerified) {
         this.uid = uid;
         this.email = email;
         this.role = role;
+        this.emailVerified = emailVerified;
     }
 
     public String getUid() {
@@ -27,6 +33,10 @@ public class FirebaseUserDetails {
 
     public String getRole() {
         return role;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
     }
 
     public boolean isAdmin() {

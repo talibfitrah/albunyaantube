@@ -232,6 +232,10 @@ public class AccountProfileService {
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new UserNotFoundException(uid));
 
+        if (user.getStatusEnum() != UserStatus.ACTIVE) {
+            throw new ProfileValidationException("status", "profile not yet completed");
+        }
+
         // Validation runs BEFORE the no-op short-circuit — defence against
         // a hypothetical migration that stored an under-13 / future DOB
         // being silently re-confirmed by a same-value PUT.

@@ -269,4 +269,24 @@ class AccountControllerTest {
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isUnauthorized());
     }
+
+    // ── Test 9: email not verified → 403 EMAIL_NOT_VERIFIED ──────────────
+    @Test
+    void postProfile_returnsForbidden_whenEmailNotVerified() throws Exception {
+        // Replace the @BeforeEach principal with one that has emailVerified=false
+        FirebaseUserDetails unverified = new FirebaseUserDetails(TEST_UID, TEST_EMAIL, "user", false);
+        UsernamePasswordAuthenticationToken auth =
+                new UsernamePasswordAuthenticationToken(unverified, null, java.util.List.of());
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        CompleteProfileRequest req = new CompleteProfileRequest();
+        req.setDisplayName("Alice");
+        req.setDateOfBirth(LocalDate.of(2000, 1, 1));
+        req.setPhoneNumber("+31612345678");
+        mockMvc.perform(post("/api/account/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+    }
 }

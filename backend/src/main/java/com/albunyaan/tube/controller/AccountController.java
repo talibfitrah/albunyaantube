@@ -57,6 +57,15 @@ public class AccountController {
             @Valid @RequestBody CompleteProfileRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
         if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        // Reviewer-flagged: client-only email gate is bypassed via curl. The
+        // EmailVerificationFragment is a UX-layer enforcement; the backend
+        // is the source of truth.
+        if (!principal.isEmailVerified()) {
+            // Google/Microsoft tokens always have emailVerified=true; if false,
+            // the user is on email/password and hasn't clicked the link.
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("code", "EMAIL_NOT_VERIFIED", "message", "Verify your email first"));
+        }
         var saved = accountProfileService.completeProfile(
                 principal.getUid(), req.getDisplayName(), req.getDateOfBirth(), req.getPhoneNumber());
         return ResponseEntity.ok(AccountMeResponse.from(saved));

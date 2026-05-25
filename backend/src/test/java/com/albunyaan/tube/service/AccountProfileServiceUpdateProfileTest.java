@@ -292,4 +292,20 @@ class AccountProfileServiceUpdateProfileTest {
             .isInstanceOf(ProfileValidationException.class);
         verify(userRepository, never()).updateFields(any(), any());
     }
+
+    // ------------------------------------------------------------------
+    // Status gate: PENDING_PROFILE user cannot use the partial-update path
+    // ------------------------------------------------------------------
+    @Test
+    void updateProfile_pendingProfileUser_throwsProfileValidationException() throws Exception {
+        User pending = new User("uid-1", "uid-1@example.com", "Alice", "user");
+        pending.setStatusEnum(UserStatus.PENDING_PROFILE);
+        when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(pending));
+
+        assertThatThrownBy(() -> svc.updateProfile("uid-1",
+            new UpdateProfileRequest(null, null, "+31612345678")))
+            .isInstanceOf(ProfileValidationException.class)
+            .hasMessageContaining("status");
+        verify(userRepository, never()).updateFields(any(), any());
+    }
 }
