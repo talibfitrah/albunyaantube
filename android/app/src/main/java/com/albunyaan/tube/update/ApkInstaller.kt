@@ -19,6 +19,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -68,7 +69,22 @@ class ApkInstaller @Inject constructor(
         val target = File(updatesDir, "fitrahtube-update.apk")
 
         val request = Request.Builder().url(apkUrl).build()
-        val call = okHttpClient.newCall(request).cancelWhenCoroutineCancels()
+        // The shared OkHttpClient has a 20s readTimeout sized for snappy API calls —
+        // far too tight for a multi-MB APK on a slow link, where any chunk read that
+        // blocks longer than 20s would throw SocketTimeoutException and surface as
+        // the misleading "Download failed" toast. Clone with a generous per-chunk
+        // timeout. The cloned client shares the parent's Dispatcher, ConnectionPool,
+        // and interceptors (per OkHttp docs, `newBuilder()` carries those refs
+        // through) so no resource leak on each Update tap.
+        //
+        // callTimeout bounds the whole download: 20 min @ 75 MB = 64 KB/s minimum
+        // throughput. Anything slower is effectively broken anyway and prevents a
+        // slow-loris payload from holding downloadMutex indefinitely.
+        val downloadClient = okHttpClient.newBuilder()
+            .readTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(20, TimeUnit.MINUTES)
+            .build()
+        val call = downloadClient.newCall(request).cancelWhenCoroutineCancels()
         call.execute().use { response ->
             require(response.isSuccessful) {
                 "APK download failed: HTTP ${response.code}"
@@ -258,23 +274,45 @@ class ApkInstaller @Inject constructor(
      * Returns SHA-256 of the package's first signing certificate, or null when
      * none is readable.
      *
-     * Known limitation (cubic R1 C1 / stage-6 Sec-2): when an app rotates its
-     * signing key via v3-signing lineage, `signingCertificateHistory` exposes
-     * the full history; `[0]` is the original (oldest) cert, not the active one.
-     * Comparing `[0]` on a rotated installed app against the new APK's `[0]`
-     * yields a false mismatch and blocks the legitimate upgrade. FitrahTube
-     * has not rotated its signing key, so this branch is dormant; if a rotation
-     * is ever planned, switch this method to compare ANY entry in the installed
-     * lineage against ANY entry in the downloaded lineage (mirrors PackageManager's
-     * own behaviour) and ship the change in a release BEFORE the rotated APK.
+     * Must use [SigningInfo.getApkContentsSigners] — that field is populated for
+     * v1, v2, and v3 signatures alike. [SigningInfo.getSigningCertificateHistory]
+     * is populated for the installed app (Android tracks the lineage in system
+     * records) and for v3-signed APK *files*, but is null/empty for v2-only APK
+     * files parsed by [PackageManager.getPackageArchiveInfo] — which is what we
+     * pass in for the downloaded update. Using the history field caused every
+     * v2-only update download to fail [verifySigningCertMatch] with
+     * "No signing certificate in downloaded APK". FitrahTube release builds
+     * currently ship v2-only, so the bug was 100% reproducible.
+     *
+     * If a v3 key rotation is ever introduced, this stays correct for the
+     * common case (installed.apkContentsSigners[0] == downloaded.apkContentsSigners[0])
+     * and will only require a richer compare against [SigningInfo.signingCertificateHistory]
+     * lineage when an installed app has been ROTATED away from its original key.
      */
     private fun certSha256(info: PackageInfo): String? {
         val signatures: Array<Signature>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.signingInfo?.let { si ->
-                if (si.hasMultipleSigners()) si.apkContentsSigners else si.signingCertificateHistory
-            }
+            info.signingInfo?.apkContentsSigners
         } else {
             @Suppress("DEPRECATION") info.signatures
+        }
+        // Comparing only [0] is safe for FitrahTube today: single-signer, no v3
+        // key rotation. Two future changes would each invalidate this shortcut
+        // and need the richer compare noted in the doc-comment above:
+        //   1) Multi-signer signing: switch to set-equality on the full
+        //      apkContentsSigners array.
+        //   2) v3 key rotation: installed app's apkContentsSigners[0] is the
+        //      *current* (post-rotation) cert, but an installed-but-not-yet-
+        //      upgraded device still reports the *original* cert — a single-
+        //      signer rotation alone would break upgrades from pre-rotation
+        //      installs. Compare against signingCertificateHistory lineage
+        //      from the installed side instead of just [0]==[0].
+        val signerCount = signatures?.size ?: 0
+        if (signerCount > 1) {
+            // Surface the dormant multi-signer branch loudly the day FitrahTube
+            // (or a fork) ships multi-signer — silent [0]==[0] would otherwise
+            // depend on PackageManager's signer ordering, which is not a stable
+            // contract across Android versions.
+            Log.w(TAG, "Multi-signer APK detected (count=$signerCount); [0]==[0] compare may misjudge")
         }
         val first = signatures?.firstOrNull() ?: return null
         return MessageDigest.getInstance("SHA-256")

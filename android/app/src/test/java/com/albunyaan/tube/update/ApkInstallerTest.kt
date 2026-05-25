@@ -96,36 +96,22 @@ class ApkInstallerTest {
     }
 
     // stage-6 testing T1: API P+ takes the GET_SIGNING_CERTIFICATES branch which
-    // reads from `signingInfo.signingCertificateHistory` (single signer) or
-    // `signingInfo.apkContentsSigners` (multi-signer per `hasMultipleSigners`).
-    // The default-config tests above cover the legacy GET_SIGNATURES branch only.
+    // reads from `signingInfo.apkContentsSigners`. The legacy GET_SIGNATURES branch
+    // is covered by the default-config tests above.
+    //
+    // Regression note: a prior implementation read `signingCertificateHistory` for
+    // single-signer APKs. That field is null/empty for v2-only APK *files* parsed
+    // via `PackageManager.getPackageArchiveInfo`, which made every update download
+    // fail with "No signing certificate in downloaded APK" (FitrahTube release APKs
+    // ship v2-only). `apkContentsSigners` is populated for v1/v2/v3 archives alike.
     @Test
     @Config(sdk = [Build.VERSION_CODES.P])
-    fun `verifySigningCertMatch on API P uses signingInfo signingCertificateHistory branch`() {
+    fun `verifySigningCertMatch on API P reads apkContentsSigners`() {
+        // Production no longer branches on hasMultipleSigners() — apkContentsSigners
+        // is the single source of truth for v1/v2/v3 archives. Test name reflects
+        // that; no hasMultipleSigners() stub is needed for the path under test.
         val sig = Signature(byteArrayOf(0x0A, 0x0B, 0x0C))
         val signingInfo = mock<SigningInfo> {
-            whenever(it.hasMultipleSigners()).thenReturn(false)
-            whenever(it.signingCertificateHistory).thenReturn(arrayOf(sig))
-        }
-        val info = packageInfoP(signingInfo)
-        val pm = mock<PackageManager> {
-            whenever(it.getPackageInfo(eq("pkg"), any<Int>())).thenReturn(info)
-            whenever(it.getPackageArchiveInfo(any(), any<Int>())).thenReturn(info)
-        }
-        val activity = mock<Activity> {
-            whenever(it.packageManager).thenReturn(pm)
-            whenever(it.packageName).thenReturn("pkg")
-        }
-        // Same cert on both sides → no throw.
-        ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/p-match.apk"))
-    }
-
-    @Test
-    @Config(sdk = [Build.VERSION_CODES.P])
-    fun `verifySigningCertMatch on API P uses apkContentsSigners when hasMultipleSigners`() {
-        val sig = Signature(byteArrayOf(0x0A, 0x0B, 0x0C))
-        val signingInfo = mock<SigningInfo> {
-            whenever(it.hasMultipleSigners()).thenReturn(true)
             whenever(it.apkContentsSigners).thenReturn(arrayOf(sig))
         }
         val info = packageInfoP(signingInfo)
@@ -138,6 +124,36 @@ class ApkInstallerTest {
             whenever(it.packageName).thenReturn("pkg")
         }
         ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/p-multi.apk"))
+    }
+
+    /**
+     * Regression for the v2-only APK update bug. The downloaded APK's PackageInfo
+     * returned `signingCertificateHistory == null` (because v2-only APK files have
+     * no v3 lineage block to parse) but `apkContentsSigners` populated. The fixed
+     * code reads from `apkContentsSigners` and must accept the match instead of
+     * throwing "No signing certificate in downloaded APK".
+     */
+    @Test
+    @Config(sdk = [Build.VERSION_CODES.P])
+    fun `verifySigningCertMatch accepts v2-only APK where signingCertificateHistory is null`() {
+        val sig = Signature(byteArrayOf(0x77, 0x77, 0x77))
+        val signingInfo = mock<SigningInfo> {
+            whenever(it.apkContentsSigners).thenReturn(arrayOf(sig))
+            // The bug we're regressing: production used to read
+            // signingCertificateHistory, which on a v2-only archive is null/empty.
+            // No need to stub history — production no longer touches it.
+        }
+        val info = packageInfoP(signingInfo)
+        val pm = mock<PackageManager> {
+            whenever(it.getPackageInfo(eq("pkg"), any<Int>())).thenReturn(info)
+            whenever(it.getPackageArchiveInfo(any(), any<Int>())).thenReturn(info)
+        }
+        val activity = mock<Activity> {
+            whenever(it.packageManager).thenReturn(pm)
+            whenever(it.packageName).thenReturn("pkg")
+        }
+        // Must not throw — the bug was throwing here even though certs match.
+        ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/p-v2only.apk"))
     }
 
     // codex stage-6 MEDIUM: package-name match is checked BEFORE cert compare.
@@ -170,12 +186,10 @@ class ApkInstallerTest {
         val installedSig = Signature(byteArrayOf(0x0A))
         val attackerSig = Signature(byteArrayOf(0xB.toByte()))
         val installedSi = mock<SigningInfo> {
-            whenever(it.hasMultipleSigners()).thenReturn(false)
-            whenever(it.signingCertificateHistory).thenReturn(arrayOf(installedSig))
+            whenever(it.apkContentsSigners).thenReturn(arrayOf(installedSig))
         }
         val attackerSi = mock<SigningInfo> {
-            whenever(it.hasMultipleSigners()).thenReturn(false)
-            whenever(it.signingCertificateHistory).thenReturn(arrayOf(attackerSig))
+            whenever(it.apkContentsSigners).thenReturn(arrayOf(attackerSig))
         }
         val installedInfo = packageInfoP(installedSi)
         val attackerInfo = packageInfoP(attackerSi)
