@@ -1,0 +1,29 @@
+android/app/src/test/java/com/albunyaan/tube/ui/me/profile/ProfileViewModelTest.kt
+  s_e026945d130ffb::t_3c1c920ce0d4fa 63
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapViewModel.kt
+  s_e026945d130ffb::t_50982a333eb1b2 3,8,11,25-26,43,49-50,71,79-104,127-134,156,163,170
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapFragment.kt
+  s_e026945d130ffb::t_6cd1d402909257 191
+android/app/src/test/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapViewModelTest.kt
+  s_e026945d130ffb::t_4f8dcb42a4b4a0 3-4,22,24,29,35,48-49,74,85,88,93-94,102,107-108,116,121-122,135,139,144,149,155,158,161-163,169-170,172,178-179,183,189-190,194,200-201,205,211-239
+android/app/src/test/java/com/albunyaan/tube/auth/AccountRepositoryApplyProfileUpdateTest.kt
+  s_e026945d130ffb::t_993a705f04347c 57
+android/app/src/test/java/com/albunyaan/tube/data/account/AccountUpdateRepositoryTest.kt
+  s_e026945d130ffb::t_86a48d8e821ba9 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "41fdfec64130b0e61df2ab09fc0d350391295a22",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
