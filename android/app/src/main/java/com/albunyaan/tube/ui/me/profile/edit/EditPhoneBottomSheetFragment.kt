@@ -102,8 +102,8 @@ class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
                             R.string.edit_phone_updated,
                             Snackbar.LENGTH_SHORT,
                         ).show()
-                        dismiss()
                         viewModel.consumeNav()
+                        dismiss()
                     }
                 }
             }

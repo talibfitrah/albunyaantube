@@ -73,8 +73,8 @@ class EditEmailBottomSheetFragment : BottomSheetDialogFragment() {
                             getString(R.string.edit_email_sent, viewModel.ui.value.newEmail),
                             Snackbar.LENGTH_LONG,
                         ).show()
-                        dismiss()
                         viewModel.consumeNav()
+                        dismiss()
                     }
                 }
             }

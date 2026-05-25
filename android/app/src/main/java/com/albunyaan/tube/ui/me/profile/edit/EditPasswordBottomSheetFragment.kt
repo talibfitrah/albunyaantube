@@ -75,8 +75,8 @@ class EditPasswordBottomSheetFragment : BottomSheetDialogFragment() {
                             R.string.edit_password_updated,
                             Snackbar.LENGTH_LONG,
                         ).show()
-                        dismiss()
                         viewModel.consumeNav()
+                        dismiss()
                     }
                 }
             }
