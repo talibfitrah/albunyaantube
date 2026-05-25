@@ -1,0 +1,29 @@
+backend/src/main/java/com/albunyaan/tube/security/FirebaseAuthFilter.java
+  s_e026945d130ffb::t_ebd904125d22b3 223
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_e026945d130ffb::t_e147ec568ec630 60-68
+backend/src/test/java/com/albunyaan/tube/service/AccountProfileServiceUpdateProfileTest.java
+  s_e026945d130ffb::t_47891ffcccb810 295-310
+backend/src/main/java/com/albunyaan/tube/service/AccountProfileService.java
+  s_e026945d130ffb::t_269d64ce94a3b3 235-238
+backend/src/main/java/com/albunyaan/tube/security/FirebaseUserDetails.java
+  s_e026945d130ffb::t_952319232b53e3 13,16-19,23,38-39
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerTest.java
+  s_e026945d130ffb::t_c906cb52b5068b 272-291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "3a3fe2c353c5402305281546d8e17bb41a19a1f6",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
