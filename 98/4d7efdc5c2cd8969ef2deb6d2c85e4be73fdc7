@@ -1,0 +1,19 @@
+android/app/src/main/res/navigation/app_nav_graph.xml
+  s_e026945d130ffb::t_480954e04846d8 72-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "984d7efdc5c2cd8969ef2deb6d2c85e4be73fdc7",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
