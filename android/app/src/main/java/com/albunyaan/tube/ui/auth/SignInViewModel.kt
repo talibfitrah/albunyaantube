@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.albunyaan.tube.util.isEmailShape
 import javax.inject.Inject
 
 /**
@@ -108,15 +109,6 @@ class SignInViewModel @Inject constructor(
                 )
             }
         }
-    }
-
-    private fun isEmailShape(s: String): Boolean {
-        // Single @, non-empty local and domain, domain has a dot.
-        val at = s.indexOf('@')
-        if (at <= 0 || at != s.lastIndexOf('@')) return false
-        if (at == s.length - 1) return false
-        val domain = s.substring(at + 1)
-        return domain.contains('.') && !domain.startsWith('.') && !domain.endsWith('.')
     }
 
     companion object {
