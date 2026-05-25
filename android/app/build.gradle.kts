@@ -317,6 +317,35 @@ dependencies {
     // misbehaves on version drift).
     val coroutinesVersion = "1.9.0"
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
+    // Transitive override: kotlinx-serialization-core is pulled in by
+    // kotlin-reflect / Firebase. We never import @Serializable directly — this
+    // entry exists ONLY to keep the version off the broken 1.6.x line.
+    //
+    // The library declares a ClassValueReferences subclass of
+    // java.lang.ClassValue. On pre-Android-12 devices (Huawei EMUI 9, stock
+    // Android 9–11) ClassValue is declared in the SDK from API 26 but not
+    // actually backed by ART until API 31, so the subclass class-init throws
+    // NoClassDefFoundError. In 1.6.x that failure was uncaught and propagated
+    // up through FirebaseApp bootstrap, dropping the entire auth subsystem
+    // (user reports: "suddenly logged off, personal lists gone"). 1.7.x wraps
+    // the cache factory in try/Throwable so the failure is caught and the
+    // library transparently falls back to a ConcurrentHashMap-backed cache —
+    // ART still logs "Rejecting re-init on previously-failed class" each cold
+    // start, but the app boots cleanly. See Kotlin/kotlinx.serialization#2638.
+    //
+    // `strictly` (not a plain version request) makes this a hard fail if any
+    // future transitive bump tries to drag us back to 1.6.x OR ahead into a
+    // 2.x major that may break Kotlin 2.0.21 binary compat. Without strictly,
+    // Gradle's conflict-resolution silently picks the higher version and the
+    // protection evaporates without a build warning (Stage 1 review P1).
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core") {
+        version { strictly("1.7.3") }
+        because(
+            "Block 1.6.x ClassValue crash on Android < 12. Exact pin (not range) because " +
+                "an ancestor BOM transitively bumps to 1.11.0 which is untested against " +
+                "Kotlin 2.0.21 binary compat — bump deliberately when ready."
+        )
+    }
     // Plan B (ANDROID-AUTH-01) T1: Firebase Auth + Google Sign-In.
     // BoM pins all firebase-* artifact versions transitively — DO NOT add
     // explicit versions to firebase-auth or other firebase- modules below.

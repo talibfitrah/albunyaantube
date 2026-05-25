@@ -86,8 +86,11 @@ class AvailableVersionsAdapter(
                     action.text = itemView.context.getString(R.string.available_versions_install)
                     action.isEnabled = true
                     action.setOnClickListener { onInstallClick(row) }
-                    itemView.setOnClickListener(null)
-                    itemView.isClickable = false
+                    // Whole row routes to install for newer rows. Tapping the row body
+                    // (left of the Install button) registered as a no-op before — easy
+                    // to miss the small right-side button, especially on dense layouts.
+                    itemView.setOnClickListener { onInstallClick(row) }
+                    itemView.isClickable = true
                 }
                 RowState.Current -> {
                     action.visibility = View.GONE
