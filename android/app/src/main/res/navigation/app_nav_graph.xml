@@ -69,6 +69,33 @@
             app:destination="@id/splashFragment"
             app:popUpTo="@id/app_nav_graph"
             app:popUpToInclusive="true" />
+        <!-- Task 17: route unverified email/password to email verification. -->
+        <action
+            android:id="@+id/action_signIn_to_emailVerification"
+            app:destination="@id/emailVerificationFragment"
+            app:popUpTo="@id/signInFragment"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <!-- Task 17: Email verification screen for newly signed up users. -->
+    <fragment
+        android:id="@+id/emailVerificationFragment"
+        android:name="com.albunyaan.tube.ui.auth.EmailVerificationFragment"
+        android:label="EmailVerification">
+        <!-- Route to splash after email is verified. SplashRouter then decides
+             final destination (main, bootstrap, or blocked). popUpTo inclusive
+             prevents back-stack from restoring verification screen. -->
+        <action
+            android:id="@+id/action_emailVerification_to_splash"
+            app:destination="@id/splashFragment"
+            app:popUpTo="@id/emailVerificationFragment"
+            app:popUpToInclusive="true" />
+        <!-- Route back to sign-in to restart auth (e.g. sign out, wrong email). -->
+        <action
+            android:id="@+id/action_emailVerification_to_signIn"
+            app:destination="@id/signInFragment"
+            app:popUpTo="@id/emailVerificationFragment"
+            app:popUpToInclusive="true" />
     </fragment>
 
     <fragment
