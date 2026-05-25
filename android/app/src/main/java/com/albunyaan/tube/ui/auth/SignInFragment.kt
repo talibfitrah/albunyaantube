@@ -31,6 +31,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.OAuthProvider
 import dagger.hilt.android.AndroidEntryPoint
@@ -147,12 +148,26 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
             authRepository.authState
                 .filterIsInstance<AuthState.SignedIn>()
                 .first()
-            if (!hasNavigatedFromSignIn) {
-                hasNavigatedFromSignIn = true
-                val nav = findNavController()
-                if (nav.currentDestination?.id == R.id.signInFragment) {
-                    nav.navigate(R.id.action_signIn_to_splash)
-                }
+            if (hasNavigatedFromSignIn) return@launch
+            hasNavigatedFromSignIn = true
+
+            val user = firebaseAuth.currentUser
+            val isPasswordProvider = user?.providerData
+                ?.any { it.providerId == EmailAuthProvider.PROVIDER_ID } == true
+            val needsVerification = isPasswordProvider && user?.isEmailVerified == false
+
+            if (needsVerification && viewModel.ui.value.mode == SignInViewModel.Mode.SIGN_UP) {
+                try { user!!.sendEmailVerification().await() } catch (_: Exception) { /* ignored */ }
+            }
+
+            val actionId = if (needsVerification) {
+                R.id.action_signIn_to_emailVerification
+            } else {
+                R.id.action_signIn_to_splash
+            }
+            val nav = findNavController()
+            if (nav.currentDestination?.id == R.id.signInFragment) {
+                nav.navigate(actionId)
             }
         }
     }
