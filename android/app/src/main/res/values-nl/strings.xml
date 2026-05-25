@@ -679,5 +679,12 @@
     <string name="empty_state_generic_headline">Nog geen inhoud</string>
     <string name="error_state_generic_headline">Er is iets misgegaan</string>
 
+    <!-- Profile bootstrap: phone -->
+    <string name="bootstrap_phone_country_label">Land</string>
+    <string name="bootstrap_phone_label">Mobiel nummer</string>
+    <string name="bootstrap_phone_hint">Telefoonnummer</string>
+    <string name="bootstrap_error_invalid_phone_country">Kies je land</string>
+    <string name="bootstrap_error_invalid_phone">Voer een geldig mobiel nummer in</string>
+
 </resources>
 

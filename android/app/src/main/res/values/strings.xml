@@ -796,4 +796,11 @@
          always renders even when the consumer only sets the body text. -->
     <string name="empty_state_generic_headline">No content yet</string>
     <string name="error_state_generic_headline">Something went wrong</string>
+
+    <!-- Profile bootstrap: phone -->
+    <string name="bootstrap_phone_country_label">Country</string>
+    <string name="bootstrap_phone_label">Mobile number</string>
+    <string name="bootstrap_phone_hint">Phone number</string>
+    <string name="bootstrap_error_invalid_phone_country">Pick your country</string>
+    <string name="bootstrap_error_invalid_phone">Enter a valid mobile number</string>
 </resources>

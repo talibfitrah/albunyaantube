@@ -709,4 +709,11 @@
     <string name="empty_state_generic_headline">لا يوجد محتوى بعد</string>
     <string name="error_state_generic_headline">حدث خطأ ما</string>
 
+    <!-- Profile bootstrap: phone -->
+    <string name="bootstrap_phone_country_label">الدولة</string>
+    <string name="bootstrap_phone_label">رقم الجوال</string>
+    <string name="bootstrap_phone_hint">رقم الهاتف</string>
+    <string name="bootstrap_error_invalid_phone_country">اختر دولتك</string>
+    <string name="bootstrap_error_invalid_phone">أدخل رقم جوال صحيح</string>
+
 </resources>
