@@ -1,5 +1,6 @@
 package com.albunyaan.tube.dto;
 
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
@@ -20,5 +21,6 @@ import java.time.LocalDate;
  */
 public record UpdateProfileRequest(
     @Size(min = 1, max = 40) String displayName,   // null = no change
-    LocalDate dateOfBirth                           // null = no change
+    LocalDate dateOfBirth,                          // null = no change
+    @Pattern(regexp = "^\\+[1-9]\\d{7,14}$", message = "must be E.164 format") String phoneNumber
 ) {}

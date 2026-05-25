@@ -18,6 +18,7 @@ public class AccountMeResponse {
     private final String email;
     private final String displayName;
     private final String dateOfBirth;
+    private final String phoneNumber;
     private final String status;
     private final String role;
 
@@ -25,12 +26,13 @@ public class AccountMeResponse {
     private final Instant profileCompletedAt;
 
     private AccountMeResponse(String uid, String email, String displayName,
-                               String dateOfBirth, String status, String role,
+                               String dateOfBirth, String phoneNumber, String status, String role,
                                Instant profileCompletedAt) {
         this.uid = uid;
         this.email = email;
         this.displayName = displayName;
         this.dateOfBirth = dateOfBirth;
+        this.phoneNumber = phoneNumber;
         this.status = status;
         this.role = role;
         this.profileCompletedAt = profileCompletedAt;
@@ -54,6 +56,7 @@ public class AccountMeResponse {
                 u.getEmail(),
                 u.getDisplayName(),
                 dobIso,
+                u.getPhoneNumber(),
                 u.getStatus(),
                 u.getRole(),
                 completedAt);
@@ -63,6 +66,7 @@ public class AccountMeResponse {
     public String getEmail() { return email; }
     public String getDisplayName() { return displayName; }
     public String getDateOfBirth() { return dateOfBirth; }
+    public String getPhoneNumber() { return phoneNumber; }
     public String getStatus() { return status; }
     public String getRole() { return role; }
     public Instant getProfileCompletedAt() { return profileCompletedAt; }
