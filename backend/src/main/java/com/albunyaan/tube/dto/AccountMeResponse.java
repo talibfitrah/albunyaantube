@@ -11,6 +11,7 @@ import java.time.ZoneOffset;
  * Public response for GET /api/account/me and POST /api/account/profile.
  * User-safe fields only — no admin metadata (blockedBy, deletedBy, etc).
  * {@code dateOfBirth} serializes as ISO-8601 {@code YYYY-MM-DD}.
+ * {@code phoneNumber} serializes as E.164 format (e.g. "+31612345678") or null.
  */
 public class AccountMeResponse {
 

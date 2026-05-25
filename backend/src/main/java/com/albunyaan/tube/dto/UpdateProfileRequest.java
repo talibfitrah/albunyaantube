@@ -18,6 +18,9 @@ import java.time.LocalDate;
  * <p>{@code dateOfBirth} is a {@link LocalDate} serialized as an ISO-8601 string
  * ("YYYY-MM-DD") on the wire, consistent with {@code CompleteProfileRequest} and
  * the Android client's {@code UpdateProfileRequestDto}.
+ *
+ * <p>{@code phoneNumber} is an E.164-formatted string (e.g. "+31612345678").
+ * Null means "no change"; backend validates the pattern only when non-null.
  */
 public record UpdateProfileRequest(
     @Size(min = 1, max = 40) String displayName,   // null = no change
