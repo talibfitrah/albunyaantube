@@ -81,12 +81,15 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
             val row = countries.getOrNull(position) ?: return@setOnItemClickListener
             viewModel.onPhoneCountryChanged(row.first)
         }
-        // Seed default selection from device locale
+        // Seed default selection from device locale — only on first creation,
+        // not on rotation, so the user's own selection is not overwritten.
         val defaultIso = (requireContext().resources.configuration.locales[0].country)
             .takeIf { it.isNotBlank() } ?: "NL"
-        countries.firstOrNull { it.first == defaultIso }?.let { (iso, display) ->
-            phoneCountryField.setText(display, /* filter */ false)
-            viewModel.onPhoneCountryChanged(iso)
+        if (savedInstanceState == null && viewModel.ui.value.phoneCountry == null) {
+            countries.firstOrNull { it.first == defaultIso }?.let { (iso, display) ->
+                phoneCountryField.setText(display, /* filter */ false)
+                viewModel.onPhoneCountryChanged(iso)
+            }
         }
 
         wireListeners()

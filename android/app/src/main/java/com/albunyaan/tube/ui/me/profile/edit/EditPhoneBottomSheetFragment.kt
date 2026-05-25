@@ -45,7 +45,9 @@ class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
 
         val seedCountry = arguments?.getString(ARG_COUNTRY)
         val seedNumber  = arguments?.getString(ARG_NUMBER)
-        viewModel.seed(seedCountry, seedNumber)
+        if (savedInstanceState == null && viewModel.ui.value.country == null) {
+            viewModel.seed(seedCountry, seedNumber)
+        }
 
         val rows = PhoneFormat.countryRows(requireContext())
         val adapter = ArrayAdapter(
@@ -56,11 +58,13 @@ class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
         countryField.setOnItemClickListener { _, _, position, _ ->
             viewModel.onCountryChanged(rows[position].first)
         }
-        seedCountry?.let { iso ->
-            val display = rows.firstOrNull { it.first == iso }?.second
-            if (display != null) countryField.setText(display, /* filter */ false)
+        if (savedInstanceState == null) {
+            seedCountry?.let { iso ->
+                val display = rows.firstOrNull { it.first == iso }?.second
+                if (display != null) countryField.setText(display, /* filter */ false)
+            }
+            seedNumber?.let { numberField.setText(it) }
         }
-        seedNumber?.let { numberField.setText(it) }
 
         numberField.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
