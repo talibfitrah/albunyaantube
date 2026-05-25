@@ -80,6 +80,9 @@ class EmailVerificationViewModel @Inject constructor(
                 } else {
                     _ui.update { it.copy(isChecking = false, error = EmailVerifyError.NOT_YET_VERIFIED) }
                 }
+            } catch (e: com.google.firebase.FirebaseTooManyRequestsException) {
+                _ui.update { it.copy(isChecking = false, error = EmailVerifyError.RATE_LIMITED) }
+                return@launch
             } catch (e: Exception) {
                 _ui.update { it.copy(isChecking = false, error = EmailVerifyError.NETWORK) }
             }
@@ -111,7 +114,7 @@ class EmailVerificationViewModel @Inject constructor(
                 saved["lastSentAtMs"] = now
                 _ui.update { it.copy(isResending = false, lastSentAtMs = now) }
             } catch (e: Exception) {
-                val mapped = if (e.message?.contains("too-many-requests", ignoreCase = true) == true)
+                val mapped = if (e is com.google.firebase.FirebaseTooManyRequestsException)
                     EmailVerifyError.RATE_LIMITED
                 else EmailVerifyError.NETWORK
                 _ui.update { it.copy(isResending = false, error = mapped) }

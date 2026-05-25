@@ -94,4 +94,17 @@ class EmailVerificationViewModelTest {
         verify(authRepository).signOut()
         assertEquals(EmailVerificationViewModel.Nav.NavigateToSignIn, vm.nav.value)
     }
+
+    @Test fun `resend with FirebaseTooManyRequestsException surfaces RATE_LIMITED`() = runTest(dispatcher) {
+        whenever(user.sendEmailVerification()).thenReturn(
+            Tasks.forException(com.google.firebase.FirebaseTooManyRequestsException("Blocked due to unusual activity"))
+        )
+        saved["lastSentAtMs"] = System.currentTimeMillis() - 70_000L // outside cooldown
+        val vm = newVm()
+        advanceUntilIdle()
+        clearInvocations(user)
+        vm.resend()
+        advanceUntilIdle()
+        assertEquals(EmailVerifyError.RATE_LIMITED, vm.ui.value.error)
+    }
 }
