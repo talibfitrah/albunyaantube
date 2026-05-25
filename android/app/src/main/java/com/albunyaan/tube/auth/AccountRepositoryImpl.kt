@@ -157,6 +157,7 @@ class AccountRepositoryImpl(
                 current.copy(
                     displayName = response.displayName ?: current.displayName,
                     dateOfBirth = response.dateOfBirth ?: current.dateOfBirth,
+                    phoneNumber = response.phoneNumber ?: current.phoneNumber,
                 )
             } else {
                 current

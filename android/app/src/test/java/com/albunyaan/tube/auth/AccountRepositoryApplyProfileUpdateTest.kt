@@ -155,4 +155,23 @@ class AccountRepositoryApplyProfileUpdateTest {
         repository.applyProfileUpdate(fakeDto(displayName = "Ghost"))
         assertTrue(repository.accountState.value !is AccountState.Loaded)
     }
+
+    @Test
+    fun `applyProfileUpdate replaces phoneNumber when response has it`() = runTest(dispatcher) {
+        seedLoaded()
+        val response = fakeDto().copy(phoneNumber = "+447412345678")
+        repository.applyProfileUpdate(response)
+        val loaded = repository.accountState.value as AccountState.Loaded
+        assertEquals("+447412345678", loaded.phoneNumber)
+    }
+
+    @Test
+    fun `applyProfileUpdate preserves existing phoneNumber when response has null`() = runTest(dispatcher) {
+        whenever(service.getMe()).thenReturn(fakeDto().copy(phoneNumber = "+31612345678"))
+        repository.fetchMe()
+        val response = fakeDto().copy(phoneNumber = null)
+        repository.applyProfileUpdate(response)
+        val loaded = repository.accountState.value as AccountState.Loaded
+        assertEquals("+31612345678", loaded.phoneNumber)
+    }
 }
