@@ -60,7 +60,27 @@ class ProfileBootstrapViewModel @Inject constructor(
         val profileSaved: Boolean = false,
         val isLoading: Boolean = false,
         val error: BootstrapError? = null,
-    )
+    ) {
+        /**
+         * Returns the first validation error in field-order, or null when the
+         * state is valid. Shared source of truth between [isFormValid] (button
+         * enable state) and [submit] (error-message dispatch) so the two cannot
+         * drift out of sync (cubic R2 P2).
+         */
+        fun firstValidationError(): BootstrapError? {
+            val name = displayName.trim()
+            if (name.isBlank() || name.length > 40) return BootstrapError.INVALID_NAME
+            if (dateOfBirth == null) return BootstrapError.INVALID_DOB
+            if (passwordRequired) {
+                if (password.length < MIN_PASSWORD_LENGTH) return BootstrapError.INVALID_PASSWORD
+                if (password != passwordConfirm) return BootstrapError.PASSWORD_MISMATCH
+            }
+            return null
+        }
+
+        /** Drives submit button enable state. True iff the form passes [firstValidationError]. */
+        val isFormValid: Boolean get() = firstValidationError() == null
+    }
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -111,26 +131,13 @@ class ProfileBootstrapViewModel @Inject constructor(
     fun submit() {
         val s = _ui.value
         if (s.isLoading) return  // de-dupe rapid double-taps
+        val validationError = s.firstValidationError()
+        if (validationError != null) {
+            _ui.update { it.copy(error = validationError) }
+            return
+        }
         val name = s.displayName.trim()
-        if (name.isBlank() || name.length > 40) {
-            _ui.update { it.copy(error = BootstrapError.INVALID_NAME) }
-            return
-        }
-        val dob = s.dateOfBirth
-        if (dob == null) {
-            _ui.update { it.copy(error = BootstrapError.INVALID_DOB) }
-            return
-        }
-        if (s.passwordRequired) {
-            if (s.password.length < MIN_PASSWORD_LENGTH) {
-                _ui.update { it.copy(error = BootstrapError.INVALID_PASSWORD) }
-                return
-            }
-            if (s.password != s.passwordConfirm) {
-                _ui.update { it.copy(error = BootstrapError.PASSWORD_MISMATCH) }
-                return
-            }
-        }
+        val dob = s.dateOfBirth!!  // firstValidationError() guarantees non-null
         _ui.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
             // Skip completeProfile if a prior submit already saved it and

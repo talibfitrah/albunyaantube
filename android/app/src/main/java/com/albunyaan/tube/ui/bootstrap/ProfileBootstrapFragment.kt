@@ -188,7 +188,7 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
             displayNameField.setSelection(state.displayName.length)
         }
         dobField.setText(state.dateOfBirth?.format(DateTimeFormatter.ISO_LOCAL_DATE).orEmpty())
-        submitButton.isEnabled = !state.isLoading
+        submitButton.isEnabled = state.isFormValid && !state.isLoading
 
         // Password section visibility is driven entirely by the
         // passwordRequired flag (set on entry from providerData). Don't

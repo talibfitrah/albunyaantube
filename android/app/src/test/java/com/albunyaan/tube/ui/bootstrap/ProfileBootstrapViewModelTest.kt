@@ -120,4 +120,70 @@ class ProfileBootstrapViewModelTest {
         advanceUntilIdle()
         verify(repository, never()).completeProfile(any(), any())
     }
+
+    @Test fun `isFormValid is false on initial empty state`() {
+        assertFalse(viewModel.ui.value.isFormValid)
+    }
+
+    @Test fun `isFormValid is false when name is blank but dob is set`() {
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        assertFalse(viewModel.ui.value.isFormValid)
+    }
+
+    @Test fun `isFormValid is false when dob is missing but name is set`() {
+        viewModel.onDisplayNameChanged("Alice")
+        assertFalse(viewModel.ui.value.isFormValid)
+    }
+
+    @Test fun `isFormValid is false when name exceeds 40 chars`() {
+        viewModel.onDisplayNameChanged("A".repeat(41))
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        assertFalse(viewModel.ui.value.isFormValid)
+    }
+
+    @Test fun `isFormValid is true with name and dob when password not required`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        assertTrue(viewModel.ui.value.isFormValid)
+    }
+
+    @Test fun `isFormValid is false when passwordRequired but password missing`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.setPasswordRequirement(true)
+        assertFalse(viewModel.ui.value.isFormValid)
+    }
+
+    @Test fun `isFormValid is false when password is too short`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.setPasswordRequirement(true)
+        viewModel.onPasswordChanged("short")
+        viewModel.onPasswordConfirmChanged("short")
+        assertFalse(viewModel.ui.value.isFormValid)
+    }
+
+    @Test fun `isFormValid is false when passwords do not match`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.setPasswordRequirement(true)
+        viewModel.onPasswordChanged("validpass1")
+        viewModel.onPasswordConfirmChanged("validpass2")
+        assertFalse(viewModel.ui.value.isFormValid)
+    }
+
+    @Test fun `isFormValid is true with matching 8+ char password when required`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.setPasswordRequirement(true)
+        viewModel.onPasswordChanged("validpass1")
+        viewModel.onPasswordConfirmChanged("validpass1")
+        assertTrue(viewModel.ui.value.isFormValid)
+    }
+
+    @Test fun `isFormValid trims whitespace-only name as blank`() {
+        viewModel.onDisplayNameChanged("   ")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        assertFalse(viewModel.ui.value.isFormValid)
+    }
 }
