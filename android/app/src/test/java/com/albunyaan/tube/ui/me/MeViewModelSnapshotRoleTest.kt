@@ -87,6 +87,7 @@ class MeViewModelSnapshotRoleTest {
                 email = "test@example.com",
                 displayName = "Farouq",
                 dateOfBirth = null,
+                phoneNumber = null,
                 status = AccountStatus.ACTIVE,
                 role = "moderator",
             )
@@ -110,7 +111,7 @@ class MeViewModelSnapshotRoleTest {
         override val accountState: StateFlow<AccountState> = MutableStateFlow(initial)
         override suspend fun fetchMe() =
             Result.failure<AccountState.Loaded>(RuntimeException("stub"))
-        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate) =
+        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate, phoneNumber: String) =
             Result.failure<AccountState.Loaded>(RuntimeException("stub"))
         override fun signOut() {}
         override fun applyProfileUpdate(response: AccountMeResponseDto) {}

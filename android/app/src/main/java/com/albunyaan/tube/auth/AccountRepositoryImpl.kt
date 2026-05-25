@@ -120,10 +120,12 @@ class AccountRepositoryImpl(
     override suspend fun completeProfile(
         displayName: String,
         dateOfBirth: LocalDate,
+        phoneNumber: String,
     ): Result<AccountState.Loaded> {
         val request = CompleteProfileRequestDto(
             displayName = displayName,
             dateOfBirth = dateOfBirth.format(DateTimeFormatter.ISO_LOCAL_DATE),
+            phoneNumber = phoneNumber,
         )
         return try {
             val dto = service.completeProfile(request)
@@ -167,6 +169,7 @@ class AccountRepositoryImpl(
         email = email,
         displayName = displayName,
         dateOfBirth = dateOfBirth,
+        phoneNumber = phoneNumber,
         status = AccountStatus.fromWire(status),
         role = (role ?: "user").lowercase(),
     )

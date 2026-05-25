@@ -37,7 +37,11 @@ interface AccountRepository {
      * `Result.failure(AgeIneligibleError)`; on other failures returns the
      * underlying exception.
      */
-    suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate): Result<AccountState.Loaded>
+    suspend fun completeProfile(
+        displayName: String,
+        dateOfBirth: LocalDate,
+        phoneNumber: String,
+    ): Result<AccountState.Loaded>
 
     /** Clears local state on sign-out. Does not call the network. */
     fun signOut()

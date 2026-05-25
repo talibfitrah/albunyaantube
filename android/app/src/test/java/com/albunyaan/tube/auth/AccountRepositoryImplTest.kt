@@ -84,12 +84,12 @@ class AccountRepositoryImplTest {
     @Test fun `completeProfile success updates accountState`() = runTest(dispatcher) {
         whenever(service.completeProfile(any())).thenReturn(dto(status = "active"))
 
-        val result = repository.completeProfile("Alice", LocalDate.of(2000, 1, 1))
+        val result = repository.completeProfile("Alice", LocalDate.of(2000, 1, 1), "+31612345678")
 
         assertTrue(result.isSuccess)
         val state = repository.accountState.first() as AccountState.Loaded
         assertEquals(AccountStatus.ACTIVE, state.status)
-        verify(service).completeProfile(CompleteProfileRequestDto("Alice", "2000-01-01"))
+        verify(service).completeProfile(CompleteProfileRequestDto("Alice", "2000-01-01", "+31612345678"))
     }
 
     @Test fun `completeProfile maps 422 AGE_INELIGIBLE to AgeIneligibleError`() = runTest(dispatcher) {
@@ -98,7 +98,7 @@ class AccountRepositoryImplTest {
         whenever(service.completeProfile(any()))
             .thenThrow(HttpException(Response.error<Any>(422, errBody)))
 
-        val result = repository.completeProfile("Kid", LocalDate.of(2020, 1, 1))
+        val result = repository.completeProfile("Kid", LocalDate.of(2020, 1, 1), "+31612345678")
         assertTrue(result.isFailure)
         assertTrue(result.exceptionOrNull() is AgeIneligibleError)
     }
@@ -114,6 +114,6 @@ class AccountRepositoryImplTest {
     private fun dto(status: String, displayName: String = "Alice", dateOfBirth: String? = null) =
         AccountMeResponseDto(
             uid = "uid-1", email = "a@b.com", displayName = displayName,
-            dateOfBirth = dateOfBirth, status = status, role = "user", profileCompletedAt = null,
+            dateOfBirth = dateOfBirth, phoneNumber = null, status = status, role = "user", profileCompletedAt = null,
         )
 }

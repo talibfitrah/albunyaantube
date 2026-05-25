@@ -47,6 +47,7 @@ class ProfileViewModelTest {
         email = email,
         displayName = displayName,
         dateOfBirth = dateOfBirth,
+        phoneNumber = null,
         status = AccountStatus.ACTIVE,
         role = "USER",
     )

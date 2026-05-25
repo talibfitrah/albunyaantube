@@ -78,7 +78,8 @@ class ProfileBootstrapViewModelTest {
         whenever(repository.completeProfile("Alice", LocalDate.of(2000, 1, 1)))
             .thenReturn(Result.success(AccountState.Loaded(
                 uid = "uid-1", email = "a@b.com", displayName = "Alice",
-                dateOfBirth = null, status = AccountStatus.ACTIVE, role = "user")))
+                dateOfBirth = null, phoneNumber = null,
+                status = AccountStatus.ACTIVE, role = "user")))
 
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
