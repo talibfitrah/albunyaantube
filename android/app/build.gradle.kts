@@ -348,9 +348,10 @@ dependencies {
     implementation("com.squareup.moshi:moshi:1.15.2")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    // NewPipeExtractor v0.26.1: patch release on top of v0.26.0
-    // Release notes: https://github.com/TeamNewPipe/NewPipeExtractor/releases/tag/v0.26.1
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.1")
+    // NewPipeExtractor v0.26.2: includes PR #1492 — fixes channel-tab Videos/Live
+    // returning empty after YouTube's lockupViewModel response-shape rollout.
+    // Release notes: https://github.com/TeamNewPipe/NewPipeExtractor/releases/tag/v0.26.2
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.2")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("io.coil-kt:coil:2.7.0")
