@@ -237,4 +237,59 @@ class AccountProfileServiceUpdateProfileTest {
             new UpdateProfileRequest("Anyone", null, null)))
             .isInstanceOf(UserNotFoundException.class);
     }
+
+    // ------------------------------------------------------------------
+    // Phone: happy path — new phone persists and audit diff emitted
+    // ------------------------------------------------------------------
+    @Test
+    void updateProfilePhoneOnlyPersistsAndAudits() throws Exception {
+        User existing = baseUser("uid-1", "Alice", null);
+        existing.setPhoneNumber("+31612345678");
+        when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+
+        AccountMeResponse resp = svc.updateProfile("uid-1",
+            new UpdateProfileRequest(null, null, "+447412345678"));
+
+        assertThat(resp.getPhoneNumber()).isEqualTo("+447412345678");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, Object>> updatesCaptor =
+            ArgumentCaptor.forClass(java.util.Map.class);
+        verify(userRepository).updateFields(eq("uid-1"), updatesCaptor.capture());
+        assertThat(updatesCaptor.getValue()).containsEntry("phoneNumber", "+447412345678");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, Object>> diffCaptor =
+            ArgumentCaptor.forClass(java.util.Map.class);
+        verify(auditLogService).logProfileEdit(eq("uid-1"), diffCaptor.capture());
+        assertThat(diffCaptor.getValue()).containsEntry("phoneNumber", "changed");
+    }
+
+    // ------------------------------------------------------------------
+    // Phone: same value → no-op (no save, no audit)
+    // ------------------------------------------------------------------
+    @Test
+    void updateProfilePhoneSameAsExistingIsNoOp() throws Exception {
+        User existing = baseUser("uid-1", "Alice", null);
+        existing.setPhoneNumber("+31612345678");
+        when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+
+        svc.updateProfile("uid-1", new UpdateProfileRequest(null, null, "+31612345678"));
+
+        verify(userRepository, never()).updateFields(any(), any());
+        verify(auditLogService, never()).logProfileEdit(any(), any());
+    }
+
+    // ------------------------------------------------------------------
+    // Phone: malformed value → ProfileValidationException, no persist
+    // ------------------------------------------------------------------
+    @Test
+    void updateProfileRejectsMalformedPhone() throws Exception {
+        User existing = baseUser("uid-1", "Alice", null);
+        existing.setPhoneNumber("+31612345678");
+        when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> svc.updateProfile("uid-1",
+            new UpdateProfileRequest(null, null, "not-a-phone")))
+            .isInstanceOf(ProfileValidationException.class);
+        verify(userRepository, never()).updateFields(any(), any());
+    }
 }

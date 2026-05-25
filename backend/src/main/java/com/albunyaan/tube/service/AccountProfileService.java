@@ -245,6 +245,9 @@ public class AccountProfileService {
             validateDateOfBirth(body.dateOfBirth());
             enforceAgeOrReject(uid, body.dateOfBirth());
         }
+        if (body.phoneNumber() != null) {
+            validatePhoneNumber(body.phoneNumber());
+        }
 
         if (isNoOpUpdate(user, body)) {
             return AccountMeResponse.from(user);
@@ -264,6 +267,11 @@ public class AccountProfileService {
                     body.dateOfBirth().atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0);
             updates.put("dateOfBirth", dobTs);
             updated.setDateOfBirth(dobTs);
+        }
+        if (body.phoneNumber() != null) {
+            String trimmed = body.phoneNumber().trim();
+            updates.put("phoneNumber", trimmed);
+            updated.setPhoneNumber(trimmed);
         }
         userRepository.updateFields(uid, updates);
         // Mirror the persisted serverTimestamp on the local response
@@ -286,7 +294,9 @@ public class AccountProfileService {
                 || body.displayName().trim().equals(u.getDisplayName());
         boolean dobSame = body.dateOfBirth() == null
                 || body.dateOfBirth().equals(timestampToLocalDate(u.getDateOfBirth()));
-        return nameSame && dobSame;
+        boolean phoneSame = body.phoneNumber() == null
+                || body.phoneNumber().trim().equals(u.getPhoneNumber());
+        return nameSame && dobSame && phoneSame;
     }
 
     private LocalDate timestampToLocalDate(Timestamp t) {
@@ -307,6 +317,9 @@ public class AccountProfileService {
         }
         if (!Objects.equals(before.getDateOfBirth(), after.getDateOfBirth())) {
             diff.put("dateOfBirth", "changed");
+        }
+        if (!Objects.equals(before.getPhoneNumber(), after.getPhoneNumber())) {
+            diff.put("phoneNumber", "changed");
         }
         return diff;
     }
