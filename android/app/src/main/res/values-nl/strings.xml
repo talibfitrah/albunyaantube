@@ -703,6 +703,16 @@
     <string name="edit_email_invalid">Geen geldig e-mailadres</string>
     <string name="edit_email_in_use">E-mailadres is al in gebruik</string>
 
+    <string name="edit_password_title">Wachtwoord wijzigen</string>
+    <string name="edit_password_current">Huidig wachtwoord</string>
+    <string name="edit_password_new">Nieuw wachtwoord</string>
+    <string name="edit_password_confirm">Nieuw wachtwoord bevestigen</string>
+    <string name="edit_password_update">Wachtwoord bijwerken</string>
+    <string name="edit_password_updated">Wachtwoord bijgewerkt.</string>
+    <string name="edit_password_wrong_current">Huidig wachtwoord is onjuist</string>
+    <string name="edit_password_weak">Wachtwoord moet minimaal 8 tekens bevatten</string>
+    <string name="edit_password_mismatch">Wachtwoorden komen niet overeen</string>
+
     <!-- Email verification (Plan B T5) -->
     <string name="email_verification_title">Bevestig je e-mail</string>
     <string name="email_verification_body">We hebben een bevestigingslink gestuurd naar %1$s. Klik erop en kom dan terug.</string>

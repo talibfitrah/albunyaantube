@@ -733,6 +733,16 @@
     <string name="edit_email_invalid">عنوان بريد غير صالح</string>
     <string name="edit_email_in_use">البريد الإلكتروني مستخدم بالفعل</string>
 
+    <string name="edit_password_title">تغيير كلمة المرور</string>
+    <string name="edit_password_current">كلمة المرور الحالية</string>
+    <string name="edit_password_new">كلمة المرور الجديدة</string>
+    <string name="edit_password_confirm">تأكيد كلمة المرور الجديدة</string>
+    <string name="edit_password_update">تحديث كلمة المرور</string>
+    <string name="edit_password_updated">تم تحديث كلمة المرور.</string>
+    <string name="edit_password_wrong_current">كلمة المرور الحالية غير صحيحة</string>
+    <string name="edit_password_weak">يجب أن تتكون كلمة المرور من 8 أحرف على الأقل</string>
+    <string name="edit_password_mismatch">كلمتا المرور غير متطابقتين</string>
+
     <!-- Email verification (Plan B T5) -->
     <string name="email_verification_title">تحقق من بريدك الإلكتروني</string>
     <string name="email_verification_body">أرسلنا رابط التحقق إلى %1$s. اضغط عليه ثم عُد إلى هنا.</string>

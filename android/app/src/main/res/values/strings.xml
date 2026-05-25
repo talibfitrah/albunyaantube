@@ -831,4 +831,14 @@
     <string name="edit_email_wrong_password">Wrong password</string>
     <string name="edit_email_invalid">Not a valid email</string>
     <string name="edit_email_in_use">Email is already in use</string>
+
+    <string name="edit_password_title">Change password</string>
+    <string name="edit_password_current">Current password</string>
+    <string name="edit_password_new">New password</string>
+    <string name="edit_password_confirm">Confirm new password</string>
+    <string name="edit_password_update">Update password</string>
+    <string name="edit_password_updated">Password updated.</string>
+    <string name="edit_password_wrong_current">Incorrect current password</string>
+    <string name="edit_password_weak">Password must be at least 8 characters</string>
+    <string name="edit_password_mismatch">Passwords do not match</string>
 </resources>
