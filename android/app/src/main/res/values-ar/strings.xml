@@ -716,6 +716,13 @@
     <string name="bootstrap_error_invalid_phone_country">اختر دولتك</string>
     <string name="bootstrap_error_invalid_phone">أدخل رقم جوال صحيح</string>
 
+    <!-- Edit phone bottom sheet (Plan G T20) -->
+    <string name="edit_phone_title">تعديل رقم الجوال</string>
+    <string name="edit_phone_country">الدولة</string>
+    <string name="edit_phone_number">رقم الهاتف</string>
+    <string name="edit_phone_save">حفظ</string>
+    <string name="profile_error_rate_limited_short">عدد كبير من الطلبات. حاول لاحقًا.</string>
+
     <!-- Email verification (Plan B T5) -->
     <string name="email_verification_title">تحقق من بريدك الإلكتروني</string>
     <string name="email_verification_body">أرسلنا رابط التحقق إلى %1$s. اضغط عليه ثم عُد إلى هنا.</string>

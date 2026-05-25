@@ -686,6 +686,13 @@
     <string name="bootstrap_error_invalid_phone_country">Kies je land</string>
     <string name="bootstrap_error_invalid_phone">Voer een geldig mobiel nummer in</string>
 
+    <!-- Edit phone bottom sheet (Plan G T20) -->
+    <string name="edit_phone_title">Telefoonnummer bewerken</string>
+    <string name="edit_phone_country">Land</string>
+    <string name="edit_phone_number">Telefoonnummer</string>
+    <string name="edit_phone_save">Opslaan</string>
+    <string name="profile_error_rate_limited_short">Te veel verzoeken. Probeer het later opnieuw.</string>
+
     <!-- Email verification (Plan B T5) -->
     <string name="email_verification_title">Bevestig je e-mail</string>
     <string name="email_verification_body">We hebben een bevestigingslink gestuurd naar %1$s. Klik erop en kom dan terug.</string>

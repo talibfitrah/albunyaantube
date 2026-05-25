@@ -814,4 +814,11 @@
     <string name="bootstrap_phone_hint">Phone number</string>
     <string name="bootstrap_error_invalid_phone_country">Pick your country</string>
     <string name="bootstrap_error_invalid_phone">Enter a valid mobile number</string>
+
+    <!-- Edit phone bottom sheet (Plan G T20) -->
+    <string name="edit_phone_title">Edit phone number</string>
+    <string name="edit_phone_country">Country</string>
+    <string name="edit_phone_number">Phone number</string>
+    <string name="edit_phone_save">Save</string>
+    <string name="profile_error_rate_limited_short">Too many requests. Try again soon.</string>
 </resources>
