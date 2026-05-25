@@ -384,6 +384,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("io.coil-kt:coil:2.7.0")
+    implementation("io.michaelrocks:libphonenumber-android:8.13.35")
 
     // Hilt Dependency Injection
     implementation("com.google.dagger:hilt-android:2.54")
