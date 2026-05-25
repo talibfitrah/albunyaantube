@@ -1,0 +1,21 @@
+backend/src/main/java/com/albunyaan/tube/model/User.java
+  s_e026945d130ffb::t_25d72d55450bda 60-62
+  s_e026945d130ffb::t_9bdc8f898e48ac 292-294
+  s_e026945d130ffb::t_c580f03747fabc 329
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "7dabf0794d772929e39ed3433ded53b0e8148419",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
