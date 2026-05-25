@@ -7,6 +7,8 @@ import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.data.account.AccountUpdateRepository
 import com.albunyaan.tube.data.account.ProfileUpdateResult
 import com.albunyaan.tube.data.account.dto.UpdateProfileRequestDto
+import com.google.firebase.auth.EmailAuthProvider
+import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +20,7 @@ import javax.inject.Inject
 class ProfileViewModel @Inject constructor(
     private val accountRepository: AccountRepository,
     private val updateRepository: AccountUpdateRepository,
+    private val firebaseAuth: FirebaseAuth,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
@@ -42,10 +45,15 @@ class ProfileViewModel @Inject constructor(
     private fun loadFromAccount() {
         val state = accountRepository.accountState.value
         if (state is AccountState.Loaded) {
+            val hasPwd = firebaseAuth.currentUser?.providerData
+                ?.any { it.providerId == EmailAuthProvider.PROVIDER_ID }
+                ?: false
             val fields = ProfileFields(
                 displayName = state.displayName.orEmpty(),
                 dateOfBirth = state.dateOfBirth,
                 emailReadOnly = state.email.orEmpty(),
+                phoneNumber = state.phoneNumber,
+                hasPasswordProvider = hasPwd,
             )
             _uiState.value = ProfileUiState.Editing(original = fields, draft = fields)
         }

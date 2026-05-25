@@ -4,6 +4,8 @@ data class ProfileFields(
     val displayName: String,
     val dateOfBirth: String?,     // ISO "YYYY-MM-DD" or null
     val emailReadOnly: String,
+    val phoneNumber: String?,
+    val hasPasswordProvider: Boolean,
 )
 
 sealed class ProfileUiState {

@@ -7,6 +7,9 @@ import com.albunyaan.tube.data.account.AccountMeResponseDto
 import com.albunyaan.tube.data.account.AccountUpdateRepository
 import com.albunyaan.tube.data.account.ProfileUpdateResult
 import com.albunyaan.tube.data.account.dto.UpdateProfileRequestDto
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.UserInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,13 +77,32 @@ class ProfileViewModelTest {
         return repo
     }
 
+    /**
+     * Returns a FirebaseAuth mock whose currentUser has no providers by
+     * default (Google-only user). Pass [hasPassword]=true to simulate a
+     * user with email/password provider — drives [ProfileFields.hasPasswordProvider].
+     */
+    private fun makeFirebaseAuth(hasPassword: Boolean = false): FirebaseAuth {
+        val auth: FirebaseAuth = mock()
+        val user: FirebaseUser = mock()
+        if (hasPassword) {
+            val pwdProvider: UserInfo = mock()
+            whenever(pwdProvider.providerId).thenReturn("password")
+            whenever(user.providerData).thenReturn(listOf(pwdProvider))
+        } else {
+            whenever(user.providerData).thenReturn(emptyList())
+        }
+        whenever(auth.currentUser).thenReturn(user)
+        return auth
+    }
+
     // ── P1: load → Editing ────────────────────────────────────────────────────
 
     @Test fun `load transitions to Editing with values from AccountState`() = runTest(dispatcher) {
         val accountRepo = makeAccountRepo()
         val updateRepo: AccountUpdateRepository = mock()
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
 
         val state = vm.uiState.value
         assertTrue(state is ProfileUiState.Editing)
@@ -96,7 +118,7 @@ class ProfileViewModelTest {
         whenever(accountRepo.accountState).thenReturn(MutableStateFlow(AccountState.Loading))
         val updateRepo: AccountUpdateRepository = mock()
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
 
         assertTrue(vm.uiState.value is ProfileUiState.Loading)
     }
@@ -104,7 +126,7 @@ class ProfileViewModelTest {
     // ── P2: draft mutations ────────────────────────────────────────────────────
 
     @Test fun `onDisplayNameChange updates draft and sets isDirty`() = runTest(dispatcher) {
-        val vm = ProfileViewModel(makeAccountRepo(), mock())
+        val vm = ProfileViewModel(makeAccountRepo(), mock(), makeFirebaseAuth())
 
         vm.onDisplayNameChange("Bob")
 
@@ -115,7 +137,7 @@ class ProfileViewModelTest {
     }
 
     @Test fun `onDateOfBirthChange updates draft`() = runTest(dispatcher) {
-        val vm = ProfileViewModel(makeAccountRepo(), mock())
+        val vm = ProfileViewModel(makeAccountRepo(), mock(), makeFirebaseAuth())
 
         vm.onDateOfBirthChange("2000-06-01")
 
@@ -129,7 +151,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.NetworkError)
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -145,7 +167,7 @@ class ProfileViewModelTest {
 
     @Test fun `save does nothing when not dirty`() = runTest(dispatcher) {
         val updateRepo: AccountUpdateRepository = mock()
-        val vm = ProfileViewModel(makeAccountRepo(), updateRepo)
+        val vm = ProfileViewModel(makeAccountRepo(), updateRepo, makeFirebaseAuth())
 
         vm.save()
         advanceUntilIdle()
@@ -162,7 +184,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.Success(response))
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -181,7 +203,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.Success(fakeResponse(displayName = "Bob")))
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
         vm.onDisplayNameChange("Bob")  // only name changed; DOB unchanged
         vm.save()
         advanceUntilIdle()
@@ -200,7 +222,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.AgeIneligible)
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -215,7 +237,7 @@ class ProfileViewModelTest {
         val accountRepo = makeAccountRepo()
         val updateRepo: AccountUpdateRepository = mock()
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
         vm.confirmAgeIneligibleSignOut()
 
         verify(accountRepo).signOut()
@@ -229,7 +251,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.RateLimited(retryAfterSec = 60L))
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -249,7 +271,7 @@ class ProfileViewModelTest {
         whenever(updateRepo.updateProfile(any()))
             .thenReturn(ProfileUpdateResult.ValidationFailed("displayName", "Name too short"))
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
         vm.onDisplayNameChange("B")
         vm.save()
         advanceUntilIdle()
@@ -267,7 +289,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.NetworkError)
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -284,7 +306,7 @@ class ProfileViewModelTest {
         val updateRepo: AccountUpdateRepository = mock()
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.Unknown(code = 503))
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
         vm.onDisplayNameChange("Bob")
         vm.save()
         advanceUntilIdle()
@@ -303,7 +325,7 @@ class ProfileViewModelTest {
         // suspend that never completes inline — use a real answer but check call count
         whenever(updateRepo.updateProfile(any())).thenReturn(ProfileUpdateResult.NetworkError)
 
-        val vm = ProfileViewModel(accountRepo, updateRepo)
+        val vm = ProfileViewModel(accountRepo, updateRepo, makeFirebaseAuth())
         vm.onDisplayNameChange("Bob")
         // First save
         vm.save()
