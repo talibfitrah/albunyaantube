@@ -76,6 +76,7 @@ class EditPasswordBottomSheetFragment : BottomSheetDialogFragment() {
                             Snackbar.LENGTH_LONG,
                         ).show()
                         dismiss()
+                        viewModel.consumeNav()
                     }
                 }
             }

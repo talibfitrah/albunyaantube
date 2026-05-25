@@ -33,6 +33,7 @@ class EditEmailViewModel @Inject constructor(
     )
 
     sealed interface Nav { data object Idle : Nav; data object Done : Nav }
+    fun consumeNav() { _nav.value = Nav.Idle }
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -68,6 +69,7 @@ class EditEmailViewModel @Inject constructor(
             }
             try {
                 user.verifyBeforeUpdateEmail(s.newEmail).await()
+                _ui.update { it.copy(saving = false) }
                 _nav.value = Nav.Done
             } catch (e: FirebaseAuthUserCollisionException) {
                 _ui.update { it.copy(saving = false, error = EditEmailError.EMAIL_IN_USE) }

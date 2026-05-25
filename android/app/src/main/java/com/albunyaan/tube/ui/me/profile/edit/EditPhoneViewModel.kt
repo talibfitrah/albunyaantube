@@ -34,6 +34,7 @@ class EditPhoneViewModel @Inject constructor(
     )
 
     sealed interface Nav { data object Idle : Nav; data object Done : Nav }
+    fun consumeNav() { _nav.value = Nav.Idle }
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -64,6 +65,7 @@ class EditPhoneViewModel @Inject constructor(
             when (val r = updateRepository.updateProfile(UpdateProfileRequestDto(phoneNumber = e164))) {
                 is ProfileUpdateResult.Success -> {
                     accountRepository.applyProfileUpdate(r.response)
+                    _ui.update { it.copy(saving = false) }
                     _nav.value = Nav.Done
                 }
                 is ProfileUpdateResult.RateLimited ->

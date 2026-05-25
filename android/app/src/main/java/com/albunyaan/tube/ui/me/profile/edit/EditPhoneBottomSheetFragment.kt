@@ -99,6 +99,7 @@ class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
                             Snackbar.LENGTH_SHORT,
                         ).show()
                         dismiss()
+                        viewModel.consumeNav()
                     }
                 }
             }
