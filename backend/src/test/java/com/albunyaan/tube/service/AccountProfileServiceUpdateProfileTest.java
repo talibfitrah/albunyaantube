@@ -73,7 +73,7 @@ class AccountProfileServiceUpdateProfileTest {
         when(userRepository.findByUid("u1")).thenReturn(Optional.of(existing));
 
         AccountMeResponse resp = svc.updateProfile("u1",
-            new UpdateProfileRequest("  New Name  ", null));
+            new UpdateProfileRequest("  New Name  ", null, null));
 
         // Field-level merge — only displayName, not a whole-doc overwrite.
         @SuppressWarnings("unchecked")
@@ -121,7 +121,7 @@ class AccountProfileServiceUpdateProfileTest {
         // otherwise a concurrent displayName edit on another device gets
         // overwritten by this thread's stale read.
         LocalDate twentyYearsAgo = LocalDate.of(2026, 5, 19).minusYears(20);
-        svc.updateProfile("u1", new UpdateProfileRequest(null, twentyYearsAgo));
+        svc.updateProfile("u1", new UpdateProfileRequest(null, twentyYearsAgo, null));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<java.util.Map<String, Object>> fields =
@@ -147,7 +147,7 @@ class AccountProfileServiceUpdateProfileTest {
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         assertThatThrownBy(() -> svc.updateProfile("u1",
-            new UpdateProfileRequest(null, twelveYearsAgo)))
+            new UpdateProfileRequest(null, twelveYearsAgo, null)))
             .isInstanceOf(AgeIneligibleException.class);
 
         verify(firebaseAuth).revokeRefreshTokens("u1");
@@ -185,7 +185,7 @@ class AccountProfileServiceUpdateProfileTest {
         // validateDateOfBirth throws ProfileValidationException (typed
         // with field metadata for client routing); reason contains "future".
         assertThatThrownBy(() -> svc.updateProfile("u1",
-            new UpdateProfileRequest(null, tomorrow)))
+            new UpdateProfileRequest(null, tomorrow, null)))
             .isInstanceOf(ProfileValidationException.class)
             .hasMessageContaining("future");
 
@@ -205,7 +205,7 @@ class AccountProfileServiceUpdateProfileTest {
         when(userRepository.findByUid("u1")).thenReturn(Optional.of(existing));
 
         AccountMeResponse resp = svc.updateProfile("u1",
-            new UpdateProfileRequest("Same Name", null));
+            new UpdateProfileRequest("Same Name", null, null));
 
         assertThat(resp.getDisplayName()).isEqualTo("Same Name");
         verify(userRepository, never()).updateFields(any(), any());
@@ -222,7 +222,7 @@ class AccountProfileServiceUpdateProfileTest {
         when(userRepository.findByUid("u1")).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> svc.updateProfile("u1",
-            new UpdateProfileRequest("Click https://spam.example", null)))
+            new UpdateProfileRequest("Click https://spam.example", null, null)))
             .isInstanceOf(ProfileValidationException.class);
     }
 
@@ -234,7 +234,7 @@ class AccountProfileServiceUpdateProfileTest {
         when(userRepository.findByUid("ghost")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> svc.updateProfile("ghost",
-            new UpdateProfileRequest("Anyone", null)))
+            new UpdateProfileRequest("Anyone", null, null)))
             .isInstanceOf(UserNotFoundException.class);
     }
 }

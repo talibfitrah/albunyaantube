@@ -97,12 +97,13 @@ class AccountControllerTest {
     @Test
     void postProfileHappyPath() throws Exception {
         User saved = activeUser();
-        when(accountProfileService.completeProfile(eq(TEST_UID), eq("Test User"), any(LocalDate.class)))
+        when(accountProfileService.completeProfile(eq(TEST_UID), eq("Test User"), any(LocalDate.class), any(String.class)))
                 .thenReturn(saved);
 
         CompleteProfileRequest req = new CompleteProfileRequest();
         req.setDisplayName("Test User");
         req.setDateOfBirth(LocalDate.of(2000, 1, 1));
+        req.setPhoneNumber("+31612345678");
 
         mockMvc.perform(post("/api/account/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -116,12 +117,13 @@ class AccountControllerTest {
 
     @Test
     void postProfileUnder13Returns422() throws Exception {
-        when(accountProfileService.completeProfile(eq(TEST_UID), any(), any(LocalDate.class)))
+        when(accountProfileService.completeProfile(eq(TEST_UID), any(), any(LocalDate.class), any(String.class)))
                 .thenThrow(new AgeIneligibleException(TEST_UID, 10));
 
         CompleteProfileRequest req = new CompleteProfileRequest();
         req.setDisplayName("Young User");
         req.setDateOfBirth(LocalDate.of(2020, 1, 1));
+        req.setPhoneNumber("+31612345678");
 
         mockMvc.perform(post("/api/account/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -134,12 +136,13 @@ class AccountControllerTest {
 
     @Test
     void postProfileAlreadyCompletedReturns409() throws Exception {
-        when(accountProfileService.completeProfile(eq(TEST_UID), any(), any(LocalDate.class)))
+        when(accountProfileService.completeProfile(eq(TEST_UID), any(), any(LocalDate.class), any(String.class)))
                 .thenThrow(new ProfileAlreadyCompletedException(TEST_UID));
 
         CompleteProfileRequest req = new CompleteProfileRequest();
         req.setDisplayName("Test User");
         req.setDateOfBirth(LocalDate.of(2000, 1, 1));
+        req.setPhoneNumber("+31612345678");
 
         mockMvc.perform(post("/api/account/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -155,6 +158,7 @@ class AccountControllerTest {
         CompleteProfileRequest req = new CompleteProfileRequest();
         req.setDisplayName("   ");
         req.setDateOfBirth(LocalDate.of(2000, 1, 1));
+        req.setPhoneNumber("+31612345678");
 
         mockMvc.perform(post("/api/account/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -221,13 +225,14 @@ class AccountControllerTest {
 
     @Test
     void postProfileAgeIneligibleAbortedReturns500() throws Exception {
-        when(accountProfileService.completeProfile(eq(TEST_UID), any(), any(LocalDate.class)))
+        when(accountProfileService.completeProfile(eq(TEST_UID), any(), any(LocalDate.class), any(String.class)))
                 .thenThrow(new AgeIneligibleAbortedException(TEST_UID,
                         new RuntimeException("revoke failed")));
 
         CompleteProfileRequest req = new CompleteProfileRequest();
         req.setDisplayName("Kid");
         req.setDateOfBirth(LocalDate.of(2020, 1, 1));
+        req.setPhoneNumber("+31612345678");
 
         mockMvc.perform(post("/api/account/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -258,6 +263,7 @@ class AccountControllerTest {
         CompleteProfileRequest req = new CompleteProfileRequest();
         req.setDisplayName("X");
         req.setDateOfBirth(LocalDate.of(2000, 1, 1));
+        req.setPhoneNumber("+31612345678");
         mockMvc.perform(post("/api/account/profile")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))

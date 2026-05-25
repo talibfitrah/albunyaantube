@@ -54,7 +54,7 @@ class AccountProfileServiceTest {
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
         User result = service.completeProfile("uid-1", "Alice",
-            LocalDate.of(2000, 1, 1)); // age 26
+            LocalDate.of(2000, 1, 1), "+31612345678"); // age 26
 
         assertEquals(UserStatus.ACTIVE, result.getStatusEnum());
         assertEquals("Alice", result.getDisplayName());
@@ -74,7 +74,7 @@ class AccountProfileServiceTest {
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
         AgeIneligibleException ex = assertThrows(AgeIneligibleException.class,
-            () -> service.completeProfile("uid-1", "Tot", LocalDate.of(2020, 1, 1)));
+            () -> service.completeProfile("uid-1", "Tot", LocalDate.of(2020, 1, 1), "+31612345678"));
 
         // Revoke must happen BEFORE the soft-delete write — see Tier C javadoc:
         // if we wrote first and revoke failed, a stale ID token could be used
@@ -97,7 +97,7 @@ class AccountProfileServiceTest {
         when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        User result = service.completeProfile("uid-1", "Teen", LocalDate.of(2013, 5, 11));
+        User result = service.completeProfile("uid-1", "Teen", LocalDate.of(2013, 5, 11), "+31612345678");
         assertEquals(UserStatus.ACTIVE, result.getStatusEnum());
     }
 
@@ -110,7 +110,7 @@ class AccountProfileServiceTest {
 
         assertThrows(AgeIneligibleException.class,
             () -> service.completeProfile("uid-1", "Almost",
-                LocalDate.of(2013, 5, 12)));
+                LocalDate.of(2013, 5, 12), "+31612345678"));
     }
 
     @Test
@@ -121,21 +121,21 @@ class AccountProfileServiceTest {
         when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
 
         assertThrows(ProfileAlreadyCompletedException.class,
-            () -> service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1)));
+            () -> service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), "+31612345678"));
     }
 
     @Test
     void completeProfileRejectsMissingUser() throws Exception {
         when(userRepository.findByUid("ghost")).thenReturn(Optional.empty());
         assertThrows(UserNotFoundException.class,
-            () -> service.completeProfile("ghost", "x", LocalDate.of(2000, 1, 1)));
+            () -> service.completeProfile("ghost", "x", LocalDate.of(2000, 1, 1), "+31612345678"));
     }
 
     @Test
     void completeProfileRejectsBlankDisplayName() {
         // Validation fires before any repository call — no stub needed.
         assertThrows(ProfileValidationException.class,
-            () -> service.completeProfile("uid-1", "   ", LocalDate.of(2000, 1, 1)));
+            () -> service.completeProfile("uid-1", "   ", LocalDate.of(2000, 1, 1), "+31612345678"));
     }
 
     @Test
@@ -143,7 +143,7 @@ class AccountProfileServiceTest {
         // Validation fires before any repository call — no stub needed.
         String over40 = "a".repeat(41);
         assertThrows(ProfileValidationException.class,
-            () -> service.completeProfile("uid-1", over40, LocalDate.of(2000, 1, 1)));
+            () -> service.completeProfile("uid-1", over40, LocalDate.of(2000, 1, 1), "+31612345678"));
     }
 
     @Test
@@ -174,9 +174,45 @@ class AccountProfileServiceTest {
             .when(firebaseAuth).revokeRefreshTokens("uid-1");
 
         assertThrows(AgeIneligibleAbortedException.class,
-            () -> service.completeProfile("uid-1", "Tot", LocalDate.of(2020, 1, 1)));
+            () -> service.completeProfile("uid-1", "Tot", LocalDate.of(2020, 1, 1), "+31612345678"));
 
         // Did NOT delete the doc — abort preserves recoverability.
         verify(userRepository, never()).deleteByUid(any());
+    }
+
+    @Test
+    void completeProfileRejectsBlankPhoneNumber() {
+        // Validation fires before any repository call — no stub needed.
+        ProfileValidationException ex = assertThrows(ProfileValidationException.class,
+            () -> service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), ""));
+        assertEquals("phoneNumber", ex.getField());
+    }
+
+    @Test
+    void completeProfileRejectsMalformedPhoneNumber() {
+        // Validation fires before any repository call — no stub needed.
+        // Missing leading + sign
+        assertThrows(ProfileValidationException.class,
+            () -> service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), "31612345678"));
+        // Too short (7 digits after +)
+        assertThrows(ProfileValidationException.class,
+            () -> service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), "+1234567"));
+        // Leading zero after + is invalid (E.164: first digit 1-9)
+        assertThrows(ProfileValidationException.class,
+            () -> service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), "+0123456789"));
+    }
+
+    @Test
+    void completeProfileAcceptsValidE164PhoneNumber() throws Exception {
+        User existing = new User("uid-1", "a@b.com", null, "user");
+        existing.setStatusEnum(UserStatus.PENDING_PROFILE);
+        when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        User result = service.completeProfile("uid-1", "Alice",
+            LocalDate.of(2000, 1, 1), "+31612345678");
+
+        assertEquals("+31612345678", result.getPhoneNumber());
+        assertEquals(UserStatus.ACTIVE, result.getStatusEnum());
     }
 }

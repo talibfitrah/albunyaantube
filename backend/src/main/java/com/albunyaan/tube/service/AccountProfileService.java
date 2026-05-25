@@ -33,6 +33,7 @@ public class AccountProfileService {
     /** Unicode format-control category — zero-width, BOM, bidi-override. */
     private static final Pattern FORMAT_CONTROL_CHARS = Pattern.compile("\\p{Cf}");
     private static final Pattern URL_PATTERN   = Pattern.compile("https?://", Pattern.CASE_INSENSITIVE);
+    private static final Pattern E164_PATTERN  = Pattern.compile("^\\+[1-9]\\d{7,14}$");
 
     private final UserRepository userRepository;
     private final FirebaseAuth firebaseAuth;
@@ -51,10 +52,11 @@ public class AccountProfileService {
         this.auditLogService = auditLogService;
     }
 
-    public User completeProfile(String uid, String displayName, LocalDate dateOfBirth)
+    public User completeProfile(String uid, String displayName, LocalDate dateOfBirth, String phoneNumber)
             throws ExecutionException, InterruptedException, TimeoutException {
         validateDisplayName(displayName);
         validateDateOfBirth(dateOfBirth);
+        validatePhoneNumber(phoneNumber);
 
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new UserNotFoundException(uid));
@@ -68,7 +70,7 @@ public class AccountProfileService {
             // Now, if the retry's payload matches the persisted profile we
             // return the existing user as a 200; if it differs we still
             // refuse (the profile is locked once set).
-            if (profileMatches(user, displayName, dateOfBirth)) {
+            if (profileMatches(user, displayName, dateOfBirth, phoneNumber)) {
                 return user;
             }
             throw new ProfileAlreadyCompletedException(uid);
@@ -80,6 +82,7 @@ public class AccountProfileService {
                 dateOfBirth.atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0);
         user.setDisplayName(displayName.trim());
         user.setDateOfBirth(dobTs);
+        user.setPhoneNumber(phoneNumber.trim());
         user.setStatusEnum(UserStatus.ACTIVE);
         user.setProfileCompletedAt(Timestamp.now());
         user.touch();
@@ -185,8 +188,9 @@ public class AccountProfileService {
      * {@code displayName} (trim-and-normalised) and {@code dateOfBirth}
      * shape are treated as the same intent.
      */
-    private static boolean profileMatches(User user, String displayName, LocalDate dateOfBirth) {
+    private static boolean profileMatches(User user, String displayName, LocalDate dateOfBirth, String phoneNumber) {
         if (user.getDisplayName() == null || !user.getDisplayName().equals(displayName.trim())) return false;
+        if (user.getPhoneNumber() == null || !user.getPhoneNumber().equals(phoneNumber.trim())) return false;
         Timestamp ts = user.getDateOfBirth();
         if (ts == null) return false;
         // Cubic R-final5 P2 — compare by date components, not raw epoch + nanos.
@@ -341,6 +345,16 @@ public class AccountProfileService {
             // Typed exception carries field metadata so the client routes
             // the message to the DOB row, not the displayName input.
             throw new ProfileValidationException("dateOfBirth", "must not be in the future");
+        }
+    }
+
+    void validatePhoneNumber(String phoneNumber) {
+        if (phoneNumber == null || phoneNumber.isBlank()) {
+            throw new ProfileValidationException("phoneNumber", "must not be blank");
+        }
+        if (!E164_PATTERN.matcher(phoneNumber).matches()) {
+            throw new ProfileValidationException("phoneNumber",
+                    "must be E.164 format (e.g. +31612345678)");
         }
     }
 }

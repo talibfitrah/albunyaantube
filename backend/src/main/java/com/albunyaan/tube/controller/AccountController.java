@@ -58,7 +58,7 @@ public class AccountController {
             throws ExecutionException, InterruptedException, TimeoutException {
         if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         var saved = accountProfileService.completeProfile(
-                principal.getUid(), req.getDisplayName(), req.getDateOfBirth());
+                principal.getUid(), req.getDisplayName(), req.getDateOfBirth(), req.getPhoneNumber());
         return ResponseEntity.ok(AccountMeResponse.from(saved));
     }
 
