@@ -743,6 +743,13 @@
     <string name="profile_display_name">Display name</string>
     <string name="profile_date_of_birth">Date of birth</string>
     <string name="profile_email_locked">Linked to your sign-in</string>
+    <string name="profile_email_label">Email</string>
+    <string name="profile_phone">Phone number</string>
+    <string name="profile_phone_unset">Not set</string>
+    <string name="profile_edit">Edit</string>
+    <string name="profile_add">Add</string>
+    <string name="profile_password">Password</string>
+    <string name="profile_password_dots">••••••••••</string>
     <string name="profile_save">Save</string>
     <string name="profile_save_success">Profile updated</string>
     <string name="profile_error_network">Couldn\'t save. Check your connection.</string>

@@ -47,6 +47,28 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
         binding.dobRow.setOnClickListener { showDobPicker() }
         binding.saveButton.setOnClickListener { vm.save() }
 
+        binding.emailEditButton.setOnClickListener {
+            com.albunyaan.tube.ui.me.profile.edit.EditEmailBottomSheetFragment().show(
+                parentFragmentManager,
+                com.albunyaan.tube.ui.me.profile.edit.EditEmailBottomSheetFragment.TAG,
+            )
+        }
+        binding.phoneEditButton.setOnClickListener {
+            val ctx = requireContext()
+            val current = (vm.uiState.value as? ProfileUiState.Editing)?.draft?.phoneNumber
+            val parsed = current?.let { com.albunyaan.tube.util.PhoneFormat.parseDisplay(ctx, it) }
+            com.albunyaan.tube.ui.me.profile.edit.EditPhoneBottomSheetFragment
+                .newInstance(country = parsed?.first, number = parsed?.second)
+                .show(parentFragmentManager,
+                      com.albunyaan.tube.ui.me.profile.edit.EditPhoneBottomSheetFragment.TAG)
+        }
+        binding.passwordEditButton.setOnClickListener {
+            com.albunyaan.tube.ui.me.profile.edit.EditPasswordBottomSheetFragment().show(
+                parentFragmentManager,
+                com.albunyaan.tube.ui.me.profile.edit.EditPasswordBottomSheetFragment.TAG,
+            )
+        }
+
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.uiState.collect { render(it) }
@@ -70,7 +92,15 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                 }
                 binding.dobValue.text =
                     state.draft.dateOfBirth ?: getString(R.string.profile_dob_pick)
-                binding.emailLabel.text = state.draft.emailReadOnly
+                binding.emailValue.text = state.draft.emailReadOnly
+                binding.phoneValue.text = state.draft.phoneNumber
+                    ?: getString(R.string.profile_phone_unset)
+                binding.phoneEditButton.setText(
+                    if (state.draft.phoneNumber.isNullOrBlank()) R.string.profile_add
+                    else R.string.profile_edit
+                )
+                binding.passwordRow.visibility =
+                    if (state.draft.hasPasswordProvider) View.VISIBLE else View.GONE
                 binding.saveButton.isEnabled = state.isDirty && !state.saving
                 binding.savingSpinner.visibility =
                     if (state.saving) View.VISIBLE else View.GONE

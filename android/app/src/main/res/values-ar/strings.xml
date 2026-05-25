@@ -722,6 +722,13 @@
     <string name="edit_phone_number">رقم الهاتف</string>
     <string name="edit_phone_save">حفظ</string>
     <string name="profile_error_rate_limited_short">عدد كبير من الطلبات. حاول لاحقًا.</string>
+    <string name="profile_email_label">البريد الإلكتروني</string>
+    <string name="profile_phone">رقم الجوال</string>
+    <string name="profile_phone_unset">غير محدد</string>
+    <string name="profile_edit">تعديل</string>
+    <string name="profile_add">إضافة</string>
+    <string name="profile_password">كلمة المرور</string>
+    <string name="profile_password_dots">••••••••••</string>
 
     <!-- Edit email bottom sheet (Plan G T21) -->
     <string name="edit_email_title">تغيير البريد الإلكتروني</string>

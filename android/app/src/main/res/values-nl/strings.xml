@@ -692,6 +692,13 @@
     <string name="edit_phone_number">Telefoonnummer</string>
     <string name="edit_phone_save">Opslaan</string>
     <string name="profile_error_rate_limited_short">Te veel verzoeken. Probeer het later opnieuw.</string>
+    <string name="profile_email_label">E-mail</string>
+    <string name="profile_phone">Telefoonnummer</string>
+    <string name="profile_phone_unset">Niet ingesteld</string>
+    <string name="profile_edit">Bewerken</string>
+    <string name="profile_add">Toevoegen</string>
+    <string name="profile_password">Wachtwoord</string>
+    <string name="profile_password_dots">••••••••••</string>
 
     <!-- Edit email bottom sheet (Plan G T21) -->
     <string name="edit_email_title">E-mail wijzigen</string>
