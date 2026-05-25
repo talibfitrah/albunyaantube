@@ -13,7 +13,7 @@ public class FirebaseUserDetails {
     private final boolean emailVerified;
 
     public FirebaseUserDetails(String uid, String email, String role) {
-        this(uid, email, role, true);
+        this(uid, email, role, false);
     }
 
     public FirebaseUserDetails(String uid, String email, String role, boolean emailVerified) {

@@ -21,7 +21,7 @@ class DownloadControllerTest {
 
     @BeforeEach
     void setUp() {
-        testUser = new FirebaseUserDetails("user-123", "user@test.com", "user");
+        testUser = new FirebaseUserDetails("user-123", "user@test.com", "user", true);
     }
 
     @Test

@@ -16,7 +16,7 @@ class AuthServiceRevokeSessionsTest {
     void revokeSessions_callsFirebase_andAuditsWithReason() throws Exception {
         FirebaseAuth firebaseAuth = mock(FirebaseAuth.class);
         AuditLogService auditLog = mock(AuditLogService.class);
-        FirebaseUserDetails actor = new FirebaseUserDetails("admin-uid", "admin@fitrahtube.com", "admin");
+        FirebaseUserDetails actor = new FirebaseUserDetails("admin-uid", "admin@fitrahtube.com", "admin", true);
         AuthService svc = AuthServiceTestFactory.with(firebaseAuth, auditLog);
 
         svc.revokeSessions("target-uid", actor, "user reported phishing");
@@ -32,7 +32,7 @@ class AuthServiceRevokeSessionsTest {
     void revokeSessions_nullReason_auditsWithoutReasonKey() throws Exception {
         FirebaseAuth firebaseAuth = mock(FirebaseAuth.class);
         AuditLogService auditLog = mock(AuditLogService.class);
-        FirebaseUserDetails actor = new FirebaseUserDetails("admin-uid", "admin@fitrahtube.com", "admin");
+        FirebaseUserDetails actor = new FirebaseUserDetails("admin-uid", "admin@fitrahtube.com", "admin", true);
         AuthService svc = AuthServiceTestFactory.with(firebaseAuth, auditLog);
 
         svc.revokeSessions("target-uid", actor, null);

@@ -56,7 +56,7 @@ class UserControllerTest {
     @BeforeEach
     void setUp() {
         // Create admin user for authentication
-        adminUser = new FirebaseUserDetails("admin-uid", "admin@test.com", "admin");
+        adminUser = new FirebaseUserDetails("admin-uid", "admin@test.com", "admin", true);
 
         // Create test users
         testAdmin = new User("test-admin-uid", "admin@example.com", "Test Admin", "admin");

@@ -65,10 +65,10 @@ class RegistryControllerTest {
     @BeforeEach
     void setUp() {
         // Create admin user
-        adminUser = new FirebaseUserDetails("admin-uid", "admin@test.com", "admin");
+        adminUser = new FirebaseUserDetails("admin-uid", "admin@test.com", "admin", true);
 
         // Create moderator user
-        moderatorUser = new FirebaseUserDetails("mod-uid", "mod@test.com", "moderator");
+        moderatorUser = new FirebaseUserDetails("mod-uid", "mod@test.com", "moderator", true);
 
         // Create test channel
         testChannel = new Channel("UC-test-channel");

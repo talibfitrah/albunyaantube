@@ -52,7 +52,7 @@ class CategoryControllerTest {
     @BeforeEach
     void setUp() {
         // Create admin user
-        adminUser = new FirebaseUserDetails("admin-uid", "admin@test.com", "admin");
+        adminUser = new FirebaseUserDetails("admin-uid", "admin@test.com", "admin", true);
 
         // Create parent category
         parentCategory = new Category("Quran", null);

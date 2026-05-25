@@ -16,7 +16,7 @@ import static org.mockito.Mockito.*;
 class BulkUserServiceTest {
 
     private static final FirebaseUserDetails ADMIN_ACTOR =
-            new FirebaseUserDetails("admin-uid", "admin@fitrahtube.com", "admin");
+            new FirebaseUserDetails("admin-uid", "admin@fitrahtube.com", "admin", true);
 
     @Test
     void happyPath_block_threeUsersSucceed() throws Exception {

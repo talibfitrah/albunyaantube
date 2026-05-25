@@ -64,7 +64,7 @@ class AccountControllerTest {
 
     @BeforeEach
     void setUpPrincipal() {
-        FirebaseUserDetails principal = new FirebaseUserDetails(TEST_UID, TEST_EMAIL, "user");
+        FirebaseUserDetails principal = new FirebaseUserDetails(TEST_UID, TEST_EMAIL, "user", true);
         UsernamePasswordAuthenticationToken auth =
                 new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of());
         SecurityContextHolder.getContext().setAuthentication(auth);
