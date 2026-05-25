@@ -20,7 +20,6 @@ import android.widget.AutoCompleteTextView
 import com.albunyaan.tube.util.PhoneFormat
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import java.util.Locale
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
@@ -71,19 +70,23 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         bindViews(view)
 
         // Populate phone-country dropdown
-        val countries = buildCountryRows()
-        val countryAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, countries)
+        val countries = PhoneFormat.countryRows(requireContext())
+        val countryAdapter = ArrayAdapter(
+            requireContext(),
+            android.R.layout.simple_list_item_1,
+            countries.map { it.second },
+        )
         phoneCountryField.setAdapter(countryAdapter)
         phoneCountryField.setOnItemClickListener { _, _, position, _ ->
-            val row = countryAdapter.getItem(position) ?: return@setOnItemClickListener
-            viewModel.onPhoneCountryChanged(row.isoCode)
+            val row = countries.getOrNull(position) ?: return@setOnItemClickListener
+            viewModel.onPhoneCountryChanged(row.first)
         }
         // Seed default selection from device locale
         val defaultIso = (requireContext().resources.configuration.locales[0].country)
             .takeIf { it.isNotBlank() } ?: "NL"
-        countries.firstOrNull { it.isoCode == defaultIso }?.let {
-            phoneCountryField.setText(it.displayName, /* filter */ false)
-            viewModel.onPhoneCountryChanged(it.isoCode)
+        countries.firstOrNull { it.first == defaultIso }?.let { (iso, display) ->
+            phoneCountryField.setText(display, /* filter */ false)
+            viewModel.onPhoneCountryChanged(iso)
         }
 
         wireListeners()
@@ -261,22 +264,6 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         }
     }
 
-    private data class CountryRow(val isoCode: String, val displayName: String) {
-        override fun toString(): String = displayName
-    }
-
-    private fun buildCountryRows(): List<CountryRow> {
-        val ctx = requireContext()
-        val locale = ctx.resources.configuration.locales[0]
-        return PhoneFormat.supportedRegions(ctx)
-            .map { iso ->
-                CountryRow(
-                    isoCode = iso,
-                    displayName = Locale("", iso).getDisplayCountry(locale).ifBlank { iso },
-                )
-            }
-            .sortedBy { it.displayName }
-    }
 
     companion object { private const val TAG = "ProfileBootstrapFragment" }
 }

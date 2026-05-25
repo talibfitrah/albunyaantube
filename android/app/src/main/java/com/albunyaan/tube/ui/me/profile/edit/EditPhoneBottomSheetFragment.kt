@@ -23,7 +23,6 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 @AndroidEntryPoint
 class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
@@ -48,10 +47,7 @@ class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
         val seedNumber  = arguments?.getString(ARG_NUMBER)
         viewModel.seed(seedCountry, seedNumber)
 
-        val locale = requireContext().resources.configuration.locales[0]
-        val rows = PhoneFormat.supportedRegions(requireContext())
-            .map { iso -> iso to (Locale("", iso).getDisplayCountry(locale).ifBlank { iso }) }
-            .sortedBy { it.second }
+        val rows = PhoneFormat.countryRows(requireContext())
         val adapter = ArrayAdapter(
             requireContext(), android.R.layout.simple_list_item_1,
             rows.map { it.second },

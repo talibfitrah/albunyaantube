@@ -3,6 +3,7 @@ package com.albunyaan.tube.util
 import android.content.Context
 import io.michaelrocks.libphonenumber.android.NumberParseException
 import io.michaelrocks.libphonenumber.android.PhoneNumberUtil
+import java.util.Locale
 
 /**
  * Wraps libphonenumber-android. The PhoneNumberUtil is per-context (loads
@@ -45,4 +46,17 @@ object PhoneFormat {
     /** ISO-3166-1 alpha-2 region codes libphonenumber knows about. */
     fun supportedRegions(ctx: Context): Set<String> =
         util(ctx).supportedRegions
+
+    /**
+     * Country pickers for both Bootstrap and Edit Phone use the same shape: a list
+     * of (ISO region, display name) pairs sorted alphabetically by display name in
+     * the device locale. Centralised here so a future localisation change (e.g. add
+     * dial-code prefix) lands in one place.
+     */
+    fun countryRows(ctx: Context): List<Pair<String, String>> {
+        val locale = ctx.resources.configuration.locales[0]
+        return supportedRegions(ctx)
+            .map { iso -> iso to (Locale("", iso).getDisplayCountry(locale).ifBlank { iso }) }
+            .sortedBy { it.second }
+    }
 }
