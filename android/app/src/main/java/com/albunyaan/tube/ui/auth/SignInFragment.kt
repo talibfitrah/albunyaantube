@@ -156,10 +156,6 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
                 ?.any { it.providerId == EmailAuthProvider.PROVIDER_ID } == true
             val needsVerification = isPasswordProvider && user?.isEmailVerified == false
 
-            if (needsVerification && viewModel.ui.value.mode == SignInViewModel.Mode.SIGN_UP) {
-                try { user!!.sendEmailVerification().await() } catch (_: Exception) { /* ignored */ }
-            }
-
             val actionId = if (needsVerification) {
                 R.id.action_signIn_to_emailVerification
             } else {
