@@ -15,8 +15,12 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.auth.AuthRepository
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.datepicker.MaterialDatePicker
+import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
+import com.albunyaan.tube.util.PhoneFormat
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import java.util.Locale
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
@@ -56,11 +60,32 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
     private lateinit var passwordField: TextInputEditText
     private lateinit var passwordConfirmLayout: TextInputLayout
     private lateinit var passwordConfirmField: TextInputEditText
+    private lateinit var phoneCountryLayout: TextInputLayout
+    private lateinit var phoneCountryField: AutoCompleteTextView
+    private lateinit var phoneLayout: TextInputLayout
+    private lateinit var phoneField: TextInputEditText
     private lateinit var submitButton: MaterialButton
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         bindViews(view)
+
+        // Populate phone-country dropdown
+        val countries = buildCountryRows()
+        val countryAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, countries)
+        phoneCountryField.setAdapter(countryAdapter)
+        phoneCountryField.setOnItemClickListener { _, _, position, _ ->
+            val row = countryAdapter.getItem(position) ?: return@setOnItemClickListener
+            viewModel.onPhoneCountryChanged(row.isoCode)
+        }
+        // Seed default selection from device locale
+        val defaultIso = (requireContext().resources.configuration.locales[0].country)
+            .takeIf { it.isNotBlank() } ?: "NL"
+        countries.firstOrNull { it.isoCode == defaultIso }?.let {
+            phoneCountryField.setText(it.displayName, /* filter */ false)
+            viewModel.onPhoneCountryChanged(it.isoCode)
+        }
+
         wireListeners()
 
         // D11: back-nav cancels sign-in. Sign out and route to signIn so the user
@@ -124,6 +149,10 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         passwordField = v.findViewById(R.id.passwordField)
         passwordConfirmLayout = v.findViewById(R.id.passwordConfirmLayout)
         passwordConfirmField = v.findViewById(R.id.passwordConfirmField)
+        phoneCountryLayout = v.findViewById(R.id.phoneCountryLayout)
+        phoneCountryField  = v.findViewById(R.id.phoneCountryField)
+        phoneLayout        = v.findViewById(R.id.phoneLayout)
+        phoneField         = v.findViewById(R.id.phoneField)
         submitButton = v.findViewById(R.id.submitButton)
     }
 
@@ -147,6 +176,13 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
                 viewModel.onPasswordConfirmChanged(s?.toString().orEmpty())
+            }
+        })
+        phoneField.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                viewModel.onPhoneNumberChanged(s?.toString().orEmpty())
             }
         })
         dobField.setOnClickListener { openDatePicker() }
@@ -206,6 +242,10 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
             ?.let { getString(R.string.bootstrap_error_invalid_password) }
         passwordConfirmLayout.error = state.error?.takeIf { it == BootstrapError.PASSWORD_MISMATCH }
             ?.let { getString(R.string.bootstrap_error_password_mismatch) }
+        phoneCountryLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_PHONE_COUNTRY }
+            ?.let { getString(R.string.bootstrap_error_invalid_phone_country) }
+        phoneLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_PHONE }
+            ?.let { getString(R.string.bootstrap_error_invalid_phone) }
         // SAVE_FAILED: shown by dobLayout clearing both field errors so the user
         // understands the problem isn't their input. A future pass can add a Snackbar.
         if (state.error == BootstrapError.SAVE_FAILED) {
@@ -219,6 +259,23 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
             // completeProfile call on retry.
             passwordLayout.error = getString(R.string.bootstrap_error_password_set_failed)
         }
+    }
+
+    private data class CountryRow(val isoCode: String, val displayName: String) {
+        override fun toString(): String = displayName
+    }
+
+    private fun buildCountryRows(): List<CountryRow> {
+        val ctx = requireContext()
+        val locale = ctx.resources.configuration.locales[0]
+        return PhoneFormat.supportedRegions(ctx)
+            .map { iso ->
+                CountryRow(
+                    isoCode = iso,
+                    displayName = Locale("", iso).getDisplayCountry(locale).ifBlank { iso },
+                )
+            }
+            .sortedBy { it.displayName }
     }
 
     companion object { private const val TAG = "ProfileBootstrapFragment" }
