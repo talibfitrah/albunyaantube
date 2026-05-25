@@ -1,0 +1,22 @@
+android/app/src/main/res/layout-sw720dp/fragment_profile.xml
+  s_e026945d130ffb::t_3b14b8b0b01703 255-256
+  s_e026945d130ffb::t_0a2bc8585ae063 96
+  s_e026945d130ffb::t_3c0a01117aad5e 157-158
+  s_e026945d130ffb::t_e5f4ea0b2f9910 206-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "7c8958b93fd46c497a52cc60c6e6cf7f51ac80e3",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
