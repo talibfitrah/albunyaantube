@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.text.method.LinkMovementMethod
 import android.view.GestureDetector
 import android.view.Menu
 import android.view.MenuInflater
@@ -445,6 +446,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.videoDescription.isVisible = !isExpanded
             binding.descriptionArrow.rotation = if (isExpanded) 0f else 180f
         }
+        // Description text is YouTube HTML — enable link spans so anchors are tappable.
+        binding.videoDescription.movementMethod = LinkMovementMethod.getInstance()
 
         // Setup action buttons
         binding.reportButton.setOnClickListener {
@@ -1356,7 +1359,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     } ?: getString(R.string.player_no_views)
 
                     binding.videoStats.text = viewText
-                    binding.videoDescription.text = currentItem.description ?: getString(R.string.player_no_description)
+                    binding.videoDescription.text =
+                        PlayerDescriptions.render(currentItem.description)
+                            ?: getString(R.string.player_no_description)
 
                     // Note: MediaSession metadata sync moved to maybePrepareStream()
                     // to ensure player has a valid media source before updating metadata.
