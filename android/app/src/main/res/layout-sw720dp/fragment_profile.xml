@@ -93,7 +93,7 @@
                         android:focusable="true"
                         android:background="?attr/selectableItemBackground"
                         android:padding="@dimen/spacing_lg"
-                        android:nextFocusDown="@id/saveButton">
+                        android:nextFocusDown="@id/emailEditButton">
 
                         <TextView
                             android:id="@+id/dobLabel"
@@ -154,7 +154,8 @@
                             style="@style/Widget.Material3.Button.TextButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/profile_edit" />
+                            android:text="@string/profile_edit"
+                            android:nextFocusDown="@id/phoneEditButton" />
 
                     </LinearLayout>
 
@@ -202,7 +203,8 @@
                             style="@style/Widget.Material3.Button.TextButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/profile_edit" />
+                            android:text="@string/profile_edit"
+                            android:nextFocusDown="@id/passwordEditButton" />
 
                     </LinearLayout>
 
@@ -250,7 +252,8 @@
                             style="@style/Widget.Material3.Button.TextButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/profile_edit" />
+                            android:text="@string/profile_edit"
+                            android:nextFocusDown="@id/saveButton" />
 
                     </LinearLayout>
 
