@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/ui/auth/EmailVerificationFragment.kt
+  s_e026945d130ffb::t_8a9f496e808c22 1-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "939c428c4d6d0ee8de75d0b96cdf414ed88693a1",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
