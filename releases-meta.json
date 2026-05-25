@@ -1,9 +1,4 @@
 {
-  "1.0.0-beta.18": {
-    "en": "Phone required at signup; new email/password accounts must verify email; edit email/password/phone in Personal Info.",
-    "ar": "رقم الجوال مطلوب عند التسجيل؛ يلزم التحقق من البريد للحسابات الجديدة؛ تعديل البريد/الكلمة/الجوال في المعلومات الشخصية.",
-    "nl": "Telefoon vereist bij signup; e-mailverificatie voor nieuwe accounts; e-mail/wachtwoord/telefoon bewerken in Profiel."
-  },
   "1.0.0-beta.17": {
     "en": "PackageInstaller migration with explicit success/failure callbacks; splash banner when last update didn't complete.",
     "ar": "ترحيل إلى PackageInstaller مع استدعاءات نجاح/فشل واضحة؛ شريط على شاشة البداية عند فشل آخر تحديث.",
