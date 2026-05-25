@@ -5,6 +5,8 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.15] - 2026-05-25
+
 ### Android
 
 - **Update prompt now appears before the sign-in screen.** The "new version
@@ -19,6 +21,66 @@ during the beta program.
   prior DEX on next launch (which previously made the install appear to do
   nothing). If the user backs out of the system installer the kill is
   skipped, so an unintentional cancel doesn't yank them out of the app.
+- **Settings → Available updates.** New screen lists the last 5 GitHub
+  releases with localized one-line summaries (en/ar/nl), tagged "Installed"
+  for your current build and "Install" for newer versions. The screen
+  reuses the same 5-minute release cache as the splash gate so it costs
+  zero extra network calls on a cold start.
+- **Videos / Live channel tabs now show content again.** Bumped
+  NewPipeExtractor to v0.26.2 (upstream PR #1492) — fixes empty
+  Videos/Live tabs after YouTube's `lockupViewModel` response-shape
+  rollout. Same bug surfaced as empty Live pickers and missing video
+  thumbnails across multiple Detail screens.
+- **Empty / error states on channel tabs no longer disappear.** The
+  short ~200 dp tab area below an expanded channel header used to clip
+  the icon + headline + body + button stack from the bottom, so the
+  user saw nothing. Layout now anchors on the body text and clips
+  gracefully from the top — the message always renders. A localized
+  generic fallback shows up when the upstream surfaces a blank error
+  string, so the user never sees a centered icon over white space.
+- **Sign-up submit button activates only when the form is valid.**
+  Submit was previously enabled the instant loading finished, even on
+  a blank form — users on Samsung S25 / Android 16 reported "the
+  button does nothing" because the underlying validation toast was
+  being missed. The button now greys out until name, date of birth,
+  and (for password sign-ups) password+confirm all pass client-side
+  checks. Backend re-validates regardless.
+- **APK update downloads now verify the signing certificate AND
+  package name** against the currently-installed app before handing
+  off to the system installer, so a compromised release-server APK
+  fails earlier with a clear "signature mismatch" toast instead of an
+  opaque OEM-styled "App not installed" dialog. Same backstop as the
+  system installer; the in-app check is defense in depth.
+- **`releases-meta.json` parse is now bounded.** Caps at 64 KiB body
+  and 160 characters per summary string, so a tampered or runaway
+  metadata file can no longer OOM the parse or render a phishing-style
+  line in the picker.
+- **Picker install path survives navigation.** Tapping Install in
+  Available Updates and then rotating, navigating back, or
+  backgrounding no longer cancels the in-flight APK download — the
+  install coroutine is now scoped to the Activity, not the view.
+- **Splash gate releases the IO thread on timeout.** The 2-second
+  cold-start budget for the GitHub release check now actually cancels
+  the underlying OkHttp socket on timeout instead of holding an IO
+  dispatcher thread for OkHttp's default 10-second socket timeout.
+- **Picker dates and summaries follow the in-app language setting.**
+  Previously the date format read the system locale and the summary
+  lookup read a different source — users on system-English / app-Arabic
+  saw an inconsistent mix. Both now resolve from
+  `AppCompatDelegate.getApplicationLocales`.
+- **Firebase Bearer token is now scoped to the API host.** Pre-fix the
+  token was attached to every outbound request, including GitHub raw
+  fetches and image CDNs. Now host-scoped to the configured
+  `API_BASE_URL`; no Bearer leaves the trust boundary.
+
+### Internal
+
+- 7-stage review pipeline (bloat-audit + superpowers code-reviewer + cso
+  + codex challenge + gstack /review with 4 specialists + 7 cubic rounds)
+  ran across the full delta. All P0/P1/P2 findings closed; 12 new
+  tests covering HTTP failure semantics, body cap boundaries, cert
+  pinning across API 26 / API 28+ signing paths, coroutine cancellation,
+  per_page envelope, and form-validation truth table.
 
 ## [1.0.0-beta.14] - 2026-05-24
 

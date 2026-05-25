@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.15": {
+    "en": "Available updates picker, channel-tab Videos/Live fix, signature-verified install.",
+    "ar": "منتقي التحديثات المتاحة، إصلاح علامات تبويب القناة (فيديوهات/مباشر)، تثبيت موثّق بالتوقيع.",
+    "nl": "Beschikbare-updates kiezer, fix voor lege Videos/Live tabs, installatie met handtekeningverificatie."
+  },
   "1.0.0-beta.14": {
     "en": "Splash-gate update prompt + Samsung post-install self-kill.",
     "ar": "موجه التحديث على شاشة البداية + إنهاء العملية على سامسونج بعد التثبيت.",
