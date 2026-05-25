@@ -1,0 +1,23 @@
+android/app/src/main/java/com/albunyaan/tube/ui/auth/SignInViewModel.kt
+  s_e026945d130ffb::t_f372f3af76b8e7 16
+android/app/src/test/java/com/albunyaan/tube/util/EmailShapeTest.kt
+  s_e026945d130ffb::t_577e37155fc500 1-17
+android/app/src/main/java/com/albunyaan/tube/util/EmailShape.kt
+  s_e026945d130ffb::t_4db93c63460355 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "f9266b69d563ad770f43ac235350706f8505a45b",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
