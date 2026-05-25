@@ -226,6 +226,7 @@
     <string name="update_check_failed">Couldn\'t check for updates. Please try again.</string>
     <string name="update_downloading">Downloading update…</string>
     <string name="update_download_failed">Download failed. Please try again.</string>
+    <string name="update_signature_mismatch">Downloaded update did not match the installed app\'s signature and was refused. Please re-download from the trusted source.</string>
     <string name="update_permission_title">Permission needed</string>
     <string name="update_permission_message">To install the update, allow %1$s to install apps. Tap Open settings, enable the permission, then tap Check for updates again.</string>
     <string name="update_grant_permission">Open settings</string>
@@ -783,4 +784,14 @@
     <string name="available_versions_downgrade_deferred">Downgrade not available</string>
     <string name="available_versions_downgrade_snackbar">Downgrading older versions isn\'t supported yet. Coming in a future update.</string>
     <string name="available_versions_empty">No releases available right now. Try again later.</string>
+
+    <!-- Fallback shown in the channel-tab error state when the upstream surfaces a
+         blank message. The new body-anchored error_state layout centers on the
+         body text — a blank string would render an icon over white space. -->
+    <string name="channel_tab_error_generic">Couldn\'t load this tab. Please check your connection and try again.</string>
+
+    <!-- Defaults baked into empty_state.xml / error_state.xml so the headline
+         always renders even when the consumer only sets the body text. -->
+    <string name="empty_state_generic_headline">No content yet</string>
+    <string name="error_state_generic_headline">Something went wrong</string>
 </resources>

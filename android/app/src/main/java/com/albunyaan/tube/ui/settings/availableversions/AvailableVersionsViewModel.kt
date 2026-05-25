@@ -1,6 +1,7 @@
 package com.albunyaan.tube.ui.settings.availableversions
 
 import androidx.annotation.VisibleForTesting
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.BuildConfig
@@ -9,6 +10,7 @@ import com.albunyaan.tube.update.ReleaseRow
 import com.albunyaan.tube.update.RowState
 import com.albunyaan.tube.update.UpdateChecker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,8 +39,16 @@ class AvailableVersionsViewModel @Inject constructor(
     @VisibleForTesting
     internal var installedVersionName: String = BuildConfig.VERSION_NAME
 
+    // Test-only override. Production reads the in-app locale at every load()
+    // call via [resolveLocale] so the picker reacts to a language change made
+    // while the ViewModel survived a config rotation (cubic R6 P2).
     @VisibleForTesting
-    internal var locale: String = Locale.getDefault().language
+    internal var locale: String? = null
+
+    /** Resolves the locale tag for summary lookup: test override → in-app override → system. */
+    private fun resolveLocale(): String =
+        locale ?: AppCompatDelegate.getApplicationLocales()[0]?.language
+            ?: Locale.getDefault().language
 
     /** Secondary constructor used by unit tests only. */
     internal constructor(
@@ -47,26 +57,53 @@ class AvailableVersionsViewModel @Inject constructor(
         locale: String,
     ) : this(catalog) {
         this.installedVersionName = installedVersionName
+        // Setting [locale] non-null disables the per-call resolution path so
+        // unit tests get deterministic locale behaviour without invoking
+        // [AppCompatDelegate].
         this.locale = locale
     }
 
     private val _rows = MutableStateFlow<List<ReleaseRow>>(emptyList())
     val rows: StateFlow<List<ReleaseRow>> = _rows.asStateFlow()
 
-    private val _loading = MutableStateFlow(false)
+    // Initialised true so the picker's `combine` collector sees `loading=true`
+    // on its first emission and renders the spinner instead of the "no releases"
+    // empty state — fixes the flicker before the load() coroutine flips the flag
+    // (cubic R1 C3).
+    private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
+    // Coalesces concurrent load() calls. A re-entry while a previous load is
+    // still in-flight discards the new call; without this the second coroutine
+    // could resolve faster and the first would overwrite it with stale data
+    // (cubic R1 C5).
+    private var inFlightLoad: Job? = null
+
+    /**
+     * Triggers a fetch + render of the picker rows.
+     *
+     * Thread-safety: MUST be called from the Main thread. The [inFlightLoad]
+     * re-entry guard is not atomic; concurrent off-Main invocations could
+     * launch duplicate fetches (cubic R6 P2). Fragment / Activity callers
+     * default to Main, so the constraint is met in practice.
+     */
     fun load() {
-        viewModelScope.launch {
+        if (inFlightLoad?.isActive == true) return
+        // Re-resolve the locale per call so a language change in Settings that
+        // does not destroy the ViewModel (config-change survival) is picked up
+        // on the next refresh (cubic R6 P2).
+        val localeTag = resolveLocale()
+        inFlightLoad = viewModelScope.launch {
             _loading.value = true
             try {
-                val releases = catalog.list(limit = 5)
+                val releases = catalog.list(limit = PICKER_PAGE_SIZE)
                 val summaries = catalog.summaries()
                 _rows.value = releases.map { info ->
+                    val remote = info.versionName.trim()
                     ReleaseRow(
                         info = info,
-                        localizedSummary = summaries.summaryFor(info.versionName, locale),
-                        state = computeState(info.versionName, installedVersionName),
+                        localizedSummary = summaries.summaryFor(info.versionName, localeTag),
+                        state = computeState(remote, installedVersionName.trim()),
                     )
                 }
             } finally {
@@ -79,5 +116,13 @@ class AvailableVersionsViewModel @Inject constructor(
         remote == installed -> RowState.Current
         UpdateChecker.isNewerVersion(remote, installed) -> RowState.Newer
         else -> RowState.Older
+    }
+
+    private companion object {
+        /** Number of releases the picker renders. Was a default param on
+         *  [ReleaseCatalogCache.list]/[UpdateChecker.listReleases]; lifted to a
+         *  caller-side constant so the API surface no longer carries a "configurable
+         *  setting nobody changes" (initial bloat-audit finding #5). */
+        const val PICKER_PAGE_SIZE = 5
     }
 }

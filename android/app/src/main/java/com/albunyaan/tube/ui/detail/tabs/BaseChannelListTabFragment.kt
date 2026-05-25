@@ -346,6 +346,13 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
                     tabRecycler.isVisible = false
                     tabEmptyState.root.isVisible = false
                     tabErrorState.root.isVisible = true
+                    // Fall back to a localized generic message when the upstream
+                    // surfaces a blank string. The new body-anchored error_state
+                    // layout centers on errorBody, so a blank assignment would
+                    // leave the user staring at an icon with no actionable text
+                    // (codex C-6).
+                    tabErrorState.errorBody.text = state.message.takeIf { it.isNotBlank() }
+                        ?: getString(R.string.channel_tab_error_generic)
                 }
                 is ChannelDetailViewModel.PaginatedState.ErrorAppend -> {
                     // Keep list visible, show error in footer with retry option

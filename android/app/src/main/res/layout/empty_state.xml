@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Empty state overlay used inside tab content areas (channel list tabs, shorts
+  tab, playlist detail). The body text is the primary anchor: vertically
+  centered so the message stays visible even when the surrounding container
+  is short (e.g. a tab area squeezed below a fully-expanded channel header,
+  which is only ~200dp tall). Icon and headline clip from the top in narrow
+  containers; the action button clips from the bottom — but the message
+  always shows.
+-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -6,50 +15,51 @@
     android:layout_height="match_parent"
     android:padding="@dimen/spacing_lg">
 
-    <!-- Empty Icon -->
+    <!-- Body Text: primary anchor, vertically centered, always visible -->
+    <TextView
+        android:id="@+id/emptyBody"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:textSize="14sp"
+        android:textColor="@android:color/darker_gray"
+        android:gravity="center"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintWidth_max="300dp"
+        tools:text="No live or upcoming streams" />
+
+    <!-- Headline: above body, clips from top in narrow containers -->
+    <TextView
+        android:id="@+id/emptyHeadline"
+        android:text="@string/empty_state_generic_headline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="@dimen/spacing_sm"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/black"
+        app:layout_constraintBottom_toTopOf="@id/emptyBody"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="No content found" />
+
+    <!-- Empty Icon: above headline, clips from top in narrow containers -->
     <ImageView
         android:id="@+id/emptyIcon"
         android:layout_width="@dimen/icon_xlarge"
         android:layout_height="@dimen/icon_xlarge"
         android:importantForAccessibility="no"
         android:tint="@color/primary_green"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/emptyHeadline"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintVertical_bias="0.35"
         tools:src="@drawable/ic_search" />
 
-    <!-- Headline -->
-    <TextView
-        android:id="@+id/emptyHeadline"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/spacing_lg"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        android:textColor="@android:color/black"
-        app:layout_constraintTop_toBottomOf="@id/emptyIcon"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        tools:text="No content found" />
-
-    <!-- Body Text -->
-    <TextView
-        android:id="@+id/emptyBody"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/spacing_sm"
-        android:textSize="14sp"
-        android:textColor="@android:color/darker_gray"
-        android:gravity="center"
-        app:layout_constraintTop_toBottomOf="@id/emptyHeadline"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintWidth_max="300dp"
-        tools:text="Try adjusting your filters or search terms" />
-
-    <!-- Action Button -->
+    <!-- Action Button: below body, hidden by default. Consumers that want
+         a CTA (e.g. "Clear filters" on filtered search results) flip
+         visibility to VISIBLE in code. -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/emptyActionButton"
         android:layout_width="wrap_content"
@@ -58,9 +68,11 @@
         android:minWidth="120dp"
         android:text="@string/clear_filters"
         android:textColor="@android:color/white"
+        android:visibility="gone"
         app:cornerRadius="@dimen/corner_radius"
         app:layout_constraintTop_toBottomOf="@id/emptyBody"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:visibility="visible" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

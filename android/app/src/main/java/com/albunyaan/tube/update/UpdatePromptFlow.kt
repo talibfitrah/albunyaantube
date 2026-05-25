@@ -114,6 +114,27 @@ class UpdatePromptFlow @Inject constructor(
     }
 
     /**
+     * Manual install entry point from the Available Updates picker. Unlike
+     * [showUpdateDialogAndAwait] (splash-gate), this bypasses the
+     * `promptDismissedThisProcess` short-circuit because picker taps are
+     * explicit user-initiated actions, equivalent to the Settings
+     * "Check for updates" path (see [runCheck]).
+     *
+     * Without this entry point the picker silently no-ops after the user has
+     * dismissed the cold-start dialog (codex stage-6 HIGH).
+     */
+    fun showPickerInstallDialog(
+        activity: Activity,
+        lifecycleOwner: LifecycleOwner,
+        info: UpdateInfo
+    ) {
+        // Intentional: do NOT check `promptDismissedThisProcess`. Picker taps
+        // are explicit user actions and must always show the dialog.
+        // showUpdateDialog (the private helper) does not consult the flag.
+        showUpdateDialog(activity, lifecycleOwner, info)
+    }
+
+    /**
      * Splash-gate entry point: shows the update dialog and suspends until the user dismisses
      * it (Later, Install, back button, or outside tap). Lets SplashFragment hold its routing
      * decision until the user has seen the update prompt — ensures the dialog is in front of
@@ -179,7 +200,7 @@ class UpdatePromptFlow @Inject constructor(
             if (Looper.myLooper() == Looper.getMainLooper()) {
                 cleanup()
             } else {
-                Handler(Looper.getMainLooper()).post(cleanup)
+                Handler(Looper.getMainLooper(), null).post(cleanup)
             }
         }
     }
@@ -217,7 +238,15 @@ class UpdatePromptFlow @Inject constructor(
         // can be dequeued after a racing invokeOnCancellation clears the listener).
         dialog.setOnDismissListener { onDismissed() }
         dialogView.findViewById<TextView>(R.id.update_full_changelog).setOnClickListener {
-            val url = "https://github.com/$GITHUB_REPO/releases/tag/v${info.versionName}"
+            val safe = info.versionName.sanitizeSemverDisplay()
+            if (safe.isEmpty()) {
+                // Sanitizer stripped the whole tag (homoglyph-only). The /tag/v
+                // URL would 404 anyway; skip the intent so we do not navigate the
+                // user to a broken page (cubic R3 P3).
+                Log.w(TAG, "Skipping changelog link — versionName sanitized to empty")
+                return@setOnClickListener
+            }
+            val url = "https://github.com/${UpdateChecker.GITHUB_REPO}/releases/tag/v$safe"
             runCatching {
                 activity.startActivity(
                     Intent(Intent.ACTION_VIEW, Uri.parse(url))
@@ -307,6 +336,13 @@ class UpdatePromptFlow @Inject constructor(
                         progressLabel.text = activity.getString(R.string.update_progress_percent, pct)
                     }
                 }
+                // Cert verification + APK parse on the IO dispatcher (cubic R2 P1):
+                // PackageManager.getPackageArchiveInfo() parses the full APK manifest
+                // and can hold the calling thread for hundreds of ms on a large APK —
+                // ANRs the splash gate if it ever ran on Main.
+                withContext(Dispatchers.IO) {
+                    installer.verifySigningCertMatch(activity, file)
+                }
                 withContext(Dispatchers.Main) {
                     if (!activity.isFinishing && !activity.isDestroyed) {
                         installer.launchInstaller(activity, file)
@@ -315,6 +351,12 @@ class UpdatePromptFlow @Inject constructor(
                 }
             } catch (ce: CancellationException) {
                 throw ce
+            } catch (se: SecurityException) {
+                // Cert / package-name mismatch surfaces here (cubic R2 P2). Distinct
+                // toast so the user understands the problem is signature-integrity,
+                // not network — actionable hint to re-download from a trusted source.
+                Log.e(TAG, "Signing verification failed", se)
+                toast(activity, R.string.update_signature_mismatch)
             } catch (t: Throwable) {
                 Log.e(TAG, "Update download/install failed", t)
                 toast(activity, R.string.update_download_failed)
@@ -344,7 +386,7 @@ class UpdatePromptFlow @Inject constructor(
      * actually proceeded, which always leaves us at IMPORTANCE_CACHED or worse.
      */
     private fun scheduleSelfKillAfterInstall() {
-        Handler(Looper.getMainLooper()).postDelayed({
+        Handler(Looper.getMainLooper(), null).postDelayed({
             if (isAppForegroundOrVisible()) {
                 Log.d(TAG, "User returned before self-kill window elapsed — skipping")
                 return@postDelayed
@@ -371,7 +413,6 @@ class UpdatePromptFlow @Inject constructor(
 
     companion object {
         private const val TAG = "UpdatePromptFlow"
-        private const val GITHUB_REPO = "talibfitrah/albunyaantube"
 
         /** Splash budget — long enough for a healthy GitHub response, short enough to not
          * stall cold start on a flaky network. The check runs in parallel with splash

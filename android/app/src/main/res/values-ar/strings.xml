@@ -196,6 +196,7 @@
     <string name="update_check_failed">تعذر التحقق من التحديثات.</string>
     <string name="update_downloading">جاري تنزيل التحديث…</string>
     <string name="update_download_failed">فشل تنزيل التحديث.</string>
+    <string name="update_signature_mismatch">التحديث الذي تم تنزيله لم يطابق توقيع التطبيق المثبت ورُفض. يرجى إعادة التنزيل من مصدر موثوق.</string>
     <string name="update_permission_title">السماح بالتثبيت من هذا التطبيق</string>
     <string name="update_permission_message">لتثبيت الإصدار الجديد، امنح الإذن بتثبيت التطبيقات غير المعروفة لـ %1$s في الشاشة التالية، ثم اضغط على التحقق من التحديثات مرة أخرى.</string>
     <string name="update_grant_permission">فتح الإعدادات</string>
@@ -702,5 +703,8 @@
     <string name="available_versions_downgrade_deferred">الرجوع لإصدار أقدم غير متاح</string>
     <string name="available_versions_downgrade_snackbar">الرجوع إلى الإصدارات القديمة غير مدعوم بعد. سيأتي في تحديث لاحق.</string>
     <string name="available_versions_empty">لا توجد إصدارات متاحة حالياً. حاول مرة أخرى لاحقاً.</string>
+    <string name="channel_tab_error_generic">تعذّر تحميل هذا التبويب. يرجى التحقق من اتصالك والمحاولة مرة أخرى.</string>
+    <string name="empty_state_generic_headline">لا يوجد محتوى بعد</string>
+    <string name="error_state_generic_headline">حدث خطأ ما</string>
 
 </resources>

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Error state overlay. Same body-text-as-anchor pattern as empty_state.xml
+  so the error message stays visible inside short containers (tab content
+  area below an expanded channel header is only ~200dp tall). Icon and
+  headline clip from the top in narrow containers; retry button stays
+  below — keep retryButton visible since users need a way to recover.
+-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -6,52 +13,51 @@
     android:layout_height="match_parent"
     android:padding="@dimen/spacing_lg">
 
-    <!-- Error Icon -->
+    <!-- Body Text: primary anchor, vertically centered, always visible -->
+    <TextView
+        android:id="@+id/errorBody"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:textSize="@dimen/text_body"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:gravity="center"
+        android:textAlignment="center"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintWidth_max="@dimen/error_body_max_width"
+        tools:text="Unable to load content. Please check your connection and try again." />
+
+    <!-- Headline: above body, clips from top in narrow containers -->
+    <TextView
+        android:id="@+id/errorHeadline"
+        android:text="@string/error_state_generic_headline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="@dimen/spacing_sm"
+        android:textSize="@dimen/text_headline"
+        android:textStyle="bold"
+        android:textColor="?attr/colorOnSurface"
+        android:textAlignment="center"
+        app:layout_constraintBottom_toTopOf="@id/errorBody"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="Something went wrong" />
+
+    <!-- Error Icon: above headline, clips from top in narrow containers -->
     <ImageView
         android:id="@+id/errorIcon"
         android:layout_width="@dimen/icon_xlarge"
         android:layout_height="@dimen/icon_xlarge"
         android:importantForAccessibility="no"
         android:tint="@color/accent_red"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/errorHeadline"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintVertical_bias="0.35"
         tools:src="@drawable/ic_error" />
 
-    <!-- Headline -->
-    <TextView
-        android:id="@+id/errorHeadline"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/spacing_lg"
-        android:textSize="@dimen/text_headline"
-        android:textStyle="bold"
-        android:textColor="?attr/colorOnSurface"
-        android:textAlignment="center"
-        app:layout_constraintTop_toBottomOf="@id/errorIcon"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        tools:text="Something went wrong" />
-
-    <!-- Body Text -->
-    <TextView
-        android:id="@+id/errorBody"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/spacing_sm"
-        android:textSize="@dimen/text_body"
-        android:textColor="?attr/colorOnSurfaceVariant"
-        android:gravity="center"
-        android:textAlignment="center"
-        app:layout_constraintTop_toBottomOf="@id/errorHeadline"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintWidth_max="@dimen/error_body_max_width"
-        tools:text="Unable to load content. Please check your connection and try again." />
-
-    <!-- Retry Button -->
+    <!-- Retry Button: below body, stays visible (user needs recovery action) -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/retryButton"
         android:layout_width="wrap_content"

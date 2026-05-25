@@ -40,10 +40,16 @@ class AvailableVersionsFragment : Fragment(R.layout.fragment_available_versions)
 
         adapter = AvailableVersionsAdapter(
             onInstallClick = { row ->
-                val activity = activity ?: return@AvailableVersionsAdapter
-                viewLifecycleOwner.lifecycleScope.launch {
-                    updatePromptFlow.showUpdateDialogAndAwait(activity, viewLifecycleOwner, row.info)
-                }
+                val hostActivity = activity ?: return@AvailableVersionsAdapter
+                // Picker install is an explicit user-initiated action. Route through
+                // `showPickerInstallDialog` which deliberately bypasses
+                // `promptDismissedThisProcess` — `showUpdateDialogAndAwait` is for the
+                // splash gate only, where a dismissal must suppress re-prompts; the
+                // picker should always be reactive to the user tapping Install
+                // (codex stage-6 HIGH). The download itself is bound to the Activity
+                // lifecycle by [showUpdateDialog] internals, so back-nav out of the
+                // picker mid-download still survives (codex C-1).
+                updatePromptFlow.showPickerInstallDialog(hostActivity, hostActivity, row.info)
             },
             onOlderClick = {
                 Snackbar.make(

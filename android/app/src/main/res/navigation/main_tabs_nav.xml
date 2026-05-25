@@ -190,8 +190,7 @@
         <action
             android:id="@+id/action_settingsFragment_to_availableVersionsFragment"
             app:destination="@id/availableVersionsFragment"
-            app:launchSingleTop="true"
-            app:popUpTo="@id/settingsFragment" />
+            app:launchSingleTop="true" />
         <action
             android:id="@+id/action_settingsFragment_to_downloadsFragment"
             app:destination="@id/downloadsFragment"

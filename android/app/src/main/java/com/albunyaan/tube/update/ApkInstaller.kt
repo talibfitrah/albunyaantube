@@ -3,16 +3,21 @@ package com.albunyaan.tube.update
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -55,7 +60,8 @@ class ApkInstaller @Inject constructor(
         val target = File(updatesDir, "fitrahtube-update.apk")
 
         val request = Request.Builder().url(apkUrl).build()
-        okHttpClient.newCall(request).execute().use { response ->
+        val call = okHttpClient.newCall(request).cancelWhenCoroutineCancels()
+        call.execute().use { response ->
             require(response.isSuccessful) {
                 "APK download failed: HTTP ${response.code}"
             }
@@ -97,6 +103,11 @@ class ApkInstaller @Inject constructor(
     /**
      * Launches the system package installer for [apkFile]. The installer runs in its own
      * activity; [activity] is only used to grant the URI permission and start the intent.
+     *
+     * The caller MUST have already invoked [verifySigningCertMatch] (typically on the IO
+     * dispatcher — the APK parse is heavy enough to ANR if it lands on Main — cubic R2 P1).
+     * `launchInstaller` itself runs on Main so the Intent dispatch can interact with the
+     * Activity.
      */
     fun launchInstaller(activity: Activity, apkFile: File) {
         val authority = "${activity.packageName}.downloads.provider"
@@ -115,6 +126,79 @@ class ApkInstaller @Inject constructor(
             Log.e(TAG, "Failed to launch package installer", t)
             throw t
         }
+    }
+
+    /**
+     * Reads the SHA-256 of the signing certificate from the currently-installed
+     * app and from the downloaded APK file; throws [SecurityException] when they
+     * do not match or when either certificate cannot be read.
+     */
+    @VisibleForTesting
+    internal fun verifySigningCertMatch(activity: Activity, apkFile: File) {
+        val pm = activity.packageManager
+        val flag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+        }
+        val installed = try {
+            pm.getPackageInfo(activity.packageName, flag)
+        } catch (e: PackageManager.NameNotFoundException) {
+            throw SecurityException("Installed package info unavailable; refusing install", e)
+        }
+        val downloaded = pm.getPackageArchiveInfo(apkFile.absolutePath, flag)
+            ?: throw SecurityException("Downloaded APK has no readable package info")
+        // Verify packageName equality BEFORE the cert compare — a same-signed
+        // APK with a different applicationId (e.g. a debug flavor of the same
+        // signing key) would otherwise pass the cert check and side-by-side
+        // install instead of upgrading (codex stage-6 MEDIUM).
+        if (downloaded.packageName != activity.packageName) {
+            Log.e(
+                TAG,
+                "Package name mismatch: installed=${activity.packageName} downloaded=${downloaded.packageName}"
+            )
+            throw SecurityException(
+                "Downloaded APK packageName does not match installed app"
+            )
+        }
+        val installedSha = certSha256(installed)
+            ?: throw SecurityException("No signing certificate on installed app")
+        val downloadedSha = certSha256(downloaded)
+            ?: throw SecurityException("No signing certificate in downloaded APK")
+        if (installedSha != downloadedSha) {
+            Log.e(TAG, "Signing certificate mismatch: installed=$installedSha downloaded=$downloadedSha")
+            throw SecurityException(
+                "Downloaded APK signing certificate does not match installed app"
+            )
+        }
+    }
+
+    /**
+     * Returns SHA-256 of the package's first signing certificate, or null when
+     * none is readable.
+     *
+     * Known limitation (cubic R1 C1 / stage-6 Sec-2): when an app rotates its
+     * signing key via v3-signing lineage, `signingCertificateHistory` exposes
+     * the full history; `[0]` is the original (oldest) cert, not the active one.
+     * Comparing `[0]` on a rotated installed app against the new APK's `[0]`
+     * yields a false mismatch and blocks the legitimate upgrade. FitrahTube
+     * has not rotated its signing key, so this branch is dormant; if a rotation
+     * is ever planned, switch this method to compare ANY entry in the installed
+     * lineage against ANY entry in the downloaded lineage (mirrors PackageManager's
+     * own behaviour) and ship the change in a release BEFORE the rotated APK.
+     */
+    private fun certSha256(info: PackageInfo): String? {
+        val signatures: Array<Signature>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.let { si ->
+                if (si.hasMultipleSigners()) si.apkContentsSigners else si.signingCertificateHistory
+            }
+        } else {
+            @Suppress("DEPRECATION") info.signatures
+        }
+        val first = signatures?.firstOrNull() ?: return null
+        return MessageDigest.getInstance("SHA-256")
+            .digest(first.toByteArray())
+            .joinToString("") { "%02x".format(it) }
     }
 
     /** On O+ the user must grant "install unknown apps" for this app specifically. */

@@ -206,6 +206,7 @@
     <string name="update_check_failed">Kan niet controleren op updates.</string>
     <string name="update_downloading">Update downloaden…</string>
     <string name="update_download_failed">Update-download mislukt.</string>
+    <string name="update_signature_mismatch">De gedownloade update komt niet overeen met de handtekening van de geïnstalleerde app en is geweigerd. Download opnieuw vanaf een vertrouwde bron.</string>
     <string name="update_permission_title">Installatie vanuit deze app toestaan</string>
     <string name="update_permission_message">Om de nieuwe versie te installeren, verleen toestemming om onbekende apps te installeren voor %1$s in het volgende scherm en tik vervolgens opnieuw op Controleren op updates.</string>
     <string name="update_grant_permission">Instellingen openen</string>
@@ -672,6 +673,9 @@
     <string name="available_versions_downgrade_deferred">Downgrade niet beschikbaar</string>
     <string name="available_versions_downgrade_snackbar">Downgraden naar oudere versies wordt nog niet ondersteund. Komt in een toekomstige update.</string>
     <string name="available_versions_empty">Geen releases beschikbaar op dit moment. Probeer het later opnieuw.</string>
+    <string name="channel_tab_error_generic">Dit tabblad kon niet worden geladen. Controleer je verbinding en probeer het opnieuw.</string>
+    <string name="empty_state_generic_headline">Nog geen inhoud</string>
+    <string name="error_state_generic_headline">Er is iets misgegaan</string>
 
 </resources>
 

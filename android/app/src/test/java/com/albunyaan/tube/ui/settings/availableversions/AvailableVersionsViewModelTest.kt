@@ -28,7 +28,7 @@ class AvailableVersionsViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(dispatcher)
     @After  fun tearDown() = Dispatchers.resetMain()
 
-    private fun info(v: String) = UpdateInfo(v, v, "", "https://x/$v.apk", 1)
+    private fun info(v: String) = UpdateInfo(v, v, "https://x/$v.apk", 1)
 
     @Test
     fun `merges releases with summaries and assigns row state by installed version`() = runTest {
@@ -95,5 +95,23 @@ class AvailableVersionsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(0, vm.rows.value.size)
+    }
+
+    // codex C-5: a tag with leading/trailing whitespace (`v1.0.0-beta.14 `) reaches
+    // versionName unnormalized. Without trim, the trailing space lands in the
+    // prerelease arm of the comparator and can sort above the installed version.
+    // With trim, the row resolves to Current as expected.
+    @Test
+    fun `trailing whitespace in remote tag resolves to Current state when matching installed`() = runTest {
+        val withSpace = info("1.0.0-beta.14 ")
+        val cache = mock<ReleaseCatalogCache> {
+            onBlocking { list(any()) } doReturn listOf(withSpace)
+            onBlocking { summaries() } doReturn ReleaseSummaries(emptyMap())
+        }
+        val vm = AvailableVersionsViewModel(cache, installedVersionName = "1.0.0-beta.14", locale = "en")
+        vm.load()
+        advanceUntilIdle()
+
+        assertEquals(RowState.Current, vm.rows.value.single().state)
     }
 }

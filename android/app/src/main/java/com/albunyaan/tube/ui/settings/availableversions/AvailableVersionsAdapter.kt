@@ -4,12 +4,14 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
 import com.albunyaan.tube.update.ReleaseRow
 import com.albunyaan.tube.update.RowState
+import com.albunyaan.tube.update.sanitizeSemverDisplay
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import java.time.ZoneId
@@ -51,11 +53,23 @@ class AvailableVersionsAdapter(
         private val installedChip: Chip = view.findViewById(R.id.installedChip)
 
         fun bind(row: ReleaseRow) {
-            version.text = "v${row.info.versionName}"
+            // Fall back to "v?" when the tag is entirely homoglyphs / non-ASCII —
+            // the sanitizer can yield an empty string and "v" alone looks broken
+            // (cubic R2 P3).
+            val sanitized = row.info.versionName.sanitizeSemverDisplay()
+            version.text = if (sanitized.isEmpty()) "v?" else "v$sanitized"
 
+            // Prefer the in-app locale override (Settings → Language) over the
+            // system locale so users on system-English but app-Arabic see Arabic
+            // dates in the picker (S1 M4). `AppCompatDelegate.getApplicationLocales`
+            // is updated by AppCompatDelegate.setApplicationLocales (called from
+            // the language-picker flow); falls back to system locale when no
+            // app-level override is set.
+            val displayLocale = AppCompatDelegate.getApplicationLocales()[0]
+                ?: Locale.getDefault()
             dateLine.text = row.info.publishedAt?.let {
                 DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)
-                    .withLocale(Locale.getDefault())
+                    .withLocale(displayLocale)
                     .withZone(ZoneId.systemDefault())
                     .format(it)
             }.orEmpty()

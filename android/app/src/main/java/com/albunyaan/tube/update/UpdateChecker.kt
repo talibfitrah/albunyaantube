@@ -21,19 +21,24 @@ import javax.inject.Singleton
 data class UpdateInfo(
     val versionName: String,
     val releaseName: String,
-    val releaseNotes: String,
     val apkUrl: String,
     val apkSizeBytes: Long,
     val publishedAt: java.time.Instant? = null,   // null when GitHub omits it
 )
 
+/**
+ * Shared DTO for both the single-release endpoint (`GET /releases/latest`) and the
+ * release-list endpoint (`GET /releases`). Originally split into two DTOs so they
+ * could evolve independently; consolidated 2026-05-25 after Task 7 (commit fe2335a2)
+ * threaded `published_at` through both — the split justification no longer holds and
+ * the duplication was bloat (initial bloat-audit, finding #2).
+ */
 @JsonClass(generateAdapter = true)
 internal data class GithubReleaseDto(
     val tag_name: String,
     val name: String?,
-    val body: String?,
     val prerelease: Boolean,
-    val assets: List<GithubAssetDto>,
+    val assets: List<GithubAssetDto> = emptyList(),
     val published_at: String? = null,
 )
 
@@ -43,21 +48,6 @@ internal data class GithubAssetDto(
     val browser_download_url: String,
     val size: Long,
     val content_type: String
-)
-
-/**
- * DTO for a single entry in the GitHub releases *list* endpoint (`GET /repos/{owner}/{repo}/releases`).
- * Kept separate from [GithubReleaseDto] (which targets the single-release endpoint) so the two
- * can evolve independently — Task 7 will add `published_at` here without touching [GithubReleaseDto].
- */
-@JsonClass(generateAdapter = true)
-internal data class GithubReleaseListItemDto(
-    val tag_name: String,
-    val name: String?,
-    val body: String?,
-    val prerelease: Boolean,
-    val assets: List<GithubAssetDto> = emptyList(),
-    val published_at: String? = null,
 )
 
 /**
@@ -79,8 +69,8 @@ class UpdateChecker @Inject constructor(
 
     private val moshi: Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val adapter = moshi.adapter(GithubReleaseDto::class.java)
-    private val listAdapter = moshi.adapter<List<GithubReleaseListItemDto>>(
-        Types.newParameterizedType(List::class.java, GithubReleaseListItemDto::class.java)
+    private val listAdapter = moshi.adapter<List<GithubReleaseDto>>(
+        Types.newParameterizedType(List::class.java, GithubReleaseDto::class.java)
     )
 
     suspend fun checkForUpdate(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
@@ -88,20 +78,21 @@ class UpdateChecker @Inject constructor(
             Log.d(TAG, "Installed from Play Store — skipping GitHub update check")
             return@withContext Result.success(null)
         }
-        runCatching {
+        runCatchingCoroutine {
             val request = Request.Builder()
                 .url(RELEASES_URL)
                 .header("Accept", "application/vnd.github+json")
                 .header("X-GitHub-Api-Version", "2022-11-28")
                 .build()
-            okHttpClient.newCall(request).execute().use { response ->
+            val call = okHttpClient.newCall(request).cancelWhenCoroutineCancels()
+            call.execute().use { response ->
                 if (!response.isSuccessful) {
                     Log.w(TAG, "GitHub releases API returned HTTP ${response.code}")
                     return@use null
                 }
                 val body = response.body?.string() ?: return@use null
                 val release = adapter.fromJson(body) ?: return@use null
-                val remoteVersion = release.tag_name.removePrefix("v").removePrefix("V")
+                val remoteVersion = release.tag_name.removePrefix("v").removePrefix("V").trim()
                 val currentVersion = BuildConfig.VERSION_NAME
                 // CodeRabbit #8: if the current build is a stable release (no prerelease
                 // suffix) and GitHub marks the candidate as prerelease, don't auto-prompt
@@ -127,7 +118,6 @@ class UpdateChecker @Inject constructor(
                 UpdateInfo(
                     versionName = remoteVersion,
                     releaseName = release.name ?: release.tag_name,
-                    releaseNotes = release.body.orEmpty(),
                     apkUrl = apkAsset.browser_download_url,
                     apkSizeBytes = apkAsset.size,
                     publishedAt = release.published_at?.let {
@@ -144,30 +134,49 @@ class UpdateChecker @Inject constructor(
      * build is stable) pre-releases — matching the rules in [checkForUpdate].
      *
      * Failure semantics:
-     *  - HTTP non-2xx, missing/empty response body, and Moshi `null` parse → return
-     *    `Result.success(emptyList())`. Callers cannot distinguish these from "no
-     *    releases exist." The Available Updates screen renders an empty state for
-     *    both cases; a future task will surface a "Couldn't refresh" subtitle.
+     *  - HTTP non-2xx (rate-limit, 5xx, transient outage) → `Result.failure(IOException)`
+     *    so [ReleaseCatalogCache] does NOT sticky an empty-list result for the full
+     *    TTL. Empty 2xx response (genuine "no releases") still returns
+     *    `Result.success(emptyList())` — distinguishable from transient failure
+     *    only by Result.isSuccess (codex C-3 / cubic R7 P0).
      *  - Thrown exceptions inside the network or parse path (IOException, SocketTimeoutException,
      *    Moshi JsonDataException on a malformed but non-null body) propagate as `Result.failure`.
      *  - Play Store installs short-circuit to `Result.success(emptyList())` before the network call.
+     *
+     * Pagination: `per_page` is bumped to `limit * 6` (capped at GitHub's 100/page
+     * maximum). The `.take(limit)` after filtering ensures the caller still gets at
+     * most [limit] post-filter entries. Without overfetching, a feed where the top
+     * N entries are prereleases-on-stable-build or no-APK would silently produce
+     * fewer (or zero) results (codex C-2).
      */
     suspend fun listReleases(
-        limit: Int = 5
+        limit: Int
     ): Result<List<UpdateInfo>> = withContext(Dispatchers.IO) {
+        require(limit in 1..GITHUB_MAX_PER_PAGE) {
+            "limit must be in 1..$GITHUB_MAX_PER_PAGE, got $limit"
+        }
         if (installSource.isPlayStore()) return@withContext Result.success(emptyList())
-        runCatching {
+        runCatchingCoroutine {
             val base = apiBaseUrlForTest ?: "https://api.github.com/"
-            val url = "${base.trimEnd('/')}/repos/$GITHUB_REPO/releases?per_page=$limit"
+            // Compute as Long to defuse Int overflow on `limit * 6` for any future
+            // caller passing a near-MAX_VALUE limit; coerce back into the
+            // 1..GITHUB_MAX_PER_PAGE window so `per_page` is always a valid
+            // GitHub API value (codex stage-6 MEDIUM).
+            val pageSize = (limit.toLong() * 6L).coerceIn(1L, GITHUB_MAX_PER_PAGE.toLong()).toInt()
+            val url = "${base.trimEnd('/')}/repos/$GITHUB_REPO/releases?per_page=$pageSize"
             val request = Request.Builder()
                 .url(url)
                 .header("Accept", "application/vnd.github+json")
                 .header("X-GitHub-Api-Version", "2022-11-28")
                 .build()
-            okHttpClient.newCall(request).execute().use { response ->
+            val call = okHttpClient.newCall(request).cancelWhenCoroutineCancels()
+            call.execute().use { response ->
                 if (!response.isSuccessful) {
-                    Log.w(TAG, "GitHub releases API returned HTTP ${response.code}")
-                    return@use emptyList<UpdateInfo>()
+                    // Throw inside runCatching so ReleaseCatalogCache.current() reads
+                    // Result.failure and does not cache an empty snapshot (codex C-3).
+                    throw java.io.IOException(
+                        "GitHub releases API returned HTTP ${response.code}"
+                    )
                 }
                 val body = response.body?.string() ?: return@use emptyList<UpdateInfo>()
                 val list = listAdapter.fromJson(body) ?: return@use emptyList<UpdateInfo>()
@@ -180,9 +189,8 @@ class UpdateChecker @Inject constructor(
                             it.name.endsWith(".apk", ignoreCase = true)
                         } ?: return@mapNotNull null
                         UpdateInfo(
-                            versionName = release.tag_name.removePrefix("v").removePrefix("V"),
+                            versionName = release.tag_name.removePrefix("v").removePrefix("V").trim(),
                             releaseName = release.name ?: release.tag_name,
-                            releaseNotes = release.body.orEmpty(),
                             apkUrl = apk.browser_download_url,
                             apkSizeBytes = apk.size,
                             publishedAt = release.published_at?.let {
@@ -198,9 +206,15 @@ class UpdateChecker @Inject constructor(
 
     companion object {
         private const val TAG = "UpdateChecker"
-        private const val GITHUB_REPO = "talibfitrah/albunyaantube"
+        /** Single source of truth for the GitHub repo coordinate. Shared with
+         *  [UpdatePromptFlow] for the "View full changelog" deep-link URL
+         *  (S1 M5 — was duplicated as a private const at both ends). */
+        const val GITHUB_REPO = "talibfitrah/albunyaantube"
         private const val RELEASES_URL =
             "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+        /** GitHub's documented maximum `per_page` for paginated REST endpoints
+         *  (https://docs.github.com/en/rest/releases/releases#list-releases). */
+        private const val GITHUB_MAX_PER_PAGE = 100
 
         /**
          * True iff [remote] is strictly greater than [current] in semver-2.0.0-ish order.

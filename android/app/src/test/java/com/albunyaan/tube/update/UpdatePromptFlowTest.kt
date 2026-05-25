@@ -76,7 +76,6 @@ class UpdatePromptFlowTest {
         val nonLatest = UpdateInfo(
             versionName = "1.0.0-beta.13",  // one behind the running build, hypothetically
             releaseName = "beta-13",
-            releaseNotes = "",
             apkUrl = "https://example/test.apk",
             apkSizeBytes = 1024L,
             publishedAt = null,
@@ -95,7 +94,6 @@ class UpdatePromptFlowTest {
     private fun updateInfo() = UpdateInfo(
         versionName = "1.0.0-beta.14",
         releaseName = "v1.0.0-beta.14",
-        releaseNotes = "",
         apkUrl = "https://github.test/release.apk",
         apkSizeBytes = 1_024L,
     )
