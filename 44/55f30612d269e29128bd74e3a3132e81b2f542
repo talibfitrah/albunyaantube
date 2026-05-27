@@ -1,0 +1,94 @@
+releases-meta.json
+  s_7e0cc834dadd29::t_6f24d554f01b34 2-6
+android/app/src/main/java/com/albunyaan/tube/update/InstallStatusActivity.kt
+  s_7e0cc834dadd29::t_978ce685524f99 69
+  s_7e0cc834dadd29::t_b1f780fcc2b483 1-10,12,14-16,21-28,35-51,53-62,70-75,77-80,82-83,91-127
+  s_7e0cc834dadd29::t_39909c68400f81 17-20,29-34,52,63-68,76,81,84-89
+  s_7e0cc834dadd29::t_512a33fc125542 90
+  s_7e0cc834dadd29::t_3c085f8db7af62 11,13
+android/app/src/main/AndroidManifest.xml
+  s_7e0cc834dadd29::t_ad59bfd7a05cec 147-152
+  s_7e0cc834dadd29::t_db6aa1fa5e8a80 146,154-159
+android/app/src/main/java/com/albunyaan/tube/ui/download/DownloadsFragment.kt
+  s_e0e70191a979cd::t_cc5ef749329937 94-98
+android/app/src/main/java/com/albunyaan/tube/download/DownloadWorker.kt
+  s_6eb9f3b82db198::t_d76ba09bf94f0d 96
+  s_6eb9f3b82db198::t_9f71d2d8afca48 234-272
+  s_6eb9f3b82db198::t_859175e5e3c934 319
+  s_7e0cc834dadd29::t_9a8445b9664571 184,186-189
+android/app/src/main/java/com/albunyaan/tube/update/ApkInstaller.kt
+  s_7e0cc834dadd29::t_c3a5132f3dfb42 38,129
+  s_7e0cc834dadd29::t_b6ea937e814f0c 190-194
+  s_7e0cc834dadd29::t_a87241d8ad440f 205
+  s_7e0cc834dadd29::t_2c59dc7c412050 195-197
+android/app/src/main/java/com/albunyaan/tube/download/DownloadStorage.kt
+  s_7e0cc834dadd29::t_31dd05882cf9d7 163,176,195,234,265
+  s_7e0cc834dadd29::t_84550a8492a49c 45,57-59
+  s_7e0cc834dadd29::t_40f71a0299e722 40,42,53-56,60,70-72
+  s_e0e70191a979cd::t_989ef1c61467c6 149-154,158,297-304,310-311,395
+  s_7e0cc834dadd29::t_93cdb11905be22 46-52
+android/app/src/test/java/com/albunyaan/tube/download/DownloadRepositoryTest.kt
+  s_e0e70191a979cd::t_84034726ceb0c1 57-63,146-153,156-162,167,174,178,192-214
+  s_e0e70191a979cd::t_45bba8d04de2f6 121-123
+  s_e0e70191a979cd::t_20c494d1323529 126-145,175-177,215-216
+  s_e0e70191a979cd::t_66c1f3e545b1b3 154-155,164-166,168-173,179-191
+  s_e0e70191a979cd::t_91a76cdc1b1725 18,217
+  s_e0e70191a979cd::t_ee816a5e116bd6 1-6,11-16,21-32,34-56,64-89,91-97,218-226,240-249,257
+  s_e0e70191a979cd::t_904114b5927433 163
+  s_e0e70191a979cd::t_543a5e09c1518c 7-10,17,20,98-112,115-120,124-125,227-239,250-256
+  s_e0e70191a979cd::t_c4dfdfb52ab674 19,33
+  s_e0e70191a979cd::t_525f777793b20a 113-114
+  s_e0e70191a979cd::t_01d54bb6211cac 90
+android/app/src/main/java/com/albunyaan/tube/download/DownloadRepository.kt
+  s_e0e70191a979cd::t_adbcdade2b25ad 173
+  s_e0e70191a979cd::t_659f52859d6062 13,32-40,166,174,176,179-181,184-187,189,193,197,210,259,261-265,278-293
+  s_7e0cc834dadd29::t_74619b47cd70fa 260,266-277
+  s_7e0cc834dadd29::t_0b9be35a2a6c95 127-131,133-139,141-146,150-155
+  s_7e0cc834dadd29::t_2c31c44daf0b1e 298-305
+  s_e0e70191a979cd::t_6d4a77752583a9 163,369-372
+  s_7e0cc834dadd29::t_70a477079bc799 216-227
+  s_e0e70191a979cd::t_a80f3a9958b250 177-178,183,191,196,202-203,209,212-215,228-257,338-339
+  s_e0e70191a979cd::t_e309bb8e80f3f3 188,306,401
+  s_7e0cc834dadd29::t_38e63825b5bcdf 297
+  s_e0e70191a979cd::t_c886d8af9664ea 360,363-368,373-375
+  s_e0e70191a979cd::t_5ce0da62ff4390 25-26,110,167-170,172,192,194-195,199-201,204,206-208
+  s_7e0cc834dadd29::t_601548c147d03e 118-124
+android/app/src/main/java/com/albunyaan/tube/ui/download/DownloadViewModel.kt
+  s_e0e70191a979cd::t_8c99402d4e296d 13,40-44
+android/app/build.gradle.kts
+  s_7e0cc834dadd29::t_fcbcb84179bdeb 39-40
+android/app/src/main/java/com/albunyaan/tube/update/LastInstallAttempt.kt
+  s_7e0cc834dadd29::t_2fc747170688ac 27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4455f30612d269e29128bd74e3a3132e81b2f542",
+  "prompts": {},
+  "sessions": {
+    "s_6eb9f3b82db198": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cb0fd45-9bee-4ad6-87fb-7f0e64353531",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    },
+    "s_7e0cc834dadd29": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2729effe-d80c-45cd-9761-8f26c1e69634",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    },
+    "s_e0e70191a979cd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e638c-3ef8-7003-9935-676f42c651f4",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
