@@ -93,21 +93,7 @@ class DownloadWorker @AssistedInject constructor(
         setForegroundAsync(notifications.createForegroundInfo(downloadId, title, 0))
 
         return runCatching {
-            val resolvedStream = resolveStream(videoId, audioOnly, targetHeight)
-                ?: throw NoStreamException(
-                    videoId = videoId,
-                    errorCode = DownloadErrorCode.NO_STREAM,
-                    message = "Failed to resolve stream for $videoId"
-                )
-
-            val finalFile = when (resolvedStream) {
-                is ResolvedStream.Progressive -> {
-                    downloadProgressiveStream(resolvedStream.url, downloadId, title, audioOnly)
-                }
-                is ResolvedStream.Split -> {
-                    downloadAndMergeStreams(resolvedStream, downloadId, title)
-                }
-            }
+            val finalFile = resolveAndDownload(videoId, audioOnly, targetHeight, downloadId, title)
 
             val mimeType = if (audioOnly) "audio/mp4" else "video/mp4"
             notifications.notifyCompletion(downloadId, title)
@@ -195,11 +181,12 @@ class DownloadWorker @AssistedInject constructor(
         // Get temp directory from storage once, then create specific temp files
         val baseTempFile = storage.createTempFile(downloadId)
         val tempDir = baseTempFile.parentFile ?: throw IOException("Cannot determine temp directory")
-        baseTempFile.delete() // Clean up the base temp file we don't need
+        baseTempFile.delete()
 
-        val videoTempFile = File(tempDir, "${downloadId}_video.tmp")
-        val audioTempFile = File(tempDir, "${downloadId}_audio.tmp")
-        val mergedTempFile = File(tempDir, "${downloadId}_merged.tmp")
+        val sanitized = storage.sanitizeId(downloadId)
+        val videoTempFile = File(tempDir, "${sanitized}_video.tmp")
+        val audioTempFile = File(tempDir, "${sanitized}_audio.tmp")
+        val mergedTempFile = File(tempDir, "${sanitized}_merged.tmp")
 
         try {
             // Download video stream (50% of progress)
@@ -242,6 +229,45 @@ class DownloadWorker @AssistedInject constructor(
             mergedTempFile.delete()
             throw t
         }
+    }
+
+    private suspend fun resolveAndDownload(
+        videoId: String,
+        audioOnly: Boolean,
+        targetHeight: Int?,
+        downloadId: String,
+        title: String,
+    ): File {
+        val resolvedStream = resolveStream(videoId, audioOnly, targetHeight)
+            ?: throw NoStreamException(
+                videoId = videoId,
+                errorCode = DownloadErrorCode.NO_STREAM,
+                message = "Failed to resolve stream for $videoId"
+            )
+
+        return try {
+            executeDownload(resolvedStream, downloadId, title, audioOnly)
+        } catch (e: DownloadHttpException) {
+            if (!e.isForbidden) throw e
+            Log.w(TAG, "Stream URL expired (403) for $videoId, re-resolving")
+            val freshStream = resolveStream(videoId, audioOnly, targetHeight)
+                ?: throw NoStreamException(
+                    videoId = videoId,
+                    errorCode = DownloadErrorCode.NO_STREAM,
+                    message = "Failed to re-resolve stream for $videoId after 403"
+                )
+            executeDownload(freshStream, downloadId, title, audioOnly)
+        }
+    }
+
+    private suspend fun executeDownload(
+        stream: ResolvedStream,
+        downloadId: String,
+        title: String,
+        audioOnly: Boolean,
+    ): File = when (stream) {
+        is ResolvedStream.Progressive -> downloadProgressiveStream(stream.url, downloadId, title, audioOnly)
+        is ResolvedStream.Split -> downloadAndMergeStreams(stream, downloadId, title)
     }
 
     /**
@@ -290,6 +316,7 @@ class DownloadWorker @AssistedInject constructor(
         // download worker would silently pull videos during an active cooldown.
         val resolved = repository.resolveStreams(
             videoId,
+            forceRefresh = true,
             priority = Priority.USER_FOREGROUND,
         ) ?: return null
 

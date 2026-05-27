@@ -91,6 +91,11 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        viewModel.refreshPersistedDownloads()
+    }
+
     private fun setupToolbar() {
         binding?.toolbar?.setNavigationOnClickListener {
             findNavController().navigateUp()

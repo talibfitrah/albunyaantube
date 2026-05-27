@@ -35,7 +35,7 @@ import javax.inject.Singleton
  * [openInstallPermissionSettings] to guide the user through granting it.
  *
  * The PackageInstaller commit→PendingIntent loop delivers the result (success
- * or failure code) to [InstallStatusReceiver], which persists the outcome via
+ * or failure code) to [InstallStatusActivity], which persists the outcome via
  * [LastInstallAttempt] so the splash gate can surface "didn't complete: <reason>"
  * instead of re-prompting silently after an OEM-rejected install (the beta.15
  * failure mode reported on Huawei EMUI 9).
@@ -126,7 +126,7 @@ class ApkInstaller @Inject constructor(
 
     /**
      * Streams [apkFile] into a [PackageInstaller] session and commits it. The OS
-     * delivers the result asynchronously to [InstallStatusReceiver] (registered
+     * delivers the result asynchronously to [InstallStatusActivity] (registered
      * in the manifest); on Android 8+ the receiver also handles the
      * STATUS_PENDING_USER_ACTION leg that shows the user-confirmation activity.
      *
@@ -187,13 +187,14 @@ class ApkInstaller @Inject constructor(
                     }
                     session!!.fsync(out)
                 }
-                // PendingIntent → InstallStatusReceiver. FLAG_MUTABLE is required so
-                // the OS can attach EXTRA_STATUS / EXTRA_STATUS_MESSAGE / EXTRA_INTENT
-                // onto the intent before delivery. UPDATE_CURRENT keeps the same
-                // PendingIntent slot across re-launches of the same session id.
-                val statusIntent = Intent(activity, InstallStatusReceiver::class.java).apply {
-                    action = InstallStatusReceiver.ACTION_INSTALL_STATUS
-                    putExtra(InstallStatusReceiver.EXTRA_TARGET_VERSION, targetVersion)
+                // PendingIntent → InstallStatusActivity. Uses getActivity (not
+                // getBroadcast) so the OS launches the trampoline Activity directly —
+                // Huawei/Honor BAL restrictions block startActivity from BroadcastReceiver
+                // context. FLAG_MUTABLE required so the OS can attach EXTRA_STATUS /
+                // EXTRA_STATUS_MESSAGE / EXTRA_INTENT before delivery.
+                val statusIntent = Intent(activity, InstallStatusActivity::class.java).apply {
+                    action = InstallStatusActivity.ACTION_INSTALL_STATUS
+                    putExtra(InstallStatusActivity.EXTRA_TARGET_VERSION, targetVersion)
                     setPackage(activity.packageName)
                 }
                 val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -201,7 +202,7 @@ class ApkInstaller @Inject constructor(
                 } else {
                     PendingIntent.FLAG_UPDATE_CURRENT
                 }
-                val pendingIntent = PendingIntent.getBroadcast(
+                val pendingIntent = PendingIntent.getActivity(
                     activity,
                     sessionId,
                     statusIntent,

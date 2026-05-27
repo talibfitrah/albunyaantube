@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -35,6 +36,12 @@ class DownloadViewModel @Inject constructor(
     fun retry(id: String) = repository.retry(id)
 
     fun delete(id: String): Boolean = repository.delete(id)
+
+    fun refreshPersistedDownloads() {
+        viewModelScope.launch {
+            repository.refreshPersistedDownloads()
+        }
+    }
 
     fun fileFor(entry: DownloadEntry): File? = entry.filePath?.let { File(it) }
 }

@@ -143,16 +143,20 @@
         </provider>
 
         <!--
-          PackageInstaller status callback receiver. ApkInstaller.launchInstaller
-          targets this via a PendingIntent; the OS delivers STATUS_* broadcasts
-          here regardless of `exported="false"` because PendingIntent grants the
-          broadcaster (the system) implicit permission to fire the intent. Keep
-          unexported so no other app can spoof status updates and poison the
-          LastInstallAttempt record.
+          Transparent trampoline Activity for PackageInstaller status callbacks.
+          The PendingIntent created in ApkInstaller.launchInstaller delivers here.
+          Uses an Activity (not BroadcastReceiver) so the OS launches it directly
+          via PendingIntent — Huawei/Honor BAL restrictions block startActivity
+          from a BroadcastReceiver context. excludeFromRecents keeps it out of
+          the task switcher; taskAffinity="" prevents it from joining the main
+          task stack.
         -->
-        <receiver
-            android:name=".update.InstallStatusReceiver"
-            android:exported="false" />
+        <activity
+            android:name=".update.InstallStatusActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="" />
 
         <!-- Google Cast SDK configuration -->
         <meta-data

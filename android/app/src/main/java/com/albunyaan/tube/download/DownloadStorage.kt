@@ -37,9 +37,26 @@ class DownloadStorage(
     private val currentSize = AtomicLong(calculateCommittedSize(rootDir))
 
     fun targetFile(downloadId: String, audioOnly: Boolean): File {
+        val sanitized = sanitizeId(downloadId)
         val suffix = if (audioOnly) "m4a" else "mp4"
-        return File(rootDir, "$downloadId.$suffix")
+        return File(rootDir, "$sanitized.$suffix")
     }
+
+    internal fun sanitizeId(id: String): String {
+        require(
+            id.isNotEmpty() &&
+                !id.contains('/') &&
+                !id.contains('\\') &&
+                !id.contains("..") &&
+                id.all { it.code >= 0x20 }
+        ) {
+            "Invalid downloadId: $id"
+        }
+        return id
+    }
+
+    private fun metadataFile(downloadId: String): File =
+        File(metadataDir, "${sanitizeId(downloadId)}.meta")
 
     fun ensureSpace(requiredBytes: Long) {
         if (requiredBytes <= 0) return
@@ -50,8 +67,9 @@ class DownloadStorage(
     }
 
     fun createTempFile(downloadId: String): File {
-        val temp = File(rootDir, "$downloadId.tmp")
-        if (temp.exists()) temp.delete()
+        val sanitized = sanitizeId(downloadId)
+        val temp = File(rootDir, "$sanitized.tmp")
+        if (temp.exists()) check(temp.delete()) { "Failed to delete stale temp file: ${temp.absolutePath}" }
         temp.parentFile?.mkdirs()
         return temp
     }
@@ -128,15 +146,21 @@ class DownloadStorage(
      * Save extended metadata (title, thumbnailUrl) for display after app restart.
      * Called when download is enqueued, before completion.
      */
-    fun saveExtendedMetadata(downloadId: String, title: String, thumbnailUrl: String?) {
+    fun saveExtendedMetadata(
+        downloadId: String,
+        title: String,
+        thumbnailUrl: String?,
+        audioOnly: Boolean? = null
+    ) {
         val props = loadMetadataProperties(downloadId)
         props.setProperty(META_KEY_TITLE, title)
         thumbnailUrl?.let { props.setProperty(META_KEY_THUMBNAIL_URL, it) }
+        audioOnly?.let { props.setProperty(META_KEY_AUDIO_ONLY, it.toString()) }
         saveMetadataProperties(downloadId, props)
     }
 
     private fun loadMetadataProperties(downloadId: String): Properties {
-        val metadataFile = File(metadataDir, "$downloadId.meta")
+        val metadataFile = metadataFile(downloadId)
         val props = Properties()
         if (metadataFile.exists()) {
             runCatching {
@@ -149,7 +173,7 @@ class DownloadStorage(
     }
 
     private fun saveMetadataProperties(downloadId: String, props: Properties) {
-        val metadataFile = File(metadataDir, "$downloadId.meta")
+        val metadataFile = metadataFile(downloadId)
         runCatching {
             metadataFile.outputStream().use { out ->
                 props.store(out, "Download metadata")
@@ -168,7 +192,7 @@ class DownloadStorage(
      */
     fun getCompletionTimestamp(downloadId: String): Long? {
         // Try metadata file first (source of truth)
-        val metadataFile = File(metadataDir, "$downloadId.meta")
+        val metadataFile = metadataFile(downloadId)
         if (metadataFile.exists()) {
             runCatching {
                 val props = Properties()
@@ -207,7 +231,7 @@ class DownloadStorage(
             }
         }
         // Clean up metadata file
-        val metadataFile = File(metadataDir, "$downloadId.meta")
+        val metadataFile = metadataFile(downloadId)
         metadataFile.delete()
     }
 
@@ -238,7 +262,7 @@ class DownloadStorage(
             }
         }
         // Clean up metadata file
-        val metadataFile = File(metadataDir, "$downloadId.meta")
+        val metadataFile = metadataFile(downloadId)
         metadataFile.delete()
         return deleted
     }
@@ -270,11 +294,21 @@ class DownloadStorage(
         return Pair(title, thumbnailUrl)
     }
 
+    fun getStoredAudioOnly(downloadId: String): Boolean? {
+        return when (loadMetadataProperties(downloadId).getProperty(META_KEY_AUDIO_ONLY)) {
+            "true" -> true
+            "false" -> false
+            else -> null
+        }
+    }
+
     /**
      * Determine if a download is audio-only based on stored metadata or existing files.
      * Used when restoring downloads where only the downloadId is known.
      */
     fun isAudioOnlyDownload(downloadId: String): Boolean {
+        getStoredAudioOnly(downloadId)?.let { return it }
+
         // Check if audio file exists
         val audioFile = targetFile(downloadId, audioOnly = true)
         if (audioFile.exists()) return true
@@ -358,5 +392,6 @@ class DownloadStorage(
         private const val META_KEY_COMPLETED_AT = "completedAtMillis"
         private const val META_KEY_TITLE = "title"
         private const val META_KEY_THUMBNAIL_URL = "thumbnailUrl"
+        private const val META_KEY_AUDIO_ONLY = "audioOnly"
     }
 }

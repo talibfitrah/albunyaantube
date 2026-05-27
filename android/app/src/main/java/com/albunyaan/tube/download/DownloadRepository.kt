@@ -10,6 +10,7 @@ import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_PATH
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_SIZE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_MIME_TYPE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
@@ -21,10 +22,21 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 interface DownloadRepository {
     val downloads: StateFlow<List<DownloadEntry>>
+
+    /**
+     * Reconcile the in-memory download list with files already committed to storage.
+     *
+     * This is intentionally a repository API, not UI-side file scanning: WorkManager can
+     * finish work while no downloads screen is active, and the repository owns the mapping
+     * from committed files back to [DownloadEntry] rows.
+     */
+    suspend fun refreshPersistedDownloads() = Unit
 
     fun enqueue(request: DownloadRequest)
     fun pause(requestId: String)
@@ -95,99 +107,52 @@ class DefaultDownloadRepository(
 
     private val entries = MutableStateFlow<List<DownloadEntry>>(emptyList())
     private val entriesLock = Any() // Synchronization lock for entries read-modify-write
+    private val reconcileMutex = Mutex()
     private val workIds = ConcurrentHashMap<String, UUID>()
     private val paused = ConcurrentHashMap.newKeySet<String>()
 
     override val downloads: StateFlow<List<DownloadEntry>> = entries.asStateFlow()
 
     init {
-        // P3-T3: Clean up expired downloads (30-day retention policy)
-        cleanupExpiredDownloads()
-        // Restore downloads from WorkManager on initialization
-        restoreDownloadsFromWorkManager()
+        scope.launch {
+            reconcileMutex.withLock {
+                cleanupExpiredDownloadsLocked()
+                restoreRunningDownloads()
+                refreshPersistedDownloadsLocked()
+                android.util.Log.d("DownloadRepository", "Restored ${entries.value.size} total downloads")
+            }
+        }
     }
 
-    /**
-     * P3-T3: 30-day expiry hook - deletes downloads older than 30 days
-     */
-    private fun cleanupExpiredDownloads() {
-        scope.launch {
-            withContext(Dispatchers.IO) {
-                val cutoffMillis = expiryPolicy.cutoffMillis()
-                val downloadFiles = storage.listAllDownloads()
-                var deletedCount = 0
-                var failedCount = 0
-                var skippedActiveCount = 0
+    private suspend fun cleanupExpiredDownloadsLocked() = withContext(Dispatchers.IO) {
+        val cutoffMillis = expiryPolicy.cutoffMillis()
+        val downloadFiles = storage.listAllDownloads()
+        var deletedCount = 0
+        var skippedActiveCount = 0
 
-                for ((downloadId, file) in downloadFiles) {
-                    // Check if download is currently active in WorkManager
-                    val workId = workIds[downloadId]
-                    if (workId != null) {
-                        val workInfo = try {
-                            workManager.getWorkInfoById(workId).get()
-                        } catch (e: Exception) {
-                            null
-                        }
-
-                        if (workInfo != null && !workInfo.state.isFinished) {
-                            android.util.Log.d(
-                                "DownloadRepository",
-                                "Skipping deletion of $downloadId: download is still active (state: ${workInfo.state})"
-                            )
-                            skippedActiveCount++
-                            continue
-                        }
-                    }
-
-                    // Use stored completion timestamp (source of truth)
-                    val completedAt = storage.getCompletionTimestamp(downloadId)
-                    if (completedAt == null || completedAt <= 0) {
-                        android.util.Log.w(
-                            "DownloadRepository",
-                            "Skipping deletion of $downloadId: no valid completion timestamp"
-                        )
-                        continue
-                    }
-
-                    // Verify file still exists before attempting deletion
-                    if (!file.exists()) {
-                        android.util.Log.d(
-                            "DownloadRepository",
-                            "Skipping deletion of $downloadId: file no longer exists"
-                        )
-                        continue
-                    }
-
-                    if (completedAt < cutoffMillis) {
-                        val audioOnly = file.name.endsWith(".m4a")
-                        val ageInDays = expiryPolicy.ttlDays - expiryPolicy.daysUntilExpiry(completedAt)
-
-                        try {
-                            storage.delete(downloadId, audioOnly)
-                            deletedCount++
-                            android.util.Log.d(
-                                "DownloadRepository",
-                                "Deleted expired download: $downloadId (age: $ageInDays days, size: ${file.length()} bytes)"
-                            )
-                        } catch (e: Exception) {
-                            failedCount++
-                            android.util.Log.e(
-                                "DownloadRepository",
-                                "Failed to delete expired download: $downloadId (age: $ageInDays days)",
-                                e
-                            )
-                        }
-                    }
-                }
-
-                // Log summary of cleanup operation
-                if (deletedCount > 0 || failedCount > 0 || skippedActiveCount > 0) {
-                    android.util.Log.i(
-                        "DownloadRepository",
-                        "Cleanup completed: deleted=$deletedCount, failed=$failedCount, skipped_active=$skippedActiveCount (threshold: >${expiryPolicy.ttlDays} days)"
-                    )
-                }
+        for ((downloadId, file) in downloadFiles) {
+            if (activeDownloadWorkInfo(downloadId) != null) {
+                skippedActiveCount++
+                continue
             }
+            val completedAt = storage.getCompletionTimestamp(downloadId)
+            if (completedAt == null || completedAt <= 0 || !file.exists()) continue
+
+            if (completedAt < cutoffMillis) {
+                val audioOnly = file.name.endsWith(".m4a")
+                runCatching { storage.delete(downloadId, audioOnly) }
+                    .onSuccess { deletedCount++ }
+                    .onFailure { e ->
+                        android.util.Log.e("DownloadRepository", "Failed to delete expired: $downloadId", e)
+                    }
+            }
+        }
+
+        if (deletedCount > 0 || skippedActiveCount > 0) {
+            android.util.Log.i(
+                "DownloadRepository",
+                "Cleanup: deleted=$deletedCount, skipped_active=$skippedActiveCount"
+            )
         }
     }
 
@@ -195,68 +160,150 @@ class DefaultDownloadRepository(
         // Note: TTL is now defined in DownloadExpiryPolicy (single source of truth)
         /** Delimiter for composite playlist download IDs: "playlistId|qualityLabel|videoId" */
         private const val PLAYLIST_ID_DELIMITER = '|'
+        private const val MIN_LEGACY_TIMESTAMP_SUFFIX_LENGTH = 10
     }
 
-    private fun restoreDownloadsFromWorkManager() {
-        scope.launch {
-            // First, restore in-progress downloads from WorkManager
-            restoreRunningDownloads()
+    override suspend fun refreshPersistedDownloads() {
+        reconcileMutex.withLock {
+            refreshPersistedDownloadsLocked()
+        }
+    }
 
-            // Then scan filesystem for completed downloads
-            val downloadFiles = storage.listAllDownloads()
-            android.util.Log.d("DownloadRepository", "Found ${downloadFiles.size} download files on disk")
+    private suspend fun refreshPersistedDownloadsLocked() = withContext(Dispatchers.IO) {
+        val downloadFiles = storage.listAllDownloads()
+        android.util.Log.d("DownloadRepository", "Found ${downloadFiles.size} download files on disk")
 
-            for ((downloadId, file) in downloadFiles) {
-                // Skip if already restored from WorkManager (in-progress or completed)
-                if (entries.value.any { it.request.id == downloadId }) {
-                    continue
-                }
-
-                // Parse downloadId to extract videoId
-                // Supports two formats:
-                // 1. Playlist format: "playlistId|qualityLabel|videoId" (new)
-                // 2. Single video format: "videoId_timestamp" (legacy)
-                val videoId = parseVideoIdFromDownloadId(downloadId)
-                val audioOnly = file.name.endsWith(".m4a")
-
-                // Load extended metadata from storage (title, thumbnailUrl)
-                // This was saved when the download was enqueued
-                val storedMetadata = storage.metadataFor(downloadId, audioOnly)
-
-                // Use stored title, fallback to videoId only if not available
-                val title = storedMetadata?.title ?: videoId
-                val thumbnailUrl = storedMetadata?.thumbnailUrl
-
-                // Extract playlist metadata if present
-                val playlistMetadata = parsePlaylistMetadataFromDownloadId(downloadId)
-
-                val request = DownloadRequest(
-                    id = downloadId,
-                    title = title,
-                    videoId = videoId,
-                    audioOnly = audioOnly,
-                    thumbnailUrl = thumbnailUrl,
-                    playlistId = playlistMetadata?.first,
-                    playlistQualityLabel = playlistMetadata?.second
+        for ((downloadId, file) in downloadFiles) {
+            val activeWorkInfo = activeDownloadWorkInfo(downloadId)
+            if (activeWorkInfo != null) {
+                android.util.Log.d(
+                    "DownloadRepository",
+                    "Skipping storage refresh for active download: $downloadId"
                 )
-
-                val metadata = storedMetadata ?: DownloadFileMetadata(
-                    sizeBytes = file.length(),
-                    completedAtMillis = file.lastModified(),
-                    mimeType = if (audioOnly) "audio/mp4" else "video/mp4"
-                )
-
-                updateEntry(request) {
-                    it.copy(
-                        status = DownloadStatus.COMPLETED,
-                        progress = 100,
-                        filePath = file.absolutePath,
-                        metadata = metadata
-                    )
-                }
+                restoreActiveDownload(downloadId, activeWorkInfo)
+                continue
             }
+            restoreCompletedDownload(downloadId, file)
+        }
+        removeMissingCompletedDownloads(downloadFiles.keys)
+    }
 
-            android.util.Log.d("DownloadRepository", "Restored ${entries.value.size} total downloads")
+    private suspend fun activeDownloadWorkInfo(downloadId: String): WorkInfo? = withContext(Dispatchers.IO) {
+        val trackedWorkInfo = workIds[downloadId]?.let { workId ->
+            runCatching { workManager.getWorkInfoById(workId).get() }.getOrNull()
+        }
+        if (trackedWorkInfo != null && !trackedWorkInfo.state.isFinished) {
+            return@withContext trackedWorkInfo
+        }
+
+        val uniqueWorkInfos = runCatching {
+            workManager.getWorkInfosForUniqueWork(downloadId).get()
+        }.getOrDefault(emptyList())
+        uniqueWorkInfos.firstOrNull { !it.state.isFinished }?.let {
+            return@withContext it
+        }
+
+        val taggedWorkInfos = runCatching {
+            workManager.getWorkInfosByTag("download_$downloadId").get()
+        }.getOrDefault(emptyList())
+        taggedWorkInfos.firstOrNull { !it.state.isFinished }
+    }
+
+    private fun restoreActiveDownload(downloadId: String, info: WorkInfo): Boolean {
+        val videoId = parseVideoIdFromDownloadId(downloadId)
+        val storedMetadata = storage.getExtendedMetadata(downloadId)
+        val playlistMetadata = parsePlaylistMetadataFromDownloadId(downloadId)
+        val request = synchronized(entriesLock) {
+            val existing = entries.value.firstOrNull { it.request.id == downloadId }?.request
+            DownloadRequest(
+                id = downloadId,
+                title = storedMetadata?.first ?: existing?.title ?: videoId,
+                videoId = videoId,
+                audioOnly = existing?.audioOnly ?: storage.isAudioOnlyDownload(downloadId),
+                thumbnailUrl = storedMetadata?.second ?: existing?.thumbnailUrl,
+                playlistId = playlistMetadata?.first ?: existing?.playlistId,
+                playlistQualityLabel = playlistMetadata?.second ?: existing?.playlistQualityLabel
+            )
+        }
+
+        val status = when (info.state) {
+            WorkInfo.State.RUNNING -> DownloadStatus.RUNNING
+            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> DownloadStatus.QUEUED
+            else -> DownloadStatus.QUEUED
+        }
+        val progress = info.progress.getInt(DownloadScheduler.KEY_PROGRESS, 0)
+        val alreadyObserved = workIds[request.id] == info.id
+        workIds[request.id] = info.id
+
+        updateEntry(request) {
+            it.copy(
+                request = request,
+                status = status,
+                progress = progress,
+                message = null,
+                filePath = null,
+                metadata = null
+            )
+        }
+
+        if (!alreadyObserved) {
+            observeWork(info.id, request)
+            android.util.Log.d(
+                "DownloadRepository",
+                "Restored active download: $downloadId (status=$status, progress=$progress%)"
+            )
+        }
+        return !alreadyObserved
+    }
+
+    private fun restoreCompletedDownload(downloadId: String, file: File) {
+        if (!file.exists()) return
+        val videoId = parseVideoIdFromDownloadId(downloadId)
+        val audioOnly = file.name.endsWith(".m4a")
+        val storedMetadata = storage.metadataFor(downloadId, audioOnly)
+        val playlistMetadata = parsePlaylistMetadataFromDownloadId(downloadId)
+
+        val request = synchronized(entriesLock) {
+            val existing = entries.value.firstOrNull { it.request.id == downloadId }?.request
+            DownloadRequest(
+                id = downloadId,
+                title = storedMetadata?.title ?: existing?.title ?: videoId,
+                videoId = videoId,
+                audioOnly = audioOnly,
+                thumbnailUrl = storedMetadata?.thumbnailUrl ?: existing?.thumbnailUrl,
+                playlistId = playlistMetadata?.first ?: existing?.playlistId,
+                playlistQualityLabel = playlistMetadata?.second ?: existing?.playlistQualityLabel
+            )
+        }
+
+        val metadata = storedMetadata ?: DownloadFileMetadata(
+            sizeBytes = file.length(),
+            completedAtMillis = file.lastModified(),
+            mimeType = if (audioOnly) "audio/mp4" else "video/mp4"
+        )
+
+        updateEntry(request) { entry ->
+            entry.copy(
+                request = request,
+                status = DownloadStatus.COMPLETED,
+                progress = 100,
+                message = null,
+                filePath = file.absolutePath,
+                metadata = metadata
+            )
+        }
+    }
+
+    private fun removeMissingCompletedDownloads(committedDownloadIds: Set<String>) {
+        synchronized(entriesLock) {
+            val staleIds = entries.value
+                .filter { it.status == DownloadStatus.COMPLETED && it.request.id !in committedDownloadIds }
+                .map { it.request.id }
+            if (staleIds.isEmpty()) return
+            entries.value = entries.value.filter { it.request.id !in staleIds }
+            staleIds.forEach { id ->
+                android.util.Log.d("DownloadRepository", "Removed stale completed download: $id")
+            }
         }
     }
 
@@ -288,58 +335,9 @@ class DefaultDownloadRepository(
                     continue
                 }
 
-                // Skip if already have this entry
-                if (entries.value.any { it.request.id == downloadId }) {
-                    android.util.Log.d("DownloadRepository", "Skipping already tracked download: $downloadId")
-                    continue
+                if (restoreActiveDownload(downloadId, info)) {
+                    restoredCount++
                 }
-
-                // Parse metadata
-                val videoId = parseVideoIdFromDownloadId(downloadId)
-                val storedMetadata = storage.getExtendedMetadata(downloadId)
-                val title = storedMetadata?.first ?: videoId
-                val thumbnailUrl = storedMetadata?.second
-
-                android.util.Log.d("DownloadRepository", "Restoring download: id=$downloadId, title=$title, thumbnailUrl=${thumbnailUrl != null}")
-
-                // Determine audio only from stored metadata or downloadId pattern
-                val audioOnly = storage.isAudioOnlyDownload(downloadId)
-
-                // Extract playlist metadata if present
-                val playlistMetadata = parsePlaylistMetadataFromDownloadId(downloadId)
-
-                val request = DownloadRequest(
-                    id = downloadId,
-                    title = title,
-                    videoId = videoId,
-                    audioOnly = audioOnly,
-                    thumbnailUrl = thumbnailUrl,
-                    playlistId = playlistMetadata?.first,
-                    playlistQualityLabel = playlistMetadata?.second
-                )
-
-                // Determine status based on WorkInfo state
-                val status = when (info.state) {
-                    WorkInfo.State.RUNNING -> DownloadStatus.RUNNING
-                    WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> DownloadStatus.QUEUED
-                    else -> DownloadStatus.QUEUED
-                }
-
-                // Get progress if available
-                val progress = info.progress.getInt(DownloadScheduler.KEY_PROGRESS, 0)
-
-                // Store workId and start observing
-                workIds[request.id] = info.id
-
-                updateEntry(request) {
-                    it.copy(status = status, progress = progress)
-                }
-
-                // Re-observe this work for progress updates
-                observeWork(info.id, request)
-
-                restoredCount++
-                android.util.Log.d("DownloadRepository", "Restored running download: $downloadId (status=$status, progress=$progress%)")
             }
 
             if (restoredCount > 0) {
@@ -359,10 +357,22 @@ class DefaultDownloadRepository(
         return if (downloadId.contains(PLAYLIST_ID_DELIMITER)) {
             // Playlist format: playlistId|qualityLabel|videoId
             val parts = downloadId.split(PLAYLIST_ID_DELIMITER)
-            if (parts.size == 3) parts[2] else downloadId.substringBefore('_')
+            if (parts.size == 3) parts[2] else parseLegacyVideoId(downloadId)
         } else {
             // Legacy format: videoId_timestamp
-            downloadId.substringBefore('_')
+            parseLegacyVideoId(downloadId)
+        }
+    }
+
+    private fun parseLegacyVideoId(downloadId: String): String {
+        val timestampSuffix = downloadId.substringAfterLast('_', missingDelimiterValue = "")
+        return if (
+            timestampSuffix.length >= MIN_LEGACY_TIMESTAMP_SUFFIX_LENGTH &&
+            timestampSuffix.all { it.isDigit() }
+        ) {
+            downloadId.substringBeforeLast('_')
+        } else {
+            downloadId
         }
     }
 
@@ -388,7 +398,7 @@ class DefaultDownloadRepository(
     override fun enqueue(request: DownloadRequest) {
         // Save extended metadata (title, thumbnailUrl) before scheduling
         // This ensures the metadata is available for display after app restart
-        storage.saveExtendedMetadata(request.id, request.title, request.thumbnailUrl)
+        storage.saveExtendedMetadata(request.id, request.title, request.thumbnailUrl, request.audioOnly)
 
         val workId = scheduler.schedule(request)
         workIds[request.id] = workId

@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.19": {
+    "en": "Downloads survive app restart; stream 403 retry with fresh URL; update install fix for Huawei/Honor devices.",
+    "ar": "التنزيلات تبقى بعد إعادة تشغيل التطبيق؛ إعادة محاولة البث عند خطأ 403؛ إصلاح تثبيت التحديثات على أجهزة هواوي/أونر.",
+    "nl": "Downloads overleven herstart; stream 403 retry met verse URL; update-installatie fix voor Huawei/Honor-apparaten."
+  },
   "1.0.0-beta.18": {
     "en": "Phone required at signup; new email/password accounts must verify email; edit email/password/phone in Personal Info.",
     "ar": "رقم الجوال مطلوب عند التسجيل؛ يلزم التحقق من البريد للحسابات الجديدة؛ تعديل البريد/الكلمة/الجوال في المعلومات الشخصية.",

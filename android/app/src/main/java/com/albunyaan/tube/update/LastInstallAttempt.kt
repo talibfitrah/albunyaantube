@@ -24,7 +24,7 @@ import javax.inject.Singleton
  *  - [recordPending] called immediately before [ApkInstaller.launchInstaller]
  *    commits the PackageInstaller session. PENDING means "we handed off to the
  *    OS but haven't heard back yet".
- *  - [InstallStatusReceiver] writes SUCCESS or FAILURE when the PackageInstaller
+ *  - [InstallStatusActivity] writes SUCCESS or FAILURE when the PackageInstaller
  *    callback fires. SUCCESS is best-effort cleanup — if the app process dies
  *    during the install, we may never get the success callback, so [snapshot]
  *    treats "PENDING for >24h" as effectively dropped.
