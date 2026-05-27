@@ -22,9 +22,6 @@ import com.albunyaan.tube.data.extractor.ResolvedStreams
  */
 class DownloadQualityDialog : DialogFragment() {
 
-    // For legacy callback support (won't survive process death, but maintains API compat)
-    private var onDismissCallback: ((Int?, Boolean) -> Unit)? = null
-
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         // Restore from arguments (survives process death)
         val heights = arguments?.getIntegerArrayList(ARG_HEIGHTS) ?: arrayListOf()
@@ -55,9 +52,6 @@ class DownloadQualityDialog : DialogFragment() {
                         RESULT_IS_AUDIO_ONLY to isAudioOnly
                     )
                 )
-
-                // Also invoke legacy callback if set
-                onDismissCallback?.invoke(targetHeight, isAudioOnly)
 
                 dialog.dismiss()
             }
@@ -122,20 +116,5 @@ class DownloadQualityDialog : DialogFragment() {
             }
         }
 
-        /**
-         * Legacy factory method for backwards compatibility.
-         * The callback is invoked immediately when selection is made.
-         *
-         * Note: This approach doesn't survive process death.
-         * Prefer using newInstance(resolvedStreams) + Fragment Result API.
-         */
-        fun newInstance(
-            resolvedStreams: ResolvedStreams,
-            onSelected: (targetHeight: Int?, isAudioOnly: Boolean) -> Unit
-        ): DownloadQualityDialog {
-            return newInstance(resolvedStreams).apply {
-                onDismissCallback = onSelected
-            }
-        }
     }
 }

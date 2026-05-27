@@ -122,6 +122,11 @@ class PlayerViewModel @Inject constructor(
 
     // PR5: Pending refresh job for cancellation when video changes or new refresh requested
     private var pendingRefreshJob: Job? = null
+
+    // Sticky audio language: preserves user's audio language choice across force-refreshes,
+    // retries, and playlist advances. Set by selectAudioTrack, read by toSelectionWithPreferredAudio.
+    // Global (session-scoped), unlike PlayerBinder.stickyAudioLanguageByVideoId which is per-video.
+    @Volatile private var stickyAudioLanguage: String? = null
     private var metadataHydrationJob: Job? = null
 
     // Live stream proactive refresh: job that schedules URL refresh before expiration
@@ -548,6 +553,7 @@ class PlayerViewModel @Inject constructor(
      * - the picked track equals the currently-active one
      */
     fun selectAudioTrack(track: AudioTrack) {
+        stickyAudioLanguage = track.language
         // Always emit, even when `track == ready.selection.audio`. AudioTrack
         // is a data class so equality compares URL too — and the player can
         // drift from the VM (ABR may pick a dubbed track without notifying
@@ -598,13 +604,6 @@ class PlayerViewModel @Inject constructor(
         if (streamState !is StreamState.Ready) return emptyList()
 
         return streamState.selection.resolved.subtitleTracks
-    }
-
-    /**
-     * Get currently selected subtitle track
-     */
-    fun getSelectedSubtitle(): SubtitleTrack? {
-        return _state.value.selectedSubtitle
     }
 
     /**
@@ -1125,17 +1124,6 @@ class PlayerViewModel @Inject constructor(
         resolveStreamFor(item, PlaybackStartReason.USER_SELECTED, forceRefresh = true)
     }
 
-    /**
-     * Retry resolving the current stream (same as retryCurrentStream).
-     * Legacy method name retained for UI compatibility.
-     *
-     * Note: Audio-only fallback is intentionally not applied automatically. Video playback should
-     * remain the default and recovery should focus on re-resolving streams / adjusting quality.
-     */
-    fun retryWithAudioOnly() {
-        retryCurrentStream()
-    }
-
     private fun resolveStreamFor(
         item: UpNextItem,
         @Suppress("UNUSED_PARAMETER") reason: PlaybackStartReason,
@@ -1245,7 +1233,7 @@ class PlayerViewModel @Inject constructor(
             }
             if (tapPrefetched != null) {
                 android.util.Log.d("PlayerViewModel", "Using tap-prefetched stream for ${item.streamId}")
-                val selection = tapPrefetched.toDefaultSelection()
+                val selection = tapPrefetched.toSelectionWithPreferredAudio(stickyAudioLanguage)
                 if (selection != null) {
                     publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
                     updateState { it.copy(streamState = StreamState.Ready(tapPrefetched.streamId, selection), retryCount = 0) }
@@ -1260,7 +1248,7 @@ class PlayerViewModel @Inject constructor(
             val prefetched = consumeFreshPrefetchCache(item.streamId)
             if (prefetched != null) {
                 android.util.Log.d("PlayerViewModel", "Using queue-prefetched stream for ${item.streamId}")
-                val selection = prefetched.toDefaultSelection()
+                val selection = prefetched.toSelectionWithPreferredAudio(stickyAudioLanguage)
                 if (selection != null) {
                     publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
                     updateState { it.copy(streamState = StreamState.Ready(prefetched.streamId, selection), retryCount = 0) }
@@ -1348,7 +1336,7 @@ class PlayerViewModel @Inject constructor(
                 }
             }
 
-            val selection = resolved.toDefaultSelection()
+            val selection = resolved.toSelectionWithPreferredAudio(stickyAudioLanguage)
             if (selection == null) {
                 playbackMetrics.onPlaybackFailed(item.streamId, "no_selection")
                 updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
@@ -1474,8 +1462,15 @@ class PlayerViewModel @Inject constructor(
                 ?: freshStreams.videoTracks.maxByOrNull { it.height ?: 0 }
         } else null
 
-        // Try to find matching audio (audio is non-null in PlaybackSelection)
-        val audio = freshStreams.audioTracks.find { it.bitrate == currentSelection.audio.bitrate }
+        // Try to find matching audio — prefer language match over bitrate match
+        val currentLang = currentSelection.audio.language
+        val langMatchAudio = if (!currentLang.isNullOrBlank()) {
+            freshStreams.audioTracks
+                .filter { it.language == currentLang }
+                .maxByOrNull { it.bitrate ?: 0 }
+        } else null
+        val audio = langMatchAudio
+            ?: freshStreams.audioTracks.find { it.bitrate == currentSelection.audio.bitrate }
             ?: freshStreams.audioTracks.maxByOrNull { it.bitrate ?: 0 }
             ?: return null
 
@@ -1765,14 +1760,6 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    /** Add multiple items to history, maintaining max size limit */
-    private fun addAllToHistory(items: List<UpNextItem>) {
-        previousItems.addAll(items)
-        while (previousItems.size > maxHistorySize) {
-            previousItems.removeAt(0)
-        }
-    }
-
     // --- Recovery State Management ---
 
     /**
@@ -1951,8 +1938,7 @@ sealed class PlaybackAnalyticsEvent {
 
 enum class PlaybackStartReason(@StringRes val labelRes: Int) {
     AUTO(R.string.player_start_reason_auto),
-    USER_SELECTED(R.string.player_start_reason_user_selected),
-    RESUME(R.string.player_start_reason_resume)
+    USER_SELECTED(R.string.player_start_reason_user_selected)
 }
 
 /**
@@ -2000,6 +1986,16 @@ private fun ResolvedStreams.toDefaultSelection(): PlaybackSelection? {
             )
         }) ?: return null
     return PlaybackSelection(streamId, preferredVideo, preferredAudio, this)
+}
+
+private fun ResolvedStreams.toSelectionWithPreferredAudio(preferredLanguage: String?): PlaybackSelection? {
+    val base = toDefaultSelection() ?: return null
+    if (preferredLanguage.isNullOrBlank()) return base
+    val matchingAudio = audioTracks
+        .filter { it.language == preferredLanguage }
+        .maxByOrNull { it.bitrate ?: 0 }
+        ?: return base
+    return base.copy(audio = matchingAudio)
 }
 
 private fun stubUpNextItems(): List<UpNextItem> = emptyList()

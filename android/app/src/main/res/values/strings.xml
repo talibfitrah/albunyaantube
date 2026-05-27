@@ -104,7 +104,6 @@
     <string name="player_auto_audio_stall">Switched to audio-only due to slow connection</string>
     <string name="player_start_reason_auto">Auto-advance</string>
     <string name="player_start_reason_user_selected">Manual selection</string>
-    <string name="player_start_reason_resume">Resume playback</string>
     <string name="player_duration_minutes_seconds">%1$d:%2$02d</string>
     <string name="player_current_item">Now playing: %1$s</string>
     <string name="player_download_current">Download for offline</string>

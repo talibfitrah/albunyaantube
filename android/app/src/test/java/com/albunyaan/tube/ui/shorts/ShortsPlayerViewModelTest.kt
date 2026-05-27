@@ -4,7 +4,6 @@ import android.content.Context
 import com.albunyaan.tube.data.channel.ChannelDetailRepository
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.local.FavoritesRepository
-import com.albunyaan.tube.data.local.FollowedChannelsRepository
 import com.albunyaan.tube.data.shorts.ShortsFeedRepository
 import com.albunyaan.tube.data.shorts.ShortsItem
 import com.albunyaan.tube.data.shorts.ShortsPage
@@ -53,7 +52,6 @@ class ShortsPlayerViewModelTest {
     private val context: Context = mock()
     private val feed: ShortsFeedRepository = mock()
     private val favorites: FavoritesRepository = mock()
-    private val follows: FollowedChannelsRepository = mock()
     private val channelDetailRepo: ChannelDetailRepository = mock()
     private val bufferPolicy: AdaptiveBufferPolicy = mock()
     private val featureFlags: PlaybackFeatureFlags = mock()
@@ -130,13 +128,12 @@ class ShortsPlayerViewModelTest {
             ShortsPage(listOf(sample("v1"), sample("v2")), null)
         )
         whenever(favorites.isFavorite(any())).thenReturn(flowOf(false))
-        whenever(follows.isFollowed(any())).thenReturn(flowOf(false))
 
         val vm = ShortsPlayerViewModel(
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -161,7 +158,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -184,35 +181,6 @@ class ShortsPlayerViewModelTest {
     }
 
     @Test
-    fun toggleFollow_invokesFollowsRepository() = runTest(dispatcher) {
-        whenever(feed.loadFeedPage(eq(null), any())).thenReturn(
-            ShortsPage(
-                listOf(sample("v1", channelId = "UC1", channelName = "ch", channelAvatarUrl = "a.jpg")),
-                null
-            )
-        )
-
-        val vm = ShortsPlayerViewModel(
-            context = context,
-            feed = feed,
-            favorites = favorites,
-            follows = follows,
-            channelDetailRepo = channelDetailRepo,
-            bufferPolicy = bufferPolicy,
-            featureFlags = featureFlags,
-            neverFreezeTrackSelectionFactory = neverFreezeFactory,
-            initialShortId = null,
-            channelId = null
-        )
-        advanceUntilIdle()
-
-        vm.toggleFollow(0)
-        advanceUntilIdle()
-
-        verify(follows).toggleFollow(eq("UC1"), eq("ch"), eq("a.jpg"))
-    }
-
-    @Test
     fun onPageChanged_loadsNextPageNearEnd() = runTest(dispatcher) {
         val firstPage = ShortsPage(
             items = (1..5).map { sample("v$it") },
@@ -229,7 +197,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -259,7 +227,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -285,7 +253,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -334,7 +302,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -371,7 +339,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -395,7 +363,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -435,7 +403,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -481,7 +449,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -515,7 +483,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
@@ -537,7 +505,7 @@ class ShortsPlayerViewModelTest {
             context = context,
             feed = feed,
             favorites = favorites,
-            follows = follows,
+
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,

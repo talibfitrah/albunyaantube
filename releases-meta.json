@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.20": {
+    "en": "Audio dub language preserved on stream refresh; subtitle Off now fully disables captions; dead code cleanup.",
+    "ar": "الحفاظ على لغة الدبلجة عند تحديث البث؛ إيقاف الترجمة يعطّل العناوين الفرعية بالكامل؛ تنظيف الشفرة غير المستخدمة.",
+    "nl": "Audiodub-taal blijft behouden bij stream-verversing; ondertiteling Uit schakelt nu volledig uit; opruiming dode code."
+  },
   "1.0.0-beta.19": {
     "en": "Downloads survive app restart; stream 403 retry with fresh URL; update install fix for Huawei/Honor devices.",
     "ar": "التنزيلات تبقى بعد إعادة تشغيل التطبيق؛ إعادة محاولة البث عند خطأ 403؛ إصلاح تثبيت التحديثات على أجهزة هواوي/أونر.",

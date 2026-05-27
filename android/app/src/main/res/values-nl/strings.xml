@@ -85,7 +85,6 @@
     <string name="player_event_stream_failed">Stream oplossen mislukt</string>
     <string name="player_start_reason_auto">Automatisch volgende</string>
     <string name="player_start_reason_user_selected">Handmatige selectie</string>
-    <string name="player_start_reason_resume">Afspelen hervatten</string>
     <string name="player_duration_minutes_seconds">%1$d:%2$02d</string>
     <string name="player_current_item">Nu afspelen: %1$s</string>
     <string name="player_download_current">Downloaden voor offline</string>

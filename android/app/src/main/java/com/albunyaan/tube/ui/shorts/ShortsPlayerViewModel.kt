@@ -7,7 +7,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.albunyaan.tube.data.channel.ChannelDetailRepository
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.local.FavoritesRepository
-import com.albunyaan.tube.data.local.FollowedChannelsRepository
 import com.albunyaan.tube.data.shorts.ShortsFeedRepository
 import com.albunyaan.tube.data.shorts.ShortsItem
 import com.albunyaan.tube.player.QualityTrackSelector
@@ -31,7 +30,7 @@ import kotlinx.coroutines.sync.Mutex
  * ViewModel for the custom shorts player.
  *
  * Holds the list of [ShortsItem]s, exposes the current page index, and delegates
- * like/follow actions to the [FavoritesRepository] / [FollowedChannelsRepository].
+ * like actions to the [FavoritesRepository].
  *
  * When launched from a channel (channelId != null) items come from the
  * channel-scoped feed ([ShortsFeedRepository.loadChannelShortsPage]) and are
@@ -46,7 +45,6 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     @ApplicationContext context: Context,
     private val feed: ShortsFeedRepository,
     private val favorites: FavoritesRepository,
-    private val follows: FollowedChannelsRepository,
     private val channelDetailRepo: ChannelDetailRepository,
     private val bufferPolicy: com.albunyaan.tube.player.AdaptiveBufferPolicy,
     private val featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags,
@@ -154,9 +152,6 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private val _items = MutableStateFlow<List<ShortsItem>>(emptyList())
     val items: StateFlow<List<ShortsItem>> = _items.asStateFlow()
 
-    private val _currentIndex = MutableStateFlow(0)
-    val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
-
     private val _events = MutableSharedFlow<LoadEvent>(
         extraBufferCapacity = 4,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
@@ -181,7 +176,6 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     }
 
     fun onPageChanged(index: Int) {
-        _currentIndex.value = index
         if (!exhausted && index >= _items.value.size - PREFETCH_THRESHOLD) {
             loadNextPage()
         }
@@ -200,17 +194,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
         }
     }
 
-    fun toggleFollow(index: Int) {
-        val item = _items.value.getOrNull(index) ?: return
-        if (item.channelId.isBlank()) return
-        viewModelScope.launch {
-            follows.toggleFollow(item.channelId, item.channelName, item.channelAvatarUrl)
-        }
-    }
-
     fun isLikedFlow(videoId: String): Flow<Boolean> = favorites.isFavorite(videoId)
-
-    fun isFollowedFlow(channelId: String): Flow<Boolean> = follows.isFollowed(channelId)
 
     /**
      * Signals a playback error for the given page. The fragment collects
