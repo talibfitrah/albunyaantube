@@ -35,6 +35,8 @@ import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 
 /**
  * Tests MeViewModel via real-time Room so the Room InvalidationTracker's
@@ -337,12 +339,25 @@ class MeViewModelTest {
     }
 
     @Test
-    fun `Bug 1 filter change triggers fresh load from week 0`() = runBlocking {
-        val now = System.currentTimeMillis()
-        val twoDaysAgo = now - 2L * 24L * 60L * 60L * 1_000L
-        val tenDaysAgo = now - 10L * 24L * 60L * 60L * 1_000L
-        // UC1 has its only item in week 1 (~10 days ago).
-        // UC2 has items in week 0 (~2 days ago).
+    fun `Bug 1 filter change loads filtered channel after rendered week becomes empty`() = runBlocking {
+        val zone = ZoneId.systemDefault()
+        val now = LocalDate.of(2026, 5, 27)
+            .atTime(LocalTime.NOON)
+            .atZone(zone)
+            .toInstant()
+            .toEpochMilli()
+        val thisWeekUpload = LocalDate.of(2026, 5, 26)
+            .atTime(LocalTime.NOON)
+            .atZone(zone)
+            .toInstant()
+            .toEpochMilli()
+        val lastWeekUpload = LocalDate.of(2026, 5, 20)
+            .atTime(LocalTime.NOON)
+            .atZone(zone)
+            .toInstant()
+            .toEpochMilli()
+        // UC1 has its only item in the previous ISO week.
+        // UC2 has items in the current ISO week.
         val feedWithItems = MeFeedRepository(
             subscriptions = subs,
             cache = db.channelVideoCacheDao(),
@@ -354,8 +369,8 @@ class MeViewModelTest {
                     priorLastModified: String?,
                 ): ChannelFeedFetcher.FetchResult {
                     val items = when (channelUrl) {
-                        "u1" -> listOf(item("v1_old", tenDaysAgo))
-                        "u2" -> listOf(item("v2", twoDaysAgo))
+                        "u1" -> listOf(item("v1_old", lastWeekUpload))
+                        "u2" -> listOf(item("v2", thisWeekUpload))
                         else -> emptyList()
                     }
                     return ChannelFeedFetcher.FetchResult.Items(items, null, null)
@@ -363,7 +378,7 @@ class MeViewModelTest {
             },
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
-        )
+        ).also { it.currentTimeMillisProvider = { now } }
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
         feedWithItems.refresh(force = true)
@@ -378,10 +393,9 @@ class MeViewModelTest {
         assertEquals(listOf("v2"), unfiltered[0].videos.map { it.videoId })
 
         // Switch filter to UC1 (no items in week 0). The view should reset
-        // and rediscover week 1 (UC1's only week with content). Without the
-        // filter-change reset, the previously-loaded weekIndex 0 would
-        // still be in loadedWeekIndices and the new load would never find
-        // UC1's content.
+        // and rediscover week 1 (UC1's only week with content). The prior
+        // regression emitted an empty rendered week after filtering and never
+        // kicked off another load for the filtered channel.
         vm.setFilter("UC1")
         val filtered = withTimeout(3_000L) {
             vm.weeks.first { it.isNotEmpty() && it[0].videos.firstOrNull()?.videoId == "v1_old" }
