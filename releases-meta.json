@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.21": {
+    "en": "Phone country code picker shows dial codes; verification emails sent from branded sender; profile phone display formatted.",
+    "ar": "منتقي رمز الدولة يعرض أرقام الاتصال؛ رسائل التحقق تُرسل من عنوان رسمي؛ عرض رقم الهاتف منسّق في الملف الشخصي.",
+    "nl": "Landkiezer toont netnummers; verificatie-e-mails verzonden vanaf merkadres; telefoonweergave opgemaakt in profiel."
+  },
   "1.0.0-beta.20": {
     "en": "Audio dub language preserved on stream refresh; subtitle Off now fully disables captions; dead code cleanup.",
     "ar": "الحفاظ على لغة الدبلجة عند تحديث البث؛ إيقاف الترجمة يعطّل العناوين الفرعية بالكامل؛ تنظيف الشفرة غير المستخدمة.",
