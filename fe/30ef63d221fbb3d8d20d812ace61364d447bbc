@@ -1,0 +1,21 @@
+android/app/src/test/java/com/albunyaan/tube/ui/me/MeViewModelTest.kt
+  s_49c1ea108bcfca::t_145a206fb99841 372-373
+  s_49c1ea108bcfca::t_53e5f03f27698f 38-39,342-358,381,396-398
+  s_49c1ea108bcfca::t_2de9100c71a4bd 359-360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fe30ef63d221fbb3d8d20d812ace61364d447bbc",
+  "prompts": {},
+  "sessions": {
+    "s_49c1ea108bcfca": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6857-951b-7c31-b5a8-46430b055782",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
