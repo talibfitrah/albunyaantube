@@ -12,8 +12,15 @@ import java.util.Locale
  */
 object PhoneFormat {
 
-    private fun util(ctx: Context): PhoneNumberUtil =
-        PhoneNumberUtil.createInstance(ctx.applicationContext)
+    @Volatile private var cachedUtil: PhoneNumberUtil? = null
+
+    private fun util(ctx: Context): PhoneNumberUtil {
+        cachedUtil?.let { return it }
+        synchronized(this) {
+            cachedUtil?.let { return it }
+            return PhoneNumberUtil.createInstance(ctx.applicationContext).also { cachedUtil = it }
+        }
+    }
 
     /**
      * Parse [national] (digits, may contain spaces / dashes / parens) using
@@ -50,13 +57,30 @@ object PhoneFormat {
     /**
      * Country pickers for both Bootstrap and Edit Phone use the same shape: a list
      * of (ISO region, display name) pairs sorted alphabetically by display name in
-     * the device locale. Centralised here so a future localisation change (e.g. add
-     * dial-code prefix) lands in one place.
+     * the device locale. Display includes the dial code so users immediately see
+     * which country code they're selecting.
      */
     fun countryRows(ctx: Context): List<Pair<String, String>> {
+        val u = util(ctx)
         val locale = ctx.resources.configuration.locales[0]
         return supportedRegions(ctx)
-            .map { iso -> iso to (Locale("", iso).getDisplayCountry(locale).ifBlank { iso }) }
+            .map { iso ->
+                val name = Locale("", iso).getDisplayCountry(locale).ifBlank { iso }
+                val code = u.getCountryCodeForRegion(iso)
+                iso to "$name (+$code)"
+            }
             .sortedBy { it.second }
+    }
+
+    /**
+     * Format an E.164 string for human-readable display, e.g. "+31 6 12345678".
+     * Returns the raw [e164] if parsing fails.
+     */
+    fun formatInternational(ctx: Context, e164: String): String = try {
+        val u = util(ctx)
+        val parsed = u.parse(e164, null)
+        u.format(parsed, PhoneNumberUtil.PhoneNumberFormat.INTERNATIONAL)
+    } catch (_: NumberParseException) {
+        e164
     }
 }

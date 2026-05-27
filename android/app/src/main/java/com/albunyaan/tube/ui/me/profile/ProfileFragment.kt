@@ -12,6 +12,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentProfileBinding
+import com.albunyaan.tube.util.PhoneFormat
 import com.google.android.material.datepicker.CalendarConstraints
 import com.google.android.material.datepicker.DateValidatorPointBackward
 import com.google.android.material.datepicker.MaterialDatePicker
@@ -93,8 +94,9 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                 binding.dobValue.text =
                     state.draft.dateOfBirth ?: getString(R.string.profile_dob_pick)
                 binding.emailValue.text = state.draft.emailReadOnly
-                binding.phoneValue.text = state.draft.phoneNumber
-                    ?: getString(R.string.profile_phone_unset)
+                binding.phoneValue.text = state.draft.phoneNumber?.let {
+                    PhoneFormat.formatInternational(requireContext(), it)
+                } ?: getString(R.string.profile_phone_unset)
                 binding.phoneEditButton.setText(
                     if (state.draft.phoneNumber.isNullOrBlank()) R.string.profile_add
                     else R.string.profile_edit

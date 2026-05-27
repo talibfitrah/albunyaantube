@@ -15,4 +15,7 @@ interface AccountService {
 
     @GET("api/account/me")
     suspend fun getMe(): AccountMeResponseDto
+
+    @POST("api/account/send-verification-email")
+    suspend fun sendVerificationEmail(): retrofit2.Response<Unit>
 }

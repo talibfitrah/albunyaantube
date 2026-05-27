@@ -57,6 +57,9 @@ class AccountControllerTest {
     @MockBean
     FirebaseAuth firebaseAuth;
 
+    @MockBean
+    com.albunyaan.tube.service.MailService mailService;
+
     ObjectMapper objectMapper;
 
     private static final String TEST_UID = "uid-test-1";

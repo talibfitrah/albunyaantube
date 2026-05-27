@@ -9,6 +9,9 @@ import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AccountProfileService;
+import com.albunyaan.tube.service.MailService;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
 import com.albunyaan.tube.service.AgeIneligibleAbortedException;
 import com.albunyaan.tube.service.AgeIneligibleException;
 import com.albunyaan.tube.service.ProfileAlreadyCompletedException;
@@ -24,6 +27,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -41,14 +45,22 @@ import java.util.concurrent.TimeoutException;
 public class AccountController {
 
     private static final Logger logger = LoggerFactory.getLogger(AccountController.class);
+    private static final long VERIFICATION_COOLDOWN_MS = 60_000L;
 
+    private final ConcurrentHashMap<String, Long> verificationCooldowns = new ConcurrentHashMap<>();
     private final AccountProfileService accountProfileService;
     private final UserRepository userRepository;
+    private final FirebaseAuth firebaseAuth;
+    private final MailService mailService;
 
     public AccountController(AccountProfileService accountProfileService,
-                              UserRepository userRepository) {
+                              UserRepository userRepository,
+                              FirebaseAuth firebaseAuth,
+                              MailService mailService) {
         this.accountProfileService = accountProfileService;
         this.userRepository = userRepository;
+        this.firebaseAuth = firebaseAuth;
+        this.mailService = mailService;
     }
 
     @PostMapping("/profile")
@@ -79,6 +91,42 @@ public class AccountController {
             throws ExecutionException, InterruptedException, TimeoutException {
         if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         return ResponseEntity.ok(accountProfileService.updateProfile(principal.getUid(), body));
+    }
+
+    @PostMapping("/send-verification-email")
+    public ResponseEntity<?> sendVerificationEmail(
+            @AuthenticationPrincipal FirebaseUserDetails principal) {
+        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (principal.isEmailVerified()) {
+            return ResponseEntity.ok(Map.of("message", "Email already verified"));
+        }
+        String email = principal.getEmail();
+        if (email == null || email.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("code", "NO_EMAIL", "message", "Account has no email address"));
+        }
+        String uid = principal.getUid();
+        Long lastSent = verificationCooldowns.get(uid);
+        if (lastSent != null && System.currentTimeMillis() - lastSent < VERIFICATION_COOLDOWN_MS) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(Map.of("code", "RATE_LIMITED", "message", "Please wait before requesting another email"));
+        }
+        try {
+            String link = firebaseAuth.generateEmailVerificationLink(email);
+            mailService.sendEmailVerification(email, link);
+            verificationCooldowns.put(uid, System.currentTimeMillis());
+            return ResponseEntity.ok(Map.of("message", "Verification email sent"));
+        } catch (FirebaseAuthException e) {
+            logger.error("send-verification-email failed uid={}", uid, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("code", "VERIFICATION_EMAIL_FAILED",
+                                 "message", "Could not send verification email"));
+        } catch (Exception e) {
+            logger.error("send-verification-email failed uid={}", uid, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("code", "VERIFICATION_EMAIL_FAILED",
+                                 "message", "Could not send verification email"));
+        }
     }
 
     @GetMapping("/me")

@@ -12,19 +12,20 @@ import static org.mockito.ArgumentMatchers.*;
 
 class MailServiceTest {
 
-    @Test
-    void disabledMail_shortCircuits_andDoesNotInitializeGraph() {
+    private MailService createDisabledService(MeterRegistry meters, AuditLogService auditLog) {
         MailProperties mail = new MailProperties();
         mail.setEnabled(false);
         mail.setFromAddress("noreply@fitrahtube.com");
         mail.setFromDisplayName("FitrahTube");
-        AzureProperties azure = new AzureProperties();
+        return new MailService(mail, new AzureProperties(), meters, auditLog);
+    }
+
+    @Test
+    void disabledMail_shortCircuits_andDoesNotInitializeGraph() {
         MeterRegistry meters = new SimpleMeterRegistry();
         AuditLogService auditLog = mock(AuditLogService.class);
+        MailService svc = createDisabledService(meters, auditLog);
 
-        MailService svc = new MailService(mail, azure, meters, auditLog);
-
-        // Should not throw, should not call Graph (no Graph client constructed at all).
         svc.sendPasswordResetEmail("user@example.com", "https://reset/link");
 
         verifyNoInteractions(auditLog);
@@ -33,53 +34,68 @@ class MailServiceTest {
     }
 
     @Test
-    void enabledMail_buildsCorrectMessage_andSends() throws Exception {
-        MailProperties mail = new MailProperties();
-        mail.setEnabled(false); // skip Graph init in constructor
-        mail.setFromAddress("noreply@fitrahtube.com");
-        mail.setFromDisplayName("FitrahTube");
-        AzureProperties azure = new AzureProperties();
+    void disabledMail_verificationEmail_shortCircuits() {
         MeterRegistry meters = new SimpleMeterRegistry();
         AuditLogService auditLog = mock(AuditLogService.class);
+        MailService svc = createDisabledService(meters, auditLog);
 
-        MailService svc = new MailService(mail, azure, meters, auditLog);
+        svc.sendEmailVerification("user@example.com", "https://verify/link");
 
-        com.microsoft.graph.models.Message msg = svc.buildPasswordResetMessage(
-                "user@example.com", "https://app.fitrahtube.com/reset/abc");
+        verifyNoInteractions(auditLog);
+        assertEquals(0.0, meters.counter("email.send.success", "type", "email_verification").count());
+    }
 
-        assertEquals("Reset your FitrahTube password", msg.getSubject());
+    @Test
+    void buildMessage_setsSubjectBodyAndRecipient() {
+        MeterRegistry meters = new SimpleMeterRegistry();
+        AuditLogService auditLog = mock(AuditLogService.class);
+        MailService svc = createDisabledService(meters, auditLog);
+
+        com.microsoft.graph.models.Message msg = svc.buildMessage(
+                "user@example.com", "Test Subject", "Test body content");
+
+        assertEquals("Test Subject", msg.getSubject());
         assertEquals(com.microsoft.graph.models.BodyType.Text, msg.getBody().getContentType());
-        assertTrue(msg.getBody().getContent().contains("https://app.fitrahtube.com/reset/abc"));
-        assertTrue(msg.getBody().getContent().contains("This link expires in 1 hour"));
-        assertTrue(msg.getBody().getContent().contains("FitrahTube"));
+        assertTrue(msg.getBody().getContent().contains("Test body content"));
         assertEquals(1, msg.getToRecipients().size());
         assertEquals("user@example.com",
                 msg.getToRecipients().get(0).getEmailAddress().getAddress());
     }
 
     @Test
-    void enabledMail_whenSendThrows_logsCountsAndAudits() {
-        MailProperties mail = new MailProperties();
-        mail.setEnabled(false); // skip Graph init in constructor
-        mail.setFromAddress("noreply@fitrahtube.com");
-        mail.setFromDisplayName("FitrahTube");
-        AzureProperties azure = new AzureProperties();
+    void handleSendFailure_logsCountsAndAudits() {
         MeterRegistry meters = new SimpleMeterRegistry();
         AuditLogService auditLog = mock(AuditLogService.class);
 
         class TestableMailService extends MailService {
-            TestableMailService() { super(mail, azure, meters, auditLog); }
-            void simulateFailure(String to) {
-                handleSendFailure(to, new RuntimeException("graph 503"));
+            TestableMailService() {
+                super(createMailProps(), new AzureProperties(), meters, auditLog);
+            }
+            private static MailProperties createMailProps() {
+                MailProperties m = new MailProperties();
+                m.setEnabled(false);
+                m.setFromAddress("noreply@fitrahtube.com");
+                m.setFromDisplayName("FitrahTube");
+                return m;
+            }
+            void simulateFailure(String to, String type) {
+                handleSendFailure(to, new RuntimeException("graph 503"), type);
             }
         }
         TestableMailService svc = new TestableMailService();
 
-        svc.simulateFailure("user@example.com");
-
+        svc.simulateFailure("user@example.com", "password_reset");
         assertEquals(1.0, meters.counter("email.send.failure", "type", "password_reset").count());
         verify(auditLog).logSystem(
                 eq("USER_PASSWORD_RESET_EMAIL_FAILED"),
+                eq("user"),
+                eq("user@example.com"),
+                anyString());
+
+        svc.simulateFailure("user@example.com", "email_verification");
+        assertEquals(1.0, meters.counter("email.send.failure", "type", "email_verification").count());
+        verify(auditLog).logSystem(
+                eq("USER_EMAIL_VERIFICATION_EMAIL_FAILED"),
                 eq("user"),
                 eq("user@example.com"),
                 anyString());

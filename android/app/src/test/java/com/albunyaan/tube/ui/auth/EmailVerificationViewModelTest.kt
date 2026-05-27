@@ -2,6 +2,7 @@ package com.albunyaan.tube.ui.auth
 
 import androidx.lifecycle.SavedStateHandle
 import com.albunyaan.tube.auth.AuthRepository
+import com.albunyaan.tube.data.account.AccountService
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.android.gms.tasks.Tasks
@@ -25,6 +26,7 @@ class EmailVerificationViewModelTest {
     private lateinit var auth: FirebaseAuth
     private lateinit var user: FirebaseUser
     private lateinit var authRepository: AuthRepository
+    private lateinit var accountService: AccountService
     private lateinit var saved: SavedStateHandle
 
     @Before fun setUp() {
@@ -38,17 +40,20 @@ class EmailVerificationViewModelTest {
         whenever(user.sendEmailVerification()).thenReturn(Tasks.forResult(null))
         whenever(user.reload()).thenReturn(Tasks.forResult(null))
         authRepository = mock()
+        accountService = mock {
+            onBlocking { sendVerificationEmail() } doReturn retrofit2.Response.success(Unit)
+        }
         saved = SavedStateHandle()
     }
 
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private fun newVm() = EmailVerificationViewModel(auth, authRepository, saved)
+    private fun newVm() = EmailVerificationViewModel(auth, authRepository, accountService, saved)
 
     @Test fun `enter sends verification once when lastSentAt is null`() = runTest(dispatcher) {
         val vm = newVm()
         advanceUntilIdle()
-        verify(user, times(1)).sendEmailVerification()
+        verify(accountService, times(1)).sendVerificationEmail()
         assertNotNull(vm.ui.value.lastSentAtMs)
     }
 
@@ -56,7 +61,7 @@ class EmailVerificationViewModelTest {
         saved["lastSentAtMs"] = 1_700_000_000_000L
         newVm()
         advanceUntilIdle()
-        verify(user, never()).sendEmailVerification()
+        verify(accountService, never()).sendVerificationEmail()
     }
 
     @Test fun `checkNow navigates to splash when verified`() = runTest(dispatcher) {
@@ -79,10 +84,10 @@ class EmailVerificationViewModelTest {
     @Test fun `resend respects 60s cooldown`() = runTest(dispatcher) {
         val vm = newVm()
         advanceUntilIdle()
-        clearInvocations(user)
+        clearInvocations(accountService)
         vm.resend()
         advanceUntilIdle()
-        verify(user, never()).sendEmailVerification()
+        verify(accountService, never()).sendVerificationEmail()
         assertEquals(EmailVerifyError.RATE_LIMITED, vm.ui.value.error)
     }
 
@@ -95,16 +100,14 @@ class EmailVerificationViewModelTest {
         assertEquals(EmailVerificationViewModel.Nav.NavigateToSignIn, vm.nav.value)
     }
 
-    @Test fun `resend with FirebaseTooManyRequestsException surfaces RATE_LIMITED`() = runTest(dispatcher) {
-        whenever(user.sendEmailVerification()).thenReturn(
-            Tasks.forException(com.google.firebase.FirebaseTooManyRequestsException("Blocked due to unusual activity"))
-        )
-        saved["lastSentAtMs"] = System.currentTimeMillis() - 70_000L // outside cooldown
-        val vm = newVm()
+    @Test fun `backend failure falls back to Firebase sendEmailVerification`() = runTest(dispatcher) {
+        accountService = mock {
+            onBlocking { sendVerificationEmail() } doReturn
+                retrofit2.Response.error<Unit>(500, okhttp3.ResponseBody.create(null, ""))
+        }
+        val vm = EmailVerificationViewModel(auth, authRepository, accountService, saved)
         advanceUntilIdle()
-        clearInvocations(user)
-        vm.resend()
-        advanceUntilIdle()
-        assertEquals(EmailVerifyError.RATE_LIMITED, vm.ui.value.error)
+        verify(user, times(1)).sendEmailVerification()
+        assertNotNull(vm.ui.value.lastSentAtMs)
     }
 }

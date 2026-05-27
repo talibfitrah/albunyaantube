@@ -59,9 +59,12 @@ class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
             viewModel.onCountryChanged(rows[position].first)
         }
         if (savedInstanceState == null) {
-            seedCountry?.let { iso ->
-                val display = rows.firstOrNull { it.first == iso }?.second
-                if (display != null) countryField.setText(display, /* filter */ false)
+            val countryToSelect = seedCountry
+                ?: requireContext().resources.configuration.locales[0].country
+                    .takeIf { it.isNotBlank() } ?: "NL"
+            rows.firstOrNull { it.first == countryToSelect }?.let { (iso, display) ->
+                countryField.setText(display, false)
+                if (seedCountry == null) viewModel.onCountryChanged(iso)
             }
             seedNumber?.let { numberField.setText(it) }
         }

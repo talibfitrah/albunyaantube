@@ -4,15 +4,20 @@ import com.albunyaan.tube.config.AzureProperties;
 import com.albunyaan.tube.config.MailProperties;
 import com.azure.identity.ClientSecretCredential;
 import com.azure.identity.ClientSecretCredentialBuilder;
+import com.microsoft.graph.models.BodyType;
+import com.microsoft.graph.models.EmailAddress;
+import com.microsoft.graph.models.ItemBody;
+import com.microsoft.graph.models.Message;
+import com.microsoft.graph.models.Recipient;
 import com.microsoft.graph.serviceclient.GraphServiceClient;
+import com.microsoft.graph.users.item.sendmail.SendMailPostRequestBody;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.Map;
+import java.util.LinkedList;
 
 /**
  * Plan F (ADMIN-USER-01) — Microsoft Graph mail sender.
@@ -77,37 +82,62 @@ public class MailService {
      */
     @Async("mailExecutor")
     public void sendPasswordResetEmail(String to, String resetLink) {
+        sendViaGraph(to, "password_reset",
+                buildMessage(to, "Reset your FitrahTube password",
+                        "Hi,\n\n"
+                      + "We received a request to reset your FitrahTube password.\n"
+                      + "Click the link below to set a new password:\n\n"
+                      + resetLink + "\n\n"
+                      + "This link expires in 1 hour. If you didn't request a reset, ignore this email — "
+                      + "your account is safe.\n\n"
+                      + "This is an automated message from " + fromDisplayName
+                      + ". Replies to this address are not monitored.\n"));
+    }
+
+    public void sendEmailVerification(String to, String verificationLink) {
+        sendViaGraph(to, "email_verification",
+                buildMessage(to, "Verify your FitrahTube email",
+                        "Assalamu alaykum,\n\n"
+                      + "Please verify your email address to complete your FitrahTube account.\n"
+                      + "Click the link below:\n\n"
+                      + verificationLink + "\n\n"
+                      + "If you didn't create a FitrahTube account, ignore this email.\n\n"
+                      + "This is an automated message from " + fromDisplayName
+                      + ". Replies to this address are not monitored.\n"));
+    }
+
+    private void sendViaGraph(String to, String type, Message msg) {
         if (!enabled) {
-            log.info("mail.disabled to={}", to);
+            log.info("mail.disabled ({}) recipient={}", type, sanitiseRecipientForAudit(to));
             return;
         }
         try {
-            com.microsoft.graph.models.Message msg = buildPasswordResetMessage(to, resetLink);
-            com.microsoft.graph.users.item.sendmail.SendMailPostRequestBody body =
-                    new com.microsoft.graph.users.item.sendmail.SendMailPostRequestBody();
+            SendMailPostRequestBody body = new SendMailPostRequestBody();
             body.setMessage(msg);
             body.setSaveToSentItems(false);
             graph.users().byUserId(fromAddress).sendMail().post(body);
-            meters.counter("email.send.success", "type", "password_reset").increment();
-            log.info("password_reset_email.sent to={}", to);
+            meters.counter("email.send.success", "type", type).increment();
+            log.info("{}.sent", type);
         } catch (Exception e) {
-            handleSendFailure(to, e);
+            handleSendFailure(to, e, type);
         }
     }
 
     /** Package-private for unit test override. */
-    void handleSendFailure(String to, Exception e) {
-        log.error("password_reset_email.failed to={}", to, e);
-        meters.counter("email.send.failure", "type", "password_reset").increment();
+    void handleSendFailure(String to, Exception e, String type) {
+        log.error("{}.failed to={}", type, to, e);
+        meters.counter("email.send.failure", "type", type).increment();
         // Cubic R5 P1: never pipe the raw `to` into an audit row — log-shippers
         // and CSV exporters get poisoned by CR/LF/control chars in unvalidated
         // recipient strings. Sanitise once here.
+        String eventName = "USER_" + type.toUpperCase() + "_EMAIL_FAILED";
         auditLog.logSystem(
-                "USER_PASSWORD_RESET_EMAIL_FAILED",
+                eventName,
                 "user",
                 sanitiseRecipientForAudit(to),
                 "mail-service: error=" + e.getClass().getSimpleName());
     }
+
 
     /**
      * Returns the recipient in a form safe to embed in an audit row: strips
@@ -132,34 +162,26 @@ public class MailService {
         return stripped;
     }
 
-    /** Package-private for unit-testability. */
-    com.microsoft.graph.models.Message buildPasswordResetMessage(String to, String link) {
-        com.microsoft.graph.models.Message m = new com.microsoft.graph.models.Message();
-        m.setSubject("Reset your FitrahTube password");
+    Message buildMessage(String to, String subject, String textContent) {
+        Message m = new Message();
+        m.setSubject(subject);
 
-        com.microsoft.graph.models.ItemBody body = new com.microsoft.graph.models.ItemBody();
-        body.setContentType(com.microsoft.graph.models.BodyType.Text);
-        body.setContent(
-                "Hi,\n\n"
-              + "We received a request to reset your FitrahTube password.\n"
-              + "Click the link below to set a new password:\n\n"
-              + link + "\n\n"
-              + "This link expires in 1 hour. If you didn't request a reset, ignore this email — "
-              + "your account is safe.\n\n"
-              + "This is an automated message from " + fromDisplayName
-              + ". Replies to this address are not monitored.\n");
+        ItemBody body = new ItemBody();
+        body.setContentType(BodyType.Text);
+        body.setContent(textContent);
         m.setBody(body);
 
-        com.microsoft.graph.models.Recipient r = new com.microsoft.graph.models.Recipient();
-        com.microsoft.graph.models.EmailAddress addr = new com.microsoft.graph.models.EmailAddress();
+        Recipient r = new Recipient();
+        EmailAddress addr = new EmailAddress();
         addr.setAddress(to);
         r.setEmailAddress(addr);
-        java.util.LinkedList<com.microsoft.graph.models.Recipient> toRecipients = new java.util.LinkedList<>();
+        LinkedList<Recipient> toRecipients = new LinkedList<>();
         toRecipients.add(r);
         m.setToRecipients(toRecipients);
 
         return m;
     }
+
 
     /** Plan F risk §11.3 — Graph users.byUserId(fromAddress).get() smoke call. */
     public void verifyFromMailboxReachable() {

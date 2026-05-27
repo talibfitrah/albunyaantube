@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.auth.AuthRepository
+import com.albunyaan.tube.data.account.AccountService
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.io.IOException
 import javax.inject.Inject
 
 enum class EmailVerifyError {
@@ -25,6 +27,7 @@ enum class EmailVerifyError {
 class EmailVerificationViewModel @Inject constructor(
     private val firebaseAuth: FirebaseAuth,
     private val authRepository: AuthRepository,
+    private val accountService: AccountService,
     private val saved: SavedStateHandle,
 ) : ViewModel() {
 
@@ -109,15 +112,21 @@ class EmailVerificationViewModel @Inject constructor(
                 return@launch
             }
             try {
-                user.sendEmailVerification().await()
+                val resp = accountService.sendVerificationEmail()
+                if (!resp.isSuccessful) {
+                    user.sendEmailVerification().await()
+                }
                 val now = System.currentTimeMillis()
                 saved["lastSentAtMs"] = now
                 _ui.update { it.copy(isResending = false, lastSentAtMs = now) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: IOException) {
+                _ui.update { it.copy(isResending = false, error = EmailVerifyError.NETWORK) }
+            } catch (e: com.google.firebase.FirebaseTooManyRequestsException) {
+                _ui.update { it.copy(isResending = false, error = EmailVerifyError.RATE_LIMITED) }
             } catch (e: Exception) {
-                val mapped = if (e is com.google.firebase.FirebaseTooManyRequestsException)
-                    EmailVerifyError.RATE_LIMITED
-                else EmailVerifyError.NETWORK
-                _ui.update { it.copy(isResending = false, error = mapped) }
+                _ui.update { it.copy(isResending = false, error = EmailVerifyError.NETWORK) }
             }
         }
     }
