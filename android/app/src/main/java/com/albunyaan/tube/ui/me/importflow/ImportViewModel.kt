@@ -1,4 +1,4 @@
-package com.albunyaan.tube.ui.me.import
+package com.albunyaan.tube.ui.me.importflow
 
 import android.content.Intent
 import androidx.lifecycle.ViewModel
@@ -10,6 +10,8 @@ import com.albunyaan.tube.data.youtube.CandidateType
 import com.albunyaan.tube.data.youtube.ImportCandidate
 import com.albunyaan.tube.data.youtube.YouTubeAuthManager
 import com.albunyaan.tube.data.youtube.YouTubeImportRemoteSource
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,12 +26,8 @@ import kotlinx.coroutines.launch
  *   Idle → Authorizing → [NeedsConsent →] Fetching → Review → Importing → Done
  * Any step can fall to Error.
  *
- * @HiltViewModel / @Inject are intentionally absent here and are added in B15.
- * Reason: adding them now causes KSP/Dagger to emit ImportViewModel_HiltModules
- * which references YouTubeImportApi — a type with no Hilt binding until B15.
- * That makes kspDebugKotlin crash with a DaggerSuperficialValidation NPE on the
- * generated class, breaking the entire app Hilt graph. B15 adds @HiltViewModel,
- * @Inject, and all required @Binds/@Provides in one atomic step.
+ * B15: @HiltViewModel + @Inject constructor added here (atomically with the full
+ * DI graph in ImportModule / NetworkModule) so KSP can resolve all transitive deps.
  *
  * Empty-candidates policy: when fetchAll() returns zero candidates we emit
  * Error("No items found", retryable=false) rather than an empty Review list.
@@ -37,7 +35,8 @@ import kotlinx.coroutines.launch
  * recover the failed type). This keeps the fragment's happy path clean — it
  * only renders Review when there is actually something to show.
  */
-class ImportViewModel(
+@HiltViewModel
+class ImportViewModel @Inject constructor(
     private val authManager: YouTubeAuthManager,
     private val remoteSource: YouTubeImportRemoteSource,
     private val importRepository: YouTubeImportRepository,

@@ -2,6 +2,7 @@ package com.albunyaan.tube.data.youtube
 
 import android.util.Log
 import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * B7: Fetches all importable YouTube items for a signed-in user.
@@ -13,6 +14,7 @@ import javax.inject.Inject
  * Hilt wiring (B15) will supply the [YouTubeImportApi] instance backed by a
  * Retrofit configured for https://www.googleapis.com/youtube/v3/.
  */
+@Singleton
 class YouTubeImportRemoteSource @Inject constructor(
     private val api: YouTubeImportApi,
 ) {

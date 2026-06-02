@@ -1,4 +1,4 @@
-package com.albunyaan.tube.ui.me.import
+package com.albunyaan.tube.ui.me.importflow
 
 import android.app.PendingIntent
 import com.albunyaan.tube.data.importflow.ImportProgress
