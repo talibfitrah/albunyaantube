@@ -87,6 +87,8 @@ class ImportFromYouTubeFragment : Fragment(R.layout.fragment_import_youtube) {
         if (state is ImportUiState.NeedsConsent) {
             val request = IntentSenderRequest.Builder(state.pendingIntent.intentSender).build()
             consentLauncher.launch(request)
+            // cubic-P3: leave NeedsConsent so a config-change re-render doesn't relaunch consent.
+            viewModel.onConsentLaunched()
             return
         }
 

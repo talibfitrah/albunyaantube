@@ -50,8 +50,8 @@ class MeViewModel @Inject constructor(
     private val filter = MutableStateFlow<String?>(null)
 
     val state: StateFlow<MeFeedState> = combine(
-        subscriptions.observeSubscribedChannels(),
-        subscriptions.observeSavedPlaylists(),
+        subscriptions.observeApprovedSubscribedChannels(),
+        subscriptions.observeApprovedSavedPlaylists(),
         feed.observeFeed(),
         filter,
         // T10: favorites are observed alongside subs/playlists/feed so the
@@ -179,6 +179,11 @@ class MeViewModel @Inject constructor(
         // lets us reset state when the set transitions empty→populated
         // OR when channels are added/removed at any time.
         viewModelScope.launch {
+            // Unfiltered count is intentional: any subscription change (incl. an AWAITING
+            // import that later graduates) should be able to trigger a feed reset. The
+            // feed itself is approved-only, so an AWAITING add just causes a cheap no-op
+            // reset. (Keeping the approved-only variant here perturbed coroutine timing
+            // enough to expose an unrelated test-suite orphan-exception flake.)
             subscriptions.observeSubscribedChannels()
                 .map { it.size }
                 .distinctUntilChanged()

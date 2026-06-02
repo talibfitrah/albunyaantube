@@ -76,6 +76,17 @@ class ImportViewModel @Inject constructor(
     }
 
     /**
+     * Called by the fragment right after it launches the consent intent. Leaving the
+     * sticky NeedsConsent state means a configuration change that re-observes uiState
+     * won't relaunch a second consent prompt (cubic-P3).
+     */
+    fun onConsentLaunched() {
+        if (_uiState.value is ImportUiState.NeedsConsent) {
+            _uiState.value = ImportUiState.Authorizing
+        }
+    }
+
+    /**
      * Toggle selection for a single candidate identified by [youtubeId].
      * No-op if the current state is not [ImportUiState.Review].
      */

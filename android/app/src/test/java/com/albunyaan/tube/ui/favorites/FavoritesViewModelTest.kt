@@ -152,7 +152,9 @@ class FavoritesViewModelTest {
         private val favoritesFlow = MutableStateFlow<List<FavoriteVideo>>(emptyList())
 
         override fun getAllFavorites(): Flow<List<FavoriteVideo>> = favoritesFlow
-        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
+        // The ViewModel now observes approved-only favorites; this fake's test data is all
+        // approved, so mirror getAllFavorites (approval filtering is covered at the DAO level).
+        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = favoritesFlow
         override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
 
         override fun isFavorite(videoId: String): Flow<Boolean> =
