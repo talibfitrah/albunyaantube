@@ -27,6 +27,10 @@ import androidx.room.RoomDatabase
  *      saved playlists to the videos they contain, so playlist content
  *      can be unioned into the weekly Me feed alongside channel uploads.
  *      See [MIGRATION_9_10].
+ * v11: YouTube import support — adds approval_status, source, imported_at
+ *      columns to subscribed_channels, saved_playlists, favorite_videos so
+ *      imported items can be held in PENDING state until reviewed.
+ *      See [MIGRATION_10_11].
  */
 @Database(
     entities = [
@@ -40,7 +44,7 @@ import androidx.room.RoomDatabase
         AccountBindingEntity::class,
         PlaylistVideoLink::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

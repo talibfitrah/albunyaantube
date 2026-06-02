@@ -1,0 +1,579 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 11,
+    "identityHash": "5eade72a873eaf2aac17e3b3b3d0c0d6",
+    "entities": [
+      {
+        "tableName": "favorite_videos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`videoId` TEXT NOT NULL, `title` TEXT NOT NULL, `channelName` TEXT NOT NULL, `thumbnailUrl` TEXT, `durationSeconds` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, `user_id` TEXT NOT NULL, `updated_at` INTEGER NOT NULL, `deleted` INTEGER NOT NULL, `dirty` INTEGER NOT NULL, `approval_status` TEXT NOT NULL, `source` TEXT, `imported_at` INTEGER, PRIMARY KEY(`videoId`))",
+        "fields": [
+          {
+            "fieldPath": "videoId",
+            "columnName": "videoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelName",
+            "columnName": "channelName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "thumbnailUrl",
+            "columnName": "thumbnailUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "durationSeconds",
+            "columnName": "durationSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAt",
+            "columnName": "addedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "user_id",
+            "columnName": "user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updated_at",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deleted",
+            "columnName": "deleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dirty",
+            "columnName": "dirty",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "approvalStatus",
+            "columnName": "approval_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "importedAt",
+            "columnName": "imported_at",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "videoId"
+          ]
+        }
+      },
+      {
+        "tableName": "subscribed_channels",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`channelId` TEXT NOT NULL, `channelUrl` TEXT NOT NULL, `name` TEXT NOT NULL, `avatarUrl` TEXT, `subscribedAt` INTEGER NOT NULL, `user_id` TEXT NOT NULL, `updated_at` INTEGER NOT NULL, `deleted` INTEGER NOT NULL, `dirty` INTEGER NOT NULL, `approval_status` TEXT NOT NULL, `source` TEXT, `imported_at` INTEGER, PRIMARY KEY(`channelId`))",
+        "fields": [
+          {
+            "fieldPath": "channelId",
+            "columnName": "channelId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelUrl",
+            "columnName": "channelUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avatarUrl",
+            "columnName": "avatarUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "subscribedAt",
+            "columnName": "subscribedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "user_id",
+            "columnName": "user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updated_at",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deleted",
+            "columnName": "deleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dirty",
+            "columnName": "dirty",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "approvalStatus",
+            "columnName": "approval_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "importedAt",
+            "columnName": "imported_at",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "channelId"
+          ]
+        }
+      },
+      {
+        "tableName": "saved_playlists",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playlistId` TEXT NOT NULL, `playlistUrl` TEXT NOT NULL, `name` TEXT NOT NULL, `thumbnailUrl` TEXT, `uploaderName` TEXT, `savedAt` INTEGER NOT NULL, `user_id` TEXT NOT NULL, `updated_at` INTEGER NOT NULL, `deleted` INTEGER NOT NULL, `dirty` INTEGER NOT NULL, `approval_status` TEXT NOT NULL, `source` TEXT, `imported_at` INTEGER, PRIMARY KEY(`playlistId`))",
+        "fields": [
+          {
+            "fieldPath": "playlistId",
+            "columnName": "playlistId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playlistUrl",
+            "columnName": "playlistUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "thumbnailUrl",
+            "columnName": "thumbnailUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "uploaderName",
+            "columnName": "uploaderName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "savedAt",
+            "columnName": "savedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "user_id",
+            "columnName": "user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updated_at",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deleted",
+            "columnName": "deleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dirty",
+            "columnName": "dirty",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "approvalStatus",
+            "columnName": "approval_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "importedAt",
+            "columnName": "imported_at",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "playlistId"
+          ]
+        }
+      },
+      {
+        "tableName": "channel_video_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`videoId` TEXT NOT NULL, `channelId` TEXT NOT NULL, `channelName` TEXT NOT NULL, `title` TEXT NOT NULL, `thumbnailUrl` TEXT, `durationSeconds` INTEGER, `viewCount` INTEGER, `uploadedAt` INTEGER, `isShort` INTEGER NOT NULL, `fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`videoId`))",
+        "fields": [
+          {
+            "fieldPath": "videoId",
+            "columnName": "videoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelId",
+            "columnName": "channelId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelName",
+            "columnName": "channelName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "thumbnailUrl",
+            "columnName": "thumbnailUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "durationSeconds",
+            "columnName": "durationSeconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "viewCount",
+            "columnName": "viewCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "uploadedAt",
+            "columnName": "uploadedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isShort",
+            "columnName": "isShort",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fetchedAt",
+            "columnName": "fetchedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "videoId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_channel_video_cache_channelId",
+            "unique": false,
+            "columnNames": [
+              "channelId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_channel_video_cache_channelId` ON `${TABLE_NAME}` (`channelId`)"
+          },
+          {
+            "name": "index_channel_video_cache_uploadedAt",
+            "unique": false,
+            "columnNames": [
+              "uploadedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_channel_video_cache_uploadedAt` ON `${TABLE_NAME}` (`uploadedAt`)"
+          }
+        ]
+      },
+      {
+        "tableName": "channel_feed_refresh_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`channelId` TEXT NOT NULL, `lastSuccessfulFetchAt` INTEGER NOT NULL, `lastAttemptAt` INTEGER NOT NULL, `lastErrorMessage` TEXT, `etag` TEXT, `lastModified` TEXT, `consecutiveErrorCount` INTEGER NOT NULL, `consecutiveEmptyCount` INTEGER NOT NULL, `backoffUntilMs` INTEGER, `deepPageUrl` TEXT, `deepPageCookiesJson` TEXT, PRIMARY KEY(`channelId`))",
+        "fields": [
+          {
+            "fieldPath": "channelId",
+            "columnName": "channelId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSuccessfulFetchAt",
+            "columnName": "lastSuccessfulFetchAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAttemptAt",
+            "columnName": "lastAttemptAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastErrorMessage",
+            "columnName": "lastErrorMessage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "etag",
+            "columnName": "etag",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastModified",
+            "columnName": "lastModified",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "consecutiveErrorCount",
+            "columnName": "consecutiveErrorCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "consecutiveEmptyCount",
+            "columnName": "consecutiveEmptyCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "backoffUntilMs",
+            "columnName": "backoffUntilMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "deepPageUrl",
+            "columnName": "deepPageUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "deepPageCookiesJson",
+            "columnName": "deepPageCookiesJson",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "channelId"
+          ]
+        }
+      },
+      {
+        "tableName": "followed_channels",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`channelId` TEXT NOT NULL, `title` TEXT NOT NULL, `avatarUrl` TEXT, `followedAt` INTEGER NOT NULL, PRIMARY KEY(`channelId`))",
+        "fields": [
+          {
+            "fieldPath": "channelId",
+            "columnName": "channelId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avatarUrl",
+            "columnName": "avatarUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "followedAt",
+            "columnName": "followedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "channelId"
+          ]
+        }
+      },
+      {
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`entityType` TEXT NOT NULL, `user_id` TEXT NOT NULL, `last_cursor` INTEGER NOT NULL, `last_doc_id` TEXT, `last_sync_at` INTEGER NOT NULL, PRIMARY KEY(`entityType`, `user_id`))",
+        "fields": [
+          {
+            "fieldPath": "entityType",
+            "columnName": "entityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "user_id",
+            "columnName": "user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "last_cursor",
+            "columnName": "last_cursor",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "last_doc_id",
+            "columnName": "last_doc_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "last_sync_at",
+            "columnName": "last_sync_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "entityType",
+            "user_id"
+          ]
+        }
+      },
+      {
+        "tableName": "account_binding",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`user_id` TEXT NOT NULL, `bound_at` INTEGER NOT NULL, `initial_merge_done` INTEGER NOT NULL, PRIMARY KEY(`user_id`))",
+        "fields": [
+          {
+            "fieldPath": "user_id",
+            "columnName": "user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bound_at",
+            "columnName": "bound_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "initial_merge_done",
+            "columnName": "initial_merge_done",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "user_id"
+          ]
+        }
+      },
+      {
+        "tableName": "playlist_video_link",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playlistId` TEXT NOT NULL, `videoId` TEXT NOT NULL, PRIMARY KEY(`playlistId`, `videoId`))",
+        "fields": [
+          {
+            "fieldPath": "playlistId",
+            "columnName": "playlistId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "videoId",
+            "columnName": "videoId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "playlistId",
+            "videoId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playlist_video_link_playlistId",
+            "unique": false,
+            "columnNames": [
+              "playlistId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playlist_video_link_playlistId` ON `${TABLE_NAME}` (`playlistId`)"
+          },
+          {
+            "name": "index_playlist_video_link_videoId",
+            "unique": false,
+            "columnNames": [
+              "videoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playlist_video_link_videoId` ON `${TABLE_NAME}` (`videoId`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5eade72a873eaf2aac17e3b3b3d0c0d6')"
+    ]
+  }
+}

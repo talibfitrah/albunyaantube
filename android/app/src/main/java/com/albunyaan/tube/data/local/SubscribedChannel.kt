@@ -1,5 +1,6 @@
 package com.albunyaan.tube.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -15,4 +16,8 @@ data class SubscribedChannel(
     val updated_at: Long = 0L,
     val deleted: Boolean = false,
     val dirty: Boolean = false,
+    // Import metadata (ANDROID-IMPORT-01)
+    @ColumnInfo(name = "approval_status") val approvalStatus: String = "APPROVED",
+    @ColumnInfo(name = "source") val source: String? = null,
+    @ColumnInfo(name = "imported_at") val importedAt: Long? = null,
 )

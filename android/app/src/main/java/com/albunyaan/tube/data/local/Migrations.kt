@@ -369,6 +369,50 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
 }
 
 /**
+ * MIGRATION_10_11 — YouTube import columns (ANDROID-IMPORT-01).
+ *
+ * Adds three columns to the three account-scoped tables so imported items
+ * can carry their approval state, origin source, and import timestamp:
+ *
+ *  - approval_status TEXT NOT NULL DEFAULT 'APPROVED'
+ *      Every pre-existing row acquires 'APPROVED' so current behaviour is
+ *      unchanged. Newly imported rows start as 'PENDING'.
+ *  - source TEXT (nullable)
+ *      Identifies the import source (e.g. "youtube_import"). NULL for rows
+ *      added manually before this migration.
+ *  - imported_at INTEGER (nullable)
+ *      Epoch-millis when the row was imported. NULL for manually-added rows.
+ *
+ * Uses the same defensive tryAlter wrapper established in MIGRATION_7_8 to
+ * survive partial restores and re-application without crashing.
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        fun tryAlter(table: String, ddl: String) {
+            try { db.execSQL(ddl) } catch (e: android.database.SQLException) {
+                android.util.Log.w("Migrations",
+                    "MIGRATION_10_11: skipping ALTER on $table — likely already applied: ${e.message}")
+            }
+        }
+
+        // subscribed_channels
+        tryAlter("subscribed_channels", "ALTER TABLE subscribed_channels ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'APPROVED'")
+        tryAlter("subscribed_channels", "ALTER TABLE subscribed_channels ADD COLUMN source TEXT")
+        tryAlter("subscribed_channels", "ALTER TABLE subscribed_channels ADD COLUMN imported_at INTEGER")
+
+        // saved_playlists
+        tryAlter("saved_playlists", "ALTER TABLE saved_playlists ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'APPROVED'")
+        tryAlter("saved_playlists", "ALTER TABLE saved_playlists ADD COLUMN source TEXT")
+        tryAlter("saved_playlists", "ALTER TABLE saved_playlists ADD COLUMN imported_at INTEGER")
+
+        // favorite_videos
+        tryAlter("favorite_videos", "ALTER TABLE favorite_videos ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'APPROVED'")
+        tryAlter("favorite_videos", "ALTER TABLE favorite_videos ADD COLUMN source TEXT")
+        tryAlter("favorite_videos", "ALTER TABLE favorite_videos ADD COLUMN imported_at INTEGER")
+    }
+}
+
+/**
  * MIGRATION_9_10 — Me-tab playlist videos.
  *
  * Adds the `playlist_video_link` table: a many-to-many mapping between
