@@ -166,6 +166,9 @@ public class ApprovalController {
             }
 
             return ResponseEntity.ok(response);
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            log.warn("Approval failed - {}: {}", e.getStatusCode(), e.getReason());
+            throw e;
         } catch (IllegalStateException e) {
             log.warn("Approval failed - invalid state: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT).build();

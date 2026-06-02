@@ -1086,6 +1086,17 @@ public class ApprovalService {
                     "Cannot approve channel " + channel.getId() + ": current status is " + channel.getStatus());
         }
 
+        // Require at least one category — either from the item or from the override.
+        List<String> existingCategories = channel.getCategoryIds();
+        boolean overridePresent = request.getCategoryOverride() != null
+                && !request.getCategoryOverride().isBlank();
+        boolean hasCategories = existingCategories != null && !existingCategories.isEmpty();
+        if (!overridePresent && !hasCategories) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Category required to approve this submission");
+        }
+
         // Update status
         channel.setStatus("APPROVED");
         channel.setApprovedBy(actorUid);
@@ -1135,6 +1146,17 @@ public class ApprovalService {
         if (!"PENDING".equals(playlist.getStatus())) {
             throw new IllegalStateException(
                     "Cannot approve playlist " + playlist.getId() + ": current status is " + playlist.getStatus());
+        }
+
+        // Require at least one category — either from the item or from the override.
+        List<String> existingCategories = playlist.getCategoryIds();
+        boolean overridePresent = request.getCategoryOverride() != null
+                && !request.getCategoryOverride().isBlank();
+        boolean hasCategories = existingCategories != null && !existingCategories.isEmpty();
+        if (!overridePresent && !hasCategories) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Category required to approve this submission");
         }
 
         // Update status
@@ -1278,6 +1300,17 @@ public class ApprovalService {
         if (!"PENDING".equals(video.getStatus())) {
             throw new IllegalStateException(
                     "Cannot approve video " + video.getId() + ": current status is " + video.getStatus());
+        }
+
+        // Require at least one category — either from the item or from the override.
+        List<String> existingCategories = video.getCategoryIds();
+        boolean overridePresent = request.getCategoryOverride() != null
+                && !request.getCategoryOverride().isBlank();
+        boolean hasCategories = existingCategories != null && !existingCategories.isEmpty();
+        if (!overridePresent && !hasCategories) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Category required to approve this submission");
         }
 
         video.setStatus("APPROVED");
