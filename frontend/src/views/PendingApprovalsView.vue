@@ -178,7 +178,7 @@
           </label>
           <select
             :id="`cat-select-${item.id}`"
-            :value="selectedCategoryOverrides.get(item.id) ?? ''"
+            :value="selectedCategoryOverrides[item.id] ?? ''"
             class="category-override-select"
             @change="onCategoryOverrideChange(item.id, ($event.target as HTMLSelectElement).value)"
           >
@@ -397,16 +397,19 @@ const processingId = ref<string | null>(null);
  * Only relevant for items with no existing categories (user-import items arrive
  * with empty categoryIds — the backend enforces a category before approving).
  */
-const selectedCategoryOverrides = ref(new Map<string, string>());
+const selectedCategoryOverrides = ref<Record<string, string>>({});
 
 function onCategoryOverrideChange(itemId: string, categoryId: string) {
   if (categoryId) {
-    selectedCategoryOverrides.value.set(itemId, categoryId);
+    selectedCategoryOverrides.value[itemId] = categoryId;
   } else {
-    selectedCategoryOverrides.value.delete(itemId);
+    delete selectedCategoryOverrides.value[itemId];
   }
-  // Trigger reactivity — Map mutations don't notify Vue automatically
-  selectedCategoryOverrides.value = new Map(selectedCategoryOverrides.value);
+}
+
+/** Returns true when the item already has at least one category assigned. */
+function itemHasCategories(item: any): boolean {
+  return !!(item.categories && item.categories.length > 0);
 }
 
 /**
@@ -415,8 +418,8 @@ function onCategoryOverrideChange(itemId: string, categoryId: string) {
  * Items with no categories require the admin to pick a category first.
  */
 function canApprove(item: any): boolean {
-  if (item.categories && item.categories.length > 0) return true;
-  return !!selectedCategoryOverrides.value.get(item.id);
+  if (itemHasCategories(item)) return true;
+  return !!selectedCategoryOverrides.value[item.id];
 }
 
 const showRejectDialog = ref(false);
@@ -450,6 +453,7 @@ async function loadCategories() {
     categories.value = cats;
   } catch (err) {
     console.error('Failed to load categories', err);
+    error.value = t('approvals.loadCategoriesError');
   }
 }
 
@@ -520,16 +524,15 @@ async function handleApprove(item: any) {
   if (!canApprove(item)) return;
 
   // Determine category override: only send for items with no existing categories
-  const categoryOverride = (!item.categories || item.categories.length === 0)
-    ? selectedCategoryOverrides.value.get(item.id)
+  const categoryOverride = !itemHasCategories(item)
+    ? selectedCategoryOverrides.value[item.id]
     : undefined;
 
   processingId.value = item.id;
   try {
     await approveItem(item.id, item.type, categoryOverride);
     // Clear the per-item override after a successful approve
-    selectedCategoryOverrides.value.delete(item.id);
-    selectedCategoryOverrides.value = new Map(selectedCategoryOverrides.value);
+    delete selectedCategoryOverrides.value[item.id];
     await loadApprovals();
     loadPendingCount();
   } catch (err) {

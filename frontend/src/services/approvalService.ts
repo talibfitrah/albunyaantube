@@ -123,7 +123,7 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
     // source was added in [ADMIN-IMPORT-01]. Read via index access for the same
     // reason as submitterNote — the OpenAPI schema.ts hasn't been regenerated yet.
     source:
-      ((dto as unknown as Record<string, unknown>)['source'] as string | undefined) || undefined
+      ((dto as unknown as Record<string, unknown>)['source'] as string | undefined)
   };
 }
 
