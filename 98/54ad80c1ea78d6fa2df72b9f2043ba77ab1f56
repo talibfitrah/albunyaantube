@@ -1,0 +1,47 @@
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPlaylistPagingTest.kt
+  s_041296e26685a0::t_98ac5eee7c1ef7 897-905
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPrefetchTtlTest.kt
+  s_041296e26685a0::t_93f834acb94ec2 389-394
+android/app/src/main/java/com/albunyaan/tube/data/import/ImportSummary.kt
+  s_041296e26685a0::t_09e80246170b68 1-21
+android/app/src/main/java/com/albunyaan/tube/data/local/FavoritesRepository.kt
+  s_041296e26685a0::t_aeaee2e8ba23f3 54-61
+  s_041296e26685a0::t_877f3ed3753ba4 62-79
+  s_041296e26685a0::t_8f8da9191e005b 191-193
+  s_041296e26685a0::t_7834b32cfe747c 194-220
+android/app/src/test/java/com/albunyaan/tube/ui/me/MeViewModelSnapshotRoleTest.kt
+  s_041296e26685a0::t_6acbee1562910b 139-144
+android/app/src/main/java/com/albunyaan/tube/data/import/YouTubeImportRepository.kt
+  s_041296e26685a0::t_7fefdfd13353d4 1-34,40,42-278
+  s_041296e26685a0::t_02d07aa6cb35ef 35-39,41
+android/app/src/main/java/com/albunyaan/tube/data/subscriptions/SubscriptionRepository.kt
+  s_041296e26685a0::t_fa7d260d1f3288 152-166
+android/app/src/main/java/com/albunyaan/tube/data/import/ImportProgress.kt
+  s_041296e26685a0::t_14801f39a32a25 1-19
+android/app/src/test/java/com/albunyaan/tube/ui/me/MeViewModelTest.kt
+  s_041296e26685a0::t_7061a4779760c6 558-564
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelAvailabilityGateTest.kt
+  s_041296e26685a0::t_db70d3eb78d998 271-276
+android/app/src/test/java/com/albunyaan/tube/data/import/YouTubeImportRepositoryTest.kt
+  s_041296e26685a0::t_693cec3c019319 1-23,31-35,39-42,45-49,52-53,56-77,79,82-88,92-94,96-97,131-133,135-149,152-155,158-168,170,175-176,179-185,190-191,195-197,199-200,203,205,218,224-227,242,244-255,258-260,263-273,275-278,282-289,292-293,296,313-319,321-325,328,332,334-345,347-354,356-369,372-377,380-383,385-388,391,393-405,409-412,414-418,420,422-427,439-440,443-446
+  s_041296e26685a0::t_8c646054d7a32d 24-30,36-38,43-44,50-51,54-55,78,80-81,89-91,95,98-130,134,150-151,156-157,169,171-174,177-178,186-189,192-194,198,201-202,204,206-217,219-223,228-241,243,256-257,261-262,274,279-281,290-291,294-295,297-312,320,326-327,329-331,333,346,355,370-371,378-379,384,389-390,392,406-408,413,419,421,428-431,433,437-438,441-442,447-449
+  s_041296e26685a0::t_24c5065ca3ebc5 432,434-436
+android/app/src/test/java/com/albunyaan/tube/ui/favorites/FavoritesViewModelTest.kt
+  s_041296e26685a0::t_a33918deded3a1 209-217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9854ad80c1ea78d6fa2df72b9f2043ba77ab1f56",
+  "prompts": {},
+  "sessions": {
+    "s_041296e26685a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d01440fc-dec4-4cf5-9283-f068651f82f7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
