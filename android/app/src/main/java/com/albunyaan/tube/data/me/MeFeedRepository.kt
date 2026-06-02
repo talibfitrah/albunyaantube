@@ -84,9 +84,8 @@ class MeFeedRepository @Inject constructor(
     // queries fall back to the channel-only paths.
     private val playlistRepository: PlaylistDetailRepository? = null,
     private val playlistVideoLinkDao: PlaylistVideoLinkDao? = null,
-    // B3: used only by observeAwaiting(); nullable so every pre-existing test
-    // fixture that constructs MeFeedRepository without this arg compiles.
-    private val favoritesRepository: FavoritesRepository? = null,
+    // B3: required for observeAwaiting(); always Hilt-injected in production.
+    private val favoritesRepository: FavoritesRepository,
 ) {
 
     /**
@@ -243,26 +242,15 @@ class MeFeedRepository @Inject constructor(
     /**
      * B3: Combines the three AWAITING streams into a single [AwaitingImports]
      * flow. Emits whenever any of the three sets changes.
-     *
-     * Returns an empty [AwaitingImports] when [favoritesRepository] was not
-     * injected (test fixtures that don't exercise this path).
      */
-    fun observeAwaiting(): Flow<AwaitingImports> {
-        val favRepo = favoritesRepository
-            ?: return combine(
-                subscriptions.observeAwaitingSubscribedChannels(),
-                subscriptions.observeAwaitingSavedPlaylists(),
-            ) { channels, playlists ->
-                AwaitingImports(channels = channels, playlists = playlists, videos = emptyList())
-            }
-        return combine(
+    fun observeAwaiting(): Flow<AwaitingImports> =
+        combine(
             subscriptions.observeAwaitingSubscribedChannels(),
             subscriptions.observeAwaitingSavedPlaylists(),
-            favRepo.observeAwaitingFavorites(),
+            favoritesRepository.observeAwaitingFavorites(),
         ) { channels, playlists, videos ->
             AwaitingImports(channels = channels, playlists = playlists, videos = videos)
         }
-    }
 
     /**
      * ANDROID-PERSONAL-03 / T4: per-week observation for the Me-tab feed.

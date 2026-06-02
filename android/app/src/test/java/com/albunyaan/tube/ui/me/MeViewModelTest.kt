@@ -77,6 +77,7 @@ class MeViewModelTest {
             fetcher = NoopFetcher,
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         )
         favs = NoopFavoritesRepository()
     }
@@ -134,6 +135,7 @@ class MeViewModelTest {
             },
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         )
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
@@ -223,6 +225,7 @@ class MeViewModelTest {
             },
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         )
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         feedWithItems.refresh(force = true)
@@ -272,6 +275,7 @@ class MeViewModelTest {
             },
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         )
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
@@ -319,6 +323,7 @@ class MeViewModelTest {
             },
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         )
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
@@ -378,6 +383,7 @@ class MeViewModelTest {
             },
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         ).also { it.currentTimeMillisProvider = { now } }
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
@@ -435,6 +441,7 @@ class MeViewModelTest {
                 },
                 ioDispatcher = Dispatchers.Unconfined,
                 telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
             )
             subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
             subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
@@ -485,6 +492,7 @@ class MeViewModelTest {
             },
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         )
     }
 
@@ -528,7 +536,7 @@ class MeViewModelTest {
         fun emit(list: List<FavoriteVideo>) { state.value = list }
 
         override fun getAllFavorites(): Flow<List<FavoriteVideo>> = state
-        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
+        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = state
         override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
         override fun isFavorite(videoId: String): Flow<Boolean> =
             state.map { list -> list.any { it.videoId == videoId } }

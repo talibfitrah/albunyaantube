@@ -186,7 +186,23 @@ class MeFeedApprovalFilterTest {
         assertEquals("VID_approved", result.single().videoId)
     }
 
-    // ── observeAwaiting combines all three awaiting streams ──────────────────
+    @Test
+    fun `AWAITING favorite excluded from feed favorites row, APPROVED favorite included`() = runBlocking {
+        insertFavorite("VID_approved", "APPROVED")
+        insertFavorite("VID_awaiting", "AWAITING")
+
+        // observeApprovedFavorites (used by MeViewModel.state) must exclude AWAITING
+        val approved = favs.observeApprovedFavorites().first()
+        assertEquals(1, approved.size)
+        assertEquals("VID_approved", approved.single().videoId)
+
+        // observeAwaiting.videos (used by MeViewModel.awaiting) must include AWAITING
+        val awaiting = repo.observeAwaiting().first()
+        assertEquals(1, awaiting.videos.size)
+        assertEquals("VID_awaiting", awaiting.videos.single().videoId)
+    }
+
+        // ── observeAwaiting combines all three awaiting streams ──────────────────
 
     @Test
     fun `observeAwaiting emits AWAITING channels playlists and videos`() = runBlocking {

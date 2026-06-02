@@ -196,7 +196,7 @@ class YouTubeImportRepository @Inject constructor(
                     playlistUrl = "https://www.youtube.com/playlist?list=${result.youtubeId}",
                     name = content?.title ?: content?.name ?: candidate?.title ?: result.youtubeId,
                     thumbnailUrl = content?.thumbnailUrl ?: candidate?.thumbnailUrl,
-                    uploaderName = content?.channelTitle ?: null,
+                    uploaderName = content?.channelTitle,
                     savedAt = now,
                     user_id = uid,
                     dirty = true,

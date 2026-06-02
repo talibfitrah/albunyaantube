@@ -57,7 +57,7 @@ class MeViewModel @Inject constructor(
         // T10: favorites are observed alongside subs/playlists/feed so the
         // row reacts immediately to add/remove from anywhere (player heart,
         // long-press snackbar, full Favorites screen).
-        favorites.getAllFavorites(),
+        favorites.observeApprovedFavorites(),
     ) { channels, playlists, cached, filterId, favs ->
         buildState(channels, playlists, cached, filterId, favs)
     }.stateIn(

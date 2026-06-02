@@ -70,6 +70,7 @@ class MeFeedRepositoryTest {
             fetcher = fetcher,
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
     }
 
@@ -202,6 +203,7 @@ class MeFeedRepositoryTest {
             fetcher = gatingFetcher,
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         bounded.refresh(force = false)
@@ -238,6 +240,7 @@ class MeFeedRepositoryTest {
             fetcher = recorder,
             ioDispatcher = StandardTestDispatcher(testScheduler),
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         staggered.refresh(force = true)
@@ -396,6 +399,7 @@ class MeFeedRepositoryTest {
             fetcher = recorder,
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         coroutineScope {
@@ -454,6 +458,7 @@ class MeFeedRepositoryTest {
             fetcher = gating,
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         bounded.refresh(force = true)
@@ -483,6 +488,7 @@ class MeFeedRepositoryTest {
             fetcher = cancelled,
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         var observed: Throwable? = null
@@ -606,6 +612,7 @@ class MeFeedRepositoryTest {
             fetcher = notModifiedFetcher,
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         // Force=true so freshness gate doesn't skip the fetch.
@@ -829,6 +836,7 @@ class MeFeedRepositoryTest {
             fetcher = hangingFetcher,
             ioDispatcher = StandardTestDispatcher(testScheduler),
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         var caught: Throwable? = null
@@ -1106,6 +1114,7 @@ class MeFeedRepositoryTest {
             fetcher = fetcher,
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
             deepPaginator = paginator,
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
@@ -1139,6 +1148,7 @@ class MeFeedRepositoryTest {
             fetcher = fetcher,
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
             deepPaginator = paginator,
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
@@ -1204,6 +1214,7 @@ class MeFeedRepositoryTest {
             fetcher = fetcher,
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
+            favoritesRepository = NoopFavoritesRepository(),
             deepPaginator = paginator,
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
@@ -1337,5 +1348,20 @@ class MeFeedRepositoryTest {
                 lastModified = null,
             )
         }
+    }
+
+    private class NoopFavoritesRepository : com.albunyaan.tube.data.local.FavoritesRepository {
+        override fun getAllFavorites(): kotlinx.coroutines.flow.Flow<List<com.albunyaan.tube.data.local.FavoriteVideo>> = kotlinx.coroutines.flow.flowOf(emptyList())
+        override fun observeApprovedFavorites(): kotlinx.coroutines.flow.Flow<List<com.albunyaan.tube.data.local.FavoriteVideo>> = kotlinx.coroutines.flow.flowOf(emptyList())
+        override fun observeAwaitingFavorites(): kotlinx.coroutines.flow.Flow<List<com.albunyaan.tube.data.local.FavoriteVideo>> = kotlinx.coroutines.flow.flowOf(emptyList())
+        override fun isFavorite(videoId: String): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+        override suspend fun isFavoriteOnce(videoId: String): Boolean = false
+        override suspend fun addFavorite(videoId: String, title: String, channelName: String, thumbnailUrl: String?, durationSeconds: Int) = Unit
+        override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean = false
+        override suspend fun addImportedFavorite(videoId: String, title: String, channelName: String, thumbnailUrl: String?, durationSeconds: Int, approvalStatus: String, source: String?, importedAt: Long?) = Unit
+        override suspend fun removeFavorite(videoId: String) = Unit
+        override suspend fun toggleFavorite(videoId: String, title: String, channelName: String, thumbnailUrl: String?, durationSeconds: Int): Boolean = false
+        override fun getFavoriteCount(): kotlinx.coroutines.flow.Flow<Int> = kotlinx.coroutines.flow.flowOf(0)
+        override suspend fun clearAll() = Unit
     }
 }

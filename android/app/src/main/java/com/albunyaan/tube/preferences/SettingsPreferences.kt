@@ -288,7 +288,7 @@ class SettingsPreferences(private val context: Context) {
     }
 
     // B13: import offer — one-time prompt after first sign-in
-    val importOfferShown: Flow<Boolean> = context.dataStore.data.map { preferences ->
+    private val importOfferShown: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[IMPORT_OFFER_SHOWN_KEY] ?: false
     }
 

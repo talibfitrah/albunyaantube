@@ -62,10 +62,6 @@ sealed interface ImportUiState {
         /** Convenience: candidates whose youtubeId is in [selected]. */
         fun selectedCandidates(): List<ImportCandidate> =
             candidates.filter { it.youtubeId in selected }
-
-        /** Convenience: candidates grouped by [CandidateType], in declaration order. */
-        fun byType(): Map<CandidateType, List<ImportCandidate>> =
-            candidates.groupBy { it.type }
     }
 
     /**

@@ -70,7 +70,7 @@ class YouTubeImportRemoteSource @Inject constructor(
     private suspend fun fetchSubscriptions(bearer: String): List<ImportCandidate> {
         val result = mutableListOf<ImportCandidate>()
         var pageToken: String? = null
-        var seenTokens = mutableSetOf<String>()
+        val seenTokens = mutableSetOf<String>()
         var pages = 0
 
         do {
