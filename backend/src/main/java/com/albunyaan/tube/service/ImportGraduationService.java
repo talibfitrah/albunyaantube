@@ -95,8 +95,8 @@ public class ImportGraduationService {
                 }
             }
 
-            // Commit any remaining writes (also handles n==0: empty batch is a no-op).
-            if (n == 0 || n % 450 != 0) {
+            // Commit any remaining writes that didn't fill a full chunk.
+            if (n > 0 && n % 450 != 0) {
                 batch.commit().get();
             }
 

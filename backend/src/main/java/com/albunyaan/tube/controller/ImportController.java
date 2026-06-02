@@ -19,6 +19,8 @@ import com.albunyaan.tube.service.ImportRateLimitedException;
 import com.albunyaan.tube.service.SubmissionRateLimiter;
 import com.albunyaan.tube.service.UserImportSubmissionService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -44,6 +46,8 @@ import java.util.concurrent.TimeoutException;
 @RestController
 @RequestMapping("/api/account/import")
 public class ImportController {
+
+    private static final Logger log = LoggerFactory.getLogger(ImportController.class);
 
     private final ChannelRepository channels;
     private final PlaylistRepository playlists;
@@ -88,7 +92,7 @@ public class ImportController {
         if (retryAfterSec != null) {
             // remaining=0: the request was rejected because there was insufficient budget;
             // the exact unconsumed amount is not tracked here to keep this read-free.
-            throw new ImportRateLimitedException(0, retryAfterSec);
+            throw new ImportRateLimitedException(retryAfterSec);
         }
 
         List<ImportResult> out = new ArrayList<>();
@@ -108,6 +112,7 @@ public class ImportController {
                     out.add(new ImportResult(item.youtubeId(), item.type(), disposition, null));
                 }
             } catch (Exception e) {
+                log.warn("Import resolve failed for youtubeId={} type={}", item.youtubeId(), item.type(), e);
                 out.add(new ImportResult(item.youtubeId(), item.type(), ImportDisposition.ERROR, null));
             }
         }

@@ -12,18 +12,19 @@ package com.albunyaan.tube.service;
  */
 public class ImportRateLimitedException extends RuntimeException {
 
-    private final int remaining;
     private final long retryAfterSec;
 
-    public ImportRateLimitedException(int remaining, long retryAfterSec) {
+    public ImportRateLimitedException(long retryAfterSec) {
         super("Daily import item limit reached. Retry after " + retryAfterSec + " seconds.");
-        this.remaining = remaining;
         this.retryAfterSec = retryAfterSec;
     }
 
-    /** Items still available in the daily budget (always 0 on a whole-request rejection). */
+    /**
+     * Items still available in the daily budget.
+     * Always 0 — the whole request is rejected; unconsumed amount is not tracked.
+     */
     public int getRemaining() {
-        return remaining;
+        return 0;
     }
 
     public long getRetryAfterSec() {
