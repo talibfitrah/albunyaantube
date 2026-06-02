@@ -188,12 +188,17 @@ public class SyncService {
 
     /**
      * F3 — derive the stored approvalStatus from the server-side registry status.
-     * A row is APPROVED only when the registry says so; everything else (PENDING,
-     * unknown id) is AWAITING. The client-supplied value is never trusted. REJECTED
-     * is handled by the callers (the row is tombstoned, not stored).
+     * Only content the registry ACTIVELY gates is withheld: a PENDING row (e.g. an
+     * imported item the /resolve endpoint just queued for review) → AWAITING. REJECTED
+     * is tombstoned by the callers. Everything else is APPROVED — including ids ABSENT
+     * from the registry, because such content is already playable under the 404 fail-open
+     * availability gate (e.g. a video favorited from an approved channel/playlist feed
+     * that has no standalone Video doc). Marking those AWAITING would strand organic
+     * favorites/subscriptions in a queue no admin can clear, without adding any gate the
+     * fail-open design doesn't already concede. The client-supplied value is never trusted.
      */
     private static String deriveApprovalStatus(String registryStatus) {
-        return "APPROVED".equalsIgnoreCase(registryStatus) ? "APPROVED" : "AWAITING";
+        return "PENDING".equalsIgnoreCase(registryStatus) ? "AWAITING" : "APPROVED";
     }
 
     // ── Write path ───────────────────────────────────────────────────────────

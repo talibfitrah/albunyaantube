@@ -75,6 +75,11 @@
     </div>
 
     <!-- Loading State -->
+    <!-- cubic-P2: non-blocking categories-load warning — renders alongside the queue, never replaces it -->
+    <div v-if="categoriesError" class="error-panel" role="alert">
+      <p>{{ categoriesError }}</p>
+    </div>
+
     <div v-if="isLoading && !approvals.length" class="loading">
       <div class="spinner"></div>
       <p>{{ t('approvals.loading') }}</p>
@@ -447,13 +452,19 @@ const displayPendingCount = computed(() => {
   return approvals.value.length;
 });
 
+const categoriesError = ref<string | null>(null);
+
 async function loadCategories() {
   try {
     const cats = await getAllCategories();
     categories.value = cats;
+    categoriesError.value = null;
   } catch (err) {
+    // cubic-P2: surface on a SEPARATE ref — do NOT write the blocking `error` ref,
+    // which gates the main panel and would hide the entire approvals queue when only
+    // the categories endpoint is down (the approvals list may have loaded fine).
     console.error('Failed to load categories', err);
-    error.value = t('approvals.loadCategoriesError');
+    categoriesError.value = t('approvals.loadCategoriesError');
   }
 }
 

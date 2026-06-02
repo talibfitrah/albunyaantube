@@ -145,7 +145,9 @@ class YouTubeImportRepository @Inject constructor(
             }
         }
 
-        _progress.value = ImportProgress(Phase.DONE, total, total)
+        // cubic-P3: report the ACTUAL processed count — a 429 break leaves processed < total,
+        // so emitting (total, total) would paint a partial run as fully complete.
+        _progress.value = ImportProgress(Phase.DONE, processed, total)
 
         val skipped = alreadyPresent + rejectedOrError
         return ImportSummary(
@@ -224,7 +226,7 @@ class YouTubeImportRepository @Inject constructor(
                     uid = uid,
                     videoId = result.youtubeId,
                     title = content?.title ?: candidate?.title ?: result.youtubeId,
-                    channelName = content?.channelTitle ?: candidate?.channelId ?: "",
+                    channelName = content?.channelTitle ?: "",  // never the channelId — it's a "UC…" id, not a name
                     thumbnailUrl = content?.thumbnailUrl ?: candidate?.thumbnailUrl,
                     durationSeconds = content?.durationSeconds ?: 0,
                     approvalStatus = "APPROVED",
@@ -279,7 +281,7 @@ class YouTubeImportRepository @Inject constructor(
                     uid = uid,
                     videoId = candidate.youtubeId,
                     title = candidate.title,
-                    channelName = candidate.channelId ?: "",
+                    channelName = "",  // no channel name on the PENDING path; the candidate carries only the id
                     thumbnailUrl = candidate.thumbnailUrl,
                     durationSeconds = 0,
                     approvalStatus = "AWAITING",

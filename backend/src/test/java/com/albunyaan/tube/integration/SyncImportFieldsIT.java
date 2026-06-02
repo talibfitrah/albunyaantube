@@ -62,6 +62,7 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setImportedAt(123L);
 
         // PUT — echo response must carry the fields
+        seedContent("channels", "UCabc", "PENDING"); // imported unknown content is PENDING in the registry
         mvc.perform(put("/api/account/subscriptions/UCabc")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -94,10 +95,7 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setSubscribedAt(1L);
         // approvalStatus intentionally NOT set (null) — simulates old client
 
-        // F3: approvalStatus is server-derived. Seed the channel as APPROVED in the
-        // registry so this organic add (no client approvalStatus) is stored APPROVED.
-        seedApprovedContent("channels", "UCdef");
-        // PUT echo must reflect the derived APPROVED status
+        // F3: id absent from the registry → fail-open APPROVED (no client approvalStatus).
         mvc.perform(put("/api/account/subscriptions/UCdef")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -127,6 +125,7 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setSource("YOUTUBE_IMPORT");
         req.setImportedAt(456L);
 
+        seedContent("playlists", "PLxyz", "PENDING");
         mvc.perform(put("/api/account/playlists/PLxyz")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -157,7 +156,6 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setSavedAt(1L);
         // approvalStatus intentionally NOT set
 
-        seedApprovedContent("playlists", "PLold");
         mvc.perform(put("/api/account/playlists/PLold")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -187,6 +185,7 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setSource("YOUTUBE_IMPORT");
         req.setImportedAt(789L);
 
+        seedContent("videos", "VIDxyz", "PENDING");
         mvc.perform(put("/api/account/favorites/VIDxyz")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -218,7 +217,6 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setAddedAt(1L);
         // approvalStatus intentionally NOT set
 
-        seedApprovedContent("videos", "VIDold");
         mvc.perform(put("/api/account/favorites/VIDold")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -245,6 +243,7 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setName("Imported");
         req.setSubscribedAt(1L);
         req.setApprovalStatus("AWAITING");
+        seedContent("channels", "UCgrad", "PENDING"); // /resolve queued it as PENDING
         mvc.perform(put("/api/account/subscriptions/UCgrad")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -253,7 +252,7 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.approvalStatus").value("AWAITING"));
 
         // 2. Admin approves the content (registry row becomes APPROVED); the fan-out runs.
-        seedApprovedContent("channels", "UCgrad");
+        seedContent("channels", "UCgrad", "APPROVED");
         graduationService.onApproved(YouTubeContentType.CHANNEL, "UCgrad");
 
         // 3. The next delta-pull must surface the row as APPROVED. This exercises BOTH
@@ -269,8 +268,8 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
     @Test
     void clientCannotForceApprovedForUnregisteredContent() throws Exception {
         // F3 (moderation bypass): a malicious client PUTs approvalStatus=APPROVED for a
-        // channel NOT approved in the registry. The server must ignore the claim and store
-        // AWAITING — a user cannot un-gate its own un-vetted import.
+        // channel the registry has as PENDING (a just-resolved import). The server must
+        // ignore the claim and store AWAITING — a user cannot self-approve a queued import.
         String uid = seedActiveUser("evil@test");
         stubAuthAs(uid, "user");
 
@@ -280,6 +279,7 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setSubscribedAt(1L);
         req.setApprovalStatus("APPROVED"); // the lie — must be overridden server-side
 
+        seedContent("channels", "UCevil", "PENDING");
         mvc.perform(put("/api/account/subscriptions/UCevil")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -288,10 +288,10 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.approvalStatus").value("AWAITING"));
     }
 
-    /** Seed an APPROVED registry doc so ContentApprovalGate derives APPROVED for the id. */
-    private void seedApprovedContent(String collection, String youtubeId) throws Exception {
-        firestore.collection(collection).document()
-                .set(Map.of("youtubeId", youtubeId, "status", "APPROVED"))
+    /** Seed a registry doc (deterministic id) so ContentApprovalGate derives from `status`. */
+    private void seedContent(String collection, String youtubeId, String status) throws Exception {
+        firestore.collection(collection).document(youtubeId)
+                .set(Map.of("youtubeId", youtubeId, "status", status))
                 .get(5, java.util.concurrent.TimeUnit.SECONDS);
     }
 

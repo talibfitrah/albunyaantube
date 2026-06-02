@@ -120,10 +120,11 @@ class SubscriptionRepository @Inject constructor(
 
     /**
      * Direct DAO upsert. **Bypasses the 30-channel cap** enforced by
-     * [SubscriptionLimitGuard.trySubscribe]. New callers MUST go through the
-     * guard; this method is kept public only so existing test fixtures continue
-     * to compile. If you find yourself wanting to call this from production
-     * code, you almost certainly want the guard instead.
+     * [SubscriptionLimitGuard.trySubscribe]. Ordinary subscribe-button code MUST go
+     * through the guard. The one intentional exception is the YouTube-import flow
+     * ([com.albunyaan.tube.data.importflow.YouTubeImportRepository]), which imports a
+     * user's full subscription list and deliberately bypasses the cap. Don't add new
+     * production callers outside that flow — use the guard instead.
      */
     suspend fun subscribe(channel: SubscribedChannel) {
         // F4: honor a pinned user_id (set by the YouTube-import flow) so a mid-import

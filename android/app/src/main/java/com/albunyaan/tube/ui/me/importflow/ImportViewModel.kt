@@ -202,6 +202,9 @@ class ImportViewModel @Inject constructor(
                 )
             }
         } catch (e: Exception) {
+            // F7b: rethrow cooperative cancellation (consistent with confirmImport) so a
+            // cleared ViewModel cancels cleanly instead of writing a bogus Error state.
+            if (e is kotlinx.coroutines.CancellationException) throw e
             _uiState.value = ImportUiState.Error(
                 message = e.message ?: "Failed to fetch YouTube data",
                 retryable = true,
