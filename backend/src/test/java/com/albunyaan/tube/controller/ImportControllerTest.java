@@ -13,6 +13,7 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
+import com.albunyaan.tube.service.SubmissionRateLimiter;
 import com.albunyaan.tube.service.UserImportSubmissionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.firebase.auth.FirebaseAuth;
@@ -35,6 +36,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -61,6 +63,9 @@ class ImportControllerTest {
     UserImportSubmissionService submissions;
 
     @MockBean
+    SubmissionRateLimiter rateLimiter;
+
+    @MockBean
     FirebaseAuth firebaseAuth;
 
     @MockBean
@@ -77,6 +82,8 @@ class ImportControllerTest {
         UsernamePasswordAuthenticationToken auth =
                 new UsernamePasswordAuthenticationToken(principal, null, List.of());
         SecurityContextHolder.getContext().setAuthentication(auth);
+        // Default: rate limiter allows all requests (null = no retry-after)
+        when(rateLimiter.tryAcquireImport(any(), anyInt())).thenReturn(null);
     }
 
     @AfterEach
@@ -189,6 +196,63 @@ class ImportControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json.writeValueAsString(req)))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ── Test A6-a: daily import budget exceeded → 429 with remaining=0 ──────
+
+    /**
+     * When tryAcquireImport signals rejection (returns non-null retryAfterSec),
+     * the controller must return HTTP 429 with a JSON body containing "message"
+     * and "remaining" fields, and must NOT consume the budget or call submit().
+     */
+    @Test
+    void budgetExceededReturns429WithRemaining() throws Exception {
+        // Limiter signals the budget is exhausted: 86 400 seconds until reset
+        when(rateLimiter.tryAcquireImport(eq(TEST_UID), anyInt())).thenReturn(86_400L);
+
+        ImportResolveRequest req = new ImportResolveRequest(List.of(
+                new ImportItem(YouTubeContentType.CHANNEL, "ch-over", "Over Budget", null, null)
+        ));
+
+        mvc.perform(post("/api/account/import/resolve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(req)))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.message").isString())
+                .andExpect(jsonPath("$.remaining").value(0));
+
+        // Budget must NOT be consumed on rejection; submit must NOT be called
+        verify(rateLimiter, times(1)).tryAcquireImport(eq(TEST_UID), anyInt());
+        verify(submissions, never()).submit(any(), any());
+    }
+
+    // ── Test A6-b: request within budget → 200 and budget consumed ─────────
+
+    /**
+     * When tryAcquireImport returns null (allowed), the request succeeds (200)
+     * and tryAcquireImport is called exactly once with the correct item count.
+     */
+    @Test
+    void requestUnderBudgetSucceedsAndConsumesBudget() throws Exception {
+        // Limiter allows (null = no retry-after)
+        when(rateLimiter.tryAcquireImport(eq(TEST_UID), eq(1))).thenReturn(null);
+
+        when(channelRepository.findByYoutubeId("ch-ok")).thenReturn(Optional.empty());
+        when(submissions.submit(any(ImportItem.class), eq(TEST_UID)))
+                .thenReturn(ImportDisposition.PENDING);
+
+        ImportResolveRequest req = new ImportResolveRequest(List.of(
+                new ImportItem(YouTubeContentType.CHANNEL, "ch-ok", "OK Channel", null, null)
+        ));
+
+        mvc.perform(post("/api/account/import/resolve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].disposition").value("PENDING"));
+
+        // Budget must have been checked (and consumed) exactly once with count=1
+        verify(rateLimiter, times(1)).tryAcquireImport(eq(TEST_UID), eq(1));
     }
 
     // ── Test 4: service exception on one item → ERROR, others unaffected ─

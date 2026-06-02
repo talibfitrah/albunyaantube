@@ -15,6 +15,8 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
+import com.albunyaan.tube.service.ImportRateLimitedException;
+import com.albunyaan.tube.service.SubmissionRateLimiter;
 import com.albunyaan.tube.service.UserImportSubmissionService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -47,16 +49,19 @@ public class ImportController {
     private final PlaylistRepository playlists;
     private final VideoRepository videos;
     private final UserImportSubmissionService submissions;
+    private final SubmissionRateLimiter rateLimiter;
 
     public ImportController(
             ChannelRepository channels,
             PlaylistRepository playlists,
             VideoRepository videos,
-            UserImportSubmissionService submissions) {
+            UserImportSubmissionService submissions,
+            SubmissionRateLimiter rateLimiter) {
         this.channels = channels;
         this.playlists = playlists;
         this.videos = videos;
         this.submissions = submissions;
+        this.rateLimiter = rateLimiter;
     }
 
     /**
@@ -73,6 +78,17 @@ public class ImportController {
 
         if (principal == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        // Per-user daily item budget check — whole request rejected if over budget.
+        // tryAcquireImport atomically consumes count slots; returns null when allowed,
+        // or retryAfterSec when the budget would be exceeded (no slots consumed).
+        int itemCount = req.items().size();
+        Long retryAfterSec = rateLimiter.tryAcquireImport(principal.getUid(), itemCount);
+        if (retryAfterSec != null) {
+            // remaining=0: the request was rejected because there was insufficient budget;
+            // the exact unconsumed amount is not tracked here to keep this read-free.
+            throw new ImportRateLimitedException(0, retryAfterSec);
         }
 
         List<ImportResult> out = new ArrayList<>();
