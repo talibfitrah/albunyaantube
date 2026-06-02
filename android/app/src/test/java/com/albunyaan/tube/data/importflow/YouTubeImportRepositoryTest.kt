@@ -91,7 +91,7 @@ class YouTubeImportRepositoryTest {
         val written = captor.firstValue
         assertEquals("UC_channel_1", written.channelId)
         assertEquals("APPROVED", written.approvalStatus)
-        assertEquals(YouTubeImportRepository.SOURCE_YOUTUBE_IMPORT, written.source)
+        assertEquals(YouTubeImportRepository.SOURCE_USER_IMPORT, written.source)
         // Canonical name from content
         assertEquals("Canonical Channel Name", written.name)
         assertEquals("https://canonical.thumb/", written.avatarUrl)
@@ -125,7 +125,7 @@ class YouTubeImportRepositoryTest {
         val written = captor.firstValue
         assertEquals("PL_ap_1", written.playlistId)
         assertEquals("APPROVED", written.approvalStatus)
-        assertEquals(YouTubeImportRepository.SOURCE_YOUTUBE_IMPORT, written.source)
+        assertEquals(YouTubeImportRepository.SOURCE_USER_IMPORT, written.source)
         assertEquals("Canonical Playlist Title", written.name)
         assertEquals("Creator Channel", written.uploaderName)
     }
@@ -157,7 +157,7 @@ class YouTubeImportRepositoryTest {
         val written = fakeFavRepo.importedFavorites.first()
         assertEquals("vid_001", written.videoId)
         assertEquals("APPROVED", written.approvalStatus)
-        assertEquals(YouTubeImportRepository.SOURCE_YOUTUBE_IMPORT, written.source)
+        assertEquals(YouTubeImportRepository.SOURCE_USER_IMPORT, written.source)
         assertEquals("Canonical Video Title", written.title)
         assertEquals("Canonical Channel", written.channelName)
         assertEquals(300, written.durationSeconds)
@@ -188,7 +188,7 @@ class YouTubeImportRepositoryTest {
         val written = captor.firstValue
         assertEquals("UC_pending", written.channelId)
         assertEquals("AWAITING", written.approvalStatus)
-        assertEquals(YouTubeImportRepository.SOURCE_YOUTUBE_IMPORT, written.source)
+        assertEquals(YouTubeImportRepository.SOURCE_USER_IMPORT, written.source)
         // Candidate metadata (no content for PENDING)
         assertEquals("Pending Channel", written.name)
         assertEquals("https://pending.thumb/", written.avatarUrl)
@@ -396,6 +396,7 @@ class YouTubeImportRepositoryTest {
             importedFavorites.any { it.videoId == videoId }
 
         override suspend fun addImportedFavorite(
+            uid: String,
             videoId: String, title: String, channelName: String,
             thumbnailUrl: String?, durationSeconds: Int,
             approvalStatus: String, source: String?, importedAt: Long?,

@@ -67,6 +67,7 @@ interface FavoritesRepository {
      * Existing callers continue to use [addFavorite] unchanged.
      */
     suspend fun addImportedFavorite(
+        uid: String,
         videoId: String,
         title: String,
         channelName: String,
@@ -192,6 +193,7 @@ class FavoritesRepositoryImpl @Inject constructor(
         favoriteVideoDao.getByIdAny(uid = uid, videoId = videoId) != null
 
     override suspend fun addImportedFavorite(
+        uid: String,
         videoId: String,
         title: String,
         channelName: String,
@@ -201,7 +203,8 @@ class FavoritesRepositoryImpl @Inject constructor(
         source: String?,
         importedAt: Long?,
     ) {
-        val uid = accountRepository.currentUid()
+        // F4: uid is pinned by the caller (the import flow captured it at start) so a
+        // mid-import account switch can't write/push this favorite under another account.
         val favorite = FavoriteVideo(
             videoId = videoId,
             title = title,

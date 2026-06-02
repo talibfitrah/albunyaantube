@@ -1,6 +1,7 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.YouTubeContentType;
+import com.google.cloud.firestore.FieldValue;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.WriteBatch;
 import org.slf4j.Logger;
@@ -75,13 +76,16 @@ public class ImportGraduationService {
                     .whereEqualTo("approvalStatus", "AWAITING")
                     .get().get();
 
-            long now = System.currentTimeMillis();
             WriteBatch batch = db.batch();
             int n = 0;
 
             for (var doc : snap.getDocuments()) {
                 Map<String, Object> upd = new HashMap<>();
-                upd.put("updatedAt", now);
+                // Must be a Firestore Timestamp (not a numeric millis): the sync
+                // delta-pull orders by updatedAt and reads it via getTimestamp().
+                // A raw long sorts in the wrong type-band (cursor never re-pulls
+                // the row) and getTimestamp() throws on a numeric field.
+                upd.put("updatedAt", FieldValue.serverTimestamp());
                 if (approve) {
                     upd.put("approvalStatus", "APPROVED");
                 } else {

@@ -88,6 +88,11 @@ class YouTubeImportRemoteSource @Inject constructor(
             pages++
         } while (pageToken != null && pages < MAX_PAGES && seenTokens.add(pageToken))
 
+        // F12: don't silently truncate — a remaining pageToken at the cap means the
+        // account has more subscriptions than we imported.
+        if (pageToken != null && pages >= MAX_PAGES) {
+            Log.w(TAG, "subscriptions truncated at $MAX_PAGES pages; some items not imported")
+        }
         return result
     }
 
@@ -112,6 +117,10 @@ class YouTubeImportRemoteSource @Inject constructor(
             pages++
         } while (pageToken != null && pages < MAX_PAGES && seenTokens.add(pageToken))
 
+        // F12: don't silently truncate — see fetchSubscriptions.
+        if (pageToken != null && pages >= MAX_PAGES) {
+            Log.w(TAG, "playlists truncated at $MAX_PAGES pages; some items not imported")
+        }
         return result
     }
 
@@ -136,6 +145,10 @@ class YouTubeImportRemoteSource @Inject constructor(
             pages++
         } while (pageToken != null && pages < MAX_PAGES && seenTokens.add(pageToken))
 
+        // F12: don't silently truncate — see fetchSubscriptions.
+        if (pageToken != null && pages >= MAX_PAGES) {
+            Log.w(TAG, "liked videos truncated at $MAX_PAGES pages; some items not imported")
+        }
         return result
     }
 }

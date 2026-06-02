@@ -1358,7 +1358,7 @@ class MeFeedRepositoryTest {
         override suspend fun isFavoriteOnce(videoId: String): Boolean = false
         override suspend fun addFavorite(videoId: String, title: String, channelName: String, thumbnailUrl: String?, durationSeconds: Int) = Unit
         override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean = false
-        override suspend fun addImportedFavorite(videoId: String, title: String, channelName: String, thumbnailUrl: String?, durationSeconds: Int, approvalStatus: String, source: String?, importedAt: Long?) = Unit
+        override suspend fun addImportedFavorite(uid: String, videoId: String, title: String, channelName: String, thumbnailUrl: String?, durationSeconds: Int, approvalStatus: String, source: String?, importedAt: Long?) = Unit
         override suspend fun removeFavorite(videoId: String) = Unit
         override suspend fun toggleFavorite(videoId: String, title: String, channelName: String, thumbnailUrl: String?, durationSeconds: Int): Boolean = false
         override fun getFavoriteCount(): kotlinx.coroutines.flow.Flow<Int> = kotlinx.coroutines.flow.flowOf(0)

@@ -48,6 +48,9 @@ class ImportViewModel @Inject constructor(
     /** Collector job for [importRepository.progress]; cancelled after import completes. */
     private var progressJob: Job? = null
 
+    /** The running import coroutine; used to reject a double-tap re-entry (F6). */
+    private var importJob: Job? = null
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
@@ -107,9 +110,13 @@ class ImportViewModel @Inject constructor(
      */
     fun confirmImport() {
         val current = _uiState.value as? ImportUiState.Review ?: return
+        // F6: guard against a double-tap launching two concurrent imports — the
+        // Review→Importing transition happens after a suspension, so the state
+        // check alone doesn't serialize two rapid taps.
+        if (importJob?.isActive == true) return
         val selectedCandidates = current.selectedCandidates()
 
-        viewModelScope.launch {
+        importJob = viewModelScope.launch {
             // Collect progress updates into the state while the import runs.
             progressJob?.cancel()
             progressJob = launch {
@@ -132,6 +139,9 @@ class ImportViewModel @Inject constructor(
             } catch (e: Exception) {
                 progressJob?.cancel()
                 progressJob = null
+                // F7: never swallow cooperative cancellation — rethrow so the coroutine
+                // actually cancels instead of surfacing a bogus Error state.
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 _uiState.value = ImportUiState.Error(
                     message = e.message ?: "Import failed",
                     retryable = true,

@@ -73,7 +73,7 @@ public class UserImportSubmissionService {
 
         Channel ch = new Channel();
         ch.setYoutubeId(item.youtubeId());
-        ch.setName(item.title());
+        ch.setName(RegistrySubmissionWriter.sanitizeText(item.title()));
         ch.setThumbnailUrl(RegistrySubmissionWriter.sanitizeThumbnailUrl(item.thumbnailUrl()));
         ch.setStatus("PENDING");
         ch.setSource("USER_IMPORT");
@@ -83,10 +83,11 @@ public class UserImportSubmissionService {
         ch.setCreatedAt(now);
         ch.setUpdatedAt(now);
 
-        // Dedup is best-effort via the findByYoutubeId check above. Firestore has no
-        // unique-field constraint, so a rare concurrent import of the same new id may
-        // create two PENDING docs; admins dedupe at approval. We do NOT catch save
-        // failures here — a failed write must surface as an error, not a false PENDING.
+        // F8: pin the doc id to the youtubeId so a concurrent import of the same NEW id
+        // is idempotent — both writes target one doc (last-write-wins, identical content)
+        // instead of creating duplicate PENDING rows. We still do NOT catch save failures:
+        // a failed write must surface as an error, not a false PENDING.
+        ch.setId(item.youtubeId());
         channels.save(ch);
         return ImportDisposition.PENDING;
     }
@@ -101,7 +102,7 @@ public class UserImportSubmissionService {
 
         Playlist pl = new Playlist();
         pl.setYoutubeId(item.youtubeId());
-        pl.setTitle(item.title());
+        pl.setTitle(RegistrySubmissionWriter.sanitizeText(item.title()));
         pl.setThumbnailUrl(RegistrySubmissionWriter.sanitizeThumbnailUrl(item.thumbnailUrl()));
         pl.setStatus("PENDING");
         pl.setSource("USER_IMPORT");
@@ -111,10 +112,9 @@ public class UserImportSubmissionService {
         pl.setCreatedAt(now);
         pl.setUpdatedAt(now);
 
-        // Dedup is best-effort via the findByYoutubeId check above. Firestore has no
-        // unique-field constraint, so a rare concurrent import of the same new id may
-        // create two PENDING docs; admins dedupe at approval. We do NOT catch save
-        // failures here — a failed write must surface as an error, not a false PENDING.
+        // F8: pin the doc id to the youtubeId so a concurrent import of the same NEW id
+        // is idempotent — see submitChannel.
+        pl.setId(item.youtubeId());
         playlists.save(pl);
         return ImportDisposition.PENDING;
     }
@@ -129,7 +129,7 @@ public class UserImportSubmissionService {
 
         Video v = new Video();
         v.setYoutubeId(item.youtubeId());
-        v.setTitle(item.title());
+        v.setTitle(RegistrySubmissionWriter.sanitizeText(item.title()));
         v.setThumbnailUrl(RegistrySubmissionWriter.sanitizeThumbnailUrl(item.thumbnailUrl()));
         v.setStatus("PENDING");
         v.setSource("USER_IMPORT");
@@ -142,10 +142,9 @@ public class UserImportSubmissionService {
         v.setCreatedAt(now);
         v.setUpdatedAt(now);
 
-        // Dedup is best-effort via the findByYoutubeId check above. Firestore has no
-        // unique-field constraint, so a rare concurrent import of the same new id may
-        // create two PENDING docs; admins dedupe at approval. We do NOT catch save
-        // failures here — a failed write must surface as an error, not a false PENDING.
+        // F8: pin the doc id to the youtubeId so a concurrent import of the same NEW id
+        // is idempotent — see submitChannel.
+        v.setId(item.youtubeId());
         videos.save(v);
         return ImportDisposition.PENDING;
     }

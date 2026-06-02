@@ -126,7 +126,10 @@ class SubscriptionRepository @Inject constructor(
      * code, you almost certainly want the guard instead.
      */
     suspend fun subscribe(channel: SubscribedChannel) {
-        val uid = accountRepository.currentUid()
+        // F4: honor a pinned user_id (set by the YouTube-import flow) so a mid-import
+        // account switch can't write the row under the wrong account. Organic callers
+        // leave user_id blank and get the current uid, exactly as before.
+        val uid = channel.user_id.ifBlank { accountRepository.currentUid() }
         channels.upsert(channel.copy(user_id = uid, dirty = true, deleted = false))
         syncManager.pushDirtyAsync(uid)
     }
@@ -165,7 +168,8 @@ class SubscriptionRepository @Inject constructor(
         playlists.getByIdAny(uid = uid, id = playlistId) != null
 
     suspend fun savePlaylist(playlist: SavedPlaylist) {
-        val uid = accountRepository.currentUid()
+        // F4: honor a pinned user_id — see subscribe().
+        val uid = playlist.user_id.ifBlank { accountRepository.currentUid() }
         playlists.upsert(playlist.copy(user_id = uid, dirty = true, deleted = false))
         syncManager.pushDirtyAsync(uid)
     }

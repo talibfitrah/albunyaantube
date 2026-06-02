@@ -761,6 +761,7 @@
     <string name="import_youtube_importing_done">Bijna klaar…</string>
     <!-- Done summary: "%1$d toegevoegd · %2$d ter beoordeling · %3$d overgeslagen" -->
     <string name="import_youtube_done_summary">%1$d toegevoegd · %2$d ter beoordeling · %3$d overgeslagen</string>
+    <string name="import_youtube_done_rate_limited">Dagelijkse importlimiet bereikt — probeer later opnieuw om de rest te importeren.</string>
     <!-- Buttons -->
     <string name="import_youtube_button_done">Klaar</string>
     <string name="import_youtube_button_retry">Opnieuw proberen</string>

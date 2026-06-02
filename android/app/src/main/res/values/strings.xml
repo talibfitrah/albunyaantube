@@ -878,6 +878,7 @@
     <string name="import_youtube_importing_done">Almost done…</string>
     <!-- Done summary: "%1$d added · %2$d sent for review · %3$d skipped" -->
     <string name="import_youtube_done_summary">%1$d added · %2$d sent for review · %3$d skipped</string>
+    <string name="import_youtube_done_rate_limited">Daily import limit reached — try again later to import the rest.</string>
     <!-- Buttons -->
     <string name="import_youtube_button_done">Done</string>
     <string name="import_youtube_button_retry">Try again</string>

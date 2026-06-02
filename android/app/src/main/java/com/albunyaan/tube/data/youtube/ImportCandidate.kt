@@ -32,4 +32,9 @@ data class ImportCandidate(
 data class ImportFetchResult(
     val candidates:  List<ImportCandidate>,
     val failedTypes: Set<CandidateType>,
+    /**
+     * F12 — types whose pagination hit the MAX_PAGES cap, so the candidate list for
+     * that type is incomplete (only relevant for very large accounts, 2000+ items).
+     */
+    val truncatedTypes: Set<CandidateType> = emptySet(),
 )

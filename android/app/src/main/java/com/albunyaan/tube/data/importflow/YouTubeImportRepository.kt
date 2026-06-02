@@ -47,7 +47,9 @@ class YouTubeImportRepository @Inject constructor(
 
     companion object {
         const val BATCH_SIZE = 200
-        const val SOURCE_YOUTUBE_IMPORT = "YOUTUBE_IMPORT"
+        // F13: align the per-user row's source tag with the backend registry's
+        // "USER_IMPORT" provenance value (they described the same thing differently).
+        const val SOURCE_USER_IMPORT = "USER_IMPORT"
     }
 
     private val _progress = MutableStateFlow(ImportProgress(Phase.RESOLVING, 0, 0))
@@ -89,6 +91,7 @@ class YouTubeImportRepository @Inject constructor(
         var processed = 0
 
         val chunks = fresh.chunked(BATCH_SIZE)
+        var rateLimited = false
         for (chunk in chunks) {
             _progress.value = ImportProgress(Phase.RESOLVING, processed, total)
 
@@ -104,7 +107,15 @@ class YouTubeImportRepository @Inject constructor(
                 }
             )
 
-            val response = importApi.resolve(request)
+            // F10: a 429 means the per-user daily import budget is exhausted mid-run.
+            // Stop here — chunks already written persist (and dedup on retry) — and
+            // report partial success plus the cap, instead of failing the whole import.
+            val response = try {
+                importApi.resolve(request)
+            } catch (e: retrofit2.HttpException) {
+                if (e.code() == 429) { rateLimited = true; break }
+                throw e
+            }
 
             // Build a map so we can look up the original candidate for fallback metadata
             val candidateByYoutubeId = chunk.associateBy { it.youtubeId }
@@ -142,6 +153,7 @@ class YouTubeImportRepository @Inject constructor(
             sentForReview = sentForReview,
             skipped = skipped,
             alreadyPresent = alreadyPresent,
+            rateLimited = rateLimited,
         )
     }
 
@@ -185,7 +197,7 @@ class YouTubeImportRepository @Inject constructor(
                     dirty = true,
                     deleted = false,
                     approvalStatus = "APPROVED",
-                    source = SOURCE_YOUTUBE_IMPORT,
+                    source = SOURCE_USER_IMPORT,
                     importedAt = now,
                 )
                 subscriptionRepository.subscribe(channel)
@@ -202,20 +214,21 @@ class YouTubeImportRepository @Inject constructor(
                     dirty = true,
                     deleted = false,
                     approvalStatus = "APPROVED",
-                    source = SOURCE_YOUTUBE_IMPORT,
+                    source = SOURCE_USER_IMPORT,
                     importedAt = now,
                 )
                 subscriptionRepository.savePlaylist(playlist)
             }
             "VIDEO" -> {
                 favoritesRepository.addImportedFavorite(
+                    uid = uid,
                     videoId = result.youtubeId,
                     title = content?.title ?: candidate?.title ?: result.youtubeId,
                     channelName = content?.channelTitle ?: candidate?.channelId ?: "",
                     thumbnailUrl = content?.thumbnailUrl ?: candidate?.thumbnailUrl,
                     durationSeconds = content?.durationSeconds ?: 0,
                     approvalStatus = "APPROVED",
-                    source = SOURCE_YOUTUBE_IMPORT,
+                    source = SOURCE_USER_IMPORT,
                     importedAt = now,
                 )
             }
@@ -239,7 +252,7 @@ class YouTubeImportRepository @Inject constructor(
                     dirty = true,
                     deleted = false,
                     approvalStatus = "AWAITING",
-                    source = SOURCE_YOUTUBE_IMPORT,
+                    source = SOURCE_USER_IMPORT,
                     importedAt = now,
                 )
                 subscriptionRepository.subscribe(channel)
@@ -256,20 +269,21 @@ class YouTubeImportRepository @Inject constructor(
                     dirty = true,
                     deleted = false,
                     approvalStatus = "AWAITING",
-                    source = SOURCE_YOUTUBE_IMPORT,
+                    source = SOURCE_USER_IMPORT,
                     importedAt = now,
                 )
                 subscriptionRepository.savePlaylist(playlist)
             }
             CandidateType.VIDEO -> {
                 favoritesRepository.addImportedFavorite(
+                    uid = uid,
                     videoId = candidate.youtubeId,
                     title = candidate.title,
                     channelName = candidate.channelId ?: "",
                     thumbnailUrl = candidate.thumbnailUrl,
                     durationSeconds = 0,
                     approvalStatus = "AWAITING",
-                    source = SOURCE_YOUTUBE_IMPORT,
+                    source = SOURCE_USER_IMPORT,
                     importedAt = now,
                 )
             }

@@ -66,11 +66,15 @@ class ImportGraduationServiceIT extends BaseIntegrationTest {
         // Both AWAITING docs must now be APPROVED with bumped updatedAt
         DocumentSnapshot snapA = readSubscription("user-a", docA);
         assertThat(snapA.getString("approvalStatus")).isEqualTo("APPROVED");
-        assertThat(snapA.getLong("updatedAt")).isGreaterThanOrEqualTo(before);
+        // F2: fan-out now writes a Firestore Timestamp (not numeric millis) so the sync
+        // delta-pull can read it via getTimestamp() and page on it.
+        assertThat(snapA.getTimestamp("updatedAt")).isNotNull();
+        assertThat(snapA.getTimestamp("updatedAt").toDate().getTime()).isGreaterThanOrEqualTo(before);
 
         DocumentSnapshot snapB = readSubscription("user-b", docB);
         assertThat(snapB.getString("approvalStatus")).isEqualTo("APPROVED");
-        assertThat(snapB.getLong("updatedAt")).isGreaterThanOrEqualTo(before);
+        assertThat(snapB.getTimestamp("updatedAt")).isNotNull();
+        assertThat(snapB.getTimestamp("updatedAt").toDate().getTime()).isGreaterThanOrEqualTo(before);
 
         // Control doc: approvalStatus still APPROVED, updatedAt still 1000L (not bumped)
         DocumentSnapshot ctrl = readSubscription("user-a", controlDoc);
@@ -95,11 +99,15 @@ class ImportGraduationServiceIT extends BaseIntegrationTest {
         // Both AWAITING docs must now be tombstoned
         DocumentSnapshot snapA = readSubscription("user-a", docA);
         assertThat(snapA.getBoolean("deleted")).isTrue();
-        assertThat(snapA.getLong("updatedAt")).isGreaterThanOrEqualTo(before);
+        // F2: fan-out now writes a Firestore Timestamp (not numeric millis) so the sync
+        // delta-pull can read it via getTimestamp() and page on it.
+        assertThat(snapA.getTimestamp("updatedAt")).isNotNull();
+        assertThat(snapA.getTimestamp("updatedAt").toDate().getTime()).isGreaterThanOrEqualTo(before);
 
         DocumentSnapshot snapB = readSubscription("user-b", docB);
         assertThat(snapB.getBoolean("deleted")).isTrue();
-        assertThat(snapB.getLong("updatedAt")).isGreaterThanOrEqualTo(before);
+        assertThat(snapB.getTimestamp("updatedAt")).isNotNull();
+        assertThat(snapB.getTimestamp("updatedAt").toDate().getTime()).isGreaterThanOrEqualTo(before);
 
         // Control doc: untouched
         DocumentSnapshot ctrl = readSubscription("user-a", controlDoc);

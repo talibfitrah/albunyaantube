@@ -455,9 +455,9 @@ class MeFeedRepository @Inject constructor(
      * spinning forever.
      */
     suspend fun countCachedRowsForFilter(filterChannelId: String?): Int = withContext(ioDispatcher) {
-        val all = subscriptions.getSubscribedChannels()
+        val all = subscriptions.getApprovedSubscribedChannels()
         val playlists: List<SavedPlaylist> =
-            if (filterChannelId == null) subscriptions.getSavedPlaylists() else emptyList()
+            if (filterChannelId == null) subscriptions.getApprovedSavedPlaylists() else emptyList()
         if (all.isEmpty() && playlists.isEmpty()) return@withContext 0
         val channelIds = if (filterChannelId != null) {
             if (all.any { it.channelId == filterChannelId }) listOf(filterChannelId) else return@withContext 0
@@ -488,7 +488,7 @@ class MeFeedRepository @Inject constructor(
         val now = currentTimeMillis()
         val bucket = WeekBucket.forIndex(weekIndex, now)
 
-        val all = subscriptions.getSubscribedChannels()
+        val all = subscriptions.getApprovedSubscribedChannels()
         if (all.isEmpty()) {
             if (BuildConfig.DEBUG) Log.d(TAG, "fillWeekIfNeeded(week=$weekIndex): no subscriptions")
             return@withContext
@@ -743,7 +743,7 @@ class MeFeedRepository @Inject constructor(
         // callers each starting from index=0 (F3).
         refreshMutex.withLock {
             val now = currentTimeMillis()
-            val all = subscriptions.getSubscribedChannels()
+            val all = subscriptions.getApprovedSubscribedChannels()
             if (all.isEmpty()) return@withLock
 
             // T9: oldest-fetch-first round-robin slice. A single batch query
@@ -1150,7 +1150,7 @@ class MeFeedRepository @Inject constructor(
     suspend fun refreshPlaylistVideos(): Unit = withContext(ioDispatcher) {
         val repo = playlistRepository ?: return@withContext
         val linkDao = playlistVideoLinkDao ?: return@withContext
-        val saved = subscriptions.getSavedPlaylists()
+        val saved = subscriptions.getApprovedSavedPlaylists()
         if (saved.isEmpty()) return@withContext
 
         coroutineScope {

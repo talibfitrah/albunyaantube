@@ -3,8 +3,10 @@ package com.albunyaan.tube.integration;
 import com.albunyaan.tube.dto.sync.PutFavoriteRequest;
 import com.albunyaan.tube.dto.sync.PutPlaylistRequest;
 import com.albunyaan.tube.dto.sync.PutSubscriptionRequest;
+import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.model.UserStatus;
+import com.albunyaan.tube.service.ImportGraduationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
@@ -40,6 +42,9 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
 
     @Autowired
     ObjectMapper json;
+
+    @Autowired
+    ImportGraduationService graduationService;
 
     // ── Subscription: explicit AWAITING + source + importedAt ───────────────
 
@@ -89,7 +94,10 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setSubscribedAt(1L);
         // approvalStatus intentionally NOT set (null) — simulates old client
 
-        // PUT echo must default to APPROVED
+        // F3: approvalStatus is server-derived. Seed the channel as APPROVED in the
+        // registry so this organic add (no client approvalStatus) is stored APPROVED.
+        seedApprovedContent("channels", "UCdef");
+        // PUT echo must reflect the derived APPROVED status
         mvc.perform(put("/api/account/subscriptions/UCdef")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -149,6 +157,7 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setSavedAt(1L);
         // approvalStatus intentionally NOT set
 
+        seedApprovedContent("playlists", "PLold");
         mvc.perform(put("/api/account/playlists/PLold")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -209,6 +218,7 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
         req.setAddedAt(1L);
         // approvalStatus intentionally NOT set
 
+        seedApprovedContent("videos", "VIDold");
         mvc.perform(put("/api/account/favorites/VIDold")
                         .header("Authorization", "Bearer fake")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -220,6 +230,69 @@ class SyncImportFieldsIT extends BaseIntegrationTest {
                         .header("Authorization", "Bearer fake"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.favorites.items[0].approvalStatus").value("APPROVED"));
+    }
+
+    // ── F1+F2: full graduation round-trip (PUT AWAITING → approve fan-out → pull APPROVED) ──
+
+    @Test
+    void importedRowGraduatesToApprovedAfterFanOut() throws Exception {
+        String uid = seedActiveUser("grad@test");
+        stubAuthAs(uid, "user");
+
+        // 1. User imports an as-yet-unknown channel → stored AWAITING (UCgrad not in registry).
+        PutSubscriptionRequest req = new PutSubscriptionRequest();
+        req.setChannelUrl("https://yt/UCgrad");
+        req.setName("Imported");
+        req.setSubscribedAt(1L);
+        req.setApprovalStatus("AWAITING");
+        mvc.perform(put("/api/account/subscriptions/UCgrad")
+                        .header("Authorization", "Bearer fake")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvalStatus").value("AWAITING"));
+
+        // 2. Admin approves the content (registry row becomes APPROVED); the fan-out runs.
+        seedApprovedContent("channels", "UCgrad");
+        graduationService.onApproved(YouTubeContentType.CHANNEL, "UCgrad");
+
+        // 3. The next delta-pull must surface the row as APPROVED. This exercises BOTH
+        //    F1 (the fan-out matched because youtubeId is now persisted on the row) and
+        //    F2 (updatedAt was bumped to a Timestamp the cursor can read and page past).
+        mvc.perform(get("/api/account/sync")
+                        .header("Authorization", "Bearer fake"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subscriptions.items[0].entityId").value("UCgrad"))
+                .andExpect(jsonPath("$.subscriptions.items[0].approvalStatus").value("APPROVED"));
+    }
+
+    @Test
+    void clientCannotForceApprovedForUnregisteredContent() throws Exception {
+        // F3 (moderation bypass): a malicious client PUTs approvalStatus=APPROVED for a
+        // channel NOT approved in the registry. The server must ignore the claim and store
+        // AWAITING — a user cannot un-gate its own un-vetted import.
+        String uid = seedActiveUser("evil@test");
+        stubAuthAs(uid, "user");
+
+        PutSubscriptionRequest req = new PutSubscriptionRequest();
+        req.setChannelUrl("https://yt/UCevil");
+        req.setName("NotApproved");
+        req.setSubscribedAt(1L);
+        req.setApprovalStatus("APPROVED"); // the lie — must be overridden server-side
+
+        mvc.perform(put("/api/account/subscriptions/UCevil")
+                        .header("Authorization", "Bearer fake")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvalStatus").value("AWAITING"));
+    }
+
+    /** Seed an APPROVED registry doc so ContentApprovalGate derives APPROVED for the id. */
+    private void seedApprovedContent(String collection, String youtubeId) throws Exception {
+        firestore.collection(collection).document()
+                .set(Map.of("youtubeId", youtubeId, "status", "APPROVED"))
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     // ── Helpers (mirrored from SyncControllerIT) ─────────────────────────────

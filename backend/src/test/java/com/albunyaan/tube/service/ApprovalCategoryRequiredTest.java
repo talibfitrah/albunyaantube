@@ -127,6 +127,8 @@ class ApprovalCategoryRequiredTest {
 
         ApprovalRequestDto request = new ApprovalRequestDto("good content");
         request.setCategoryOverride("cat-islam-101");
+        // F11: the override must reference an existing category for approve to succeed.
+        when(categoryRepository.findById("cat-islam-101")).thenReturn(Optional.of(new com.albunyaan.tube.model.Category()));
 
         ApprovalResponseDto response = approvalService.approve("ch1", request, "admin-uid", "Admin");
 
@@ -173,6 +175,7 @@ class ApprovalCategoryRequiredTest {
 
         ApprovalRequestDto request = new ApprovalRequestDto("notes");
         request.setCategoryOverride("cat-quran");
+        when(categoryRepository.findById("cat-quran")).thenReturn(Optional.of(new com.albunyaan.tube.model.Category()));
 
         ApprovalResponseDto response = approvalService.approve("pl1", request, "admin-uid", "Admin");
 
@@ -218,6 +221,7 @@ class ApprovalCategoryRequiredTest {
 
         ApprovalRequestDto request = new ApprovalRequestDto("notes");
         request.setCategoryOverride("cat-hadith");
+        when(categoryRepository.findById("cat-hadith")).thenReturn(Optional.of(new com.albunyaan.tube.model.Category()));
 
         ApprovalResponseDto response = approvalService.approve("v1", request, "admin-uid", "Admin");
 

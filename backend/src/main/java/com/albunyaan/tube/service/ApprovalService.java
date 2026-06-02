@@ -1101,8 +1101,8 @@ public class ApprovalService {
         channel.touch();
 
         // Apply category override if provided
-        if (request.getCategoryOverride() != null) {
-            channel.setCategoryIds(List.of(request.getCategoryOverride()));
+        if (request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
+            channel.setCategoryIds(List.of(request.getCategoryOverride().strip()));
         }
 
         // Set approval metadata
@@ -1162,8 +1162,8 @@ public class ApprovalService {
         playlist.touch();
 
         // Apply category override if provided
-        if (request.getCategoryOverride() != null) {
-            playlist.setCategoryIds(List.of(request.getCategoryOverride()));
+        if (request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
+            playlist.setCategoryIds(List.of(request.getCategoryOverride().strip()));
         }
 
         // Set approval metadata
@@ -1327,8 +1327,8 @@ public class ApprovalService {
         video.setApprovedBy(actorUid);
         video.touch();
 
-        if (request.getCategoryOverride() != null) {
-            video.setCategoryIds(List.of(request.getCategoryOverride()));
+        if (request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
+            video.setCategoryIds(List.of(request.getCategoryOverride().strip()));
         }
 
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
@@ -1412,13 +1412,22 @@ public class ApprovalService {
      * Guard: throw 400 if neither existing categoryIds nor a categoryOverride are present.
      * Called at the start of each approveChannel/approvePlaylist/approveVideo.
      */
-    private void requireCategoryOrOverride(List<String> existingCategoryIds, ApprovalRequestDto request) {
-        boolean overridePresent = request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank();
+    private void requireCategoryOrOverride(List<String> existingCategoryIds, ApprovalRequestDto request)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        String override = request.getCategoryOverride();
+        boolean overridePresent = override != null && !override.isBlank();
         boolean hasCategories = existingCategoryIds != null && !existingCategoryIds.isEmpty();
         if (!overridePresent && !hasCategories) {
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.BAD_REQUEST,
                     "Category required to approve this submission");
+        }
+        // F11: a provided override must reference a real category — otherwise a typo'd or
+        // stale id would silently become the content's only category.
+        if (overridePresent && categoryRepository.findById(override.strip()).isEmpty()) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Category override does not reference an existing category");
         }
     }
 

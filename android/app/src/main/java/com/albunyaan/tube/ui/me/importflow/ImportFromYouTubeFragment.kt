@@ -140,12 +140,19 @@ class ImportFromYouTubeFragment : Fragment(R.layout.fragment_import_youtube) {
             }
             is ImportUiState.Done -> {
                 val s = state.summary
-                binding.doneSummary.text = getString(
+                val summaryText = getString(
                     R.string.import_youtube_done_summary,
                     s.added,
                     s.sentForReview,
                     s.skipped,
                 )
+                // F10: if the daily budget cut the run short, tell the user the rest
+                // weren't imported (already-imported items are saved; retry later).
+                binding.doneSummary.text = if (s.rateLimited) {
+                    "$summaryText\n${getString(R.string.import_youtube_done_rate_limited)}"
+                } else {
+                    summaryText
+                }
             }
             is ImportUiState.Error -> {
                 binding.errorMessage.text = state.message

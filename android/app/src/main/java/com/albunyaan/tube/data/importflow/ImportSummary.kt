@@ -18,4 +18,11 @@ data class ImportSummary(
     val sentForReview: Int,
     val skipped: Int,
     val alreadyPresent: Int,
+    /**
+     * F10 — true when the per-user daily import budget (HTTP 429) cut the run short.
+     * The counts above reflect only the chunks that completed before the cap; the
+     * remaining items were not sent and can be re-imported later (dedup skips the
+     * ones already written).
+     */
+    val rateLimited: Boolean = false,
 )

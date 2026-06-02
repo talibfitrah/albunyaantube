@@ -795,6 +795,7 @@
     <string name="import_youtube_importing_done">يكاد ينتهي…</string>
     <!-- Done summary: "%1$d أُضيف · %2$d أُرسل للمراجعة · %3$d تخطّى" -->
     <string name="import_youtube_done_summary">%1$d أُضيف · %2$d أُرسل للمراجعة · %3$d تخطّى</string>
+    <string name="import_youtube_done_rate_limited">تم بلوغ الحد اليومي للاستيراد — حاول مرة أخرى لاحقًا لاستيراد البقية.</string>
     <!-- Buttons -->
     <string name="import_youtube_button_done">تم</string>
     <string name="import_youtube_button_retry">حاول مجدداً</string>

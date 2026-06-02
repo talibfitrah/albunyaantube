@@ -566,6 +566,7 @@ class MeViewModelTest {
         override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean =
             state.value.any { it.videoId == videoId }
         override suspend fun addImportedFavorite(
+            uid: String,
             videoId: String, title: String, channelName: String,
             thumbnailUrl: String?, durationSeconds: Int,
             approvalStatus: String, source: String?, importedAt: Long?,
