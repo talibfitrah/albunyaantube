@@ -407,6 +407,16 @@
         <item quantity="other">منذ %d سنة</item>
     </plurals>
 
+    <!-- B11: Import button label — "استيراد 5 عناصر" / "استيراد عنصر واحد" -->
+    <plurals name="import_youtube_button_import">
+        <item quantity="zero">استيراد</item>
+        <item quantity="one">استيراد عنصر واحد</item>
+        <item quantity="two">استيراد عنصرين</item>
+        <item quantity="few">استيراد %d عناصر</item>
+        <item quantity="many">استيراد %d عنصراً</item>
+        <item quantity="other">استيراد %d عنصر</item>
+    </plurals>
+
     <!-- View Count Formatting (Shorts) -->
     <string name="views_count_billions">%.1f مليار مشاهدة</string>
     <string name="views_count_millions">%.1f مليون مشاهدة</string>
@@ -760,5 +770,45 @@
     <string name="email_verification_rate_limited">الرجاء الانتظار قبل إعادة الإرسال.</string>
     <string name="email_verification_last_sent">آخر إرسال قبل %1$d ثانية</string>
     <string name="email_verification_network_error">تعذر الوصول إلى الخادم. حاول مجددًا.</string>
+
+    <!-- ── Import from YouTube (B11) ──────────────────────────────────────── -->
+    <!-- Note: import_youtube_button_import is defined as a plural above near other plurals. -->
+    <string name="import_youtube_title">استيراد من يوتيوب</string>
+    <!-- Loading states -->
+    <string name="import_youtube_loading_authorizing">جارٍ الاتصال بـ Google…</string>
+    <string name="import_youtube_loading_fetching">جارٍ تحميل مكتبتك على يوتيوب…</string>
+    <!-- Group headers: "%1$d" is the item count -->
+    <string name="import_youtube_group_channels">القنوات (%1$d)</string>
+    <string name="import_youtube_group_playlists">قوائم التشغيل (%1$d)</string>
+    <string name="import_youtube_group_videos">الفيديوهات المُعجب بها (%1$d)</string>
+    <!-- Short names used in partial-failure notice -->
+    <string name="import_youtube_group_channels_short">القنوات</string>
+    <string name="import_youtube_group_playlists_short">قوائم التشغيل</string>
+    <string name="import_youtube_group_videos_short">الفيديوهات</string>
+    <!-- Partial-failure inline notice; "%1$s" is a comma-separated list of failed type names -->
+    <string name="import_youtube_partial_failure">تعذّر تحميل: %1$s</string>
+    <!-- Select-all checkbox accessibility label -->
+    <string name="import_youtube_select_all_content_description">تحديد الكل في المجموعة</string>
+    <!-- Importing progress -->
+    <string name="import_youtube_importing_resolving">جارٍ التحقق من المحتوى…</string>
+    <string name="import_youtube_importing_writing">جارٍ الحفظ في مكتبتك…</string>
+    <string name="import_youtube_importing_done">يكاد ينتهي…</string>
+    <!-- Done summary: "%1$d أُضيف · %2$d أُرسل للمراجعة · %3$d تخطّى" -->
+    <string name="import_youtube_done_summary">%1$d أُضيف · %2$d أُرسل للمراجعة · %3$d تخطّى</string>
+    <!-- Buttons -->
+    <string name="import_youtube_button_done">تم</string>
+    <string name="import_youtube_button_retry">حاول مجدداً</string>
+    <!-- Me kebab entry for import -->
+    <string name="me_kebab_import_youtube">استيراد من يوتيوب</string>
+    <!-- First-login import offer dialog -->
+    <string name="import_offer_title">استيراد مكتبتك من يوتيوب</string>
+    <string name="import_offer_message">أحضر اشتراكاتك في يوتيوب وقوائم تشغيلك وفيديوهاتك المُعجب بها إلى FitrahTube بنقرة واحدة.</string>
+    <string name="import_offer_positive">استيراد</string>
+    <string name="import_offer_negative">ليس الآن</string>
+    <!-- B14: Me tab "Awaiting review" section -->
+    <string name="me_awaiting_section_title">مستوردة — قيد المراجعة</string>
+    <!-- %1$d = total count of awaiting items -->
+    <string name="me_awaiting_count">%1$d قيد الانتظار</string>
+    <string name="me_awaiting_pending_label">قيد المراجعة</string>
 
 </resources>
