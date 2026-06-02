@@ -93,6 +93,8 @@ public class Video {
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String submitterNote;
 
+    private String source; // "USER_IMPORT" | "ADMIN" | "MODERATOR" | "BULK" | null
+
     /**
      * Approval metadata (reviewer info, notes, rejection reason).
      */
@@ -203,6 +205,14 @@ public class Video {
 
     public void setSubmitterNote(String submitterNote) {
         this.submitterNote = submitterNote;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
     }
 
     public String getTitle() {
