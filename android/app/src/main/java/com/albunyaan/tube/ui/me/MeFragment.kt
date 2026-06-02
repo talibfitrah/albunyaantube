@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.work.WorkManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.auth.AuthState
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
@@ -35,6 +36,7 @@ import com.albunyaan.tube.util.showIcons
 import com.albunyaan.tube.util.tintIcons
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.albunyaan.tube.preferences.SettingsPreferences
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -55,6 +57,9 @@ class MeFragment : Fragment(R.layout.fragment_me) {
 
     @Inject lateinit var prefetchService: com.albunyaan.tube.player.StreamPrefetchService
     @Inject lateinit var playbackFeatureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
+
+    // B13: created lazily so requireContext() is safe at first use (onResume or later).
+    private val settingsPreferences: SettingsPreferences by lazy { SettingsPreferences(requireContext()) }
 
     private val viewModel: MeViewModel by viewModels()
     private var binding: FragmentMeBinding? = null
@@ -233,6 +238,13 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                     }
                     true
                 }
+                R.id.action_import_youtube -> {
+                    // B12: visible to all signed-in users; no role gate.
+                    if (findNavController().currentDestination?.id == R.id.meFragment) {
+                        findNavController().navigate(R.id.action_me_to_importFromYouTube)
+                    }
+                    true
+                }
                 R.id.action_sign_out -> {
                     MaterialAlertDialogBuilder(requireContext())
                         .setTitle(R.string.settings_account_sign_out_confirm_title)
@@ -289,6 +301,34 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         viewLifecycleOwner.lifecycleScope.launch {
             refreshScheduler.enqueueForegroundBurstIfStale()
         }
+        // B13: one-time import offer for signed-in users.
+        viewLifecycleOwner.lifecycleScope.launch {
+            maybeShowImportOffer()
+        }
+    }
+
+    /**
+     * B13: Shows a one-time "Import from YouTube" offer dialog the first time a
+     * signed-in user lands on the Me tab. Sets [SettingsPreferences.IMPORT_OFFER_SHOWN_KEY]
+     * true on any choice (Import or Not now) so it never appears again.
+     */
+    private suspend fun maybeShowImportOffer() {
+        val isSignedIn = authRepository.authState.value is AuthState.SignedIn
+        if (!isSignedIn) return
+        if (!settingsPreferences.shouldShowImportOffer()) return
+        // Mark shown immediately to prevent a second launch before the dialog closes.
+        settingsPreferences.setImportOfferShown()
+        if (!isAdded || activity == null) return
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.import_offer_title)
+            .setMessage(R.string.import_offer_message)
+            .setPositiveButton(R.string.import_offer_positive) { _, _ ->
+                if (findNavController().currentDestination?.id == R.id.meFragment) {
+                    findNavController().navigate(R.id.action_me_to_importFromYouTube)
+                }
+            }
+            .setNegativeButton(R.string.import_offer_negative, null)
+            .show()
     }
 
     private fun render(state: MeFeedState) {

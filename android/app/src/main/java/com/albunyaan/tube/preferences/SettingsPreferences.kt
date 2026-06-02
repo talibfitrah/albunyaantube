@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import android.os.Build
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
@@ -86,6 +87,9 @@ class SettingsPreferences(private val context: Context) {
 
         // Onboarding
         val ONBOARDING_COMPLETED_KEY = booleanPreferencesKey("onboarding_completed")
+
+        // B13: first-login import offer — set true on any dismissal so it never shows again
+        val IMPORT_OFFER_SHOWN_KEY = booleanPreferencesKey("import_offer_shown")
 
         // Supported languages - use listOf for explicit ordering (displayed in UI)
         val SUPPORTED_LOCALES = listOf("en", "ar", "nl")
@@ -281,5 +285,27 @@ class SettingsPreferences(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[ONBOARDING_COMPLETED_KEY] = completed
         }
+    }
+
+    // B13: import offer — one-time prompt after first sign-in
+    val importOfferShown: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[IMPORT_OFFER_SHOWN_KEY] ?: false
+    }
+
+    suspend fun setImportOfferShown(shown: Boolean = true) {
+        context.dataStore.edit { preferences ->
+            preferences[IMPORT_OFFER_SHOWN_KEY] = shown
+        }
+    }
+
+    /**
+     * Returns true if the import offer should be shown: the flag has never been
+     * set (first run / first sign-in). Callers are responsible for also checking
+     * that the user is signed in before presenting the dialog.
+     *
+     * Reads a single snapshot — cheap, no ongoing collection needed.
+     */
+    suspend fun shouldShowImportOffer(): Boolean {
+        return !importOfferShown.first()
     }
 }

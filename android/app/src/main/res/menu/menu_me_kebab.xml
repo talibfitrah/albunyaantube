@@ -15,6 +15,10 @@
           android:icon="@drawable/ic_add"
           android:visible="false"
           app:showAsAction="never"/>
+    <item android:id="@+id/action_import_youtube"
+          android:title="@string/me_kebab_import_youtube"
+          android:icon="@drawable/ic_import_youtube"
+          app:showAsAction="never"/>
     <item android:id="@+id/action_sign_out"
           android:title="@string/me_kebab_sign_out"
           android:icon="@drawable/ic_logout"
