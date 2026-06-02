@@ -32,9 +32,7 @@ data class ImportCandidate(
 data class ImportFetchResult(
     val candidates:  List<ImportCandidate>,
     val failedTypes: Set<CandidateType>,
-    /**
-     * F12 — types whose pagination hit the MAX_PAGES cap, so the candidate list for
-     * that type is incomplete (only relevant for very large accounts, 2000+ items).
-     */
-    val truncatedTypes: Set<CandidateType> = emptySet(),
 )
+// F12: per-type MAX_PAGES truncation is logged (Log.w in YouTubeImportRemoteSource) so it
+// isn't silent. Surfacing it to the user in the Review screen is a deferred UI enhancement
+// (rare: only accounts with 2000+ items of one type) — not wired here to avoid a dead field.

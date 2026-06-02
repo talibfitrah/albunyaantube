@@ -139,8 +139,10 @@ class ImportViewModel @Inject constructor(
                 }
             }
 
-            // Emit initial Importing state with the current progress snapshot.
-            _uiState.value = ImportUiState.Importing(importRepository.progress.value)
+            // Emit an initial Importing state with FRESH zero progress. Using
+            // importRepository.progress.value would, on a re-import, briefly show the
+            // previous run's DONE snapshot for one frame (cubic-P3).
+            _uiState.value = ImportUiState.Importing(ImportProgress(ImportProgress.Phase.RESOLVING, 0, 0))
 
             try {
                 val summary = importRepository.import(selectedCandidates)
