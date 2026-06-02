@@ -83,16 +83,11 @@ public class UserImportSubmissionService {
         ch.setCreatedAt(now);
         ch.setUpdatedAt(now);
 
-        try {
-            channels.save(ch);
-        } catch (Exception e) {
-            // Race: another request saved the same youtubeId between our read and write.
-            Optional<Channel> raceRead = channels.findByYoutubeId(item.youtubeId());
-            if (raceRead.isPresent()) {
-                return statusToDisposition(raceRead.get().getStatus());
-            }
-            throw e;
-        }
+        // Dedup is best-effort via the findByYoutubeId check above. Firestore has no
+        // unique-field constraint, so a rare concurrent import of the same new id may
+        // create two PENDING docs; admins dedupe at approval. We do NOT catch save
+        // failures here — a failed write must surface as an error, not a false PENDING.
+        channels.save(ch);
         return ImportDisposition.PENDING;
     }
 
@@ -116,15 +111,11 @@ public class UserImportSubmissionService {
         pl.setCreatedAt(now);
         pl.setUpdatedAt(now);
 
-        try {
-            playlists.save(pl);
-        } catch (Exception e) {
-            Optional<Playlist> raceRead = playlists.findByYoutubeId(item.youtubeId());
-            if (raceRead.isPresent()) {
-                return statusToDisposition(raceRead.get().getStatus());
-            }
-            throw e;
-        }
+        // Dedup is best-effort via the findByYoutubeId check above. Firestore has no
+        // unique-field constraint, so a rare concurrent import of the same new id may
+        // create two PENDING docs; admins dedupe at approval. We do NOT catch save
+        // failures here — a failed write must surface as an error, not a false PENDING.
+        playlists.save(pl);
         return ImportDisposition.PENDING;
     }
 
@@ -151,15 +142,11 @@ public class UserImportSubmissionService {
         v.setCreatedAt(now);
         v.setUpdatedAt(now);
 
-        try {
-            videos.save(v);
-        } catch (Exception e) {
-            Optional<Video> raceRead = videos.findByYoutubeId(item.youtubeId());
-            if (raceRead.isPresent()) {
-                return statusToDisposition(raceRead.get().getStatus());
-            }
-            throw e;
-        }
+        // Dedup is best-effort via the findByYoutubeId check above. Firestore has no
+        // unique-field constraint, so a rare concurrent import of the same new id may
+        // create two PENDING docs; admins dedupe at approval. We do NOT catch save
+        // failures here — a failed write must surface as an error, not a false PENDING.
+        videos.save(v);
         return ImportDisposition.PENDING;
     }
 

@@ -159,6 +159,19 @@ class UserImportSubmissionServiceTest {
         verify(playlists, never()).save(any());
     }
 
+    @Test
+    void existingPendingPlaylistReturnsPending() throws Exception {
+        Playlist existing = new Playlist();
+        existing.setStatus("PENDING");
+        when(playlists.findByYoutubeId("PL1")).thenReturn(Optional.of(existing));
+
+        ImportDisposition d = svc.submit(
+                new ImportItem(YouTubeContentType.PLAYLIST, "PL1", "x", null, null), "uid-8");
+
+        assertEquals(ImportDisposition.PENDING, d);
+        verify(playlists, never()).save(any());
+    }
+
     // ── VIDEO ─────────────────────────────────────────────────────────────
 
     @Test
@@ -184,6 +197,7 @@ class UserImportSubmissionServiceTest {
         assertTrue(saved.getCategoryIds() == null || saved.getCategoryIds().isEmpty());
         assertNotNull(saved.getCreatedAt());
         assertNotNull(saved.getUpdatedAt());
+        assertEquals("UC1", saved.getChannelId());
     }
 
     @Test
@@ -209,6 +223,19 @@ class UserImportSubmissionServiceTest {
                 new ImportItem(YouTubeContentType.VIDEO, "VID1", "x", null, null), "uid-9");
 
         assertEquals(ImportDisposition.REJECTED, d);
+        verify(videos, never()).save(any());
+    }
+
+    @Test
+    void existingPendingVideoReturnsPending() throws Exception {
+        Video existing = new Video();
+        existing.setStatus("PENDING");
+        when(videos.findByYoutubeId("VID1")).thenReturn(Optional.of(existing));
+
+        ImportDisposition d = svc.submit(
+                new ImportItem(YouTubeContentType.VIDEO, "VID1", "x", null, null), "uid-9");
+
+        assertEquals(ImportDisposition.PENDING, d);
         verify(videos, never()).save(any());
     }
 
