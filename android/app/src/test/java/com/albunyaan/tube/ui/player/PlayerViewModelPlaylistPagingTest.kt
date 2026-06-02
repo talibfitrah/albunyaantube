@@ -894,6 +894,15 @@ class PlayerViewModelPlaylistPagingTest {
 
         override fun getFavoriteCount(): Flow<Int> = favorites.map { it.size }
 
+        override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean =
+            favorites.value.any { it.videoId == videoId }
+
+        override suspend fun addImportedFavorite(
+            videoId: String, title: String, channelName: String,
+            thumbnailUrl: String?, durationSeconds: Int,
+            approvalStatus: String, source: String?, importedAt: Long?,
+        ) = addFavorite(videoId, title, channelName, thumbnailUrl, durationSeconds)
+
         override suspend fun clearAll() {
             favorites.value = emptyList()
         }

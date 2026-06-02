@@ -149,6 +149,21 @@ class SubscriptionRepository @Inject constructor(
         syncManager.pushDirtyAsync(uid)
     }
 
+    /**
+     * B9: Deleted-agnostic existence check for import dedup.
+     * Returns true if the channel already exists for the user in any state
+     * (APPROVED, AWAITING, soft-deleted) so we don't re-send it to the backend.
+     */
+    suspend fun channelExistsAny(uid: String, channelId: String): Boolean =
+        channels.getByIdAny(uid = uid, id = channelId) != null
+
+    /**
+     * B9: Deleted-agnostic existence check for import dedup.
+     * Returns true if the playlist already exists for the user in any state.
+     */
+    suspend fun playlistExistsAny(uid: String, playlistId: String): Boolean =
+        playlists.getByIdAny(uid = uid, id = playlistId) != null
+
     suspend fun savePlaylist(playlist: SavedPlaylist) {
         val uid = accountRepository.currentUid()
         playlists.upsert(playlist.copy(user_id = uid, dirty = true, deleted = false))

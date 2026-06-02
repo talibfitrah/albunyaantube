@@ -51,6 +51,33 @@ interface FavoritesRepository {
     )
 
     /**
+     * B9: Deleted-agnostic existence check for import dedup.
+     * Returns true if a favorite video already exists for [uid] in any state
+     * (APPROVED, AWAITING, soft-deleted). Used by [YouTubeImportRepository]
+     * to skip candidates that are already present before calling the backend.
+     */
+    suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean
+
+    /**
+     * Add a video to favorites with import-specific metadata.
+     *
+     * New method added for B9 (YouTubeImportRepository) so the import path can
+     * stamp [approvalStatus], [source], and [importedAt] without changing the
+     * existing [addFavorite] signature (which would break all fakes in tests).
+     * Existing callers continue to use [addFavorite] unchanged.
+     */
+    suspend fun addImportedFavorite(
+        videoId: String,
+        title: String,
+        channelName: String,
+        thumbnailUrl: String?,
+        durationSeconds: Int,
+        approvalStatus: String,
+        source: String?,
+        importedAt: Long?,
+    )
+
+    /**
      * Remove a video from favorites.
      */
     suspend fun removeFavorite(videoId: String)
@@ -157,6 +184,36 @@ class FavoritesRepositoryImpl @Inject constructor(
         // clearSoftDelete and upsertFavorite would leave the row at
         // deleted=0/dirty=1 with stale metadata, and pushDirty would ship
         // the stale payload to the server (losing the fresher user input).
+        favoriteVideoDao.resurrectAndUpsert(favorite)
+        syncManager.pushDirtyAsync(uid)
+    }
+
+    override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean =
+        favoriteVideoDao.getByIdAny(uid = uid, videoId = videoId) != null
+
+    override suspend fun addImportedFavorite(
+        videoId: String,
+        title: String,
+        channelName: String,
+        thumbnailUrl: String?,
+        durationSeconds: Int,
+        approvalStatus: String,
+        source: String?,
+        importedAt: Long?,
+    ) {
+        val uid = accountRepository.currentUid()
+        val favorite = FavoriteVideo(
+            videoId = videoId,
+            title = title,
+            channelName = channelName,
+            thumbnailUrl = thumbnailUrl,
+            durationSeconds = durationSeconds,
+            user_id = uid,
+            dirty = true,
+            approvalStatus = approvalStatus,
+            source = source,
+            importedAt = importedAt,
+        )
         favoriteVideoDao.resurrectAndUpsert(favorite)
         syncManager.pushDirtyAsync(uid)
     }

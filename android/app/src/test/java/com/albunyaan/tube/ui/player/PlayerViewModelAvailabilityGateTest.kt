@@ -268,6 +268,12 @@ class PlayerViewModelAvailabilityGateTest {
             thumbnailUrl: String?, durationSeconds: Int,
         ): Boolean = false
         override fun getFavoriteCount(): Flow<Int> = favorites.map { it.size }
+        override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean = false
+        override suspend fun addImportedFavorite(
+            videoId: String, title: String, channelName: String,
+            thumbnailUrl: String?, durationSeconds: Int,
+            approvalStatus: String, source: String?, importedAt: Long?,
+        ) {}
         override suspend fun clearAll() {}
     }
 
