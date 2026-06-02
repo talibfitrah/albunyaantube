@@ -23,6 +23,12 @@ interface FavoritesRepository {
      */
     fun getAllFavorites(): Flow<List<FavoriteVideo>>
 
+    /** B3: Live list of APPROVED favorites for Me-feed composition. */
+    fun observeApprovedFavorites(): Flow<List<FavoriteVideo>>
+
+    /** B3: Live list of AWAITING favorites for the awaiting-imports surface. */
+    fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>>
+
     /**
      * Check if a video is favorited (reactive).
      */
@@ -95,6 +101,18 @@ class FavoritesRepositoryImpl @Inject constructor(
     override fun getAllFavorites(): Flow<List<FavoriteVideo>> =
         accountRepository.accountState.flatMapLatest { state ->
             favoriteVideoDao.getAllFavorites(uid = uidOf(state))
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            favoriteVideoDao.observeApprovedFavorites(uid = uidOf(state))
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            favoriteVideoDao.observeAwaitingFavorites(uid = uidOf(state))
         }
 
     @OptIn(ExperimentalCoroutinesApi::class)

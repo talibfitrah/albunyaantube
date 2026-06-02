@@ -528,6 +528,8 @@ class MeViewModelTest {
         fun emit(list: List<FavoriteVideo>) { state.value = list }
 
         override fun getAllFavorites(): Flow<List<FavoriteVideo>> = state
+        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
+        override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
         override fun isFavorite(videoId: String): Flow<Boolean> =
             state.map { list -> list.any { it.videoId == videoId } }
         override suspend fun isFavoriteOnce(videoId: String): Boolean =

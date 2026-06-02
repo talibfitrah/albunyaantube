@@ -6,6 +6,7 @@ import com.albunyaan.tube.data.local.ChannelFeedRefreshState
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.PlaylistVideoLink
 import com.albunyaan.tube.data.local.PlaylistVideoLinkDao
 import com.albunyaan.tube.data.local.SavedPlaylist
@@ -83,6 +84,9 @@ class MeFeedRepository @Inject constructor(
     // queries fall back to the channel-only paths.
     private val playlistRepository: PlaylistDetailRepository? = null,
     private val playlistVideoLinkDao: PlaylistVideoLinkDao? = null,
+    // B3: used only by observeAwaiting(); nullable so every pre-existing test
+    // fixture that constructs MeFeedRepository without this arg compiles.
+    private val favoritesRepository: FavoritesRepository? = null,
 ) {
 
     /**
@@ -214,7 +218,7 @@ class MeFeedRepository @Inject constructor(
      * will not show stale items past the window (F4).
      */
     fun observeFeed(): Flow<List<ChannelVideoCache>> =
-        subscriptions.observeSubscribedChannels()
+        subscriptions.observeApprovedSubscribedChannels()
             .flatMapLatest { subs ->
                 if (subs.isEmpty()) {
                     flowOf(emptyList())
@@ -235,6 +239,30 @@ class MeFeedRepository @Inject constructor(
                 }
             }
             .distinctUntilChanged()
+
+    /**
+     * B3: Combines the three AWAITING streams into a single [AwaitingImports]
+     * flow. Emits whenever any of the three sets changes.
+     *
+     * Returns an empty [AwaitingImports] when [favoritesRepository] was not
+     * injected (test fixtures that don't exercise this path).
+     */
+    fun observeAwaiting(): Flow<AwaitingImports> {
+        val favRepo = favoritesRepository
+            ?: return combine(
+                subscriptions.observeAwaitingSubscribedChannels(),
+                subscriptions.observeAwaitingSavedPlaylists(),
+            ) { channels, playlists ->
+                AwaitingImports(channels = channels, playlists = playlists, videos = emptyList())
+            }
+        return combine(
+            subscriptions.observeAwaitingSubscribedChannels(),
+            subscriptions.observeAwaitingSavedPlaylists(),
+            favRepo.observeAwaitingFavorites(),
+        ) { channels, playlists, videos ->
+            AwaitingImports(channels = channels, playlists = playlists, videos = videos)
+        }
+    }
 
     /**
      * ANDROID-PERSONAL-03 / T4: per-week observation for the Me-tab feed.
@@ -264,8 +292,8 @@ class MeFeedRepository @Inject constructor(
         filterChannelId: String? = null,
     ): Flow<WeekContent?> =
         combine(
-            subscriptions.observeSubscribedChannels(),
-            subscriptions.observeSavedPlaylists(),
+            subscriptions.observeApprovedSubscribedChannels(),
+            subscriptions.observeApprovedSavedPlaylists(),
         ) { subs, playlists -> subs to playlists }
             .flatMapLatest<Pair<List<SubscribedChannel>, List<SavedPlaylist>>, WeekContent?> { (subs, playlists) ->
                 // No subscriptions AND no saved playlists → nothing to show.
@@ -383,11 +411,11 @@ class MeFeedRepository @Inject constructor(
     ): Int? = withContext(ioDispatcher) {
         if (fromIndex > maxIndex) return@withContext null
         val now = currentTimeMillis()
-        val all = subscriptions.getSubscribedChannels()
+        val all = subscriptions.getApprovedSubscribedChannels()
         // Playlist videos only count toward the unfiltered scan — a channel
         // chip filters strictly to channel uploads.
         val playlists: List<SavedPlaylist> =
-            if (filterChannelId == null) subscriptions.getSavedPlaylists() else emptyList()
+            if (filterChannelId == null) subscriptions.getApprovedSavedPlaylists() else emptyList()
         if (all.isEmpty() && playlists.isEmpty()) return@withContext null
         // ANDROID-PERSONAL-03 / Bug 1: when filtering, scope the scan to the
         // single channel. If the filter target is no longer subscribed

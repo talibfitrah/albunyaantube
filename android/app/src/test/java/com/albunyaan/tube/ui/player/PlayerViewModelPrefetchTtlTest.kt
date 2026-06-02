@@ -370,6 +370,8 @@ class PlayerViewModelPrefetchTtlTest {
     private class FakeFavoritesRepository : FavoritesRepository {
         private val favorites = MutableStateFlow<List<FavoriteVideo>>(emptyList())
         override fun getAllFavorites(): Flow<List<FavoriteVideo>> = favorites
+        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
+        override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
         override fun isFavorite(videoId: String): Flow<Boolean> = favorites.map { list ->
             list.any { it.videoId == videoId }
         }

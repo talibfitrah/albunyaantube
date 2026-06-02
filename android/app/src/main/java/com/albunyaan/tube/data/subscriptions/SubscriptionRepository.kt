@@ -49,15 +49,47 @@ class SubscriptionRepository @Inject constructor(
             channels.observeAll(uid = uidOf(state))
         }
 
+    /** B3: APPROVED-only variant used by feed composition. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeApprovedSubscribedChannels(): Flow<List<SubscribedChannel>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            channels.observeApprovedChannels(uid = uidOf(state))
+        }
+
+    /** B3: AWAITING variant used by the awaiting-imports surface. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeAwaitingSubscribedChannels(): Flow<List<SubscribedChannel>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            channels.observeAwaitingChannels(uid = uidOf(state))
+        }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observeSavedPlaylists(): Flow<List<SavedPlaylist>> =
         accountRepository.accountState.flatMapLatest { state ->
             playlists.observeAll(uid = uidOf(state))
         }
 
+    /** B3: APPROVED-only variant used by feed composition. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeApprovedSavedPlaylists(): Flow<List<SavedPlaylist>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            playlists.observeApprovedPlaylists(uid = uidOf(state))
+        }
+
+    /** B3: AWAITING variant used by the awaiting-imports surface. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeAwaitingSavedPlaylists(): Flow<List<SavedPlaylist>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            playlists.observeAwaitingPlaylists(uid = uidOf(state))
+        }
+
     // One-shot read — uid is captured at call time, no Flow rescoping needed.
     suspend fun getSubscribedChannels(): List<SubscribedChannel> =
         channels.getAll(uid = accountRepository.currentUid())
+
+    /** B3: APPROVED-only one-shot read used by feed composition. */
+    suspend fun getApprovedSubscribedChannels(): List<SubscribedChannel> =
+        channels.getApprovedSubscribedChannels(uid = accountRepository.currentUid())
 
     // One-shot read of saved playlists for the current account. Used by
     // [MeFeedRepository.refreshPlaylistVideos] which iterates playlists
@@ -66,6 +98,10 @@ class SubscriptionRepository @Inject constructor(
     // the next tick.
     suspend fun getSavedPlaylists(): List<SavedPlaylist> =
         playlists.getAll(uid = accountRepository.currentUid())
+
+    /** B3: APPROVED-only one-shot read used by feed composition. */
+    suspend fun getApprovedSavedPlaylists(): List<SavedPlaylist> =
+        playlists.getApprovedSavedPlaylists(uid = accountRepository.currentUid())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun isChannelSubscribed(id: String): Flow<Boolean> =

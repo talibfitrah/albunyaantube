@@ -152,6 +152,8 @@ class FavoritesViewModelTest {
         private val favoritesFlow = MutableStateFlow<List<FavoriteVideo>>(emptyList())
 
         override fun getAllFavorites(): Flow<List<FavoriteVideo>> = favoritesFlow
+        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
+        override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
 
         override fun isFavorite(videoId: String): Flow<Boolean> =
             favoritesFlow.map { list -> list.any { it.videoId == videoId } }
