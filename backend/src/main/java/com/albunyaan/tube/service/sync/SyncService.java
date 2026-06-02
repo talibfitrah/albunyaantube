@@ -126,6 +126,10 @@ public class SyncService {
         d.setName((String) m.getOrDefault("name", ""));
         d.setAvatarUrl((String) m.get("avatarUrl"));
         d.setSubscribedAt(longOf(m.get("subscribedAt")));
+        // A10 — default "APPROVED" for docs written before this field existed
+        d.setApprovalStatus((String) m.getOrDefault("approvalStatus", "APPROVED"));
+        d.setSource((String) m.get("source"));
+        d.setImportedAt(nullableLongOf(m.get("importedAt")));
         return d;
     }
 
@@ -140,6 +144,10 @@ public class SyncService {
         d.setThumbnailUrl((String) m.get("thumbnailUrl"));
         d.setUploaderName((String) m.get("uploaderName"));
         d.setSavedAt(longOf(m.get("savedAt")));
+        // A10 — default "APPROVED" for docs written before this field existed
+        d.setApprovalStatus((String) m.getOrDefault("approvalStatus", "APPROVED"));
+        d.setSource((String) m.get("source"));
+        d.setImportedAt(nullableLongOf(m.get("importedAt")));
         return d;
     }
 
@@ -154,6 +162,10 @@ public class SyncService {
         d.setThumbnailUrl((String) m.get("thumbnailUrl"));
         d.setDurationSeconds(intOf(m.get("durationSeconds")));
         d.setAddedAt(longOf(m.get("addedAt")));
+        // A10 — default "APPROVED" for docs written before this field existed
+        d.setApprovalStatus((String) m.getOrDefault("approvalStatus", "APPROVED"));
+        d.setSource((String) m.get("source"));
+        d.setImportedAt(nullableLongOf(m.get("importedAt")));
         return d;
     }
 
@@ -161,9 +173,21 @@ public class SyncService {
         if (o instanceof Number n) return n.longValue();
         return 0L;
     }
+    private static Long nullableLongOf(Object o) {
+        if (o instanceof Number n) return n.longValue();
+        return null;
+    }
     private static int intOf(Object o) {
         if (o instanceof Number n) return n.intValue();
         return 0;
+    }
+
+    /**
+     * A10 — resolves approvalStatus for storage: null/blank client value defaults
+     * to "APPROVED" for back-compat with existing clients that don't send the field.
+     */
+    private static String resolveApprovalStatus(String value) {
+        return (value == null || value.isBlank()) ? "APPROVED" : value;
     }
 
     // ── Write path ───────────────────────────────────────────────────────────
@@ -184,6 +208,10 @@ public class SyncService {
         body.put("name", req.getName());
         body.put("avatarUrl", req.getAvatarUrl());
         body.put("subscribedAt", req.getSubscribedAt());
+        // A10 — store import metadata; approvalStatus defaults to "APPROVED" when absent
+        body.put("approvalStatus", resolveApprovalStatus(req.getApprovalStatus()));
+        body.put("source", req.getSource());
+        body.put("importedAt", req.getImportedAt());
         return toSubscriptionDto(projector.projectSubscription(
                 repo.upsert(uid, SyncRepository.SUBS_COLL, id, body)));
     }
@@ -202,6 +230,10 @@ public class SyncService {
         body.put("thumbnailUrl", req.getThumbnailUrl());
         body.put("uploaderName", req.getUploaderName());
         body.put("savedAt", req.getSavedAt());
+        // A10 — store import metadata; approvalStatus defaults to "APPROVED" when absent
+        body.put("approvalStatus", resolveApprovalStatus(req.getApprovalStatus()));
+        body.put("source", req.getSource());
+        body.put("importedAt", req.getImportedAt());
         return toPlaylistDto(projector.projectPlaylist(
                 repo.upsert(uid, SyncRepository.PLAYLISTS_COLL, id, body)));
     }
@@ -220,6 +252,10 @@ public class SyncService {
         body.put("thumbnailUrl", req.getThumbnailUrl());
         body.put("durationSeconds", req.getDurationSeconds());
         body.put("addedAt", req.getAddedAt());
+        // A10 — store import metadata; approvalStatus defaults to "APPROVED" when absent
+        body.put("approvalStatus", resolveApprovalStatus(req.getApprovalStatus()));
+        body.put("source", req.getSource());
+        body.put("importedAt", req.getImportedAt());
         return toFavoriteDto(projector.projectFavorite(
                 repo.upsert(uid, SyncRepository.FAVORITES_COLL, id, body)));
     }
