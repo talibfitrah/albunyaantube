@@ -1,0 +1,21 @@
+docs/superpowers/specs/2026-06-02-youtube-import-me-list-design.md
+  s_041296e26685a0::t_90028271ebae1d 1-124,127-142,144-230
+  s_041296e26685a0::t_544cd1c8b42f11 143
+  s_041296e26685a0::t_119451ad1bd338 125-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "13c0cc8ab1743492f9bacd678df3a68a8b7e5868",
+  "prompts": {},
+  "sessions": {
+    "s_041296e26685a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d01440fc-dec4-4cf5-9283-f068651f82f7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
