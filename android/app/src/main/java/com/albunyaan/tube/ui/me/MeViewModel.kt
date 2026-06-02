@@ -14,6 +14,7 @@ import com.albunyaan.tube.data.local.SavedPlaylist
 import com.albunyaan.tube.data.local.SubscribedChannel
 import com.albunyaan.tube.data.me.ChipItem
 import com.albunyaan.tube.data.me.MeFeedRepository
+import com.albunyaan.tube.data.me.AwaitingImports
 import com.albunyaan.tube.data.me.MeFeedState
 import com.albunyaan.tube.data.me.MeFeedVideo
 import com.albunyaan.tube.data.me.WeekBucket
@@ -121,6 +122,16 @@ class MeViewModel @Inject constructor(
     // to suppress further [loadNextWeek] calls without expensive scans.
     private val reachedEndState = MutableStateFlow(false)
     val reachedEnd: StateFlow<Boolean> = reachedEndState.asStateFlow()
+
+    // B14: items that were imported from YouTube but are not yet approved.
+    // Derived directly from MeFeedRepository.observeAwaiting() so the section
+    // appears / disappears reactively without any change to MeFeedState.Content.
+    val awaiting: StateFlow<AwaitingImports> = feed.observeAwaiting()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = AwaitingImports(emptyList(), emptyList(), emptyList()),
+        )
 
     // Single in-flight job to prevent overlapping loads — the fragment's
     // scroll listener can fire many times in rapid succession.

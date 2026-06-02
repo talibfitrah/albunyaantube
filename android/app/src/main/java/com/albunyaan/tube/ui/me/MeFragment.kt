@@ -23,6 +23,7 @@ import com.albunyaan.tube.auth.AuthState
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
+import com.albunyaan.tube.data.me.AwaitingImports
 import com.albunyaan.tube.data.me.ChipItem
 import com.albunyaan.tube.data.me.MeFeedState
 import com.albunyaan.tube.data.me.MeFeedVideo
@@ -66,6 +67,8 @@ class MeFragment : Fragment(R.layout.fragment_me) {
 
     private lateinit var chipsAdapter: MeChipsAdapter
     private lateinit var favoritesAdapter: MeFavoritesAdapter
+    // B14: awaiting-review section; sits between favorites and per-week sections.
+    private lateinit var awaitingAdapter: AwaitingImportsAdapter
     private lateinit var concatAdapter: ConcatAdapter
 
     private var prefetchController: com.albunyaan.tube.player.PredictivePrefetchController? = null
@@ -97,13 +100,16 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             onLongPress = ::confirmRemoveFavorite,
             onSeeAll = ::navigateToFavoritesScreen,
         )
+        // B14: awaiting section — item count is 0 until the first non-empty
+        // AwaitingImports arrives; collapses automatically when it empties.
+        awaitingAdapter = AwaitingImportsAdapter()
 
         // ANDROID-PERSONAL-03 / T6: dynamic ConcatAdapter. Initially holds
-        // chips + favorites; per-week sub-adapters are appended as the
-        // viewModel.weeks flow emits. Isolation is disabled so the
+        // chips + favorites + awaiting; per-week sub-adapters are appended as
+        // the viewModel.weeks flow emits. Isolation is disabled so the
         // spanSizeLookup can compare raw inner view types — every
         // adapter participating in this ConcatAdapter must use a unique
-        // view type constant (chips=101, favorites=401-403,
+        // view type constant (chips=101, favorites=401-403, awaiting=601-602,
         // weeks=501-503; see each adapter's companion object).
         concatAdapter = ConcatAdapter(
             ConcatAdapter.Config.Builder()
@@ -112,6 +118,8 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             chipsAdapter.rowAdapter,
             // T10: favorites row sits between chips and per-week content.
             favoritesAdapter.sectionAdapter,
+            // B14: awaiting section sits after favorites, before per-week sections.
+            awaitingAdapter.sectionAdapter,
         )
 
         val isTablet = DeviceConfig.isTablet(requireContext()) || DeviceConfig.isTV(requireContext())
@@ -172,6 +180,15 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.weeks.collect { renderWeeks(it) }
+            }
+        }
+
+        // B14: awaiting-review section collector. Drives awaitingAdapter
+        // so the section appears / disappears reactively without touching
+        // the weekly feed sections.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.awaiting.collect { awaitingAdapter.submit(it) }
             }
         }
 
