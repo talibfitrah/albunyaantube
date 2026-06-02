@@ -42,6 +42,7 @@ public class ApprovalService {
     private final SortOrderService sortOrderService;
     private final StreamIndexService streamIndexService;
     private final UserRepository userRepository;
+    private final ImportGraduationService importGraduationService;
 
     public ApprovalService(ChannelRepository channelRepository,
                           PlaylistRepository playlistRepository,
@@ -51,7 +52,8 @@ public class ApprovalService {
                           AuditLogService auditLogService,
                           SortOrderService sortOrderService,
                           StreamIndexService streamIndexService,
-                          UserRepository userRepository) {
+                          UserRepository userRepository,
+                          ImportGraduationService importGraduationService) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
@@ -61,6 +63,7 @@ public class ApprovalService {
         this.sortOrderService = sortOrderService;
         this.streamIndexService = streamIndexService;
         this.userRepository = userRepository;
+        this.importGraduationService = importGraduationService;
     }
 
     /**
@@ -1129,6 +1132,13 @@ public class ApprovalService {
         // Create audit log
         auditLogService.logApproval("channel", channel.getId(), actorUid, actorDisplayName, request.getReviewNotes());
 
+        // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
+        try {
+            importGraduationService.onApproved(YouTubeContentType.CHANNEL, channel.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on channel approve youtubeId={}: {}", channel.getYoutubeId(), e.getMessage());
+        }
+
         // Return response
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("APPROVED");
@@ -1191,6 +1201,13 @@ public class ApprovalService {
         // Create audit log
         auditLogService.logApproval("playlist", playlist.getId(), actorUid, actorDisplayName, request.getReviewNotes());
 
+        // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
+        try {
+            importGraduationService.onApproved(YouTubeContentType.PLAYLIST, playlist.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on playlist approve youtubeId={}: {}", playlist.getYoutubeId(), e.getMessage());
+        }
+
         // Return response
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("APPROVED");
@@ -1237,6 +1254,13 @@ public class ApprovalService {
                 streamIndexService.removeSource("CHANNEL", channel.getYoutubeId()));
         }
 
+        // Fan-out: tombstone AWAITING per-user Me-list rows (swallows its own errors)
+        try {
+            importGraduationService.onRejected(YouTubeContentType.CHANNEL, channel.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on channel reject youtubeId={}: {}", channel.getYoutubeId(), e.getMessage());
+        }
+
         // Return response
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("REJECTED");
@@ -1281,6 +1305,13 @@ public class ApprovalService {
         if (playlist.getYoutubeId() != null) {
             CompletableFuture.runAsync(() ->
                 streamIndexService.removeSource("PLAYLIST", playlist.getYoutubeId()));
+        }
+
+        // Fan-out: tombstone AWAITING per-user Me-list rows (swallows its own errors)
+        try {
+            importGraduationService.onRejected(YouTubeContentType.PLAYLIST, playlist.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on playlist reject youtubeId={}: {}", playlist.getYoutubeId(), e.getMessage());
         }
 
         // Return response
@@ -1340,6 +1371,13 @@ public class ApprovalService {
 
         auditLogService.logApproval("video", video.getId(), actorUid, actorDisplayName, request.getReviewNotes());
 
+        // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
+        try {
+            importGraduationService.onApproved(YouTubeContentType.VIDEO, video.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on video approve youtubeId={}: {}", video.getYoutubeId(), e.getMessage());
+        }
+
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("APPROVED");
         response.setReviewedAt(metadata.getReviewedAt());
@@ -1374,6 +1412,13 @@ public class ApprovalService {
         details.put("reason", request.getReason());
         details.put("notes", request.getReviewNotes());
         auditLogService.logRejection("video", video.getId(), actorUid, actorDisplayName, details);
+
+        // Fan-out: tombstone AWAITING per-user Me-list rows (swallows its own errors)
+        try {
+            importGraduationService.onRejected(YouTubeContentType.VIDEO, video.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on video reject youtubeId={}: {}", video.getYoutubeId(), e.getMessage());
+        }
 
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("REJECTED");

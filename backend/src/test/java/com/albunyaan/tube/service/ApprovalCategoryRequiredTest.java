@@ -46,6 +46,7 @@ class ApprovalCategoryRequiredTest {
     @Mock private SortOrderService sortOrderService;
     @Mock private StreamIndexService streamIndexService;
     @Mock private UserRepository userRepository;
+    @Mock private ImportGraduationService graduationService;
 
     private ApprovalService approvalService;
 
@@ -60,7 +61,8 @@ class ApprovalCategoryRequiredTest {
                 auditLogService,
                 sortOrderService,
                 streamIndexService,
-                userRepository
+                userRepository,
+                graduationService
         );
     }
 

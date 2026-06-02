@@ -54,6 +54,9 @@ class ApprovalServiceRequestChangesTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private ImportGraduationService graduationService;
+
     private ApprovalService approvalService;
 
     @BeforeEach
@@ -67,7 +70,8 @@ class ApprovalServiceRequestChangesTest {
                 auditLogService,
                 sortOrderService,
                 streamIndexService,
-                userRepository
+                userRepository,
+                graduationService
         );
     }
 

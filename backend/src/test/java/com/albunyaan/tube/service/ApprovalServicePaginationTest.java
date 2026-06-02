@@ -64,6 +64,9 @@ class ApprovalServicePaginationTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private ImportGraduationService graduationService;
+
     private ApprovalService approvalService;
 
     @BeforeEach
@@ -77,7 +80,8 @@ class ApprovalServicePaginationTest {
                 auditLogService,
                 sortOrderService,
                 streamIndexService,
-                userRepository
+                userRepository,
+                graduationService
         );
     }
 
