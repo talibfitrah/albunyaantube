@@ -15,6 +15,23 @@ interface SavedPlaylistDao {
     @Query("SELECT * FROM saved_playlists WHERE user_id = :uid AND deleted = 0 ORDER BY savedAt DESC")
     suspend fun getAll(uid: String): List<SavedPlaylist>
 
+    // ── Feed-composition queries (approval_status filtered) ───────────────────
+    // These are the only queries that may filter by approval_status. The
+    // unfiltered observeAll / getAll above are shared with SyncManager (push,
+    // pull, merge) and must remain untouched.
+
+    /** Me-feed composition: live list of APPROVED saved playlists (B2). */
+    @Query("SELECT * FROM saved_playlists WHERE user_id = :uid AND deleted = 0 AND approval_status = 'APPROVED' ORDER BY savedAt DESC")
+    fun observeApprovedPlaylists(uid: String): Flow<List<SavedPlaylist>>
+
+    /** Me-feed composition: one-shot snapshot of APPROVED saved playlists (B2). */
+    @Query("SELECT * FROM saved_playlists WHERE user_id = :uid AND deleted = 0 AND approval_status = 'APPROVED' ORDER BY savedAt DESC")
+    suspend fun getApprovedSavedPlaylists(uid: String): List<SavedPlaylist>
+
+    /** Awaiting-review surface: live list of AWAITING saved playlists (B2). */
+    @Query("SELECT * FROM saved_playlists WHERE user_id = :uid AND deleted = 0 AND approval_status = 'AWAITING' ORDER BY savedAt DESC")
+    fun observeAwaitingPlaylists(uid: String): Flow<List<SavedPlaylist>>
+
     @Query("SELECT * FROM saved_playlists WHERE playlistId = :id AND user_id = :uid AND deleted = 0")
     suspend fun getById(uid: String, id: String): SavedPlaylist?
 
