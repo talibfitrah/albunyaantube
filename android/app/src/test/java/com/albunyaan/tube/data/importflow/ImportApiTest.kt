@@ -1,8 +1,8 @@
-package com.albunyaan.tube.data.`import`
+package com.albunyaan.tube.data.importflow
 
-import com.albunyaan.tube.data.`import`.dto.ImportItemDto
-import com.albunyaan.tube.data.`import`.dto.ImportResolveRequestDto
-import com.albunyaan.tube.data.`import`.dto.ImportResolveResponseDto
+import com.albunyaan.tube.data.importflow.dto.ImportItemDto
+import com.albunyaan.tube.data.importflow.dto.ImportResolveRequestDto
+import com.albunyaan.tube.data.importflow.dto.ImportResolveResponseDto
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.test.runTest

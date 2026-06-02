@@ -1,4 +1,4 @@
-package com.albunyaan.tube.data.`import`
+package com.albunyaan.tube.data.importflow
 
 /**
  * B9: Live progress snapshot emitted by [YouTubeImportRepository.progress]

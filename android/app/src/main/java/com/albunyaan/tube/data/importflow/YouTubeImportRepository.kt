@@ -1,17 +1,19 @@
-package com.albunyaan.tube.data.`import`
+package com.albunyaan.tube.data.importflow
 
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.currentUid
-import com.albunyaan.tube.data.`import`.ImportProgress.Phase
-import com.albunyaan.tube.data.`import`.dto.ImportItemDto
-import com.albunyaan.tube.data.`import`.dto.ImportResolveRequestDto
-import com.albunyaan.tube.data.`import`.dto.ImportResultDto
+import com.albunyaan.tube.data.importflow.ImportProgress.Phase
+import com.albunyaan.tube.data.importflow.dto.ImportItemDto
+import com.albunyaan.tube.data.importflow.dto.ImportResolveRequestDto
+import com.albunyaan.tube.data.importflow.dto.ImportResultDto
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.SavedPlaylist
 import com.albunyaan.tube.data.local.SubscribedChannel
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import com.albunyaan.tube.data.youtube.CandidateType
 import com.albunyaan.tube.data.youtube.ImportCandidate
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,12 +35,10 @@ import kotlinx.coroutines.flow.asStateFlow
  *       - REJECTED / ERROR / unknown → NOT written; counted as [skipped].
  *  4. Progress is emitted via [progress] as a [StateFlow<ImportProgress>].
  *
- * Hilt @Singleton/@Inject annotations are applied in B15 (DI module). Omitted
- * here because KSP would generate a Java factory in package
- * `com.albunyaan.tube.data.import`, which is invalid Java (`import` is reserved).
- * The B15 module will provide this class via a @Provides function instead.
+ * Hilt-injected singleton; the [ImportApi] dependency is provided by the DI module (B15).
  */
-class YouTubeImportRepository(
+@Singleton
+class YouTubeImportRepository @Inject constructor(
     private val importApi: ImportApi,
     private val subscriptionRepository: SubscriptionRepository,
     private val favoritesRepository: FavoritesRepository,

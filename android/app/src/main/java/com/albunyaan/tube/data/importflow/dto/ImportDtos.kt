@@ -1,4 +1,4 @@
-package com.albunyaan.tube.data.`import`.dto
+package com.albunyaan.tube.data.importflow.dto
 
 import com.albunyaan.tube.data.model.api.models.ContentItemDto
 import com.squareup.moshi.Json

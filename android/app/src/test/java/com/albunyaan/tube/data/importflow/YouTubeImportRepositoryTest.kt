@@ -1,10 +1,10 @@
-package com.albunyaan.tube.data.`import`
+package com.albunyaan.tube.data.importflow
 
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountState
-import com.albunyaan.tube.data.`import`.dto.ImportResolveRequestDto
-import com.albunyaan.tube.data.`import`.dto.ImportResolveResponseDto
-import com.albunyaan.tube.data.`import`.dto.ImportResultDto
+import com.albunyaan.tube.data.importflow.dto.ImportResolveRequestDto
+import com.albunyaan.tube.data.importflow.dto.ImportResolveResponseDto
+import com.albunyaan.tube.data.importflow.dto.ImportResultDto
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.SavedPlaylist
