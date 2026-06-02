@@ -90,6 +90,13 @@ public class PendingApprovalDto {
     private String submitterNote;
 
     /**
+     * Submission source — e.g. "USER_IMPORT", "ADMIN", "MODERATOR", "BULK".
+     * Nullable; null means the item predates source tracking or was submitted
+     * through an untracked path.
+     */
+    private String source;
+
+    /**
      * Additional metadata (subscribers, video count, etc.)
      */
     private Map<String, Object> metadata;
@@ -218,6 +225,14 @@ public class PendingApprovalDto {
 
     public void setYoutubeId(String youtubeId) {
         this.youtubeId = youtubeId;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
     }
 
     public Map<String, Object> getMetadata() {

@@ -930,6 +930,7 @@ public class ApprovalService {
         dto.setSubmittedAt(channel.getCreatedAt());
         dto.setSubmittedBy(channel.getSubmittedBy());
         dto.setSubmitterNote(channel.getSubmitterNote());
+        dto.setSource(channel.getSource());
 
         // Enrich with submitter details
         if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
@@ -986,6 +987,7 @@ public class ApprovalService {
         dto.setSubmittedAt(playlist.getCreatedAt());
         dto.setSubmittedBy(playlist.getSubmittedBy());
         dto.setSubmitterNote(playlist.getSubmitterNote());
+        dto.setSource(playlist.getSource());
 
         // Enrich with submitter details
         if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
@@ -1036,6 +1038,7 @@ public class ApprovalService {
         dto.setSubmittedAt(video.getCreatedAt());
         dto.setSubmittedBy(video.getSubmittedBy());
         dto.setSubmitterNote(video.getSubmitterNote());
+        dto.setSource(video.getSource());
 
         // Enrich with submitter details
         if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
