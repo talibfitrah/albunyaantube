@@ -157,7 +157,7 @@ public class UserImportSubmissionService {
      * Unknown statuses (e.g. ARCHIVED, UNAVAILABLE) map to PENDING so the
      * caller sees "not yet approved" rather than silently failing.
      */
-    static ImportDisposition statusToDisposition(String status) {
+    public static ImportDisposition statusToDisposition(String status) {
         if (status == null) return ImportDisposition.PENDING;
         return switch (status.toUpperCase()) {
             case "APPROVED"   -> ImportDisposition.APPROVED;

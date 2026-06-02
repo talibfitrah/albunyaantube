@@ -176,7 +176,22 @@ class ImportControllerTest {
         verify(submissions).submit(any(ImportItem.class), eq(TEST_UID));
     }
 
-    // ── Test 3: service exception on one item → ERROR, others unaffected ─
+    // ── Test 3: unauthenticated request → 401 ────────────────────────────
+
+    @Test
+    void unauthenticatedReturns401() throws Exception {
+        SecurityContextHolder.clearContext();
+        // One valid item so @NotEmpty passes; principal is null because context was cleared.
+        ImportResolveRequest req = new ImportResolveRequest(List.of(
+                new ImportItem(YouTubeContentType.CHANNEL, "ch-anon", "Anon Channel", null, null)
+        ));
+        mvc.perform(post("/api/account/import/resolve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(req)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ── Test 4: service exception on one item → ERROR, others unaffected ─
 
     @Test
     void serviceExceptionOnOneItemYieldsErrorOthersUnaffected() throws Exception {

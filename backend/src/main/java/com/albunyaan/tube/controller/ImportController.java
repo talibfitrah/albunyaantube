@@ -1,6 +1,7 @@
 package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.dto.ContentItemDto;
+import com.albunyaan.tube.dto.ContentItemMapper;
 import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.dto.importflow.ImportDisposition;
 import com.albunyaan.tube.dto.importflow.ImportItem;
@@ -24,9 +25,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -84,7 +82,7 @@ public class ImportController {
                 if (existing.isPresent()) {
                     Object model = existing.get();
                     String status = statusOf(model);
-                    ImportDisposition disposition = statusToDisposition(status);
+                    ImportDisposition disposition = UserImportSubmissionService.statusToDisposition(status);
                     ContentItemDto dto = disposition == ImportDisposition.APPROVED
                             ? toDto(model, item.type())
                             : null;
@@ -102,21 +100,6 @@ public class ImportController {
     }
 
     // ── private helpers ─────────────────────────────────────────────────
-
-    /**
-     * Maps a Firestore status string to an {@link ImportDisposition}.
-     * Mirrors {@code UserImportSubmissionService.statusToDisposition} exactly — unknown/null
-     * statuses (ARCHIVED, UNAVAILABLE, etc.) map to PENDING so the caller sees "not approved yet"
-     * rather than a silent error.
-     */
-    private static ImportDisposition statusToDisposition(String status) {
-        if (status == null) return ImportDisposition.PENDING;
-        return switch (status.toUpperCase()) {
-            case "APPROVED" -> ImportDisposition.APPROVED;
-            case "REJECTED" -> ImportDisposition.REJECTED;
-            default         -> ImportDisposition.PENDING;
-        };
-    }
 
     private Optional<?> lookup(ImportItem item)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -137,57 +120,14 @@ public class ImportController {
     }
 
     /**
-     * Maps a registry model to a {@link ContentItemDto} using the same static builder pattern as
-     * {@code PublicContentService.toDto()} — kept in sync with that implementation.
-     *
-     * <p>Only called when {@code disposition == APPROVED}, so null category / metadata are
-     * acceptable (same trade-off as the public content controller).
+     * Maps a registry model to a {@link ContentItemDto} via {@link ContentItemMapper}.
+     * Only called when {@code disposition == APPROVED}.
      */
     private static ContentItemDto toDto(Object model, YouTubeContentType type) {
         return switch (type) {
-            case CHANNEL -> {
-                Channel ch = (Channel) model;
-                yield ContentItemDto.channel(
-                        ch.getYoutubeId(),
-                        ch.getName(),
-                        ch.getCategory() != null ? ch.getCategory().getName() : null,
-                        ch.getSubscribers(),
-                        ch.getDescription(),
-                        ch.getThumbnailUrl(),
-                        ch.getVideoCount(),
-                        ch.getKeywords());
-            }
-            case PLAYLIST -> {
-                Playlist pl = (Playlist) model;
-                yield ContentItemDto.playlist(
-                        pl.getYoutubeId(),
-                        pl.getTitle(),
-                        pl.getCategory() != null ? pl.getCategory().getName() : null,
-                        pl.getItemCount(),
-                        pl.getDescription(),
-                        pl.getThumbnailUrl(),
-                        pl.getKeywords());
-            }
-            case VIDEO -> {
-                Video v = (Video) model;
-                int durationSeconds = v.getDurationSeconds() != null ? v.getDurationSeconds() : 0;
-                LocalDateTime uploadedAt = v.getUploadedAt() != null
-                        ? v.getUploadedAt().toDate().toInstant()
-                                .atZone(ZoneId.systemDefault()).toLocalDateTime()
-                        : LocalDateTime.now();
-                int uploadedDaysAgo = (int) ChronoUnit.DAYS.between(uploadedAt, LocalDateTime.now());
-                yield ContentItemDto.video(
-                        v.getYoutubeId(),
-                        v.getTitle(),
-                        null,                // category name — same trade-off as PublicContentService
-                        durationSeconds,
-                        uploadedDaysAgo,
-                        v.getDescription(),
-                        v.getThumbnailUrl(),
-                        v.getViewCount(),
-                        v.getChannelTitle(),
-                        v.getKeywords());
-            }
+            case CHANNEL  -> ContentItemMapper.fromChannel((Channel) model);
+            case PLAYLIST -> ContentItemMapper.fromPlaylist((Playlist) model);
+            case VIDEO    -> ContentItemMapper.fromVideo((Video) model);
             default -> throw new IllegalArgumentException(
                     "Unsupported content type for DTO mapping: " + type);
         };
