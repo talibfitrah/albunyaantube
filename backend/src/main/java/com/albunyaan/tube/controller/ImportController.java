@@ -112,6 +112,11 @@ public class ImportController {
                     out.add(new ImportResult(item.youtubeId(), item.type(), disposition, null));
                 }
             } catch (Exception e) {
+                // Per-item resilience is intentional and tested
+                // (serviceExceptionOnOneItemYieldsErrorOthersUnaffected): one item's failure
+                // must not fail the whole batch. A review flagged that a sustained outage then
+                // returns 200-with-all-ERROR; that's a deliberate trade and would be a product
+                // decision (it contradicts the test), not a silent pipeline change.
                 log.warn("Import resolve failed for youtubeId={} type={}", item.youtubeId(), item.type(), e);
                 out.add(new ImportResult(item.youtubeId(), item.type(), ImportDisposition.ERROR, null));
             }

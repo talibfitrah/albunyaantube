@@ -309,6 +309,7 @@ export const messages = {
       submitterNote: 'Submitter\'s message',
       sourceUserImport: 'User import',
       categoryRequired: 'Select a category to approve',
+      selectCategory: 'Select a category',
       loadCategoriesError: 'Couldn\'t load categories. Refresh to try again.',
       rejectDialog: {
         title: 'Reject Submission',
@@ -1877,6 +1878,7 @@ export const messages = {
       submitterNote: 'رسالة المقدم',
       sourceUserImport: 'استيراد مستخدم',
       categoryRequired: 'اختر فئة للموافقة',
+      selectCategory: 'اختر فئة',
       loadCategoriesError: 'تعذّر تحميل الفئات. أعد تحميل الصفحة للمحاولة مجددًا.',
       rejectDialog: {
         title: 'رفض الطلب',
@@ -3226,6 +3228,7 @@ export const messages = {
       submitterNote: 'Bericht van indiener',
       sourceUserImport: 'Gebruikersimport',
       categoryRequired: 'Selecteer een categorie om goed te keuren',
+      selectCategory: 'Selecteer een categorie',
       loadCategoriesError: 'Categorieën konden niet worden geladen. Vernieuw de pagina om het opnieuw te proberen.',
       rejectDialog: {
         title: 'Indiening afwijzen',

@@ -130,10 +130,14 @@ class YouTubeImportRepository @Inject constructor(
                         added++
                     }
                     "PENDING" -> {
+                        // Count as "sent for review" only when a row is actually written.
+                        // candidate is null only if the backend returns a youtubeId absent from
+                        // the request chunk (near-impossible); writePending is skipped there, so
+                        // the count must be too, otherwise the summary over-reports by one.
                         if (candidate != null) {
                             writePending(uid, now, candidate)
+                            sentForReview++
                         }
-                        sentForReview++
                     }
                     else -> {
                         // "REJECTED", "ERROR", or any unknown disposition — do not write

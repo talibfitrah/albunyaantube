@@ -46,6 +46,11 @@ class QualityTrackSelector(
     @Volatile private var ceilingHeight: Int = Int.MAX_VALUE
     @Volatile private var ceilingBitrate: Int = Int.MAX_VALUE
     @Volatile private var manualLockActive: Boolean = false
+    // Active AUTO/AUTO_RECOVERY cap height (Int.MAX_VALUE == none). Unlike a MANUAL lock this
+    // is NOT protected by manualLockActive, so re-applying the network ceiling must clamp to it
+    // — otherwise a recovery step-down (e.g. 480p) is silently widened back to the ceiling on the
+    // next ceiling re-apply (cache-hit re-prepare), letting ABR climb back into the failing quality.
+    @Volatile private var autoCapHeight: Int = Int.MAX_VALUE
 
     init {
         // Configure parameters for better quality selection
@@ -95,6 +100,7 @@ class QualityTrackSelector(
                 // The effective ceiling is the tighter of the requested cap and the network
                 // ceiling, and we also clamp the bitrate so ABR cannot climb into a stall.
                 manualLockActive = false
+                autoCapHeight = height // remembered so a later ceiling re-apply can't widen past it
                 val effectiveHeight = minOf(height, ceilingHeight)
                 Log.d(TAG, "Applying quality CAP: max ${effectiveHeight}p (req ${height}p, ceiling ${ceilingHeight}p), bitrate≤${ceilingBitrate}")
                 buildUponParameters()
@@ -149,6 +155,7 @@ class QualityTrackSelector(
      */
     fun selectAutoQuality() {
         manualLockActive = false
+        autoCapHeight = Int.MAX_VALUE // free ABR — drop any prior recovery/cold-start cap
         Log.d(TAG, "Selecting AUTO quality: ABR enabled, ceiling maxHeight=${ceilingHeight}p bitrate≤${ceilingBitrate}")
         applyAutoWithCeiling()
     }
@@ -158,8 +165,11 @@ class QualityTrackSelector(
      * With no ceiling (WiFi) this is equivalent to clearing all constraints.
      */
     private fun applyAutoWithCeiling() {
+        // Clamp to BOTH the network ceiling and any active AUTO cap (recovery step-down /
+        // cold-start), so re-applying the ceiling never widens past a deliberate cap.
+        val maxHeight = minOf(ceilingHeight, autoCapHeight)
         parameters = buildUponParameters()
-            .setMaxVideoSize(Int.MAX_VALUE, ceilingHeight)
+            .setMaxVideoSize(Int.MAX_VALUE, maxHeight)
             .setMaxVideoBitrate(ceilingBitrate)
             .setMinVideoSize(0, 0)
             .setForceHighestSupportedBitrate(false)

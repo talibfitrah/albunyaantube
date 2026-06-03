@@ -187,7 +187,7 @@
             class="category-override-select"
             @change="onCategoryOverrideChange(item.id, ($event.target as HTMLSelectElement).value)"
           >
-            <option value="">{{ t('approvals.filters.allCategories') }}</option>
+            <option value="">{{ t('approvals.selectCategory') }}</option>
             <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">
               {{ cat.label }}
             </option>

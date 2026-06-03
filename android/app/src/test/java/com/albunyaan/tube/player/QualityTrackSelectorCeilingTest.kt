@@ -85,6 +85,21 @@ class QualityTrackSelectorCeilingTest {
     }
 
     @Test
+    fun `ceiling re-apply does not widen past an active AUTO_RECOVERY cap`() {
+        val s = newSelector()
+        // Recovery clamps to 480p on WiFi (no network ceiling).
+        s.applyQualityConstraint(480, QualityConstraintMode.CAP)
+        assertEquals(480, s.parameters.maxVideoHeight)
+        // A cache-hit re-prepare re-applies the (WiFi/unbounded) ceiling. The recovery cap
+        // must survive — otherwise ABR climbs straight back into the quality that just stalled.
+        s.applyNetworkCeiling(null, null)
+        assertEquals("recovery CAP must survive a ceiling re-apply", 480, s.parameters.maxVideoHeight)
+        // selectAutoQuality (a genuine return to free ABR) is what clears it.
+        s.selectAutoQuality()
+        assertEquals(Int.MAX_VALUE, s.parameters.maxVideoHeight)
+    }
+
+    @Test
     fun `clearing the ceiling restores unbounded ABR (WiFi)`() {
         val s = newSelector()
         s.applyNetworkCeiling(720, 2_500_000)
