@@ -2,11 +2,13 @@ package com.albunyaan.tube.di
 
 import android.content.Context
 import com.albunyaan.tube.BuildConfig
+import com.albunyaan.tube.data.importflow.ImportApi
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.DownloadApi
 import com.albunyaan.tube.data.source.api.IndexApi
 import com.albunyaan.tube.data.source.api.ReportApi
 import com.albunyaan.tube.data.sync.SyncApi
+import com.albunyaan.tube.data.youtube.YouTubeImportApi
 import com.squareup.moshi.FromJson
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.ToJson
@@ -177,6 +179,52 @@ object NetworkModule {
     @Singleton
     fun provideYouTubeSearchApi(retrofit: Retrofit): com.albunyaan.tube.data.search.YouTubeSearchApi =
         retrofit.create(com.albunyaan.tube.data.search.YouTubeSearchApi::class.java)
+
+    // ── Import feature (B15) ────────────────────────────────────────────────
+
+    /**
+     * B15: Provides the backend ImportApi using the existing authenticated Retrofit
+     * (Firebase-auth interceptor + backend base URL). POST /api/account/import/resolve
+     * is an authenticated endpoint so the shared Retrofit is correct here.
+     */
+    @Provides
+    @Singleton
+    fun provideImportApi(retrofit: Retrofit): ImportApi =
+        retrofit.create(ImportApi::class.java)
+
+    /**
+     * B15: Provides the YouTubeImportApi backed by a dedicated Retrofit instance
+     * targeting https://www.googleapis.com/youtube/v3/.
+     *
+     * A clean OkHttpClient is constructed here (no Firebase-auth interceptor,
+     * no X-Device-Id header, no AccountStatusInterceptor). The YouTube OAuth
+     * bearer token is passed per-call as an Authorization header param — adding
+     * Firebase credentials to this client would be incorrect and a security risk.
+     *
+     * The shared Moshi singleton is reused (YouTube API uses standard JSON;
+     * OffsetDateTimeAdapter and FirestoreTimestampAdapter are harmless extras).
+     *
+     * Return type is YouTubeImportApi (not Retrofit), so there is no ambiguous
+     * Retrofit binding in the graph.
+     */
+    @Provides
+    @Singleton
+    fun provideYouTubeImportApi(moshi: Moshi): YouTubeImportApi {
+        val youtubeClient = OkHttpClient.Builder()
+            .addNetworkInterceptor(HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BASIC
+            })
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .build()
+        return Retrofit.Builder()
+            .baseUrl("https://www.googleapis.com/youtube/v3/")
+            .client(youtubeClient)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+            .create(YouTubeImportApi::class.java)
+    }
 }
 
 /** Moshi adapter for java.time.OffsetDateTime used in OpenAPI-generated models. */

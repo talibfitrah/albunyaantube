@@ -62,6 +62,9 @@
         <action
             android:id="@+id/action_me_to_suggestContent"
             app:destination="@id/suggestContentFragment" />
+        <action
+            android:id="@+id/action_me_to_importFromYouTube"
+            app:destination="@id/importFromYouTubeFragment" />
     </fragment>
 
     <fragment
@@ -81,6 +84,12 @@
         android:name="com.albunyaan.tube.ui.me.suggest.SuggestContentFragment"
         android:label="@string/me_kebab_suggest_content"
         tools:layout="@layout/fragment_suggest_content" />
+
+    <fragment
+        android:id="@+id/importFromYouTubeFragment"
+        android:name="com.albunyaan.tube.ui.me.importflow.ImportFromYouTubeFragment"
+        android:label="@string/import_youtube_title"
+        tools:layout="@layout/fragment_import_youtube" />
 
     <fragment
         android:id="@+id/downloadsFragment"

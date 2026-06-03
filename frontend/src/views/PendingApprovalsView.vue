@@ -75,6 +75,11 @@
     </div>
 
     <!-- Loading State -->
+    <!-- cubic-P2: non-blocking categories-load warning — renders alongside the queue, never replaces it -->
+    <div v-if="categoriesError" class="error-panel" role="alert">
+      <p>{{ categoriesError }}</p>
+    </div>
+
     <div v-if="isLoading && !approvals.length" class="loading">
       <div class="spinner"></div>
       <p>{{ t('approvals.loading') }}</p>
@@ -95,7 +100,12 @@
     <div v-else class="approvals-grid">
       <div v-for="item in approvals" :key="item.id" class="approval-card">
         <div class="card-header">
-          <span class="content-type">{{ t(`approvals.types.${item.type}`) }}</span>
+          <div class="card-header-left">
+            <span class="content-type">{{ t(`approvals.types.${item.type}`) }}</span>
+            <span v-if="item.source === 'USER_IMPORT'" class="source-badge source-user-import">
+              {{ t('approvals.sourceUserImport') }}
+            </span>
+          </div>
           <div class="card-header-right">
             <span v-if="isModeratorView && item.status" :class="['status-badge', `status-${item.status.toLowerCase()}`]">
               {{ t(`approvals.statusTabs.${item.status.toLowerCase()}`) }}
@@ -163,6 +173,27 @@
           </div>
         </div>
 
+        <!-- Category selector: shown only for admin view on items with no categories -->
+        <div
+          v-if="authStore.isAdmin && (!item.categories || item.categories.length === 0)"
+          class="category-required-row"
+        >
+          <label :for="`cat-select-${item.id}`" class="meta-label">
+            {{ t('approvals.categoryRequired') }}
+          </label>
+          <select
+            :id="`cat-select-${item.id}`"
+            :value="selectedCategoryOverrides[item.id] ?? ''"
+            class="category-override-select"
+            @change="onCategoryOverrideChange(item.id, ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">{{ t('approvals.filters.allCategories') }}</option>
+            <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">
+              {{ cat.label }}
+            </option>
+          </select>
+        </div>
+
         <div class="card-footer">
           <div class="submitted-by">
             <span class="meta-label">{{ t('approvals.submittedBy') }}:</span>
@@ -190,7 +221,8 @@
               v-if="authStore.isAdmin"
               type="button"
               class="action-btn approve"
-              :disabled="processingId === item.id"
+              :disabled="processingId === item.id || !canApprove(item)"
+              :title="!canApprove(item) ? t('approvals.categoryRequired') : undefined"
               @click="handleApprove(item)"
             >
               <span v-if="processingId === item.id">{{ t('approvals.approving') }}</span>
@@ -365,6 +397,36 @@ const isLoading = ref(false);
 const error = ref<string | null>(null);
 const processingId = ref<string | null>(null);
 
+/**
+ * Per-card category override selections. Keyed by item.id.
+ * Only relevant for items with no existing categories (user-import items arrive
+ * with empty categoryIds — the backend enforces a category before approving).
+ */
+const selectedCategoryOverrides = ref<Record<string, string>>({});
+
+function onCategoryOverrideChange(itemId: string, categoryId: string) {
+  if (categoryId) {
+    selectedCategoryOverrides.value[itemId] = categoryId;
+  } else {
+    delete selectedCategoryOverrides.value[itemId];
+  }
+}
+
+/** Returns true when the item already has at least one category assigned. */
+function itemHasCategories(item: any): boolean {
+  return !!(item.categories && item.categories.length > 0);
+}
+
+/**
+ * Returns true when the Approve button may be clicked for this item.
+ * Items that already have at least one category approve unconditionally.
+ * Items with no categories require the admin to pick a category first.
+ */
+function canApprove(item: any): boolean {
+  if (itemHasCategories(item)) return true;
+  return !!selectedCategoryOverrides.value[item.id];
+}
+
 const showRejectDialog = ref(false);
 const rejectItem = ref<any | null>(null);
 const rejectReason = ref('');
@@ -390,12 +452,19 @@ const displayPendingCount = computed(() => {
   return approvals.value.length;
 });
 
+const categoriesError = ref<string | null>(null);
+
 async function loadCategories() {
   try {
     const cats = await getAllCategories();
     categories.value = cats;
+    categoriesError.value = null;
   } catch (err) {
+    // cubic-P2: surface on a SEPARATE ref — do NOT write the blocking `error` ref,
+    // which gates the main panel and would hide the entire approvals queue when only
+    // the categories endpoint is down (the approvals list may have loaded fine).
     console.error('Failed to load categories', err);
+    categoriesError.value = t('approvals.loadCategoriesError');
   }
 }
 
@@ -463,10 +532,18 @@ function loadMore() {
 
 async function handleApprove(item: any) {
   if (processingId.value) return;
+  if (!canApprove(item)) return;
+
+  // Determine category override: only send for items with no existing categories
+  const categoryOverride = !itemHasCategories(item)
+    ? selectedCategoryOverrides.value[item.id]
+    : undefined;
 
   processingId.value = item.id;
   try {
-    await approveItem(item.id, item.type);
+    await approveItem(item.id, item.type, categoryOverride);
+    // Clear the per-item override after a successful approve
+    delete selectedCategoryOverrides.value[item.id];
     await loadApprovals();
     loadPendingCount();
   } catch (err) {
@@ -852,12 +929,59 @@ onMounted(() => {
   line-height: 1.5;
 }
 
+.card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .content-type {
   font-size: 0.8125rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-brand);
+}
+
+.source-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+}
+
+.source-user-import {
+  background: rgba(139, 92, 246, 0.12);
+  color: #7c3aed;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.category-required-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1.5rem;
+  background: var(--color-warning-soft, rgba(245, 158, 11, 0.08));
+  border-top: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-warning, #f59e0b);
+}
+
+.category-required-row .meta-label {
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+
+.category-override-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.75rem;
+  border: 1.5px solid var(--color-border);
+  border-radius: 0.375rem;
+  background: var(--color-surface);
+  font-size: 0.875rem;
+  cursor: pointer;
 }
 
 .submitted-date {

@@ -844,6 +844,8 @@ class PlayerViewModelPlaylistPagingTest {
         private val favorites = MutableStateFlow<List<FavoriteVideo>>(emptyList())
 
         override fun getAllFavorites(): Flow<List<FavoriteVideo>> = favorites
+        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
+        override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
 
         override fun isFavorite(videoId: String): Flow<Boolean> {
             return favorites.map { list -> list.any { it.videoId == videoId } }
@@ -891,6 +893,16 @@ class PlayerViewModelPlaylistPagingTest {
         }
 
         override fun getFavoriteCount(): Flow<Int> = favorites.map { it.size }
+
+        override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean =
+            favorites.value.any { it.videoId == videoId }
+
+        override suspend fun addImportedFavorite(
+            uid: String,
+            videoId: String, title: String, channelName: String,
+            thumbnailUrl: String?, durationSeconds: Int,
+            approvalStatus: String, source: String?, importedAt: Long?,
+        ) = addFavorite(videoId, title, channelName, thumbnailUrl, durationSeconds)
 
         override suspend fun clearAll() {
             favorites.value = emptyList()

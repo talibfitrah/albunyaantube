@@ -64,6 +64,9 @@ class ApprovalServicePaginationTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private ImportGraduationService graduationService;
+
     private ApprovalService approvalService;
 
     @BeforeEach
@@ -77,7 +80,8 @@ class ApprovalServicePaginationTest {
                 auditLogService,
                 sortOrderService,
                 streamIndexService,
-                userRepository
+                userRepository,
+                graduationService
         );
     }
 
@@ -1065,6 +1069,8 @@ class ApprovalServicePaginationTest {
 
         ApprovalRequestDto request = new ApprovalRequestDto("Good content");
         request.setCategoryOverride("new-cat");
+        // F11: the override must reference an existing category for approve to succeed.
+        when(categoryRepository.findById("new-cat")).thenReturn(Optional.of(new com.albunyaan.tube.model.Category()));
         approvalService.approve("video-1", request, "admin-uid", "admin@test.com");
 
         verify(videoRepository).saveIfStatus(argThat(v ->

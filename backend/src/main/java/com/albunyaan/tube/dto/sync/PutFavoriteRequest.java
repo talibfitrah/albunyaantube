@@ -57,4 +57,33 @@ public class PutFavoriteRequest {
     public void setAddedAt(Long v) {
         this.addedAt = v;
     }
+
+    // A10 — import metadata fields
+    private String approvalStatus;
+    private String source;
+    private Long importedAt;
+
+    public String getApprovalStatus() {
+        return approvalStatus;
+    }
+
+    public void setApprovalStatus(String v) {
+        this.approvalStatus = v;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String v) {
+        this.source = v;
+    }
+
+    public Long getImportedAt() {
+        return importedAt;
+    }
+
+    public void setImportedAt(Long v) {
+        this.importedAt = v;
+    }
 }

@@ -50,6 +50,27 @@ public class RegistrySubmissionWriter {
     );
 
     /**
+     * Zero-width and bidi-override controls (U+200B, U+202A–U+202E, U+2060, U+FEFF).
+     * Mirrors RegistryController's submitterNote strip. These can spoof how a
+     * client-supplied title renders in the admin approval UI (e.g. an RTL-override
+     * making text read backwards). Vue escapes HTML so this is not XSS, but the
+     * display-spoofing of a moderator's view is real.
+     */
+    private static final java.util.regex.Pattern ZERO_WIDTH_BIDI =
+            java.util.regex.Pattern.compile("[\\u200B\\u202A-\\u202E\\u2060\\uFEFF]");
+
+    /**
+     * Strip zero-width / bidi-override controls from client-supplied display text
+     * (e.g. imported channel/playlist/video titles) and trim. Null or
+     * effectively-empty input returns null so callers fall back to a safe default.
+     */
+    public static String sanitizeText(String raw) {
+        if (raw == null) return null;
+        String stripped = ZERO_WIDTH_BIDI.matcher(raw.strip()).replaceAll("").strip();
+        return stripped.isEmpty() ? null : stripped;
+    }
+
+    /**
      * Reject thumbnailUrl pointing to non-YouTube CDN hosts.
      * Returns null (no thumbnail) for unsafe URLs; the UI falls back to a placeholder.
      */

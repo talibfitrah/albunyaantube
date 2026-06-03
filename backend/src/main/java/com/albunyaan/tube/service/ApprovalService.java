@@ -42,6 +42,7 @@ public class ApprovalService {
     private final SortOrderService sortOrderService;
     private final StreamIndexService streamIndexService;
     private final UserRepository userRepository;
+    private final ImportGraduationService importGraduationService;
 
     public ApprovalService(ChannelRepository channelRepository,
                           PlaylistRepository playlistRepository,
@@ -51,7 +52,8 @@ public class ApprovalService {
                           AuditLogService auditLogService,
                           SortOrderService sortOrderService,
                           StreamIndexService streamIndexService,
-                          UserRepository userRepository) {
+                          UserRepository userRepository,
+                          ImportGraduationService importGraduationService) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
@@ -61,6 +63,7 @@ public class ApprovalService {
         this.sortOrderService = sortOrderService;
         this.streamIndexService = streamIndexService;
         this.userRepository = userRepository;
+        this.importGraduationService = importGraduationService;
     }
 
     /**
@@ -927,6 +930,7 @@ public class ApprovalService {
         dto.setSubmittedAt(channel.getCreatedAt());
         dto.setSubmittedBy(channel.getSubmittedBy());
         dto.setSubmitterNote(channel.getSubmitterNote());
+        dto.setSource(channel.getSource());
 
         // Enrich with submitter details
         if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
@@ -983,6 +987,7 @@ public class ApprovalService {
         dto.setSubmittedAt(playlist.getCreatedAt());
         dto.setSubmittedBy(playlist.getSubmittedBy());
         dto.setSubmitterNote(playlist.getSubmitterNote());
+        dto.setSource(playlist.getSource());
 
         // Enrich with submitter details
         if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
@@ -1033,6 +1038,7 @@ public class ApprovalService {
         dto.setSubmittedAt(video.getCreatedAt());
         dto.setSubmittedBy(video.getSubmittedBy());
         dto.setSubmitterNote(video.getSubmitterNote());
+        dto.setSource(video.getSource());
 
         // Enrich with submitter details
         if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
@@ -1086,14 +1092,17 @@ public class ApprovalService {
                     "Cannot approve channel " + channel.getId() + ": current status is " + channel.getStatus());
         }
 
+        // Require at least one category — either from the item or from the override.
+        requireCategoryOrOverride(channel.getCategoryIds(), request);
+
         // Update status
         channel.setStatus("APPROVED");
         channel.setApprovedBy(actorUid);
         channel.touch();
 
         // Apply category override if provided
-        if (request.getCategoryOverride() != null) {
-            channel.setCategoryIds(List.of(request.getCategoryOverride()));
+        if (request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
+            channel.setCategoryIds(List.of(request.getCategoryOverride().strip()));
         }
 
         // Set approval metadata
@@ -1118,6 +1127,13 @@ public class ApprovalService {
         // Create audit log
         auditLogService.logApproval("channel", channel.getId(), actorUid, actorDisplayName, request.getReviewNotes());
 
+        // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
+        try {
+            importGraduationService.onApproved(YouTubeContentType.CHANNEL, channel.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on channel approve youtubeId={}: {}", channel.getYoutubeId(), e.getMessage());
+        }
+
         // Return response
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("APPROVED");
@@ -1137,14 +1153,17 @@ public class ApprovalService {
                     "Cannot approve playlist " + playlist.getId() + ": current status is " + playlist.getStatus());
         }
 
+        // Require at least one category — either from the item or from the override.
+        requireCategoryOrOverride(playlist.getCategoryIds(), request);
+
         // Update status
         playlist.setStatus("APPROVED");
         playlist.setApprovedBy(actorUid);
         playlist.touch();
 
         // Apply category override if provided
-        if (request.getCategoryOverride() != null) {
-            playlist.setCategoryIds(List.of(request.getCategoryOverride()));
+        if (request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
+            playlist.setCategoryIds(List.of(request.getCategoryOverride().strip()));
         }
 
         // Set approval metadata
@@ -1168,6 +1187,13 @@ public class ApprovalService {
 
         // Create audit log
         auditLogService.logApproval("playlist", playlist.getId(), actorUid, actorDisplayName, request.getReviewNotes());
+
+        // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
+        try {
+            importGraduationService.onApproved(YouTubeContentType.PLAYLIST, playlist.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on playlist approve youtubeId={}: {}", playlist.getYoutubeId(), e.getMessage());
+        }
 
         // Return response
         ApprovalResponseDto response = new ApprovalResponseDto();
@@ -1213,6 +1239,13 @@ public class ApprovalService {
         if (channel.getYoutubeId() != null) {
             CompletableFuture.runAsync(() ->
                 streamIndexService.removeSource("CHANNEL", channel.getYoutubeId()));
+        }
+
+        // Fan-out: tombstone AWAITING per-user Me-list rows (swallows its own errors)
+        try {
+            importGraduationService.onRejected(YouTubeContentType.CHANNEL, channel.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on channel reject youtubeId={}: {}", channel.getYoutubeId(), e.getMessage());
         }
 
         // Return response
@@ -1261,6 +1294,13 @@ public class ApprovalService {
                 streamIndexService.removeSource("PLAYLIST", playlist.getYoutubeId()));
         }
 
+        // Fan-out: tombstone AWAITING per-user Me-list rows (swallows its own errors)
+        try {
+            importGraduationService.onRejected(YouTubeContentType.PLAYLIST, playlist.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on playlist reject youtubeId={}: {}", playlist.getYoutubeId(), e.getMessage());
+        }
+
         // Return response
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("REJECTED");
@@ -1280,12 +1320,15 @@ public class ApprovalService {
                     "Cannot approve video " + video.getId() + ": current status is " + video.getStatus());
         }
 
+        // Require at least one category — either from the item or from the override.
+        requireCategoryOrOverride(video.getCategoryIds(), request);
+
         video.setStatus("APPROVED");
         video.setApprovedBy(actorUid);
         video.touch();
 
-        if (request.getCategoryOverride() != null) {
-            video.setCategoryIds(List.of(request.getCategoryOverride()));
+        if (request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
+            video.setCategoryIds(List.of(request.getCategoryOverride().strip()));
         }
 
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
@@ -1306,6 +1349,13 @@ public class ApprovalService {
         }
 
         auditLogService.logApproval("video", video.getId(), actorUid, actorDisplayName, request.getReviewNotes());
+
+        // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
+        try {
+            importGraduationService.onApproved(YouTubeContentType.VIDEO, video.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on video approve youtubeId={}: {}", video.getYoutubeId(), e.getMessage());
+        }
 
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("APPROVED");
@@ -1342,6 +1392,13 @@ public class ApprovalService {
         details.put("notes", request.getReviewNotes());
         auditLogService.logRejection("video", video.getId(), actorUid, actorDisplayName, details);
 
+        // Fan-out: tombstone AWAITING per-user Me-list rows (swallows its own errors)
+        try {
+            importGraduationService.onRejected(YouTubeContentType.VIDEO, video.getYoutubeId());
+        } catch (Exception e) {
+            log.warn("Graduation fan-out failed on video reject youtubeId={}: {}", video.getYoutubeId(), e.getMessage());
+        }
+
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("REJECTED");
         response.setReviewedAt(metadata.getReviewedAt());
@@ -1349,6 +1406,29 @@ public class ApprovalService {
         response.setReviewNotes(request.getReviewNotes());
 
         return response;
+    }
+
+    /**
+     * Guard: throw 400 if neither existing categoryIds nor a categoryOverride are present.
+     * Called at the start of each approveChannel/approvePlaylist/approveVideo.
+     */
+    private void requireCategoryOrOverride(List<String> existingCategoryIds, ApprovalRequestDto request)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        String override = request.getCategoryOverride();
+        boolean overridePresent = override != null && !override.isBlank();
+        boolean hasCategories = existingCategoryIds != null && !existingCategoryIds.isEmpty();
+        if (!overridePresent && !hasCategories) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Category required to approve this submission");
+        }
+        // F11: a provided override must reference a real category — otherwise a typo'd or
+        // stale id would silently become the content's only category.
+        if (overridePresent && categoryRepository.findById(override.strip()).isEmpty()) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Category override does not reference an existing category");
+        }
     }
 
     private String formatNumber(long number) {

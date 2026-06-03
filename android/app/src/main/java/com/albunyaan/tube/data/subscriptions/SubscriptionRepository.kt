@@ -49,15 +49,47 @@ class SubscriptionRepository @Inject constructor(
             channels.observeAll(uid = uidOf(state))
         }
 
+    /** B3: APPROVED-only variant used by feed composition. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeApprovedSubscribedChannels(): Flow<List<SubscribedChannel>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            channels.observeApprovedChannels(uid = uidOf(state))
+        }
+
+    /** B3: AWAITING variant used by the awaiting-imports surface. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeAwaitingSubscribedChannels(): Flow<List<SubscribedChannel>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            channels.observeAwaitingChannels(uid = uidOf(state))
+        }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observeSavedPlaylists(): Flow<List<SavedPlaylist>> =
         accountRepository.accountState.flatMapLatest { state ->
             playlists.observeAll(uid = uidOf(state))
         }
 
+    /** B3: APPROVED-only variant used by feed composition. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeApprovedSavedPlaylists(): Flow<List<SavedPlaylist>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            playlists.observeApprovedPlaylists(uid = uidOf(state))
+        }
+
+    /** B3: AWAITING variant used by the awaiting-imports surface. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeAwaitingSavedPlaylists(): Flow<List<SavedPlaylist>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            playlists.observeAwaitingPlaylists(uid = uidOf(state))
+        }
+
     // One-shot read — uid is captured at call time, no Flow rescoping needed.
     suspend fun getSubscribedChannels(): List<SubscribedChannel> =
         channels.getAll(uid = accountRepository.currentUid())
+
+    /** B3: APPROVED-only one-shot read used by feed composition. */
+    suspend fun getApprovedSubscribedChannels(): List<SubscribedChannel> =
+        channels.getApprovedSubscribedChannels(uid = accountRepository.currentUid())
 
     // One-shot read of saved playlists for the current account. Used by
     // [MeFeedRepository.refreshPlaylistVideos] which iterates playlists
@@ -66,6 +98,10 @@ class SubscriptionRepository @Inject constructor(
     // the next tick.
     suspend fun getSavedPlaylists(): List<SavedPlaylist> =
         playlists.getAll(uid = accountRepository.currentUid())
+
+    /** B3: APPROVED-only one-shot read used by feed composition. */
+    suspend fun getApprovedSavedPlaylists(): List<SavedPlaylist> =
+        playlists.getApprovedSavedPlaylists(uid = accountRepository.currentUid())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun isChannelSubscribed(id: String): Flow<Boolean> =
@@ -84,13 +120,17 @@ class SubscriptionRepository @Inject constructor(
 
     /**
      * Direct DAO upsert. **Bypasses the 30-channel cap** enforced by
-     * [SubscriptionLimitGuard.trySubscribe]. New callers MUST go through the
-     * guard; this method is kept public only so existing test fixtures continue
-     * to compile. If you find yourself wanting to call this from production
-     * code, you almost certainly want the guard instead.
+     * [SubscriptionLimitGuard.trySubscribe]. Ordinary subscribe-button code MUST go
+     * through the guard. The one intentional exception is the YouTube-import flow
+     * ([com.albunyaan.tube.data.importflow.YouTubeImportRepository]), which imports a
+     * user's full subscription list and deliberately bypasses the cap. Don't add new
+     * production callers outside that flow — use the guard instead.
      */
     suspend fun subscribe(channel: SubscribedChannel) {
-        val uid = accountRepository.currentUid()
+        // F4: honor a pinned user_id (set by the YouTube-import flow) so a mid-import
+        // account switch can't write the row under the wrong account. Organic callers
+        // leave user_id blank and get the current uid, exactly as before.
+        val uid = channel.user_id.ifBlank { accountRepository.currentUid() }
         channels.upsert(channel.copy(user_id = uid, dirty = true, deleted = false))
         syncManager.pushDirtyAsync(uid)
     }
@@ -113,8 +153,24 @@ class SubscriptionRepository @Inject constructor(
         syncManager.pushDirtyAsync(uid)
     }
 
+    /**
+     * B9: Deleted-agnostic existence check for import dedup.
+     * Returns true if the channel already exists for the user in any state
+     * (APPROVED, AWAITING, soft-deleted) so we don't re-send it to the backend.
+     */
+    suspend fun channelExistsAny(uid: String, channelId: String): Boolean =
+        channels.getByIdAny(uid = uid, id = channelId) != null
+
+    /**
+     * B9: Deleted-agnostic existence check for import dedup.
+     * Returns true if the playlist already exists for the user in any state.
+     */
+    suspend fun playlistExistsAny(uid: String, playlistId: String): Boolean =
+        playlists.getByIdAny(uid = uid, id = playlistId) != null
+
     suspend fun savePlaylist(playlist: SavedPlaylist) {
-        val uid = accountRepository.currentUid()
+        // F4: honor a pinned user_id — see subscribe().
+        val uid = playlist.user_id.ifBlank { accountRepository.currentUid() }
         playlists.upsert(playlist.copy(user_id = uid, dirty = true, deleted = false))
         syncManager.pushDirtyAsync(uid)
     }

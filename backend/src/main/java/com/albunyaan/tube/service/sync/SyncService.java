@@ -1,8 +1,10 @@
 package com.albunyaan.tube.service.sync;
 
+import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.dto.sync.*;
 import com.albunyaan.tube.repository.SyncRepository;
 import com.albunyaan.tube.repository.SyncRepository.RawRow;
+import com.albunyaan.tube.service.ContentApprovalGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -42,10 +44,12 @@ public class SyncService {
 
     private final SyncRepository repo;
     private final ArchiveProjector projector;
+    private final ContentApprovalGate approvalGate;
 
-    public SyncService(SyncRepository repo, ArchiveProjector projector) {
+    public SyncService(SyncRepository repo, ArchiveProjector projector, ContentApprovalGate approvalGate) {
         this.repo = repo;
         this.projector = projector;
+        this.approvalGate = approvalGate;
     }
 
     public SyncResponseDto pull(String uid, SyncCursors cursors)
@@ -126,6 +130,10 @@ public class SyncService {
         d.setName((String) m.getOrDefault("name", ""));
         d.setAvatarUrl((String) m.get("avatarUrl"));
         d.setSubscribedAt(longOf(m.get("subscribedAt")));
+        // A10 — default "APPROVED" for docs written before this field existed
+        d.setApprovalStatus((String) m.getOrDefault("approvalStatus", "APPROVED"));
+        d.setSource((String) m.get("source"));
+        d.setImportedAt(nullableLongOf(m.get("importedAt")));
         return d;
     }
 
@@ -140,6 +148,10 @@ public class SyncService {
         d.setThumbnailUrl((String) m.get("thumbnailUrl"));
         d.setUploaderName((String) m.get("uploaderName"));
         d.setSavedAt(longOf(m.get("savedAt")));
+        // A10 — default "APPROVED" for docs written before this field existed
+        d.setApprovalStatus((String) m.getOrDefault("approvalStatus", "APPROVED"));
+        d.setSource((String) m.get("source"));
+        d.setImportedAt(nullableLongOf(m.get("importedAt")));
         return d;
     }
 
@@ -154,6 +166,10 @@ public class SyncService {
         d.setThumbnailUrl((String) m.get("thumbnailUrl"));
         d.setDurationSeconds(intOf(m.get("durationSeconds")));
         d.setAddedAt(longOf(m.get("addedAt")));
+        // A10 — default "APPROVED" for docs written before this field existed
+        d.setApprovalStatus((String) m.getOrDefault("approvalStatus", "APPROVED"));
+        d.setSource((String) m.get("source"));
+        d.setImportedAt(nullableLongOf(m.get("importedAt")));
         return d;
     }
 
@@ -161,9 +177,28 @@ public class SyncService {
         if (o instanceof Number n) return n.longValue();
         return 0L;
     }
+    private static Long nullableLongOf(Object o) {
+        if (o instanceof Number n) return n.longValue();
+        return null;
+    }
     private static int intOf(Object o) {
         if (o instanceof Number n) return n.intValue();
         return 0;
+    }
+
+    /**
+     * F3 — derive the stored approvalStatus from the server-side registry status.
+     * Only content the registry ACTIVELY gates is withheld: a PENDING row (e.g. an
+     * imported item the /resolve endpoint just queued for review) → AWAITING. REJECTED
+     * is tombstoned by the callers. Everything else is APPROVED — including ids ABSENT
+     * from the registry, because such content is already playable under the 404 fail-open
+     * availability gate (e.g. a video favorited from an approved channel/playlist feed
+     * that has no standalone Video doc). Marking those AWAITING would strand organic
+     * favorites/subscriptions in a queue no admin can clear, without adding any gate the
+     * fail-open design doesn't already concede. The client-supplied value is never trusted.
+     */
+    private static String deriveApprovalStatus(String registryStatus) {
+        return "PENDING".equalsIgnoreCase(registryStatus) ? "AWAITING" : "APPROVED";
     }
 
     // ── Write path ───────────────────────────────────────────────────────────
@@ -179,11 +214,25 @@ public class SyncService {
 
     public SubscriptionSyncDto upsertSubscription(String uid, String id, PutSubscriptionRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
+        // F3: approvalStatus is server-authoritative — derived from the content registry,
+        // never trusted from the client. An admin-rejected row is tombstoned, not resurrected.
+        String regStatus = approvalGate.statusOf(YouTubeContentType.CHANNEL, id);
+        if ("REJECTED".equalsIgnoreCase(regStatus)) {
+            return toSubscriptionDto(projector.projectSubscription(
+                    repo.tombstone(uid, SyncRepository.SUBS_COLL, id)));
+        }
         Map<String, Object> body = new java.util.HashMap<>();
+        // F1: persist the youtubeId (== the {id} path var, server-authoritative) so
+        // ImportGraduationService's collection-group fan-out — whereEqualTo("youtubeId", …)
+        // — can match this row when an admin approves/rejects the content.
+        body.put("youtubeId", id);
         body.put("channelUrl", req.getChannelUrl());
         body.put("name", req.getName());
         body.put("avatarUrl", req.getAvatarUrl());
         body.put("subscribedAt", req.getSubscribedAt());
+        body.put("approvalStatus", deriveApprovalStatus(regStatus));
+        body.put("source", req.getSource());
+        body.put("importedAt", req.getImportedAt());
         return toSubscriptionDto(projector.projectSubscription(
                 repo.upsert(uid, SyncRepository.SUBS_COLL, id, body)));
     }
@@ -196,12 +245,23 @@ public class SyncService {
 
     public PlaylistSyncDto upsertPlaylist(String uid, String id, PutPlaylistRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
+        // F3: see upsertSubscription — approvalStatus is server-derived, REJECTED is tombstoned.
+        String regStatus = approvalGate.statusOf(YouTubeContentType.PLAYLIST, id);
+        if ("REJECTED".equalsIgnoreCase(regStatus)) {
+            return toPlaylistDto(projector.projectPlaylist(
+                    repo.tombstone(uid, SyncRepository.PLAYLISTS_COLL, id)));
+        }
         Map<String, Object> body = new java.util.HashMap<>();
+        // F1: persist the youtubeId (== the {id} path var) — see upsertSubscription.
+        body.put("youtubeId", id);
         body.put("playlistUrl", req.getPlaylistUrl());
         body.put("name", req.getName());
         body.put("thumbnailUrl", req.getThumbnailUrl());
         body.put("uploaderName", req.getUploaderName());
         body.put("savedAt", req.getSavedAt());
+        body.put("approvalStatus", deriveApprovalStatus(regStatus));
+        body.put("source", req.getSource());
+        body.put("importedAt", req.getImportedAt());
         return toPlaylistDto(projector.projectPlaylist(
                 repo.upsert(uid, SyncRepository.PLAYLISTS_COLL, id, body)));
     }
@@ -214,12 +274,23 @@ public class SyncService {
 
     public FavoriteSyncDto upsertFavorite(String uid, String id, PutFavoriteRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
+        // F3: see upsertSubscription — approvalStatus is server-derived, REJECTED is tombstoned.
+        String regStatus = approvalGate.statusOf(YouTubeContentType.VIDEO, id);
+        if ("REJECTED".equalsIgnoreCase(regStatus)) {
+            return toFavoriteDto(projector.projectFavorite(
+                    repo.tombstone(uid, SyncRepository.FAVORITES_COLL, id)));
+        }
         Map<String, Object> body = new java.util.HashMap<>();
+        // F1: persist the youtubeId (== the {id} path var) — see upsertSubscription.
+        body.put("youtubeId", id);
         body.put("title", req.getTitle());
         body.put("channelName", req.getChannelName());
         body.put("thumbnailUrl", req.getThumbnailUrl());
         body.put("durationSeconds", req.getDurationSeconds());
         body.put("addedAt", req.getAddedAt());
+        body.put("approvalStatus", deriveApprovalStatus(regStatus));
+        body.put("source", req.getSource());
+        body.put("importedAt", req.getImportedAt());
         return toFavoriteDto(projector.projectFavorite(
                 repo.upsert(uid, SyncRepository.FAVORITES_COLL, id, body)));
     }

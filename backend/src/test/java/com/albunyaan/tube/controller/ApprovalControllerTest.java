@@ -8,7 +8,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Arrays;
 
@@ -376,6 +378,20 @@ class ApprovalControllerTest {
 
         // Assert
         assertEquals(500, response.getStatusCodeValue());
+    }
+
+    @Test
+    void testApprove_NoCategoryOnUncategorizedItem_Rethrows400() throws Exception {
+        // Arrange: service throws 400 when item has no categories and no override
+        ApprovalRequestDto request = new ApprovalRequestDto("notes");
+        when(approvalService.approve(any(), any(), any(), any()))
+                .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Category required to approve this submission"));
+
+        // Act + Assert: controller must re-throw (not swallow into 500)
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.approve("ch1", request, mockUser));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
     }
 
     @Test

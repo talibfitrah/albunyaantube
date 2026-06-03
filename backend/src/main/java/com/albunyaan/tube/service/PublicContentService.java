@@ -3,6 +3,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
+import com.albunyaan.tube.dto.ContentItemMapper;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.dto.HomeCategoryDto;
 import com.albunyaan.tube.exception.ContentGoneException;
@@ -1551,53 +1552,15 @@ public class PublicContentService {
     }
 
     private ContentItemDto toDto(Channel channel) {
-        return ContentItemDto.channel(
-                channel.getYoutubeId(),
-                channel.getName(),
-                channel.getCategory() != null ? channel.getCategory().getName() : null,
-                channel.getSubscribers(),
-                channel.getDescription(),
-                channel.getThumbnailUrl(),
-                channel.getVideoCount(),
-                channel.getKeywords()
-        );
+        return ContentItemMapper.fromChannel(channel);
     }
 
     private ContentItemDto toDto(Playlist playlist) {
-        return ContentItemDto.playlist(
-                playlist.getYoutubeId(),
-                playlist.getTitle(),
-                playlist.getCategory() != null ? playlist.getCategory().getName() : null,
-                playlist.getItemCount(),
-                playlist.getDescription(),
-                playlist.getThumbnailUrl(),
-                playlist.getKeywords()
-        );
+        return ContentItemMapper.fromPlaylist(playlist);
     }
 
     private ContentItemDto toDto(Video video) {
-        int durationSeconds = video.getDurationSeconds() != null ? video.getDurationSeconds() : 0;
-        LocalDateTime uploadedAt = video.getUploadedAt() != null ?
-            video.getUploadedAt().toDate().toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime() :
-            LocalDateTime.now();
-        int uploadedDaysAgo = (int) ChronoUnit.DAYS.between(uploadedAt, LocalDateTime.now());
-
-        // Category name will be null for now - will be populated by client-side lookup
-        // To avoid Firestore query in stream operations
-        String categoryName = null;
-
-        return ContentItemDto.video(
-                video.getYoutubeId(),
-                video.getTitle(),
-                categoryName,
-                durationSeconds,
-                uploadedDaysAgo,
-                video.getDescription(),
-                video.getThumbnailUrl(),
-                video.getViewCount(),
-                video.getChannelTitle(),
-                video.getKeywords()
-        );
+        return ContentItemMapper.fromVideo(video);
     }
 
     /**

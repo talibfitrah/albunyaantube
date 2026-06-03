@@ -19,9 +19,11 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.work.WorkManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.auth.AuthState
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
+import com.albunyaan.tube.data.me.AwaitingImports
 import com.albunyaan.tube.data.me.ChipItem
 import com.albunyaan.tube.data.me.MeFeedState
 import com.albunyaan.tube.data.me.MeFeedVideo
@@ -35,6 +37,7 @@ import com.albunyaan.tube.util.showIcons
 import com.albunyaan.tube.util.tintIcons
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.albunyaan.tube.preferences.SettingsPreferences
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -56,11 +59,16 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     @Inject lateinit var prefetchService: com.albunyaan.tube.player.StreamPrefetchService
     @Inject lateinit var playbackFeatureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
 
+    // B13: created lazily so requireContext() is safe at first use (onResume or later).
+    private val settingsPreferences: SettingsPreferences by lazy { SettingsPreferences(requireContext()) }
+
     private val viewModel: MeViewModel by viewModels()
     private var binding: FragmentMeBinding? = null
 
     private lateinit var chipsAdapter: MeChipsAdapter
     private lateinit var favoritesAdapter: MeFavoritesAdapter
+    // B14: awaiting-review section; sits between favorites and per-week sections.
+    private lateinit var awaitingAdapter: AwaitingImportsAdapter
     private lateinit var concatAdapter: ConcatAdapter
 
     private var prefetchController: com.albunyaan.tube.player.PredictivePrefetchController? = null
@@ -92,13 +100,16 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             onLongPress = ::confirmRemoveFavorite,
             onSeeAll = ::navigateToFavoritesScreen,
         )
+        // B14: awaiting section — item count is 0 until the first non-empty
+        // AwaitingImports arrives; collapses automatically when it empties.
+        awaitingAdapter = AwaitingImportsAdapter()
 
         // ANDROID-PERSONAL-03 / T6: dynamic ConcatAdapter. Initially holds
-        // chips + favorites; per-week sub-adapters are appended as the
-        // viewModel.weeks flow emits. Isolation is disabled so the
+        // chips + favorites + awaiting; per-week sub-adapters are appended as
+        // the viewModel.weeks flow emits. Isolation is disabled so the
         // spanSizeLookup can compare raw inner view types — every
         // adapter participating in this ConcatAdapter must use a unique
-        // view type constant (chips=101, favorites=401-403,
+        // view type constant (chips=101, favorites=401-403, awaiting=601-602,
         // weeks=501-503; see each adapter's companion object).
         concatAdapter = ConcatAdapter(
             ConcatAdapter.Config.Builder()
@@ -107,6 +118,8 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             chipsAdapter.rowAdapter,
             // T10: favorites row sits between chips and per-week content.
             favoritesAdapter.sectionAdapter,
+            // B14: awaiting section sits after favorites, before per-week sections.
+            awaitingAdapter.sectionAdapter,
         )
 
         val isTablet = DeviceConfig.isTablet(requireContext()) || DeviceConfig.isTV(requireContext())
@@ -167,6 +180,15 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.weeks.collect { renderWeeks(it) }
+            }
+        }
+
+        // B14: awaiting-review section collector. Drives awaitingAdapter
+        // so the section appears / disappears reactively without touching
+        // the weekly feed sections.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.awaiting.collect { awaitingAdapter.submit(it) }
             }
         }
 
@@ -233,6 +255,13 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                     }
                     true
                 }
+                R.id.action_import_youtube -> {
+                    // B12: visible to all signed-in users; no role gate.
+                    if (findNavController().currentDestination?.id == R.id.meFragment) {
+                        findNavController().navigate(R.id.action_me_to_importFromYouTube)
+                    }
+                    true
+                }
                 R.id.action_sign_out -> {
                     MaterialAlertDialogBuilder(requireContext())
                         .setTitle(R.string.settings_account_sign_out_confirm_title)
@@ -289,6 +318,34 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         viewLifecycleOwner.lifecycleScope.launch {
             refreshScheduler.enqueueForegroundBurstIfStale()
         }
+        // B13: one-time import offer for signed-in users.
+        viewLifecycleOwner.lifecycleScope.launch {
+            maybeShowImportOffer()
+        }
+    }
+
+    /**
+     * B13: Shows a one-time "Import from YouTube" offer dialog the first time a
+     * signed-in user lands on the Me tab. Sets [SettingsPreferences.IMPORT_OFFER_SHOWN_KEY]
+     * true on any choice (Import or Not now) so it never appears again.
+     */
+    private suspend fun maybeShowImportOffer() {
+        val isSignedIn = authRepository.authState.value is AuthState.SignedIn
+        if (!isSignedIn) return
+        if (!settingsPreferences.shouldShowImportOffer()) return
+        // Mark shown immediately to prevent a second launch before the dialog closes.
+        settingsPreferences.setImportOfferShown()
+        if (!isAdded || activity == null) return
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.import_offer_title)
+            .setMessage(R.string.import_offer_message)
+            .setPositiveButton(R.string.import_offer_positive) { _, _ ->
+                if (findNavController().currentDestination?.id == R.id.meFragment) {
+                    findNavController().navigate(R.id.action_me_to_importFromYouTube)
+                }
+            }
+            .setNegativeButton(R.string.import_offer_negative, null)
+            .show()
     }
 
     private fun render(state: MeFeedState) {

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="@dimen/spacing_md"
+    android:paddingEnd="@dimen/spacing_md"
+    android:paddingTop="@dimen/spacing_sm"
+    android:paddingBottom="@dimen/spacing_sm"
+    android:background="?attr/selectableItemBackground">
+
+    <CheckBox
+        android:id="@+id/candidateCheckbox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        tools:checked="true" />
+
+    <com.google.android.material.imageview.ShapeableImageView
+        android:id="@+id/thumbnail"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:scaleType="centerCrop"
+        android:background="?attr/colorSurfaceVariant"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.Albunyaan.RoundedThumbnail"
+        tools:src="@drawable/thumbnail_placeholder" />
+
+    <TextView
+        android:id="@+id/candidateTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textAlignment="viewStart"
+        android:maxLines="2"
+        android:ellipsize="end"
+        tools:text="Islamic History Channel" />
+
+</LinearLayout>

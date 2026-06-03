@@ -27,6 +27,8 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class SubmissionRateLimiter {
     public static final int LIMIT = 50;
+    /** Per-user daily item budget for the import-resolve endpoint. */
+    public static final int IMPORT_DAILY_ITEM_BUDGET = 1000;
     public static final Duration WINDOW = Duration.ofHours(24);
 
     private final Clock clock;
@@ -100,6 +102,49 @@ public class SubmissionRateLimiter {
                 // implies `dq.size() >= 1`.
                 Instant oldest = dq.peekFirst();
                 retryAfter[0] = oldest.plus(WINDOW).getEpochSecond() - now.getEpochSecond();
+            } else {
+                for (int i = 0; i < count; i++) dq.addLast(now);
+            }
+            return dq;
+        });
+        return retryAfter[0];
+    }
+
+    /**
+     * Atomically consume {@code count} import-item slots from the per-user daily
+     * import budget ({@link #IMPORT_DAILY_ITEM_BUDGET}). Returns null when granted;
+     * otherwise returns seconds until the oldest slot ages out. Failure is
+     * all-or-nothing — no slots are taken when the budget would be exceeded.
+     *
+     * <p>Uses the same Caffeine cache and sliding-window logic as
+     * {@link #tryAcquire(String, int)} but under an {@code "import:"}-prefixed key
+     * so import item consumption is tracked independently from moderator submission
+     * consumption for the same user.
+     */
+    public Long tryAcquireImport(String uid, int count) {
+        if (uid == null || uid.isBlank()) {
+            throw new IllegalArgumentException("tryAcquireImport requires a non-blank uid");
+        }
+        if (count < 1) {
+            throw new IllegalArgumentException("count must be >= 1, got " + count);
+        }
+        Instant now = clock.instant();
+        Instant cutoff = now.minus(WINDOW);
+        String key = "import:" + uid;
+        Long[] retryAfter = new Long[]{null};
+        hits.asMap().compute(key, (k, existing) -> {
+            Deque<Instant> dq = existing != null ? existing : new ArrayDeque<>();
+            while (!dq.isEmpty() && dq.peekFirst().isBefore(cutoff)) dq.pollFirst();
+            if (dq.size() + count > IMPORT_DAILY_ITEM_BUDGET) {
+                // All-or-nothing: leave the deque untouched and report when the oldest slot
+                // ages out. The empty-deque case would require count > the 1000-item budget,
+                // but the only caller caps count at 200 (@Size on ImportResolveRequest.items),
+                // so it is unreachable. The guard remains as cheap defense: were it ever empty,
+                // retryAfter stays null → callers treat remaining=0.
+                if (!dq.isEmpty()) {
+                    Instant oldest = dq.peekFirst();
+                    retryAfter[0] = oldest.plus(WINDOW).getEpochSecond() - now.getEpochSecond();
+                }
             } else {
                 for (int i = 0; i < count; i++) dq.addLast(now);
             }

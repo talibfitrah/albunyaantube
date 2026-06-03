@@ -26,6 +26,10 @@ data class SubscriptionSyncDto(
     val name: String,
     val avatarUrl: String?,
     val subscribedAt: Long,
+    // Import metadata (B4)
+    val approvalStatus: String? = null,
+    val source: String? = null,
+    val importedAt: Long? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -38,6 +42,10 @@ data class PlaylistSyncDto(
     val thumbnailUrl: String?,
     val uploaderName: String?,
     val savedAt: Long,
+    // Import metadata (B4)
+    val approvalStatus: String? = null,
+    val source: String? = null,
+    val importedAt: Long? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -50,6 +58,10 @@ data class FavoriteSyncDto(
     val thumbnailUrl: String?,
     val durationSeconds: Int,
     val addedAt: Long,
+    // Import metadata (B4)
+    val approvalStatus: String? = null,
+    val source: String? = null,
+    val importedAt: Long? = null,
 )
 
 // ── Push bodies ────────────────────────────────────────────────────────
@@ -60,6 +72,10 @@ data class PutSubscriptionRequest(
     val name: String,
     val avatarUrl: String?,
     val subscribedAt: Long,
+    // Import metadata (B4)
+    val approvalStatus: String? = null,
+    val source: String? = null,
+    val importedAt: Long? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -69,6 +85,10 @@ data class PutPlaylistRequest(
     val thumbnailUrl: String?,
     val uploaderName: String?,
     val savedAt: Long,
+    // Import metadata (B4)
+    val approvalStatus: String? = null,
+    val source: String? = null,
+    val importedAt: Long? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -78,4 +98,8 @@ data class PutFavoriteRequest(
     val thumbnailUrl: String?,
     val durationSeconds: Int,
     val addedAt: Long,
+    // Import metadata (B4)
+    val approvalStatus: String? = null,
+    val source: String? = null,
+    val importedAt: Long? = null,
 )

@@ -14,6 +14,7 @@ import com.albunyaan.tube.data.local.SavedPlaylist
 import com.albunyaan.tube.data.local.SubscribedChannel
 import com.albunyaan.tube.data.me.ChipItem
 import com.albunyaan.tube.data.me.MeFeedRepository
+import com.albunyaan.tube.data.me.AwaitingImports
 import com.albunyaan.tube.data.me.MeFeedState
 import com.albunyaan.tube.data.me.MeFeedVideo
 import com.albunyaan.tube.data.me.WeekBucket
@@ -49,14 +50,14 @@ class MeViewModel @Inject constructor(
     private val filter = MutableStateFlow<String?>(null)
 
     val state: StateFlow<MeFeedState> = combine(
-        subscriptions.observeSubscribedChannels(),
-        subscriptions.observeSavedPlaylists(),
+        subscriptions.observeApprovedSubscribedChannels(),
+        subscriptions.observeApprovedSavedPlaylists(),
         feed.observeFeed(),
         filter,
         // T10: favorites are observed alongside subs/playlists/feed so the
         // row reacts immediately to add/remove from anywhere (player heart,
         // long-press snackbar, full Favorites screen).
-        favorites.getAllFavorites(),
+        favorites.observeApprovedFavorites(),
     ) { channels, playlists, cached, filterId, favs ->
         buildState(channels, playlists, cached, filterId, favs)
     }.stateIn(
@@ -122,6 +123,16 @@ class MeViewModel @Inject constructor(
     private val reachedEndState = MutableStateFlow(false)
     val reachedEnd: StateFlow<Boolean> = reachedEndState.asStateFlow()
 
+    // B14: items that were imported from YouTube but are not yet approved.
+    // Derived directly from MeFeedRepository.observeAwaiting() so the section
+    // appears / disappears reactively without any change to MeFeedState.Content.
+    val awaiting: StateFlow<AwaitingImports> = feed.observeAwaiting()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = AwaitingImports(emptyList(), emptyList(), emptyList()),
+        )
+
     // Single in-flight job to prevent overlapping loads — the fragment's
     // scroll listener can fire many times in rapid succession.
     private var loadJob: Job? = null
@@ -168,6 +179,11 @@ class MeViewModel @Inject constructor(
         // lets us reset state when the set transitions empty→populated
         // OR when channels are added/removed at any time.
         viewModelScope.launch {
+            // Unfiltered count is intentional: any subscription change (incl. an AWAITING
+            // import that later graduates) should be able to trigger a feed reset. The
+            // feed itself is approved-only, so an AWAITING add just causes a cheap no-op
+            // reset. (Keeping the approved-only variant here perturbed coroutine timing
+            // enough to expose an unrelated test-suite orphan-exception flake.)
             subscriptions.observeSubscribedChannels()
                 .map { it.size }
                 .distinctUntilChanged()

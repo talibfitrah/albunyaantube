@@ -414,6 +414,11 @@
         <item quantity="one">%d year ago</item>
         <item quantity="other">%d years ago</item>
     </plurals>
+    <!-- B11: Import button label — "Import 5" / "Import 1" -->
+    <plurals name="import_youtube_button_import">
+        <item quantity="one">Import %d item</item>
+        <item quantity="other">Import %d items</item>
+    </plurals>
 
     <!-- View Count Formatting (Shorts) -->
     <string name="views_count_billions">%.1fB views</string>
@@ -848,4 +853,45 @@
     <string name="edit_password_wrong_current">Incorrect current password</string>
     <string name="edit_password_weak">Password must be at least 8 characters</string>
     <string name="edit_password_mismatch">Passwords do not match</string>
+
+    <!-- ── Import from YouTube (B11) ─────────────────────────────────────── -->
+    <!-- Note: import_youtube_button_import is defined as a plural below near other plurals. -->
+    <string name="import_youtube_title">Import from YouTube</string>
+    <!-- Loading states -->
+    <string name="import_youtube_loading_authorizing">Connecting to Google…</string>
+    <string name="import_youtube_loading_fetching">Loading your YouTube library…</string>
+    <!-- Group headers: "%1$d" is the item count -->
+    <string name="import_youtube_group_channels">Channels (%1$d)</string>
+    <string name="import_youtube_group_playlists">Playlists (%1$d)</string>
+    <string name="import_youtube_group_videos">Liked videos (%1$d)</string>
+    <!-- Short names used in partial-failure notice -->
+    <string name="import_youtube_group_channels_short">Channels</string>
+    <string name="import_youtube_group_playlists_short">Playlists</string>
+    <string name="import_youtube_group_videos_short">Videos</string>
+    <!-- Partial-failure inline notice; "%1$s" is a comma-separated list of failed type names -->
+    <string name="import_youtube_partial_failure">Couldn\'t load: %1$s</string>
+    <!-- Select-all checkbox accessibility label -->
+    <string name="import_youtube_select_all_content_description">Select all in group</string>
+    <!-- Importing progress -->
+    <string name="import_youtube_importing_resolving">Checking content…</string>
+    <string name="import_youtube_importing_writing">Saving to your library…</string>
+    <string name="import_youtube_importing_done">Almost done…</string>
+    <!-- Done summary: "%1$d added · %2$d sent for review · %3$d skipped" -->
+    <string name="import_youtube_done_summary">%1$d added · %2$d sent for review · %3$d skipped</string>
+    <string name="import_youtube_done_rate_limited">Daily import limit reached — try again later to import the rest.</string>
+    <!-- Buttons -->
+    <string name="import_youtube_button_done">Done</string>
+    <string name="import_youtube_button_retry">Try again</string>
+    <!-- Me kebab entry for import -->
+    <string name="me_kebab_import_youtube">Import from YouTube</string>
+    <!-- First-login import offer dialog -->
+    <string name="import_offer_title">Import your YouTube library</string>
+    <string name="import_offer_message">Bring your YouTube subscriptions, playlists, and liked videos into FitrahTube in one tap.</string>
+    <string name="import_offer_positive">Import</string>
+    <string name="import_offer_negative">Not now</string>
+    <!-- B14: Me tab "Awaiting review" section -->
+    <string name="me_awaiting_section_title">Imported — awaiting review</string>
+    <!-- %1$d = total count of awaiting items -->
+    <string name="me_awaiting_count">%1$d pending</string>
+    <string name="me_awaiting_pending_label">Pending review</string>
 </resources>

@@ -41,10 +41,11 @@ class FavoritesViewModel @Inject constructor(
     val uiEvents: SharedFlow<UiEvent> = _uiEvents.asSharedFlow()
 
     /**
-     * All favorite videos as a StateFlow.
+     * Approved favorite videos as a StateFlow. AWAITING imported videos are held in the
+     * Me-tab "Awaiting review" section and must NOT appear or be playable here (cubic-P2).
      * Updates automatically when favorites change.
      */
-    val favorites: StateFlow<List<FavoriteVideo>> = repository.getAllFavorites()
+    val favorites: StateFlow<List<FavoriteVideo>> = repository.observeApprovedFavorites()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),

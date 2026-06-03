@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import com.albunyaan.tube.service.ImportRateLimitedException;
 import com.albunyaan.tube.service.YouTubeSearchRateLimitedException;
 
 /**
@@ -289,6 +290,26 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header("Retry-After", String.valueOf(ex.getRetryAfterSec()))
+                .body(body);
+    }
+
+    /**
+     * Handle ImportRateLimitedException (429) — per-user daily item budget exhausted
+     * on the import-resolve endpoint. Body includes {@code remaining} (always 0 on a
+     * whole-request rejection) so the Android client can surface a useful message.
+     */
+    @ExceptionHandler(ImportRateLimitedException.class)
+    public ResponseEntity<Object> handleImportRateLimited(
+            ImportRateLimitedException ex, WebRequest request) {
+        logger.warn("Import rate-limited: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("message", "Daily import limit reached. Try again later.");
+        body.put("remaining", ex.getRemaining());
+
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSec()))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .body(body);
     }
 

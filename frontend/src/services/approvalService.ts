@@ -25,6 +25,11 @@ export interface PendingApproval {
   submittedBy: string;
   /** Optional free-text note the submitter attached at submit time or via edit. */
   submitterNote?: string;
+  /**
+   * Submission source — "USER_IMPORT" | "ADMIN" | "MODERATOR" | "BULK" | undefined.
+   * Undefined means legacy item or untracked path.
+   */
+  source?: string;
 }
 
 /**
@@ -114,7 +119,11 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
     // regen-and-commit step holding up the feature.
     submitterNote:
       ((dto as unknown as Record<string, unknown>)['submitterNote'] as string | undefined) ||
-      undefined
+      undefined,
+    // source was added in [ADMIN-IMPORT-01]. Read via index access for the same
+    // reason as submitterNote — the OpenAPI schema.ts hasn't been regenerated yet.
+    source:
+      ((dto as unknown as Record<string, unknown>)['source'] as string | undefined)
   };
 }
 

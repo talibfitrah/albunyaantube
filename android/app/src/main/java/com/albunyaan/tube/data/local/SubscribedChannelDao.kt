@@ -15,6 +15,23 @@ interface SubscribedChannelDao {
     @Query("SELECT * FROM subscribed_channels WHERE user_id = :uid AND deleted = 0 ORDER BY subscribedAt DESC")
     suspend fun getAll(uid: String): List<SubscribedChannel>
 
+    // ── Feed-composition queries (approval_status filtered) ───────────────────
+    // These are the only queries that may filter by approval_status. The
+    // unfiltered observeAll / getAll above are shared with SyncManager (push,
+    // pull, merge) and must remain untouched.
+
+    /** Me-feed composition: live list of APPROVED subscribed channels (B2). */
+    @Query("SELECT * FROM subscribed_channels WHERE user_id = :uid AND deleted = 0 AND approval_status = 'APPROVED' ORDER BY subscribedAt DESC")
+    fun observeApprovedChannels(uid: String): Flow<List<SubscribedChannel>>
+
+    /** Me-feed composition: one-shot snapshot of APPROVED subscribed channels (B2). */
+    @Query("SELECT * FROM subscribed_channels WHERE user_id = :uid AND deleted = 0 AND approval_status = 'APPROVED' ORDER BY subscribedAt DESC")
+    suspend fun getApprovedSubscribedChannels(uid: String): List<SubscribedChannel>
+
+    /** Awaiting-review surface: live list of AWAITING subscribed channels (B2). */
+    @Query("SELECT * FROM subscribed_channels WHERE user_id = :uid AND deleted = 0 AND approval_status = 'AWAITING' ORDER BY subscribedAt DESC")
+    fun observeAwaitingChannels(uid: String): Flow<List<SubscribedChannel>>
+
     @Query("SELECT * FROM subscribed_channels WHERE channelId = :id AND user_id = :uid AND deleted = 0")
     suspend fun getById(uid: String, id: String): SubscribedChannel?
 

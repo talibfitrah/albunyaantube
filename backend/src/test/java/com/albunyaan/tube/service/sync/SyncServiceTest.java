@@ -3,6 +3,7 @@ package com.albunyaan.tube.service.sync;
 import com.albunyaan.tube.dto.sync.*;
 import com.albunyaan.tube.repository.SyncRepository;
 import com.albunyaan.tube.repository.SyncRepository.RawRow;
+import com.albunyaan.tube.service.ContentApprovalGate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -19,13 +20,17 @@ class SyncServiceTest {
 
     private SyncRepository repo;
     private ArchiveProjector projector;
+    private ContentApprovalGate approvalGate;
     private SyncService service;
 
     @BeforeEach
     void setUp() {
         repo = Mockito.mock(SyncRepository.class);
         projector = Mockito.mock(ArchiveProjector.class);
-        service = new SyncService(repo, projector);
+        // F3: gate is mocked; unstubbed statusOf() returns null → derived AWAITING
+        // (not REJECTED), so these upsert tests proceed to the normal write path.
+        approvalGate = Mockito.mock(ContentApprovalGate.class);
+        service = new SyncService(repo, projector, approvalGate);
     }
 
     @Test

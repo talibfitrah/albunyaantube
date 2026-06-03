@@ -295,6 +295,13 @@ class FavoritesRepositoryImplTest {
             favoritesFlow.value = current
         }
 
+        // ── Feed-composition filtered stubs (B2) ─────────────────────────────
+        override fun observeApprovedFavorites(uid: String): Flow<List<FavoriteVideo>> =
+            favoritesFlow.map { list -> list.filter { it.user_id == uid && !it.deleted && it.approvalStatus == "APPROVED" } }
+
+        override fun observeAwaitingFavorites(uid: String): Flow<List<FavoriteVideo>> =
+            favoritesFlow.map { list -> list.filter { it.user_id == uid && !it.deleted && it.approvalStatus == "AWAITING" } }
+
         // ── Sync surface stubs (not exercised by repo tests) ──────────────────
         override suspend fun tagAnonRowsToUid(uid: String): Int = 0
         override suspend fun selectDirty(uid: String): List<FavoriteVideo> = emptyList()

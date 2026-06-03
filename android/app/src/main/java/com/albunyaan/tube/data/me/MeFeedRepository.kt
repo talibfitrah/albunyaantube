@@ -6,6 +6,7 @@ import com.albunyaan.tube.data.local.ChannelFeedRefreshState
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.PlaylistVideoLink
 import com.albunyaan.tube.data.local.PlaylistVideoLinkDao
 import com.albunyaan.tube.data.local.SavedPlaylist
@@ -83,6 +84,8 @@ class MeFeedRepository @Inject constructor(
     // queries fall back to the channel-only paths.
     private val playlistRepository: PlaylistDetailRepository? = null,
     private val playlistVideoLinkDao: PlaylistVideoLinkDao? = null,
+    // B3: required for observeAwaiting(); always Hilt-injected in production.
+    private val favoritesRepository: FavoritesRepository,
 ) {
 
     /**
@@ -214,7 +217,7 @@ class MeFeedRepository @Inject constructor(
      * will not show stale items past the window (F4).
      */
     fun observeFeed(): Flow<List<ChannelVideoCache>> =
-        subscriptions.observeSubscribedChannels()
+        subscriptions.observeApprovedSubscribedChannels()
             .flatMapLatest { subs ->
                 if (subs.isEmpty()) {
                     flowOf(emptyList())
@@ -235,6 +238,19 @@ class MeFeedRepository @Inject constructor(
                 }
             }
             .distinctUntilChanged()
+
+    /**
+     * B3: Combines the three AWAITING streams into a single [AwaitingImports]
+     * flow. Emits whenever any of the three sets changes.
+     */
+    fun observeAwaiting(): Flow<AwaitingImports> =
+        combine(
+            subscriptions.observeAwaitingSubscribedChannels(),
+            subscriptions.observeAwaitingSavedPlaylists(),
+            favoritesRepository.observeAwaitingFavorites(),
+        ) { channels, playlists, videos ->
+            AwaitingImports(channels = channels, playlists = playlists, videos = videos)
+        }
 
     /**
      * ANDROID-PERSONAL-03 / T4: per-week observation for the Me-tab feed.
@@ -264,8 +280,8 @@ class MeFeedRepository @Inject constructor(
         filterChannelId: String? = null,
     ): Flow<WeekContent?> =
         combine(
-            subscriptions.observeSubscribedChannels(),
-            subscriptions.observeSavedPlaylists(),
+            subscriptions.observeApprovedSubscribedChannels(),
+            subscriptions.observeApprovedSavedPlaylists(),
         ) { subs, playlists -> subs to playlists }
             .flatMapLatest<Pair<List<SubscribedChannel>, List<SavedPlaylist>>, WeekContent?> { (subs, playlists) ->
                 // No subscriptions AND no saved playlists → nothing to show.
@@ -383,11 +399,11 @@ class MeFeedRepository @Inject constructor(
     ): Int? = withContext(ioDispatcher) {
         if (fromIndex > maxIndex) return@withContext null
         val now = currentTimeMillis()
-        val all = subscriptions.getSubscribedChannels()
+        val all = subscriptions.getApprovedSubscribedChannels()
         // Playlist videos only count toward the unfiltered scan — a channel
         // chip filters strictly to channel uploads.
         val playlists: List<SavedPlaylist> =
-            if (filterChannelId == null) subscriptions.getSavedPlaylists() else emptyList()
+            if (filterChannelId == null) subscriptions.getApprovedSavedPlaylists() else emptyList()
         if (all.isEmpty() && playlists.isEmpty()) return@withContext null
         // ANDROID-PERSONAL-03 / Bug 1: when filtering, scope the scan to the
         // single channel. If the filter target is no longer subscribed
@@ -439,9 +455,9 @@ class MeFeedRepository @Inject constructor(
      * spinning forever.
      */
     suspend fun countCachedRowsForFilter(filterChannelId: String?): Int = withContext(ioDispatcher) {
-        val all = subscriptions.getSubscribedChannels()
+        val all = subscriptions.getApprovedSubscribedChannels()
         val playlists: List<SavedPlaylist> =
-            if (filterChannelId == null) subscriptions.getSavedPlaylists() else emptyList()
+            if (filterChannelId == null) subscriptions.getApprovedSavedPlaylists() else emptyList()
         if (all.isEmpty() && playlists.isEmpty()) return@withContext 0
         val channelIds = if (filterChannelId != null) {
             if (all.any { it.channelId == filterChannelId }) listOf(filterChannelId) else return@withContext 0
@@ -472,7 +488,7 @@ class MeFeedRepository @Inject constructor(
         val now = currentTimeMillis()
         val bucket = WeekBucket.forIndex(weekIndex, now)
 
-        val all = subscriptions.getSubscribedChannels()
+        val all = subscriptions.getApprovedSubscribedChannels()
         if (all.isEmpty()) {
             if (BuildConfig.DEBUG) Log.d(TAG, "fillWeekIfNeeded(week=$weekIndex): no subscriptions")
             return@withContext
@@ -727,7 +743,7 @@ class MeFeedRepository @Inject constructor(
         // callers each starting from index=0 (F3).
         refreshMutex.withLock {
             val now = currentTimeMillis()
-            val all = subscriptions.getSubscribedChannels()
+            val all = subscriptions.getApprovedSubscribedChannels()
             if (all.isEmpty()) return@withLock
 
             // T9: oldest-fetch-first round-robin slice. A single batch query
@@ -1134,7 +1150,7 @@ class MeFeedRepository @Inject constructor(
     suspend fun refreshPlaylistVideos(): Unit = withContext(ioDispatcher) {
         val repo = playlistRepository ?: return@withContext
         val linkDao = playlistVideoLinkDao ?: return@withContext
-        val saved = subscriptions.getSavedPlaylists()
+        val saved = subscriptions.getApprovedSavedPlaylists()
         if (saved.isEmpty()) return@withContext
 
         coroutineScope {

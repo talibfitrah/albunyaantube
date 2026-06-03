@@ -120,6 +120,8 @@ class MeViewModelSnapshotRoleTest {
     private class StubFavoritesRepository : FavoritesRepository {
         private val state = MutableStateFlow<List<FavoriteVideo>>(emptyList())
         override fun getAllFavorites(): Flow<List<FavoriteVideo>> = state
+        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
+        override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> = kotlinx.coroutines.flow.emptyFlow()
         override fun isFavorite(videoId: String): Flow<Boolean> =
             state.map { list -> list.any { it.videoId == videoId } }
         override suspend fun isFavoriteOnce(videoId: String): Boolean =
@@ -134,6 +136,13 @@ class MeViewModelSnapshotRoleTest {
             thumbnailUrl: String?, durationSeconds: Int,
         ): Boolean = false
         override fun getFavoriteCount(): Flow<Int> = state.map { it.size }
+        override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean = false
+        override suspend fun addImportedFavorite(
+            uid: String,
+            videoId: String, title: String, channelName: String,
+            thumbnailUrl: String?, durationSeconds: Int,
+            approvalStatus: String, source: String?, importedAt: Long?,
+        ) {}
         override suspend fun clearAll() {}
     }
 }

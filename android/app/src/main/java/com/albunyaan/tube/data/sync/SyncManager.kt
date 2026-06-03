@@ -337,29 +337,37 @@ class SyncManager @Inject constructor(
 
     private fun rowToSub(uid: String, r: SubscriptionSyncDto) =
         SubscribedChannel(
-            channelId    = r.entityId,
-            channelUrl   = r.channelUrl,
-            name         = r.name,
-            avatarUrl    = r.avatarUrl,
-            subscribedAt = r.subscribedAt,
-            user_id      = uid,
-            updated_at   = r.updatedAt,
-            deleted      = false,
-            dirty        = false,
+            channelId      = r.entityId,
+            channelUrl     = r.channelUrl,
+            name           = r.name,
+            avatarUrl      = r.avatarUrl,
+            subscribedAt   = r.subscribedAt,
+            user_id        = uid,
+            updated_at     = r.updatedAt,
+            deleted        = false,
+            dirty          = false,
+            // Import metadata — null from server defaults to APPROVED (B4)
+            approvalStatus = r.approvalStatus ?: "APPROVED",
+            source         = r.source,
+            importedAt     = r.importedAt,
         )
 
     private fun rowToPlaylist(uid: String, r: PlaylistSyncDto) =
         SavedPlaylist(
-            playlistId   = r.entityId,
-            playlistUrl  = r.playlistUrl,
-            name         = r.name,
-            thumbnailUrl = r.thumbnailUrl,
-            uploaderName = r.uploaderName,
-            savedAt      = r.savedAt,
-            user_id      = uid,
-            updated_at   = r.updatedAt,
-            deleted      = false,
-            dirty        = false,
+            playlistId     = r.entityId,
+            playlistUrl    = r.playlistUrl,
+            name           = r.name,
+            thumbnailUrl   = r.thumbnailUrl,
+            uploaderName   = r.uploaderName,
+            savedAt        = r.savedAt,
+            user_id        = uid,
+            updated_at     = r.updatedAt,
+            deleted        = false,
+            dirty          = false,
+            // Import metadata — null from server defaults to APPROVED (B4)
+            approvalStatus = r.approvalStatus ?: "APPROVED",
+            source         = r.source,
+            importedAt     = r.importedAt,
         )
 
     private fun rowToFavorite(uid: String, r: FavoriteSyncDto) =
@@ -374,6 +382,10 @@ class SyncManager @Inject constructor(
             updated_at      = r.updatedAt,
             deleted         = false,
             dirty           = false,
+            // Import metadata — null from server defaults to APPROVED (B4)
+            approvalStatus  = r.approvalStatus ?: "APPROVED",
+            source          = r.source,
+            importedAt      = r.importedAt,
         )
 
     suspend fun pushDirty(uid: String) = syncMutex.withLock { pushDirtyLocked(uid) }
@@ -400,8 +412,10 @@ class SyncManager @Inject constructor(
                     on404    = { subs.clearDirty(uid, row.channelId, System.currentTimeMillis()) })
             } else {
                 push({ api.putSubscription(row.channelId, PutSubscriptionRequest(
-                    channelUrl = row.channelUrl, name = row.name,
-                    avatarUrl  = row.avatarUrl,  subscribedAt = row.subscribedAt)) },
+                    channelUrl     = row.channelUrl, name = row.name,
+                    avatarUrl      = row.avatarUrl,  subscribedAt = row.subscribedAt,
+                    approvalStatus = row.approvalStatus, source = row.source,
+                    importedAt     = row.importedAt)) },
                     onSuccess = { resp ->
                         // SYNC-ECHO-01 — archive-echo: if server projection
                         // says this row is virtually tombstoned (parent is
@@ -435,9 +449,11 @@ class SyncManager @Inject constructor(
                     on404    = { playlists.clearDirty(uid, row.playlistId, System.currentTimeMillis()) })
             } else {
                 push({ api.putPlaylist(row.playlistId, PutPlaylistRequest(
-                    playlistUrl  = row.playlistUrl,  name         = row.name,
-                    thumbnailUrl = row.thumbnailUrl, uploaderName = row.uploaderName,
-                    savedAt      = row.savedAt)) },
+                    playlistUrl    = row.playlistUrl,  name         = row.name,
+                    thumbnailUrl   = row.thumbnailUrl, uploaderName = row.uploaderName,
+                    savedAt        = row.savedAt,
+                    approvalStatus = row.approvalStatus, source = row.source,
+                    importedAt     = row.importedAt)) },
                     onSuccess = { resp ->
                         if (resp.deleted) {
                             playlists.applyTombstone(uid, row.playlistId, resp.updatedAt)
@@ -466,7 +482,9 @@ class SyncManager @Inject constructor(
                 push({ api.putFavorite(row.videoId, PutFavoriteRequest(
                     title           = row.title,           channelName     = row.channelName,
                     thumbnailUrl    = row.thumbnailUrl,    durationSeconds = row.durationSeconds,
-                    addedAt         = row.addedAt)) },
+                    addedAt         = row.addedAt,
+                    approvalStatus  = row.approvalStatus,  source          = row.source,
+                    importedAt      = row.importedAt)) },
                     onSuccess = { resp ->
                         if (resp.deleted) {
                             favorites.applyTombstone(uid, row.videoId, resp.updatedAt)

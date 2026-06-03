@@ -23,6 +23,20 @@ interface FavoriteVideoDao {
     @Query("SELECT * FROM favorite_videos WHERE user_id = :uid AND deleted = 0 ORDER BY addedAt DESC")
     suspend fun getAll(uid: String): List<FavoriteVideo>
 
+    // ── Feed-composition queries (approval_status filtered) ───────────────────
+    // These are the only queries that may filter by approval_status. The
+    // unfiltered getAllFavorites / getAll above are shared with FavoritesRepository
+    // (main favorites list), FavoritesRepositoryImpl, and SyncManager push/pull
+    // paths — all must remain untouched.
+
+    /** Me-feed composition: live list of APPROVED favorite videos (B2). */
+    @Query("SELECT * FROM favorite_videos WHERE user_id = :uid AND deleted = 0 AND approval_status = 'APPROVED' ORDER BY addedAt DESC")
+    fun observeApprovedFavorites(uid: String): Flow<List<FavoriteVideo>>
+
+    /** Awaiting-review surface: live list of AWAITING favorite videos (B2). */
+    @Query("SELECT * FROM favorite_videos WHERE user_id = :uid AND deleted = 0 AND approval_status = 'AWAITING' ORDER BY addedAt DESC")
+    fun observeAwaitingFavorites(uid: String): Flow<List<FavoriteVideo>>
+
     @Query("SELECT EXISTS(SELECT 1 FROM favorite_videos WHERE videoId = :videoId AND user_id = :uid AND deleted = 0)")
     fun isFavorite(uid: String, videoId: String): Flow<Boolean>
 

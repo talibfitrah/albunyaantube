@@ -1,6 +1,18 @@
 package com.albunyaan.tube.data.me
 
 import com.albunyaan.tube.data.local.FavoriteVideo
+import com.albunyaan.tube.data.local.SavedPlaylist
+import com.albunyaan.tube.data.local.SubscribedChannel
+
+/**
+ * B3: Aggregated snapshot of items that are pending admin approval.
+ * Emitted by [MeFeedRepository.observeAwaiting].
+ */
+data class AwaitingImports(
+    val channels: List<SubscribedChannel>,
+    val playlists: List<SavedPlaylist>,
+    val videos: List<FavoriteVideo>,
+)
 
 sealed class ChipItem {
     abstract val id: String

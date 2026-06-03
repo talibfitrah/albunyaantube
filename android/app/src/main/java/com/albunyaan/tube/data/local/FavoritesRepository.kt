@@ -23,6 +23,12 @@ interface FavoritesRepository {
      */
     fun getAllFavorites(): Flow<List<FavoriteVideo>>
 
+    /** B3: Live list of APPROVED favorites for Me-feed composition. */
+    fun observeApprovedFavorites(): Flow<List<FavoriteVideo>>
+
+    /** B3: Live list of AWAITING favorites for the awaiting-imports surface. */
+    fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>>
+
     /**
      * Check if a video is favorited (reactive).
      */
@@ -42,6 +48,34 @@ interface FavoritesRepository {
         channelName: String,
         thumbnailUrl: String?,
         durationSeconds: Int
+    )
+
+    /**
+     * B9: Deleted-agnostic existence check for import dedup.
+     * Returns true if a favorite video already exists for [uid] in any state
+     * (APPROVED, AWAITING, soft-deleted). Used by [YouTubeImportRepository]
+     * to skip candidates that are already present before calling the backend.
+     */
+    suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean
+
+    /**
+     * Add a video to favorites with import-specific metadata.
+     *
+     * New method added for B9 (YouTubeImportRepository) so the import path can
+     * stamp [approvalStatus], [source], and [importedAt] without changing the
+     * existing [addFavorite] signature (which would break all fakes in tests).
+     * Existing callers continue to use [addFavorite] unchanged.
+     */
+    suspend fun addImportedFavorite(
+        uid: String,
+        videoId: String,
+        title: String,
+        channelName: String,
+        thumbnailUrl: String?,
+        durationSeconds: Int,
+        approvalStatus: String,
+        source: String?,
+        importedAt: Long?,
     )
 
     /**
@@ -98,6 +132,18 @@ class FavoritesRepositoryImpl @Inject constructor(
         }
 
     @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            favoriteVideoDao.observeApprovedFavorites(uid = uidOf(state))
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> =
+        accountRepository.accountState.flatMapLatest { state ->
+            favoriteVideoDao.observeAwaitingFavorites(uid = uidOf(state))
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun isFavorite(videoId: String): Flow<Boolean> =
         accountRepository.accountState.flatMapLatest { state ->
             favoriteVideoDao.isFavorite(uid = uidOf(state), videoId = videoId)
@@ -139,6 +185,38 @@ class FavoritesRepositoryImpl @Inject constructor(
         // clearSoftDelete and upsertFavorite would leave the row at
         // deleted=0/dirty=1 with stale metadata, and pushDirty would ship
         // the stale payload to the server (losing the fresher user input).
+        favoriteVideoDao.resurrectAndUpsert(favorite)
+        syncManager.pushDirtyAsync(uid)
+    }
+
+    override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean =
+        favoriteVideoDao.getByIdAny(uid = uid, videoId = videoId) != null
+
+    override suspend fun addImportedFavorite(
+        uid: String,
+        videoId: String,
+        title: String,
+        channelName: String,
+        thumbnailUrl: String?,
+        durationSeconds: Int,
+        approvalStatus: String,
+        source: String?,
+        importedAt: Long?,
+    ) {
+        // F4: uid is pinned by the caller (the import flow captured it at start) so a
+        // mid-import account switch can't write/push this favorite under another account.
+        val favorite = FavoriteVideo(
+            videoId = videoId,
+            title = title,
+            channelName = channelName,
+            thumbnailUrl = thumbnailUrl,
+            durationSeconds = durationSeconds,
+            user_id = uid,
+            dirty = true,
+            approvalStatus = approvalStatus,
+            source = source,
+            importedAt = importedAt,
+        )
         favoriteVideoDao.resurrectAndUpsert(favorite)
         syncManager.pushDirtyAsync(uid)
     }
