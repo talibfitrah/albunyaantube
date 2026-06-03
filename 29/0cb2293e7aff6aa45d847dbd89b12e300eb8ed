@@ -1,0 +1,19 @@
+backend/src/main/java/com/albunyaan/tube/service/SubmissionRateLimiter.java
+  s_ec6997f7f4b8e7::t_45ee7eaca1eb72 139-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "290cb2293e7aff6aa45d847dbd89b12e300eb8ed",
+  "prompts": {},
+  "sessions": {
+    "s_ec6997f7f4b8e7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fb68bbe7-e99d-43b4-b1c5-a005b3b74616",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
