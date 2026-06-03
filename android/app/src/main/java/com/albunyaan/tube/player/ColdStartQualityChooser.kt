@@ -148,11 +148,11 @@ class ColdStartQualityChooser @Inject constructor() {
         val screenClass = detectScreenClass(context)
         val persistedHint = getPersistedQualityHint(context)
 
-        val recommendedHeight = calculateRecommendedHeight(
-            networkType = networkType,
-            screenClass = screenClass,
-            persistedHint = persistedHint
-        )
+        // persistedHint is intentionally NOT used to clamp the cold-start height —
+        // clamping kept users stuck at 360-480p after switching to fast WiFi. It is
+        // still recorded on QualityChoice below (logging); manual quality picks win at
+        // runtime regardless. See recommendedHeightFor.
+        val recommendedHeight = recommendedHeightFor(networkType, screenClass)
 
         val choice = QualityChoice(
             recommendedHeight = recommendedHeight,
@@ -336,21 +336,6 @@ class ColdStartQualityChooser @Inject constructor() {
         return if (height > 0) height else null
     }
 
-    private fun calculateRecommendedHeight(
-        networkType: NetworkType,
-        screenClass: ScreenClass,
-        persistedHint: Int?
-    ): Int {
-        // Persisted hint disabled — previously this clamped quality DOWN if a
-        // prior session ran at low quality, which kept users stuck at 360-480p
-        // even after switching to fast WiFi. Manual picks from the quality
-        // menu always win at runtime regardless of this cold-start hint.
-        @Suppress("UNUSED_VARIABLE")
-        val ignoredHint = persistedHint
-
-        return recommendedHeightFor(networkType, screenClass)
-    }
-
     /**
      * Pure network+screen → initial-height policy (no Android context, unit-testable).
      *
@@ -408,9 +393,6 @@ class ColdStartQualityChooser @Inject constructor() {
      * Applied to the track selector so adaptive ABR cannot climb into a stall.
      */
     fun chooseCeiling(context: Context): Ceiling? = ceilingFor(detectNetworkType(context))
-
-    /** Current network classification — exposed so the player can react to handovers. */
-    fun currentNetworkType(context: Context): NetworkType = detectNetworkType(context)
 
     private fun findBestTrackForHeight(tracks: List<VideoTrack>, targetHeight: Int): VideoTrack? {
         // Find the best track at or below target height

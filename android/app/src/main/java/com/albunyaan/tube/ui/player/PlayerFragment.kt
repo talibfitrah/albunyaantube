@@ -222,6 +222,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var preparedAdaptiveType: MediaSourceResult.AdaptiveType =
         MediaSourceResult.AdaptiveType.NONE
     /**
+     * Treats a 403/error that lands right after a user seek on a multi-quality
+     * adaptive stream as a transient refresh (rebuild the same adaptive manifest)
+     * instead of consuming the degrade-to-muxed budget. Without this, seeking on a
+     * 4K video drove the player permanently down to a single muxed 360p track.
+     * See [com.albunyaan.tube.player.SeekTransientErrorGate].
+     */
+    private val seekTransientErrorGate = com.albunyaan.tube.player.SeekTransientErrorGate()
+    /**
      * Phase 1B: Tracks when the current stream was prepared (elapsedRealtime).
      * Used to detect "early 403" errors that should trigger HLS poisoning.
      * Set at prepare() time (not onIsPlayingChanged) to catch pre-playback 403s during buffering.
@@ -1052,6 +1060,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             private val maxStreamRefreshes = 2
             private var lastStreamIdForRetries: String? = null
 
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                // A seek (user scrub or fast-forward) can land on an expired/range-rejected
+                // segment URL and 403. Record it so a follow-up error on an adaptive stream is
+                // treated as a transient refresh, not a slide toward the muxed 360p fallback.
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    seekTransientErrorGate.onSeek()
+                }
+            }
+
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onIsPlayingChanged: isPlaying=$isPlaying, hasAutoHidden=$hasAutoHidden")
                 val currentStreamId = viewModel.state.value.currentItem?.streamId
@@ -1086,6 +1107,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             degradationManager.onPlaybackSuccess(streamId)
                         }
                     }
+
+                    // Playback resumed: the seek-induced failure episode (if any) is over,
+                    // so a future seek gets a fresh allowance of transient refreshes.
+                    seekTransientErrorGate.onPlaybackResumed()
 
                     if (!hasAutoHidden) {
                         // Auto-hide controls after playback starts
@@ -1149,6 +1174,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         lastStreamIdForRetries = currentStreamId
                         retryCount = 0
                         streamRefreshCount = 0
+                        // Genuinely new video (not a same-stream refresh): clear seek-transient
+                        // state so a stale seek from the previous video can't leak across.
+                        seekTransientErrorGate.onNewStream()
                     }
                     hasAutoHidden = false
                 }
@@ -2002,8 +2030,18 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             "Refreshing stream for ${currentItem.streamId} at ${resumePosition}ms: $reason"
         )
 
-        // Phase 4: Consume refresh budget and check for degradation action (if enabled)
-        if (featureFlags.isDegradationManagerEnabled) {
+        // A 403/error right after a user seek on a multi-quality adaptive stream is a transient
+        // failure (expired / range-rejected segment URL), not a failing stream. Refresh and
+        // rebuild the SAME adaptive manifest WITHOUT spending the degrade-to-muxed budget —
+        // otherwise repeated seeks march the player down to a permanent single muxed 360p track.
+        val seekTransient = seekTransientErrorGate.tryClaimSeekTransientRefresh(preparedAdaptiveType)
+        if (seekTransient) {
+            android.util.Log.i(
+                "PlayerFragment",
+                "Seek-induced transient on $preparedAdaptiveType — rebuilding adaptive manifest, not consuming degradation budget"
+            )
+        } else if (featureFlags.isDegradationManagerEnabled) {
+            // Phase 4: Consume refresh budget and check for degradation action (if enabled)
             val degradationAction = degradationManager.consumeRefresh(currentItem.streamId, refreshReason)
             if (degradationAction !is com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.None) {
                 android.util.Log.w("PlayerFragment", "Degradation action required: $degradationAction")
@@ -2099,6 +2137,34 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             is com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.SwitchToMuxed -> {
+                // Backstop: never collapse a multi-quality adaptive stream (SYNTH_ADAPTIVE/DASH/HLS)
+                // to a single muxed 360p track. Rebuild the adaptive manifest with fresh URLs so ABR
+                // keeps the full quality ladder (and can still drop to a low rep on a poor network).
+                // Mark the muxed step as applied so a *repeat* exhaustion escalates past it
+                // (→ ForceHlsFallback → ShowError) instead of looping on this backstop.
+                if (com.albunyaan.tube.player.SeekTransientErrorGate.isMultiQualityAdaptive(preparedAdaptiveType)) {
+                    val refreshAllowed = viewModel.forceRefreshForAutoRecovery()
+                    if (refreshAllowed) {
+                        android.util.Log.i(
+                            "PlayerFragment",
+                            "Degradation: $preparedAdaptiveType — rebuilding adaptive manifest instead of muxed 360p collapse"
+                        )
+                        degradationManager.onDegradationApplied(videoId, action)
+                        mpdRegistry.unregisterBoth(videoId)
+                        pendingResumeStreamId = videoId
+                        pendingResumePositionMs = resumePositionMs.takeIf { it > 0L }
+                        pendingResumePlayWhenReady = wasPlayWhenReady
+                        preparedStreamKey = null
+                        preparedStreamUrl = null
+                        preparedIsAdaptive = false
+                        preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
+                        preparedQualityCapHeight = null
+                        factorySelectedVideoTrack = null
+                        player?.stop()
+                        return
+                    }
+                    android.util.Log.w("PlayerFragment", "Degradation: adaptive-rebuild backstop blocked by rate limiter; falling through to muxed")
+                }
                 android.util.Log.i("PlayerFragment", "Degradation: switching to muxed stream")
                 val state = viewModel.state.value
                 val streamState = when (val s = state.streamState) {
@@ -4029,15 +4095,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     /**
-     * Apply quality constraints based on selection origin.
-     *
-     * - MANUAL: User explicitly selected a resolution, use LOCK mode (fixed quality)
-     * - AUTO_RECOVERY/AUTO: System selected, use CAP mode (ABR can go lower)
-     *
-     * @param height The desired video height
-     * @param origin How the quality was selected
-     */
-    /**
      * Resolve and apply the current network's quality ceiling to the track selector.
      * Cellular → hard height+bitrate cap so ABR can't climb into a stall; WiFi → unbounded.
      * Cheap to re-run, so it is called on player setup and on every stream prepare to
@@ -4052,6 +4109,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
+    /**
+     * Apply quality constraints based on selection origin.
+     *
+     * - MANUAL: User explicitly selected a resolution, use LOCK mode (fixed quality)
+     * - AUTO_RECOVERY/AUTO: System selected, use CAP mode (ABR can go lower)
+     *
+     * @param height The desired video height
+     * @param origin How the quality was selected
+     */
     private fun applyQualityConstraintByOrigin(height: Int, origin: QualitySelectionOrigin) {
         val selector = trackSelector ?: return
         val mode = when (origin) {
