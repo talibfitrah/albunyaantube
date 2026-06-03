@@ -136,15 +136,14 @@ public class SubmissionRateLimiter {
             Deque<Instant> dq = existing != null ? existing : new ArrayDeque<>();
             while (!dq.isEmpty() && dq.peekFirst().isBefore(cutoff)) dq.pollFirst();
             if (dq.size() + count > IMPORT_DAILY_ITEM_BUDGET) {
-                // All-or-nothing: leave the deque untouched.
-                // If the deque is empty (count alone exceeds budget, which only
-                // happens if count > IMPORT_DAILY_ITEM_BUDGET), retryAfter stays null
-                // meaning "reset at window end" — callers treat remaining=0 in that case.
+                // All-or-nothing: leave the deque untouched and report when the oldest slot
+                // ages out. The empty-deque case would require count > the 1000-item budget,
+                // but the only caller caps count at 200 (@Size on ImportResolveRequest.items),
+                // so it is unreachable. The guard remains as cheap defense: were it ever empty,
+                // retryAfter stays null → callers treat remaining=0.
                 if (!dq.isEmpty()) {
                     Instant oldest = dq.peekFirst();
                     retryAfter[0] = oldest.plus(WINDOW).getEpochSecond() - now.getEpochSecond();
-                } else {
-                    retryAfter[0] = WINDOW.getSeconds();
                 }
             } else {
                 for (int i = 0; i < count; i++) dq.addLast(now);
