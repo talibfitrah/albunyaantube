@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.22": {
+    "en": "Import your YouTube subscriptions, playlists and favorites into your Me list (admin-reviewed). Fixes 4K dropping to 360p after seeking; steadier playback on 4G.",
+    "ar": "استيراد اشتراكاتك وقوائم التشغيل والمفضلات من يوتيوب إلى قائمتك (بمراجعة المشرف). إصلاح انخفاض جودة 4K إلى 360p بعد التمرير؛ تشغيل أكثر ثباتًا على 4G.",
+    "nl": "Importeer je YouTube-abonnementen, afspeellijsten en favorieten naar je Me-lijst (door beheerder beoordeeld). 4K valt niet meer terug naar 360p na zoeken; stabieler afspelen op 4G."
+  },
   "1.0.0-beta.21": {
     "en": "Phone country code picker shows dial codes; verification emails sent from branded sender; profile phone display formatted.",
     "ar": "منتقي رمز الدولة يعرض أرقام الاتصال؛ رسائل التحقق تُرسل من عنوان رسمي؛ عرض رقم الهاتف منسّق في الملف الشخصي.",
