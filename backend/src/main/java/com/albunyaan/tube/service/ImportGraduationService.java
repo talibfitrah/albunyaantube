@@ -70,6 +70,12 @@ public class ImportGraduationService {
      * All exceptions are swallowed: fan-out failure must not break the admin action.
      */
     private void fanOut(YouTubeContentType type, String youtubeId, boolean approve) {
+        // A blank/null youtubeId would issue whereEqualTo("youtubeId", null) — a wasted
+        // collection-group query that matches nothing useful. Organic registry items can
+        // lack a youtubeId; skip rather than scan. Mirrors ContentApprovalGate's blank guard.
+        if (youtubeId == null || youtubeId.isBlank()) {
+            return;
+        }
         try {
             var snap = db.collectionGroup(coll(type))
                     .whereEqualTo("youtubeId", youtubeId)

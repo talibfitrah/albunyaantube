@@ -1112,6 +1112,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     // so a future seek gets a fresh allowance of transient refreshes.
                     seekTransientErrorGate.onPlaybackResumed()
 
+                    // streamRefreshCount gates the 403/refresh path and previously reset only
+                    // on a stream CHANGE — so two successful seek-recoveries on one long video
+                    // exhausted it, and the next seek-403 hit "stream unavailable" instead of
+                    // recovering. Reset on every successful resume so the budget is per-failure-
+                    // episode, not per-video-lifetime. Genuinely broken streams never reach
+                    // isPlaying=true, so their cap (and the degradation budget) still holds.
+                    streamRefreshCount = 0
+
                     if (!hasAutoHidden) {
                         // Auto-hide controls after playback starts
                         hasAutoHidden = true

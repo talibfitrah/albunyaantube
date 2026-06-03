@@ -51,8 +51,15 @@ class SeekTransientErrorGate(
         lastSeekElapsedMs = clock()
     }
 
-    /** Playback resumed successfully — the failure episode (if any) is over. */
+    /**
+     * Playback resumed successfully — the failure episode is over. Clears the transient
+     * count AND the armed seek timestamp: after a clean resume, a later error counts as
+     * seek-transient only if a NEW user seek precedes it. Without clearing the timestamp,
+     * the programmatic resume-seek (seekTo after a refresh) re-arms the gate and lets
+     * recovery errors keep bypassing the degradation budget with no user seek involved.
+     */
     fun onPlaybackResumed() {
+        lastSeekElapsedMs = null
         transientRefreshCount = 0
     }
 

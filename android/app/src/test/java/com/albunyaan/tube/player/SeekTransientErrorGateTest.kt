@@ -107,6 +107,23 @@ class SeekTransientErrorGateTest {
     }
 
     @Test
+    fun `successful resume disarms the gate so a programmatic resume-seek cannot re-arm it`() {
+        // After a clean resume, an error is seek-transient ONLY if a NEW user seek precedes it.
+        // The programmatic seekTo(resumePosition) after a refresh records via onSeek(); if the
+        // gate stayed armed across resume, recovery errors would keep bypassing degradation with
+        // no user seek. onPlaybackResumed() must clear lastSeekElapsedMs.
+        val g = gate()
+        g.onSeek()
+        now += 100
+        assertTrue(g.tryClaimSeekTransientRefresh(AdaptiveType.SYNTH_ADAPTIVE))
+
+        g.onPlaybackResumed()          // clean resume — gate disarms
+        now += 100
+        // No new user seek: a subsequent error is NOT seek-transient (defers to degradation).
+        assertFalse(g.tryClaimSeekTransientRefresh(AdaptiveType.SYNTH_ADAPTIVE))
+    }
+
+    @Test
     fun `new stream clears a stale seek so it cannot leak across videos`() {
         val g = gate()
         g.onSeek()

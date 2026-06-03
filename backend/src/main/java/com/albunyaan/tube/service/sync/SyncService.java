@@ -198,7 +198,18 @@ public class SyncService {
      * fail-open design doesn't already concede. The client-supplied value is never trusted.
      */
     private static String deriveApprovalStatus(String registryStatus) {
-        return "PENDING".equalsIgnoreCase(registryStatus) ? "AWAITING" : "APPROVED";
+        // Actively-gated states the admin hasn't cleared → AWAITING. This mirrors
+        // PublicContentService, which 404s BOTH PENDING and REQUEST_CHANGES (an admin
+        // sent the item back for revision — not yet approved/playable). Mapping
+        // REQUEST_CHANGES to APPROVED would mislabel it as live in the user's Me feed
+        // while the availability gate still 404s playback. REJECTED never reaches here
+        // (callers tombstone it first). Everything else — APPROVED, or an id ABSENT from
+        // the registry — is APPROVED so organic favorites/subscriptions aren't stranded.
+        if ("PENDING".equalsIgnoreCase(registryStatus)
+                || "REQUEST_CHANGES".equalsIgnoreCase(registryStatus)) {
+            return "AWAITING";
+        }
+        return "APPROVED";
     }
 
     // ── Write path ───────────────────────────────────────────────────────────
