@@ -8,6 +8,7 @@ import com.albunyaan.tube.data.shorts.ShortsFeedRepository
 import com.albunyaan.tube.data.shorts.ShortsItem
 import com.albunyaan.tube.data.shorts.ShortsPage
 import com.albunyaan.tube.player.AdaptiveBufferPolicy
+import com.albunyaan.tube.player.ColdStartQualityChooser
 import com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory
 import com.albunyaan.tube.player.PlaybackFeatureFlags
 import kotlinx.coroutines.CoroutineStart
@@ -56,6 +57,7 @@ class ShortsPlayerViewModelTest {
     private val bufferPolicy: AdaptiveBufferPolicy = mock()
     private val featureFlags: PlaybackFeatureFlags = mock()
     private val neverFreezeFactory: NeverFreezeTrackSelectionFactory = mock()
+    private val coldStartQualityChooser: ColdStartQualityChooser = mock()
 
     @Before
     fun setup() {
@@ -138,6 +140,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = null
         )
@@ -163,6 +166,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = null
         )
@@ -202,6 +206,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = null
         )
@@ -232,6 +237,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = "UC1"
         )
@@ -258,6 +264,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = "UC1"
         )
@@ -307,6 +314,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = "UC1"
         )
@@ -344,6 +352,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = null
         )
@@ -368,6 +377,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = null
         )
@@ -408,6 +418,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = "v3",
             channelId = null
         )
@@ -454,6 +465,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = null
         )
@@ -488,6 +500,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = null
         )
@@ -510,6 +523,7 @@ class ShortsPlayerViewModelTest {
             bufferPolicy = bufferPolicy,
             featureFlags = featureFlags,
             neverFreezeTrackSelectionFactory = neverFreezeFactory,
+            coldStartQualityChooser = coldStartQualityChooser,
             initialShortId = null,
             channelId = null
         )

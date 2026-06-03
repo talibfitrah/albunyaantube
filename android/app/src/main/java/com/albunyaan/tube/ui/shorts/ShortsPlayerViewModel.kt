@@ -49,6 +49,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private val bufferPolicy: com.albunyaan.tube.player.AdaptiveBufferPolicy,
     private val featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags,
     private val neverFreezeTrackSelectionFactory: com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory,
+    private val coldStartQualityChooser: com.albunyaan.tube.player.ColdStartQualityChooser,
     @Assisted("initialShortId") private val initialShortId: String?,
     @Assisted("channelId") private val channelId: String?,
     @Assisted("initialShortTitle") private val initialShortTitle: String? = null,
@@ -91,6 +92,9 @@ class ShortsPlayerViewModel @AssistedInject constructor(
             QualityTrackSelector.createForDiscreteQualities(context)
         }
         trackSelector = selector
+        // Bound ABR on cellular so shorts don't stall on weak networks (no-op on WiFi).
+        val ceiling = runCatching { coldStartQualityChooser.chooseCeiling(context) }.getOrNull()
+        selector.applyNetworkCeiling(ceiling?.maxHeight, ceiling?.maxBitrateBps)
         ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(bufferPolicy.buildLoadControl())
             .setTrackSelector(selector)
@@ -114,10 +118,9 @@ class ShortsPlayerViewModel @AssistedInject constructor(
         player
         if (heightPx <= 0) {
             userQualityCapHeight = 0
-            trackSelector.parameters = trackSelector.buildUponParameters()
-                .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
-                .setMaxVideoBitrate(Int.MAX_VALUE)
-                .build()
+            // AUTO: honor the active network ceiling (cellular) instead of clearing to MAX,
+            // which would let ABR climb back into a stall on weak networks.
+            trackSelector.selectAutoQuality()
         } else {
             userQualityCapHeight = heightPx
             trackSelector.applyQualityConstraint(

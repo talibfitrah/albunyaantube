@@ -62,6 +62,17 @@ class ColdStartQualityChooser @Inject constructor() {
         const val QUALITY_LOW = 480
         const val QUALITY_MINIMUM = 360
 
+        // Cellular bitrate ceilings (bits per second). These bound ABR so it cannot
+        // climb into a bitrate the cellular link can't actually sustain, which is the
+        // root cause of the "plays 2-3s then stalls" loop on congested 4G.
+        //
+        // We MUST cap by network class rather than the reported link speed:
+        // NetworkCapabilities.linkDownstreamBandwidthKbps is a *technology* estimate
+        // (LTE/5G almost always reports tens of Mbps regardless of real throughput on
+        // a busy cell), so it is useless for protecting playback.
+        const val CELLULAR_FAST_MAX_BITRATE_BPS = 2_500_000   // ~720p H.264 ceiling
+        const val CELLULAR_SLOW_MAX_BITRATE_BPS = 1_200_000   // ~480p H.264 ceiling
+
         // Screen size breakpoints (dp)
         private const val SCREEN_SMALL = 600   // < 600dp = phone
         private const val SCREEN_MEDIUM = 720  // 600-720dp = small tablet
@@ -107,6 +118,21 @@ class ColdStartQualityChooser @Inject constructor() {
             append(")")
         }
     }
+
+    /**
+     * A hard ceiling applied to the track selector on constrained networks.
+     *
+     * Unlike the cold-start [QualityChoice] (which only seeds the *initial* pick and
+     * does nothing for HLS/DASH ABR), this ceiling bounds adaptive bitrate selection
+     * for the whole session so ABR cannot climb back into a stall after a lull.
+     *
+     * @param maxHeight Maximum video height (pixels) ABR may select.
+     * @param maxBitrateBps Maximum video bitrate (bits/sec) ABR may select.
+     */
+    data class Ceiling(
+        val maxHeight: Int,
+        val maxBitrateBps: Int
+    )
 
     /**
      * Choose the initial playback quality based on context.
@@ -315,10 +341,29 @@ class ColdStartQualityChooser @Inject constructor() {
         screenClass: ScreenClass,
         persistedHint: Int?
     ): Int {
-        // User preference: aim high by default; AdaptiveTrackSelection will
-        // step down on stalls. Previously this prioritised TTFF with low
-        // initial quality, but on stable connections it never upgraded
-        // visibly — playback stayed at 480-720p even on fast WiFi.
+        // Persisted hint disabled — previously this clamped quality DOWN if a
+        // prior session ran at low quality, which kept users stuck at 360-480p
+        // even after switching to fast WiFi. Manual picks from the quality
+        // menu always win at runtime regardless of this cold-start hint.
+        @Suppress("UNUSED_VARIABLE")
+        val ignoredHint = persistedHint
+
+        return recommendedHeightFor(networkType, screenClass)
+    }
+
+    /**
+     * Pure network+screen → initial-height policy (no Android context, unit-testable).
+     *
+     * On WiFi we still aim high and let ABR run free (a deliberate choice: starting
+     * low on WiFi meant playback never visibly upgraded on stable links).
+     *
+     * On cellular we start conservative. The link-speed signal cannot be trusted, and
+     * for progressive / single-representation streams there is NO in-stream ABR to
+     * rescue an over-ambitious start, so an optimistic cellular start = guaranteed
+     * stall. Starting at 480p (phone) / 720p (tablet) gives a fast, stutter-free start;
+     * ABR climbs from there only when *measured* throughput supports it.
+     */
+    internal fun recommendedHeightFor(networkType: NetworkType, screenClass: ScreenClass): Int {
         val networkRecommendation = when (networkType) {
             NetworkType.WIFI -> when (screenClass) {
                 ScreenClass.LARGE_TABLET_TV -> QUALITY_ULTRA  // 4K on TV/large tablet
@@ -326,9 +371,9 @@ class ColdStartQualityChooser @Inject constructor() {
                 ScreenClass.PHONE -> QUALITY_HIGH             // 1080p on phone WiFi
             }
             NetworkType.CELLULAR_FAST -> when (screenClass) {
-                ScreenClass.LARGE_TABLET_TV -> QUALITY_HIGH   // 1080p on LTE/5G
-                ScreenClass.TABLET -> QUALITY_HIGH            // 1080p on LTE/5G
-                ScreenClass.PHONE -> QUALITY_MEDIUM           // 720p on phone LTE/5G
+                ScreenClass.LARGE_TABLET_TV -> QUALITY_HIGH   // 1080p on LTE/5G TV/large tablet
+                ScreenClass.TABLET -> QUALITY_MEDIUM          // 720p on LTE/5G tablet
+                ScreenClass.PHONE -> QUALITY_LOW              // 480p start on phone LTE/5G
             }
             NetworkType.CELLULAR_SLOW, NetworkType.METERED -> QUALITY_LOW // 480p for slow/metered
             NetworkType.OFFLINE -> QUALITY_MINIMUM // 360p when offline (cached content only)
@@ -341,18 +386,31 @@ class ColdStartQualityChooser @Inject constructor() {
             ScreenClass.PHONE -> QUALITY_HIGH             // Cap at 1080p (most modern phones)
         }
 
-        // Apply screen cap
-        val cappedRecommendation = minOf(networkRecommendation, screenCap)
-
-        // Persisted hint disabled — previously this clamped quality DOWN if a
-        // prior session ran at low quality, which kept users stuck at 360-480p
-        // even after switching to fast WiFi. Manual picks from the quality
-        // menu always win at runtime regardless of this cold-start hint.
-        @Suppress("UNUSED_VARIABLE")
-        val ignoredHint = persistedHint
-
-        return cappedRecommendation
+        return minOf(networkRecommendation, screenCap)
     }
+
+    /**
+     * Pure network → ceiling policy (no Android context, unit-testable).
+     *
+     * Returns null on WiFi/offline (no ceiling — ABR runs free / cached). On cellular
+     * it returns a hard height+bitrate cap matched to what the link class can sustain.
+     */
+    internal fun ceilingFor(networkType: NetworkType): Ceiling? = when (networkType) {
+        NetworkType.CELLULAR_FAST ->
+            Ceiling(QUALITY_MEDIUM, CELLULAR_FAST_MAX_BITRATE_BPS)   // ≤720p / 2.5 Mbps
+        NetworkType.CELLULAR_SLOW, NetworkType.METERED ->
+            Ceiling(QUALITY_LOW, CELLULAR_SLOW_MAX_BITRATE_BPS)      // ≤480p / 1.2 Mbps
+        NetworkType.WIFI, NetworkType.OFFLINE -> null
+    }
+
+    /**
+     * Resolve the current cellular ceiling for [context], or null on WiFi/offline.
+     * Applied to the track selector so adaptive ABR cannot climb into a stall.
+     */
+    fun chooseCeiling(context: Context): Ceiling? = ceilingFor(detectNetworkType(context))
+
+    /** Current network classification — exposed so the player can react to handovers. */
+    fun currentNetworkType(context: Context): NetworkType = detectNetworkType(context)
 
     private fun findBestTrackForHeight(tracks: List<VideoTrack>, targetHeight: Int): VideoTrack? {
         // Find the best track at or below target height

@@ -879,6 +879,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             QualityTrackSelector.createForDiscreteQualities(requireContext())
         }.also { this.trackSelector = it }
 
+        // Bound ABR up front on cellular. Without this, adaptive (HLS/DASH) playback starts
+        // unconstrained from Int.MAX and the first segments grab a bitrate the 4G link can't
+        // sustain — the "plays 2-3s then stalls" loop. No-op (unbounded) on WiFi.
+        applyNetworkCeilingFromCurrentNetwork()
+
         // LegacySubtitleRenderersFactory re-enables legacy TTML/VTT decoding
         // on the TextRenderer; required because Media3 1.10 disables it by
         // default and our side-loaded subtitle pipeline needs it (see the
@@ -1715,24 +1720,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val streamState = viewModel.state.value.streamState
         if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "showQualitySelector: streamState = $streamState")
 
-        if (streamState !is StreamState.Ready) {
-            Toast.makeText(requireContext(), R.string.player_video_not_ready, Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val videoTracks = streamState.selection.resolved.videoTracks
-        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Available video tracks: ${videoTracks.size}")
-        if (BuildConfig.DEBUG) {
-            videoTracks.forEachIndexed { index, track ->
-                android.util.Log.d("PlayerFragment", "Track $index: height=${track.height}, qualityLabel=${track.qualityLabel}")
-            }
-        }
-
+        // Source the list from the ViewModel, which reads ready-OR-recovering. This lets the
+        // user drop resolution DURING a stall — the exact moment they most want to.
         val allQualities = viewModel.getAvailableQualities()
         if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "getAvailableQualities returned: ${allQualities.size} qualities")
 
         if (allQualities.isEmpty()) {
-            Toast.makeText(requireContext(), R.string.player_quality_unavailable, Toast.LENGTH_LONG).show()
+            // Distinguish "settled but no tracks" from "genuinely not ready yet".
+            val msg = if (streamState is StreamState.Ready || streamState is StreamState.Recovering) {
+                R.string.player_quality_unavailable
+            } else {
+                R.string.player_video_not_ready
+            }
+            Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
             return
         }
 
@@ -1750,7 +1750,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Quality labels: ${labels.joinToString()}")
 
-        val currentQuality = streamState.selection.video?.qualityLabel
+        val currentQuality = viewModel.currentVideoQualityLabel()
         if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Current quality: $currentQuality")
 
         val currentIndex = sortedQualities.indexOfFirst { it.label == currentQuality }
@@ -2736,6 +2736,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 return
             }
         }
+
+        // Re-evaluate the network ceiling per stream so a WiFi↔cellular change between
+        // videos is honored. Cheap, and a no-op when the network is unchanged.
+        applyNetworkCeilingFromCurrentNetwork()
 
         val key = streamState.streamId to state.audioOnly
         val selection = streamState.selection
@@ -4033,6 +4037,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      * @param height The desired video height
      * @param origin How the quality was selected
      */
+    /**
+     * Resolve and apply the current network's quality ceiling to the track selector.
+     * Cellular → hard height+bitrate cap so ABR can't climb into a stall; WiFi → unbounded.
+     * Cheap to re-run, so it is called on player setup and on every stream prepare to
+     * track WiFi↔cellular transitions between videos.
+     */
+    private fun applyNetworkCeilingFromCurrentNetwork() {
+        val selector = trackSelector ?: return
+        val ceiling = runCatching { coldStartQualityChooser.chooseCeiling(requireContext()) }.getOrNull()
+        selector.applyNetworkCeiling(ceiling?.maxHeight, ceiling?.maxBitrateBps)
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d("PlayerFragment", "Applied network ceiling: ${ceiling ?: "none (WiFi/unbounded)"}")
+        }
+    }
+
     private fun applyQualityConstraintByOrigin(height: Int, origin: QualitySelectionOrigin) {
         val selector = trackSelector ?: return
         val mode = when (origin) {

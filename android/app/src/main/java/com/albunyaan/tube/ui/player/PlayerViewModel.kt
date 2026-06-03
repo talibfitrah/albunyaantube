@@ -318,10 +318,11 @@ class PlayerViewModel @Inject constructor(
      * for better reliability (no audio/video merge needed).
      */
     fun getAvailableQualities(): List<QualityOption> {
-        val streamState = _state.value.streamState
-        if (streamState !is StreamState.Ready) return emptyList()
+        // Source from ready-OR-recovering so the picker is populated even while the player
+        // is stalling/recovering — otherwise the user can't drop resolution during a stall.
+        val selection = readyOrRecoveringSelection()?.selection ?: return emptyList()
 
-        val videoTracks = streamState.selection.resolved.videoTracks
+        val videoTracks = selection.resolved.videoTracks
 
         // Deduplicate by height: prefer muxed over video-only, then highest bitrate
         val deduped = videoTracks
@@ -345,6 +346,13 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * Label of the currently-selected video quality (ready or recovering), or null.
+     * Used by the picker to highlight the active choice even during a stall.
+     */
+    fun currentVideoQualityLabel(): String? =
+        readyOrRecoveringSelection()?.selection?.video?.qualityLabel
+
+    /**
      * Set user quality cap (ceiling) from manual selection.
      * This treats the user's choice as a maximum resolution cap. ABR can still drop
      * below when network dips, then recover back up to the cap.
@@ -361,8 +369,9 @@ class PlayerViewModel @Inject constructor(
         qualitySwitchJob?.cancel()
 
         // Capture current streamId to verify after debounce - prevents applying
-        // a quality cap to a different video if the user navigated away
-        val targetStreamId = (_state.value.streamState as? StreamState.Ready)?.streamId
+        // a quality cap to a different video if the user navigated away. Ready-or-recovering
+        // so a quality change requested during a stall is still honored.
+        val targetStreamId = readyOrRecoveringSelection()?.streamId
 
         qualitySwitchJob = viewModelScope.launch(dispatcher) {
             // Debounce: wait before applying to coalesce rapid clicks
@@ -380,8 +389,9 @@ class PlayerViewModel @Inject constructor(
      *        to prevent applying settings to the wrong video.
      */
     private fun applyQualityCapInternal(track: VideoTrack, targetStreamId: String?) {
-        val streamState = _state.value.streamState
-        if (streamState !is StreamState.Ready) return
+        // Ready-or-recovering: a manual quality change during a stall must still apply.
+        // This mirrors applyAutoQualityStepDown, which already settles Recovering -> Ready.
+        val streamState = readyOrRecoveringSelection() ?: return
 
         // Verify we're still on the same video - user may have navigated during debounce
         if (targetStreamId != null && streamState.streamId != targetStreamId) {
