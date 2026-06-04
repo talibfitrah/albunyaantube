@@ -1,0 +1,40 @@
+backend/src/test/java/com/albunyaan/tube/service/DownloadServiceTest.java
+  s_2b90f660103eb6::t_c6aae8854da3df 56
+  s_2b90f660103eb6::t_8a1c4c0fde9ad2 154,166
+  s_2b90f660103eb6::t_77890f00fe65e8 48,65
+  s_2b90f660103eb6::t_1e0496195463f3 172-197
+backend/src/main/java/com/albunyaan/tube/service/VisibilityPolicy.java
+  s_2b90f660103eb6::t_d6a73c26b5f79f 1-33
+backend/src/main/java/com/albunyaan/tube/service/StreamIndexService.java
+  s_2b90f660103eb6::t_edf163750fbc39 41
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_2b90f660103eb6::t_a6f7e42b143bbf 1525
+backend/src/main/java/com/albunyaan/tube/service/sync/SyncService.java
+  s_2b90f660103eb6::t_5c96c7c8e68e13 8
+  s_2b90f660103eb6::t_685737fa946ac2 220
+backend/src/main/java/com/albunyaan/tube/service/UserImportSubmissionService.java
+  s_2b90f660103eb6::t_0c56d30c5ee1ae 166
+backend/src/test/java/com/albunyaan/tube/controller/DownloadControllerTest.java
+  s_2b90f660103eb6::t_9dc54aea6486bc 30-31
+backend/src/main/java/com/albunyaan/tube/service/DownloadService.java
+  s_2b90f660103eb6::t_052186779b31f2 70
+  s_2b90f660103eb6::t_b256acd28c8cb4 48,60-63
+backend/src/main/java/com/albunyaan/tube/controller/DownloadController.java
+  s_2b90f660103eb6::t_24a16e04abb38e 31-32,34-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "654d3c5e204c0e76dcbd43ed0094f2be6dbc117c",
+  "prompts": {},
+  "sessions": {
+    "s_2b90f660103eb6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc12f1b8-09b6-48e7-b8e8-1ad439a58004",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
