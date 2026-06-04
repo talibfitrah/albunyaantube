@@ -58,8 +58,10 @@ class YoutubeClientRotator @Inject constructor() {
      */
     fun currentClient(videoId: String, isIosEnabled: Boolean): Client {
         evictExpired()
+        // nextClient() never stores an index >= ROTATION_ORDER.size (it removes the state
+        // at the boundary and returns null), so a stored index is always in range.
         val state = states[videoId] ?: return initialClient(isIosEnabled)
-        return ROTATION_ORDER[state.index.coerceIn(0, ROTATION_ORDER.lastIndex)]
+        return ROTATION_ORDER[state.index]
     }
 
     fun reset(videoId: String) {
