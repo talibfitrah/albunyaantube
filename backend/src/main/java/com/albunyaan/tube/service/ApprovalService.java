@@ -1116,14 +1116,18 @@ public class ApprovalService {
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
         channel.setApprovalMetadata(metadata);
 
+        // CAS first: commit the approve decision (status PENDING→APPROVED) atomically BEFORE any
+        // per-user fan-out, so a lost reject-vs-personal-approve race can never strand per-user
+        // rows APPROVED against a registry doc that wasn't actually approved.
+        channelRepository.saveIfStatus(channel, "PENDING");
+
         if (personal) {
-            // Graduate waiting importers + record grants; never added to public listings.
+            // CAS won → safe to graduate waiting importers and persist the grant list (second
+            // write; status is already APPROVED so no CAS is needed).
             channel.setPersonalGrants(collectPersonalGrants(
                     YouTubeContentType.CHANNEL, channel.getYoutubeId(), channel.getSubmittedBy()));
+            channelRepository.save(channel);
         }
-
-        // Save to Firestore (transactional — atomically verifies PENDING status)
-        channelRepository.saveIfStatus(channel, "PENDING");
 
         // Add to category sort order (public approvals only — personal items stay out of listings)
         if (!personal && channel.getCategoryIds() != null) {
@@ -1192,14 +1196,18 @@ public class ApprovalService {
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
         playlist.setApprovalMetadata(metadata);
 
+        // CAS first: commit the approve decision (status PENDING→APPROVED) atomically BEFORE any
+        // per-user fan-out, so a lost reject-vs-personal-approve race can never strand per-user
+        // rows APPROVED against a registry doc that wasn't actually approved.
+        playlistRepository.saveIfStatus(playlist, "PENDING");
+
         if (personal) {
-            // Graduate waiting importers + record grants; never added to public listings.
+            // CAS won → safe to graduate waiting importers and persist the grant list (second
+            // write; status is already APPROVED so no CAS is needed).
             playlist.setPersonalGrants(collectPersonalGrants(
                     YouTubeContentType.PLAYLIST, playlist.getYoutubeId(), playlist.getSubmittedBy()));
+            playlistRepository.save(playlist);
         }
-
-        // Save to Firestore (transactional — atomically verifies PENDING status)
-        playlistRepository.saveIfStatus(playlist, "PENDING");
 
         // Add to category sort order (public approvals only — personal items stay out of listings)
         if (!personal && playlist.getCategoryIds() != null) {
@@ -1371,14 +1379,18 @@ public class ApprovalService {
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
         video.setApprovalMetadata(metadata);
 
+        // CAS first: commit the approve decision (status PENDING→APPROVED) atomically BEFORE any
+        // per-user fan-out, so a lost reject-vs-personal-approve race can never strand per-user
+        // rows APPROVED against a registry doc that wasn't actually approved.
+        videoRepository.saveIfStatus(video, "PENDING");
+
         if (personal) {
-            // Graduate waiting importers + record grants; never added to public listings.
+            // CAS won → safe to graduate waiting importers and persist the grant list (second
+            // write; status is already APPROVED so no CAS is needed).
             video.setPersonalGrants(collectPersonalGrants(
                     YouTubeContentType.VIDEO, video.getYoutubeId(), video.getSubmittedBy()));
+            videoRepository.save(video);
         }
-
-        // Save to Firestore (transactional — atomically verifies PENDING status)
-        videoRepository.saveIfStatus(video, "PENDING");
 
         if (!personal && video.getCategoryIds() != null) {
             for (String categoryId : video.getCategoryIds()) {

@@ -948,6 +948,13 @@ public class PublicContentService {
             throw new ResourceNotFoundException("Channel", channelId);
         }
 
+        // Finding 3: PERSONAL items aren't public — 404 (fail-open) on the public by-id so a
+        // non-grantee can't fetch the curated DTO. Grantees reach personal items via
+        // authenticated sync + on-device NewPipe.
+        if (!isPublicVisibility(channel.getVisibility())) {
+            throw new ResourceNotFoundException("Channel", channelId);
+        }
+
         return channel;
     }
 
@@ -964,6 +971,11 @@ public class PublicContentService {
 
         // PENDING or REQUEST_CHANGES → 404; fail-open.
         if (!"APPROVED".equals(playlist.getStatus())) {
+            throw new ResourceNotFoundException("Playlist", playlistId);
+        }
+
+        // Finding 3: PERSONAL items aren't public — 404 (fail-open) on the public by-id.
+        if (!isPublicVisibility(playlist.getVisibility())) {
             throw new ResourceNotFoundException("Playlist", playlistId);
         }
 
@@ -989,6 +1001,13 @@ public class PublicContentService {
         if (video.getValidationStatus() == ValidationStatus.UNAVAILABLE
                 || video.getValidationStatus() == ValidationStatus.ARCHIVED) {
             throw new ContentGoneException("Video", videoId);
+        }
+
+        // Finding 3: PERSONAL items aren't public — 404 (fail-open) on the public by-id so a
+        // non-grantee can't fetch the curated DTO. Grantees reach personal items via
+        // authenticated sync + on-device NewPipe.
+        if (!isPublicVisibility(video.getVisibility())) {
+            throw new ResourceNotFoundException("Video", videoId);
         }
 
         return video;

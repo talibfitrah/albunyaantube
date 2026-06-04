@@ -115,8 +115,11 @@ public class ImportGraduationService {
                 }
                 batch.update(doc.getReference(), upd);
 
-                // Path is users/{uid}/{coll}/{docId}; the doc's grandparent is the user
-                // doc, whose id is the owning uid.
+                // Path is users/{uid}/{coll}/{docId}; the doc's grandparent is the user doc,
+                // whose id is the owning uid. The uid is recorded when its update is staged; if a
+                // later chunk commit fails (swallowed below), the returned set can be a superset of
+                // actually-flipped rows. Benign for the personal-grant caller — the per-user derive
+                // re-applies APPROVED from personalGrants on the next sync (fail-toward-grant, never a leak).
                 var userRef = doc.getReference().getParent().getParent();
                 if (userRef != null) {
                     affectedUids.add(userRef.getId());

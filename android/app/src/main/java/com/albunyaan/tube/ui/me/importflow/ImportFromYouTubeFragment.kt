@@ -54,6 +54,9 @@ class ImportFromYouTubeFragment : Fragment(R.layout.fragment_import_youtube) {
     // Track whether start() has been called so we auto-start only once.
     private var startedOnce = false
 
+    /** Held so it can be dismissed in onDestroyView — avoids a WindowLeaked warning on rotation. */
+    private var cautionDialog: androidx.appcompat.app.AlertDialog? = null
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentImportYoutubeBinding.bind(view)
@@ -198,16 +201,20 @@ class ImportFromYouTubeFragment : Fragment(R.layout.fragment_import_youtube) {
      * review screen with their selection intact.
      */
     private fun showImportCautionDialog() {
-        MaterialAlertDialogBuilder(requireContext())
+        cautionDialog?.dismiss()
+        cautionDialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.import_caution_title)
             .setMessage(R.string.import_caution_message)
             .setPositiveButton(R.string.import_caution_continue) { _, _ -> viewModel.confirmImport() }
             .setNegativeButton(android.R.string.cancel, null)
+            .setOnDismissListener { cautionDialog = null }
             .show()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
+        cautionDialog?.dismiss()
+        cautionDialog = null
         _binding = null
     }
 }

@@ -93,12 +93,15 @@ public class Channel {
      * PERSONAL items are approved only for specific users and never appear in public
      * browse/search. Set at approval time, not at submission.
      */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String visibility;
 
     /**
      * Finding 3: Firebase UIDs granted personal access when visibility == PERSONAL.
      * Null/empty when PUBLIC. See Video.personalGrants and SyncService derive.
+     * WRITE_ONLY: never serialized to clients — leaking the grantee UID list is a PII/enumeration risk.
      */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private List<String> personalGrants;
 
     /**

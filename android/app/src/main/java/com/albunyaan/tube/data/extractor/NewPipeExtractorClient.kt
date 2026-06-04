@@ -157,7 +157,10 @@ class NewPipeExtractorClient(
                     val retryHandler = streamLinkHandlerFactory.fromId(videoId)
                     synchronized(NewPipeExtractorClient::class.java) {
                         if (featureFlags.isClientRotationEnabled) {
-                            applyClientSetting(clientRotator.initialClient(featureFlags.isIosFetchEnabled))
+                            // Honor the armed client (currentClient), not initialClient — a caller
+                            // retry may already have advanced IOS→ANDROID after a real failure, and
+                            // the visitorData retry must not silently revert to IOS.
+                            applyClientSetting(clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled))
                         } else {
                             applyIosFetchSetting()
                         }
