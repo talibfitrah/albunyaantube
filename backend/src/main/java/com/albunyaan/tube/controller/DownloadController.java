@@ -64,9 +64,11 @@ public class DownloadController {
     public ResponseEntity<DownloadManifestDto> getManifest(
             @PathVariable String videoId,
             @RequestParam String token,
-            @RequestParam(defaultValue = "false") boolean supportsMerging)
+            @RequestParam(defaultValue = "false") boolean supportsMerging,
+            @AuthenticationPrincipal FirebaseUserDetails user)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        DownloadManifestDto manifest = downloadService.getDownloadManifest(videoId, token, supportsMerging);
+        DownloadManifestDto manifest = downloadService.getDownloadManifest(
+                videoId, token, user != null ? user.getUid() : null, supportsMerging);
         return ResponseEntity.ok(manifest);
     }
 

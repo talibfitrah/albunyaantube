@@ -58,9 +58,13 @@ public class ApprovalRequestDto {
         this.scope = scope;
     }
 
-    /** True when this request asks for a per-user ("PERSONAL") approval. */
+    /**
+     * True when this request asks for a per-user ("PERSONAL") approval. Trimmed before
+     * comparison so a stray-whitespace scope (e.g. " PERSONAL ") is not silently treated
+     * as a public approval of content the admin intended to keep personal.
+     */
     public boolean isPersonalScope() {
-        return "PERSONAL".equalsIgnoreCase(scope);
+        return scope != null && "PERSONAL".equalsIgnoreCase(scope.trim());
     }
 }
 
