@@ -231,7 +231,10 @@ public class PublicContentService {
             result = channelRepository.findApprovedBySubscribersDescWithCursor(limit, cursor);
         }
 
+        // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
+        // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
         List<ContentItemDto> items = result.getItems().stream()
+                .filter(this::isApproved)
                 .filter(this::isAvailable)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -282,7 +285,10 @@ public class PublicContentService {
             result = playlistRepository.findApprovedByItemCountDescWithCursor(limit, cursor);
         }
 
+        // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
+        // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
         List<ContentItemDto> items = result.getItems().stream()
+                .filter(this::isApproved)
                 .filter(this::isAvailable)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -319,7 +325,10 @@ public class PublicContentService {
                 result = videoRepository.findApprovedByUploadedAtDescWithCursor(limit, cursor);
             }
 
+            // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
+            // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
             List<ContentItemDto> items = result.getItems().stream()
+                    .filter(this::isApproved)
                     .filter(this::isAvailable)
                     .map(this::toDto)
                     .collect(Collectors.toList());

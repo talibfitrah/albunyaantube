@@ -183,6 +183,54 @@ class ImportControllerTest {
         verify(submissions).submit(any(ImportItem.class), eq(TEST_UID));
     }
 
+    // ── Finding 3: existing PERSONAL item is grant-gated on the resolve short-circuit ──
+
+    @Test
+    void resolveExistingPersonalItem_nonGrantee_returnsPendingNoContent() throws Exception {
+        Video v = new Video();
+        v.setYoutubeId("vid-personal");
+        v.setStatus("APPROVED");
+        v.setVisibility("PERSONAL");
+        v.setPersonalGrants(List.of("someone-else"));
+        v.setTitle("Personal Video");
+        when(videoRepository.findByYoutubeId("vid-personal")).thenReturn(Optional.of(v));
+
+        ImportResolveRequest req = new ImportResolveRequest(List.of(
+                new ImportItem(YouTubeContentType.VIDEO, "vid-personal", "Personal Video", null, null)
+        ));
+
+        mvc.perform(post("/api/account/import/resolve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].disposition").value("PENDING"))
+                .andExpect(jsonPath("$.results[0].content").doesNotExist());
+        // existing doc → never creates a new submission
+        verify(submissions, never()).submit(any(ImportItem.class), eq(TEST_UID));
+    }
+
+    @Test
+    void resolveExistingPersonalItem_grantee_returnsApprovedWithContent() throws Exception {
+        Video v = new Video();
+        v.setYoutubeId("vid-personal");
+        v.setStatus("APPROVED");
+        v.setVisibility("PERSONAL");
+        v.setPersonalGrants(List.of(TEST_UID));
+        v.setTitle("Personal Video");
+        when(videoRepository.findByYoutubeId("vid-personal")).thenReturn(Optional.of(v));
+
+        ImportResolveRequest req = new ImportResolveRequest(List.of(
+                new ImportItem(YouTubeContentType.VIDEO, "vid-personal", "Personal Video", null, null)
+        ));
+
+        mvc.perform(post("/api/account/import/resolve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].disposition").value("APPROVED"))
+                .andExpect(jsonPath("$.results[0].content").isNotEmpty());
+    }
+
     // ── Test 3: unauthenticated request → 401 ────────────────────────────
 
     @Test

@@ -161,7 +161,7 @@ public class UserImportSubmissionService {
      * per-user sync derive keeps it AWAITING) instead of appearing as an approved, playable
      * item they were never granted. All other cases defer to {@link #statusToDisposition}.
      */
-    static ImportDisposition dispositionForExisting(String status, String visibility, List<String> grants, String uid) {
+    public static ImportDisposition dispositionForExisting(String status, String visibility, List<String> grants, String uid) {
         if ("APPROVED".equalsIgnoreCase(status)
                 && "PERSONAL".equalsIgnoreCase(visibility)
                 && (grants == null || uid == null || !grants.contains(uid))) {
