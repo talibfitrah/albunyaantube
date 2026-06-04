@@ -103,34 +103,20 @@ class NewPipeExtractorClient(
         try {
             val handler = streamLinkHandlerFactory.fromId(videoId)
             val extractor = youtubeService.getStreamExtractor(handler)
-            // Apply client setting before extraction. On initial attempt, derive client from
-            // feature flags (IOS when isIosFetchEnabled, ANDROID otherwise). When forceRefresh=true
-            // and client rotation is enabled, advance to the next fallback client instead.
-            // NOTE: Synchronization only ensures atomic apply of the setting to NewPipe's global state.
-            // It does NOT guarantee that concurrent extractions (in fetchPage()) observe the same
-            // value throughout their execution. Full serialization would be too costly. This is
-            // acceptable since toggles are rare (ops/debug only) and not toggled during playback.
-            if (forceRefresh && featureFlags.isClientRotationEnabled) {
-                val nextClient = clientRotator.nextClient(videoId)
-                if (nextClient != null) {
-                    synchronized(NewPipeExtractorClient::class.java) {
-                        applyClientSetting(nextClient)
-                    }
+            // ANDROID-PLAYBACK-02 (root-cause fix): client selection is FAILURE-driven, not
+            // forceRefresh-driven. A post-seek HTTP 403 just needs fresh URLs from the SAME
+            // client; rotating IOS→ANDROID on every refresh collapsed the adaptive ladder to
+            // muxed 360p (the ANDROID client returns only itag 18). We stay on the client that
+            // last extracted successfully (currentClient) and only advance to the next client
+            // when an extraction actually fails — armed in the catch below via nextClient().
+            // NOTE: Synchronization only ensures atomic apply of the setting to NewPipe's global
+            // state; it does not serialize concurrent fetchPage() executions. Acceptable since the
+            // single-flight GlobalStreamResolver makes concurrent same-video resolves rare.
+            synchronized(NewPipeExtractorClient::class.java) {
+                if (featureFlags.isClientRotationEnabled) {
+                    applyClientSetting(clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled))
                 } else {
-                    // All clients exhausted — restore initial setting and report failure
-                    synchronized(NewPipeExtractorClient::class.java) {
-                        applyClientSetting(clientRotator.initialClient(featureFlags.isIosFetchEnabled))
-                    }
-                    metrics.onStreamResolveFailure(videoId, ExtractionException("All YouTube clients exhausted for $videoId"))
-                    return@withContext null
-                }
-            } else {
-                synchronized(NewPipeExtractorClient::class.java) {
-                    if (forceRefresh || !featureFlags.isClientRotationEnabled) {
-                        applyIosFetchSetting()
-                    } else {
-                        applyClientSetting(clientRotator.initialClient(featureFlags.isIosFetchEnabled))
-                    }
+                    applyIosFetchSetting()
                 }
             }
             // CRITICAL: Must call fetchPage() before getInfo() to get ALL video formats!
@@ -197,6 +183,12 @@ class NewPipeExtractorClient(
                 } catch (_: Throwable) {
                     // Retry also failed; fall through to normal error handling
                 }
+            }
+            // ANDROID-PLAYBACK-02: a genuine extraction failure arms the next fallback client
+            // so the caller's retry advances IOS→ANDROID. Any successful extraction clears this
+            // via clientRotator.reset(videoId) on the success paths above.
+            if (featureFlags.isClientRotationEnabled) {
+                clientRotator.nextClient(videoId)
             }
             metrics.onStreamResolveFailure(videoId, throwable)
             if (throwable is IOException || throwable is ExtractionException) {

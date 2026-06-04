@@ -93,4 +93,39 @@ class YoutubeClientRotatorTest {
         // nextClient for that video still starts fresh
         assertEquals(YoutubeClientRotator.Client.ANDROID, rotator.nextClient("nonExistentVideo"))
     }
+
+    // ── currentClient (ANDROID-PLAYBACK-02: failure-driven, not refresh-driven) ──────
+
+    @Test
+    fun currentClient_noState_iosEnabled_returnsIos() {
+        // The seek-403 fix: with no prior failure, a refresh stays on IOS (full ladder),
+        // never rotating to the muxed-only ANDROID client.
+        assertEquals(YoutubeClientRotator.Client.IOS, rotator.currentClient("v1", isIosEnabled = true))
+    }
+
+    @Test
+    fun currentClient_noState_iosDisabled_returnsAndroid() {
+        assertEquals(YoutubeClientRotator.Client.ANDROID, rotator.currentClient("v1", isIosEnabled = false))
+    }
+
+    @Test
+    fun currentClient_doesNotAdvanceState_repeatedCallsStayIos() {
+        // Repeated refreshes (no failure) must NOT rotate — this is the core of the fix.
+        repeat(5) { assertEquals(YoutubeClientRotator.Client.IOS, rotator.currentClient("v1", isIosEnabled = true)) }
+    }
+
+    @Test
+    fun currentClient_afterFailureArmed_returnsAndroid() {
+        rotator.nextClient("v1") // simulate an extraction failure arming the fallback
+        assertEquals(YoutubeClientRotator.Client.ANDROID, rotator.currentClient("v1", isIosEnabled = true))
+        // ...and stays armed without advancing further on repeat reads
+        assertEquals(YoutubeClientRotator.Client.ANDROID, rotator.currentClient("v1", isIosEnabled = true))
+    }
+
+    @Test
+    fun currentClient_afterReset_returnsInitialIos() {
+        rotator.nextClient("v1")
+        rotator.reset("v1")
+        assertEquals(YoutubeClientRotator.Client.IOS, rotator.currentClient("v1", isIosEnabled = true))
+    }
 }
