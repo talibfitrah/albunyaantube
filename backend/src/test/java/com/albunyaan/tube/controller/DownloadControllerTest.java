@@ -27,8 +27,8 @@ class DownloadControllerTest {
     @Test
     void checkPolicy_shouldReturnPolicy() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         DownloadPolicyDto policy = DownloadPolicyDto.allowed();
-        when(downloadService.checkDownloadPolicy("video-123")).thenReturn(policy);
-        ResponseEntity<DownloadPolicyDto> response = downloadController.checkPolicy("video-123");
+        when(downloadService.checkDownloadPolicy("video-123", "user-123")).thenReturn(policy);
+        ResponseEntity<DownloadPolicyDto> response = downloadController.checkPolicy("video-123", testUser);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertTrue(response.getBody().isAllowed());
     }

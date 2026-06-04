@@ -5,6 +5,7 @@ import com.albunyaan.tube.dto.sync.*;
 import com.albunyaan.tube.repository.SyncRepository;
 import com.albunyaan.tube.repository.SyncRepository.RawRow;
 import com.albunyaan.tube.service.ContentApprovalGate;
+import com.albunyaan.tube.service.VisibilityPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -216,7 +217,7 @@ public class SyncService {
         // Finding 3: a PERSONAL-approved item is APPROVED only for its grantees. Any other
         // user — including a later importer of the same id — stays AWAITING, so a personal
         // approval never leaks the item beyond the people the admin approved it for.
-        if ("PERSONAL".equalsIgnoreCase(info.visibility())) {
+        if (!VisibilityPolicy.isPublic(info.visibility())) {
             java.util.List<String> grants = info.personalGrants();
             boolean granted = grants != null && uid != null && grants.contains(uid);
             return granted ? "APPROVED" : "AWAITING";

@@ -45,7 +45,7 @@ public class DownloadService {
         this.firestore = firestore;
     }
 
-    public DownloadPolicyDto checkDownloadPolicy(String videoId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    public DownloadPolicyDto checkDownloadPolicy(String videoId, String uid) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Video video = videoRepository.findByYoutubeId(videoId).orElse(null);
         if (video == null) {
             return DownloadPolicyDto.denied("Video not found in registry");
@@ -57,12 +57,17 @@ public class DownloadService {
                 || video.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
             return DownloadPolicyDto.denied("Video no longer available");
         }
+        // Finding 3: a PERSONAL video is downloadable only by a grantee (this endpoint is
+        // authenticated, so uid is available). Non-grantees are denied — no token, no manifest.
+        if (!VisibilityPolicy.isAccessible(video.getVisibility(), video.getPersonalGrants(), uid)) {
+            return DownloadPolicyDto.denied("Video not available");
+        }
         return DownloadPolicyDto.allowedWithEula();
     }
 
     public DownloadTokenDto generateDownloadToken(String videoId, String userId, boolean eulaAccepted)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        DownloadPolicyDto policy = checkDownloadPolicy(videoId);
+        DownloadPolicyDto policy = checkDownloadPolicy(videoId, userId);
         if (!policy.isAllowed()) {
             throw new PolicyViolationException("Download not allowed: " + policy.getReason());
         }

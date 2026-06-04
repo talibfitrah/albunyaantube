@@ -163,7 +163,7 @@ public class UserImportSubmissionService {
      */
     public static ImportDisposition dispositionForExisting(String status, String visibility, List<String> grants, String uid) {
         if ("APPROVED".equalsIgnoreCase(status)
-                && "PERSONAL".equalsIgnoreCase(visibility)
+                && !VisibilityPolicy.isPublic(visibility)
                 && (grants == null || uid == null || !grants.contains(uid))) {
             return ImportDisposition.PENDING;
         }

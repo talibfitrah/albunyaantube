@@ -28,9 +28,11 @@ public class DownloadController {
     }
 
     @GetMapping("/policy/{videoId}")
-    public ResponseEntity<DownloadPolicyDto> checkPolicy(@PathVariable String videoId)
+    public ResponseEntity<DownloadPolicyDto> checkPolicy(@PathVariable String videoId,
+            @AuthenticationPrincipal FirebaseUserDetails user)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        DownloadPolicyDto policy = downloadService.checkDownloadPolicy(videoId);
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy(
+                videoId, user != null ? user.getUid() : null);
         return ResponseEntity.ok(policy);
     }
 

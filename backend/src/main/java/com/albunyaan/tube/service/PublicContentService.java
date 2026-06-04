@@ -1522,7 +1522,7 @@ public class PublicContentService {
      * visibility (legacy docs and all organic/admin adds) is treated as PUBLIC.
      */
     private boolean isPublicVisibility(String visibility) {
-        return visibility == null || visibility.isBlank() || "PUBLIC".equalsIgnoreCase(visibility);
+        return VisibilityPolicy.isPublic(visibility);
     }
 
     /**

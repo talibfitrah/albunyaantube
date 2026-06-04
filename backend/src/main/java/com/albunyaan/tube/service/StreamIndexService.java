@@ -38,7 +38,7 @@ public class StreamIndexService {
 
     /** Finding 3: PERSONAL-visibility sources must not be indexed into public search. */
     private static boolean isPublicVisibility(String visibility) {
-        return visibility == null || visibility.isBlank() || "PUBLIC".equalsIgnoreCase(visibility);
+        return VisibilityPolicy.isPublic(visibility);
     }
 
     /**
