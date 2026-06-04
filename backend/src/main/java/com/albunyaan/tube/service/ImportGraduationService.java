@@ -58,6 +58,40 @@ public class ImportGraduationService {
         return fanOut(type, youtubeId, true);
     }
 
+    /**
+     * Read-only: the Firebase UIDs of every user with an AWAITING per-user row for this content
+     * type + youtubeId. NO writes — it does not flip any row.
+     *
+     * Used by the personal-approval path to compute the grant list BEFORE the registry CAS write,
+     * so status + visibility + grants land in one atomic write. (Doing the grant write second,
+     * after the CAS, let a crash/transient error strand the item APPROVED+PERSONAL with null
+     * grants — which the PENDING status guard then made unrecoverable on retry.) The row-flip
+     * side effect is applied separately by {@link #onApprovedPersonal} once the CAS has won.
+     */
+    public Set<String> awaitingUids(YouTubeContentType type, String youtubeId) {
+        Set<String> uids = new HashSet<>();
+        if (youtubeId == null || youtubeId.isBlank()) {
+            return uids;
+        }
+        try {
+            var snap = db.collectionGroup(coll(type))
+                    .whereEqualTo("youtubeId", youtubeId)
+                    .whereEqualTo("approvalStatus", "AWAITING")
+                    .get().get();
+            for (var doc : snap.getDocuments()) {
+                // Path is users/{uid}/{coll}/{docId}; the doc's grandparent is the user doc.
+                var userRef = doc.getReference().getParent().getParent();
+                if (userRef != null) {
+                    uids.add(userRef.getId());
+                }
+            }
+        } catch (Exception e) {
+            log.error("awaitingUids query failed type={} youtubeId={}", type, youtubeId, e);
+            // Caller (collectPersonalGrants) still grants the submitter on an empty/failed read.
+        }
+        return uids;
+    }
+
     /** Reject (tombstone) all AWAITING per-user rows for the given content type and youtubeId. */
     public void onRejected(YouTubeContentType type, String youtubeId) {
         fanOut(type, youtubeId, false);

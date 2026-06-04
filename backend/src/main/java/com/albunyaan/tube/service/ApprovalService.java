@@ -1116,17 +1116,29 @@ public class ApprovalService {
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
         channel.setApprovalMetadata(metadata);
 
+        if (personal) {
+            // Compute the grant list (read-only) BEFORE the CAS so status + visibility + grants
+            // land in ONE atomic write. A crash/transient Firestore error after the CAS can then
+            // never strand the item APPROVED+PERSONAL with null grants — which the PENDING status
+            // guard at the top of this method would make unrecoverable on a retry.
+            channel.setPersonalGrants(collectPersonalGrants(
+                    YouTubeContentType.CHANNEL, channel.getYoutubeId(), channel.getSubmittedBy()));
+        }
+
         // CAS first: commit the approve decision (status PENDING→APPROVED) atomically BEFORE any
-        // per-user fan-out, so a lost reject-vs-personal-approve race can never strand per-user
+        // per-user row flip, so a lost reject-vs-personal-approve race can never strand per-user
         // rows APPROVED against a registry doc that wasn't actually approved.
         channelRepository.saveIfStatus(channel, "PENDING");
 
         if (personal) {
-            // CAS won → safe to graduate waiting importers and persist the grant list (second
-            // write; status is already APPROVED so no CAS is needed).
-            channel.setPersonalGrants(collectPersonalGrants(
-                    YouTubeContentType.CHANNEL, channel.getYoutubeId(), channel.getSubmittedBy()));
-            channelRepository.save(channel);
+            // CAS won → eagerly flip waiting importers' AWAITING rows to APPROVED. Best-effort:
+            // the grant-aware sync derive re-applies APPROVED from the persisted grants if this
+            // fails, and it never runs if the CAS was lost.
+            try {
+                importGraduationService.onApprovedPersonal(YouTubeContentType.CHANNEL, channel.getYoutubeId());
+            } catch (Exception e) {
+                log.warn("Personal graduation fan-out failed on channel approve youtubeId={}: {}", channel.getYoutubeId(), e.getMessage());
+            }
         }
 
         // Add to category sort order (public approvals only — personal items stay out of listings)
@@ -1196,17 +1208,29 @@ public class ApprovalService {
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
         playlist.setApprovalMetadata(metadata);
 
+        if (personal) {
+            // Compute the grant list (read-only) BEFORE the CAS so status + visibility + grants
+            // land in ONE atomic write. A crash/transient Firestore error after the CAS can then
+            // never strand the item APPROVED+PERSONAL with null grants — which the PENDING status
+            // guard at the top of this method would make unrecoverable on a retry.
+            playlist.setPersonalGrants(collectPersonalGrants(
+                    YouTubeContentType.PLAYLIST, playlist.getYoutubeId(), playlist.getSubmittedBy()));
+        }
+
         // CAS first: commit the approve decision (status PENDING→APPROVED) atomically BEFORE any
-        // per-user fan-out, so a lost reject-vs-personal-approve race can never strand per-user
+        // per-user row flip, so a lost reject-vs-personal-approve race can never strand per-user
         // rows APPROVED against a registry doc that wasn't actually approved.
         playlistRepository.saveIfStatus(playlist, "PENDING");
 
         if (personal) {
-            // CAS won → safe to graduate waiting importers and persist the grant list (second
-            // write; status is already APPROVED so no CAS is needed).
-            playlist.setPersonalGrants(collectPersonalGrants(
-                    YouTubeContentType.PLAYLIST, playlist.getYoutubeId(), playlist.getSubmittedBy()));
-            playlistRepository.save(playlist);
+            // CAS won → eagerly flip waiting importers' AWAITING rows to APPROVED. Best-effort:
+            // the grant-aware sync derive re-applies APPROVED from the persisted grants if this
+            // fails, and it never runs if the CAS was lost.
+            try {
+                importGraduationService.onApprovedPersonal(YouTubeContentType.PLAYLIST, playlist.getYoutubeId());
+            } catch (Exception e) {
+                log.warn("Personal graduation fan-out failed on playlist approve youtubeId={}: {}", playlist.getYoutubeId(), e.getMessage());
+            }
         }
 
         // Add to category sort order (public approvals only — personal items stay out of listings)
@@ -1379,17 +1403,29 @@ public class ApprovalService {
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
         video.setApprovalMetadata(metadata);
 
+        if (personal) {
+            // Compute the grant list (read-only) BEFORE the CAS so status + visibility + grants
+            // land in ONE atomic write. A crash/transient Firestore error after the CAS can then
+            // never strand the item APPROVED+PERSONAL with null grants — which the PENDING status
+            // guard at the top of this method would make unrecoverable on a retry.
+            video.setPersonalGrants(collectPersonalGrants(
+                    YouTubeContentType.VIDEO, video.getYoutubeId(), video.getSubmittedBy()));
+        }
+
         // CAS first: commit the approve decision (status PENDING→APPROVED) atomically BEFORE any
-        // per-user fan-out, so a lost reject-vs-personal-approve race can never strand per-user
+        // per-user row flip, so a lost reject-vs-personal-approve race can never strand per-user
         // rows APPROVED against a registry doc that wasn't actually approved.
         videoRepository.saveIfStatus(video, "PENDING");
 
         if (personal) {
-            // CAS won → safe to graduate waiting importers and persist the grant list (second
-            // write; status is already APPROVED so no CAS is needed).
-            video.setPersonalGrants(collectPersonalGrants(
-                    YouTubeContentType.VIDEO, video.getYoutubeId(), video.getSubmittedBy()));
-            videoRepository.save(video);
+            // CAS won → eagerly flip waiting importers' AWAITING rows to APPROVED. Best-effort:
+            // the grant-aware sync derive re-applies APPROVED from the persisted grants if this
+            // fails, and it never runs if the CAS was lost.
+            try {
+                importGraduationService.onApprovedPersonal(YouTubeContentType.VIDEO, video.getYoutubeId());
+            } catch (Exception e) {
+                log.warn("Personal graduation fan-out failed on video approve youtubeId={}: {}", video.getYoutubeId(), e.getMessage());
+            }
         }
 
         if (!personal && video.getCategoryIds() != null) {
@@ -1424,18 +1460,19 @@ public class ApprovalService {
     }
 
     /**
-     * Finding 3: run the personal graduation fan-out for an imported item and return the
-     * grantee list (the importers whose AWAITING rows were flipped, plus the recorded
-     * submitter) for persisting on the registry item's personalGrants. The fan-out
-     * swallows its own errors; on failure we still grant the submitter so a personal
-     * approval is never a no-op for the person who asked for it.
+     * Finding 3: compute the grantee list for an imported item — the importers with an AWAITING
+     * row for this id (read-only query, no row flip), plus the recorded submitter — for persisting
+     * on the registry item's personalGrants WITHIN the approve CAS. The read is best-effort; on
+     * failure we still grant the submitter so a personal approval is never a no-op for the person
+     * who asked. The AWAITING rows themselves are flipped separately (onApprovedPersonal) after
+     * the CAS wins.
      */
     private List<String> collectPersonalGrants(YouTubeContentType type, String youtubeId, String submittedBy) {
         java.util.Set<String> grants;
         try {
-            grants = importGraduationService.onApprovedPersonal(type, youtubeId);
+            grants = importGraduationService.awaitingUids(type, youtubeId);
         } catch (Exception e) {
-            log.warn("Personal graduation fan-out failed type={} youtubeId={}: {}", type, youtubeId, e.getMessage());
+            log.warn("Personal grant computation failed type={} youtubeId={}: {}", type, youtubeId, e.getMessage());
             grants = new java.util.HashSet<>();
         }
         java.util.Set<String> all = new java.util.HashSet<>(grants);

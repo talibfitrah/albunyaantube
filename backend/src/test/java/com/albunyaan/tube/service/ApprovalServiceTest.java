@@ -63,7 +63,7 @@ class ApprovalServiceTest {
         when(videoRepository.findById("yt-vid")).thenReturn(Optional.of(v));
         when(videoRepository.saveIfStatus(any(Video.class), eq("PENDING"))).thenAnswer(i -> i.getArgument(0));
         // Fan-out reports the importers whose AWAITING rows were flipped.
-        when(importGraduationService.onApprovedPersonal(YouTubeContentType.VIDEO, "yt-vid"))
+        when(importGraduationService.awaitingUids(YouTubeContentType.VIDEO, "yt-vid"))
                 .thenReturn(Set.of("importer-1", "importer-2"));
 
         ApprovalRequestDto req = new ApprovalRequestDto();
@@ -111,7 +111,7 @@ class ApprovalServiceTest {
         c.setSubmittedBy("importer-1");
         when(channelRepository.findById("yt-ch")).thenReturn(Optional.of(c));
         when(channelRepository.saveIfStatus(any(Channel.class), eq("PENDING"))).thenAnswer(i -> i.getArgument(0));
-        when(importGraduationService.onApprovedPersonal(YouTubeContentType.CHANNEL, "yt-ch"))
+        when(importGraduationService.awaitingUids(YouTubeContentType.CHANNEL, "yt-ch"))
                 .thenReturn(Set.of("importer-1"));
 
         ApprovalRequestDto req = new ApprovalRequestDto();
@@ -138,7 +138,7 @@ class ApprovalServiceTest {
         when(channelRepository.findById("yt-pl")).thenReturn(Optional.empty());
         when(playlistRepository.findById("yt-pl")).thenReturn(Optional.of(p));
         when(playlistRepository.saveIfStatus(any(Playlist.class), eq("PENDING"))).thenAnswer(i -> i.getArgument(0));
-        when(importGraduationService.onApprovedPersonal(YouTubeContentType.PLAYLIST, "yt-pl"))
+        when(importGraduationService.awaitingUids(YouTubeContentType.PLAYLIST, "yt-pl"))
                 .thenReturn(Set.of("importer-1"));
 
         ApprovalRequestDto req = new ApprovalRequestDto();
@@ -168,7 +168,7 @@ class ApprovalServiceTest {
         when(playlistRepository.findById("yt-vid")).thenReturn(Optional.empty());
         when(videoRepository.findById("yt-vid")).thenReturn(Optional.of(v));
         when(videoRepository.saveIfStatus(any(Video.class), eq("PENDING"))).thenAnswer(i -> i.getArgument(0));
-        when(importGraduationService.onApprovedPersonal(YouTubeContentType.VIDEO, "yt-vid"))
+        when(importGraduationService.awaitingUids(YouTubeContentType.VIDEO, "yt-vid"))
                 .thenThrow(new RuntimeException("firestore down"));
 
         ApprovalRequestDto req = new ApprovalRequestDto();
