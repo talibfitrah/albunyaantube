@@ -89,6 +89,19 @@ public class Channel {
     private String source; // "USER_IMPORT" | "ADMIN" | "MODERATOR" | "BULK" | null
 
     /**
+     * Finding 3: PUBLIC (default; null on legacy docs is treated as PUBLIC) or PERSONAL.
+     * PERSONAL items are approved only for specific users and never appear in public
+     * browse/search. Set at approval time, not at submission.
+     */
+    private String visibility;
+
+    /**
+     * Finding 3: Firebase UIDs granted personal access when visibility == PERSONAL.
+     * Null/empty when PUBLIC. See Video.personalGrants and SyncService derive.
+     */
+    private List<String> personalGrants;
+
+    /**
      * Approval metadata (BACKEND-APPR-01)
      */
     private ApprovalMetadata approvalMetadata;
@@ -346,6 +359,22 @@ public class Channel {
 
     public void setSource(String source) {
         this.source = source;
+    }
+
+    public String getVisibility() {
+        return visibility;
+    }
+
+    public void setVisibility(String visibility) {
+        this.visibility = visibility;
+    }
+
+    public List<String> getPersonalGrants() {
+        return personalGrants;
+    }
+
+    public void setPersonalGrants(List<String> personalGrants) {
+        this.personalGrants = personalGrants;
     }
 
     public void touch() {

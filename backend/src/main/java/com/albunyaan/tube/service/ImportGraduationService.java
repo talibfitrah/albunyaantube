@@ -9,7 +9,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * BACKEND-IMPORT-08: Fan-out approve/reject decisions to per-user Me-list rows.
@@ -45,6 +47,17 @@ public class ImportGraduationService {
         fanOut(type, youtubeId, true);
     }
 
+    /**
+     * Finding 3: personal approval. Approves every AWAITING per-user row for the id
+     * (exactly like {@link #onApproved}) but RETURNS the set of Firebase UIDs whose rows
+     * were flipped, so the caller can persist them as the registry item's personalGrants.
+     * The per-user sync derive then keeps these users APPROVED while a later importer of
+     * the same id (not in the set) stays AWAITING — so the item never leaks publicly.
+     */
+    public Set<String> onApprovedPersonal(YouTubeContentType type, String youtubeId) {
+        return fanOut(type, youtubeId, true);
+    }
+
     /** Reject (tombstone) all AWAITING per-user rows for the given content type and youtubeId. */
     public void onRejected(YouTubeContentType type, String youtubeId) {
         fanOut(type, youtubeId, false);
@@ -69,12 +82,15 @@ public class ImportGraduationService {
      *
      * All exceptions are swallowed: fan-out failure must not break the admin action.
      */
-    private void fanOut(YouTubeContentType type, String youtubeId, boolean approve) {
+    private Set<String> fanOut(YouTubeContentType type, String youtubeId, boolean approve) {
+        // Owning per-user UIDs of every row touched. For a personal approval the caller
+        // persists these as the registry item's personalGrants (see onApprovedPersonal).
+        Set<String> affectedUids = new HashSet<>();
         // A blank/null youtubeId would issue whereEqualTo("youtubeId", null) — a wasted
         // collection-group query that matches nothing useful. Organic registry items can
         // lack a youtubeId; skip rather than scan. Mirrors ContentApprovalGate's blank guard.
         if (youtubeId == null || youtubeId.isBlank()) {
-            return;
+            return affectedUids;
         }
         try {
             var snap = db.collectionGroup(coll(type))
@@ -99,6 +115,13 @@ public class ImportGraduationService {
                 }
                 batch.update(doc.getReference(), upd);
 
+                // Path is users/{uid}/{coll}/{docId}; the doc's grandparent is the user
+                // doc, whose id is the owning uid.
+                var userRef = doc.getReference().getParent().getParent();
+                if (userRef != null) {
+                    affectedUids.add(userRef.getId());
+                }
+
                 if (++n % 450 == 0) {
                     batch.commit().get();
                     batch = db.batch();
@@ -115,5 +138,6 @@ public class ImportGraduationService {
                     type, youtubeId, approve, e);
             // Never rethrow — fan-out failure must not break the admin's approve/reject.
         }
+        return affectedUids;
     }
 }

@@ -882,6 +882,10 @@
     <!-- Buttons -->
     <string name="import_youtube_button_done">Done</string>
     <string name="import_youtube_button_retry">Try again</string>
+    <!-- Finding 4: Sharia-compliance caution shown before an import runs -->
+    <string name="import_caution_title">Before you import</string>
+    <string name="import_caution_message">Be mindful of what you bring in. You alone are responsible before Allah for the content you add. Choose only what is halāl and in keeping with the Sharī\'ah as understood by Ahl us-Sunnah, and fear Allah in your choices.</string>
+    <string name="import_caution_continue">Continue</string>
     <!-- Me kebab entry for import -->
     <string name="me_kebab_import_youtube">Import from YouTube</string>
     <!-- First-login import offer dialog -->

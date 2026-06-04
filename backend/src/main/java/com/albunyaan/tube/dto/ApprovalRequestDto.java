@@ -18,6 +18,13 @@ public class ApprovalRequestDto {
      */
     private String categoryOverride;
 
+    /**
+     * Finding 3: approval scope. "PUBLIC" (default/null) approves the item into the public
+     * library for everyone; "PERSONAL" approves it only for the user(s) who imported it
+     * (visibility = PERSONAL) and skips the category requirement.
+     */
+    private String scope;
+
     public ApprovalRequestDto() {
     }
 
@@ -41,6 +48,19 @@ public class ApprovalRequestDto {
 
     public void setCategoryOverride(String categoryOverride) {
         this.categoryOverride = categoryOverride;
+    }
+
+    public String getScope() {
+        return scope;
+    }
+
+    public void setScope(String scope) {
+        this.scope = scope;
+    }
+
+    /** True when this request asks for a per-user ("PERSONAL") approval. */
+    public boolean isPersonalScope() {
+        return "PERSONAL".equalsIgnoreCase(scope);
     }
 }
 

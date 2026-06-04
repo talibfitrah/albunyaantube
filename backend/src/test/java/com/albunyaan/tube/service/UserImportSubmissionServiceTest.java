@@ -262,4 +262,53 @@ class UserImportSubmissionServiceTest {
         ImportItem item = new ImportItem(YouTubeContentType.CHANNEL, "UC3", "Chan", null, null);
         assertDoesNotThrow(() -> svc.submit(item, "uid-7"));
     }
+
+    // ── Finding 3: PERSONAL re-import disposition ──────────────────────────────
+
+    @Test
+    void existingPersonalApprovedChannel_grantee_returnsApproved() throws Exception {
+        // A personal-approved item is APPROVED for a user it was granted to.
+        Channel existing = new Channel();
+        existing.setStatus("APPROVED");
+        existing.setVisibility("PERSONAL");
+        existing.setPersonalGrants(java.util.List.of("uid-7"));
+        when(channels.findByYoutubeId("UC1")).thenReturn(Optional.of(existing));
+
+        ImportDisposition d = svc.submit(
+                new ImportItem(YouTubeContentType.CHANNEL, "UC1", "x", null, null), "uid-7");
+
+        assertEquals(ImportDisposition.APPROVED, d);
+        verify(channels, never()).save(any());
+    }
+
+    @Test
+    void existingPersonalApprovedChannel_nonGrantee_returnsPending() throws Exception {
+        // A personal item must NOT auto-grant a DIFFERENT importer — they get PENDING, not the content.
+        Channel existing = new Channel();
+        existing.setStatus("APPROVED");
+        existing.setVisibility("PERSONAL");
+        existing.setPersonalGrants(java.util.List.of("someone-else"));
+        when(channels.findByYoutubeId("UC1")).thenReturn(Optional.of(existing));
+
+        ImportDisposition d = svc.submit(
+                new ImportItem(YouTubeContentType.CHANNEL, "UC1", "x", null, null), "uid-7");
+
+        assertEquals(ImportDisposition.PENDING, d);
+        verify(channels, never()).save(any());
+    }
+
+    @Test
+    void existingPersonalApprovedVideo_nonGrantee_returnsPending() throws Exception {
+        Video existing = new Video();
+        existing.setStatus("APPROVED");
+        existing.setVisibility("PERSONAL");
+        existing.setPersonalGrants(java.util.List.of("someone-else"));
+        when(videos.findByYoutubeId("VID1")).thenReturn(Optional.of(existing));
+
+        ImportDisposition d = svc.submit(
+                new ImportItem(YouTubeContentType.VIDEO, "VID1", "x", null, null), "uid-9");
+
+        assertEquals(ImportDisposition.PENDING, d);
+        verify(videos, never()).save(any());
+    }
 }

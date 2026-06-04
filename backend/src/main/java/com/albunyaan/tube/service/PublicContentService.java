@@ -398,13 +398,13 @@ public class PublicContentService {
         Set<String> activeCategoryIds = new HashSet<>();
 
         for (Channel ch : channelRepository.findByStatus("APPROVED")) {
-            if (ch.getCategoryIds() != null) activeCategoryIds.addAll(ch.getCategoryIds());
+            if (isPublicVisibility(ch.getVisibility()) && ch.getCategoryIds() != null) activeCategoryIds.addAll(ch.getCategoryIds());
         }
         for (Playlist pl : playlistRepository.findByStatus("APPROVED")) {
-            if (pl.getCategoryIds() != null) activeCategoryIds.addAll(pl.getCategoryIds());
+            if (isPublicVisibility(pl.getVisibility()) && pl.getCategoryIds() != null) activeCategoryIds.addAll(pl.getCategoryIds());
         }
         for (Video v : videoRepository.findByStatus("APPROVED")) {
-            if (v.getCategoryIds() != null) activeCategoryIds.addAll(v.getCategoryIds());
+            if (isPublicVisibility(v.getVisibility()) && v.getCategoryIds() != null) activeCategoryIds.addAll(v.getCategoryIds());
         }
 
         // Expand to include ancestor categories so parent categories remain navigable
@@ -1477,15 +1477,24 @@ public class PublicContentService {
 
     // Helper methods
     private boolean isApproved(Channel channel) {
-        return "APPROVED".equals(channel.getStatus());
+        return "APPROVED".equals(channel.getStatus()) && isPublicVisibility(channel.getVisibility());
     }
 
     private boolean isApproved(Playlist playlist) {
-        return "APPROVED".equals(playlist.getStatus());
+        return "APPROVED".equals(playlist.getStatus()) && isPublicVisibility(playlist.getVisibility());
     }
 
     private boolean isApproved(Video video) {
-        return "APPROVED".equals(video.getStatus());
+        return "APPROVED".equals(video.getStatus()) && isPublicVisibility(video.getVisibility());
+    }
+
+    /**
+     * Finding 3: only PUBLIC-visibility items appear in public browse/search. A PERSONAL
+     * item is approved for specific users only and must never surface here. null/blank
+     * visibility (legacy docs and all organic/admin adds) is treated as PUBLIC.
+     */
+    private boolean isPublicVisibility(String visibility) {
+        return visibility == null || visibility.isBlank() || "PUBLIC".equalsIgnoreCase(visibility);
     }
 
     /**

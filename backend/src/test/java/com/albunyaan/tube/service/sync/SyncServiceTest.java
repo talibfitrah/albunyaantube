@@ -1,11 +1,13 @@
 package com.albunyaan.tube.service.sync;
 
+import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.dto.sync.*;
 import com.albunyaan.tube.repository.SyncRepository;
 import com.albunyaan.tube.repository.SyncRepository.RawRow;
 import com.albunyaan.tube.service.ContentApprovalGate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.util.List;
@@ -27,8 +29,9 @@ class SyncServiceTest {
     void setUp() {
         repo = Mockito.mock(SyncRepository.class);
         projector = Mockito.mock(ArchiveProjector.class);
-        // F3: gate is mocked; unstubbed statusOf() returns null → derived AWAITING
-        // (not REJECTED), so these upsert tests proceed to the normal write path.
+        // F3 / Finding 3: gate is mocked; an unstubbed infoOf() returns null → derived
+        // APPROVED (absent from registry = fail-open), so these upsert tests proceed to the
+        // normal write path. PERSONAL-visibility derivation is covered by dedicated tests below.
         approvalGate = Mockito.mock(ContentApprovalGate.class);
         service = new SyncService(repo, projector, approvalGate);
     }
@@ -174,5 +177,58 @@ class SyncServiceTest {
         assertEquals("ch1", out.getEntityId());
         assertTrue(out.isDeleted());
         assertEquals(5678L, out.getUpdatedAt());
+    }
+
+    // ── Finding 3: PERSONAL-visibility derive gating ──────────────────────────
+
+    @Test
+    void upsertSubscription_personalApprovedGrantee_derivesApproved() throws Exception {
+        // A PERSONAL-approved item is APPROVED for a user it was granted to.
+        when(approvalGate.infoOf(YouTubeContentType.CHANNEL, "ch1"))
+                .thenReturn(new ContentApprovalGate.ApprovalInfo("APPROVED", "PERSONAL", List.of("u1")));
+        var req = new PutSubscriptionRequest();
+        req.setChannelUrl("u"); req.setName("n"); req.setSubscribedAt(50L);
+        RawRow stored = new RawRow("ch1", Map.of("deleted", false), 1L);
+        ArgumentCaptor<Map> body = ArgumentCaptor.forClass(Map.class);
+        when(repo.upsert(eq("u1"), eq("subscriptions"), eq("ch1"), body.capture())).thenReturn(stored);
+        when(projector.projectSubscription(stored)).thenReturn(stored);
+
+        service.upsertSubscription("u1", "ch1", req);
+
+        assertEquals("APPROVED", body.getValue().get("approvalStatus"));
+    }
+
+    @Test
+    void upsertSubscription_personalApprovedNonGrantee_derivesAwaiting() throws Exception {
+        // The SAME personal item must stay AWAITING for a non-grantee — no leak.
+        when(approvalGate.infoOf(YouTubeContentType.CHANNEL, "ch1"))
+                .thenReturn(new ContentApprovalGate.ApprovalInfo("APPROVED", "PERSONAL", List.of("someone-else")));
+        var req = new PutSubscriptionRequest();
+        req.setChannelUrl("u"); req.setName("n"); req.setSubscribedAt(50L);
+        RawRow stored = new RawRow("ch1", Map.of("deleted", false), 1L);
+        ArgumentCaptor<Map> body = ArgumentCaptor.forClass(Map.class);
+        when(repo.upsert(eq("u1"), eq("subscriptions"), eq("ch1"), body.capture())).thenReturn(stored);
+        when(projector.projectSubscription(stored)).thenReturn(stored);
+
+        service.upsertSubscription("u1", "ch1", req);
+
+        assertEquals("AWAITING", body.getValue().get("approvalStatus"));
+    }
+
+    @Test
+    void upsertSubscription_pendingRegistry_derivesAwaiting() throws Exception {
+        // A PENDING registry item (e.g. an import queued for review) → AWAITING for everyone.
+        when(approvalGate.infoOf(YouTubeContentType.CHANNEL, "ch1"))
+                .thenReturn(new ContentApprovalGate.ApprovalInfo("PENDING", null, null));
+        var req = new PutSubscriptionRequest();
+        req.setChannelUrl("u"); req.setName("n"); req.setSubscribedAt(50L);
+        RawRow stored = new RawRow("ch1", Map.of("deleted", false), 1L);
+        ArgumentCaptor<Map> body = ArgumentCaptor.forClass(Map.class);
+        when(repo.upsert(eq("u1"), eq("subscriptions"), eq("ch1"), body.capture())).thenReturn(stored);
+        when(projector.projectSubscription(stored)).thenReturn(stored);
+
+        service.upsertSubscription("u1", "ch1", req);
+
+        assertEquals("AWAITING", body.getValue().get("approvalStatus"));
     }
 }

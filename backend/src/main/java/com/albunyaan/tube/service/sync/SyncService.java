@@ -197,17 +197,29 @@ public class SyncService {
      * favorites/subscriptions in a queue no admin can clear, without adding any gate the
      * fail-open design doesn't already concede. The client-supplied value is never trusted.
      */
-    private static String deriveApprovalStatus(String registryStatus) {
+    private static String deriveApprovalStatus(ContentApprovalGate.ApprovalInfo info, String uid) {
         // Actively-gated states the admin hasn't cleared → AWAITING. This mirrors
         // PublicContentService, which 404s BOTH PENDING and REQUEST_CHANGES (an admin
         // sent the item back for revision — not yet approved/playable). Mapping
         // REQUEST_CHANGES to APPROVED would mislabel it as live in the user's Me feed
         // while the availability gate still 404s playback. REJECTED never reaches here
-        // (callers tombstone it first). Everything else — APPROVED, or an id ABSENT from
-        // the registry — is APPROVED so organic favorites/subscriptions aren't stranded.
+        // (callers tombstone it first). An id ABSENT from the registry (info == null) is
+        // APPROVED so organic favorites/subscriptions aren't stranded.
+        if (info == null) {
+            return "APPROVED";
+        }
+        String registryStatus = info.status();
         if ("PENDING".equalsIgnoreCase(registryStatus)
                 || "REQUEST_CHANGES".equalsIgnoreCase(registryStatus)) {
             return "AWAITING";
+        }
+        // Finding 3: a PERSONAL-approved item is APPROVED only for its grantees. Any other
+        // user — including a later importer of the same id — stays AWAITING, so a personal
+        // approval never leaks the item beyond the people the admin approved it for.
+        if ("PERSONAL".equalsIgnoreCase(info.visibility())) {
+            java.util.List<String> grants = info.personalGrants();
+            boolean granted = grants != null && uid != null && grants.contains(uid);
+            return granted ? "APPROVED" : "AWAITING";
         }
         return "APPROVED";
     }
@@ -227,8 +239,8 @@ public class SyncService {
             throws ExecutionException, InterruptedException, TimeoutException {
         // F3: approvalStatus is server-authoritative — derived from the content registry,
         // never trusted from the client. An admin-rejected row is tombstoned, not resurrected.
-        String regStatus = approvalGate.statusOf(YouTubeContentType.CHANNEL, id);
-        if ("REJECTED".equalsIgnoreCase(regStatus)) {
+        ContentApprovalGate.ApprovalInfo info = approvalGate.infoOf(YouTubeContentType.CHANNEL, id);
+        if (info != null && "REJECTED".equalsIgnoreCase(info.status())) {
             return toSubscriptionDto(projector.projectSubscription(
                     repo.tombstone(uid, SyncRepository.SUBS_COLL, id)));
         }
@@ -241,7 +253,7 @@ public class SyncService {
         body.put("name", req.getName());
         body.put("avatarUrl", req.getAvatarUrl());
         body.put("subscribedAt", req.getSubscribedAt());
-        body.put("approvalStatus", deriveApprovalStatus(regStatus));
+        body.put("approvalStatus", deriveApprovalStatus(info, uid));
         body.put("source", req.getSource());
         body.put("importedAt", req.getImportedAt());
         return toSubscriptionDto(projector.projectSubscription(
@@ -257,8 +269,8 @@ public class SyncService {
     public PlaylistSyncDto upsertPlaylist(String uid, String id, PutPlaylistRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
         // F3: see upsertSubscription — approvalStatus is server-derived, REJECTED is tombstoned.
-        String regStatus = approvalGate.statusOf(YouTubeContentType.PLAYLIST, id);
-        if ("REJECTED".equalsIgnoreCase(regStatus)) {
+        ContentApprovalGate.ApprovalInfo info = approvalGate.infoOf(YouTubeContentType.PLAYLIST, id);
+        if (info != null && "REJECTED".equalsIgnoreCase(info.status())) {
             return toPlaylistDto(projector.projectPlaylist(
                     repo.tombstone(uid, SyncRepository.PLAYLISTS_COLL, id)));
         }
@@ -270,7 +282,7 @@ public class SyncService {
         body.put("thumbnailUrl", req.getThumbnailUrl());
         body.put("uploaderName", req.getUploaderName());
         body.put("savedAt", req.getSavedAt());
-        body.put("approvalStatus", deriveApprovalStatus(regStatus));
+        body.put("approvalStatus", deriveApprovalStatus(info, uid));
         body.put("source", req.getSource());
         body.put("importedAt", req.getImportedAt());
         return toPlaylistDto(projector.projectPlaylist(
@@ -286,8 +298,8 @@ public class SyncService {
     public FavoriteSyncDto upsertFavorite(String uid, String id, PutFavoriteRequest req)
             throws ExecutionException, InterruptedException, TimeoutException {
         // F3: see upsertSubscription — approvalStatus is server-derived, REJECTED is tombstoned.
-        String regStatus = approvalGate.statusOf(YouTubeContentType.VIDEO, id);
-        if ("REJECTED".equalsIgnoreCase(regStatus)) {
+        ContentApprovalGate.ApprovalInfo info = approvalGate.infoOf(YouTubeContentType.VIDEO, id);
+        if (info != null && "REJECTED".equalsIgnoreCase(info.status())) {
             return toFavoriteDto(projector.projectFavorite(
                     repo.tombstone(uid, SyncRepository.FAVORITES_COLL, id)));
         }
@@ -299,7 +311,7 @@ public class SyncService {
         body.put("thumbnailUrl", req.getThumbnailUrl());
         body.put("durationSeconds", req.getDurationSeconds());
         body.put("addedAt", req.getAddedAt());
-        body.put("approvalStatus", deriveApprovalStatus(regStatus));
+        body.put("approvalStatus", deriveApprovalStatus(info, uid));
         body.put("source", req.getSource());
         body.put("importedAt", req.getImportedAt());
         return toFavoriteDto(projector.projectFavorite(
