@@ -68,7 +68,8 @@ public class UserImportSubmissionService {
 
         Optional<Channel> existing = channels.findByYoutubeId(item.youtubeId());
         if (existing.isPresent()) {
-            return statusToDisposition(existing.get().getStatus());
+            Channel e = existing.get();
+            return dispositionForExisting(e.getStatus(), e.getVisibility(), e.getPersonalGrants(), uid);
         }
 
         Channel ch = new Channel();
@@ -97,7 +98,8 @@ public class UserImportSubmissionService {
 
         Optional<Playlist> existing = playlists.findByYoutubeId(item.youtubeId());
         if (existing.isPresent()) {
-            return statusToDisposition(existing.get().getStatus());
+            Playlist e = existing.get();
+            return dispositionForExisting(e.getStatus(), e.getVisibility(), e.getPersonalGrants(), uid);
         }
 
         Playlist pl = new Playlist();
@@ -124,7 +126,8 @@ public class UserImportSubmissionService {
 
         Optional<Video> existing = videos.findByYoutubeId(item.youtubeId());
         if (existing.isPresent()) {
-            return statusToDisposition(existing.get().getStatus());
+            Video e = existing.get();
+            return dispositionForExisting(e.getStatus(), e.getVisibility(), e.getPersonalGrants(), uid);
         }
 
         Video v = new Video();
@@ -150,6 +153,22 @@ public class UserImportSubmissionService {
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
+
+    /**
+     * Finding 3: disposition for an item that already exists in the registry. A
+     * PERSONAL-approved item is APPROVED only for its grantees; a different importer must
+     * NOT auto-receive it — return PENDING so it lands in their awaiting section (and the
+     * per-user sync derive keeps it AWAITING) instead of appearing as an approved, playable
+     * item they were never granted. All other cases defer to {@link #statusToDisposition}.
+     */
+    public static ImportDisposition dispositionForExisting(String status, String visibility, List<String> grants, String uid) {
+        if ("APPROVED".equalsIgnoreCase(status)
+                && !VisibilityPolicy.isPublic(visibility)
+                && (grants == null || uid == null || !grants.contains(uid))) {
+            return ImportDisposition.PENDING;
+        }
+        return statusToDisposition(status);
+    }
 
     /**
      * Maps the Firestore status string to an {@link ImportDisposition}.

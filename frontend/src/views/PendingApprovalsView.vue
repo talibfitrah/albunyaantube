@@ -226,7 +226,17 @@
               @click="handleApprove(item)"
             >
               <span v-if="processingId === item.id">{{ t('approvals.approving') }}</span>
-              <span v-else>{{ t('approvals.approve') }}</span>
+              <span v-else>{{ item.source === 'USER_IMPORT' ? t('approvals.approvePublic') : t('approvals.approve') }}</span>
+            </button>
+            <button
+              v-if="authStore.isAdmin && item.source === 'USER_IMPORT'"
+              type="button"
+              class="action-btn approve-personal"
+              :disabled="processingId === item.id"
+              :title="t('approvals.approvePersonalHint')"
+              @click="handleApprovePersonal(item)"
+            >
+              {{ t('approvals.approvePersonal') }}
             </button>
           </div>
         </div>
@@ -543,6 +553,25 @@ async function handleApprove(item: any) {
   try {
     await approveItem(item.id, item.type, categoryOverride);
     // Clear the per-item override after a successful approve
+    delete selectedCategoryOverrides.value[item.id];
+    await loadApprovals();
+    loadPendingCount();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : t('approvals.approveError');
+  } finally {
+    processingId.value = null;
+  }
+}
+
+/**
+ * Finding 3: personal approval — grants the imported item only to the user(s) who
+ * imported it (no category required) and keeps it out of the public library.
+ */
+async function handleApprovePersonal(item: any) {
+  if (processingId.value) return;
+  processingId.value = item.id;
+  try {
+    await approveItem(item.id, item.type, undefined, undefined, 'PERSONAL');
     delete selectedCategoryOverrides.value[item.id];
     await loadApprovals();
     loadPendingCount();

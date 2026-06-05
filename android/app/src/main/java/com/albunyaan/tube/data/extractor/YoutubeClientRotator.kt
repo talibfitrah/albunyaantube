@@ -49,6 +49,21 @@ class YoutubeClientRotator @Inject constructor() {
         return ROTATION_ORDER[nextIndex]
     }
 
+    /**
+     * The client to use RIGHT NOW for [videoId]: the armed fallback client if a prior
+     * extraction failed and advanced the rotation state (via [nextClient]), otherwise the
+     * [initialClient]. Does NOT advance state — a post-seek URL refresh calls this and stays
+     * on the same client, so it never downgrades a working IOS adaptive stream to the
+     * muxed-only ANDROID client (ANDROID-PLAYBACK-02).
+     */
+    fun currentClient(videoId: String, isIosEnabled: Boolean): Client {
+        evictExpired()
+        // nextClient() never stores an index >= ROTATION_ORDER.size (it removes the state
+        // at the boundary and returns null), so a stored index is always in range.
+        val state = states[videoId] ?: return initialClient(isIosEnabled)
+        return ROTATION_ORDER[state.index]
+    }
+
     fun reset(videoId: String) {
         states.remove(videoId)
     }

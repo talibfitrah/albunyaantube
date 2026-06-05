@@ -9,7 +9,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * BACKEND-IMPORT-08: Fan-out approve/reject decisions to per-user Me-list rows.
@@ -45,6 +47,51 @@ public class ImportGraduationService {
         fanOut(type, youtubeId, true);
     }
 
+    /**
+     * Finding 3: personal approval. Approves every AWAITING per-user row for the id
+     * (exactly like {@link #onApproved}) but RETURNS the set of Firebase UIDs whose rows
+     * were flipped, so the caller can persist them as the registry item's personalGrants.
+     * The per-user sync derive then keeps these users APPROVED while a later importer of
+     * the same id (not in the set) stays AWAITING — so the item never leaks publicly.
+     */
+    public Set<String> onApprovedPersonal(YouTubeContentType type, String youtubeId) {
+        return fanOut(type, youtubeId, true);
+    }
+
+    /**
+     * Read-only: the Firebase UIDs of every user with an AWAITING per-user row for this content
+     * type + youtubeId. NO writes — it does not flip any row.
+     *
+     * Used by the personal-approval path to compute the grant list BEFORE the registry CAS write,
+     * so status + visibility + grants land in one atomic write. (Doing the grant write second,
+     * after the CAS, let a crash/transient error strand the item APPROVED+PERSONAL with null
+     * grants — which the PENDING status guard then made unrecoverable on retry.) The row-flip
+     * side effect is applied separately by {@link #onApprovedPersonal} once the CAS has won.
+     */
+    public Set<String> awaitingUids(YouTubeContentType type, String youtubeId) {
+        Set<String> uids = new HashSet<>();
+        if (youtubeId == null || youtubeId.isBlank()) {
+            return uids;
+        }
+        try {
+            var snap = db.collectionGroup(coll(type))
+                    .whereEqualTo("youtubeId", youtubeId)
+                    .whereEqualTo("approvalStatus", "AWAITING")
+                    .get().get();
+            for (var doc : snap.getDocuments()) {
+                // Path is users/{uid}/{coll}/{docId}; the doc's grandparent is the user doc.
+                var userRef = doc.getReference().getParent().getParent();
+                if (userRef != null) {
+                    uids.add(userRef.getId());
+                }
+            }
+        } catch (Exception e) {
+            log.error("awaitingUids query failed type={} youtubeId={}", type, youtubeId, e);
+            // Caller (collectPersonalGrants) still grants the submitter on an empty/failed read.
+        }
+        return uids;
+    }
+
     /** Reject (tombstone) all AWAITING per-user rows for the given content type and youtubeId. */
     public void onRejected(YouTubeContentType type, String youtubeId) {
         fanOut(type, youtubeId, false);
@@ -69,12 +116,15 @@ public class ImportGraduationService {
      *
      * All exceptions are swallowed: fan-out failure must not break the admin action.
      */
-    private void fanOut(YouTubeContentType type, String youtubeId, boolean approve) {
+    private Set<String> fanOut(YouTubeContentType type, String youtubeId, boolean approve) {
+        // Owning per-user UIDs of every row touched. For a personal approval the caller
+        // persists these as the registry item's personalGrants (see onApprovedPersonal).
+        Set<String> affectedUids = new HashSet<>();
         // A blank/null youtubeId would issue whereEqualTo("youtubeId", null) — a wasted
         // collection-group query that matches nothing useful. Organic registry items can
         // lack a youtubeId; skip rather than scan. Mirrors ContentApprovalGate's blank guard.
         if (youtubeId == null || youtubeId.isBlank()) {
-            return;
+            return affectedUids;
         }
         try {
             var snap = db.collectionGroup(coll(type))
@@ -99,6 +149,16 @@ public class ImportGraduationService {
                 }
                 batch.update(doc.getReference(), upd);
 
+                // Path is users/{uid}/{coll}/{docId}; the doc's grandparent is the user doc,
+                // whose id is the owning uid. The uid is recorded when its update is staged; if a
+                // later chunk commit fails (swallowed below), the returned set can be a superset of
+                // actually-flipped rows. Benign for the personal-grant caller — the per-user derive
+                // re-applies APPROVED from personalGrants on the next sync (fail-toward-grant, never a leak).
+                var userRef = doc.getReference().getParent().getParent();
+                if (userRef != null) {
+                    affectedUids.add(userRef.getId());
+                }
+
                 if (++n % 450 == 0) {
                     batch.commit().get();
                     batch = db.batch();
@@ -115,5 +175,6 @@ public class ImportGraduationService {
                     type, youtubeId, approve, e);
             // Never rethrow — fan-out failure must not break the admin's approve/reject.
         }
+        return affectedUids;
     }
 }

@@ -36,6 +36,11 @@ public class StreamIndexService {
         this.tokenizer = tokenizer;
     }
 
+    /** Finding 3: PERSONAL-visibility sources must not be indexed into public search. */
+    private static boolean isPublicVisibility(String visibility) {
+        return VisibilityPolicy.isPublic(visibility);
+    }
+
     /**
      * Index streams from an approved channel (Videos, Shorts, or Live tab).
      * Channel name is fetched server-side from Firestore — never trusted from client.
@@ -43,7 +48,10 @@ public class StreamIndexService {
     public void indexFromChannel(String channelYoutubeId, List<StreamItemDto> items) {
         try {
             Optional<Channel> opt = channelRepository.findByYoutubeId(channelYoutubeId);
-            if (opt.isEmpty() || !"APPROVED".equals(opt.get().getStatus())) return;
+            // Finding 3: don't index PERSONAL-approved channels — their streams must not surface
+            // in unauthenticated search.
+            if (opt.isEmpty() || !"APPROVED".equals(opt.get().getStatus())
+                    || !isPublicVisibility(opt.get().getVisibility())) return;
 
             Channel channel = opt.get();
             Channel.ExcludedItems excluded = channel.getExcludedItems();
@@ -67,7 +75,9 @@ public class StreamIndexService {
     public void indexFromPlaylist(String playlistYoutubeId, List<StreamItemDto> items) {
         try {
             Optional<Playlist> opt = playlistRepository.findByYoutubeId(playlistYoutubeId);
-            if (opt.isEmpty() || !"APPROVED".equals(opt.get().getStatus())) return;
+            // Finding 3: don't index PERSONAL-approved playlists — see indexFromChannel.
+            if (opt.isEmpty() || !"APPROVED".equals(opt.get().getStatus())
+                    || !isPublicVisibility(opt.get().getVisibility())) return;
 
             Playlist playlist = opt.get();
             List<String> rawExcluded = playlist.getExcludedVideoIds();

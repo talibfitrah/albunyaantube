@@ -45,7 +45,7 @@ public class DownloadService {
         this.firestore = firestore;
     }
 
-    public DownloadPolicyDto checkDownloadPolicy(String videoId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    public DownloadPolicyDto checkDownloadPolicy(String videoId, String uid) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Video video = videoRepository.findByYoutubeId(videoId).orElse(null);
         if (video == null) {
             return DownloadPolicyDto.denied("Video not found in registry");
@@ -57,12 +57,17 @@ public class DownloadService {
                 || video.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
             return DownloadPolicyDto.denied("Video no longer available");
         }
+        // Finding 3: a PERSONAL video is downloadable only by a grantee (this endpoint is
+        // authenticated, so uid is available). Non-grantees are denied — no token, no manifest.
+        if (!VisibilityPolicy.isAccessible(video.getVisibility(), video.getPersonalGrants(), uid)) {
+            return DownloadPolicyDto.denied("Video not available");
+        }
         return DownloadPolicyDto.allowedWithEula();
     }
 
     public DownloadTokenDto generateDownloadToken(String videoId, String userId, boolean eulaAccepted)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        DownloadPolicyDto policy = checkDownloadPolicy(videoId);
+        DownloadPolicyDto policy = checkDownloadPolicy(videoId, userId);
         if (!policy.isAllowed()) {
             throw new PolicyViolationException("Download not allowed: " + policy.getReason());
         }
@@ -74,7 +79,7 @@ public class DownloadService {
         return new DownloadTokenDto(token, expiresAtMillis, videoId);
     }
 
-    public DownloadManifestDto getDownloadManifest(String videoId, String token, boolean supportsMerging)
+    public DownloadManifestDto getDownloadManifest(String videoId, String token, String uid, boolean supportsMerging)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (!tokenService.validateToken(token, videoId)) {
             throw new InvalidTokenException("Invalid or expired download token");
@@ -90,6 +95,15 @@ public class DownloadService {
         if (video.getValidationStatus() == ValidationStatus.ARCHIVED
                 || video.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
             logger.warn("Download manifest denied for video {}: validationStatus={}", videoId, video.getValidationStatus());
+            throw new ResourceNotFoundException("Video", videoId);
+        }
+        // Finding 3 (manifest leak): re-check visibility against the CALLER, not just the token.
+        // validateToken only binds the token to the videoId, and the token rides in a URL query
+        // string (proxy/access logs, browser history, referer), so a leaked token must not let a
+        // non-grantee redeem a PERSONAL video's real stream URLs. 404 (not 403) to avoid
+        // confirming the id exists.
+        if (!VisibilityPolicy.isAccessible(video.getVisibility(), video.getPersonalGrants(), uid)) {
+            logger.warn("Download manifest denied for video {}: not accessible to caller", videoId);
             throw new ResourceNotFoundException("Video", videoId);
         }
 

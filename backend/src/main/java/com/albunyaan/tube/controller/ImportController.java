@@ -101,8 +101,11 @@ public class ImportController {
                 Optional<?> existing = lookup(item);
                 if (existing.isPresent()) {
                     Object model = existing.get();
-                    String status = statusOf(model);
-                    ImportDisposition disposition = UserImportSubmissionService.statusToDisposition(status);
+                    // Grant-aware: a PERSONAL item resolves to APPROVED only for a grantee; a
+                    // non-grantee gets PENDING and no DTO. The controller short-circuits existing
+                    // docs, so it must apply the same gate as UserImportSubmissionService.submit.
+                    ImportDisposition disposition = UserImportSubmissionService.dispositionForExisting(
+                            statusOf(model), visibilityOf(model), personalGrantsOf(model), principal.getUid());
                     ContentItemDto dto = disposition == ImportDisposition.APPROVED
                             ? toDto(model, item.type())
                             : null;
@@ -142,6 +145,20 @@ public class ImportController {
         if (model instanceof Channel  c) return c.getStatus();
         if (model instanceof Playlist p) return p.getStatus();
         if (model instanceof Video    v) return v.getStatus();
+        throw new IllegalArgumentException("Unexpected model type: " + model.getClass());
+    }
+
+    private static String visibilityOf(Object model) {
+        if (model instanceof Channel  c) return c.getVisibility();
+        if (model instanceof Playlist p) return p.getVisibility();
+        if (model instanceof Video    v) return v.getVisibility();
+        throw new IllegalArgumentException("Unexpected model type: " + model.getClass());
+    }
+
+    private static List<String> personalGrantsOf(Object model) {
+        if (model instanceof Channel  c) return c.getPersonalGrants();
+        if (model instanceof Playlist p) return p.getPersonalGrants();
+        if (model instanceof Video    v) return v.getPersonalGrants();
         throw new IllegalArgumentException("Unexpected model type: " + model.getClass());
     }
 

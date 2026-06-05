@@ -1092,16 +1092,23 @@ public class ApprovalService {
                     "Cannot approve channel " + channel.getId() + ": current status is " + channel.getStatus());
         }
 
-        // Require at least one category — either from the item or from the override.
-        requireCategoryOrOverride(channel.getCategoryIds(), request);
+        // Finding 3: PERSONAL approval grants the item only to its importer(s) and skips
+        // the category requirement; PUBLIC approval is the existing flow.
+        boolean personal = request.isPersonalScope();
+
+        if (!personal) {
+            // Require at least one category — either from the item or from the override.
+            requireCategoryOrOverride(channel.getCategoryIds(), request);
+        }
 
         // Update status
         channel.setStatus("APPROVED");
         channel.setApprovedBy(actorUid);
+        channel.setVisibility(personal ? "PERSONAL" : "PUBLIC");
         channel.touch();
 
-        // Apply category override if provided
-        if (request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
+        // Apply category override if provided (public approvals only)
+        if (!personal && request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
             channel.setCategoryIds(List.of(request.getCategoryOverride().strip()));
         }
 
@@ -1109,11 +1116,33 @@ public class ApprovalService {
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
         channel.setApprovalMetadata(metadata);
 
-        // Save to Firestore (transactional — atomically verifies PENDING status)
+        if (personal) {
+            // Compute the grant list (read-only) BEFORE the CAS so status + visibility + grants
+            // land in ONE atomic write. A crash/transient Firestore error after the CAS can then
+            // never strand the item APPROVED+PERSONAL with null grants — which the PENDING status
+            // guard at the top of this method would make unrecoverable on a retry.
+            channel.setPersonalGrants(collectPersonalGrants(
+                    YouTubeContentType.CHANNEL, channel.getYoutubeId(), channel.getSubmittedBy()));
+        }
+
+        // CAS first: commit the approve decision (status PENDING→APPROVED) atomically BEFORE any
+        // per-user row flip, so a lost reject-vs-personal-approve race can never strand per-user
+        // rows APPROVED against a registry doc that wasn't actually approved.
         channelRepository.saveIfStatus(channel, "PENDING");
 
-        // Add to category sort order
-        if (channel.getCategoryIds() != null) {
+        if (personal) {
+            // CAS won → eagerly flip waiting importers' AWAITING rows to APPROVED. Best-effort:
+            // the grant-aware sync derive re-applies APPROVED from the persisted grants if this
+            // fails, and it never runs if the CAS was lost.
+            try {
+                importGraduationService.onApprovedPersonal(YouTubeContentType.CHANNEL, channel.getYoutubeId());
+            } catch (Exception e) {
+                log.warn("Personal graduation fan-out failed on channel approve youtubeId={}: {}", channel.getYoutubeId(), e.getMessage());
+            }
+        }
+
+        // Add to category sort order (public approvals only — personal items stay out of listings)
+        if (!personal && channel.getCategoryIds() != null) {
             for (String categoryId : channel.getCategoryIds()) {
                 try {
                     sortOrderService.addContentToCategory(categoryId, channel.getId(), "channel");
@@ -1127,11 +1156,13 @@ public class ApprovalService {
         // Create audit log
         auditLogService.logApproval("channel", channel.getId(), actorUid, actorDisplayName, request.getReviewNotes());
 
-        // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
-        try {
-            importGraduationService.onApproved(YouTubeContentType.CHANNEL, channel.getYoutubeId());
-        } catch (Exception e) {
-            log.warn("Graduation fan-out failed on channel approve youtubeId={}: {}", channel.getYoutubeId(), e.getMessage());
+        if (!personal) {
+            // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
+            try {
+                importGraduationService.onApproved(YouTubeContentType.CHANNEL, channel.getYoutubeId());
+            } catch (Exception e) {
+                log.warn("Graduation fan-out failed on channel approve youtubeId={}: {}", channel.getYoutubeId(), e.getMessage());
+            }
         }
 
         // Return response
@@ -1153,16 +1184,23 @@ public class ApprovalService {
                     "Cannot approve playlist " + playlist.getId() + ": current status is " + playlist.getStatus());
         }
 
-        // Require at least one category — either from the item or from the override.
-        requireCategoryOrOverride(playlist.getCategoryIds(), request);
+        // Finding 3: PERSONAL approval grants the item only to its importer(s) and skips
+        // the category requirement; PUBLIC approval is the existing flow.
+        boolean personal = request.isPersonalScope();
+
+        if (!personal) {
+            // Require at least one category — either from the item or from the override.
+            requireCategoryOrOverride(playlist.getCategoryIds(), request);
+        }
 
         // Update status
         playlist.setStatus("APPROVED");
         playlist.setApprovedBy(actorUid);
+        playlist.setVisibility(personal ? "PERSONAL" : "PUBLIC");
         playlist.touch();
 
-        // Apply category override if provided
-        if (request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
+        // Apply category override if provided (public approvals only)
+        if (!personal && request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
             playlist.setCategoryIds(List.of(request.getCategoryOverride().strip()));
         }
 
@@ -1170,11 +1208,33 @@ public class ApprovalService {
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
         playlist.setApprovalMetadata(metadata);
 
-        // Save to Firestore (transactional — atomically verifies PENDING status)
+        if (personal) {
+            // Compute the grant list (read-only) BEFORE the CAS so status + visibility + grants
+            // land in ONE atomic write. A crash/transient Firestore error after the CAS can then
+            // never strand the item APPROVED+PERSONAL with null grants — which the PENDING status
+            // guard at the top of this method would make unrecoverable on a retry.
+            playlist.setPersonalGrants(collectPersonalGrants(
+                    YouTubeContentType.PLAYLIST, playlist.getYoutubeId(), playlist.getSubmittedBy()));
+        }
+
+        // CAS first: commit the approve decision (status PENDING→APPROVED) atomically BEFORE any
+        // per-user row flip, so a lost reject-vs-personal-approve race can never strand per-user
+        // rows APPROVED against a registry doc that wasn't actually approved.
         playlistRepository.saveIfStatus(playlist, "PENDING");
 
-        // Add to category sort order
-        if (playlist.getCategoryIds() != null) {
+        if (personal) {
+            // CAS won → eagerly flip waiting importers' AWAITING rows to APPROVED. Best-effort:
+            // the grant-aware sync derive re-applies APPROVED from the persisted grants if this
+            // fails, and it never runs if the CAS was lost.
+            try {
+                importGraduationService.onApprovedPersonal(YouTubeContentType.PLAYLIST, playlist.getYoutubeId());
+            } catch (Exception e) {
+                log.warn("Personal graduation fan-out failed on playlist approve youtubeId={}: {}", playlist.getYoutubeId(), e.getMessage());
+            }
+        }
+
+        // Add to category sort order (public approvals only — personal items stay out of listings)
+        if (!personal && playlist.getCategoryIds() != null) {
             for (String categoryId : playlist.getCategoryIds()) {
                 try {
                     sortOrderService.addContentToCategory(categoryId, playlist.getId(), "playlist");
@@ -1188,11 +1248,13 @@ public class ApprovalService {
         // Create audit log
         auditLogService.logApproval("playlist", playlist.getId(), actorUid, actorDisplayName, request.getReviewNotes());
 
-        // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
-        try {
-            importGraduationService.onApproved(YouTubeContentType.PLAYLIST, playlist.getYoutubeId());
-        } catch (Exception e) {
-            log.warn("Graduation fan-out failed on playlist approve youtubeId={}: {}", playlist.getYoutubeId(), e.getMessage());
+        if (!personal) {
+            // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
+            try {
+                importGraduationService.onApproved(YouTubeContentType.PLAYLIST, playlist.getYoutubeId());
+            } catch (Exception e) {
+                log.warn("Graduation fan-out failed on playlist approve youtubeId={}: {}", playlist.getYoutubeId(), e.getMessage());
+            }
         }
 
         // Return response
@@ -1320,24 +1382,53 @@ public class ApprovalService {
                     "Cannot approve video " + video.getId() + ": current status is " + video.getStatus());
         }
 
-        // Require at least one category — either from the item or from the override.
-        requireCategoryOrOverride(video.getCategoryIds(), request);
+        // Finding 3: PERSONAL approval grants the item only to its importer(s) and skips
+        // the category requirement; PUBLIC approval is the existing flow.
+        boolean personal = request.isPersonalScope();
+
+        if (!personal) {
+            // Require at least one category — either from the item or from the override.
+            requireCategoryOrOverride(video.getCategoryIds(), request);
+        }
 
         video.setStatus("APPROVED");
         video.setApprovedBy(actorUid);
+        video.setVisibility(personal ? "PERSONAL" : "PUBLIC");
         video.touch();
 
-        if (request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
+        if (!personal && request.getCategoryOverride() != null && !request.getCategoryOverride().isBlank()) {
             video.setCategoryIds(List.of(request.getCategoryOverride().strip()));
         }
 
         ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, request.getReviewNotes());
         video.setApprovalMetadata(metadata);
 
-        // Save to Firestore (transactional — atomically verifies PENDING status)
+        if (personal) {
+            // Compute the grant list (read-only) BEFORE the CAS so status + visibility + grants
+            // land in ONE atomic write. A crash/transient Firestore error after the CAS can then
+            // never strand the item APPROVED+PERSONAL with null grants — which the PENDING status
+            // guard at the top of this method would make unrecoverable on a retry.
+            video.setPersonalGrants(collectPersonalGrants(
+                    YouTubeContentType.VIDEO, video.getYoutubeId(), video.getSubmittedBy()));
+        }
+
+        // CAS first: commit the approve decision (status PENDING→APPROVED) atomically BEFORE any
+        // per-user row flip, so a lost reject-vs-personal-approve race can never strand per-user
+        // rows APPROVED against a registry doc that wasn't actually approved.
         videoRepository.saveIfStatus(video, "PENDING");
 
-        if (video.getCategoryIds() != null) {
+        if (personal) {
+            // CAS won → eagerly flip waiting importers' AWAITING rows to APPROVED. Best-effort:
+            // the grant-aware sync derive re-applies APPROVED from the persisted grants if this
+            // fails, and it never runs if the CAS was lost.
+            try {
+                importGraduationService.onApprovedPersonal(YouTubeContentType.VIDEO, video.getYoutubeId());
+            } catch (Exception e) {
+                log.warn("Personal graduation fan-out failed on video approve youtubeId={}: {}", video.getYoutubeId(), e.getMessage());
+            }
+        }
+
+        if (!personal && video.getCategoryIds() != null) {
             for (String categoryId : video.getCategoryIds()) {
                 try {
                     sortOrderService.addContentToCategory(categoryId, video.getId(), "video");
@@ -1350,11 +1441,13 @@ public class ApprovalService {
 
         auditLogService.logApproval("video", video.getId(), actorUid, actorDisplayName, request.getReviewNotes());
 
-        // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
-        try {
-            importGraduationService.onApproved(YouTubeContentType.VIDEO, video.getYoutubeId());
-        } catch (Exception e) {
-            log.warn("Graduation fan-out failed on video approve youtubeId={}: {}", video.getYoutubeId(), e.getMessage());
+        if (!personal) {
+            // Fan-out: flip AWAITING per-user Me-list rows to APPROVED (swallows its own errors)
+            try {
+                importGraduationService.onApproved(YouTubeContentType.VIDEO, video.getYoutubeId());
+            } catch (Exception e) {
+                log.warn("Graduation fan-out failed on video approve youtubeId={}: {}", video.getYoutubeId(), e.getMessage());
+            }
         }
 
         ApprovalResponseDto response = new ApprovalResponseDto();
@@ -1364,6 +1457,29 @@ public class ApprovalService {
         response.setReviewNotes(request.getReviewNotes());
 
         return response;
+    }
+
+    /**
+     * Finding 3: compute the grantee list for an imported item — the importers with an AWAITING
+     * row for this id (read-only query, no row flip), plus the recorded submitter — for persisting
+     * on the registry item's personalGrants WITHIN the approve CAS. The read is best-effort; on
+     * failure we still grant the submitter so a personal approval is never a no-op for the person
+     * who asked. The AWAITING rows themselves are flipped separately (onApprovedPersonal) after
+     * the CAS wins.
+     */
+    private List<String> collectPersonalGrants(YouTubeContentType type, String youtubeId, String submittedBy) {
+        java.util.Set<String> grants;
+        try {
+            grants = importGraduationService.awaitingUids(type, youtubeId);
+        } catch (Exception e) {
+            log.warn("Personal grant computation failed type={} youtubeId={}: {}", type, youtubeId, e.getMessage());
+            grants = new java.util.HashSet<>();
+        }
+        java.util.Set<String> all = new java.util.HashSet<>(grants);
+        if (submittedBy != null && !submittedBy.isBlank()) {
+            all.add(submittedBy);
+        }
+        return new java.util.ArrayList<>(all);
     }
 
     private ApprovalResponseDto rejectVideo(Video video, RejectionRequestDto request,

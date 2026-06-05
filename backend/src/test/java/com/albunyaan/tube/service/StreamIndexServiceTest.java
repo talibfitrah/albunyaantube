@@ -52,6 +52,18 @@ class StreamIndexServiceTest {
     }
 
     @Test
+    void indexFromChannel_skipsIfChannelPersonal() throws Exception {
+        // Finding 3: PERSONAL channels must not be indexed into unauthenticated search.
+        Channel ch = new Channel("UC123");
+        ch.setStatus("APPROVED");
+        ch.setVisibility("PERSONAL");
+        ch.setName("Test Channel");
+        when(channelRepository.findByYoutubeId("UC123")).thenReturn(Optional.of(ch));
+        service.indexFromChannel("UC123", List.of(makeItem("abc12345678", "Test Video")));
+        verifyNoInteractions(streamRepository);
+    }
+
+    @Test
     void indexFromChannel_indexesApprovedChannelItem() throws Exception {
         Channel ch = new Channel("UC123");
         ch.setStatus("APPROVED");

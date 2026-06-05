@@ -239,11 +239,13 @@ export async function approveItem(
   itemId: string,
   itemType: 'channel' | 'playlist' | 'video',
   categoryOverride?: string,
-  reviewNotes?: string
+  reviewNotes?: string,
+  scope?: 'PUBLIC' | 'PERSONAL'
 ): Promise<void> {
   const payload: ApprovalRequestDto = {
     reviewNotes,
-    categoryOverride
+    categoryOverride,
+    scope
   };
 
   await apiClient.post(`/api/admin/approvals/${itemId}/approve`, payload);

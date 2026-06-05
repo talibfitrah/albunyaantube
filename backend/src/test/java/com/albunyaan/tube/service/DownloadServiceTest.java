@@ -45,7 +45,7 @@ class DownloadServiceTest {
     @Test
     void checkDownloadPolicy_shouldAllowDownload_whenVideoApproved() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         when(videoRepository.findByYoutubeId("YT-video-123")).thenReturn(Optional.of(approvedVideo));
-        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("YT-video-123");
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("YT-video-123", "user-1");
         assertTrue(policy.isAllowed());
         assertTrue(policy.isRequiresEula());
     }
@@ -53,7 +53,7 @@ class DownloadServiceTest {
     @Test
     void checkDownloadPolicy_shouldDenyDownload_whenVideoNotFound() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         when(videoRepository.findByYoutubeId("nonexistent")).thenReturn(Optional.empty());
-        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("nonexistent");
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("nonexistent", "user-1");
         assertFalse(policy.isAllowed());
         assertEquals("Video not found in registry", policy.getReason());
     }
@@ -62,7 +62,7 @@ class DownloadServiceTest {
     void checkDownloadPolicy_shouldDenyDownload_whenVideoNotApproved() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         approvedVideo.setStatus("PENDING");
         when(videoRepository.findByYoutubeId("YT-video-123")).thenReturn(Optional.of(approvedVideo));
-        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("YT-video-123");
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("YT-video-123", "user-1");
         assertFalse(policy.isAllowed());
         assertEquals("Video not approved for viewing", policy.getReason());
     }
@@ -116,7 +116,7 @@ class DownloadServiceTest {
         when(youtubeGateway.fetchStreamInfo("YT-video-123")).thenReturn(mockStreamInfo);
 
         // Execute (supportsMerging=false for this test)
-        DownloadManifestDto manifest = downloadService.getDownloadManifest("YT-video-123", "valid-token", false);
+        DownloadManifestDto manifest = downloadService.getDownloadManifest("YT-video-123", "valid-token", "user-1", false);
 
         // Verify
         assertNotNull(manifest);
@@ -151,7 +151,7 @@ class DownloadServiceTest {
         v.setValidationStatus(ValidationStatus.ARCHIVED);
         when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
 
-        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("ytv-1");
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("ytv-1", "user-1");
 
         assertFalse(policy.isAllowed());
     }
@@ -163,9 +163,36 @@ class DownloadServiceTest {
         v.setValidationStatus(ValidationStatus.UNAVAILABLE);
         when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
 
-        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("ytv-1");
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("ytv-1", "user-1");
 
         assertFalse(policy.isAllowed());
+    }
+
+    @Test
+    void checkDownloadPolicy_personalVideo_deniedForNonGrantee() throws Exception {
+        // Finding 3: a non-grantee must not be able to download a PERSONAL video.
+        Video v = new Video("YT-personal");
+        v.setStatus("APPROVED");
+        v.setVisibility("PERSONAL");
+        v.setPersonalGrants(List.of("grantee-uid"));
+        when(videoRepository.findByYoutubeId("YT-personal")).thenReturn(Optional.of(v));
+
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("YT-personal", "other-uid");
+
+        assertFalse(policy.isAllowed());
+    }
+
+    @Test
+    void checkDownloadPolicy_personalVideo_allowedForGrantee() throws Exception {
+        Video v = new Video("YT-personal");
+        v.setStatus("APPROVED");
+        v.setVisibility("PERSONAL");
+        v.setPersonalGrants(List.of("grantee-uid"));
+        when(videoRepository.findByYoutubeId("YT-personal")).thenReturn(Optional.of(v));
+
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("YT-personal", "grantee-uid");
+
+        assertTrue(policy.isAllowed());
     }
 
     @Test
@@ -177,7 +204,7 @@ class DownloadServiceTest {
         when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
 
         assertThrows(ResourceNotFoundException.class,
-                () -> downloadService.getDownloadManifest("ytv-1", "tok", false));
+                () -> downloadService.getDownloadManifest("ytv-1", "tok", "user-1", false));
     }
 
     @Test
@@ -189,7 +216,7 @@ class DownloadServiceTest {
         when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
 
         assertThrows(ResourceNotFoundException.class,
-                () -> downloadService.getDownloadManifest("ytv-1", "tok", false));
+                () -> downloadService.getDownloadManifest("ytv-1", "tok", "user-1", false));
     }
 
     @Test
@@ -201,7 +228,25 @@ class DownloadServiceTest {
         when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
 
         assertThrows(ResourceNotFoundException.class,
-                () -> downloadService.getDownloadManifest("ytv-1", "tok", false));
+                () -> downloadService.getDownloadManifest("ytv-1", "tok", "user-1", false));
+    }
+
+    @Test
+    void getDownloadManifest_personalVideo_nonGrantee_throwsResourceNotFound() throws Exception {
+        // Finding 3 (manifest leak): a valid but leaked token must not let a non-grantee
+        // redeem a PERSONAL video's stream URLs — the manifest re-checks visibility against
+        // the caller, and short-circuits before any stream fetch.
+        when(tokenService.validateToken("tok", "YT-personal")).thenReturn(true);
+        Video v = new Video("YT-personal");
+        v.setStatus("APPROVED");
+        v.setValidationStatus(ValidationStatus.VALID);
+        v.setVisibility("PERSONAL");
+        v.setPersonalGrants(List.of("grantee-uid"));
+        when(videoRepository.findByYoutubeId("YT-personal")).thenReturn(Optional.of(v));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> downloadService.getDownloadManifest("YT-personal", "tok", "other-uid", false));
+        verifyNoInteractions(youtubeGateway);
     }
 }
 

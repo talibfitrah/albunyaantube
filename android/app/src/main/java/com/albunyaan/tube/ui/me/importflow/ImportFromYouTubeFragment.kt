@@ -16,6 +16,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.importflow.ImportProgress
 import com.albunyaan.tube.data.youtube.CandidateType
 import com.albunyaan.tube.databinding.FragmentImportYoutubeBinding
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
@@ -53,6 +54,9 @@ class ImportFromYouTubeFragment : Fragment(R.layout.fragment_import_youtube) {
     // Track whether start() has been called so we auto-start only once.
     private var startedOnce = false
 
+    /** Held so it can be dismissed in onDestroyView — avoids a WindowLeaked warning on rotation. */
+    private var cautionDialog: androidx.appcompat.app.AlertDialog? = null
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentImportYoutubeBinding.bind(view)
@@ -62,7 +66,7 @@ class ImportFromYouTubeFragment : Fragment(R.layout.fragment_import_youtube) {
         binding.recycler.layoutManager = LinearLayoutManager(requireContext())
         binding.recycler.adapter = adapter
 
-        binding.importButton.setOnClickListener { viewModel.confirmImport() }
+        binding.importButton.setOnClickListener { showImportCautionDialog() }
         binding.doneButton.setOnClickListener { findNavController().navigateUp() }
         binding.retryButton.setOnClickListener { viewModel.retry() }
 
@@ -191,8 +195,26 @@ class ImportFromYouTubeFragment : Fragment(R.layout.fragment_import_youtube) {
         return getString(R.string.import_youtube_partial_failure, names)
     }
 
+    /**
+     * Finding 4: show a Sharī'ah-compliance caution before the import runs. Confirming
+     * proceeds to [ImportViewModel.confirmImport]; cancelling leaves the user on the
+     * review screen with their selection intact.
+     */
+    private fun showImportCautionDialog() {
+        cautionDialog?.dismiss()
+        cautionDialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.import_caution_title)
+            .setMessage(R.string.import_caution_message)
+            .setPositiveButton(R.string.import_caution_continue) { _, _ -> viewModel.confirmImport() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .setOnDismissListener { cautionDialog = null }
+            .show()
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
+        cautionDialog?.dismiss()
+        cautionDialog = null
         _binding = null
     }
 }

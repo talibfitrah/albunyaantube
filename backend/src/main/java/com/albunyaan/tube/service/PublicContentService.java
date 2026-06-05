@@ -231,7 +231,10 @@ public class PublicContentService {
             result = channelRepository.findApprovedBySubscribersDescWithCursor(limit, cursor);
         }
 
+        // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
+        // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
         List<ContentItemDto> items = result.getItems().stream()
+                .filter(this::isApproved)
                 .filter(this::isAvailable)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -282,7 +285,10 @@ public class PublicContentService {
             result = playlistRepository.findApprovedByItemCountDescWithCursor(limit, cursor);
         }
 
+        // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
+        // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
         List<ContentItemDto> items = result.getItems().stream()
+                .filter(this::isApproved)
                 .filter(this::isAvailable)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -319,7 +325,10 @@ public class PublicContentService {
                 result = videoRepository.findApprovedByUploadedAtDescWithCursor(limit, cursor);
             }
 
+            // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
+            // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
             List<ContentItemDto> items = result.getItems().stream()
+                    .filter(this::isApproved)
                     .filter(this::isAvailable)
                     .map(this::toDto)
                     .collect(Collectors.toList());
@@ -398,13 +407,13 @@ public class PublicContentService {
         Set<String> activeCategoryIds = new HashSet<>();
 
         for (Channel ch : channelRepository.findByStatus("APPROVED")) {
-            if (ch.getCategoryIds() != null) activeCategoryIds.addAll(ch.getCategoryIds());
+            if (isPublicVisibility(ch.getVisibility()) && ch.getCategoryIds() != null) activeCategoryIds.addAll(ch.getCategoryIds());
         }
         for (Playlist pl : playlistRepository.findByStatus("APPROVED")) {
-            if (pl.getCategoryIds() != null) activeCategoryIds.addAll(pl.getCategoryIds());
+            if (isPublicVisibility(pl.getVisibility()) && pl.getCategoryIds() != null) activeCategoryIds.addAll(pl.getCategoryIds());
         }
         for (Video v : videoRepository.findByStatus("APPROVED")) {
-            if (v.getCategoryIds() != null) activeCategoryIds.addAll(v.getCategoryIds());
+            if (isPublicVisibility(v.getVisibility()) && v.getCategoryIds() != null) activeCategoryIds.addAll(v.getCategoryIds());
         }
 
         // Expand to include ancestor categories so parent categories remain navigable
@@ -948,6 +957,13 @@ public class PublicContentService {
             throw new ResourceNotFoundException("Channel", channelId);
         }
 
+        // Finding 3: PERSONAL items aren't public — 404 (fail-open) on the public by-id so a
+        // non-grantee can't fetch the curated DTO. Grantees reach personal items via
+        // authenticated sync + on-device NewPipe.
+        if (!isPublicVisibility(channel.getVisibility())) {
+            throw new ResourceNotFoundException("Channel", channelId);
+        }
+
         return channel;
     }
 
@@ -964,6 +980,11 @@ public class PublicContentService {
 
         // PENDING or REQUEST_CHANGES → 404; fail-open.
         if (!"APPROVED".equals(playlist.getStatus())) {
+            throw new ResourceNotFoundException("Playlist", playlistId);
+        }
+
+        // Finding 3: PERSONAL items aren't public — 404 (fail-open) on the public by-id.
+        if (!isPublicVisibility(playlist.getVisibility())) {
             throw new ResourceNotFoundException("Playlist", playlistId);
         }
 
@@ -989,6 +1010,13 @@ public class PublicContentService {
         if (video.getValidationStatus() == ValidationStatus.UNAVAILABLE
                 || video.getValidationStatus() == ValidationStatus.ARCHIVED) {
             throw new ContentGoneException("Video", videoId);
+        }
+
+        // Finding 3: PERSONAL items aren't public — 404 (fail-open) on the public by-id so a
+        // non-grantee can't fetch the curated DTO. Grantees reach personal items via
+        // authenticated sync + on-device NewPipe.
+        if (!isPublicVisibility(video.getVisibility())) {
+            throw new ResourceNotFoundException("Video", videoId);
         }
 
         return video;
@@ -1477,15 +1505,24 @@ public class PublicContentService {
 
     // Helper methods
     private boolean isApproved(Channel channel) {
-        return "APPROVED".equals(channel.getStatus());
+        return "APPROVED".equals(channel.getStatus()) && isPublicVisibility(channel.getVisibility());
     }
 
     private boolean isApproved(Playlist playlist) {
-        return "APPROVED".equals(playlist.getStatus());
+        return "APPROVED".equals(playlist.getStatus()) && isPublicVisibility(playlist.getVisibility());
     }
 
     private boolean isApproved(Video video) {
-        return "APPROVED".equals(video.getStatus());
+        return "APPROVED".equals(video.getStatus()) && isPublicVisibility(video.getVisibility());
+    }
+
+    /**
+     * Finding 3: only PUBLIC-visibility items appear in public browse/search. A PERSONAL
+     * item is approved for specific users only and must never surface here. null/blank
+     * visibility (legacy docs and all organic/admin adds) is treated as PUBLIC.
+     */
+    private boolean isPublicVisibility(String visibility) {
+        return VisibilityPolicy.isPublic(visibility);
     }
 
     /**

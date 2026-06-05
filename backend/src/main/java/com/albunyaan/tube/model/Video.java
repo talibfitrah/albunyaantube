@@ -96,6 +96,23 @@ public class Video {
     private String source; // "USER_IMPORT" | "ADMIN" | "MODERATOR" | "BULK" | null
 
     /**
+     * Finding 3: PUBLIC (default; null on legacy docs is treated as PUBLIC) or PERSONAL.
+     * PERSONAL items are approved only for specific users and never appear in public
+     * browse/search. Set at approval time, not at submission.
+     */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String visibility;
+
+    /**
+     * Finding 3: Firebase UIDs granted personal access when visibility == PERSONAL.
+     * SyncService's per-user derive keeps these users' Me-list rows APPROVED; everyone
+     * else (including a later importer of the same id) stays AWAITING. Null/empty when PUBLIC.
+     * WRITE_ONLY: never serialized to clients — leaking the grantee UID list is a PII/enumeration risk.
+     */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private List<String> personalGrants;
+
+    /**
      * Approval metadata (reviewer info, notes, rejection reason).
      */
     private ApprovalMetadata approvalMetadata;
@@ -213,6 +230,22 @@ public class Video {
 
     public void setSource(String source) {
         this.source = source;
+    }
+
+    public String getVisibility() {
+        return visibility;
+    }
+
+    public void setVisibility(String visibility) {
+        this.visibility = visibility;
+    }
+
+    public List<String> getPersonalGrants() {
+        return personalGrants;
+    }
+
+    public void setPersonalGrants(List<String> personalGrants) {
+        this.personalGrants = personalGrants;
     }
 
     public String getTitle() {

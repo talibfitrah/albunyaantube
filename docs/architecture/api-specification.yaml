@@ -4145,6 +4145,13 @@ components:
           type: string
           nullable: true
           description: Optional category override
+        scope:
+          type: string
+          nullable: true
+          enum:
+            - PUBLIC
+            - PERSONAL
+          description: "Finding 3 — approval scope. PUBLIC (default/null) approves into the public library for everyone; PERSONAL approves only for the importing user(s) and skips the category requirement."
 
     ApprovalResponseDto:
       type: object

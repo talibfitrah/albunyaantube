@@ -28,9 +28,11 @@ public class DownloadController {
     }
 
     @GetMapping("/policy/{videoId}")
-    public ResponseEntity<DownloadPolicyDto> checkPolicy(@PathVariable String videoId)
+    public ResponseEntity<DownloadPolicyDto> checkPolicy(@PathVariable String videoId,
+            @AuthenticationPrincipal FirebaseUserDetails user)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        DownloadPolicyDto policy = downloadService.checkDownloadPolicy(videoId);
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy(
+                videoId, user != null ? user.getUid() : null);
         return ResponseEntity.ok(policy);
     }
 
@@ -62,9 +64,11 @@ public class DownloadController {
     public ResponseEntity<DownloadManifestDto> getManifest(
             @PathVariable String videoId,
             @RequestParam String token,
-            @RequestParam(defaultValue = "false") boolean supportsMerging)
+            @RequestParam(defaultValue = "false") boolean supportsMerging,
+            @AuthenticationPrincipal FirebaseUserDetails user)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        DownloadManifestDto manifest = downloadService.getDownloadManifest(videoId, token, supportsMerging);
+        DownloadManifestDto manifest = downloadService.getDownloadManifest(
+                videoId, token, user != null ? user.getUid() : null, supportsMerging);
         return ResponseEntity.ok(manifest);
     }
 
