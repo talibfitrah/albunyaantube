@@ -151,8 +151,11 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
      * which the stall watchdog (BUFFERING-only) never observes, so the short
      * froze forever with no skip and no retry. [stallListener] now recovers:
      * first error on a short → refresh its stream URLs; repeat error on the
-     * same short → skip to the next. The budget resets when the short reaches
-     * STATE_READY (a good stretch earns a fresh ladder).
+     * same short → skip to the next. The budget resets when the *current short
+     * changes* (see the id check in onPlayerError) so each short gets a fresh
+     * ladder; it deliberately does NOT reset on STATE_READY, which would let a
+     * short that reaches READY then re-errors (corrupt mid-stream segment, late
+     * 403) flap refresh→READY→error forever and never reach the skip branch.
      */
     private var errorRecoveryVideoId: String? = null
     private var errorRecoveryAttempts = 0
@@ -202,11 +205,6 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             } else {
                 timeBarHandler.removeCallbacks(stallRecoveryRunnable)
                 pendingStalledVideoId = null
-                if (playbackState == androidx.media3.common.Player.STATE_READY) {
-                    // Successful playback — replenish this short's error budget so a
-                    // later, unrelated error gets a fresh refresh-then-skip ladder.
-                    errorRecoveryAttempts = 0
-                }
             }
         }
 
