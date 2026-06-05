@@ -391,7 +391,7 @@ class PlayerBinder private constructor(
         sourceChannelId: String?,
         forceRefresh: Boolean
     ) {
-        val resolved: ResolvedStreams? = runCatching {
+        val initial: ResolvedStreams? = runCatching {
             playerRepository.resolveStreams(videoId, forceRefresh = forceRefresh, sourceChannelId = sourceChannelId)
         }.onFailure { error ->
             android.util.Log.w(
@@ -402,6 +402,26 @@ class PlayerBinder private constructor(
 
         // Discard if a newer bind has superseded this one.
         if (myGen != generation.get()) return
+
+        // Stale-URL guard (mirrors PlayerViewModel): the extractor cache can return
+        // a progressive/synthetic stream up to 30 min old, but googlevideo segment
+        // URLs expire sooner and 403 on the first chunk -> frozen first frame when a
+        // page is (re)bound. If this wasn't already a forced refresh and the URLs look
+        // expired, re-resolve fresh once. HLS/DASH carry their own refreshable
+        // manifests, so the guard is scoped to progressive streams.
+        val resolved: ResolvedStreams? =
+            if (!forceRefresh && initial != null &&
+                initial.hlsUrl == null && initial.dashUrl == null && initial.areUrlsExpired()
+            ) {
+                android.util.Log.d("PlayerBinder", "cached URLs expired for $videoId — re-resolving fresh")
+                val fresh = runCatching {
+                    playerRepository.resolveStreams(videoId, forceRefresh = true, sourceChannelId = sourceChannelId)
+                }.getOrNull()
+                if (myGen != generation.get()) return
+                fresh ?: initial
+            } else {
+                initial
+            }
 
         if (resolved == null) {
             _failureEvents.tryEmit(videoId)
