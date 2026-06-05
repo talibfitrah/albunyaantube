@@ -5,6 +5,30 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.23] - 2026-06-05
+
+### Android
+
+- **Import flow now has a Save button.** After selecting subscriptions, playlists,
+  or favorites to import, a clear submit action commits the selection (it was
+  previously hidden behind the bottom navigation bar).
+- **Pre-import halal-content reminder.** A confirmation dialog before importing
+  advises choosing only halal-compliant content, per ahl al-sunnah, and to fear
+  Allah in the selection. Strings localized in en/ar/nl.
+- **Seek no longer collapses 4K to 360p.** YouTube client rotation is now
+  failure-driven instead of refresh-driven: a post-seek URL refresh stays on the
+  IOS client (full adaptive ladder) rather than downgrading to the ANDROID
+  muxed-only 360p client. Only a genuine extraction failure arms the fallback.
+
+### Backend
+
+- **Per-user vs public approval.** Admins can approve imported content either
+  publicly (into the curated catalog) or for the requesting user only
+  (`visibility` PUBLIC/PERSONAL + `personalGrants`). PERSONAL items are gated out
+  of every public read path through a single `VisibilityPolicy`, and the approve
+  write is atomic + compare-and-set safe (no stranding, no reject-race). The
+  download manifest is bound to the calling user, not just the token.
+
 ## [1.0.0-beta.18] - 2026-05-25
 
 ### Android

@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.23": {
+    "en": "Import: new Save button and a halal-content reminder before importing. Playback: 4K no longer drops to 360p after seeking.",
+    "ar": "الاستيراد: زر حفظ جديد وتذكير باختيار محتوى حلال قبل الاستيراد. التشغيل: لم تعد جودة 4K تنخفض إلى 360p بعد التمرير.",
+    "nl": "Importeren: nieuwe Opslaan-knop en een halal-contentherinnering vooraf. Afspelen: 4K valt niet meer terug naar 360p na zoeken."
+  },
   "1.0.0-beta.22": {
     "en": "Import your YouTube subscriptions, playlists and favorites into your Me list (admin-reviewed). Fixes 4K dropping to 360p after seeking; steadier playback on 4G.",
     "ar": "استيراد اشتراكاتك وقوائم التشغيل والمفضلات من يوتيوب إلى قائمتك (بمراجعة المشرف). إصلاح انخفاض جودة 4K إلى 360p بعد التمرير؛ تشغيل أكثر ثباتًا على 4G.",
