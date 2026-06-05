@@ -1373,10 +1373,31 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         android.util.Log.w("PlayerFragment", "Decoder error: ${error.errorCodeName} - attempting quality step-down")
                         handleDecoderError(player, error)
                     }
+                    PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> {
+                        // The live edge moved past our buffered position. The correct
+                        // recovery is to jump back into the live window and re-prepare,
+                        // NOT a stream re-resolve. Without this the live stream froze.
+                        android.util.Log.w("PlayerFragment", "Behind live window — seeking to live edge and re-preparing")
+                        player.seekToDefaultPosition()
+                        player.prepare()
+                    }
                     else -> {
-                        // Other errors - show message with safe context access
-                        context?.let { ctx ->
-                            Toast.makeText(ctx, getString(R.string.player_stream_error) + ": ${error.errorCodeName}", Toast.LENGTH_LONG).show()
+                        // Previously toast-only: every unhandled code (TIMEOUT,
+                        // IO_NO_PERMISSION, CLEARTEXT_NOT_PERMITTED,
+                        // INVALID_HTTP_CONTENT_TYPE, AUDIO_TRACK_INIT/WRITE_FAILED, DRM,
+                        // UNSPECIFIED) left the player in STATE_IDLE with a frozen
+                        // surface and no recovery. Attempt a generic stream re-resolve +
+                        // resume first (bounded by the refresh budget); only fall back to
+                        // a toast once recovery is exhausted, instead of freezing.
+                        if (streamRefreshCount < maxStreamRefreshes) {
+                            streamRefreshCount++
+                            requestStreamRefreshAndResume(
+                                "unhandled player error (${error.errorCodeName}, http=${httpResponseCode ?: "n/a"})"
+                            )
+                        } else {
+                            context?.let { ctx ->
+                                Toast.makeText(ctx, getString(R.string.player_stream_error) + ": ${error.errorCodeName}", Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
                 }

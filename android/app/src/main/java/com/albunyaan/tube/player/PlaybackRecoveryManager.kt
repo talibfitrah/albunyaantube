@@ -48,6 +48,15 @@ class PlaybackRecoveryManager(
         const val MAX_RECOVERY_ATTEMPTS = 5
         private const val RECOVERY_BACKOFF_BASE_MS = 2_000L
 
+        /**
+         * Continuous healthy-playback time since the last recovery after which the
+         * recovery-attempt budget is replenished to 0. Long enough that a flapping
+         * stream (re-failing sooner) never replenishes and stays bounded by
+         * [MAX_RECOVERY_ATTEMPTS]; short enough that a genuinely-recovered long video
+         * regains its budget for an unrelated later stall.
+         */
+        private const val SUSTAINED_RECOVERY_RESET_MS = 60_000L
+
         // Buffer health monitoring for live streams
         /** Minimum buffer growth per check interval to consider stream progressing */
         private const val MIN_HEALTHY_BUFFER_GROWTH_MS = 1000L
@@ -435,6 +444,24 @@ class PlaybackRecoveryManager(
                     }
                     positionStuckSince = -1L
                     lastKnownPosition = player.currentPosition
+
+                    // Sustained-success budget replenishment: if a prior recovery
+                    // happened and playback has since stayed healthy for
+                    // SUSTAINED_RECOVERY_RESET_MS, replenish the recovery budget.
+                    // Without this, a long video that recovers from N *separate*
+                    // stalls over its runtime eventually hits MAX_RECOVERY_ATTEMPTS
+                    // and shows a false "can't recover" screen even though every prior
+                    // stall self-healed. Gated on sustained health, so a flapping
+                    // stream (re-failing before the window elapses) can never loop —
+                    // a new failure restarts recovery and moves lastRecoveryTime forward.
+                    val lastRecovery = lastRecoveryTime.get()
+                    if (recoveryAttempt.get() > 0 && lastRecovery > 0 &&
+                        clock() - lastRecovery >= SUSTAINED_RECOVERY_RESET_MS
+                    ) {
+                        Log.i(TAG, "Sustained healthy playback since last recovery - replenishing recovery budget")
+                        recoveryAttempt.set(0)
+                        lastRecoveryTime.set(-1L)
+                    }
                     continue
                 }
 
