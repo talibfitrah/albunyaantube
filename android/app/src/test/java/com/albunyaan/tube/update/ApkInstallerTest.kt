@@ -208,4 +208,64 @@ class ApkInstallerTest {
             // expected
         }
     }
+
+    @Suppress("DEPRECATION")
+    private fun packageInfoNoSig(pkg: String = "pkg"): PackageInfo =
+        PackageInfo().apply {
+            packageName = pkg
+            signatures = null
+        }
+
+    /**
+     * Regression for the Android 9 / older update-install failure. On API <= 28 the
+     * legacy GET_SIGNATURES branch reads `info.signatures`, which is null for a
+     * v2-only APK *file* (no v1/JAR block). The old code then threw
+     * "No signing certificate in downloaded APK" and the update aborted before
+     * install. The fix fails open on pre-P: the OS PackageInstaller still enforces
+     * signing-cert equality on update, so this must NOT throw.
+     */
+    @Test
+    fun `verifySigningCertMatch fails open on pre-P when archive cert unreadable (v2-only)`() {
+        val sig = Signature(byteArrayOf(0x01, 0x02, 0x03, 0x04))
+        val pm = mock<PackageManager> {
+            whenever(it.getPackageInfo(eq("pkg"), any<Int>())).thenReturn(packageInfoWith(sig))
+            whenever(it.getPackageArchiveInfo(any(), any<Int>())).thenReturn(packageInfoNoSig("pkg"))
+        }
+        val activity = mock<Activity> {
+            whenever(it.packageManager).thenReturn(pm)
+            whenever(it.packageName).thenReturn("pkg")
+        }
+        // Must NOT throw on API 26 (pre-P) — this is the historical install failure.
+        ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/v2only-preP.apk"))
+    }
+
+    /**
+     * The pre-P fail-open must be scoped to pre-P only. On API P+ the archive cert
+     * is always readable via apkContentsSigners, so a null there is a genuine
+     * problem and must still abort — no fail-open on modern Android.
+     */
+    @Test
+    @Config(sdk = [Build.VERSION_CODES.P])
+    fun `verifySigningCertMatch still throws on API P when archive cert unreadable`() {
+        val installedSig = Signature(byteArrayOf(0x0A))
+        val installedSi = mock<SigningInfo> {
+            whenever(it.apkContentsSigners).thenReturn(arrayOf(installedSig))
+        }
+        // No stub for apkContentsSigners -> returns null (unreadable archive cert).
+        val downloadedSi = mock<SigningInfo>()
+        val pm = mock<PackageManager> {
+            whenever(it.getPackageInfo(eq("pkg"), any<Int>())).thenReturn(packageInfoP(installedSi))
+            whenever(it.getPackageArchiveInfo(any(), any<Int>())).thenReturn(packageInfoP(downloadedSi))
+        }
+        val activity = mock<Activity> {
+            whenever(it.packageManager).thenReturn(pm)
+            whenever(it.packageName).thenReturn("pkg")
+        }
+        try {
+            ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/p-noreadcert.apk"))
+            fail("Expected SecurityException — P+ must not fail open on unreadable cert")
+        } catch (e: SecurityException) {
+            // expected
+        }
+    }
 }

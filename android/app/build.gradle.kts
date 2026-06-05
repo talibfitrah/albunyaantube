@@ -131,6 +131,19 @@ android {
     }
 
     signingConfigs {
+        // Re-enable v1 (JAR) signing alongside v2/v3. With minSdk 26, AGP disables
+        // v1 by default (v2 covers API 24+), producing v2-only APKs. But the in-app
+        // updater's pre-install signature check reads getPackageArchiveInfo with
+        // GET_SIGNATURES, which can only read v1 signatures on Android <= 9
+        // (API <= 28): a v2-only APK has no readable cert there, so the update
+        // aborts with "signature mismatch" before install ever starts. Shipping
+        // v1+v2+v3 keeps the cert readable across all supported APIs (26+). Same
+        // signing key, so existing v2-only installs still upgrade cleanly.
+        getByName("debug") {
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+        }
         create("release") {
             if (keystorePropertiesFile.exists()) {
                 storeFile = file(keystoreProperties["storeFile"] as String)
@@ -138,6 +151,9 @@ android {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
             }
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 

@@ -262,7 +262,26 @@ class ApkInstaller @Inject constructor(
         val installedSha = certSha256(installed)
             ?: throw SecurityException("No signing certificate on installed app")
         val downloadedSha = certSha256(downloaded)
-            ?: throw SecurityException("No signing certificate in downloaded APK")
+        if (downloadedSha == null) {
+            // On Android <= 9 (API <= 28), getPackageArchiveInfo(GET_SIGNATURES) can
+            // only read v1 (JAR) signatures from the APK *file*; a v2-only archive
+            // yields no readable cert there. Rather than hard-block the update (the
+            // historical Android-9 install failure), fail open on pre-P: the OS
+            // PackageInstaller still enforces signing-certificate equality against the
+            // installed app on every update, so a mismatched/tampered APK is rejected
+            // by the platform regardless. On P+ the archive cert is always readable via
+            // apkContentsSigners, so a null there is a genuine problem and still aborts.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+                Log.w(
+                    TAG,
+                    "Downloaded APK cert unreadable on API ${Build.VERSION.SDK_INT} " +
+                        "(v2-only archive on pre-P); skipping app-level cert check — " +
+                        "PackageInstaller enforces signature match on update"
+                )
+                return
+            }
+            throw SecurityException("No signing certificate in downloaded APK")
+        }
         if (installedSha != downloadedSha) {
             Log.e(TAG, "Signing certificate mismatch: installed=$installedSha downloaded=$downloadedSha")
             throw SecurityException(
