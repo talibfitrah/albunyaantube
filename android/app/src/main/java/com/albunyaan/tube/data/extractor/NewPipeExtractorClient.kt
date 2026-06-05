@@ -1,6 +1,7 @@
 package com.albunyaan.tube.data.extractor
 
 import android.os.SystemClock
+import androidx.annotation.VisibleForTesting
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.player.PlaybackFeatureFlags
@@ -547,18 +548,7 @@ class NewPipeExtractorClient(
                 )
             }
 
-        val audioTracks = when {
-            audioTracksRaw.isNotEmpty() -> audioTracksRaw
-            videoTracks.isNotEmpty() -> listOf(
-                AudioTrack(
-                    url = videoTracks.first().url,
-                    mimeType = videoTracks.first().mimeType,
-                    bitrate = videoTracks.first().bitrate,
-                    codec = null
-                )
-            )
-            else -> emptyList()
-        }
+        val audioTracks = deriveFallbackAudioTracks(audioTracksRaw, videoTracks)
 
         if (videoTracks.isEmpty() && audioTracks.isEmpty()) return null
 
@@ -944,6 +934,36 @@ class NewPipeExtractorClient(
     }
 
     companion object {
+        /**
+         * Resolve the audio track list, falling back to a MUXED video track's embedded
+         * audio when YouTube exposes no separate audio stream.
+         *
+         * The previous implementation fabricated an "audio" track from videoTracks.first(),
+         * but that list is sorted highest-resolution-first and is almost always VIDEO-ONLY,
+         * so ExoPlayer merged a silent video stream as the audio renderer input ->
+         * "image, no sound". Only a muxed track (isVideoOnly == false) carries embedded
+         * audio. If no muxed track exists, return empty rather than fabricate a
+         * guaranteed-silent track: the fabricated track carries no syntheticDashMetadata,
+         * so the synthetic-DASH / SYNTH_ADAPTIVE paths filter it out and playback falls
+         * through to the progressive merge where the muxed source supplies real audio.
+         */
+        @VisibleForTesting
+        internal fun deriveFallbackAudioTracks(
+            audioTracksRaw: List<AudioTrack>,
+            videoTracks: List<VideoTrack>
+        ): List<AudioTrack> {
+            if (audioTracksRaw.isNotEmpty()) return audioTracksRaw
+            val muxed = videoTracks.firstOrNull { !it.isVideoOnly } ?: return emptyList()
+            return listOf(
+                AudioTrack(
+                    url = muxed.url,
+                    mimeType = muxed.mimeType,
+                    bitrate = muxed.bitrate,
+                    codec = null
+                )
+            )
+        }
+
         // Increased cache TTL to 30 minutes for better performance
         // YouTube stream URLs typically expire after 6 hours
         private const val STREAM_CACHE_TTL_MILLIS = 30 * 60 * 1000L
