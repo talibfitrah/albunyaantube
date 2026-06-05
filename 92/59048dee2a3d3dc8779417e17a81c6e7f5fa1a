@@ -1,0 +1,23 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  s_13eb3230c8051b::t_3ab9fc0bf48e2f 551
+  s_13eb3230c8051b::t_48073949fe9599 4
+  s_13eb3230c8051b::t_7370426375def6 937-966
+android/app/src/test/java/com/albunyaan/tube/data/extractor/NewPipeExtractorAudioFallbackTest.kt
+  s_13eb3230c8051b::t_2b5293277033e2 1-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "9259048dee2a3d3dc8779417e17a81c6e7f5fa1a",
+  "prompts": {},
+  "sessions": {
+    "s_13eb3230c8051b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c5d25553-7050-4ccc-8583-ef54297404ab",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
