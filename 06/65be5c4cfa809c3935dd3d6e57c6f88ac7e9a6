@@ -1,0 +1,23 @@
+android/app/build.gradle.kts
+  s_13eb3230c8051b::t_80124b7d305058 134-146,154-156
+android/app/src/test/java/com/albunyaan/tube/update/ApkInstallerTest.kt
+  s_13eb3230c8051b::t_ebbcad824f0098 211-270
+android/app/src/main/java/com/albunyaan/tube/update/ApkInstaller.kt
+  s_13eb3230c8051b::t_c11c90f779ae34 265-284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "0665be5c4cfa809c3935dd3d6e57c6f88ac7e9a6",
+  "prompts": {},
+  "sessions": {
+    "s_13eb3230c8051b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c5d25553-7050-4ccc-8583-ef54297404ab",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
