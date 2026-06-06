@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.25": {
+    "en": "Fixes videos stuck loading (\"Resolving…\") that never played, mainly on older Android / Huawei devices.",
+    "ar": "إصلاح الفيديوهات العالقة على \"حل البث\" التي لا تعمل أبدًا، خاصةً على أندرويد الأقدم وأجهزة هواوي.",
+    "nl": "Lost video's op die bleven hangen op laden en nooit speelden, vooral op oudere Android / Huawei-toestellen."
+  },
   "1.0.0-beta.24": {
     "en": "Fixes silent video (audio now plays), Shorts freezing, and stuck playback; update install fixed on older Android.",
     "ar": "إصلاح الفيديو بلا صوت (يعمل الصوت الآن)، وتجمّد Shorts، وتوقّف التشغيل؛ وإصلاح تثبيت التحديث على إصدارات أندرويد الأقدم.",

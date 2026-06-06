@@ -5,6 +5,23 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.25] - 2026-06-06
+
+### Android
+
+- **Fixed videos never playing — endless "Resolving stream…" (حل البث) loop.**
+  Root cause (reproduced on a Huawei Honor Play, EMUI 9 / Android 9): streams are
+  extracted with the iOS client (default), but the progressive/DASH data source
+  hardcoded the Android `User-Agent`. YouTube returns HTTP 403 for googlevideo URLs
+  fetched with a UA that doesn't match the extracting client. HLS already used the
+  iOS UA; the progressive/DASH path did not — so when synthetic-DASH failed and
+  playback fell back to a raw progressive stream, the iOS URL + Android UA 403'd, and
+  the reactive 403-refresh re-resolved into the same 403 indefinitely. The
+  progressive/DASH/synthetic-DASH data source now uses the iOS UA when iOS-fetch is
+  enabled, matching the extraction client (consistent with the existing HLS path).
+  Confirmed on-device. Known follow-up: when iOS extraction fails and rotates to the
+  Android client, the UA should track the per-stream source client.
+
 ## [1.0.0-beta.24] - 2026-06-06
 
 ### Android
