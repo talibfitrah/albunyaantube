@@ -9,13 +9,9 @@ import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.model.ContentType
 import java.io.IOException
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Pattern
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
@@ -79,10 +75,6 @@ class NewPipeExtractorClient(
         }
     }
     private val streamCacheLock = Any()
-
-    /** Guards one-shot poToken pre-warm; the WebView is minted once per process at startup. */
-    private val prewarmStarted = AtomicBoolean(false)
-    private val prewarmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Primary stream resolver — ANDROID_VR client (poToken-free). See [AndroidVrStreamResolver]. */
     private val androidVrResolver = AndroidVrStreamResolver(clock)
@@ -899,19 +891,14 @@ class NewPipeExtractorClient(
             // PO Token on stream URLs; without one, every stream URL returns HTTP 403 and playback
             // falls into the "Resolving stream…" retry loop. Registered once, globally, on the
             // static extractor. See WebViewPoTokenProvider.
+            // poToken provider is the FALLBACK now (ANDROID_VR is the primary resolve path). It's
+            // registered but minted lazily — no eager startup WebView spin-up.
             poTokenProvider?.let { provider ->
                 YoutubeStreamExtractor.setPoTokenProvider(provider)
                 android.util.Log.i(
                     ADAPTIVE_PROBE_TAG,
-                    "poToken provider registered: ${provider.javaClass.simpleName}"
+                    "poToken provider registered (fallback): ${provider.javaClass.simpleName}"
                 )
-                // Mint the BotGuard token once at startup, off the main thread, while memory is calm
-                // — before ExoPlayer/Cronet open the Android <=28 WebView-renderer-kill window.
-                if (provider is com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider &&
-                    prewarmStarted.compareAndSet(false, true)
-                ) {
-                    prewarmScope.launch { provider.prewarm() }
-                }
             }
             // Apply initial iOS fetch setting (runtime toggle applied before each extraction)
             applyIosFetchSetting()
