@@ -191,7 +191,7 @@ class ShortsPlayerFragmentTest {
 
         androidx.test.espresso.Espresso.onView(
             androidx.test.espresso.matcher.ViewMatchers.withId(
-                com.albunyaan.tube.R.id.shortSubscribeBtn
+                com.albunyaan.tube.R.id.subscribeButton
             )
         ).perform(androidx.test.espresso.action.ViewActions.click())
 

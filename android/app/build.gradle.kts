@@ -36,8 +36,8 @@ android {
         applicationId = "com.albunyaan.tube"
         minSdk = 26
         targetSdk = 35
-        versionCode = 39
-        versionName = "1.0.0-beta.25"
+        versionCode = 40
+        versionName = "1.0.0-beta.26"
 
         testInstrumentationRunner = "com.albunyaan.tube.HiltTestRunner"
         vectorDrawables.useSupportLibrary = true
@@ -71,9 +71,12 @@ android {
 
         // PR6.2: iOS client fetch feature flag
         // Enables NewPipeExtractor iOS client fetch for better HLS manifest availability.
-        // Default OFF - enable in local.properties: npe.ios.fetch.enabled=true
+        // Default ON: the iOS client provides the full HD/4K adaptive ladder and now works once the
+        // WebView poToken is supplied (see WebViewPoTokenProvider.getIosClientPoToken). The android
+        // client is SABR-gutted to a single 360p muxed stream, so iOS must stay on. Disable only for
+        // debugging: npe.ios.fetch.enabled=false
         // WARNING: Requires iOS User-Agent for HLS playback (configured in MultiQualityMediaSourceFactory)
-        val enableNpeIosFetch = localProperties.getProperty("npe.ios.fetch.enabled", "false").toBoolean()
+        val enableNpeIosFetch = localProperties.getProperty("npe.ios.fetch.enabled", "true").toBoolean()
         buildConfigField("boolean", "ENABLE_NPE_IOS_FETCH", "$enableNpeIosFetch")
 
         // ===================================================================================

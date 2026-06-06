@@ -84,7 +84,8 @@ class FakeContentApi : ContentApi {
         category: String?,
         length: String?,
         date: String?,
-        sort: String?
+        sort: String?,
+        query: String?
     ): CursorPage {
         return CursorPage(
             data = emptyList(),
@@ -121,6 +122,15 @@ class FakeContentApi : ContentApi {
             )
         )
     }
+
+    override suspend fun checkChannelAvailable(id: String): retrofit2.Response<Unit> =
+        retrofit2.Response.success(Unit)
+
+    override suspend fun checkPlaylistAvailable(id: String): retrofit2.Response<Unit> =
+        retrofit2.Response.success(Unit)
+
+    override suspend fun checkVideoAvailable(id: String): retrofit2.Response<Unit> =
+        retrofit2.Response.success(Unit)
 }
 
 /**
