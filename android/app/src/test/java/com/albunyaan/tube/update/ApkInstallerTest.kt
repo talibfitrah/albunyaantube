@@ -217,12 +217,12 @@ class ApkInstallerTest {
         }
 
     /**
-     * Regression for the Android 9 / older update-install failure. On API <= 28 the
-     * legacy GET_SIGNATURES branch reads `info.signatures`, which is null for a
-     * v2-only APK *file* (no v1/JAR block). The old code then threw
+     * Regression for the old-Android update-install failure (Android <= 8.1, pre-P).
+     * On API < 28 the legacy GET_SIGNATURES branch reads `info.signatures`, which is
+     * null for a v2-only APK *file* (no v1/JAR block). The old code then threw
      * "No signing certificate in downloaded APK" and the update aborted before
      * install. The fix fails open on pre-P: the OS PackageInstaller still enforces
-     * signing-cert equality on update, so this must NOT throw.
+     * signing-cert equality on update, so this must NOT throw. (@Config sdk=O = API 26.)
      */
     @Test
     fun `verifySigningCertMatch fails open on pre-P when archive cert unreadable (v2-only)`() {
@@ -264,6 +264,24 @@ class ApkInstallerTest {
         try {
             ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/p-noreadcert.apk"))
             fail("Expected SecurityException — P+ must not fail open on unreadable cert")
+        } catch (e: SecurityException) {
+            // expected
+        }
+    }
+
+    /**
+     * Security: the updater must never fetch an APK over a plaintext URL. The guard
+     * runs before any network/file IO, so a bare mock Context is fine — it throws on
+     * the scheme alone.
+     */
+    @Test
+    fun `download refuses a non-HTTPS APK URL`() {
+        val context = mock<android.content.Context>()
+        try {
+            kotlinx.coroutines.runBlocking {
+                ApkInstaller(OkHttpClient()).download(context, "http://evil.example/app.apk")
+            }
+            fail("Expected SecurityException for non-HTTPS APK URL")
         } catch (e: SecurityException) {
             // expected
         }

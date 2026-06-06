@@ -1058,6 +1058,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             private val maxRetries = 3
             private var streamRefreshCount = 0
             private val maxStreamRefreshes = 2
+            // Lifetime bound (per video, reset only on a new stream — NOT on isPlaying)
+            // for the unexpected-error recovery paths (else-branch refresh and
+            // BEHIND_LIVE_WINDOW re-prepare). streamRefreshCount resets on every
+            // isPlaying=true, which is correct for URL-expiry refreshes but would let a
+            // partial-playback error (play-a-few-seconds → re-fail) loop forever. These
+            // paths use this lifetime counter instead so they always terminate.
+            private var unhandledErrorRecoveries = 0
+            private val maxUnhandledErrorRecoveries = 3
             private var lastStreamIdForRetries: String? = null
 
             override fun onPositionDiscontinuity(
@@ -1182,6 +1190,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         lastStreamIdForRetries = currentStreamId
                         retryCount = 0
                         streamRefreshCount = 0
+                        unhandledErrorRecoveries = 0
                         // Genuinely new video (not a same-stream refresh): clear seek-transient
                         // state so a stale seek from the previous video can't leak across.
                         seekTransientErrorGate.onNewStream()
@@ -1376,10 +1385,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> {
                         // The live edge moved past our buffered position. The correct
                         // recovery is to jump back into the live window and re-prepare,
-                        // NOT a stream re-resolve. Without this the live stream froze.
-                        android.util.Log.w("PlayerFragment", "Behind live window — seeking to live edge and re-preparing")
-                        player.seekToDefaultPosition()
-                        player.prepare()
+                        // NOT a stream re-resolve. Bounded by the lifetime counter so a
+                        // device that can't keep pace with a live stream can't oscillate
+                        // seek→prepare→fall-behind→error forever; after the cap we surface
+                        // an error instead of an endless re-prepare cycle.
+                        if (unhandledErrorRecoveries < maxUnhandledErrorRecoveries) {
+                            unhandledErrorRecoveries++
+                            android.util.Log.w("PlayerFragment", "Behind live window — seeking to live edge and re-preparing ($unhandledErrorRecoveries/$maxUnhandledErrorRecoveries)")
+                            player.seekToDefaultPosition()
+                            player.prepare()
+                        } else {
+                            context?.let { ctx ->
+                                Toast.makeText(ctx, getString(R.string.player_stream_error) + ": ${error.errorCodeName}", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     }
                     else -> {
                         // Previously toast-only: every unhandled code (TIMEOUT,
@@ -1387,10 +1406,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         // INVALID_HTTP_CONTENT_TYPE, AUDIO_TRACK_INIT/WRITE_FAILED, DRM,
                         // UNSPECIFIED) left the player in STATE_IDLE with a frozen
                         // surface and no recovery. Attempt a generic stream re-resolve +
-                        // resume first (bounded by the refresh budget); only fall back to
-                        // a toast once recovery is exhausted, instead of freezing.
-                        if (streamRefreshCount < maxStreamRefreshes) {
-                            streamRefreshCount++
+                        // resume first; only fall back to a toast once recovery is
+                        // exhausted, instead of freezing. Bounded by the LIFETIME counter
+                        // (not streamRefreshCount, which resets on isPlaying) so an error
+                        // that allows brief playback before re-failing can't loop forever.
+                        if (unhandledErrorRecoveries < maxUnhandledErrorRecoveries) {
+                            unhandledErrorRecoveries++
                             requestStreamRefreshAndResume(
                                 "unhandled player error (${error.errorCodeName}, http=${httpResponseCode ?: "n/a"})"
                             )

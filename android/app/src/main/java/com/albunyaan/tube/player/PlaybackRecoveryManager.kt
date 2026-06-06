@@ -89,6 +89,7 @@ class PlaybackRecoveryManager(
     // Jobs
     private var bufferingStallJob: Job? = null
     private var stuckReadyJob: Job? = null
+    private var budgetReplenishJob: Job? = null
 
     /**
      * Callbacks for recovery actions that require external handling.
@@ -193,6 +194,34 @@ class PlaybackRecoveryManager(
         }
         // Reset position tracking to current
         positionStuckSince = -1L
+        scheduleBudgetReplenish()
+    }
+
+    /**
+     * Sustained-success budget replenishment. Must NOT live inside the stuck-ready
+     * monitor: [onPlaybackStarted] (fired on isPlaying→true) cancels that job via
+     * [stopStuckReadyDetection], so an in-job reset would never run during sustained
+     * healthy playback. Instead, when playback goes healthy after a recovery, schedule
+     * a one-shot reset: if the stream stays healthy for [SUSTAINED_RECOVERY_RESET_MS],
+     * replenish the accumulated recovery budget so a long video that self-healed N
+     * separate stalls doesn't hit a false "can't recover" screen. Any new stall calls
+     * [initiateRecovery], which advances lastRecoveryTime, so the elapsed re-check below
+     * fails and the reset is a no-op — a flapping stream can never replenish.
+     */
+    private fun scheduleBudgetReplenish() {
+        budgetReplenishJob?.cancel()
+        if (recoveryAttempt.get() <= 0) return
+        budgetReplenishJob = scope.launch {
+            delay(SUSTAINED_RECOVERY_RESET_MS)
+            val lastRecovery = lastRecoveryTime.get()
+            if (!isRecovering && recoveryAttempt.get() > 0 && lastRecovery > 0 &&
+                clock() - lastRecovery >= SUSTAINED_RECOVERY_RESET_MS
+            ) {
+                Log.i(TAG, "Sustained healthy playback since last recovery - replenishing recovery budget")
+                recoveryAttempt.set(0)
+                lastRecoveryTime.set(-1L)
+            }
+        }
     }
 
     /**
@@ -444,24 +473,6 @@ class PlaybackRecoveryManager(
                     }
                     positionStuckSince = -1L
                     lastKnownPosition = player.currentPosition
-
-                    // Sustained-success budget replenishment: if a prior recovery
-                    // happened and playback has since stayed healthy for
-                    // SUSTAINED_RECOVERY_RESET_MS, replenish the recovery budget.
-                    // Without this, a long video that recovers from N *separate*
-                    // stalls over its runtime eventually hits MAX_RECOVERY_ATTEMPTS
-                    // and shows a false "can't recover" screen even though every prior
-                    // stall self-healed. Gated on sustained health, so a flapping
-                    // stream (re-failing before the window elapses) can never loop —
-                    // a new failure restarts recovery and moves lastRecoveryTime forward.
-                    val lastRecovery = lastRecoveryTime.get()
-                    if (recoveryAttempt.get() > 0 && lastRecovery > 0 &&
-                        clock() - lastRecovery >= SUSTAINED_RECOVERY_RESET_MS
-                    ) {
-                        Log.i(TAG, "Sustained healthy playback since last recovery - replenishing recovery budget")
-                        recoveryAttempt.set(0)
-                        lastRecoveryTime.set(-1L)
-                    }
                     continue
                 }
 
@@ -632,5 +643,7 @@ class PlaybackRecoveryManager(
         stuckReadyJob = null
         pendingRecoveryJob?.cancel()
         pendingRecoveryJob = null
+        budgetReplenishJob?.cancel()
+        budgetReplenishJob = null
     }
 }
