@@ -208,6 +208,11 @@ class PlaybackRecoveryManager(
      * [initiateRecovery], which advances lastRecoveryTime, so the elapsed re-check below
      * fails and the reset is a no-op — a flapping stream can never replenish.
      */
+    /** Current accumulated recovery-attempt count. Test-only observability for the
+     *  budget-replenishment logic (the counter is otherwise private state). */
+    @androidx.annotation.VisibleForTesting
+    internal fun currentRecoveryAttempt(): Int = recoveryAttempt.get()
+
     private fun scheduleBudgetReplenish() {
         budgetReplenishJob?.cancel()
         if (recoveryAttempt.get() <= 0) return

@@ -5,6 +5,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Before
@@ -478,5 +479,60 @@ class PlaybackRecoveryManagerTest {
 
         // Now triggers again (fresh state)
         verify(mockCallbacks, times(2)).onRecoveryStarted(any(), any())
+    }
+
+    // --- Budget replenishment (codex review: this path was relocated out of the
+    //     stuck-ready monitor, which onPlaybackStarted cancels; verify the new
+    //     scheduled job actually replenishes, and never does so for a flapping stream).
+    //
+    //     The injected clock is advanced BEFORE virtual time so the one-shot replenish
+    //     job (a single delay() then a single clock() check) observes the elapsed
+    //     wall-clock when it fires — advanceTimeAndClock advances clock AFTER the
+    //     coroutine runs, which would leave clock() stale for this single-shot path.
+
+    @Test
+    fun `budget replenishes after sustained healthy playback since last recovery`() = testScope.runTest {
+        recoveryManager.onNewStream("v1", true)
+        // One recovery → attempt counter goes positive, isRecovering=true.
+        recoveryManager.onVideoRenderStall(mockPlayer)
+        assertTrue("a recovery should be counted", recoveryManager.currentRecoveryAttempt() > 0)
+
+        // Playback goes healthy → onRecoverySuccess (isRecovering=false) + arms replenish.
+        recoveryManager.onPlaybackStarted()
+
+        // Stay healthy for the full window: advance clock first, then fire the delayed job.
+        currentTime += 60_000L
+        advanceTimeBy(60_000L)
+        runCurrent()
+
+        assertEquals("budget should be replenished to 0 after 60s healthy", 0, recoveryManager.currentRecoveryAttempt())
+    }
+
+    @Test
+    fun `budget does NOT replenish when a new stall lands within the window`() = testScope.runTest {
+        recoveryManager.onNewStream("v1", true)
+        recoveryManager.onVideoRenderStall(mockPlayer)      // attempt=1, lastRecovery=t0
+        recoveryManager.onPlaybackStarted()                 // arms replenish, fires at t0+60s
+
+        // Healthy for 30s...
+        currentTime += 30_000L
+        advanceTimeBy(30_000L)
+        runCurrent()
+        // ...then a fresh stall advances lastRecoveryTime (defeats the pending replenish).
+        recoveryManager.onVideoRenderStall(mockPlayer)      // attempt=2, lastRecovery=t0+30s
+        val attemptsAfterSecondStall = recoveryManager.currentRecoveryAttempt()
+        assertTrue("second stall should accumulate", attemptsAfterSecondStall >= 2)
+
+        // Let the ORIGINAL replenish job fire (at t0+60s). It must see the recent
+        // lastRecoveryTime (elapsed 30s < 60s) and NOT reset — a flapping stream
+        // can never replenish.
+        currentTime += 30_000L
+        advanceTimeBy(30_000L)
+        runCurrent()
+
+        assertTrue(
+            "flapping stream must not replenish its budget",
+            recoveryManager.currentRecoveryAttempt() >= attemptsAfterSecondStall
+        )
     }
 }
