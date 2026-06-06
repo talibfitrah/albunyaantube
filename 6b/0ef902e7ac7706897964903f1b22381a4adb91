@@ -1,0 +1,53 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  s_b45b82b9589d49::t_9e0ecd75774ec8 43-46
+  s_b45b82b9589d49::t_3dc31a9ac6c72f 877-881
+android/app/src/main/java/com/albunyaan/tube/data/extractor/potoken/PoTokenGenerator.kt
+  s_b45b82b9589d49::t_2e9a0cd48c3955 1-37
+android/app/build.gradle.kts
+  s_b45b82b9589d49::t_9ff3e1558fd878 74-77
+  s_b45b82b9589d49::t_e4e927b46e07d9 79
+  s_b45b82b9589d49::t_abb09e466a6abc 39-40
+android/app/src/androidTest/java/com/albunyaan/tube/data/extractor/potoken/PoTokenStreamResolutionTest.kt
+  s_b45b82b9589d49::t_306c78e9e849b9 1-84
+releases-meta.json
+  s_b45b82b9589d49::t_3741b77f706f9e 2-6
+android/app/src/main/java/com/albunyaan/tube/data/extractor/potoken/PoTokenJavaScriptUtil.kt
+  s_b45b82b9589d49::t_8bfb515fdc8e81 1-4,7-8,14-20,22,24,26,28-33,54-61,63-86,96-131
+  s_b45b82b9589d49::t_1192ed99b584c6 5-6,9-13,21,23,25,27,34-53,62,87-95
+android/app/src/androidTest/java/com/albunyaan/tube/ui/shorts/ShortsPlayerFragmentTest.kt
+  s_b45b82b9589d49::t_9041897114f4ac 194
+android/app/src/main/java/com/albunyaan/tube/di/DataModule.kt
+  s_b45b82b9589d49::t_9df38e7271c1d2 262,271-279
+android/app/src/main/java/com/albunyaan/tube/data/extractor/potoken/PoTokenWebView.kt
+  s_b45b82b9589d49::t_4f29ab209cf250 1-289
+android/app/src/main/java/com/albunyaan/tube/data/extractor/potoken/WebViewPoTokenProvider.kt
+  s_b45b82b9589d49::t_cade26edd5ffbf 1-17,27,31-39,53-56,58-62,64,66-70,72-73,75-81,83-88,90-99,101,103-104,107-108,112-124,126-147
+  s_b45b82b9589d49::t_ca5c1d0af1f793 18-22,28-30,40-52,57,63,65,71,74,82,89,100,102,105-106,109-111,125
+  s_b45b82b9589d49::t_62a3f1d32481a5 23-26
+android/app/src/androidTest/java/com/albunyaan/tube/di/TestNetworkModule.kt
+  s_b45b82b9589d49::t_77cdc16bb228ff 125-133
+  s_b45b82b9589d49::t_218fb73a8efa3b 87-88
+android/app/src/main/java/com/albunyaan/tube/data/extractor/potoken/PoTokenException.kt
+  s_b45b82b9589d49::t_a70fa7b765928b 1-24
+android/app/src/main/assets/po_token.html
+  s_b45b82b9589d49::t_def2f4dd727678 1-127
+CHANGELOG.md
+  s_b45b82b9589d49::t_338d51a4237ef9 8-13,22-23,33,37-39
+  s_b45b82b9589d49::t_8e06afac1f7bae 14-21,24-32,34-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "6b0ef902e7ac7706897964903f1b22381a4adb91",
+  "prompts": {},
+  "sessions": {
+    "s_b45b82b9589d49": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "748830e7-8a2b-433d-a16b-38c6aa06f0b9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
