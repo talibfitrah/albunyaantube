@@ -1,0 +1,23 @@
+releases-meta.json
+  s_5988c719e26a6c::t_1a2f7c1837db2a 2-6
+android/app/build.gradle.kts
+  s_5988c719e26a6c::t_459f2602e41681 39-40
+CHANGELOG.md
+  s_5988c719e26a6c::t_f4cebb16169826 8-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "55cf97f54f26fbe85ae0546d130be441776b4047",
+  "prompts": {},
+  "sessions": {
+    "s_5988c719e26a6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e435415-c113-4b79-8885-8df47e1baec5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
