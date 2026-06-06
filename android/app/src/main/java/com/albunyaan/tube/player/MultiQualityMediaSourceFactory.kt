@@ -87,14 +87,23 @@ class MultiQualityMediaSourceFactory(
     private val simpleCache: SimpleCache,
 ) {
 
-    // Standard data source for progressive/DASH (Android User-Agent)
-    // Uses Cronet (HTTP/2 + QUIC) when available and the flag is enabled.
+    // Standard data source for progressive/DASH/synthetic-DASH.
+    // The User-Agent MUST match the client that extracted the stream URLs: when iOS
+    // client fetch is enabled (the default), googlevideo progressive/DASH URLs are
+    // iOS-bound and return HTTP 403 if fetched with the Android UA. HLS already used
+    // the iOS UA, but progressive/DASH did not — so when synthetic-DASH failed and
+    // playback fell back to a raw progressive stream, the iOS URL + Android UA 403'd,
+    // and the reactive 403-refresh re-resolved into the same 403 forever (the
+    // "Resolving stream…" loop reported on Huawei/Android 9). Match the UA to the
+    // extraction client, consistent with the HLS path above.
+    private val useIosUserAgent: Boolean = featureFlags?.isIosFetchEnabled == true
     private val httpDataSourceFactory: DataSource.Factory =
         if (featureFlags?.isCronetEnabled == true && cronetDataSourceFactory != null) {
-            cronetDataSourceFactory.createForAndroidUA()
+            if (useIosUserAgent) cronetDataSourceFactory.createForIosUA()
+            else cronetDataSourceFactory.createForAndroidUA()
         } else {
             DefaultHttpDataSource.Factory()
-                .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
+                .setUserAgent(if (useIosUserAgent) HttpConstants.YOUTUBE_IOS_USER_AGENT else HttpConstants.YOUTUBE_USER_AGENT)
                 .setConnectTimeoutMs(15000)
                 .setReadTimeoutMs(20000)
                 .setAllowCrossProtocolRedirects(true)
