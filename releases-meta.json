@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.27": {
+    "en": "Fixes videos stuck on \"Resolving…\" that never played — now uses a YouTube stream source that isn't blocked. Works on older Android too.",
+    "ar": "إصلاح الفيديوهات العالقة على \"حل البث\" التي لا تعمل — يستخدم الآن مصدر بثّ من يوتيوب غير محجوب. يعمل على أندرويد الأقدم أيضًا.",
+    "nl": "Lost video's op die vastliepen op \"Resolving…\" en nooit speelden — gebruikt nu een niet-geblokkeerde YouTube-streambron. Werkt ook op oudere Android."
+  },
   "1.0.0-beta.26": {
     "en": "Fixes videos that wouldn't play (stuck on \"Resolving…\"), adapting to YouTube's new stream-verification requirement.",
     "ar": "إصلاح الفيديوهات التي لا تعمل (العالقة على \"حل البث\")، بالتوافق مع اشتراط يوتيوب الجديد للتحقق قبل تحميل البث.",

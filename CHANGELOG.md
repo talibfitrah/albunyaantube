@@ -5,6 +5,28 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.27] - 2026-06-06
+
+### Android
+
+- **Fixed videos never playing — the "Resolving stream…" (حل البث) 403 loop — at the
+  real root cause, which is external.** Around 2026-06-06 YouTube began requiring a
+  valid GVS PO Token on the WEB / iOS / ANDROID clients that NewPipeExtractor
+  (0.26.2, the latest release) uses, so every stream URL returned HTTP 403. The
+  beta.26 WebView poToken mints a *web-context* token that YouTube rejects for the
+  iOS client. Verified by building beta.23 (no poToken) and beta.26 (poToken) on a
+  clean Android 9 emulator: **both 403 identically** — so this was not a code
+  regression and not fixable by minting a token. yt-dlp pulls working streams from
+  the same network using the `ANDROID_VR` client, which YouTube does not gate.
+- **Fix:** added `AndroidVrStreamResolver`, which resolves streams via the
+  **ANDROID_VR** innertube client. It bootstraps a visitorData + consent cookie,
+  posts the player request, and maps the returned **direct** stream URLs (no
+  signature deciphering, no WebView, no poToken) into the player. This is now the
+  primary resolve path; the NewPipe + poToken path remains as a fallback. Verified
+  end-to-end on the Android 9 emulator: `first_frame_rendered ttff=1009ms`,
+  `playback_started success=true`, zero 403s. Dropping the WebView dependency also
+  removes the Android ≤28 renderer-crash failure mode.
+
 ## [1.0.0-beta.26] - 2026-06-06
 
 ### Android
