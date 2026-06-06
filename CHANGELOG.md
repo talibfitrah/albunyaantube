@@ -5,6 +5,38 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.26] - 2026-06-06
+
+### Android
+
+- **Fixed videos never playing — the "Resolving stream…" (حل البث) loop — at the
+  actual root cause.** YouTube now requires a **GVS PO Token** (a BotGuard
+  proof-of-origin token) on its googlevideo stream URLs. The app extracts with the
+  iOS client (which returns the full HD/4K ladder), but with no poToken every stream
+  URL returned HTTP 403, so playback fell into the reactive 403-refresh loop. The
+  beta.25 change (matching the data-source `User-Agent` to the iOS client) treated a
+  red herring — its on-device "verification" was a false positive (synthetic DASH
+  happened to succeed that run and never exercised the 403 path). Confirmed with
+  yt-dlp against the live site: the iOS client's https formats are skipped with
+  "require a GVS PO Token … may yield HTTP Error 403".
+- **Fix:** ported NewPipe's (GPLv3) WebView poToken generator into the app
+  (`data/extractor/potoken/`). A hidden, network-blocked `WebView` runs Google's
+  BotGuard challenge to mint a poToken, wired into NewPipeExtractor via
+  `YoutubeStreamExtractor.setPoTokenProvider(...)`. The token is returned from every
+  streaming-client getter; pinned extractor 0.26.2 consumes it through
+  `getIosClientPoToken` and appends it to the iOS client's stream URLs. The RxJava
+  reference was adapted to Kotlin coroutines.
+- Why the iOS client (not web/android): on 0.26.2 the web client serves no stream
+  URLs and the android client is SABR-restricted to a single 360p muxed stream — only
+  the iOS client returns the full adaptive ladder. iOS client fetch is the build
+  default again (`ENABLE_NPE_IOS_FETCH=true`).
+- Verified on-device (Android 9 emulator, instrumented test
+  `PoTokenStreamResolutionTest`): the user-reported failing videos now resolve
+  iOS-client streams carrying the `pot=` token, with the full ladder (1080p; 2160p on
+  4K content) and HTTP 206 fetches, zero 403s.
+- Requires a working system WebView (present on all standard devices); falls back to
+  tokenless extraction if the WebView is broken.
+
 ## [1.0.0-beta.25] - 2026-06-06
 
 ### Android

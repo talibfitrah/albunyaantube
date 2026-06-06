@@ -259,6 +259,7 @@ object DataModule {
     @Provides
     @Singleton
     fun provideNewPipeExtractorClient(
+        @ApplicationContext context: Context,
         // Inject the rate-limited wrapper, not the bare [OkHttpDownloader] —
         // every NewPipe HTTP call must pass through the gates (spec §4.4).
         downloader: com.albunyaan.tube.data.extractor.RateLimitedDownloader,
@@ -267,7 +268,15 @@ object DataModule {
         featureFlags: PlaybackFeatureFlags,
         clientRotator: YoutubeClientRotator
     ): NewPipeExtractorClient {
-        return NewPipeExtractorClient(downloader, cache, metrics, featureFlags, clientRotator)
+        return NewPipeExtractorClient(
+            downloader,
+            cache,
+            metrics,
+            featureFlags,
+            clientRotator,
+            // WebView-minted poTokens for the YouTube web client (fixes the HTTP 403 stream loop).
+            com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider(context),
+        )
     }
 
     @Provides

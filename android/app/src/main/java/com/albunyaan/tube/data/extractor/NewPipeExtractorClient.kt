@@ -40,6 +40,11 @@ class NewPipeExtractorClient(
     private val featureFlags: PlaybackFeatureFlags,
     private val clientRotator: YoutubeClientRotator = YoutubeClientRotator(),
     /**
+     * Supplies WebView-minted poTokens to the YouTube web client. Null in tests / contexts without
+     * a WebView, in which case extraction proceeds without a token (the pre-poToken behavior).
+     */
+    private val poTokenProvider: org.schabi.newpipe.extractor.services.youtube.PoTokenProvider? = null,
+    /**
      * Clock provider for timestamps. Uses SystemClock.elapsedRealtime() by default
      * to match StreamModels.areUrlsExpired() which also uses elapsedRealtime().
      * This ensures URL TTL checks work correctly regardless of wall-clock changes.
@@ -869,6 +874,11 @@ class NewPipeExtractorClient(
                 NewPipe.init(downloader, localization, contentCountry)
                 NewPipe.setupLocalization(localization, contentCountry)
             }
+            // Supply WebView-minted poTokens to the YouTube web client. YouTube now requires a GVS
+            // PO Token on stream URLs; without one, every stream URL returns HTTP 403 and playback
+            // falls into the "Resolving stream…" retry loop. Registered once, globally, on the
+            // static extractor. See WebViewPoTokenProvider.
+            poTokenProvider?.let { YoutubeStreamExtractor.setPoTokenProvider(it) }
             // Apply initial iOS fetch setting (runtime toggle applied before each extraction)
             applyIosFetchSetting()
         }
