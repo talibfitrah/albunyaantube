@@ -48,6 +48,15 @@ class PlaybackRecoveryManager(
         const val MAX_RECOVERY_ATTEMPTS = 5
         private const val RECOVERY_BACKOFF_BASE_MS = 2_000L
 
+        /**
+         * Continuous healthy-playback time since the last recovery after which the
+         * recovery-attempt budget is replenished to 0. Long enough that a flapping
+         * stream (re-failing sooner) never replenishes and stays bounded by
+         * [MAX_RECOVERY_ATTEMPTS]; short enough that a genuinely-recovered long video
+         * regains its budget for an unrelated later stall.
+         */
+        private const val SUSTAINED_RECOVERY_RESET_MS = 60_000L
+
         // Buffer health monitoring for live streams
         /** Minimum buffer growth per check interval to consider stream progressing */
         private const val MIN_HEALTHY_BUFFER_GROWTH_MS = 1000L
@@ -80,6 +89,7 @@ class PlaybackRecoveryManager(
     // Jobs
     private var bufferingStallJob: Job? = null
     private var stuckReadyJob: Job? = null
+    private var budgetReplenishJob: Job? = null
 
     /**
      * Callbacks for recovery actions that require external handling.
@@ -184,6 +194,39 @@ class PlaybackRecoveryManager(
         }
         // Reset position tracking to current
         positionStuckSince = -1L
+        scheduleBudgetReplenish()
+    }
+
+    /**
+     * Sustained-success budget replenishment. Must NOT live inside the stuck-ready
+     * monitor: [onPlaybackStarted] (fired on isPlaying→true) cancels that job via
+     * [stopStuckReadyDetection], so an in-job reset would never run during sustained
+     * healthy playback. Instead, when playback goes healthy after a recovery, schedule
+     * a one-shot reset: if the stream stays healthy for [SUSTAINED_RECOVERY_RESET_MS],
+     * replenish the accumulated recovery budget so a long video that self-healed N
+     * separate stalls doesn't hit a false "can't recover" screen. Any new stall calls
+     * [initiateRecovery], which advances lastRecoveryTime, so the elapsed re-check below
+     * fails and the reset is a no-op — a flapping stream can never replenish.
+     */
+    /** Current accumulated recovery-attempt count. Test-only observability for the
+     *  budget-replenishment logic (the counter is otherwise private state). */
+    @androidx.annotation.VisibleForTesting
+    internal fun currentRecoveryAttempt(): Int = recoveryAttempt.get()
+
+    private fun scheduleBudgetReplenish() {
+        budgetReplenishJob?.cancel()
+        if (recoveryAttempt.get() <= 0) return
+        budgetReplenishJob = scope.launch {
+            delay(SUSTAINED_RECOVERY_RESET_MS)
+            val lastRecovery = lastRecoveryTime.get()
+            if (!isRecovering && recoveryAttempt.get() > 0 && lastRecovery > 0 &&
+                clock() - lastRecovery >= SUSTAINED_RECOVERY_RESET_MS
+            ) {
+                Log.i(TAG, "Sustained healthy playback since last recovery - replenishing recovery budget")
+                recoveryAttempt.set(0)
+                lastRecoveryTime.set(-1L)
+            }
+        }
     }
 
     /**
@@ -605,5 +648,7 @@ class PlaybackRecoveryManager(
         stuckReadyJob = null
         pendingRecoveryJob?.cancel()
         pendingRecoveryJob = null
+        budgetReplenishJob?.cancel()
+        budgetReplenishJob = null
     }
 }

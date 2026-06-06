@@ -63,6 +63,15 @@ class ApkInstaller @Inject constructor(
         expectedSizeBytes: Long? = null,
         onProgress: ((Float) -> Unit)? = null
     ): File = withContext(Dispatchers.IO) {
+        // Security: only ever fetch an update APK over HTTPS. Today the URL always
+        // comes from GitHub's HTTPS browser_download_url and cleartext is already
+        // blocked by network_security_config, but assert it here so the requirement is
+        // explicit and survives any future change to the release feed or net-sec-config
+        // — otherwise the OS signature check would be the only guard against a
+        // MITM-swapped APK on a plaintext link.
+        if (!apkUrl.startsWith("https://", ignoreCase = true)) {
+            throw SecurityException("Refusing to download update APK over non-HTTPS URL")
+        }
         val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
         // Overwrite any prior download to avoid stale APKs occupying cache.
         updatesDir.listFiles()?.forEach { it.delete() }
@@ -262,7 +271,27 @@ class ApkInstaller @Inject constructor(
         val installedSha = certSha256(installed)
             ?: throw SecurityException("No signing certificate on installed app")
         val downloadedSha = certSha256(downloaded)
-            ?: throw SecurityException("No signing certificate in downloaded APK")
+        if (downloadedSha == null) {
+            // Pre-P only (SDK_INT < P == API < 28, i.e. Android <= 8.1; API 26-27 given
+            // minSdk 26). There the updater uses getPackageArchiveInfo(GET_SIGNATURES),
+            // which can only read v1 (JAR) signatures from the APK *file*; a v2-only
+            // archive yields no readable cert. Rather than hard-block the update (the
+            // historical old-Android install failure), fail open: the OS PackageInstaller
+            // still enforces signing-certificate equality against the installed app on
+            // every update, so a mismatched/tampered APK is rejected by the platform
+            // regardless. On API 28+ the archive cert is always readable via
+            // apkContentsSigners, so a null there is a genuine problem and still aborts.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+                Log.w(
+                    TAG,
+                    "Downloaded APK cert unreadable on API ${Build.VERSION.SDK_INT} " +
+                        "(v2-only archive on pre-P); skipping app-level cert check — " +
+                        "PackageInstaller enforces signature match on update"
+                )
+                return
+            }
+            throw SecurityException("No signing certificate in downloaded APK")
+        }
         if (installedSha != downloadedSha) {
             Log.e(TAG, "Signing certificate mismatch: installed=$installedSha downloaded=$downloadedSha")
             throw SecurityException(

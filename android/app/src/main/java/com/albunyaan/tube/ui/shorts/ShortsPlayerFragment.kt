@@ -142,6 +142,24 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
      * re-validates with expectedVideoId, giving a second line of defence.
      */
     private var pendingStalledVideoId: String? = null
+
+    /**
+     * Per-short playback-error recovery budget. Shorts share one VM-owned
+     * ExoPlayer and previously had NO [androidx.media3.common.Player.Listener.onPlayerError]
+     * handling at all — a hard playback error (decoder failure, dead URL after
+     * Media3's retries, malformed segment) dropped the player into STATE_IDLE,
+     * which the stall watchdog (BUFFERING-only) never observes, so the short
+     * froze forever with no skip and no retry. [stallListener] now recovers:
+     * first error on a short → refresh its stream URLs; repeat error on the
+     * same short → skip to the next. The budget resets when the *current short
+     * changes* (see the id check in onPlayerError) so each short gets a fresh
+     * ladder; it deliberately does NOT reset on STATE_READY, which would let a
+     * short that reaches READY then re-errors (corrupt mid-stream segment, late
+     * 403) flap refresh→READY→error forever and never reach the skip branch.
+     */
+    private var errorRecoveryVideoId: String? = null
+    private var errorRecoveryAttempts = 0
+
     private val stallRecoveryRunnable = Runnable {
         // Only trigger if the player is still buffering (state may have changed
         // between scheduling and firing).
@@ -187,6 +205,47 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             } else {
                 timeBarHandler.removeCallbacks(stallRecoveryRunnable)
                 pendingStalledVideoId = null
+            }
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            val pos = binding?.shortsPager?.currentItem ?: return
+            val currentId = viewModel.items.value.getOrNull(pos)?.id ?: return
+
+            // Reset the budget when the failing short differs from the last one
+            // we tried to recover (user swiped, or a new short took the slot).
+            if (currentId != errorRecoveryVideoId) {
+                errorRecoveryVideoId = currentId
+                errorRecoveryAttempts = 0
+            }
+
+            // Cancel the stall watchdog — onPlayerError supersedes it; the player
+            // is now in STATE_IDLE, not BUFFERING, so the runnable would no-op
+            // anyway, but clearing it avoids a stale refresh racing this one.
+            timeBarHandler.removeCallbacks(stallRecoveryRunnable)
+            pendingStalledVideoId = null
+
+            if (errorRecoveryAttempts < MAX_ERROR_RECOVERIES) {
+                // Most playback errors here are expired/403 googlevideo URLs or a
+                // transient decode hiccup — a fresh resolve + re-prepare fixes them.
+                errorRecoveryAttempts++
+                android.util.Log.w(
+                    "ShortsPlayerFragment",
+                    "onPlayerError ($currentId) attempt $errorRecoveryAttempts/$MAX_ERROR_RECOVERIES: " +
+                        "${error.errorCodeName} — refreshing stream"
+                )
+                mpdRegistry.unregisterBoth(currentId)
+                binder?.forceRefreshCurrent(expectedVideoId = currentId)
+            } else {
+                // Recovery exhausted for this short — skip to the next one (the
+                // SkipCurrent handler toasts if this is the last item) instead of
+                // leaving a frozen frame.
+                android.util.Log.w(
+                    "ShortsPlayerFragment",
+                    "onPlayerError ($currentId): recovery exhausted (${error.errorCodeName}) — skipping"
+                )
+                val idx = viewModel.items.value.indexOfFirst { it.id == currentId }
+                if (idx >= 0) viewModel.onPlaybackError(idx)
             }
         }
     }
@@ -892,5 +951,13 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         private const val TIME_BAR_UPDATE_MS = 250L
         /** Force a fresh URL resolve after this long stuck in BUFFERING. */
         private const val STALL_RECOVERY_MS = 6_000L
+
+        /**
+         * How many times a single short may be auto-refreshed after a playback
+         * error before we give up and skip to the next one. Bounds the
+         * refresh→error→refresh loop so a permanently-broken short can never hang
+         * the feed.
+         */
+        private const val MAX_ERROR_RECOVERIES = 2
     }
 }
