@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.24": {
+    "en": "Fixes silent video (audio now plays), Shorts freezing, and stuck playback; update install fixed on older Android.",
+    "ar": "إصلاح الفيديو بلا صوت (يعمل الصوت الآن)، وتجمّد Shorts، وتوقّف التشغيل؛ وإصلاح تثبيت التحديث على إصدارات أندرويد الأقدم.",
+    "nl": "Lost stille video (geluid werkt weer), vastlopende Shorts en haperend afspelen op; update-fix voor oudere Android."
+  },
   "1.0.0-beta.23": {
     "en": "Import: new Save button and a halal-content reminder before importing. Playback: 4K no longer drops to 360p after seeking.",
     "ar": "الاستيراد: زر حفظ جديد وتذكير باختيار محتوى حلال قبل الاستيراد. التشغيل: لم تعد جودة 4K تنخفض إلى 360p بعد التمرير.",

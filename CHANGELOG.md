@@ -5,6 +5,35 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.24] - 2026-06-06
+
+### Android
+
+- **Silent video fixed (picture, no sound).** When YouTube returned no separate
+  audio stream, the extractor fabricated a fake audio track from a *video-only*
+  URL, so ExoPlayer played a silent stream as the audio. It now sources fallback
+  audio from a muxed track (which carries audio), or none — never a
+  guaranteed-silent track. Affects both the regular and Shorts players.
+- **Shorts no longer freeze on a playback error.** The Shorts player had no
+  `onPlayerError` handling: a hard failure (decoder fault, dead URL after retries)
+  dropped the shared player into an unwatched IDLE state and froze forever. It now
+  refreshes the stream, then auto-skips to the next short, then surfaces a retry —
+  bounded per-short so a broken short can't loop. Plus a stale-URL guard that
+  re-resolves expired progressive URLs to avoid a frozen first frame on re-bind.
+- **Main player recovers from more stalls.** Several `onPlayerError` codes
+  (timeout, behind-live-window, cleartext, DRM, unspecified) previously showed a
+  toast and left a frozen surface; they now route to recovery, bounded by a
+  per-video lifetime counter so a partial-playback error can't loop. A long video
+  that recovers from several *separate* stalls no longer hits a false "can't
+  recover" screen — the recovery budget replenishes after sustained healthy
+  playback.
+- **Update install fixed on older Android (8.0–8.1).** APKs are now signed with
+  v1+v2+v3, so the pre-install signature check can read the certificate via the
+  legacy `GET_SIGNATURES` path on pre-P devices; the installer also fails open on
+  pre-P when it still can't read a v2-only cert (the OS enforces signature match on
+  update regardless). Android 9+ already read the cert via `apkContentsSigners`.
+  The updater now also refuses non-HTTPS APK URLs.
+
 ## [1.0.0-beta.23] - 2026-06-05
 
 ### Android
