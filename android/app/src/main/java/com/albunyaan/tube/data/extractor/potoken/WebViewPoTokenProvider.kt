@@ -3,7 +3,7 @@ package com.albunyaan.tube.data.extractor.potoken
 import android.content.Context
 import android.util.Log
 import android.webkit.CookieManager
-import com.albunyaan.tube.BuildConfig
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.services.youtube.InnertubeClientRequestInfo
@@ -51,20 +51,48 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
 
     private fun poTokenOrNull(videoId: String): PoTokenResult? {
         if (!webViewSupported || webViewBadImpl) {
+            Log.w(TAG, "poToken requested but unavailable (supported=$webViewSupported, bad=$webViewBadImpl) for $videoId")
             return null
         }
-        return try {
-            obtainPoToken(videoId = videoId, forceRecreate = false)
-        } catch (e: BadWebViewException) {
-            Log.e(TAG, "Could not obtain poToken because WebView is broken; disabling for session", e)
-            webViewBadImpl = true
-            null
-        } catch (e: Throwable) {
-            // A null token surfaces as the pre-fix behavior (tokenless URLs); do not crash
-            // extraction by rethrowing transient BotGuard/network failures.
-            Log.e(TAG, "Failed to obtain poToken for $videoId", e)
-            null
+        Log.i(TAG, "poToken requested for $videoId")
+        var lastError: Throwable? = null
+        // Retry across full generator recreation. On Android <= 28 the WebView renderer is often
+        // low-memory-killed on the first attempt (while ExoPlayer/Cronet start up), but a fresh
+        // WebView a few hundred ms later usually survives. Renderer death is now reported
+        // immediately (see PoTokenWebView.onRenderProcessGone) instead of stalling for the full
+        // timeout, so these retries are cheap. Without this, one failure yielded a null token and
+        // the tokenless stream URL 403-looped forever ("Resolving stream…" / حل البث).
+        repeat(MAX_GENERATION_ATTEMPTS) { attempt ->
+            try {
+                return obtainPoToken(videoId = videoId, forceRecreate = attempt > 0)
+            } catch (e: BadWebViewException) {
+                Log.e(TAG, "WebView is broken; disabling poToken for this session", e)
+                webViewBadImpl = true
+                return null
+            } catch (e: Throwable) {
+                lastError = e
+                // Retrying while NewPipe's downloader is in rate-limit cooldown only deepens the
+                // cooldown and is guaranteed to fail (the visitorData POST is what's blocked). Bail
+                // immediately, keep the existing generator, and let the caller back off naturally.
+                if (e.message?.contains("cooldown", ignoreCase = true) == true) {
+                    Log.w(TAG, "poToken aborted for $videoId: downloader in cooldown, not retrying")
+                    return null
+                }
+                Log.e(TAG, "poToken attempt ${attempt + 1}/$MAX_GENERATION_ATTEMPTS failed for $videoId", e)
+                if (attempt < MAX_GENERATION_ATTEMPTS - 1) {
+                    runBlocking { delay(RETRY_BACKOFF_MS * (attempt + 1)) }
+                }
+            }
         }
+        // Give up: drop the (likely dead) generator so the next playback attempt starts clean.
+        // A null token surfaces as the pre-fix behavior (tokenless URLs); never crash extraction.
+        synchronized(lock) {
+            runCatching { poTokenGenerator?.close() }
+            poTokenGenerator = null
+            poTokenStreamingPot = null
+        }
+        Log.e(TAG, "Gave up obtaining poToken for $videoId after $MAX_GENERATION_ATTEMPTS attempts", lastError)
+        return null
     }
 
     /**
@@ -72,11 +100,29 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
      * generator threw while minting a token (e.g. the WebView content was lost in the background).
      */
     private fun obtainPoToken(videoId: String, forceRecreate: Boolean): PoTokenResult {
-        val generator: PoTokenGenerator
-        val visitorData: String
-        val streamingPot: String
-        val hasBeenRecreated: Boolean
+        val (generator, visitorData, streamingPot) = ensureWarmGenerator(forceRecreate)
 
+        // Not under [lock]: the generator can mint multiple player tokens in parallel. The only
+        // ordering requirement (streaming token generated first) is satisfied in ensureWarmGenerator.
+        // Any failure (incl. a renderer kill) propagates to poTokenOrNull(), which recreates+retries.
+        val playerPot = runBlocking { generator.generatePoToken(videoId) }
+
+        Log.i(
+            TAG,
+            "poToken minted for $videoId " +
+                "(visitorData=${visitorData.length}, player=${playerPot.length}, streaming=${streamingPot.length})"
+        )
+
+        return PoTokenResult(visitorData, playerPot, streamingPot)
+    }
+
+    /**
+     * Ensure the BotGuard generator exists and has minted its (video-independent) streaming token,
+     * recreating it when missing / expired / [forceRecreate]. Returns
+     * (generator, visitorData, streamingPoToken). The slow WebView init + BotGuard challenge runs
+     * under [lock].
+     */
+    private fun ensureWarmGenerator(forceRecreate: Boolean): Triple<PoTokenGenerator, String, String> {
         synchronized(lock) {
             val shouldRecreate =
                 poTokenGenerator == null || forceRecreate || poTokenGenerator!!.isExpired()
@@ -106,30 +152,31 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
                     runBlocking { poTokenGenerator!!.generatePoToken(poTokenVisitorData!!) }
             }
 
-            generator = poTokenGenerator!!
-            visitorData = poTokenVisitorData!!
-            streamingPot = poTokenStreamingPot!!
-            hasBeenRecreated = shouldRecreate
+            return Triple(poTokenGenerator!!, poTokenVisitorData!!, poTokenStreamingPot!!)
         }
+    }
 
-        val playerPot = try {
-            // Not under [lock]: the generator can mint multiple player tokens in parallel. The only
-            // ordering requirement (streaming token generated first) is satisfied above.
-            runBlocking { generator.generatePoToken(videoId) }
-        } catch (throwable: Throwable) {
-            if (hasBeenRecreated) {
-                // Already recreated this round; nothing more we can do.
-                throw throwable
+    /**
+     * Eagerly create the generator and mint the (video-independent) streaming token at app startup,
+     * while memory is calm — before ExoPlayer/Cronet start and the Android <=28 WebView-renderer-kill
+     * window opens. The live generator persists in this singleton, so the per-video token then mints
+     * in milliseconds on the already-warm WebView at playback time. Idempotent; failures are
+     * swallowed (the playback path retries). Must run off the main thread.
+     */
+    fun prewarm() {
+        if (!webViewSupported || webViewBadImpl) {
+            Log.w(TAG, "poToken prewarm skipped (supported=$webViewSupported, bad=$webViewBadImpl)")
+            return
+        }
+        synchronized(lock) {
+            if (poTokenGenerator != null && !poTokenGenerator!!.isExpired()) {
+                return
             }
-            Log.e(TAG, "Failed to obtain poToken, recreating generator and retrying", throwable)
-            return obtainPoToken(videoId = videoId, forceRecreate = true)
         }
-
-        if (BuildConfig.DEBUG) {
-            Log.d(TAG, "poToken for $videoId obtained (player + streaming + visitorData)")
-        }
-
-        return PoTokenResult(visitorData, playerPot, streamingPot)
+        Log.i(TAG, "poToken prewarm starting (mint streaming token at startup)")
+        runCatching { ensureWarmGenerator(forceRecreate = false) }
+            .onSuccess { Log.i(TAG, "poToken prewarm OK — streaming token ready, WebView warm") }
+            .onFailure { Log.e(TAG, "poToken prewarm failed (will retry at playback)", it) }
     }
 
     private fun supportsWebView(): Boolean = try {
@@ -143,5 +190,13 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
 
     companion object {
         private const val TAG = "WebViewPoTokenProvider"
+
+        /**
+         * How many times to mint a token, recreating the WebView from scratch each round. Tuned for
+         * Android <= 28, where the out-of-process renderer is frequently low-memory-killed during
+         * the player startup spike; renderer death now fails fast, so these retries are cheap.
+         */
+        private const val MAX_GENERATION_ATTEMPTS = 3
+        private const val RETRY_BACKOFF_MS = 300L
     }
 }

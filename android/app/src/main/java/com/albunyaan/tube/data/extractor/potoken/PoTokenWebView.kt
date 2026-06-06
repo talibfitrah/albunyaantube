@@ -7,8 +7,10 @@ import android.os.Looper
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import com.albunyaan.tube.BuildConfig
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -66,6 +68,22 @@ class PoTokenWebView private constructor(
                     onInitError(BadWebViewException(fmt))
                 }
                 return super.onConsoleMessage(m)
+            }
+        }
+        webView.webViewClient = object : WebViewClient() {
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: RenderProcessGoneDetail?,
+            ): Boolean {
+                // The sandboxed WebView renderer was killed out from under us. On Android 8-9
+                // (API <= 28) the out-of-process renderer is least protected, and OEM low-memory
+                // killers reap it while ExoPlayer + Cronet spin up. Previously this surfaced only
+                // as a silent 10s/20s timeout and a null token, i.e. the HTTP 403 "Resolving" loop.
+                // Fail pending requests now so the provider recreates and retries, and return true
+                // so the framework does not tear down the whole app process.
+                Log.e(TAG, "WebView renderer gone (didCrash=${detail?.didCrash()}); failing poToken")
+                onInitError(PoTokenException("WebView renderer process gone"))
+                return true
             }
         }
     }

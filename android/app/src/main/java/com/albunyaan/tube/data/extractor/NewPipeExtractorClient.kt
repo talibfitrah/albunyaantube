@@ -9,9 +9,13 @@ import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.model.ContentType
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Pattern
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
@@ -76,6 +80,13 @@ class NewPipeExtractorClient(
     }
     private val streamCacheLock = Any()
 
+    /** Guards one-shot poToken pre-warm; the WebView is minted once per process at startup. */
+    private val prewarmStarted = AtomicBoolean(false)
+    private val prewarmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Primary stream resolver — ANDROID_VR client (poToken-free). See [AndroidVrStreamResolver]. */
+    private val androidVrResolver = AndroidVrStreamResolver(clock)
+
     init {
         initializeNewPipe()
     }
@@ -106,6 +117,16 @@ class NewPipeExtractorClient(
         // and keeping it preserves fallback data if fresh fetch fails
         metrics.onCacheMiss(ContentType.VIDEOS, 1)
         val start = clock()
+        // Primary path: ANDROID_VR client. YouTube began requiring a poToken on NewPipe's
+        // WEB/IOS/ANDROID clients (~2026-06) → HTTP 403 "Resolving stream" loop. ANDROID_VR is not
+        // poToken-gated and returns directly-playable URLs (no WebView). Falls through to the
+        // NewPipe path below on any miss.
+        androidVrResolver.resolve(videoId, start)?.let { vr ->
+            synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(vr, start) }
+            clientRotator.reset(videoId)
+            metrics.onStreamResolveSuccess(videoId, clock() - start)
+            return@withContext vr
+        }
         try {
             val handler = streamLinkHandlerFactory.fromId(videoId)
             val extractor = youtubeService.getStreamExtractor(handler)
@@ -878,7 +899,20 @@ class NewPipeExtractorClient(
             // PO Token on stream URLs; without one, every stream URL returns HTTP 403 and playback
             // falls into the "Resolving stream…" retry loop. Registered once, globally, on the
             // static extractor. See WebViewPoTokenProvider.
-            poTokenProvider?.let { YoutubeStreamExtractor.setPoTokenProvider(it) }
+            poTokenProvider?.let { provider ->
+                YoutubeStreamExtractor.setPoTokenProvider(provider)
+                android.util.Log.i(
+                    ADAPTIVE_PROBE_TAG,
+                    "poToken provider registered: ${provider.javaClass.simpleName}"
+                )
+                // Mint the BotGuard token once at startup, off the main thread, while memory is calm
+                // — before ExoPlayer/Cronet open the Android <=28 WebView-renderer-kill window.
+                if (provider is com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider &&
+                    prewarmStarted.compareAndSet(false, true)
+                ) {
+                    prewarmScope.launch { provider.prewarm() }
+                }
+            }
             // Apply initial iOS fetch setting (runtime toggle applied before each extraction)
             applyIosFetchSetting()
         }
@@ -909,16 +943,13 @@ class NewPipeExtractorClient(
     private fun applyIosFetchSetting() {
         val iosFetchEnabled = featureFlags.isIosFetchEnabled
         YoutubeStreamExtractor.setFetchIosClient(iosFetchEnabled)
-        if (BuildConfig.DEBUG) {
-            android.util.Log.d(ADAPTIVE_PROBE_TAG, "applyIosFetchSetting: fetchIosClient=$iosFetchEnabled")
-        }
+        android.util.Log.i(ADAPTIVE_PROBE_TAG, "applyIosFetchSetting: fetchIosClient=$iosFetchEnabled")
     }
 
     private fun applyClientSetting(client: YoutubeClientRotator.Client) {
-        YoutubeStreamExtractor.setFetchIosClient(client == YoutubeClientRotator.Client.IOS)
-        if (BuildConfig.DEBUG) {
-            android.util.Log.d(ADAPTIVE_PROBE_TAG, "applyClientSetting: client=$client")
-        }
+        val useIos = client == YoutubeClientRotator.Client.IOS
+        YoutubeStreamExtractor.setFetchIosClient(useIos)
+        android.util.Log.i(ADAPTIVE_PROBE_TAG, "applyClientSetting: client=$client (fetchIosClient=$useIos)")
     }
 
     /**
