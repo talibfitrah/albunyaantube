@@ -1,0 +1,22 @@
+android/app/src/main/java/com/albunyaan/tube/player/PlaybackRecoveryManager.kt
+  s_13eb3230c8051b::t_a955df699381f1 211-215
+android/app/src/test/java/com/albunyaan/tube/player/PlaybackRecoveryManagerTest.kt
+  s_13eb3230c8051b::t_012c8523cf8733 483-537
+  s_13eb3230c8051b::t_d7ef2e10e4a208 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "c14d5769c0751b55ec274be55563cf0fb717df8b",
+  "prompts": {},
+  "sessions": {
+    "s_13eb3230c8051b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c5d25553-7050-4ccc-8583-ef54297404ab",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
