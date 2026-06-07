@@ -96,8 +96,6 @@ class DashSourceBuilder @Inject constructor(
             return SourceDecision.LocalDash(mpdResult.mpdDataUri)
         }
 
-        Log.d(TAG, "MPD generation failed (${(mpdResult as MultiRepresentationMpdGenerator.Result.Failure).reason}), falling back to progressive")
-
         // Progressive fallback — prefer a muxed track (has built-in audio: itag 18/22)
         val muxed = resolved.videoTracks.firstOrNull { !it.isVideoOnly }
         if (muxed != null) {
@@ -175,7 +173,11 @@ class DashSourceBuilder @Inject constructor(
                 .build()
         }
 
-        return when (val decision = decide(resolved)) {
+        val decision = decide(resolved)
+        if (decision is SourceDecision.Progressive) {
+            Log.d(TAG, "MPD generation failed or ineligible, falling back to progressive (audioUrl=${decision.audioUrl != null})")
+        }
+        return when (decision) {
             is SourceDecision.LocalDash -> {
                 Log.d(TAG, "Building LocalDash MediaSource (MPD data URI)")
                 DashMediaSource.Factory(factory)

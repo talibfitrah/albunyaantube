@@ -166,6 +166,24 @@ class DashSourceBuilderTest {
     }
 
     @Test
+    fun `VOD MPD ineligible single video-only no audio → Progressive with videoUrl set and null audio`() {
+        val video = videoOnlyTrack(720, itag = 136)
+        val resolved = streams(
+            videoTracks = listOf(video),  // only 1 video-only → MPD ineligible
+            audioTracks = emptyList(),    // no audio tracks
+        )
+
+        val decision = builder.decide(resolved)
+
+        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
+        val prog = decision as SourceDecision.Progressive
+        assertEquals("videoUrl must match the single video-only track", video.url, prog.videoUrl)
+        assertEquals("videoMime must match the track mimeType", video.mimeType, prog.videoMime)
+        assertNull("audioUrl must be null when no audio track available", prog.audioUrl)
+        assertNull("audioMime must be null when no audio track available", prog.audioMime)
+    }
+
+    @Test
     fun `VOD no tracks at all → None`() {
         val resolved = streams(
             videoTracks = emptyList(),
