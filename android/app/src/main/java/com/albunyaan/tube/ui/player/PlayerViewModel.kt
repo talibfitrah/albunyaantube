@@ -456,8 +456,8 @@ class PlayerViewModel @Inject constructor(
     /**
      * Handle decoder error by stepping down quality AND clamping the user's cap.
      *
-     * Unlike [applyAutoQualityStepDown] which preserves the user's cap for network-based
-     * step-downs (where higher quality can recover), decoder errors indicate the device
+     * Unlike the network-based auto step-down (now removed) which preserved the user's cap
+     * for cases where higher quality can recover, decoder errors indicate the device
      * CANNOT play the current quality at all. We must clamp the cap to prevent the
      * track selector from immediately re-selecting the undecodable quality.
      *

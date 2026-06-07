@@ -99,7 +99,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     @Inject lateinit var featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
     @Inject lateinit var mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry
     @Inject lateinit var bufferPolicy: AdaptiveBufferPolicy
-    @Inject lateinit var cachedHttpDataSourceFactory: com.albunyaan.tube.player.CachedHttpDataSourceFactory
+    @Inject lateinit var dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider
     @Inject lateinit var neverFreezeTrackSelectionFactory: com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory
     @Inject lateinit var dashSourceBuilder: com.albunyaan.tube.player.DashSourceBuilder
 
@@ -1617,9 +1617,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
 
-    private fun cachedProgressiveMediaSourceFactory(): ProgressiveMediaSource.Factory =
-        ProgressiveMediaSource.Factory(cachedHttpDataSourceFactory.create())
-
     /**
      * Handle seamless live stream URL refresh without stopping playback.
      * Saves current position, swaps media source, and resumes at same position.
@@ -2928,7 +2925,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 .setUri(url)
                 .setMimeType(mimeType)
                 .build()
-            val source = cachedProgressiveMediaSourceFactory().createMediaSource(mediaItem)
+            val source = ProgressiveMediaSource.Factory(
+                dataSourceFactoryProvider.forStreams(streamState.selection.resolved)
+            ).createMediaSource(mediaItem)
             // Create a fallback MediaSourceResult for the progressive source
             MediaSourceResult(
                 source = source,

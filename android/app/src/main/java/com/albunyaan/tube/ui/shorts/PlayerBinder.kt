@@ -641,12 +641,22 @@ class PlayerBinder private constructor(
         val position = playerOps.getCurrentPosition()
         val wasPlaying = playerOps.getPlayWhenReady()
 
+        // Honour the user's pinned (sticky) audio language. Without this filter
+        // the source builders re-pick audio by max bitrate, reverting a
+        // non-default dub the user explicitly chose via switchAudioTrack. Mirror
+        // the bind path's sticky-language block.
+        val stickyLang = rememberedAudioLanguage(videoId)
+        val effectiveResolved = if (!stickyLang.isNullOrBlank()) {
+            val stickyTracks = resolved.audioTracks.filter { it.language == stickyLang }
+            if (stickyTracks.isNotEmpty()) resolved.copy(audioTracks = stickyTracks) else resolved
+        } else resolved
+
         // The lean DashSourceBuilder.build() takes no quality cap, so a MANUAL
         // cap is honoured via the cap-aware progressive builder (it selects a
         // single track at the cap). A cleared cap (AUTO) routes through the
         // adaptive lean path, which lets the track selector pick by bandwidth.
-        val built = if (cap == null) tryDashBuild(resolved) else null
-        val source = built?.source ?: buildProgressiveSource(resolved, qualityCapHeight = cap) ?: return
+        val built = if (cap == null) tryDashBuild(effectiveResolved) else null
+        val source = built?.source ?: buildProgressiveSource(effectiveResolved, qualityCapHeight = cap) ?: return
 
         playerOps.setMediaSource(source)
         playerOps.setRepeatModeOne()

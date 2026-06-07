@@ -172,7 +172,11 @@ class PlayerBinderTest {
     private fun newBinder(
         repo: PlayerRepository,
         ops: PlayerBinder.PlayerOps = RecordingPlayerOps(),
-        attach: PlayerBinder.PlayerViewAttach = RecordingAttach()
+        attach: PlayerBinder.PlayerViewAttach = RecordingAttach(),
+        factoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider =
+            org.mockito.kotlin.mock {
+                on { forStreams(org.mockito.kotlin.any()) } doReturn org.mockito.kotlin.mock()
+            },
     ) = PlayerBinder(
         repo,
         ops,
@@ -180,9 +184,46 @@ class PlayerBinderTest {
         // Stub forStreams() so any code path that drops into the progressive
         // fallback (e.g. buildProgressiveSource) gets a non-null DataSource
         // factory instead of NPEing on Mockito's null default.
-        org.mockito.kotlin.mock<com.albunyaan.tube.player.SegmentDataSourceFactoryProvider> {
-            on { forStreams(org.mockito.kotlin.any()) } doReturn org.mockito.kotlin.mock()
-        },
+        factoryProvider,
+    )
+
+    /**
+     * A resolved-streams payload exposing TWO audio languages plus a
+     * video-only track, so the source builders must *pick* an audio track
+     * (no muxed shortcut). Lets a test verify that a pinned dub language
+     * survives a quality switch.
+     */
+    private fun multiLangResolved(id: String): ResolvedStreams = ResolvedStreams(
+        streamId = id,
+        videoTracks = listOf(
+            VideoTrack(
+                url = "https://example.test/$id-video.mp4",
+                mimeType = "video/mp4",
+                width = 720,
+                height = 1280,
+                bitrate = 1_000_000,
+                qualityLabel = "720p",
+                fps = 30,
+                isVideoOnly = true
+            )
+        ),
+        audioTracks = listOf(
+            AudioTrack(
+                url = "https://example.test/$id-audio-en.mp4",
+                mimeType = "audio/mp4",
+                bitrate = 128_000,
+                codec = "mp4a.40.2",
+                language = "en"
+            ),
+            AudioTrack(
+                url = "https://example.test/$id-audio-ar.mp4",
+                mimeType = "audio/mp4",
+                bitrate = 128_000,
+                codec = "mp4a.40.2",
+                language = "ar"
+            ),
+        ),
+        durationSeconds = 30
     )
 
     @Test
@@ -521,6 +562,75 @@ class PlayerBinderTest {
             "Stale switchQuality for a non-bound video must be a no-op",
             mediaSourcesBefore,
             ops.calls.count { it == "setMediaSource" },
+        )
+    }
+
+    /**
+     * Fix B regression: a user who pins a non-default dub language via
+     * [PlayerBinder.switchAudioTrack] must keep that language after a
+     * subsequent [PlayerBinder.switchQuality]. Before the fix, switchQuality
+     * rebuilt from the *unfiltered* resolved streams, so the source builder
+     * re-picked audio by max bitrate and reverted the pinned dub.
+     *
+     * We observe the filtering at the [SegmentDataSourceFactoryProvider.forStreams]
+     * seam: it receives the *effective* (filtered) ResolvedStreams the builder
+     * works from. After pinning "ar", switchQuality must hand it streams whose
+     * audioTracks are exactly the "ar" track.
+     *
+     * The pin survives because switchAudioTrack records the sticky language —
+     * but a re-resolve (URL expiry / rebuffer recovery, simulated here via
+     * forceRefreshCurrent) repopulates the cache with the FULL track list.
+     * That re-resolve is what makes Fix B load-bearing: without the
+     * sticky-language filter in switchQuality, the builder would re-pick audio
+     * by bitrate from the full list and revert the dub. The re-resolve step is
+     * essential — without it the cache already holds only the pinned track and
+     * the test would pass vacuously.
+     */
+    @Test
+    fun switchQuality_keepsPinnedDubLanguage() = runTest(dispatcher) {
+        val ops = RecordingPlayerOps()
+        val attach = RecordingAttach()
+        val repo = TestPlayerRepository()
+        val factoryProvider = org.mockito.kotlin.mock<com.albunyaan.tube.player.SegmentDataSourceFactoryProvider> {
+            on { forStreams(org.mockito.kotlin.any()) } doReturn org.mockito.kotlin.mock()
+        }
+        val binder = newBinder(repo, ops, attach, factoryProvider)
+
+        val view: PlayerView = org.mockito.kotlin.mock()
+        val streams = multiLangResolved("A")
+        binder.bind(view, "A")
+        repo.complete("A", streams)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        // Pin the Arabic dub (a non-default, non-max-bitrate-distinguishable track).
+        binder.switchAudioTrack("A", streams.audioTracks.first { it.language == "ar" })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        // Re-resolve A: repopulates the cache with the FULL (en + ar) track list,
+        // mimicking a URL-expiry/rebuffer recovery. The sticky "ar" pin persists.
+        binder.forceRefreshCurrent()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(
+            "Re-resolve must repopulate cache with both languages",
+            listOf("en", "ar"),
+            binder.resolvedStreamsFor("A")!!.audioTracks.map { it.language },
+        )
+
+        // Switch quality (AUTO cap -> 0 so the cap-clearing branch is exercised).
+        binder.switchQuality("A", 0)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val captor = org.mockito.kotlin.argumentCaptor<ResolvedStreams>()
+        org.mockito.kotlin.verify(factoryProvider, org.mockito.kotlin.atLeastOnce())
+            .forStreams(captor.capture())
+
+        // The MOST RECENT forStreams call belongs to switchQuality. Its streams
+        // must carry only the pinned "ar" audio track despite the cache holding both.
+        val effective = captor.lastValue
+        assertEquals(
+            "switchQuality must filter audio to the pinned dub language",
+            listOf("ar"),
+            effective.audioTracks.map { it.language },
         )
     }
 
