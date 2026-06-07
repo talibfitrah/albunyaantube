@@ -172,9 +172,12 @@ data class ResolvedStreams(
  * a UA mismatch causes HTTP 403 on segment requests.
  */
 enum class ExtractionClient {
-    ANDROID_VR,       // primary resolver; Android UA
-    NEWPIPE_IOS,      // NewPipe iOS client; iOS UA
-    NEWPIPE_ANDROID;  // NewPipe Android client; Android UA
+    /** Primary resolver; Android UA. */
+    ANDROID_VR,
+    /** NewPipe iOS client; iOS UA. */
+    NEWPIPE_IOS,
+    /** NewPipe Android client; Android UA. */
+    NEWPIPE_ANDROID;
 
     /** Only the NewPipe iOS client needs the iOS UA; everything else uses the Android UA. */
     fun usesIosUserAgent(): Boolean = this == NEWPIPE_IOS

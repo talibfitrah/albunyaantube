@@ -137,8 +137,7 @@ class NewPipeExtractorClient(
                     primaryClient = clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled)
                     applyClientSetting(primaryClient)
                 } else {
-                    primaryClient = if (featureFlags.isIosFetchEnabled) YoutubeClientRotator.Client.IOS
-                                    else YoutubeClientRotator.Client.ANDROID
+                    primaryClient = clientRotator.initialClient(featureFlags.isIosFetchEnabled)
                     applyIosFetchSetting()
                 }
             }
@@ -146,10 +145,7 @@ class NewPipeExtractorClient(
             extractor.fetchPage()
             val info = StreamInfo.getInfo(extractor)
             val urlGeneratedAt = clock()
-            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt)?.copy(
-                extractionClient = if (primaryClient == YoutubeClientRotator.Client.IOS)
-                    ExtractionClient.NEWPIPE_IOS else ExtractionClient.NEWPIPE_ANDROID
-            )
+            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt, primaryClient.toExtractionClient())
             if (resolved == null) {
                 // Client responded but stream mapping failed — reset rotator so the next
                 // retry starts fresh rather than advancing to the next rotation slot on a
@@ -190,8 +186,7 @@ class NewPipeExtractorClient(
                             retryClient = clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled)
                             applyClientSetting(retryClient)
                         } else {
-                            retryClient = if (featureFlags.isIosFetchEnabled) YoutubeClientRotator.Client.IOS
-                                          else YoutubeClientRotator.Client.ANDROID
+                            retryClient = clientRotator.initialClient(featureFlags.isIosFetchEnabled)
                             applyIosFetchSetting()
                         }
                     }
@@ -199,10 +194,7 @@ class NewPipeExtractorClient(
                     retryExtractor.fetchPage()
                     val retryInfo = StreamInfo.getInfo(retryExtractor)
                     val urlGeneratedAt = clock()
-                    val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt)?.copy(
-                        extractionClient = if (retryClient == YoutubeClientRotator.Client.IOS)
-                            ExtractionClient.NEWPIPE_IOS else ExtractionClient.NEWPIPE_ANDROID
-                    )
+                    val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt, retryClient.toExtractionClient())
                     if (resolved != null) {
                         synchronized(streamCacheLock) {
                             streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt)
@@ -445,7 +437,10 @@ class NewPipeExtractorClient(
         }
     }
 
-    private fun StreamInfo.toResolvedStreams(streamId: String, generatedAt: Long): ResolvedStreams? {
+    private fun YoutubeClientRotator.Client.toExtractionClient(): ExtractionClient =
+        if (this == YoutubeClientRotator.Client.IOS) ExtractionClient.NEWPIPE_IOS else ExtractionClient.NEWPIPE_ANDROID
+
+    private fun StreamInfo.toResolvedStreams(streamId: String, generatedAt: Long, extractionClient: ExtractionClient): ResolvedStreams? {
         // Combine both muxed AND video-only streams to get ALL qualities
         val allVideoStreams = (videoStreams + videoOnlyStreams).distinctBy { it.content }
 
@@ -634,7 +629,8 @@ class NewPipeExtractorClient(
             dashUrl = dashStreamUrl,
             isLive = isLiveStream,
             urlGeneratedAt = generatedAt,
-            urlTimebaseVersion = ResolvedStreams.URL_TIMEBASE_VERSION
+            urlTimebaseVersion = ResolvedStreams.URL_TIMEBASE_VERSION,
+            extractionClient = extractionClient
         )
     }
 
