@@ -335,6 +335,17 @@ class DashSourceBuilderTest {
         val decision = builder.decide(resolved, forceProgressive = true)
 
         assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
+        val prog = decision as SourceDecision.Progressive
+        assertEquals(
+            "No muxed → best video-only track (1080p itag 137) is the video url",
+            "https://example.com/video137",
+            prog.videoUrl
+        )
+        assertEquals(
+            "Separate audio track must be paired in",
+            "https://example.com/audio140",
+            prog.audioUrl
+        )
     }
 
     @Test
