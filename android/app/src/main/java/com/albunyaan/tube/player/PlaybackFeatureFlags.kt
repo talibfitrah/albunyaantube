@@ -53,7 +53,6 @@ class PlaybackFeatureFlags @Inject constructor(
         // Made public for API consistency with clearOverride()
         const val KEY_SYNTH_ADAPTIVE = "synth_adaptive"
         const val KEY_MPD_PREFETCH = "mpd_prefetch"
-        const val KEY_DEGRADATION_MANAGER = "degradation_manager"
         const val KEY_IOS_FETCH = "ios_fetch"
         const val KEY_GENEROUS_CROP_BUDGET = "generous_crop_budget"
         const val KEY_CLIENT_ROTATION = "client_rotation"
@@ -68,7 +67,6 @@ class PlaybackFeatureFlags @Inject constructor(
         private val VALID_KEYS = setOf(
             KEY_SYNTH_ADAPTIVE,
             KEY_MPD_PREFETCH,
-            KEY_DEGRADATION_MANAGER,
             KEY_IOS_FETCH,
             KEY_GENEROUS_CROP_BUDGET,
             KEY_CLIENT_ROTATION,
@@ -136,7 +134,6 @@ class PlaybackFeatureFlags @Inject constructor(
         prefs.edit()
             .remove(KEY_SYNTH_ADAPTIVE)
             .remove(KEY_MPD_PREFETCH)
-            .remove(KEY_DEGRADATION_MANAGER)
             .remove(KEY_IOS_FETCH)
             .remove(KEY_GENEROUS_CROP_BUDGET)
             .remove(KEY_CLIENT_ROTATION)
@@ -170,17 +167,6 @@ class PlaybackFeatureFlags @Inject constructor(
      */
     val isMpdPrefetchEnabled: Boolean
         get() = resolveFlag(KEY_MPD_PREFETCH, BuildConfig.ENABLE_MPD_PREFETCH)
-
-    /**
-     * Whether the degradation manager is enabled.
-     *
-     * When enabled, implements per-video refresh budgets and automatic
-     * quality step-downs for graceful degradation.
-     *
-     * Build-time default: [BuildConfig.ENABLE_DEGRADATION_MANAGER]
-     */
-    val isDegradationManagerEnabled: Boolean
-        get() = resolveFlag(KEY_DEGRADATION_MANAGER, BuildConfig.ENABLE_DEGRADATION_MANAGER)
 
     /**
      * Whether iOS client fetch is enabled in NewPipeExtractor.
@@ -262,15 +248,6 @@ class PlaybackFeatureFlags @Inject constructor(
     }
 
     /**
-     * Set a runtime override for degradation manager.
-     * @param enabled true to enable, false to disable, null to use build-time default
-     */
-    fun setDegradationManagerEnabled(enabled: Boolean?) {
-        setOverride(KEY_DEGRADATION_MANAGER, enabled)
-        Log.i(TAG, "DEGRADATION_MANAGER override set to: $enabled (effective: $isDegradationManagerEnabled)")
-    }
-
-    /**
      * Set a runtime override for iOS fetch.
      * @param enabled true to enable, false to disable, null to use build-time default
      */
@@ -349,7 +326,6 @@ class PlaybackFeatureFlags @Inject constructor(
         prefs.edit()
             .remove(KEY_SYNTH_ADAPTIVE)
             .remove(KEY_MPD_PREFETCH)
-            .remove(KEY_DEGRADATION_MANAGER)
             .remove(KEY_IOS_FETCH)
             .remove(KEY_GENEROUS_CROP_BUDGET)
             .remove(KEY_CLIENT_ROTATION)
@@ -380,7 +356,6 @@ class PlaybackFeatureFlags @Inject constructor(
         return mapOf(
             KEY_SYNTH_ADAPTIVE to getFlagState(KEY_SYNTH_ADAPTIVE, BuildConfig.ENABLE_SYNTH_ADAPTIVE),
             KEY_MPD_PREFETCH to getFlagState(KEY_MPD_PREFETCH, BuildConfig.ENABLE_MPD_PREFETCH),
-            KEY_DEGRADATION_MANAGER to getFlagState(KEY_DEGRADATION_MANAGER, BuildConfig.ENABLE_DEGRADATION_MANAGER),
             KEY_IOS_FETCH to getFlagState(KEY_IOS_FETCH, BuildConfig.ENABLE_NPE_IOS_FETCH),
             KEY_GENEROUS_CROP_BUDGET to getFlagState(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra()),
             KEY_CLIENT_ROTATION to getFlagState(KEY_CLIENT_ROTATION, BuildConfig.ENABLE_CLIENT_ROTATION),

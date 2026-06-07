@@ -31,7 +31,6 @@ import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.databinding.FragmentShortsPlayerBinding
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
-import androidx.media3.datasource.cache.SimpleCache
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.share.ShareLinks
 import com.albunyaan.tube.share.ShareMetadataPublisher
@@ -66,15 +65,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
 
     @Inject lateinit var playerRepository: PlayerRepository
     @Inject lateinit var downloadRepository: DownloadRepository
-    @Inject lateinit var hlsPoisonRegistry: com.albunyaan.tube.player.HlsPoisonRegistry
-    @Inject lateinit var multiRepFactory: com.albunyaan.tube.player.MultiRepSyntheticDashMediaSourceFactory
-    @Inject lateinit var coldStartQualityChooser: com.albunyaan.tube.player.ColdStartQualityChooser
     @Inject lateinit var playbackFeatureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
     @Inject lateinit var mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry
-    @Inject lateinit var probationChecker: com.albunyaan.tube.player.HlsProbationChecker
-    @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
-    @Inject lateinit var simpleCache: SimpleCache
-    @Inject lateinit var cachedHttpDataSourceFactory: com.albunyaan.tube.player.CachedHttpDataSourceFactory
     @Inject lateinit var dashSourceBuilder: com.albunyaan.tube.player.DashSourceBuilder
     @Inject lateinit var dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider
 

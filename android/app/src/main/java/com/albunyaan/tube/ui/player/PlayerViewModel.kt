@@ -454,43 +454,6 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Apply automatic quality step-down during playback stalls.
-     * This does NOT change the user's quality cap - it's a temporary recovery action.
-     * Used only when playing progressive streams (not adaptive).
-     *
-     * @return true if step-down was applied, false if URLs were expired (refresh triggered)
-     */
-    fun applyAutoQualityStepDown(track: VideoTrack): Boolean {
-        val streamState = readyOrRecoveringSelection() ?: return false
-
-        val resolved = streamState.selection.resolved
-        val isProgressiveStream = resolved.hlsUrl == null && resolved.dashUrl == null
-
-        // PR4: URL Lifecycle Hardening - check if progressive URLs are expired
-        if (isProgressiveStream && resolved.areUrlsExpired()) {
-            android.util.Log.w("PlayerViewModel", "applyAutoQualityStepDown: URLs expired, forcing stream refresh instead of step-down")
-            // PR5: Use AUTO_RECOVERY for automatic quality step-down paths - ensures recovery
-            // is not blocked by manual refresh limits
-            forceRefreshForAutoRecovery()
-            return false
-        }
-
-        // Preserve user's cap if they set one - auto step-down should not override it
-        val newSelection = PlaybackSelection(
-            streamId = streamState.streamId,
-            video = track,
-            audio = streamState.selection.audio,
-            resolved = resolved,
-            userQualityCapHeight = streamState.selection.userQualityCapHeight,
-            selectionOrigin = QualitySelectionOrigin.AUTO_RECOVERY
-        )
-
-        updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
-        android.util.Log.d("PlayerViewModel", "Auto step-down to ${track.qualityLabel} (cap preserved: ${streamState.selection.userQualityCapHeight}p)")
-        return true
-    }
-
-    /**
      * Handle decoder error by stepping down quality AND clamping the user's cap.
      *
      * Unlike [applyAutoQualityStepDown] which preserves the user's cap for network-based
@@ -1771,19 +1734,6 @@ class PlayerViewModel @Inject constructor(
     }
 
     // --- Recovery State Management ---
-
-    /**
-     * Transition to Recovering state for UI to show recovery overlay.
-     * Preserves the underlying stream/selection so playback can continue.
-     */
-    fun setRecoveringState(
-        streamId: String,
-        selection: PlaybackSelection,
-        step: RecoveryStep,
-        attempt: Int
-    ) {
-        updateState { it.copy(streamState = StreamState.Recovering(streamId, selection, step, attempt)) }
-    }
 
     /**
      * Clear recovering state and return to Ready state.
