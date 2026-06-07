@@ -196,19 +196,6 @@ class DashSourceBuilderTest {
         assertEquals("NO_VIDEO_TRACK", (decision as SourceDecision.None).reason)
     }
 
-    @Test
-    fun `VOD only video-only tracks no audio and MPD ineligible → NO_PLAYABLE_STREAM`() {
-        // single video-only track → MPD ineligible (needs ≥2). isVideoOnly=true means no muxed.
-        // bestVideo found but bestAudio null → falls through to Progressive, not None.
-        // To hit NO_PLAYABLE_STREAM we need: no muxed, videoTracks non-empty, but bestVideo==null.
-        // That only happens when all video tracks are muxed (isVideoOnly=false) and removed by
-        // the muxed branch — actually muxed branch returns Progressive. So NO_PLAYABLE_STREAM
-        // is only reachable when video tracks exist but ALL are video-only yet the maxByOrNull
-        // still returns null — impossible. Kept for documentation: if we ever gate bestVideo,
-        // the reason string is "NO_PLAYABLE_STREAM".
-        // For now assert NO_VIDEO_TRACK for the empty-tracks case (tested above).
-    }
-
     // =========================================================================
     // decide() — Live paths
     // =========================================================================
