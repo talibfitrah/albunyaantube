@@ -120,11 +120,12 @@ class MultiRepresentationMpdGeneratorTest {
 
         val xml = success.mpdXml
 
-        // Exactly 2 audio AdaptationSets
+        // Exactly 2 audio AdaptationSets (match on the shared prefix so the assertion
+        // is not fooled by partial substrings or container variants like audio/webm)
         assertEquals(
             "Expected exactly 2 audio AdaptationSets",
             2,
-            xml.countOccurrences("""mimeType="audio/mp4"""")
+            xml.countOccurrences("""<AdaptationSet mimeType="audio/""")
         )
 
         // English: lang="en" and role value="main" (ORIGINAL → main)
@@ -320,5 +321,114 @@ class MultiRepresentationMpdGeneratorTest {
 
         // Legacy audioTrack must be the ORIGINAL track
         assertEquals("Legacy audioTrack must be the ORIGINAL (en) track", enTrack, success.audioTrack)
+    }
+
+    // =========================================================================
+    // m2 — WebM video + MP4 audio → NO_COMPATIBLE_AUDIO
+    // =========================================================================
+
+    /** video/webm VP9 video-only track with valid ranges. */
+    private fun webmVideoTrack(height: Int, itag: Int, bitrate: Int = height * 4000) = VideoTrack(
+        url = "https://example.com/video$itag",
+        mimeType = "video/webm",
+        width = height * 16 / 9,
+        height = height,
+        bitrate = bitrate,
+        qualityLabel = "${height}p",
+        fps = 30,
+        isVideoOnly = true,
+        syntheticDashMetadata = validMeta(itag, "vp9"),
+        codec = "vp9"
+    )
+
+    @Test
+    fun `webm video with mp4 audio returns Failure NO_COMPATIBLE_AUDIO`() {
+        val resolved = streams(
+            videoTracks = listOf(
+                webmVideoTrack(360, itag = 243),
+                webmVideoTrack(720, itag = 247)
+            ),
+            audioTracks = listOf(
+                audioTrack(itag = 140, language = "en", trackType = AudioTrackKind.ORIGINAL)
+            )
+        )
+
+        val result = generator.generateMpd(resolved)
+
+        assertTrue(
+            "Expected Failure but got: $result",
+            result is MultiRepresentationMpdGenerator.Result.Failure
+        )
+        assertEquals(
+            "Failure reason must be NO_COMPATIBLE_AUDIO",
+            "NO_COMPATIBLE_AUDIO",
+            (result as MultiRepresentationMpdGenerator.Result.Failure).reason
+        )
+    }
+
+    // =========================================================================
+    // C1 — same language, different role → two AdaptationSets
+    // =========================================================================
+
+    @Test
+    fun `same language different trackType produces two audio AdaptationSets`() {
+        val resolved = streams(
+            videoTracks = listOf(
+                videoTrack(360, itag = 134),
+                videoTrack(720, itag = 136)
+            ),
+            audioTracks = listOf(
+                audioTrack(itag = 140, language = "en", trackType = AudioTrackKind.ORIGINAL),
+                audioTrack(itag = 258, language = "en", trackType = AudioTrackKind.DESCRIPTIVE)
+            )
+        )
+
+        val result = generator.generateMpd(resolved)
+
+        assertTrue("Expected Success but got: $result", result is MultiRepresentationMpdGenerator.Result.Success)
+        val success = result as MultiRepresentationMpdGenerator.Result.Success
+
+        // Must have 2 audio AdaptationSets, not 1 (same language but different roles)
+        assertEquals("audioTracks must contain 2 entries", 2, success.audioTracks.size)
+
+        val xml = success.mpdXml
+        assertEquals(
+            "Expected exactly 2 audio AdaptationSets",
+            2,
+            xml.countOccurrences("""<AdaptationSet mimeType="audio/""")
+        )
+        assertTrue("MPD must contain value=\"main\" for ORIGINAL", xml.contains("""value="main""""))
+        assertTrue("MPD must contain value=\"description\" for DESCRIPTIVE", xml.contains("""value="description""""))
+    }
+
+    // =========================================================================
+    // C2 — deterministic order: ORIGINAL before DUBBED regardless of input order
+    // =========================================================================
+
+    @Test
+    fun `audio AdaptationSets are ordered ORIGINAL first regardless of input order`() {
+        // Input order: DUBBED ar first, then ORIGINAL en — output must be reversed
+        val resolved = streams(
+            videoTracks = listOf(
+                videoTrack(360, itag = 134),
+                videoTrack(720, itag = 136)
+            ),
+            audioTracks = listOf(
+                audioTrack(itag = 256, language = "ar", trackType = AudioTrackKind.DUBBED),
+                audioTrack(itag = 140, language = "en", trackType = AudioTrackKind.ORIGINAL)
+            )
+        )
+
+        val result = generator.generateMpd(resolved)
+
+        assertTrue("Expected Success but got: $result", result is MultiRepresentationMpdGenerator.Result.Success)
+        val xml = (result as MultiRepresentationMpdGenerator.Result.Success).mpdXml
+
+        val enPos = xml.indexOf("""lang="en"""")
+        val arPos = xml.indexOf("""lang="ar"""")
+        assertTrue(
+            "ORIGINAL 'en' AdaptationSet must appear before DUBBED 'ar' in MPD XML",
+            enPos in 0 until arPos
+        )
     }
 }
