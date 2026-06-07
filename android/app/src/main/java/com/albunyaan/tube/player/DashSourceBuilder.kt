@@ -58,10 +58,10 @@ sealed interface SourceDecision {
  * - **Live**: Use the server-side DASH manifest; fall back to HLS.
  *
  * The [decide] and [subtitleMimeType] functions are **pure** (no Android/Media3 deps) and
- * are fully covered by [DashSourceBuilderTest].  Only [build] touches runtime APIs.
+ * are fully covered by [DashSourceBuilderTest].  Only [build] / [buildAudioOnly] touch runtime APIs.
  *
- * This class is intentionally **not wired into any Fragment/ViewModel yet** — that happens
- * in a later task.
+ * This is the single source-construction path used by `PlayerFragment` (replacing the
+ * legacy multi-strategy `MultiQualityMediaSourceFactory`).
  */
 @OptIn(UnstableApi::class)
 @Singleton
@@ -80,10 +80,14 @@ class DashSourceBuilder @Inject constructor(
     /**
      * Determine the best [SourceDecision] for [resolved].
      *
+     * When [forceProgressive] is true (sticky-fallback retry after adaptive failed), the VOD
+     * branch SKIPS the LocalDash (MPD-generation) attempt and goes straight to the progressive
+     * derivation. The live branch is unaffected by [forceProgressive].
+     *
      * This function is **pure** — it makes no I/O calls, uses no Android APIs,
      * and can be exercised directly in JVM unit tests.
      */
-    fun decide(resolved: ResolvedStreams): SourceDecision {
+    fun decide(resolved: ResolvedStreams, forceProgressive: Boolean = false): SourceDecision {
         if (resolved.isLive) {
             // Prefer server-side DASH for live streams — follows LibreTube's OnlinePlayerService
             // which uses the server DASH MPD for live, giving better segment availability and timing.
@@ -94,10 +98,12 @@ class DashSourceBuilder @Inject constructor(
             }
         }
 
-        // VOD — try multi-rep MPD first
-        val mpdResult = mpdGenerator.generateMpd(resolved)
-        if (mpdResult is MultiRepresentationMpdGenerator.Result.Success) {
-            return SourceDecision.LocalDash(mpdResult.mpdDataUri)
+        // VOD — try multi-rep MPD first (unless forced to progressive).
+        if (!forceProgressive) {
+            val mpdResult = mpdGenerator.generateMpd(resolved)
+            if (mpdResult is MultiRepresentationMpdGenerator.Result.Success) {
+                return SourceDecision.LocalDash(mpdResult.mpdDataUri)
+            }
         }
 
         // Progressive fallback — prefer best-quality muxed track (has built-in audio: itag 18/22).
@@ -169,8 +175,14 @@ class DashSourceBuilder @Inject constructor(
     // Integration: build a MediaSource (not unit-tested — needs Media3 runtime)
     // -------------------------------------------------------------------------
 
+    /** The built source plus the decision that produced it, so callers can map metadata. */
+    data class BuiltSource(val source: MediaSource, val decision: SourceDecision)
+
     /**
-     * Build a Media3 [MediaSource] for [resolved], or `null` if no playable source exists.
+     * Build a Media3 [MediaSource] for [resolved] (wrapped in a [BuiltSource] alongside the
+     * [SourceDecision] that produced it), or `null` if no playable source exists.
+     *
+     * When [forceProgressive] is true the decision skips LocalDash MPD generation (see [decide]).
      *
      * **Subtitle side-loading**: `MediaItem.setSubtitleConfigurations` is silently ignored by
      * `DashMediaSource.Factory`, `HlsMediaSource.Factory`, and `ProgressiveMediaSource.Factory`
@@ -182,10 +194,10 @@ class DashSourceBuilder @Inject constructor(
      *
      * This method is **not unit-tested** — it depends on Android/Media3 runtime.
      */
-    fun build(resolved: ResolvedStreams): MediaSource? {
+    fun build(resolved: ResolvedStreams, forceProgressive: Boolean = false): BuiltSource? {
         val factory = dataSourceFactoryProvider.forStreams(resolved)
 
-        val decision = decide(resolved)
+        val decision = decide(resolved, forceProgressive)
         if (decision is SourceDecision.Progressive) {
             Log.d(TAG, "MPD generation failed or ineligible, falling back to progressive (audioUrl=${decision.audioUrl != null})")
         }
@@ -230,7 +242,20 @@ class DashSourceBuilder @Inject constructor(
             }
         }
 
-        return wrapWithSideLoadSubtitles(mainSource, resolved.subtitleTracks, factory)
+        return BuiltSource(
+            source = wrapWithSideLoadSubtitles(mainSource, resolved.subtitleTracks, factory),
+            decision = decision,
+        )
+    }
+
+    /** Build an audio-only progressive source (background/audio-only mode) using the UA-correct factory. */
+    fun buildAudioOnly(resolved: ResolvedStreams): MediaSource? {
+        val audio = resolved.audioTracks.maxByOrNull { it.bitrate ?: 0 }
+            ?: resolved.audioTracks.firstOrNull()
+            ?: return null
+        val factory = dataSourceFactoryProvider.forStreams(resolved)
+        return ProgressiveMediaSource.Factory(factory)
+            .createMediaSource(mediaItem(audio.url, audio.mimeType))
     }
 
     // -------------------------------------------------------------------------

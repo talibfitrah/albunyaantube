@@ -73,6 +73,7 @@ import com.albunyaan.tube.player.BufferHealthMonitor
 import com.albunyaan.tube.player.MediaSessionMetadataManager
 import com.albunyaan.tube.player.CacheHitDecider
 import com.albunyaan.tube.player.MediaSourceResult
+import com.albunyaan.tube.player.SourceDecision
 import com.albunyaan.tube.player.PlaybackRecoveryManager
 import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.player.StreamRequestTelemetry
@@ -108,6 +109,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     @Inject lateinit var simpleCache: SimpleCache
     @Inject lateinit var cachedHttpDataSourceFactory: com.albunyaan.tube.player.CachedHttpDataSourceFactory
     @Inject lateinit var neverFreezeTrackSelectionFactory: com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory
+    @Inject lateinit var dashSourceBuilder: com.albunyaan.tube.player.DashSourceBuilder
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
@@ -859,18 +861,41 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
-    private val mediaSourceFactory by lazy {
-        com.albunyaan.tube.player.MultiQualityMediaSourceFactory(
-            requireContext(),
-            hlsPoisonRegistry,
-            multiRepFactory,
-            coldStartQualityChooser,
-            featureFlags,
-            mpdRegistry,
-            probationChecker,
-            cronetDataSourceFactory,
-            simpleCache = simpleCache
-        )
+    // Replaces MultiQualityMediaSourceFactory.createMediaSourceWithType. Maps the lean
+    // DashSourceBuilder decision back onto MediaSourceResult so all downstream cache-hit,
+    // TTL-watcher, recovery and metrics code keeps working unchanged.
+    //
+    // Accepted limitation: on a forceProgressive sticky-fallback retry where the user set a
+    // manual quality cap, the Progressive branch picks best-quality muxed and does NOT honor
+    // the cap (track-selector constraints don't apply to a single progressive track). This
+    // matches the lean model; the old findBestTrackUnderCap path is intentionally dropped.
+    // Only triggers in the rare (adaptive-failed + manual-cap) intersection.
+    private fun buildMediaSourceResultViaDash(
+        resolved: ResolvedStreams,
+        audioOnly: Boolean,
+        forceProgressive: Boolean
+    ): MediaSourceResult {
+        if (audioOnly) {
+            val audio = resolved.audioTracks.maxByOrNull { it.bitrate ?: 0 } ?: resolved.audioTracks.firstOrNull()
+            val source = dashSourceBuilder.buildAudioOnly(resolved)
+                ?: throw IllegalStateException("No audio track for audio-only playback")
+            return MediaSourceResult(source, isAdaptive = false, actualSourceUrl = audio?.url,
+                adaptiveType = MediaSourceResult.AdaptiveType.NONE)
+        }
+        val built = dashSourceBuilder.build(resolved, forceProgressive)
+            ?: throw IllegalStateException("DashSourceBuilder produced no playable source")
+        return when (val d = built.decision) {
+            is SourceDecision.LocalDash -> MediaSourceResult(built.source, true, d.dataUri,
+                MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE, null)
+            is SourceDecision.ServerDash -> MediaSourceResult(built.source, true, d.url,
+                MediaSourceResult.AdaptiveType.DASH, null)
+            is SourceDecision.Hls -> MediaSourceResult(built.source, true, d.url,
+                MediaSourceResult.AdaptiveType.HLS, null)
+            is SourceDecision.Progressive -> MediaSourceResult(built.source, false, d.videoUrl,
+                MediaSourceResult.AdaptiveType.NONE,
+                resolved.videoTracks.firstOrNull { it.url == d.videoUrl })
+            is SourceDecision.None -> throw IllegalStateException("unreachable: build returned non-null")
+        }
     }
 
     private fun setupPlayer(binding: FragmentPlayerBinding) {
@@ -1643,17 +1668,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Create new media source with fresh URLs
         val resolved = event.newSelection.resolved
-        val videoId = viewModel.state.value.currentItem?.streamId
         val mediaSourceResult = try {
-            mediaSourceFactory.createMediaSourceWithType(
-                resolved = resolved,
-                audioOnly = audioOnly,
-                selectedQuality = event.newSelection.video,
-                userQualityCapHeight = event.newSelection.userQualityCapHeight,
-                selectionOrigin = event.newSelection.selectionOrigin,
-                forceProgressive = false, // Live streams use adaptive
-                videoId = videoId // Phase 1B: for HLS poison check
-            )
+            buildMediaSourceResultViaDash(resolved, audioOnly, forceProgressive = false)
         } catch (e: Exception) {
             android.util.Log.e("PlayerFragment", "Live refresh: failed to create media source", e)
             return
@@ -2993,15 +3009,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // through the resolve, so deferred until we observe the regional 403s in
         // telemetry.
         val mediaSourceResult = try {
-            val result = mediaSourceFactory.createMediaSourceWithType(
-                resolved = resolvedForFactory,
-                audioOnly = state.audioOnly,
-                selectedQuality = selection.video,
-                userQualityCapHeight = selection.userQualityCapHeight,
-                selectionOrigin = selection.selectionOrigin,
-                forceProgressive = forceProgressive,
-                videoId = streamState.streamId // Phase 1B: for HLS poison check
-            )
+            val result = buildMediaSourceResultViaDash(resolvedForFactory, state.audioOnly, forceProgressive)
             preparedIsAdaptive = result.isAdaptive
             preparedAdaptiveType = result.adaptiveType
 

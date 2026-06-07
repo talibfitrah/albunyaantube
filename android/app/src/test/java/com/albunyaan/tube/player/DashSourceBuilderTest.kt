@@ -316,6 +316,56 @@ class DashSourceBuilderTest {
     }
 
     // =========================================================================
+    // decide() — forceProgressive
+    // =========================================================================
+
+    @Test
+    fun `VOD eligible-for-LocalDash + forceProgressive=true → Progressive not LocalDash`() {
+        // Same fixture as the LocalDash test (≥2 video-only same-codec + audio), but with
+        // forceProgressive=true the MPD attempt is skipped and we fall through to progressive.
+        val resolved = streams(
+            videoTracks = listOf(
+                videoOnlyTrack(360, itag = 134),
+                videoOnlyTrack(720, itag = 136),
+                videoOnlyTrack(1080, itag = 137),
+            ),
+            audioTracks = listOf(audioTrack(itag = 140))
+        )
+
+        val decision = builder.decide(resolved, forceProgressive = true)
+
+        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
+    }
+
+    @Test
+    fun `forceProgressive=true with muxed present → Progressive picks best-quality muxed`() {
+        val muxed360 = muxedTrack(height = 360, itag = 18, url = "https://example.com/muxed18")
+        val muxed720 = muxedTrack(height = 720, itag = 22, url = "https://example.com/muxed22")
+        // Three video-only tracks would normally be LocalDash-eligible; forceProgressive skips that.
+        val resolved = streams(
+            videoTracks = listOf(
+                videoOnlyTrack(360, itag = 134),
+                videoOnlyTrack(720, itag = 136),
+                videoOnlyTrack(1080, itag = 137),
+                muxed360,
+                muxed720,
+            ),
+            audioTracks = listOf(audioTrack(itag = 140))
+        )
+
+        val decision = builder.decide(resolved, forceProgressive = true)
+
+        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
+        val prog = decision as SourceDecision.Progressive
+        assertEquals(
+            "Must pick the highest-quality muxed track (720p itag 22)",
+            muxed720.url,
+            prog.videoUrl
+        )
+        assertNull("Muxed track needs no separate audio", prog.audioUrl)
+    }
+
+    // =========================================================================
     // subtitleMimeType() mapping
     // =========================================================================
 
