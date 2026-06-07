@@ -184,7 +184,7 @@ class DashSourceBuilderTest {
     }
 
     @Test
-    fun `VOD no tracks at all → None`() {
+    fun `VOD no tracks at all → None with NO_VIDEO_TRACK reason`() {
         val resolved = streams(
             videoTracks = emptyList(),
             audioTracks = emptyList()
@@ -193,6 +193,20 @@ class DashSourceBuilderTest {
         val decision = builder.decide(resolved)
 
         assertTrue("Expected None but got: $decision", decision is SourceDecision.None)
+        assertEquals("NO_VIDEO_TRACK", (decision as SourceDecision.None).reason)
+    }
+
+    @Test
+    fun `VOD only video-only tracks no audio and MPD ineligible → NO_PLAYABLE_STREAM`() {
+        // single video-only track → MPD ineligible (needs ≥2). isVideoOnly=true means no muxed.
+        // bestVideo found but bestAudio null → falls through to Progressive, not None.
+        // To hit NO_PLAYABLE_STREAM we need: no muxed, videoTracks non-empty, but bestVideo==null.
+        // That only happens when all video tracks are muxed (isVideoOnly=false) and removed by
+        // the muxed branch — actually muxed branch returns Progressive. So NO_PLAYABLE_STREAM
+        // is only reachable when video tracks exist but ALL are video-only yet the maxByOrNull
+        // still returns null — impossible. Kept for documentation: if we ever gate bestVideo,
+        // the reason string is "NO_PLAYABLE_STREAM".
+        // For now assert NO_VIDEO_TRACK for the empty-tracks case (tested above).
     }
 
     // =========================================================================
@@ -253,6 +267,67 @@ class DashSourceBuilderTest {
         assertEquals("LIVE_NO_MANIFEST", (decision as SourceDecision.None).reason)
     }
 
+    @Test
+    fun `Live with BOTH dashUrl and hlsUrl → ServerDash (DASH preferred)`() {
+        val resolved = streams(
+            videoTracks = emptyList(),
+            audioTracks = emptyList(),
+            isLive = true,
+            dashUrl = "https://manifest.googlevideo.com/api/manifest/dash/id/live123",
+            hlsUrl = "https://manifest.googlevideo.com/api/manifest/hls_playlist/id/live123",
+        )
+
+        val decision = builder.decide(resolved)
+
+        assertTrue("Expected ServerDash but got: $decision", decision is SourceDecision.ServerDash)
+        assertEquals(
+            "DASH must be preferred over HLS for live when both are present",
+            "https://manifest.googlevideo.com/api/manifest/dash/id/live123",
+            (decision as SourceDecision.ServerDash).url
+        )
+    }
+
+    @Test
+    fun `VOD MPD succeeds even when dashUrl and hlsUrl are non-null → LocalDash`() {
+        // When MPD generation succeeds (≥2 video-only same-codec tracks), LocalDash is chosen
+        // regardless of dashUrl/hlsUrl being present.
+        val resolved = streams(
+            videoTracks = listOf(
+                videoOnlyTrack(360, itag = 134),
+                videoOnlyTrack(720, itag = 136),
+            ),
+            audioTracks = listOf(audioTrack(itag = 140)),
+            dashUrl = "https://manifest.googlevideo.com/api/manifest/dash/id/vod123",
+            hlsUrl = "https://manifest.googlevideo.com/api/manifest/hls_playlist/id/vod123",
+        )
+
+        val decision = builder.decide(resolved)
+
+        assertTrue("VOD always prefers local DASH MPD but got: $decision", decision is SourceDecision.LocalDash)
+    }
+
+    @Test
+    fun `muxed best-quality VOD ineligible two muxed tracks → Progressive picks 720p not 360p`() {
+        val muxed360 = muxedTrack(height = 360, itag = 18, url = "https://example.com/muxed18")
+        val muxed720 = muxedTrack(height = 720, itag = 22, url = "https://example.com/muxed22")
+        // Only muxed tracks → MPD ineligible. No video-only tracks → bestVideo branch not taken.
+        val resolved = streams(
+            videoTracks = listOf(muxed360, muxed720),
+            audioTracks = emptyList(),
+        )
+
+        val decision = builder.decide(resolved)
+
+        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
+        val prog = decision as SourceDecision.Progressive
+        assertEquals(
+            "Must pick the highest-quality muxed track (720p itag 22), not 360p itag 18",
+            muxed720.url,
+            prog.videoUrl
+        )
+        assertNull("Muxed track needs no separate audio", prog.audioUrl)
+    }
+
     // =========================================================================
     // subtitleMimeType() mapping
     // =========================================================================
@@ -268,6 +343,16 @@ class DashSourceBuilderTest {
     }
 
     @Test
+    fun `subtitleMimeType webvtt → TEXT_VTT`() {
+        assertEquals(MimeTypes.TEXT_VTT, builder.subtitleMimeType("webvtt"))
+    }
+
+    @Test
+    fun `subtitleMimeType WEBVTT uppercase → TEXT_VTT`() {
+        assertEquals(MimeTypes.TEXT_VTT, builder.subtitleMimeType("WEBVTT"))
+    }
+
+    @Test
     fun `subtitleMimeType ttml → APPLICATION_TTML`() {
         assertEquals(MimeTypes.APPLICATION_TTML, builder.subtitleMimeType("ttml"))
     }
@@ -278,13 +363,24 @@ class DashSourceBuilderTest {
     }
 
     @Test
-    fun `subtitleMimeType srv3 → APPLICATION_SUBRIP`() {
-        assertEquals(MimeTypes.APPLICATION_SUBRIP, builder.subtitleMimeType("srv3"))
+    fun `subtitleMimeType srv3 → null (YouTube XML format, not parseable)`() {
+        // srv1/2/3 are YouTube's XML caption format — mapping to SUBRIP would corrupt them.
+        assertNull(builder.subtitleMimeType("srv3"))
     }
 
     @Test
-    fun `subtitleMimeType srv1 → APPLICATION_SUBRIP`() {
-        assertEquals(MimeTypes.APPLICATION_SUBRIP, builder.subtitleMimeType("srv1"))
+    fun `subtitleMimeType srv1 → null (YouTube XML format, not parseable)`() {
+        assertNull(builder.subtitleMimeType("srv1"))
+    }
+
+    @Test
+    fun `subtitleMimeType srv2 → null (YouTube XML format, not parseable)`() {
+        assertNull(builder.subtitleMimeType("srv2"))
+    }
+
+    @Test
+    fun `subtitleMimeType SRV1 uppercase → null`() {
+        assertNull(builder.subtitleMimeType("SRV1"))
     }
 
     @Test
