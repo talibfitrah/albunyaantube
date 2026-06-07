@@ -541,8 +541,13 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
             else -> 44100 // Default for AAC and other codecs
         }
 
-        // Generate representation ID from itag and escape for XML safety
-        val repId = escapeXml("audio_${metadata.itag}")
+        // Generate representation ID from itag PLUS language/role, then escape for XML safety.
+        // YouTube serves every dub language under the SAME itag (e.g. 140/251), so an
+        // itag-only id (`audio_140`) collides across the per-language AdaptationSets in one
+        // Period — a DASH `@id`-uniqueness violation. Disambiguate with language + trackType.
+        val langTag = track.language?.takeIf { it.isNotBlank() } ?: "und"
+        val roleTag = track.trackType?.name?.lowercase() ?: "default"
+        val repId = escapeXml("audio_${metadata.itag}_${langTag}_${roleTag}")
         val escapedCodec = escapeXml(codec)
 
         appendLine("""      <Representation id="$repId" bandwidth="$bitrate" codecs="$escapedCodec" audioSamplingRate="$sampleRate">""")

@@ -141,6 +141,44 @@ class MultiRepresentationMpdGeneratorTest {
     }
 
     // =========================================================================
+    // Test 1b — Real dubs share an itag → Representation @id must stay unique
+    // =========================================================================
+
+    /**
+     * Regression: YouTube serves every dub language under the SAME audio itag
+     * (e.g. 140). Two same-itag language groups must NOT both emit
+     * `<Representation id="audio_140">` — that collides within one Period and
+     * violates DASH @id uniqueness. The id must be disambiguated by language/role.
+     */
+    @Test
+    fun `same itag dubs produce unique audio Representation ids`() {
+        val resolved = streams(
+            videoTracks = listOf(
+                videoTrack(360, itag = 134),
+                videoTrack(720, itag = 136)
+            ),
+            audioTracks = listOf(
+                // Both itag 140 — the production reality the old itag-only id missed.
+                audioTrack(itag = 140, language = "en", trackType = AudioTrackKind.ORIGINAL),
+                audioTrack(itag = 140, language = "ar", trackType = AudioTrackKind.DUBBED)
+            )
+        )
+
+        val result = generator.generateMpd(resolved)
+        assertTrue("Expected Success but got: $result", result is MultiRepresentationMpdGenerator.Result.Success)
+        val xml = (result as MultiRepresentationMpdGenerator.Result.Success).mpdXml
+
+        // The bare itag-only id must NEVER appear (it would collide across the two dubs).
+        assertFalse(
+            "audio Representation @id must not be the bare itag (collides across dubs)",
+            xml.contains("""<Representation id="audio_140" """)
+        )
+        // Both dubs present with distinct, language-qualified ids.
+        assertTrue("English dub id must be present", xml.contains("""id="audio_140_en_"""))
+        assertTrue("Arabic dub id must be present", xml.contains("""id="audio_140_ar_"""))
+    }
+
+    // =========================================================================
     // Test 2 — Single audio, no language → one AdaptationSet, no lang, no Role
     // =========================================================================
 

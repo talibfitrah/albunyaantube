@@ -199,7 +199,11 @@ class DashSourceBuilder @Inject constructor(
 
         val decision = decide(resolved, forceProgressive)
         if (decision is SourceDecision.Progressive) {
-            Log.d(TAG, "MPD generation failed or ineligible, falling back to progressive (audioUrl=${decision.audioUrl != null})")
+            if (forceProgressive) {
+                Log.d(TAG, "Building progressive by request (forceProgressive; MPD skipped) (audioUrl=${decision.audioUrl != null})")
+            } else {
+                Log.d(TAG, "MPD generation failed or ineligible, falling back to progressive (audioUrl=${decision.audioUrl != null})")
+            }
         }
 
         val mainSource: MediaSource = when (decision) {
