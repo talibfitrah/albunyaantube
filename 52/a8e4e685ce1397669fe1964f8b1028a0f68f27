@@ -1,0 +1,19 @@
+android/app/src/test/java/com/albunyaan/tube/player/DashSourceBuilderTest.kt
+  s_c832b66577aa53::t_ef83b2ba169e22 338-348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "52a8e4e685ce1397669fe1964f8b1028a0f68f27",
+  "prompts": {},
+  "sessions": {
+    "s_c832b66577aa53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1f2a368e-209c-4984-acb2-d1c7b954568d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
