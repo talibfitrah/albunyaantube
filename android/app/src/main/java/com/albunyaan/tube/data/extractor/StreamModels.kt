@@ -96,7 +96,13 @@ data class ResolvedStreams(
      * Version marker for the urlGeneratedAt timebase.
      * Bump if the time source changes to avoid comparing incompatible timestamps.
      */
-    val urlTimebaseVersion: Int = URL_TIMEBASE_VERSION
+    val urlTimebaseVersion: Int = URL_TIMEBASE_VERSION,
+    /**
+     * Which YouTube innertube client minted these stream URLs. Determines the
+     * User-Agent that must be used when fetching segments (UA mismatch → HTTP 403).
+     * Defaults to ANDROID_VR because that is the primary resolver.
+     */
+    val extractionClient: ExtractionClient = ExtractionClient.ANDROID_VR
 ) {
     companion object {
         /**
@@ -158,6 +164,20 @@ data class ResolvedStreams(
         val remaining = LIVE_PROACTIVE_REFRESH_MS - elapsed
         return if (remaining > 0) remaining else 0L
     }
+}
+
+/**
+ * Which YouTube innertube client minted a [ResolvedStreams]' URLs.
+ * Determines the User-Agent that must be used when fetching segments:
+ * a UA mismatch causes HTTP 403 on segment requests.
+ */
+enum class ExtractionClient {
+    ANDROID_VR,       // primary resolver; Android UA
+    NEWPIPE_IOS,      // NewPipe iOS client; iOS UA
+    NEWPIPE_ANDROID;  // NewPipe Android client; Android UA
+
+    /** Only the NewPipe iOS client needs the iOS UA; everything else uses the Android UA. */
+    fun usesIosUserAgent(): Boolean = this == NEWPIPE_IOS
 }
 
 /**

@@ -104,7 +104,8 @@ class AndroidVrStreamResolver(
             hlsUrl = null,
             dashUrl = null,
             isLive = false,
-            urlGeneratedAt = urlGeneratedAt
+            urlGeneratedAt = urlGeneratedAt,
+            extractionClient = ExtractionClient.ANDROID_VR
         )
     }
 

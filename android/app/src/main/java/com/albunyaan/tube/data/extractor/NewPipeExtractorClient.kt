@@ -131,10 +131,14 @@ class NewPipeExtractorClient(
             // NOTE: Synchronization only ensures atomic apply of the setting to NewPipe's global
             // state; it does not serialize concurrent fetchPage() executions. Acceptable since the
             // single-flight GlobalStreamResolver makes concurrent same-video resolves rare.
+            val primaryClient: YoutubeClientRotator.Client
             synchronized(NewPipeExtractorClient::class.java) {
                 if (featureFlags.isClientRotationEnabled) {
-                    applyClientSetting(clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled))
+                    primaryClient = clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled)
+                    applyClientSetting(primaryClient)
                 } else {
+                    primaryClient = if (featureFlags.isIosFetchEnabled) YoutubeClientRotator.Client.IOS
+                                    else YoutubeClientRotator.Client.ANDROID
                     applyIosFetchSetting()
                 }
             }
@@ -142,7 +146,10 @@ class NewPipeExtractorClient(
             extractor.fetchPage()
             val info = StreamInfo.getInfo(extractor)
             val urlGeneratedAt = clock()
-            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt)
+            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt)?.copy(
+                extractionClient = if (primaryClient == YoutubeClientRotator.Client.IOS)
+                    ExtractionClient.NEWPIPE_IOS else ExtractionClient.NEWPIPE_ANDROID
+            )
             if (resolved == null) {
                 // Client responded but stream mapping failed — reset rotator so the next
                 // retry starts fresh rather than advancing to the next rotation slot on a
@@ -174,13 +181,17 @@ class NewPipeExtractorClient(
                     // accepted on the first attempt (callers tolerate it because
                     // NewPipe toggles are rare and not driven by playback).
                     val retryHandler = streamLinkHandlerFactory.fromId(videoId)
+                    val retryClient: YoutubeClientRotator.Client
                     synchronized(NewPipeExtractorClient::class.java) {
                         if (featureFlags.isClientRotationEnabled) {
                             // Honor the armed client (currentClient), not initialClient — a caller
                             // retry may already have advanced IOS→ANDROID after a real failure, and
                             // the visitorData retry must not silently revert to IOS.
-                            applyClientSetting(clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled))
+                            retryClient = clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled)
+                            applyClientSetting(retryClient)
                         } else {
+                            retryClient = if (featureFlags.isIosFetchEnabled) YoutubeClientRotator.Client.IOS
+                                          else YoutubeClientRotator.Client.ANDROID
                             applyIosFetchSetting()
                         }
                     }
@@ -188,7 +199,10 @@ class NewPipeExtractorClient(
                     retryExtractor.fetchPage()
                     val retryInfo = StreamInfo.getInfo(retryExtractor)
                     val urlGeneratedAt = clock()
-                    val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt)
+                    val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt)?.copy(
+                        extractionClient = if (retryClient == YoutubeClientRotator.Client.IOS)
+                            ExtractionClient.NEWPIPE_IOS else ExtractionClient.NEWPIPE_ANDROID
+                    )
                     if (resolved != null) {
                         synchronized(streamCacheLock) {
                             streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt)
