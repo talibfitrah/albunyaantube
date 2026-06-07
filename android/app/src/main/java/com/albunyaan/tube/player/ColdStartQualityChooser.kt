@@ -27,7 +27,7 @@ import javax.inject.Singleton
  * - Start conservative to minimize initial buffering (TTFF optimization)
  * - Use network and screen signals to inform the initial choice
  * - Persist successful playback quality to learn user preferences
- * - ABR/BufferHealthMonitor handles upgrades after playback starts
+ * - ABR handles upgrades after playback starts
  *
  * **Quality Tiers (heights in pixels):**
  * - ULTRA: 2160 (4K) - Screen cap for large tablet/TV (ABR may upgrade to this)
@@ -36,7 +36,7 @@ import javax.inject.Singleton
  * - LOW: 480 - Cellular / data saver / constrained
  * - MINIMUM: 360 - Very constrained (slow 3G, extreme data saver)
  *
- * Note: Initial recommendations are conservative to minimize TTFF. ABR/BufferHealthMonitor
+ * Note: Initial recommendations are conservative to minimize TTFF. ABR
  * handles quality upgrades after playback starts based on actual bandwidth.
  *
  * **Version Migration:**

@@ -252,7 +252,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var adaptiveFailedForCurrentStream: String? = null
 
     /**
-     * Minimal buffering-stall watchdog (replaces the removed PlaybackRecoveryManager's
+     * Minimal buffering-stall watchdog (replaces the old multi-step recovery
      * stall ladder). When the player sits in STATE_BUFFERING past a threshold and the
      * current stream is unchanged, route through the battle-tested re-resolve path
      * ([requestStreamRefreshAndResume]). One runnable, one threshold, no escalation —
@@ -1172,7 +1172,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     }
                 }
 
-                // Minimal stall watchdog (replaces PlaybackRecoveryManager's stall ladder):
+                // Minimal stall watchdog (replaces the old multi-step stall ladder):
                 // a silent buffering stall past the threshold re-resolves fresh URLs and
                 // resumes at position. Cancel on any non-buffering state.
                 if (playbackState == Player.STATE_BUFFERING) {
@@ -1338,6 +1338,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                                 )
                             } else {
                                 // Use safe context access to prevent crash if fragment is detached
+                                surfaceRecoveryExhausted()
                                 context?.let { ctx ->
                                     Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
                                 }
@@ -1368,6 +1369,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             )
                         } else {
                             // Use safe context access to prevent crash if fragment is detached
+                            surfaceRecoveryExhausted()
                             context?.let { ctx ->
                                 Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
                             }
@@ -1396,6 +1398,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             player.seekToDefaultPosition()
                             player.prepare()
                         } else {
+                            surfaceRecoveryExhausted()
                             context?.let { ctx ->
                                 Toast.makeText(ctx, getString(R.string.player_stream_error) + ": ${error.errorCodeName}", Toast.LENGTH_LONG).show()
                             }
@@ -1417,6 +1420,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                                 "unhandled player error (${error.errorCodeName}, http=${httpResponseCode ?: "n/a"})"
                             )
                         } else {
+                            surfaceRecoveryExhausted()
                             context?.let { ctx ->
                                 Toast.makeText(ctx, getString(R.string.player_stream_error) + ": ${error.errorCodeName}", Toast.LENGTH_LONG).show()
                             }
@@ -2045,6 +2049,18 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     /**
+     * Surface the manual-retry escape hatch. Flips [streamState] to
+     * [StreamState.RecoveryExhausted] (only from Recovering/Ready; no-op otherwise),
+     * which makes the player retry button visible at terminal "we give up" points so a
+     * permanently-failing stream never sits on a spinner with toasts alone. Purely a UI
+     * state flip — it does not touch the player, playback, or the refresh path, and the
+     * normal Ready transition clears it if the stream self-recovers.
+     */
+    private fun surfaceRecoveryExhausted() {
+        viewModel.setRecoveryExhaustedState()
+    }
+
+    /**
      * Single re-resolve recovery path: re-extract fresh stream URLs and resume at the
      * saved position. Used by every error/stall recovery branch. The MPD invalidation
      * + [PlayerViewModel.forceRefreshForAutoRecovery] rate-limiter below are the
@@ -2084,6 +2100,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Rate-limited: don't stop player, show toast and let current playback continue.
             // This prevents the player from being stuck in stopped state when refresh is blocked.
             android.util.Log.w("PlayerFragment", "Stream refresh blocked by rate limiter, continuing playback")
+            surfaceRecoveryExhausted()
             context?.let { ctx ->
                 Toast.makeText(ctx, R.string.player_refresh_rate_limited, Toast.LENGTH_SHORT).show()
             }
@@ -2290,6 +2307,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             onStreamRefresh()
                             requestStreamRefreshAndResume("rate limited, retrying after ${backoffMs}ms")
                         } else {
+                            surfaceRecoveryExhausted()
                             context?.let { ctx ->
                                 Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
                             }
@@ -2309,6 +2327,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         onStreamRefresh()
                         requestStreamRefreshAndResume("URL expired (403)")
                     } else {
+                        surfaceRecoveryExhausted()
                         context?.let { ctx ->
                             Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
                         }
@@ -2331,6 +2350,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             onStreamRefresh()
                             requestStreamRefreshAndResume("HTTP $httpResponseCode (${failureType.name})")
                         } else {
+                            surfaceRecoveryExhausted()
                             context?.let { ctx ->
                                 Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
                             }
@@ -2348,6 +2368,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 "HTTP error (${error.errorCodeName}, http=${httpResponseCode ?: "n/a"})"
             )
         } else {
+            surfaceRecoveryExhausted()
             context?.let { ctx ->
                 Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
             }
@@ -3972,7 +3993,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     //   to detect the change and trigger rebuild. Using factorySelectedVideoTrack here
                     //   would incorrectly return "Hit" and block manual quality switches.
                     //
-                    // - AUTO_RECOVERY: BufferHealthMonitor requested downshift. Same as MANUAL - must
+                    // - AUTO_RECOVERY: automatic recovery requested downshift. Same as MANUAL - must
                     //   compare against the new selection.video to detect and apply the change.
                     val effectiveVideoUrl = when (selection.selectionOrigin) {
                         QualitySelectionOrigin.AUTO -> factorySelectedVideoTrack?.url ?: selection.video?.url

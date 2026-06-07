@@ -10,8 +10,8 @@ import android.os.SystemClock
  * A 4K video on WiFi plays as a multi-representation synthetic DASH stream
  * (SYNTH_ADAPTIVE) built from YouTube's video-only `googlevideo` URLs. When the
  * user seeks, ExoPlayer issues a far-ahead byte-range request against those URLs,
- * which frequently returns HTTP 403. Each 403 used to consume
- * [PlaybackDegradationManager]'s refresh budget; after a handful of seeks the
+ * which frequently returns HTTP 403. Each 403 used to consume the old
+ * degrade-to-muxed refresh budget; after a handful of seeks the
  * budget exhausted and the player fell back to a single muxed 360p (itag 18)
  * progressive track — permanently, with no path back to adaptive. The visible
  * symptom: seek on a 4K video → video goes blurry and the quality menu collapses

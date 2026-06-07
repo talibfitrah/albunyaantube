@@ -172,7 +172,7 @@ class MultiQualityMediaSourceFactory(
 
         /**
          * Fallback initial quality ceiling when ColdStartQualityChooser is unavailable.
-         * 480p prioritizes fast first frame (TTFF) over initial quality. ABR/BufferHealthMonitor
+         * 480p prioritizes fast first frame (TTFF) over initial quality. ABR
          * will upgrade after playback starts if bandwidth supports it. Muxed progressive
          * tracks (which avoid MergingMediaSource A/V sync overhead) are most commonly
          * available at 360-480p, so this ceiling also reduces the chance of needing
@@ -358,7 +358,7 @@ class MultiQualityMediaSourceFactory(
             }
             else -> {
                 // No user cap (AUTO mode): use cold-start quality selection.
-                // BufferHealthMonitor handles quality adjustments via predictive/early-stall downshift.
+                // ABR handles quality adjustments after playback starts based on bandwidth.
                 val initialHeight = getInitialQualityHeight()
                 // Fallback chain: 1) ≤initialHeight, 2) lowest with height, 3) first available (null heights)
                 findBestTrackUnderCap(resolved.videoTracks, initialHeight)
@@ -691,7 +691,7 @@ class MultiQualityMediaSourceFactory(
             }
             else -> {
                 // No user cap (AUTO mode): use cold-start quality selection.
-                // BufferHealthMonitor handles quality adjustments via predictive/early-stall downshift.
+                // ABR handles quality adjustments after playback starts based on bandwidth.
                 val initialHeight = getInitialQualityHeight()
                 // Fallback chain: 1) ≤initialHeight video-only, 2) lowest with height, 3) first eligible
                 SyntheticDashTrackSelector.findBestVideoOnlyTrackUnderCap(resolved.videoTracks, initialHeight)

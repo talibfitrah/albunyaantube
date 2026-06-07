@@ -1056,7 +1056,7 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Force re-resolve stream URLs for automatic recovery.
-     * Called from PlaybackRecoveryManager during REFRESH_URLS step.
+     * Called when the player needs fresh stream URLs (stall watchdog, error refresh).
      *
      * PR5: Uses AUTO_RECOVERY request kind with reserved budget that won't be
      * blocked by manual refresh limits - ensures recovery can always proceed.
@@ -1804,7 +1804,8 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Transition to RecoveryExhausted state when all automatic recovery attempts fail.
-     * Called by PlaybackRecoveryManager.onRecoveryExhausted callback.
+     * Surfaced when automatic recovery is exhausted (terminal error / rate-limit) to
+     * show the manual-retry escape hatch.
      */
     fun setRecoveryExhaustedState() {
         val current = _state.value.streamState

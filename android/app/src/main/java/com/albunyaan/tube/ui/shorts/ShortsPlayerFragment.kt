@@ -268,8 +268,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
 
         // Stall watchdog: if BUFFERING persists past STALL_RECOVERY_MS, force
         // a fresh stream resolve. Common cause is expired progressive URLs
-        // returning 403 mid-segment. Mirrors the recovery intent of the main
-        // player's PlaybackRecoveryManager without hauling in its full machinery.
+        // returning 403 mid-segment. Mirrors the main player's minimal stall
+        // watchdog (re-resolve fresh URLs) without an escalation ladder.
         // Listener is held as the [stallListener] field so onDestroyView can
         // remove it — see field-level KDoc for the leak this prevents.
         viewModel.player.addListener(stallListener)
