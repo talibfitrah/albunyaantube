@@ -76,6 +76,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     @Inject lateinit var simpleCache: SimpleCache
     @Inject lateinit var cachedHttpDataSourceFactory: com.albunyaan.tube.player.CachedHttpDataSourceFactory
     @Inject lateinit var dashSourceBuilder: com.albunyaan.tube.player.DashSourceBuilder
+    @Inject lateinit var dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider
 
     private val viewModel: ShortsPlayerViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -260,7 +261,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             player = viewModel.player,
             playerRepository = playerRepository,
             dashSourceBuilder = dashSourceBuilder,
-            cachedHttpDataSourceFactory = cachedHttpDataSourceFactory,
+            dataSourceFactoryProvider = dataSourceFactoryProvider,
             mpdRegistry = mpdRegistry,
             featureFlags = playbackFeatureFlags
         )

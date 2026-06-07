@@ -2,7 +2,6 @@ package com.albunyaan.tube.ui.shorts
 
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.ExoPlayer
 // (Player import retained for REPEAT_MODE_ONE constant)
 import androidx.media3.exoplayer.source.MediaSource
@@ -13,7 +12,6 @@ import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.AudioTrackKind
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
-import com.albunyaan.tube.player.CachedHttpDataSourceFactory
 import com.albunyaan.tube.player.PlayerRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,11 +76,13 @@ class PlayerBinder private constructor(
      */
     private val attach: PlayerViewAttach,
     /**
-     * Single source of truth for the cached HTTP transport. Non-null in
-     * production; tests pass a Mockito mock since the JVM unit-test path
-     * does not exercise progressive fallback.
+     * UA-correct, cache-wrapped transport for the progressive fallback. The factory's
+     * User-Agent is matched to the extraction client that minted the URLs
+     * ([SegmentDataSourceFactoryProvider.forStreams]), avoiding client/UA-mismatch 403s on
+     * iOS-minted streams. Non-null in production; tests pass a Mockito mock since the JVM
+     * unit-test path does not exercise progressive fallback.
      */
-    private val cachedHttpDataSourceFactory: CachedHttpDataSourceFactory,
+    private val dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider,
     private val mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry? = null,
     private val featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags? = null
 ) {
@@ -92,7 +92,7 @@ class PlayerBinder private constructor(
         player: ExoPlayer,
         playerRepository: PlayerRepository,
         dashSourceBuilder: com.albunyaan.tube.player.DashSourceBuilder,
-        cachedHttpDataSourceFactory: CachedHttpDataSourceFactory,
+        dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider,
         mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry? = null,
         featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags? = null
     ) : this(
@@ -103,7 +103,7 @@ class PlayerBinder private constructor(
         attach = PlayerViewAttach { view, attached ->
             if (attached) view.player = player else view.player = null
         },
-        cachedHttpDataSourceFactory = cachedHttpDataSourceFactory,
+        dataSourceFactoryProvider = dataSourceFactoryProvider,
         mpdRegistry = mpdRegistry,
         featureFlags = featureFlags
     )
@@ -113,8 +113,8 @@ class PlayerBinder private constructor(
         playerRepository: PlayerRepository,
         ops: PlayerOps,
         attach: PlayerViewAttach,
-        cachedHttpDataSourceFactory: CachedHttpDataSourceFactory,
-    ) : this(null, playerRepository, null, ops, attach, cachedHttpDataSourceFactory)
+        dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider,
+    ) : this(null, playerRepository, null, ops, attach, dataSourceFactoryProvider)
 
     /**
      * Minimal surface of player mutations needed for testing the rapid-swipe
@@ -497,7 +497,9 @@ class PlayerBinder private constructor(
         resolved: ResolvedStreams,
         qualityCapHeight: Int? = SHORTS_FALLBACK_STARTUP_MAX_HEIGHT
     ): MediaSource? {
-        val dataSourceFactory = buildFallbackDataSourceFactory()
+        // UA-matched to the client that minted these URLs (ANDROID_VR / NewPipe-iOS /
+        // NewPipe-Android). Using a fixed Android UA here 403s on iOS-minted streams.
+        val dataSourceFactory = dataSourceFactoryProvider.forStreams(resolved)
 
         // Prefer muxed (video+audio) progressive tracks. Pick a fast-start
         // quality first; shorts can upgrade through the adaptive path when it
@@ -535,9 +537,6 @@ class PlayerBinder private constructor(
 
         return null
     }
-
-    private fun buildFallbackDataSourceFactory(): DataSource.Factory =
-        cachedHttpDataSourceFactory.create()
 
     /** Run the lean DashSourceBuilder for [resolved]; null on failure or when no builder is wired (tests). */
     private fun tryDashBuild(resolved: ResolvedStreams): com.albunyaan.tube.player.DashSourceBuilder.BuiltSource? =
@@ -617,14 +616,11 @@ class PlayerBinder private constructor(
      * Switch the playback quality cap for the currently-bound video.
      * `capHeightPx == 0` (or negative) clears the cap (auto / ABR-driven).
      *
-     * Most YouTube videos on shorts end up as single-rep synthetic DASH
-     * (video tracks have inconsistent containers, so SYNTH_ADAPTIVE
-     * fails). With single-rep the manifest holds exactly one video
-     * track, so a track-selector cap can't pick a different quality —
-     * the manifest itself has to be regenerated with a different track.
-     * This rebuilds the MediaSource via the same factory path used at
-     * initial prep, passing the new cap so the synthetic-DASH builder
-     * picks the appropriate track.
+     * The lean [DashSourceBuilder.build] takes no quality cap, so a MANUAL cap
+     * is honoured by rebuilding a progressive source whose single track is
+     * chosen at the requested cap. A cleared cap (AUTO) routes through the
+     * adaptive lean path (multi-rep DASH when eligible), letting the track
+     * selector pick by bandwidth.
      *
      * Preserves position and playWhenReady so the short resumes exactly
      * where the user was. Safe no-op if there is no cached resolved-

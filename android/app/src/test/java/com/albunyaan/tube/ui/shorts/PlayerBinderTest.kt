@@ -162,11 +162,11 @@ class PlayerBinderTest {
         repo,
         ops,
         attach,
-        // Stub create() so any code path that drops into the progressive
+        // Stub forStreams() so any code path that drops into the progressive
         // fallback (e.g. buildProgressiveSource) gets a non-null DataSource
         // factory instead of NPEing on Mockito's null default.
-        org.mockito.kotlin.mock<com.albunyaan.tube.player.CachedHttpDataSourceFactory> {
-            on { create() } doReturn org.mockito.kotlin.mock()
+        org.mockito.kotlin.mock<com.albunyaan.tube.player.SegmentDataSourceFactoryProvider> {
+            on { forStreams(org.mockito.kotlin.any()) } doReturn org.mockito.kotlin.mock()
         },
     )
 
