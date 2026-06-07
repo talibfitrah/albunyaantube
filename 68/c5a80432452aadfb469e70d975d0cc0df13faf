@@ -1,0 +1,26 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/StreamModels.kt
+  s_c832b66577aa53::t_ec47f8910deb24 175-180
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  s_c832b66577aa53::t_6bad471a0e9518 140,148
+  s_c832b66577aa53::t_8c665260691446 632-633
+  s_c832b66577aa53::t_d3d780ca9df728 440-443
+  s_c832b66577aa53::t_4bcda52141c56c 189,197
+android/app/src/test/java/com/albunyaan/tube/player/SegmentDataSourceFactoryProviderTest.kt
+  s_c832b66577aa53::t_f21e4633f3ae76 1-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "68c5a80432452aadfb469e70d975d0cc0df13faf",
+  "prompts": {},
+  "sessions": {
+    "s_c832b66577aa53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1f2a368e-209c-4984-acb2-d1c7b954568d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
