@@ -1,6 +1,7 @@
 package com.albunyaan.tube.data.extractor.potoken
 
 import android.content.Context
+import android.os.Looper
 import android.util.Log
 import android.webkit.CookieManager
 import kotlinx.coroutines.delay
@@ -50,6 +51,14 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
     override fun getWebEmbedClientPoToken(videoId: String): PoTokenResult? = null
 
     private fun poTokenOrNull(videoId: String): PoTokenResult? {
+        // runBlocking here would deadlock on the main thread: the WebView callbacks that resolve the
+        // awaited deferred are posted to the main looper, which is the very thread we'd be blocking.
+        // Extraction always runs on Dispatchers.IO, so a main-thread call is a programming error —
+        // degrade to a tokenless result (ANDROID_VR fallback) rather than ANR.
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            Log.e(TAG, "poToken requested on main thread; returning null to avoid deadlock ($videoId)")
+            return null
+        }
         if (!webViewSupported || webViewBadImpl) {
             Log.w(TAG, "poToken requested but unavailable (supported=$webViewSupported, bad=$webViewBadImpl) for $videoId")
             return null
@@ -69,6 +78,16 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
                 Log.e(TAG, "WebView is broken; disabling poToken for this session", e)
                 webViewBadImpl = true
                 return null
+            } catch (e: InterruptedException) {
+                // The blocking await was interrupted because the coroutine driving extraction was
+                // cancelled (e.g. screen rotation tearing down the caller's scope mid-fetch) — the
+                // NewPipe #12045 crash class. The WebView/generator is app-scoped and survives, so we
+                // just abandon THIS fetch: restore the interrupt flag (so the outer cancellation is
+                // still observed) and degrade to a tokenless result instead of crashing. Do NOT retry
+                // — the thread is being torn down.
+                Thread.currentThread().interrupt()
+                Log.w(TAG, "poToken interrupted by lifecycle cancellation for $videoId; degrading to tokenless")
+                return null
             } catch (e: Throwable) {
                 lastError = e
                 // Retrying while NewPipe's downloader is in rate-limit cooldown only deepens the
@@ -80,7 +99,16 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
                 }
                 Log.e(TAG, "poToken attempt ${attempt + 1}/$MAX_GENERATION_ATTEMPTS failed for $videoId", e)
                 if (attempt < MAX_GENERATION_ATTEMPTS - 1) {
-                    runBlocking { delay(RETRY_BACKOFF_MS * (attempt + 1)) }
+                    // Interruptible backoff: if cancellation arrives during the wait, bail cleanly
+                    // (restore the interrupt flag) instead of letting InterruptedException escape
+                    // unprotected into NewPipe's extraction call.
+                    try {
+                        runBlocking { delay(RETRY_BACKOFF_MS * (attempt + 1)) }
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        Log.w(TAG, "poToken backoff interrupted for $videoId; degrading to tokenless")
+                        return null
+                    }
                 }
             }
         }
