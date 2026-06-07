@@ -2,10 +2,10 @@ package com.albunyaan.tube.player
 
 import android.util.Log
 import com.albunyaan.tube.data.extractor.AudioTrack
+import com.albunyaan.tube.data.extractor.AudioTrackKind
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SyntheticDashMetadata
 import com.albunyaan.tube.data.extractor.VideoTrack
-import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -79,13 +79,16 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
          * @param mpdXml The raw MPD XML content
          * @param mpdDataUri The data: URI for use with Media3
          * @param videoTracks The video tracks included in the MPD (ordered by height desc)
-         * @param audioTrack The audio track included in the MPD
+         * @param audioTracks All audio tracks included in the MPD (one per language group)
+         * @param audioTrack The primary audio track (ORIGINAL if present, else highest bitrate).
+         *                   Kept for backward-compat with existing callers.
          * @param codecFamily The codec family used for video representations
          */
         data class Success(
             val mpdXml: String,
             val mpdDataUri: String,
             val videoTracks: List<VideoTrack>,
+            val audioTracks: List<AudioTrack>,
             val audioTrack: AudioTrack,
             val codecFamily: String
         ) : Result()
@@ -210,36 +213,56 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
             return Result.Failure("INSUFFICIENT_AFTER_CONTAINER_FILTER:${videoTracksForMpd.size}/${familyTracks.size}")
         }
 
-        // Get best audio track
-        val audioTrack = resolved.audioTracks
-            .filter { it.syntheticDashMetadata?.hasValidRanges() == true }
-            .maxByOrNull { it.bitrate ?: 0 }
-            ?: return Result.Failure("NO_AUDIO_TRACK")
+        // Determine chosen video container (webm or not) so we can filter audio by compatibility.
+        val chosenVideoMimeType = resolveVideoContainerMimeType(videoTracksForMpd)
+            ?: return Result.Failure("NO_CONTAINER_FAMILY")
+        val isChosenVideoWebm = chosenVideoMimeType == "video/webm"
+
+        // Select eligible audio tracks: valid ranges AND container compatible with chosen video.
+        val eligibleAudioTracks = resolved.audioTracks.filter { audio ->
+            audio.syntheticDashMetadata?.hasValidRanges() == true &&
+                (resolveAudioContainerMimeType(audio) == "audio/webm") == isChosenVideoWebm
+        }
+        if (eligibleAudioTracks.isEmpty()) {
+            return Result.Failure("NO_COMPATIBLE_AUDIO")
+        }
+
+        // Group by language; null language is its own group (key = null).
+        // Within each group take the highest-bitrate track as the single representative.
+        val audioTracksForMpd: List<AudioTrack> = eligibleAudioTracks
+            .groupBy { it.language }          // Map<String?, List<AudioTrack>>
+            .map { (_, group) -> group.maxByOrNull { it.bitrate ?: 0 }!! }
+
+        // Derive the primary (legacy) audio track: prefer ORIGINAL, else highest bitrate.
+        val primaryAudioTrack: AudioTrack =
+            audioTracksForMpd.firstOrNull { it.trackType == AudioTrackKind.ORIGINAL }
+                ?: audioTracksForMpd.maxByOrNull { it.bitrate ?: 0 }!!
 
         // Generate MPD XML
         val mpdXml = try {
-            buildMpdXml(videoTracksForMpd, audioTrack, durationSeconds)
+            buildMpdXml(videoTracksForMpd, audioTracksForMpd, durationSeconds)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to generate MPD: ${e.javaClass.simpleName}")
             return Result.Failure("MPD_GENERATION_ERROR:${e.javaClass.simpleName}")
         }
 
-        // buildMpdXml returns null if tracks have inconsistent containers
+        // buildMpdXml returns null if video tracks have inconsistent containers
         if (mpdXml == null) {
             return Result.Failure("INCONSISTENT_CONTAINERS")
         }
 
-        // Create data: URI for Media3
-        val mpdDataUri = "data:application/dash+xml;charset=utf-8," +
-            URLEncoder.encode(mpdXml, "UTF-8")
+        // Create data: URI for Media3 — base64 encoded (java.util.Base64, works on JVM tests)
+        val mpdDataUri = "data:application/dash+xml;base64," +
+            java.util.Base64.getEncoder().encodeToString(mpdXml.toByteArray(Charsets.UTF_8))
 
-        Log.d(TAG, "Generated multi-rep MPD: ${videoTracksForMpd.size} video reps ($bestFamily), 1 audio rep")
+        Log.d(TAG, "Generated multi-rep MPD: ${videoTracksForMpd.size} video reps ($bestFamily), ${audioTracksForMpd.size} audio lang(s)")
 
         return Result.Success(
             mpdXml = mpdXml,
             mpdDataUri = mpdDataUri,
             videoTracks = videoTracksForMpd,
-            audioTrack = audioTrack,
+            audioTracks = audioTracksForMpd,
+            audioTrack = primaryAudioTrack,
             codecFamily = bestFamily
         )
     }
@@ -304,7 +327,7 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
      * Structure:
      * - Period
      *   - AdaptationSet (video, with multiple Representations)
-     *   - AdaptationSet (audio, with single Representation)
+     *   - AdaptationSet per language group (audio, one Representation each)
      *
      * Container types are derived from track.mimeType (source of truth from extraction),
      * not inferred from codec strings to avoid mismatch (e.g., AV1 can be in MP4 or WebM).
@@ -313,11 +336,11 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
      * - "urn:mpeg:dash:profile:isoff-on-demand:2011" for ISO-BMFF (MP4) containers
      * - "urn:mpeg:dash:profile:webm-on-demand:2012" for WebM containers
      *
-     * @return The MPD XML string, or null if tracks have inconsistent containers
+     * @return The MPD XML string, or null if video tracks have inconsistent containers
      */
     private fun buildMpdXml(
         videoTracks: List<VideoTrack>,
-        audioTrack: AudioTrack,
+        audioTracks: List<AudioTrack>,
         durationSeconds: Long
     ): String? {
         val durationPT = "PT${durationSeconds}S"
@@ -330,20 +353,9 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
             return null
         }
 
-        // Determine audio container from track.mimeType
-        val audioMimeType = resolveAudioContainerMimeType(audioTrack)
-
-        // Validate container compatibility: video and audio must use the same container family.
-        // Mixed containers (e.g., video/webm + audio/mp4) may not work with a single DASH profile.
         val isVideoWebm = videoMimeType == "video/webm"
-        val isAudioWebm = audioMimeType == "audio/webm"
-        if (isVideoWebm != isAudioWebm) {
-            Log.w(TAG, "buildMpdXml: mixed containers (video=$videoMimeType, audio=$audioMimeType) - not supported")
-            return null
-        }
 
         // Select DASH profile based on container type.
-        // WebM uses a different profile (urn:mpeg:dash:profile:webm-on-demand:2012).
         val dashProfile = if (isVideoWebm) {
             "urn:mpeg:dash:profile:webm-on-demand:2012"
         } else {
@@ -362,10 +374,25 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
             }
             appendLine("""    </AdaptationSet>""")
 
-            // Audio AdaptationSet with correct container mime type
-            appendLine("""    <AdaptationSet mimeType="$audioMimeType" segmentAlignment="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">""")
-            appendAudioRepresentation(audioTrack, durationSeconds)
-            appendLine("""    </AdaptationSet>""")
+            // One audio AdaptationSet per language group
+            for (audioTrack in audioTracks) {
+                val audioMimeType = resolveAudioContainerMimeType(audioTrack)
+                val langAttr = if (audioTrack.language != null) """ lang="${escapeXml(audioTrack.language)}"""" else ""
+                appendLine("""    <AdaptationSet mimeType="$audioMimeType"$langAttr segmentAlignment="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">""")
+                // Emit <Role> only when trackType is ORIGINAL, DUBBED, DUBBED_AUTO, or DESCRIPTIVE.
+                // UNKNOWN and null → omit the element entirely.
+                val roleValue = when (audioTrack.trackType) {
+                    AudioTrackKind.ORIGINAL -> "main"
+                    AudioTrackKind.DUBBED, AudioTrackKind.DUBBED_AUTO -> "dub"
+                    AudioTrackKind.DESCRIPTIVE -> "description"
+                    AudioTrackKind.UNKNOWN, null -> null
+                }
+                if (roleValue != null) {
+                    appendLine("""      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="$roleValue"/>""")
+                }
+                appendAudioRepresentation(audioTrack, durationSeconds)
+                appendLine("""    </AdaptationSet>""")
+            }
 
             appendLine("""  </Period>""")
             appendLine("""</MPD>""")
