@@ -61,7 +61,7 @@ sealed interface SourceDecision {
  * are fully covered by [DashSourceBuilderTest].  Only [build] / [buildAudioOnly] touch runtime APIs.
  *
  * This is the single source-construction path used by `PlayerFragment` (replacing the
- * legacy multi-strategy `MultiQualityMediaSourceFactory`).
+ * legacy multi-strategy media-source factory, now removed).
  */
 @OptIn(UnstableApi::class)
 @Singleton
@@ -189,7 +189,7 @@ class DashSourceBuilder @Inject constructor(
      * — only `DefaultMediaSourceFactory` merges side-load subtitle sources automatically.
      * Because we use the specific factories here, we build [SingleSampleMediaSource] per subtitle
      * track and merge them with the main source via [MergingMediaSource], mirroring the approach
-     * in [MultiQualityMediaSourceFactory.wrapWithSideLoadSubtitles].  Tracks whose format maps to
+     * in the legacy factory (now removed).  Tracks whose format maps to
      * `null` from [subtitleMimeType] (e.g. srv1/srv2/srv3) are silently skipped.
      *
      * This method is **not unit-tested** — it depends on Android/Media3 runtime.
@@ -205,6 +205,16 @@ class DashSourceBuilder @Inject constructor(
         val mainSource: MediaSource = when (decision) {
             is SourceDecision.LocalDash -> {
                 Log.d(TAG, "Building LocalDash MediaSource (MPD data URI)")
+                // Known gap (tracked follow-up, intentionally not handled here):
+                // this synchronous LocalDash path serves the MPD inline as a
+                // base64 `data:` URI and does NOT register it in
+                // SyntheticDashMpdRegistry. As a result the proactive
+                // MpdTtlWatcher only arms when StreamPrefetchService already
+                // pre-registered this videoId (the common path — prefetch is on
+                // by default). A cold, non-prefetched open has no registry entry,
+                // so it falls back to reactive 403 re-resolve when segment URLs
+                // expire. Registering here is deferred; do not implement it in
+                // this branch.
                 DashMediaSource.Factory(factory)
                     .createMediaSource(mediaItem(decision.dataUri, MimeTypes.APPLICATION_MPD))
             }
@@ -269,7 +279,7 @@ class DashSourceBuilder @Inject constructor(
      * `DashMediaSource.Factory`, `HlsMediaSource.Factory`, and `ProgressiveMediaSource.Factory`
      * all ignore `MediaItem.SubtitleConfiguration`; only `DefaultMediaSourceFactory` does the
      * merge automatically.  We replicate that merge here, matching
-     * [MultiQualityMediaSourceFactory.wrapWithSideLoadSubtitles] exactly.
+     * the legacy factory's side-load merge exactly (now removed).
      *
      * Tracks with a null MIME (srv1/srv2/srv3 or unknown) are skipped — the subtitle pipeline
      * cannot parse them without a known hint.
@@ -292,7 +302,7 @@ class DashSourceBuilder @Inject constructor(
 
     /**
      * Build [MediaItem.SubtitleConfiguration] objects for each [SubtitleTrack], including
-     * role flags and a human-readable label — matching [MultiQualityMediaSourceFactory.buildSubtitleConfigurations].
+     * role flags and a human-readable label — matching the legacy factory's behaviour (now removed).
      *
      * Role flags:
      * - Human-authored: [C.ROLE_FLAG_SUBTITLE]

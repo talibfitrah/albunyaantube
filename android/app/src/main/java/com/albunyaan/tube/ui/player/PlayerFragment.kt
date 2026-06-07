@@ -1582,7 +1582,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      * Arm the proactive MPD TTL watcher for the current synthetic-DASH stream.
      *
      * The synthetic-DASH MPD generator produces manifests whose embedded CDN URLs
-     * expire — `SyntheticDashDataSource.MPD_TTL_MS` is a conservative 15-minute
+     * expire — `SyntheticDashMpdRegistry.MPD_TTL_MS` is a conservative 15-minute
      * lower bound. Without a proactive refresh, ExoPlayer hits a 403 on the next
      * chunk fetch when URLs go stale and the user sees a visible stall while the
      * reactive recovery path (`onPlayerError → handle403OrHttpError`) re-resolves.

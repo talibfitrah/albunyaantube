@@ -390,7 +390,7 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
             appendLine("""  <Period duration="$durationPT">""")
 
             // Video AdaptationSet with correct container mime type
-            appendLine("""    <AdaptationSet mimeType="$videoMimeType" segmentAlignment="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">""")
+            appendLine("""    <AdaptationSet mimeType="${escapeXml(videoMimeType)}" segmentAlignment="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">""")
             for (track in videoTracks) {
                 appendVideoRepresentation(track, durationSeconds)
             }
@@ -399,7 +399,7 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
             // One audio AdaptationSet per (language, role) group
             for ((track, audioMimeType) in audioTracks) {
                 val langAttr = if (track.language != null) """ lang="${escapeXml(track.language)}"""" else ""
-                appendLine("""    <AdaptationSet mimeType="$audioMimeType"$langAttr segmentAlignment="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">""")
+                appendLine("""    <AdaptationSet mimeType="${escapeXml(audioMimeType)}"$langAttr segmentAlignment="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">""")
                 // Emit <Role> only when trackType is ORIGINAL, DUBBED, DUBBED_AUTO, or DESCRIPTIVE.
                 // UNKNOWN and null → omit the element entirely.
                 val roleValue = when (track.trackType) {

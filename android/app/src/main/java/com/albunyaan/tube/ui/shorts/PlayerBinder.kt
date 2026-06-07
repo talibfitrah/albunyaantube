@@ -588,6 +588,12 @@ class PlayerBinder private constructor(
      * (e.g. called before the first successful resolve).
      */
     fun switchAudioTrack(videoId: String, chosen: AudioTrack) {
+        // Staleness gate: the audio-language picker can resolve a result for short A
+        // after the user has already swiped to short B (the picker stores the video id
+        // at open time). Without this guard we'd swap A's media onto the SHARED player
+        // that is now showing B. This method is synchronous up to setMediaSource, so a
+        // single entry check fully closes the race. Mirrors bind()'s generation gate.
+        if (videoId != boundVideoId) return
         val resolved = resolvedStreamsFor(videoId) ?: return
         // Pin the user's language choice so subsequent re-resolves keep the
         // same audio instead of letting the factory re-pick by bitrate.
@@ -627,6 +633,9 @@ class PlayerBinder private constructor(
      * streams entry for [videoId].
      */
     fun switchQuality(videoId: String, capHeightPx: Int) {
+        // Staleness gate (same race as switchAudioTrack): a quality pick for short A
+        // must not swap media onto the shared player once the user has swiped to B.
+        if (videoId != boundVideoId) return
         val resolved = resolvedStreamsFor(videoId) ?: return
         val cap = capHeightPx.takeIf { it > 0 }
         val position = playerOps.getCurrentPosition()

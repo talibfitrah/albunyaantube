@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui.shorts
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.ui.PlayerView
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
@@ -135,7 +136,12 @@ class PlayerBinderTest {
         }
     }
 
-    /** Build a resolved-streams payload whose [buildProgressiveSource] will succeed. */
+    /**
+     * Build a resolved-streams payload whose [buildProgressiveSource] will
+     * succeed. Includes one (video-only) muxed track plus one audio track so
+     * the staleness-gate tests can hand [PlayerBinder.switchAudioTrack] a real
+     * [AudioTrack] without re-resolving.
+     */
     private fun resolved(id: String): ResolvedStreams = ResolvedStreams(
         streamId = id,
         videoTracks = listOf(
@@ -150,8 +156,17 @@ class PlayerBinderTest {
                 isVideoOnly = false
             )
         ),
-        audioTracks = emptyList(),
+        audioTracks = listOf(audioTrack(id)),
         durationSeconds = 30
+    )
+
+    /** A muxed-friendly audio track for [id] (progressive fallback can merge it). */
+    private fun audioTrack(id: String): AudioTrack = AudioTrack(
+        url = "https://example.test/$id-audio.mp4",
+        mimeType = "audio/mp4",
+        bitrate = 128_000,
+        codec = "mp4a.40.2",
+        language = "en"
     )
 
     private fun newBinder(
@@ -413,6 +428,99 @@ class PlayerBinderTest {
         assertFalse(
             "prepare must NOT fire when resolve throws ContentUnavailableException",
             ops.calls.contains("prepare"),
+        )
+    }
+
+    /**
+     * Critical race fix: [PlayerBinder.switchAudioTrack] must reject a switch
+     * for a video that is no longer bound, even when that video still has a
+     * live entry in [PlayerBinder.resolvedStreamsFor]'s cache.
+     *
+     * The audio-language picker captures its video id at open time and can
+     * resolve a selection AFTER the user has swiped to a different short. Both
+     * A and B are resolved here so `resolvedCache["A"]` is non-null — meaning
+     * the existing `resolvedStreamsFor(videoId) ?: return` early-return does
+     * NOT cover this case. Only the `if (videoId != boundVideoId) return`
+     * staleness gate stops A's media from being swapped onto the shared player
+     * that is now showing B. Without that gate, this test would observe a
+     * `setMediaSource` (count + 1) for the stale switch.
+     */
+    @Test
+    fun switchAudioTrack_rejectsStaleSwitchForNonBoundVideo() = runTest(dispatcher) {
+        val ops = RecordingPlayerOps()
+        val attach = RecordingAttach()
+        val repo = TestPlayerRepository()
+        val binder = newBinder(repo, ops, attach)
+
+        val viewA: PlayerView = org.mockito.kotlin.mock()
+        val viewB: PlayerView = org.mockito.kotlin.mock()
+
+        // Bind + resolve A, then bind + resolve B. After this, resolvedCache
+        // holds BOTH A and B, but boundVideoId == "B".
+        val streamsA = resolved("A")
+        binder.bind(viewA, "A")
+        repo.complete("A", streamsA)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        binder.bind(viewB, "B")
+        repo.complete("B", resolved("B"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        // Sanity: A is still cached (so the null-cache early-return does NOT
+        // fire — the staleness gate is the only thing that can reject this).
+        assertTrue("A must still be cached", binder.resolvedStreamsFor("A") != null)
+
+        val mediaSourcesBefore = ops.calls.count { it == "setMediaSource" }
+
+        // Stale switch: pick an audio track from A while B is bound.
+        binder.switchAudioTrack("A", streamsA.audioTracks.first())
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(
+            "Stale switchAudioTrack for a non-bound video must be a no-op",
+            mediaSourcesBefore,
+            ops.calls.count { it == "setMediaSource" },
+        )
+    }
+
+    /**
+     * Parallel to [switchAudioTrack_rejectsStaleSwitchForNonBoundVideo] for
+     * [PlayerBinder.switchQuality]: a quality pick for short A must not swap
+     * media onto the shared player once the user has swiped to B, even though
+     * A remains in the resolved-streams cache. Without the
+     * `if (videoId != boundVideoId) return` gate this would fire a stale
+     * `setMediaSource`.
+     */
+    @Test
+    fun switchQuality_rejectsStaleSwitchForNonBoundVideo() = runTest(dispatcher) {
+        val ops = RecordingPlayerOps()
+        val attach = RecordingAttach()
+        val repo = TestPlayerRepository()
+        val binder = newBinder(repo, ops, attach)
+
+        val viewA: PlayerView = org.mockito.kotlin.mock()
+        val viewB: PlayerView = org.mockito.kotlin.mock()
+
+        binder.bind(viewA, "A")
+        repo.complete("A", resolved("A"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        binder.bind(viewB, "B")
+        repo.complete("B", resolved("B"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue("A must still be cached", binder.resolvedStreamsFor("A") != null)
+
+        val mediaSourcesBefore = ops.calls.count { it == "setMediaSource" }
+
+        // Stale switch: cap quality on A while B is bound.
+        binder.switchQuality("A", 720)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(
+            "Stale switchQuality for a non-bound video must be a no-op",
+            mediaSourcesBefore,
+            ops.calls.count { it == "setMediaSource" },
         )
     }
 

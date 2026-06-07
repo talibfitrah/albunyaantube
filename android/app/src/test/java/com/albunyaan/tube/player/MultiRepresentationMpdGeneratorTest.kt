@@ -431,4 +431,49 @@ class MultiRepresentationMpdGeneratorTest {
             enPos in 0 until arPos
         )
     }
+
+    // =========================================================================
+    // XML-escape — extractor-controlled mimeType cannot inject MPD attributes
+    // =========================================================================
+
+    /**
+     * The video AdaptationSet's `mimeType` attribute derives from
+     * `track.mimeType`, which is extractor-controlled input. Without escaping,
+     * a mimeType containing a `"` would break out of the attribute and inject
+     * arbitrary attributes into the emitted MPD XML.
+     *
+     * `normalizeContainerMimeType` only strips a trailing `;...` and lowercases,
+     * so a value with no semicolon (e.g. `video/mp4" malicious="x`) passes
+     * through verbatim into the attribute value. Both video-only tracks carry
+     * the same malicious mimeType so the container-consistency check still
+     * resolves (otherwise the generator would bail to Failure before emitting).
+     */
+    @Test
+    fun `malicious mimeType is XML-escaped in video AdaptationSet attribute`() {
+        val maliciousMime = """video/mp4" malicious="x"""
+        val resolved = streams(
+            videoTracks = listOf(
+                videoTrack(360, itag = 134).copy(mimeType = maliciousMime),
+                videoTrack(720, itag = 136).copy(mimeType = maliciousMime)
+            ),
+            audioTracks = listOf(audioTrack(itag = 140))
+        )
+
+        val result = generator.generateMpd(resolved)
+
+        assertTrue("Expected Success but got: $result", result is MultiRepresentationMpdGenerator.Result.Success)
+        val xml = (result as MultiRepresentationMpdGenerator.Result.Success).mpdXml
+
+        // The raw injection must NOT appear — that would be an attribute break-out.
+        assertFalse(
+            "Raw injected attribute must not appear unescaped in MPD XML",
+            xml.contains("""mimeType="video/mp4" malicious="x"""")
+        )
+        // The escaped form must appear: each `"` in the value becomes `&quot;`,
+        // and the two enclosing attribute quotes stay intact.
+        assertTrue(
+            "mimeType value's quotes must be XML-escaped to &quot;",
+            xml.contains("mimeType=\"video/mp4&quot; malicious=&quot;x\"")
+        )
+    }
 }
