@@ -26,16 +26,23 @@ class SegmentDataSourceFactoryProvider @Inject constructor(
     private val cronetDataSourceFactory: CronetDataSourceFactory,
     private val simpleCache: SimpleCache,
 ) {
-    fun forStreams(streams: ResolvedStreams): DataSource.Factory = forClient(streams.extractionClient)
+    fun forStreams(streams: ResolvedStreams): DataSource.Factory =
+        // Live: skip the segment cache to avoid serving a stale manifest window (matches the
+        // pre-convergence factory's live-uncached behavior). VOD: cache for fast seek/replay.
+        forClient(streams.extractionClient, cache = !streams.isLive)
 
-    fun forClient(client: ExtractionClient): DataSource.Factory {
+    fun forClient(client: ExtractionClient, cache: Boolean = true): DataSource.Factory {
         val http = if (client.usesIosUserAgent()) cronetDataSourceFactory.createForIosUA()
                    else cronetDataSourceFactory.createForAndroidUA()
-        val cached = CacheDataSource.Factory()
-            .setCache(simpleCache)
-            .setUpstreamDataSourceFactory(http)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        // DefaultDataSource routes data: (inline MPD) to DataSchemeDataSource and http(s): to `cached`.
-        return DefaultDataSource.Factory(context, cached)
+        val upstream: DataSource.Factory = if (cache) {
+            CacheDataSource.Factory()
+                .setCache(simpleCache)
+                .setUpstreamDataSourceFactory(http)
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        } else {
+            http
+        }
+        // DefaultDataSource routes data: (inline MPD) to DataSchemeDataSource and http(s): to `upstream`.
+        return DefaultDataSource.Factory(context, upstream)
     }
 }

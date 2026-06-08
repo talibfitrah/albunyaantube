@@ -14,10 +14,11 @@ data class MediaSourceResult(
     /** Which adaptive type was used, if any */
     val adaptiveType: AdaptiveType = AdaptiveType.NONE,
     /**
-     * The video track actually selected by the factory for progressive/synthetic DASH sources.
-     * Used by proactive downshift to know the true "current" quality (may differ from selection.video
-     * when factory applies cold-start quality selection in AUTO mode).
-     * Null for adaptive HLS/DASH (ABR handles quality) or audio-only mode.
+     * The video track actually served for a progressive source — matched from the
+     * [DashSourceBuilder] progressive decision's video URL. Used by cache-hit detection and
+     * proactive downshift to know the true "current" quality (may differ from the requested
+     * selection.video when adaptive was unavailable and a single progressive track was served).
+     * Null for adaptive DASH/HLS (ABR handles quality) or audio-only mode.
      */
     val selectedVideoTrack: VideoTrack? = null
 ) {

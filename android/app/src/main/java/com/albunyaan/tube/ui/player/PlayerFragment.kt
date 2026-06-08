@@ -2919,12 +2919,18 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             } else null
 
             when {
-                progressiveBuilt != null -> MediaSourceResult(
-                    source = progressiveBuilt.source,
-                    isAdaptive = false,
-                    actualSourceUrl = (progressiveBuilt.decision as? SourceDecision.Progressive)?.videoUrl,
-                    adaptiveType = MediaSourceResult.AdaptiveType.NONE
-                )
+                progressiveBuilt != null -> {
+                    val progVideoUrl = (progressiveBuilt.decision as? SourceDecision.Progressive)?.videoUrl
+                    MediaSourceResult(
+                        source = progressiveBuilt.source,
+                        isAdaptive = false,
+                        actualSourceUrl = progVideoUrl,
+                        adaptiveType = MediaSourceResult.AdaptiveType.NONE,
+                        // Match the served track so cache-hit detection compares served-vs-served
+                        // (not served-vs-requested), avoiding an extra re-prepare cycle.
+                        selectedVideoTrack = streamState.selection.resolved.videoTracks.firstOrNull { it.url == progVideoUrl }
+                    )
+                }
 
                 !state.audioOnly && !fallbackBuilderThrew -> {
                     // build() returned null without throwing => decide() found NO sustainable source
@@ -2957,7 +2963,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         source = source,
                         isAdaptive = false,
                         actualSourceUrl = url,
-                        adaptiveType = MediaSourceResult.AdaptiveType.NONE
+                        adaptiveType = MediaSourceResult.AdaptiveType.NONE,
+                        selectedVideoTrack = streamState.selection.resolved.videoTracks.firstOrNull { it.url == url }
                     )
                 }
             }
