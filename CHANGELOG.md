@@ -5,6 +5,29 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.28] - 2026-06-08
+
+### Android
+
+- **Player converged onto one lean DASH path.** Replaced the multi-strategy
+  media-source factory plus the recovery / degradation / buffer-health managers
+  (~6000 lines) with a single `DashSourceBuilder` → multi-representation DASH MPD
+  path (LibreTube style). Quality switching is now a track-selector cap, not a
+  media-source rebuild.
+- **Fixed the residual 403 loop on VR-unplayable / GVS-gated videos** (e.g. some
+  kids-channel episodes). These resolve via the NewPipe fallback, whose adaptive
+  segments 403 after ~60s, so the player now serves the always-present muxed 360p
+  progressive stream directly (plays immediately, ad-free) instead of a 60s
+  false-start + 403 recovery loop. The GVS poToken is bound to the videoId.
+  ANDROID_VR (the common path) keeps its full HD/4K adaptive ladder.
+- **Honest quality menu:** the picker now offers only qualities that actually play
+  (the fallback path shows the single served track instead of a phantom ladder).
+- **Steadier playback:** the stall watchdog no longer re-resolves a slow-but-working
+  buffer — only a genuinely stuck one — so slow networks aren't turned into failures.
+- Hardened by a full review pass (code-reviewer, security, codex, gstack /review,
+  cubic): fixed a silent-video fallback, a re-prepare loop, live-stream segment
+  caching, and several player/Shorts concurrency guards.
+
 ## [1.0.0-beta.27] - 2026-06-06
 
 ### Android

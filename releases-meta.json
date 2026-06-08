@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.28": {
+    "en": "More videos that still wouldn't play now play ad-free; the quality menu shows only working options; steadier playback.",
+    "ar": "مزيد من الفيديوهات التي لم تعمل أصبحت تعمل الآن بدون إعلانات؛ قائمة الجودة تعرض الخيارات العاملة فقط؛ تشغيل أكثر ثباتًا.",
+    "nl": "Meer video's die niet speelden spelen nu advertentievrij; het kwaliteitsmenu toont alleen werkende opties; stabieler afspelen."
+  },
   "1.0.0-beta.27": {
     "en": "Fixes videos stuck on \"Resolving…\" that never played — now uses a YouTube stream source that isn't blocked. Works on older Android too.",
     "ar": "إصلاح الفيديوهات العالقة على \"حل البث\" التي لا تعمل — يستخدم الآن مصدر بثّ من يوتيوب غير محجوب. يعمل على أندرويد الأقدم أيضًا.",
