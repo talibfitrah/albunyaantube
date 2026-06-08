@@ -2103,7 +2103,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Rate-limited: don't stop player, show toast and let current playback continue.
             // This prevents the player from being stuck in stopped state when refresh is blocked.
             android.util.Log.w("PlayerFragment", "Stream refresh blocked by rate limiter, continuing playback")
-            surfaceRecoveryExhausted()
+            // Only surface the full-screen manual-retry overlay if playback is NOT actually
+            // progressing — otherwise it would cover working video (the "let playback continue"
+            // case cubic flagged). A toast is enough when playback continues.
+            if (player?.isPlaying != true) {
+                surfaceRecoveryExhausted()
+            }
             context?.let { ctx ->
                 Toast.makeText(ctx, R.string.player_refresh_rate_limited, Toast.LENGTH_SHORT).show()
             }
@@ -2147,21 +2152,32 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private fun scheduleStallWatchdog() {
         val streamId = viewModel.state.value.currentItem?.streamId ?: return
         // Only arm for mid-playback stalls: a stream that hasn't reached READY yet is still in its
-        // (possibly slow) initial cold-start buffer, and re-resolving that turns a slow-but-working
-        // load into a false failure. playbackStartedStreamId is set on the first READY.
+        // (possibly slow) initial cold-start buffer. playbackStartedStreamId is set on the first READY.
         if (playbackStartedStreamId != streamId) return
+        val activePlayer = player ?: return
         // Re-arm fresh on each BUFFERING transition for the current stream.
         stallWatchdogRunnable?.let { stallWatchdogHandler.removeCallbacks(it) }
         stallWatchdogStreamId = streamId
+        val bufferedAtArm = activePlayer.bufferedPosition
         val thresholdMs = if (currentStreamIsLive) STALL_WATCHDOG_LIVE_MS else STALL_WATCHDOG_VOD_MS
         val runnable = Runnable {
-            val activePlayer = player ?: return@Runnable
+            val p = player ?: return@Runnable
             // Only act if still buffering and on the same stream we armed for.
-            if (activePlayer.playbackState != Player.STATE_BUFFERING) return@Runnable
+            if (p.playbackState != Player.STATE_BUFFERING) return@Runnable
             if (viewModel.state.value.currentItem?.streamId != stallWatchdogStreamId) return@Runnable
+            // Distinguish a STUCK buffer (no progress -> likely expired URLs / dead segment, where a
+            // re-resolve helps) from a SLOW-but-working one (buffer advancing on a poor network, where
+            // re-resolving would only discard the partial buffer and re-fetch over the same slow link
+            // -- a re-resolve loop that turns a playable video into a hard failure). Only re-resolve
+            // when genuinely stuck; otherwise re-arm and keep buffering through.
+            if (p.bufferedPosition > bufferedAtArm) {
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Stall watchdog: buffer advancing (slow network), re-arming instead of re-resolving")
+                scheduleStallWatchdog()
+                return@Runnable
+            }
             android.util.Log.w(
                 "PlayerFragment",
-                "Buffering stall watchdog fired after ${thresholdMs}ms — re-resolving"
+                "Buffering stall watchdog fired after ${thresholdMs}ms (buffer stuck) — re-resolving"
             )
             requestStreamRefreshAndResume("buffering stall")
         }
