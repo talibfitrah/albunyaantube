@@ -222,7 +222,7 @@ class SyntheticDashMpdRegistry @Inject constructor() {
     /**
      * Unregister both the video MPD and the companion audio MPD for a videoId.
      * Use this at all cleanup sites instead of [unregister] to avoid leaking the
-     * "${videoId}_audio" entry that [tryCreateSyntheticDashSource] registers.
+     * "${videoId}_audio" companion entry created during audio-MPD registration.
      */
     fun unregisterBoth(videoId: String) {
         unregister(videoId)

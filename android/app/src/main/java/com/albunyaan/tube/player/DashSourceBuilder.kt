@@ -13,6 +13,7 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.source.SingleSampleMediaSource
+import com.albunyaan.tube.data.extractor.ExtractionClient
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import javax.inject.Inject
@@ -98,11 +99,42 @@ class DashSourceBuilder @Inject constructor(
             }
         }
 
-        // VOD — try multi-rep MPD first (unless forced to progressive).
-        if (!forceProgressive) {
-            val mpdResult = mpdGenerator.generateMpd(resolved)
-            if (mpdResult is MultiRepresentationMpdGenerator.Result.Success) {
-                return SourceDecision.LocalDash(mpdResult.mpdDataUri)
+        // VOD — try multi-rep adaptive MPD first, UNLESS forced to progressive or the streams came
+        // from the NewPipe poToken fallback. The ANDROID_VR primary client's adaptive segments
+        // sustain full playback; the fallback clients' adaptive segments do NOT. YouTube only honors
+        // our WebView (web-context) poToken for the *initial* range of iOS/android-client GVS
+        // segments — sustained adaptive streaming needs native client attestation we can't produce on
+        // Android — so an adaptive build on the fallback path plays ~60s then 403s on every later
+        // segment (verified on-device + via yt-dlp for One4kids "Zaky's Learning Club", and even for a
+        // normal control video). The muxed itag-18/22 progressive stream, always present via the
+        // ANDROID client NewPipe fetches, DOES sustain a full ad-free download. So for fallback
+        // resolves skip the doomed adaptive manifest and serve progressive directly (360p) — it plays
+        // immediately instead of a 60s false-start + 403 recovery loop. ANDROID_VR (the common path)
+        // is unaffected and keeps its full HD/4K adaptive ladder.
+        val adaptiveCanSustain = resolved.extractionClient == ExtractionClient.ANDROID_VR
+        if (!forceProgressive && adaptiveCanSustain) {
+            when (val mpdResult = mpdGenerator.generateMpd(resolved)) {
+                is MultiRepresentationMpdGenerator.Result.Success ->
+                    return SourceDecision.LocalDash(mpdResult.mpdDataUri)
+                is MultiRepresentationMpdGenerator.Result.Failure -> {
+                    // Diagnostic: surface WHY the multi-rep MPD couldn't be built (and the track
+                    // shape behind it) so progressive-fallback regressions are debuggable from logs.
+                    val voRanged = resolved.videoTracks.count {
+                        it.isVideoOnly && it.syntheticDashMetadata?.hasValidRanges() == true
+                    }
+                    val aMp4 = resolved.audioTracks.count {
+                        (it.mimeType ?: "").startsWith("audio/mp4") && it.syntheticDashMetadata?.hasValidRanges() == true
+                    }
+                    val aWebm = resolved.audioTracks.count {
+                        (it.mimeType ?: "").startsWith("audio/webm") && it.syntheticDashMetadata?.hasValidRanges() == true
+                    }
+                    Log.d(
+                        TAG,
+                        "MPD gen failed reason=${mpdResult.reason} videoOnlyRanged=$voRanged " +
+                            "audioMp4Ranged=$aMp4 audioWebmRanged=$aWebm videoTotal=${resolved.videoTracks.size} " +
+                            "audioTotal=${resolved.audioTracks.size} client=${resolved.extractionClient}"
+                    )
+                }
             }
         }
 

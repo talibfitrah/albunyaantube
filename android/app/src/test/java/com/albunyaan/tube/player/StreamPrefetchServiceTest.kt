@@ -52,13 +52,15 @@ class StreamPrefetchServiceTest {
     }
 
     @Test
-    fun `checkEligibility returns false when insufficient video tracks`() {
+    fun `checkEligibility returns true for a single video track (no min-rep gate)`() {
+        // Include-everything: one valid video-only track + valid audio is enough. LibreTube has no
+        // minimum-representation gate; the old code required 2+ and failed to 360p otherwise.
         val resolved = createResolvedStreamsWithOneVideoTrack()
 
         val (eligible, reason) = mpdGenerator.checkEligibility(resolved)
 
-        assertFalse("Should not be eligible with only 1 video track", eligible)
-        assertTrue("Reason should indicate insufficient tracks", reason.startsWith("INSUFFICIENT_VIDEO_TRACKS"))
+        assertTrue("A single valid video track should be eligible", eligible)
+        assertTrue("Reason should indicate eligible", reason.startsWith("ELIGIBLE"))
     }
 
     @Test
@@ -78,11 +80,8 @@ class StreamPrefetchServiceTest {
         val (eligible, reason) = mpdGenerator.checkEligibility(resolved)
 
         assertFalse("Should not be eligible without DASH metadata", eligible)
-        // Tracks without DASH metadata are filtered out, resulting in 0 eligible tracks
-        assertTrue(
-            "Reason should indicate insufficient tracks, got: $reason",
-            reason.startsWith("INSUFFICIENT_VIDEO_TRACKS") || reason.startsWith("INSUFFICIENT_SAME_CODEC")
-        )
+        // Tracks without DASH metadata are filtered out, leaving 0 eligible video tracks.
+        assertEquals("NO_ELIGIBLE_VIDEO", reason)
     }
 
     // --- MPD Generation Tests ---
@@ -113,7 +112,8 @@ class StreamPrefetchServiceTest {
 
     @Test
     fun `generateMpd returns failure for ineligible streams`() {
-        val resolved = createResolvedStreamsWithOneVideoTrack()
+        // Genuinely ineligible now means zero usable video (no DASH metadata), not "< 2 tracks".
+        val resolved = createResolvedStreamsWithoutDashMetadata()
 
         val result = mpdGenerator.generateMpd(resolved)
 

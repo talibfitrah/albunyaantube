@@ -253,11 +253,14 @@ class MultiRepresentationMpdGeneratorTest {
     }
 
     // =========================================================================
-    // Test 4 — Ineligibility preserved: 1 video-only track → Failure
+    // Test 4 — Include-everything: a SINGLE video-only track now builds a valid
+    // one-Representation MPD. LibreTube has no minimum-representation gate, so a
+    // 1-rep ladder is valid (ExoPlayer simply has one quality to play). The old
+    // MIN_REPRESENTATIONS=2 gate failed the whole manifest → 360p fallback.
     // =========================================================================
 
     @Test
-    fun `single video track returns Failure (unchanged eligibility behavior)`() {
+    fun `single video track builds a one-representation MPD (no min-rep gate)`() {
         val resolved = streams(
             videoTracks = listOf(
                 videoTrack(720, itag = 136)
@@ -267,7 +270,10 @@ class MultiRepresentationMpdGeneratorTest {
 
         val result = generator.generateMpd(resolved)
 
-        assertTrue("Expected Failure for single video track but got: $result", result is MultiRepresentationMpdGenerator.Result.Failure)
+        assertTrue("Expected Success but got: $result", result is MultiRepresentationMpdGenerator.Result.Success)
+        val xml = (result as MultiRepresentationMpdGenerator.Result.Success).mpdXml
+        assertEquals("one video AdaptationSet", 1, xml.countOccurrences("""<AdaptationSet mimeType="video/mp4""""))
+        assertEquals("exactly one video Representation", 1, xml.countOccurrences("""<Representation id="video_"""))
     }
 
     // =========================================================================
@@ -362,7 +368,9 @@ class MultiRepresentationMpdGeneratorTest {
     }
 
     // =========================================================================
-    // m2 — WebM video + MP4 audio → NO_COMPATIBLE_AUDIO
+    // m2 — WebM video + only MP4 audio → Success with MIXED-container audio.
+    // DASH allows a different-container audio AdaptationSet (LibreTube does exactly
+    // this); rejecting it used to cap such videos at progressive 360p.
     // =========================================================================
 
     /** video/webm VP9 video-only track with valid ranges. */
@@ -380,7 +388,7 @@ class MultiRepresentationMpdGeneratorTest {
     )
 
     @Test
-    fun `webm video with mp4 audio returns Failure NO_COMPATIBLE_AUDIO`() {
+    fun `webm video with only mp4 audio builds Success with mixed-container audio`() {
         val resolved = streams(
             videoTracks = listOf(
                 webmVideoTrack(360, itag = 243),
@@ -393,14 +401,87 @@ class MultiRepresentationMpdGeneratorTest {
 
         val result = generator.generateMpd(resolved)
 
-        assertTrue(
-            "Expected Failure but got: $result",
-            result is MultiRepresentationMpdGenerator.Result.Failure
+        assertTrue("Expected Success but got: $result", result is MultiRepresentationMpdGenerator.Result.Success)
+        val xml = (result as MultiRepresentationMpdGenerator.Result.Success).mpdXml
+        // VP9/webm video ladder with the mp4/AAC audio AdaptationSet (no webm audio existed).
+        assertTrue("video AdaptationSet must be webm", xml.contains("""<AdaptationSet mimeType="video/webm""""))
+        assertTrue("audio AdaptationSet must be mp4 (mixed with webm video)", xml.contains("""<AdaptationSet mimeType="audio/mp4""""))
+        assertTrue("manifest must use the DASH full profile for mixed containers", xml.contains("urn:mpeg:dash:profile:full:2011"))
+    }
+
+    /** audio/webm Opus track with valid ranges. */
+    private fun opusAudioTrack(
+        itag: Int,
+        bitrate: Int = 128_000,
+        language: String? = null,
+        trackType: AudioTrackKind? = null
+    ) = AudioTrack(
+        url = "https://example.com/audio$itag",
+        mimeType = "audio/webm",
+        bitrate = bitrate,
+        codec = "opus",
+        syntheticDashMetadata = validMeta(itag, "opus"),
+        language = language,
+        trackType = trackType
+    )
+
+    // =========================================================================
+    // Regression (fix/PLAYER-lean-dash-convergence): a VP9/webm video ladder
+    // MUST build when Opus (webm) audio is present. AndroidVrStreamResolver used
+    // to drop all non-mp4 audio, so VP9-topped videos (the common 1440p/2160p
+    // case) hit NO_COMPATIBLE_AUDIO → progressive 360p fallback + a re-prepare
+    // loop on high-res selection. The resolver now keeps webm audio; this test
+    // pins the generator's webm-ladder path the fix depends on.
+    // =========================================================================
+
+    @Test
+    fun `webm VP9 video with opus audio builds Success with webm AdaptationSets`() {
+        val resolved = streams(
+            videoTracks = listOf(
+                webmVideoTrack(1080, itag = 248),
+                webmVideoTrack(2160, itag = 313)
+            ),
+            audioTracks = listOf(
+                opusAudioTrack(itag = 251, language = "ar", trackType = AudioTrackKind.ORIGINAL)
+            )
         )
+
+        val result = generator.generateMpd(resolved)
+
+        assertTrue("Expected Success but got: $result", result is MultiRepresentationMpdGenerator.Result.Success)
+        val xml = (result as MultiRepresentationMpdGenerator.Result.Success).mpdXml
+        assertTrue("video AdaptationSet must be webm", xml.contains("""<AdaptationSet mimeType="video/webm""""))
+        assertTrue("audio AdaptationSet must be webm", xml.contains("""<AdaptationSet mimeType="audio/webm""""))
+        assertTrue("audio codec must be opus", xml.contains("""codecs="opus""""))
+    }
+
+    @Test
+    fun `VP9 video with both mp4 and webm audio keeps BOTH audio AdaptationSets`() {
+        // Include-everything (LibreTube parity): video and audio are independent AdaptationSets,
+        // so a VP9/webm video ladder keeps BOTH the Opus/webm AND the AAC/mp4 audio — ExoPlayer
+        // selects. The old code container-matched and DROPPED the AAC, which LibreTube never does.
+        val resolved = streams(
+            videoTracks = listOf(
+                webmVideoTrack(1080, itag = 248),
+                webmVideoTrack(2160, itag = 313)
+            ),
+            audioTracks = listOf(
+                audioTrack(itag = 140, language = "ar", trackType = AudioTrackKind.ORIGINAL),     // AAC / mp4
+                opusAudioTrack(itag = 251, language = "ar", trackType = AudioTrackKind.ORIGINAL)   // Opus / webm
+            )
+        )
+
+        val result = generator.generateMpd(resolved)
+
+        assertTrue("Expected Success but got: $result", result is MultiRepresentationMpdGenerator.Result.Success)
+        val xml = (result as MultiRepresentationMpdGenerator.Result.Success).mpdXml
+        assertTrue("video AdaptationSet must be webm", xml.contains("""<AdaptationSet mimeType="video/webm""""))
+        assertTrue("the webm/Opus audio must be present", xml.contains("""<AdaptationSet mimeType="audio/webm""""))
+        assertTrue("the mp4/AAC audio must ALSO be present (include-everything)", xml.contains("""<AdaptationSet mimeType="audio/mp4""""))
         assertEquals(
-            "Failure reason must be NO_COMPATIBLE_AUDIO",
-            "NO_COMPATIBLE_AUDIO",
-            (result as MultiRepresentationMpdGenerator.Result.Failure).reason
+            "both audio AdaptationSets survive (no container matching)",
+            2,
+            xml.countOccurrences("""<AdaptationSet mimeType="audio/""")
         )
     }
 
@@ -513,5 +594,66 @@ class MultiRepresentationMpdGeneratorTest {
             "mimeType value's quotes must be XML-escaped to &quot;",
             xml.contains("mimeType=\"video/mp4&quot; malicious=&quot;x\"")
         )
+    }
+
+    // =========================================================================
+    // Include-everything coverage: multiple containers and multiple codecs are
+    // ALL emitted (the central new capability — no family/container narrowing).
+    // =========================================================================
+
+    /** video/mp4 AV1 video-only track with valid ranges. */
+    private fun av1Mp4VideoTrack(height: Int, itag: Int, bitrate: Int = height * 4000) = VideoTrack(
+        url = "https://example.com/video$itag",
+        mimeType = "video/mp4",
+        width = height * 16 / 9,
+        height = height,
+        bitrate = bitrate,
+        qualityLabel = "${height}p",
+        fps = 30,
+        isVideoOnly = true,
+        syntheticDashMetadata = validMeta(itag, "av01.0.05M.08"),
+        codec = "av01.0.05M.08"
+    )
+
+    @Test
+    fun `mixed mp4 and webm video produces two video AdaptationSets`() {
+        val resolved = streams(
+            videoTracks = listOf(
+                videoTrack(720, itag = 136),        // avc1 / mp4
+                videoTrack(1080, itag = 137),       // avc1 / mp4
+                webmVideoTrack(1080, itag = 248),   // vp9 / webm
+                webmVideoTrack(2160, itag = 313)    // vp9 / webm
+            ),
+            audioTracks = listOf(audioTrack(itag = 140))
+        )
+
+        val result = generator.generateMpd(resolved)
+
+        assertTrue("Expected Success but got: $result", result is MultiRepresentationMpdGenerator.Result.Success)
+        val xml = (result as MultiRepresentationMpdGenerator.Result.Success).mpdXml
+        assertEquals("one video/mp4 AdaptationSet", 1, xml.countOccurrences("""<AdaptationSet mimeType="video/mp4""""))
+        assertEquals("one video/webm AdaptationSet", 1, xml.countOccurrences("""<AdaptationSet mimeType="video/webm""""))
+        // All four video reps present — none dropped by family/container narrowing.
+        assertEquals("four video Representations", 4, xml.countOccurrences("""<Representation id="video_"""))
+    }
+
+    @Test
+    fun `avc1 and av01 in mp4 share one AdaptationSet with both codecs`() {
+        val resolved = streams(
+            videoTracks = listOf(
+                videoTrack(720, itag = 136),          // avc1 / mp4
+                av1Mp4VideoTrack(1080, itag = 399)    // av01 / mp4
+            ),
+            audioTracks = listOf(audioTrack(itag = 140))
+        )
+
+        val result = generator.generateMpd(resolved)
+
+        assertTrue("Expected Success but got: $result", result is MultiRepresentationMpdGenerator.Result.Success)
+        val xml = (result as MultiRepresentationMpdGenerator.Result.Success).mpdXml
+        // One mp4 video AdaptationSet holding BOTH codecs (ExoPlayer adapts across them).
+        assertEquals("one video/mp4 AdaptationSet", 1, xml.countOccurrences("""<AdaptationSet mimeType="video/mp4""""))
+        assertTrue("avc1 codec present", xml.contains("""codecs="avc1.64001f""""))
+        assertTrue("av01 codec present", xml.contains("""codecs="av01.0.05M.08""""))
     }
 }

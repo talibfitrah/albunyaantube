@@ -191,7 +191,7 @@ class AdaptiveBufferPolicy @Inject constructor(
      * Get the buffer configuration appropriate for this device.
      * Returns a cached configuration computed once based on device capabilities.
      */
-    fun getBufferConfig(): BufferConfig = cachedBufferConfig
+    private fun getBufferConfig(): BufferConfig = cachedBufferConfig
 
     /**
      * Build a DefaultLoadControl with adaptive buffer configuration.
@@ -209,23 +209,5 @@ class AdaptiveBufferPolicy @Inject constructor(
             .setBackBuffer(config.backBufferMs, true)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
-    }
-
-    /**
-     * Get diagnostic info about buffer policy.
-     */
-    fun getDiagnostics(): Map<String, Any> {
-        val config = getBufferConfig()
-        return mapOf(
-            "memoryClass" to memoryClass,
-            "isLowRamDevice" to isLowRamDevice,
-            "isTvOrSetTopBox" to isTvOrSetTopBox,
-            "profile" to config.profile.name,
-            "minBufferMs" to config.minBufferMs,
-            "maxBufferMs" to config.maxBufferMs,
-            "bufferForPlaybackMs" to config.bufferForPlaybackMs,
-            "bufferForPlaybackAfterRebufferMs" to config.bufferForPlaybackAfterRebufferMs,
-            "backBufferMs" to config.backBufferMs
-        )
     }
 }

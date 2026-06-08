@@ -135,13 +135,25 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
         // Any failure (incl. a renderer kill) propagates to poTokenOrNull(), which recreates+retries.
         val playerPot = runBlocking { generator.generatePoToken(videoId) }
 
+        // GVS (streaming-data) poToken binding. YouTube's `html5_generate_content_po_token`
+        // experiment — active on a subset of videos (e.g. One4kids / "Zaky's Learning Club") —
+        // requires the GVS `&pot=` token bound to the VIDEO ID, not the visitorData. Those videos
+        // are also ANDROID_VR-UNPLAYABLE, so they fall through to this NewPipe poToken path; a
+        // visitorData-bound GVS token then makes every segment fetch 403 (verified the video plays
+        // with a video-id-bound GVS token via yt-dlp + bgutil). The video-id binding is exactly the
+        // player token's binding, so reuse [playerPot] for the streaming slot. This only affects the
+        // fallback path (the ANDROID_VR primary uses no poToken at all). visitorData is still passed
+        // as arg 1 for the session (X-Goog-Visitor-Id) header.
+        val streamingDataPot = playerPot
+
         Log.i(
             TAG,
             "poToken minted for $videoId " +
-                "(visitorData=${visitorData.length}, player=${playerPot.length}, streaming=${streamingPot.length})"
+                "(visitorData=${visitorData.length}, player=${playerPot.length}, " +
+                "streaming=${streamingDataPot.length}, gvsBinding=videoId; warmStreaming=${streamingPot.length})"
         )
 
-        return PoTokenResult(visitorData, playerPot, streamingPot)
+        return PoTokenResult(visitorData, playerPot, streamingDataPot)
     }
 
     /**
@@ -182,29 +194,6 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
 
             return Triple(poTokenGenerator!!, poTokenVisitorData!!, poTokenStreamingPot!!)
         }
-    }
-
-    /**
-     * Eagerly create the generator and mint the (video-independent) streaming token at app startup,
-     * while memory is calm — before ExoPlayer/Cronet start and the Android <=28 WebView-renderer-kill
-     * window opens. The live generator persists in this singleton, so the per-video token then mints
-     * in milliseconds on the already-warm WebView at playback time. Idempotent; failures are
-     * swallowed (the playback path retries). Must run off the main thread.
-     */
-    fun prewarm() {
-        if (!webViewSupported || webViewBadImpl) {
-            Log.w(TAG, "poToken prewarm skipped (supported=$webViewSupported, bad=$webViewBadImpl)")
-            return
-        }
-        synchronized(lock) {
-            if (poTokenGenerator != null && !poTokenGenerator!!.isExpired()) {
-                return
-            }
-        }
-        Log.i(TAG, "poToken prewarm starting (mint streaming token at startup)")
-        runCatching { ensureWarmGenerator(forceRecreate = false) }
-            .onSuccess { Log.i(TAG, "poToken prewarm OK — streaming token ready, WebView warm") }
-            .onFailure { Log.e(TAG, "poToken prewarm failed (will retry at playback)", it) }
     }
 
     private fun supportsWebView(): Boolean = try {

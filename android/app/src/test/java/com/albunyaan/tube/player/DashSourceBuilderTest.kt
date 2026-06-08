@@ -3,6 +3,7 @@ package com.albunyaan.tube.player
 import androidx.media3.common.MimeTypes
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.AudioTrackKind
+import com.albunyaan.tube.data.extractor.ExtractionClient
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.SyntheticDashMetadata
@@ -84,6 +85,7 @@ class DashSourceBuilderTest {
         isLive: Boolean = false,
         hlsUrl: String? = null,
         dashUrl: String? = null,
+        extractionClient: ExtractionClient = ExtractionClient.ANDROID_VR,
     ) = ResolvedStreams(
         streamId = "test-stream",
         videoTracks = videoTracks,
@@ -93,6 +95,7 @@ class DashSourceBuilderTest {
         isLive = isLive,
         hlsUrl = hlsUrl,
         dashUrl = dashUrl,
+        extractionClient = extractionClient,
     )
 
     @Before
@@ -130,14 +133,16 @@ class DashSourceBuilderTest {
     }
 
     @Test
-    fun `VOD MPD ineligible 1 video-only + muxed track → Progressive with muxed url and no audio url`() {
+    fun `VOD MPD ineligible (no audio) + muxed track → Progressive with muxed url and no audio url`() {
+        // MPD now fails only for a genuine reason (here: no audio with ranges). When it does, the
+        // progressive fallback still prefers the muxed track. (1 video-only is no longer "too few".)
         val muxed = muxedTrack(height = 360, itag = 18, url = "https://example.com/muxed18")
         val resolved = streams(
             videoTracks = listOf(
-                videoOnlyTrack(720, itag = 136),  // only 1 video-only → MPD ineligible
+                videoOnlyTrack(720, itag = 136),
                 muxed,
             ),
-            audioTracks = listOf(audioTrack(itag = 140))
+            audioTracks = emptyList()  // no audio → MPD ineligible → progressive
         )
 
         val decision = builder.decide(resolved)
@@ -149,20 +154,24 @@ class DashSourceBuilderTest {
     }
 
     @Test
-    fun `VOD MPD ineligible no muxed 1 video-only + 1 audio → Progressive with both urls set`() {
+    fun `VOD 1 video-only + 1 audio → LocalDash adaptive (no min-rep gate)`() {
+        // Behavior change (the fix): a single video-only track + audio is a valid 1-rep DASH ladder
+        // (LibreTube parity), so we build LocalDash instead of collapsing to progressive 360p.
         val video = videoOnlyTrack(720, itag = 136)
         val audio = audioTrack(itag = 140)
         val resolved = streams(
-            videoTracks = listOf(video),  // only 1 video-only → MPD ineligible
+            videoTracks = listOf(video),
             audioTracks = listOf(audio)
         )
 
         val decision = builder.decide(resolved)
 
-        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
-        val prog = decision as SourceDecision.Progressive
-        assertEquals("videoUrl must match video-only track", video.url, prog.videoUrl)
-        assertEquals("audioUrl must match audio track", audio.url, prog.audioUrl)
+        assertTrue("Expected LocalDash but got: $decision", decision is SourceDecision.LocalDash)
+        val localDash = decision as SourceDecision.LocalDash
+        assertTrue(
+            "dataUri must start with 'data:application/dash+xml;base64,'",
+            localDash.dataUri.startsWith("data:application/dash+xml;base64,")
+        )
     }
 
     @Test
@@ -313,6 +322,63 @@ class DashSourceBuilderTest {
             prog.videoUrl
         )
         assertNull("Muxed track needs no separate audio", prog.audioUrl)
+    }
+
+    // =========================================================================
+    // decide() — extractionClient gate (adaptive only sustains on ANDROID_VR)
+    // =========================================================================
+    //
+    // The NewPipe poToken fallback clients (iOS / android) mint GVS segment URLs whose adaptive
+    // ranges YouTube only honors for the *initial* ~60s — later segments 403 (verified on-device +
+    // yt-dlp for One4kids "Zaky's Learning Club" and a control video). Only ANDROID_VR's adaptive
+    // segments sustain. So a fallback resolve must SKIP the (doomed) adaptive MPD and serve the
+    // always-present muxed itag-18 progressive stream directly — even when the tracks would
+    // otherwise be LocalDash-eligible. ANDROID_VR keeps its full HD/4K adaptive ladder.
+
+    /** The Ep3 fallback shape: MPD-eligible video-only tracks + muxed itag 18 + audio. */
+    private fun fallbackEligibleStreams(extractionClient: ExtractionClient) = streams(
+        videoTracks = listOf(
+            videoOnlyTrack(360, itag = 134),
+            videoOnlyTrack(720, itag = 136),
+            videoOnlyTrack(1080, itag = 137),
+            muxedTrack(height = 360, itag = 18, url = "https://example.com/muxed18"),
+        ),
+        audioTracks = listOf(audioTrack(itag = 140)),
+        extractionClient = extractionClient,
+    )
+
+    @Test
+    fun `NEWPIPE_IOS fallback + LocalDash-eligible tracks → Progressive muxed 360p (adaptive skipped)`() {
+        val decision = builder.decide(fallbackEligibleStreams(ExtractionClient.NEWPIPE_IOS))
+
+        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
+        val prog = decision as SourceDecision.Progressive
+        assertEquals(
+            "Fallback must serve the sustaining muxed itag-18 stream, not the doomed adaptive ladder",
+            "https://example.com/muxed18",
+            prog.videoUrl,
+        )
+        assertNull("Muxed track carries its own audio — no separate audio url", prog.audioUrl)
+    }
+
+    @Test
+    fun `NEWPIPE_ANDROID fallback + LocalDash-eligible tracks → Progressive (adaptive skipped)`() {
+        // The gate is `== ANDROID_VR`, so the android fallback client is treated like iOS here.
+        val decision = builder.decide(fallbackEligibleStreams(ExtractionClient.NEWPIPE_ANDROID))
+
+        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
+        assertEquals(
+            "https://example.com/muxed18",
+            (decision as SourceDecision.Progressive).videoUrl,
+        )
+    }
+
+    @Test
+    fun `same eligible fixture on ANDROID_VR → LocalDash (proves the client is the only difference)`() {
+        // Contrast guard: identical tracks, only extractionClient differs. ANDROID_VR keeps adaptive.
+        val decision = builder.decide(fallbackEligibleStreams(ExtractionClient.ANDROID_VR))
+
+        assertTrue("ANDROID_VR must keep the adaptive MPD but got: $decision", decision is SourceDecision.LocalDash)
     }
 
     // =========================================================================

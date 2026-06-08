@@ -468,9 +468,16 @@ class NewPipeExtractorClient(
                     android.util.Log.d("NewPipeExtractor", "Video stream: $properLabel (${stream.width}x${stream.height}), bitrate=${stream.bitrate}, videoOnly=${stream.isVideoOnly()}")
                 }
 
-                // Extract SyntheticDashMetadata for video-only PROGRESSIVE_HTTP streams
+                // Build SyntheticDashMetadata for every video-only stream that carries byte ranges,
+                // regardless of delivery method. NewPipe tags YouTube's adaptive video-only formats
+                // as DeliveryMethod.DASH (never PROGRESSIVE_HTTP) yet still populates init/index
+                // ranges on the ItagItem, so the old PROGRESSIVE_HTTP gate silently dropped the
+                // entire (poToken'd) adaptive ladder → MPD generation failed → 360p muxed fallback.
+                // ANDROID_VR never had this problem because it reads ranges unconditionally; mirror
+                // that here. hasValidRanges() excludes OTF/muxed (ranges = -1) so only genuine
+                // SegmentBase streams survive.
                 val syntheticDashMeta = stream.itagItem?.let { itag ->
-                    if (stream.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && stream.isVideoOnly()) {
+                    if (stream.isVideoOnly()) {
                         SyntheticDashMetadata(
                             itag = stream.itag,
                             initStart = stream.initStart.toLong(),
@@ -479,7 +486,7 @@ class NewPipeExtractorClient(
                             indexEnd = stream.indexEnd.toLong(),
                             approxDurationMs = itag.approxDurationMs,
                             codec = stream.codec
-                        )
+                        ).takeIf { it.hasValidRanges() }
                     } else null
                 }
 
@@ -511,19 +518,21 @@ class NewPipeExtractorClient(
         val audioTracksRaw = audioStreams
             .filter { it.content.isNotBlank() }
             .map { stream ->
-                // Extract SyntheticDashMetadata for PROGRESSIVE_HTTP audio streams
+                // Build SyntheticDashMetadata for every audio stream that carries byte ranges.
+                // YouTube audio is always adaptive (DeliveryMethod.DASH); the old PROGRESSIVE_HTTP
+                // gate dropped all of it, leaving the NewPipe+poToken fallback with no audio for the
+                // synthetic-DASH ladder. Mirror ANDROID_VR: read ranges unconditionally and let
+                // hasValidRanges() drop anything without a real SegmentBase.
                 val syntheticDashMeta = stream.itagItem?.let { itag ->
-                    if (stream.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP) {
-                        SyntheticDashMetadata(
-                            itag = stream.itag,
-                            initStart = stream.initStart.toLong(),
-                            initEnd = stream.initEnd.toLong(),
-                            indexStart = stream.indexStart.toLong(),
-                            indexEnd = stream.indexEnd.toLong(),
-                            approxDurationMs = itag.approxDurationMs,
-                            codec = stream.codec
-                        )
-                    } else null
+                    SyntheticDashMetadata(
+                        itag = stream.itag,
+                        initStart = stream.initStart.toLong(),
+                        initEnd = stream.initEnd.toLong(),
+                        indexStart = stream.indexStart.toLong(),
+                        indexEnd = stream.indexEnd.toLong(),
+                        approxDurationMs = itag.approxDurationMs,
+                        codec = stream.codec
+                    ).takeIf { it.hasValidRanges() }
                 }
 
                 // Defensive reads: NewPipe 0.26.0 exposes audioLocale / audioTrackName /
@@ -925,7 +934,7 @@ class NewPipeExtractorClient(
      *
      * WARNING: iOS fetch changes the HLS manifest source from YouTube's Android/Web
      * endpoint to the iOS endpoint. HLS segment URLs expect iOS-like headers.
-     * MultiQualityMediaSourceFactory uses iOS User-Agent for HLS to match.
+     * SegmentDataSourceFactoryProvider uses iOS User-Agent for HLS to match.
      *
      * RUNTIME TOGGLE SEMANTICS:
      * - Applied immediately before each new extraction (not retroactively to cached streams)

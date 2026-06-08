@@ -582,8 +582,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             adaptiveFailedForCurrentStream = null
             // Manual refresh: ALWAYS invalidate MPD first, regardless of rate limit.
             // This is intentional - user-initiated refresh should clear stale URLs even if
-            // rate-limited, so the next allowed refresh uses fresh URLs. Different from
-            // auto-recovery path (line ~1475) where invalidation is conditional.
+            // rate-limited, so the next allowed refresh uses fresh URLs.
             viewModel.state.value.currentItem?.streamId?.let { videoId ->
                 mpdRegistry.unregisterBoth(videoId)
             }
@@ -1793,7 +1792,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         if (allQualities.isEmpty()) {
             // Distinguish "settled but no tracks" from "genuinely not ready yet".
-            val msg = if (streamState is StreamState.Ready || streamState is StreamState.Recovering) {
+            val msg = if (streamState is StreamState.Ready) {
                 R.string.player_quality_unavailable
             } else {
                 R.string.player_video_not_ready
@@ -1989,11 +1988,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
-            is StreamState.Recovering -> {
-                binding.playerRecoveryOverlay.visibility = View.GONE
-                binding.playerErrorOverlay.visibility = View.GONE
-                binding.playerStatus.text = getString(R.string.player_status_resolving)
-            }
             is StreamState.RecoveryExhausted -> {
                 // Show recovery overlay with retry button (exhausted state)
                 binding.playerRecoveryOverlay.visibility = View.VISIBLE
@@ -2042,7 +2036,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     /**
      * Surface the manual-retry escape hatch. Flips [streamState] to
-     * [StreamState.RecoveryExhausted] (only from Recovering/Ready; no-op otherwise),
+     * [StreamState.RecoveryExhausted] (only from Ready; no-op otherwise),
      * which makes the player retry button visible at terminal "we give up" points so a
      * permanently-failing stream never sits on a spinner with toasts alone. Purely a UI
      * state flip — it does not touch the player, playback, or the refresh path, and the
@@ -2450,8 +2444,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Find an alternative track to try, preferring H.264/AVC (most compatible codec)
         // Strategy: First try same-resolution with more compatible codec, then fall back to lower resolution
         //
-        // NOTE: For adaptive HLS/DASH playback, codec swaps may be limited since
-        // MultiQualityMediaSourceFactory applies constraints via DefaultTrackSelector height cap
+        // NOTE: For adaptive DASH playback, codec swaps may be limited since
+        // the track selector applies constraints via DefaultTrackSelector height cap
         // rather than direct track selection. A same-height "swap" may be a no-op if the manifest
         // doesn't offer the desired codec at that resolution. This recovery is most effective for
         // progressive (URL-selected) playback.
@@ -2660,30 +2654,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         viewModel.applyDecoderErrorStepDown(lowerQualityTrack)
     }
 
-    /**
-     * Find the next lower quality track to step down to.
-     * Delegates to [com.albunyaan.tube.player.QualityStepDownHelper] for testability.
-     */
-    private fun findNextLowerQualityTrack(
-        current: com.albunyaan.tube.data.extractor.VideoTrack?,
-        available: List<com.albunyaan.tube.data.extractor.VideoTrack>
-    ): com.albunyaan.tube.data.extractor.VideoTrack? {
-        val result = com.albunyaan.tube.player.QualityStepDownHelper.findNextLowerQualityTrack(current, available)
-        if (result != null && current != null) {
-            val currentHeight = current.height ?: 0
-            val resultHeight = result.height ?: 0
-            when {
-                current.isVideoOnly && !result.isVideoOnly && resultHeight == currentHeight ->
-                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Step-down: video-only -> muxed at ${currentHeight}p")
-                resultHeight == currentHeight ->
-                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Step-down: lower bitrate at ${currentHeight}p (${current.bitrate} -> ${result.bitrate})")
-                else ->
-                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Step-down: ${currentHeight}p -> ${resultHeight}p")
-            }
-        }
-        return result
-    }
-
     private fun maybePrepareStream(state: PlayerState) {
         val streamState = state.streamState
         if (streamState !is StreamState.Ready) {
@@ -2726,7 +2696,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // - adaptive (if available): manifest URL
         // - progressive: selected video URL
         // Note: This is used for cache-hit detection. The actual prepared URL is set AFTER
-        // factory.createMediaSourceWithType() returns, based on whether adaptive succeeded.
+        // the media source is built, based on whether adaptive succeeded.
         val expectedSourceUrl = when {
             state.audioOnly -> selection.audio.url
             // If we're already prepared as adaptive, use manifest URL for comparison
@@ -2889,6 +2859,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 clearTrackSelectorConstraints()
                 preparedQualityCapHeight = null
                 factorySelectedVideoTrack = result.selectedVideoTrack // Factory's actual choice
+
+                // Clean adaptive/MPD failure: the build returned progressive even though we
+                // attempted adaptive (not forced, not audio-only). Make the fallback sticky so we
+                // (a) stop re-running MPD generation on every state tick, and (b) let checkCacheHit
+                // compare against the actually-served muxed track instead of the unreachable
+                // requested high-res track — without this, a MANUAL high-res pick that can't be
+                // honored (e.g. ANDROID_VR-unplayable videos served via the NewPipe fallback)
+                // re-prepares forever, thrashing the audio/codec pipeline.
+                if (!result.isAdaptive && !forceProgressive && !state.audioOnly) {
+                    adaptiveFailedForCurrentStream = streamState.streamId
+                    if (BuildConfig.DEBUG) android.util.Log.d(
+                        "PlayerFragment",
+                        "MPD/adaptive unavailable for ${streamState.streamId} (served=${sourceIdentityForLog(result.actualSourceUrl)}); sticky progressive to prevent re-prepare loop"
+                    )
+                }
             }
 
             result
@@ -3989,10 +3974,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     //
                     // - AUTO_RECOVERY: automatic recovery requested downshift. Same as MANUAL - must
                     //   compare against the new selection.video to detect and apply the change.
+                    //
+                    // EXCEPTION (forceProgressive): adaptive/MPD generation has failed for this
+                    //   stream (sticky), so the requested high-res track can NEVER be served — the
+                    //   builder deterministically returns the muxed fallback. Comparing the served
+                    //   URL to the unreachable requested track would never match, re-preparing
+                    //   forever. Under sticky fallback, compare against the actually-served track
+                    //   (factorySelectedVideoTrack) for MANUAL/AUTO_RECOVERY too, exactly like AUTO.
+                    //   A real quality change still can't be honored anyway (only muxed exists), so
+                    //   treating it as a hit is correct and stops the loop.
                     val effectiveVideoUrl = when (selection.selectionOrigin) {
                         QualitySelectionOrigin.AUTO -> factorySelectedVideoTrack?.url ?: selection.video?.url
-                        QualitySelectionOrigin.MANUAL -> selection.video?.url
-                        QualitySelectionOrigin.AUTO_RECOVERY -> selection.video?.url
+                        QualitySelectionOrigin.MANUAL, QualitySelectionOrigin.AUTO_RECOVERY ->
+                            if (forceProgressive) factorySelectedVideoTrack?.url ?: selection.video?.url
+                            else selection.video?.url
                     }
                     preparedStreamUrl == effectiveVideoUrl
                 }
