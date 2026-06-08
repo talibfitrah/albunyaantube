@@ -131,10 +131,13 @@ class NewPipeExtractorClient(
             // NOTE: Synchronization only ensures atomic apply of the setting to NewPipe's global
             // state; it does not serialize concurrent fetchPage() executions. Acceptable since the
             // single-flight GlobalStreamResolver makes concurrent same-video resolves rare.
+            val primaryClient: YoutubeClientRotator.Client
             synchronized(NewPipeExtractorClient::class.java) {
                 if (featureFlags.isClientRotationEnabled) {
-                    applyClientSetting(clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled))
+                    primaryClient = clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled)
+                    applyClientSetting(primaryClient)
                 } else {
+                    primaryClient = clientRotator.initialClient(featureFlags.isIosFetchEnabled)
                     applyIosFetchSetting()
                 }
             }
@@ -142,7 +145,7 @@ class NewPipeExtractorClient(
             extractor.fetchPage()
             val info = StreamInfo.getInfo(extractor)
             val urlGeneratedAt = clock()
-            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt)
+            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt, primaryClient.toExtractionClient())
             if (resolved == null) {
                 // Client responded but stream mapping failed — reset rotator so the next
                 // retry starts fresh rather than advancing to the next rotation slot on a
@@ -174,13 +177,16 @@ class NewPipeExtractorClient(
                     // accepted on the first attempt (callers tolerate it because
                     // NewPipe toggles are rare and not driven by playback).
                     val retryHandler = streamLinkHandlerFactory.fromId(videoId)
+                    val retryClient: YoutubeClientRotator.Client
                     synchronized(NewPipeExtractorClient::class.java) {
                         if (featureFlags.isClientRotationEnabled) {
                             // Honor the armed client (currentClient), not initialClient — a caller
                             // retry may already have advanced IOS→ANDROID after a real failure, and
                             // the visitorData retry must not silently revert to IOS.
-                            applyClientSetting(clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled))
+                            retryClient = clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled)
+                            applyClientSetting(retryClient)
                         } else {
+                            retryClient = clientRotator.initialClient(featureFlags.isIosFetchEnabled)
                             applyIosFetchSetting()
                         }
                     }
@@ -188,7 +194,7 @@ class NewPipeExtractorClient(
                     retryExtractor.fetchPage()
                     val retryInfo = StreamInfo.getInfo(retryExtractor)
                     val urlGeneratedAt = clock()
-                    val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt)
+                    val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt, retryClient.toExtractionClient())
                     if (resolved != null) {
                         synchronized(streamCacheLock) {
                             streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt)
@@ -431,7 +437,10 @@ class NewPipeExtractorClient(
         }
     }
 
-    private fun StreamInfo.toResolvedStreams(streamId: String, generatedAt: Long): ResolvedStreams? {
+    private fun YoutubeClientRotator.Client.toExtractionClient(): ExtractionClient =
+        if (this == YoutubeClientRotator.Client.IOS) ExtractionClient.NEWPIPE_IOS else ExtractionClient.NEWPIPE_ANDROID
+
+    private fun StreamInfo.toResolvedStreams(streamId: String, generatedAt: Long, extractionClient: ExtractionClient): ResolvedStreams? {
         // Combine both muxed AND video-only streams to get ALL qualities
         val allVideoStreams = (videoStreams + videoOnlyStreams).distinctBy { it.content }
 
@@ -459,9 +468,16 @@ class NewPipeExtractorClient(
                     android.util.Log.d("NewPipeExtractor", "Video stream: $properLabel (${stream.width}x${stream.height}), bitrate=${stream.bitrate}, videoOnly=${stream.isVideoOnly()}")
                 }
 
-                // Extract SyntheticDashMetadata for video-only PROGRESSIVE_HTTP streams
+                // Build SyntheticDashMetadata for every video-only stream that carries byte ranges,
+                // regardless of delivery method. NewPipe tags YouTube's adaptive video-only formats
+                // as DeliveryMethod.DASH (never PROGRESSIVE_HTTP) yet still populates init/index
+                // ranges on the ItagItem, so the old PROGRESSIVE_HTTP gate silently dropped the
+                // entire (poToken'd) adaptive ladder → MPD generation failed → 360p muxed fallback.
+                // ANDROID_VR never had this problem because it reads ranges unconditionally; mirror
+                // that here. hasValidRanges() excludes OTF/muxed (ranges = -1) so only genuine
+                // SegmentBase streams survive.
                 val syntheticDashMeta = stream.itagItem?.let { itag ->
-                    if (stream.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && stream.isVideoOnly()) {
+                    if (stream.isVideoOnly()) {
                         SyntheticDashMetadata(
                             itag = stream.itag,
                             initStart = stream.initStart.toLong(),
@@ -470,7 +486,7 @@ class NewPipeExtractorClient(
                             indexEnd = stream.indexEnd.toLong(),
                             approxDurationMs = itag.approxDurationMs,
                             codec = stream.codec
-                        )
+                        ).takeIf { it.hasValidRanges() }
                     } else null
                 }
 
@@ -502,19 +518,21 @@ class NewPipeExtractorClient(
         val audioTracksRaw = audioStreams
             .filter { it.content.isNotBlank() }
             .map { stream ->
-                // Extract SyntheticDashMetadata for PROGRESSIVE_HTTP audio streams
+                // Build SyntheticDashMetadata for every audio stream that carries byte ranges.
+                // YouTube audio is always adaptive (DeliveryMethod.DASH); the old PROGRESSIVE_HTTP
+                // gate dropped all of it, leaving the NewPipe+poToken fallback with no audio for the
+                // synthetic-DASH ladder. Mirror ANDROID_VR: read ranges unconditionally and let
+                // hasValidRanges() drop anything without a real SegmentBase.
                 val syntheticDashMeta = stream.itagItem?.let { itag ->
-                    if (stream.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP) {
-                        SyntheticDashMetadata(
-                            itag = stream.itag,
-                            initStart = stream.initStart.toLong(),
-                            initEnd = stream.initEnd.toLong(),
-                            indexStart = stream.indexStart.toLong(),
-                            indexEnd = stream.indexEnd.toLong(),
-                            approxDurationMs = itag.approxDurationMs,
-                            codec = stream.codec
-                        )
-                    } else null
+                    SyntheticDashMetadata(
+                        itag = stream.itag,
+                        initStart = stream.initStart.toLong(),
+                        initEnd = stream.initEnd.toLong(),
+                        indexStart = stream.indexStart.toLong(),
+                        indexEnd = stream.indexEnd.toLong(),
+                        approxDurationMs = itag.approxDurationMs,
+                        codec = stream.codec
+                    ).takeIf { it.hasValidRanges() }
                 }
 
                 // Defensive reads: NewPipe 0.26.0 exposes audioLocale / audioTrackName /
@@ -620,7 +638,8 @@ class NewPipeExtractorClient(
             dashUrl = dashStreamUrl,
             isLive = isLiveStream,
             urlGeneratedAt = generatedAt,
-            urlTimebaseVersion = ResolvedStreams.URL_TIMEBASE_VERSION
+            urlTimebaseVersion = ResolvedStreams.URL_TIMEBASE_VERSION,
+            extractionClient = extractionClient
         )
     }
 
@@ -915,7 +934,7 @@ class NewPipeExtractorClient(
      *
      * WARNING: iOS fetch changes the HLS manifest source from YouTube's Android/Web
      * endpoint to the iOS endpoint. HLS segment URLs expect iOS-like headers.
-     * MultiQualityMediaSourceFactory uses iOS User-Agent for HLS to match.
+     * SegmentDataSourceFactoryProvider uses iOS User-Agent for HLS to match.
      *
      * RUNTIME TOGGLE SEMANTICS:
      * - Applied immediately before each new extraction (not retroactively to cached streams)

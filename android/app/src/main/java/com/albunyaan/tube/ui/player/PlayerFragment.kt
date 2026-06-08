@@ -33,7 +33,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -69,11 +68,10 @@ import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.analytics.PlaybackMetricsCollector
 import com.albunyaan.tube.player.AdaptiveBufferPolicy
-import com.albunyaan.tube.player.BufferHealthMonitor
 import com.albunyaan.tube.player.MediaSessionMetadataManager
 import com.albunyaan.tube.player.CacheHitDecider
 import com.albunyaan.tube.player.MediaSourceResult
-import com.albunyaan.tube.player.PlaybackRecoveryManager
+import com.albunyaan.tube.player.SourceDecision
 import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.player.StreamRequestTelemetry
 import com.albunyaan.tube.data.report.ReportTargetType
@@ -97,17 +95,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     @Inject lateinit var metadataManager: MediaSessionMetadataManager
     @Inject lateinit var streamTelemetry: StreamRequestTelemetry
     @Inject lateinit var hlsPoisonRegistry: com.albunyaan.tube.player.HlsPoisonRegistry
-    @Inject lateinit var multiRepFactory: com.albunyaan.tube.player.MultiRepSyntheticDashMediaSourceFactory
     @Inject lateinit var coldStartQualityChooser: com.albunyaan.tube.player.ColdStartQualityChooser
-    @Inject lateinit var degradationManager: com.albunyaan.tube.player.PlaybackDegradationManager
     @Inject lateinit var featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
     @Inject lateinit var mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry
-    @Inject lateinit var probationChecker: com.albunyaan.tube.player.HlsProbationChecker
     @Inject lateinit var bufferPolicy: AdaptiveBufferPolicy
-    @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
-    @Inject lateinit var simpleCache: SimpleCache
-    @Inject lateinit var cachedHttpDataSourceFactory: com.albunyaan.tube.player.CachedHttpDataSourceFactory
+    @Inject lateinit var dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider
     @Inject lateinit var neverFreezeTrackSelectionFactory: com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory
+    @Inject lateinit var dashSourceBuilder: com.albunyaan.tube.player.DashSourceBuilder
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
@@ -212,8 +206,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var mutedForStreamKey: Pair<String, Boolean>? = null
     private val firstFrameHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var firstFrameTimeoutRunnable: Runnable? = null
-    /** Video render watchdog: detects audio-playing-but-no-video-frame within 5s and routes
-     *  through PlaybackRecoveryManager's recovery ladder (not a parallel path). */
+    /** Video render watchdog: detects audio-playing-but-no-video-frame within 5s and
+     *  re-resolves via [requestStreamRefreshAndResume]. */
     private var videoFrameRendered = false
     private var videoRenderWatchdogJob: Job? = null
     /** Tracks whether current media source is adaptive (HLS/DASH) vs progressive */
@@ -252,11 +246,23 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      */
     private var adaptiveFailedForCurrentStream: String? = null
 
-    /** Manages automatic playback recovery for freeze detection and stall handling */
-    private var recoveryManager: PlaybackRecoveryManager? = null
-
-    /** Monitors buffer health and triggers proactive quality downshift for progressive streams */
-    private var bufferHealthMonitor: BufferHealthMonitor? = null
+    /**
+     * Minimal buffering-stall watchdog (replaces the old multi-step recovery
+     * stall ladder). When the player sits in STATE_BUFFERING past a threshold and the
+     * current stream is unchanged, route through the battle-tested re-resolve path
+     * ([requestStreamRefreshAndResume]). One runnable, one threshold, no escalation —
+     * the [PlayerViewModel.forceRefreshForAutoRecovery] rate-limiter caps repeats.
+     * Mirrors [com.albunyaan.tube.ui.shorts.ShortsPlayerFragment]'s stall recovery.
+     */
+    private val stallWatchdogHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var stallWatchdogRunnable: Runnable? = null
+    /** Stream id captured when the buffering stall began (so we don't refresh a stream the user already left). */
+    private var stallWatchdogStreamId: String? = null
+    /** Stream id that has reached STATE_READY at least once — gates the stall watchdog so it only
+     *  arms for mid-playback stalls, not slow cold-start buffering. */
+    private var playbackStartedStreamId: String? = null
+    /** Whether the current stream is live (longer stall tolerance — live buffers more). */
+    private var currentStreamIsLive: Boolean = false
 
     /** PlaybackService for MediaSession and background playback */
     private var playbackService: PlaybackService? = null
@@ -579,8 +585,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             adaptiveFailedForCurrentStream = null
             // Manual refresh: ALWAYS invalidate MPD first, regardless of rate limit.
             // This is intentional - user-initiated refresh should clear stale URLs even if
-            // rate-limited, so the next allowed refresh uses fresh URLs. Different from
-            // auto-recovery path (line ~1475) where invalidation is conditional.
+            // rate-limited, so the next allowed refresh uses fresh URLs.
             viewModel.state.value.currentItem?.streamId?.let { videoId ->
                 mpdRegistry.unregisterBoth(videoId)
             }
@@ -593,7 +598,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Setup recovery retry button (shown when auto-recovery exhausted)
         binding.playerRecoveryRetryButton.setOnClickListener {
             // User manual retry - resets recovery state and forces stream refresh
-            recoveryManager?.resetRecoveryState()
+            cancelStallWatchdog()
             viewModel.clearRecoveringState()
             // Reset adaptive fallback flag - manual retry should retry adaptive
             adaptiveFailedForCurrentStream = null
@@ -777,13 +782,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // fitsSystemWindows was set to false but isFullscreen hasn't been set yet
         restoreShellRootView()
 
-        // Clean up recovery manager
-        recoveryManager?.cancel()
-        recoveryManager = null
-
-        // Clean up buffer health monitor
-        bufferHealthMonitor?.release()
-        bufferHealthMonitor = null
+        // Cancel the buffering-stall watchdog to prevent stale refresh triggers
+        cancelStallWatchdog()
 
         // Release MediaSession BEFORE releasing player (service doesn't own player lifecycle)
         playbackService?.releaseSession()
@@ -859,18 +859,41 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
-    private val mediaSourceFactory by lazy {
-        com.albunyaan.tube.player.MultiQualityMediaSourceFactory(
-            requireContext(),
-            hlsPoisonRegistry,
-            multiRepFactory,
-            coldStartQualityChooser,
-            featureFlags,
-            mpdRegistry,
-            probationChecker,
-            cronetDataSourceFactory,
-            simpleCache = simpleCache
-        )
+    // Replaces MultiQualityMediaSourceFactory.createMediaSourceWithType. Maps the lean
+    // DashSourceBuilder decision back onto MediaSourceResult so all downstream cache-hit,
+    // TTL-watcher, recovery and metrics code keeps working unchanged.
+    //
+    // Accepted limitation: on a forceProgressive sticky-fallback retry where the user set a
+    // manual quality cap, the Progressive branch picks best-quality muxed and does NOT honor
+    // the cap (track-selector constraints don't apply to a single progressive track). This
+    // matches the lean model; the old findBestTrackUnderCap path is intentionally dropped.
+    // Only triggers in the rare (adaptive-failed + manual-cap) intersection.
+    private fun buildMediaSourceResultViaDash(
+        resolved: ResolvedStreams,
+        audioOnly: Boolean,
+        forceProgressive: Boolean
+    ): MediaSourceResult {
+        if (audioOnly) {
+            val audio = resolved.audioTracks.maxByOrNull { it.bitrate ?: 0 } ?: resolved.audioTracks.firstOrNull()
+            val source = dashSourceBuilder.buildAudioOnly(resolved)
+                ?: throw IllegalStateException("No audio track for audio-only playback")
+            return MediaSourceResult(source, isAdaptive = false, actualSourceUrl = audio?.url,
+                adaptiveType = MediaSourceResult.AdaptiveType.NONE)
+        }
+        val built = dashSourceBuilder.build(resolved, forceProgressive)
+            ?: throw IllegalStateException("DashSourceBuilder produced no playable source")
+        return when (val d = built.decision) {
+            is SourceDecision.LocalDash -> MediaSourceResult(built.source, true, d.dataUri,
+                MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE, null)
+            is SourceDecision.ServerDash -> MediaSourceResult(built.source, true, d.url,
+                MediaSourceResult.AdaptiveType.DASH, null)
+            is SourceDecision.Hls -> MediaSourceResult(built.source, true, d.url,
+                MediaSourceResult.AdaptiveType.HLS, null)
+            is SourceDecision.Progressive -> MediaSourceResult(built.source, false, d.videoUrl,
+                MediaSourceResult.AdaptiveType.NONE,
+                resolved.videoTracks.firstOrNull { it.url == d.videoUrl })
+            is SourceDecision.None -> throw IllegalStateException("unreachable: build returned non-null")
+        }
     }
 
     private fun setupPlayer(binding: FragmentPlayerBinding) {
@@ -978,22 +1001,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Initialize MediaSession if service is already bound (e.g., after player rebuild during recovery)
         playbackService?.initializeSession(player)
 
-        // Initialize PlaybackRecoveryManager for freeze detection and automatic recovery
-        recoveryManager = PlaybackRecoveryManager(
-            scope = viewLifecycleOwner.lifecycleScope,
-            callbacks = createRecoveryCallbacks()
-        )
-
-        // Clean up existing buffer health monitor before recreating
-        bufferHealthMonitor?.release()
-        bufferHealthMonitor = null
-
-        // Initialize BufferHealthMonitor for proactive quality downshift on progressive streams
-        bufferHealthMonitor = BufferHealthMonitor(
-            scope = viewLifecycleOwner.lifecycleScope,
-            callbacks = createBufferHealthCallbacks()
-        )
-
         // Add listener to auto-hide controls when playback starts and handle errors
         playbackListener = createPlaybackListener(player)
         playbackListener?.let { player.addListener(it) }
@@ -1098,22 +1105,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     // Android's 5-second rule. MediaSessionService shows notification automatically
                     // once the MediaSession has a playing player attached.
 
-                    // Notify recovery manager that playback is healthy
-                    recoveryManager?.onPlaybackStarted()
-
-                    // Notify buffer health monitor to start monitoring (progressive streams only)
-                    bufferHealthMonitor?.onPlaybackStarted(player)
+                    // Playback is healthy again — cancel any pending stall watchdog.
+                    cancelStallWatchdog()
 
                     // PR5: Reset rate limiter backoff for successful playback
                     currentStreamId?.let { streamId ->
                         viewModel.onPlaybackSuccess(streamId)
-                    }
-
-                    // Phase 4: Notify degradation manager of successful playback (if enabled)
-                    if (featureFlags.isDegradationManagerEnabled) {
-                        currentStreamId?.let { streamId ->
-                            degradationManager.onPlaybackSuccess(streamId)
-                        }
                     }
 
                     // Playback resumed: the seek-induced failure episode (if any) is over,
@@ -1155,9 +1152,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 } else {
                     // Phase 0 metrics: mark playback paused
                     currentStreamId?.let { viewModel.metrics.onPlaybackPaused(it) }
-
-                    // Pause buffer health monitoring when not playing
-                    bufferHealthMonitor?.onPlaybackPaused()
                 }
             }
 
@@ -1175,10 +1169,23 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     }
                 }
 
-                // Delegate to recovery manager for freeze detection
-                recoveryManager?.onPlaybackStateChanged(player, playbackState)
+                // Minimal stall watchdog (replaces the old multi-step stall ladder):
+                // a silent buffering stall past the threshold re-resolves fresh URLs and
+                // resumes at position. Cancel on any non-buffering state.
+                if (playbackState == Player.STATE_BUFFERING) {
+                    scheduleStallWatchdog()
+                } else {
+                    cancelStallWatchdog()
+                }
 
-                // Cancel watchdog on terminal states
+                // Mark playback as started for this stream on first READY so the stall watchdog
+                // only arms for mid-playback stalls, not slow cold-start buffering (which would
+                // otherwise re-resolve a slow-but-working initial load into a false failure).
+                if (playbackState == Player.STATE_READY) {
+                    viewModel.state.value.currentItem?.streamId?.let { playbackStartedStreamId = it }
+                }
+
+                // Cancel video render watchdog on terminal states
                 if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
                     videoRenderWatchdogJob?.cancel()
                 }
@@ -1213,8 +1220,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
                     userWantsToPlay = playWhenReady
                 }
-                // Delegate to recovery manager for stuck-in-ready detection
-                recoveryManager?.onPlayWhenReadyChanged(player, playWhenReady)
             }
 
             override fun onRenderedFirstFrame() {
@@ -1337,6 +1342,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                                 )
                             } else {
                                 // Use safe context access to prevent crash if fragment is detached
+                                surfaceRecoveryExhausted()
                                 context?.let { ctx ->
                                     Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
                                 }
@@ -1367,6 +1373,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             )
                         } else {
                             // Use safe context access to prevent crash if fragment is detached
+                            surfaceRecoveryExhausted()
                             context?.let { ctx ->
                                 Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
                             }
@@ -1395,6 +1402,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             player.seekToDefaultPosition()
                             player.prepare()
                         } else {
+                            surfaceRecoveryExhausted()
                             context?.let { ctx ->
                                 Toast.makeText(ctx, getString(R.string.player_stream_error) + ": ${error.errorCodeName}", Toast.LENGTH_LONG).show()
                             }
@@ -1416,6 +1424,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                                 "unhandled player error (${error.errorCodeName}, http=${httpResponseCode ?: "n/a"})"
                             )
                         } else {
+                            surfaceRecoveryExhausted()
                             context?.let { ctx ->
                                 Toast.makeText(ctx, getString(R.string.player_stream_error) + ": ${error.errorCodeName}", Toast.LENGTH_LONG).show()
                             }
@@ -1582,7 +1591,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      * Arm the proactive MPD TTL watcher for the current synthetic-DASH stream.
      *
      * The synthetic-DASH MPD generator produces manifests whose embedded CDN URLs
-     * expire — `SyntheticDashDataSource.MPD_TTL_MS` is a conservative 15-minute
+     * expire — `SyntheticDashMpdRegistry.MPD_TTL_MS` is a conservative 15-minute
      * lower bound. Without a proactive refresh, ExoPlayer hits a 403 on the next
      * chunk fetch when URLs go stale and the user sees a visible stall while the
      * reactive recovery path (`onPlayerError → handle403OrHttpError`) re-resolves.
@@ -1612,13 +1621,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // user pausing through 90% TTL and resuming hours later would get a
             // visible reactive 403 stall on the first segment. Refreshing during
             // pause is the lesser evil for this app's perf-focused UX.
-            onRefreshNeeded = { viewModel.forceRefreshForProactiveTtl() }
+            onRefreshNeeded = {
+                // Guard: only refresh if this stream is still current. The watcher is single-shot
+                // and cancelled on every new prepare, but capture-and-check prevents refreshing a
+                // stream the user already navigated away from (mirrors the Shorts watcher).
+                if (viewModel.state.value.currentItem?.streamId == streamId) {
+                    viewModel.forceRefreshForProactiveTtl()
+                }
+            }
         ).also { it.start(viewLifecycleOwner.lifecycleScope) }
     }
 
-
-    private fun cachedProgressiveMediaSourceFactory(): ProgressiveMediaSource.Factory =
-        ProgressiveMediaSource.Factory(cachedHttpDataSourceFactory.create())
 
     /**
      * Handle seamless live stream URL refresh without stopping playback.
@@ -1643,17 +1656,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Create new media source with fresh URLs
         val resolved = event.newSelection.resolved
-        val videoId = viewModel.state.value.currentItem?.streamId
         val mediaSourceResult = try {
-            mediaSourceFactory.createMediaSourceWithType(
-                resolved = resolved,
-                audioOnly = audioOnly,
-                selectedQuality = event.newSelection.video,
-                userQualityCapHeight = event.newSelection.userQualityCapHeight,
-                selectionOrigin = event.newSelection.selectionOrigin,
-                forceProgressive = false, // Live streams use adaptive
-                videoId = videoId // Phase 1B: for HLS poison check
-            )
+            buildMediaSourceResultViaDash(resolved, audioOnly, forceProgressive = false)
         } catch (e: Exception) {
             android.util.Log.e("PlayerFragment", "Live refresh: failed to create media source", e)
             return
@@ -1800,12 +1804,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Source the list from the ViewModel, which reads ready-OR-recovering. This lets the
         // user drop resolution DURING a stall — the exact moment they most want to.
-        val allQualities = viewModel.getAvailableQualities()
+        val allQualities = viewModel.getAvailableQualities(adaptiveActive = preparedIsAdaptive)
         if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "getAvailableQualities returned: ${allQualities.size} qualities")
 
         if (allQualities.isEmpty()) {
             // Distinguish "settled but no tracks" from "genuinely not ready yet".
-            val msg = if (streamState is StreamState.Ready || streamState is StreamState.Recovering) {
+            val msg = if (streamState is StreamState.Ready) {
                 R.string.player_quality_unavailable
             } else {
                 R.string.player_video_not_ready
@@ -2001,11 +2005,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
-            is StreamState.Recovering -> {
-                binding.playerRecoveryOverlay.visibility = View.GONE
-                binding.playerErrorOverlay.visibility = View.GONE
-                binding.playerStatus.text = getString(R.string.player_status_resolving)
-            }
             is StreamState.RecoveryExhausted -> {
                 // Show recovery overlay with retry button (exhausted state)
                 binding.playerRecoveryOverlay.visibility = View.VISIBLE
@@ -2052,23 +2051,27 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
-    private fun requestStreamRefreshAndResume(reason: String) {
-        requestStreamRefreshAndResumeWithReason(
-            reason = reason,
-            refreshReason = com.albunyaan.tube.player.PlaybackDegradationManager.RefreshReason.RECOVERY
-        )
+    /**
+     * Surface the manual-retry escape hatch. Flips [streamState] to
+     * [StreamState.RecoveryExhausted] (only from Ready; no-op otherwise),
+     * which makes the player retry button visible at terminal "we give up" points so a
+     * permanently-failing stream never sits on a spinner with toasts alone. Purely a UI
+     * state flip — it does not touch the player, playback, or the refresh path, and the
+     * normal Ready transition clears it if the stream self-recovers.
+     */
+    private fun surfaceRecoveryExhausted() {
+        viewModel.setRecoveryExhaustedState()
     }
 
     /**
-     * Phase 4: Refresh stream URLs with explicit reason for budget tracking.
+     * Single re-resolve recovery path: re-extract fresh stream URLs and resume at the
+     * saved position. Used by every error/stall recovery branch. The MPD invalidation
+     * + [PlayerViewModel.forceRefreshForAutoRecovery] rate-limiter below are the
+     * battle-tested core that prevents 403 loops — do not alter their ordering.
      *
      * @param reason Human-readable reason for logging
-     * @param refreshReason Degradation manager reason for budget consumption
      */
-    private fun requestStreamRefreshAndResumeWithReason(
-        reason: String,
-        refreshReason: com.albunyaan.tube.player.PlaybackDegradationManager.RefreshReason
-    ) {
+    private fun requestStreamRefreshAndResume(reason: String) {
         val currentItem = viewModel.state.value.currentItem ?: return
         val currentPlayer = player ?: return
 
@@ -2088,16 +2091,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         if (seekTransient) {
             android.util.Log.i(
                 "PlayerFragment",
-                "Seek-induced transient on $preparedAdaptiveType — rebuilding adaptive manifest, not consuming degradation budget"
+                "Seek-induced transient on $preparedAdaptiveType — rebuilding adaptive manifest"
             )
-        } else if (featureFlags.isDegradationManagerEnabled) {
-            // Phase 4: Consume refresh budget and check for degradation action (if enabled)
-            val degradationAction = degradationManager.consumeRefresh(currentItem.streamId, refreshReason)
-            if (degradationAction !is com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.None) {
-                android.util.Log.w("PlayerFragment", "Degradation action required: $degradationAction")
-                handleDegradationAction(currentItem.streamId, degradationAction, resumePosition, wasPlayWhenReady)
-                return
-            }
         }
 
         // PR5: Check if refresh is allowed BEFORE stopping player to avoid leaving playback stuck.
@@ -2108,6 +2103,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Rate-limited: don't stop player, show toast and let current playback continue.
             // This prevents the player from being stuck in stopped state when refresh is blocked.
             android.util.Log.w("PlayerFragment", "Stream refresh blocked by rate limiter, continuing playback")
+            // Only surface the full-screen manual-retry overlay if playback is NOT actually
+            // progressing — otherwise it would cover working video (the "let playback continue"
+            // case cubic flagged). A toast is enough when playback continues.
+            if (player?.isPlaying != true) {
+                surfaceRecoveryExhausted()
+            }
             context?.let { ctx ->
                 Toast.makeText(ctx, R.string.player_refresh_rate_limited, Toast.LENGTH_SHORT).show()
             }
@@ -2142,159 +2143,53 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     /**
-     * Phase 4: Handle degradation action when refresh budget is exhausted.
-     *
-     * Actions are applied in priority order:
-     * 1. QualityStepDown - try lower quality
-     * 2. SwitchToMuxed - switch from video-only to muxed
-     * 3. ForceHlsFallback - poison current stream and try HLS
-     * 4. ShowError - all options exhausted
+     * Arm the minimal buffering-stall watchdog. Posts a single delayed runnable; when it
+     * fires, if the player is STILL buffering AND the stream hasn't changed, it routes to
+     * [requestStreamRefreshAndResume] (re-resolve fresh URLs + resume at position). No
+     * escalation ladder, no attempt counter — [PlayerViewModel.forceRefreshForAutoRecovery]
+     * rate-limits repeats. VOD waits 6s; live waits 45s (live buffers more by nature).
      */
-    private fun handleDegradationAction(
-        videoId: String,
-        action: com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction,
-        resumePositionMs: Long,
-        wasPlayWhenReady: Boolean
-    ) {
-        when (action) {
-            is com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.QualityStepDown -> {
-                android.util.Log.i("PlayerFragment", "Degradation: stepping down to ${action.targetHeight}p")
-                val state = viewModel.state.value
-                val streamState = when (val s = state.streamState) {
-                    is StreamState.Ready -> s
-                    is StreamState.Recovering -> StreamState.Ready(s.streamId, s.selection)
-                    is StreamState.RecoveryExhausted -> StreamState.Ready(s.streamId, s.selection)
-                    else -> null
-                }
-
-                if (streamState != null) {
-                    val targetHeight = action.targetHeight ?: 480
-                    val nextLower = streamState.selection.resolved.videoTracks
-                        .filter { (it.height ?: 0) <= targetHeight }
-                        .maxByOrNull { it.height ?: 0 }
-
-                    if (nextLower != null) {
-                        viewModel.applyAutoQualityStepDown(nextLower)
-                        degradationManager.onDegradationApplied(videoId, action)
-                        return
-                    }
-                }
-
-                // Couldn't step down - escalate to next action
-                android.util.Log.w("PlayerFragment", "Quality step-down failed, escalating")
-                val nextAction = com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.SwitchToMuxed
-                handleDegradationAction(videoId, nextAction, resumePositionMs, wasPlayWhenReady)
+    private fun scheduleStallWatchdog() {
+        val streamId = viewModel.state.value.currentItem?.streamId ?: return
+        // Only arm for mid-playback stalls: a stream that hasn't reached READY yet is still in its
+        // (possibly slow) initial cold-start buffer. playbackStartedStreamId is set on the first READY.
+        if (playbackStartedStreamId != streamId) return
+        val activePlayer = player ?: return
+        // Re-arm fresh on each BUFFERING transition for the current stream.
+        stallWatchdogRunnable?.let { stallWatchdogHandler.removeCallbacks(it) }
+        stallWatchdogStreamId = streamId
+        val bufferedAtArm = activePlayer.bufferedPosition
+        val thresholdMs = if (currentStreamIsLive) STALL_WATCHDOG_LIVE_MS else STALL_WATCHDOG_VOD_MS
+        val runnable = Runnable {
+            val p = player ?: return@Runnable
+            // Only act if still buffering and on the same stream we armed for.
+            if (p.playbackState != Player.STATE_BUFFERING) return@Runnable
+            if (viewModel.state.value.currentItem?.streamId != stallWatchdogStreamId) return@Runnable
+            // Distinguish a STUCK buffer (no progress -> likely expired URLs / dead segment, where a
+            // re-resolve helps) from a SLOW-but-working one (buffer advancing on a poor network, where
+            // re-resolving would only discard the partial buffer and re-fetch over the same slow link
+            // -- a re-resolve loop that turns a playable video into a hard failure). Only re-resolve
+            // when genuinely stuck; otherwise re-arm and keep buffering through.
+            if (p.bufferedPosition > bufferedAtArm) {
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Stall watchdog: buffer advancing (slow network), re-arming instead of re-resolving")
+                scheduleStallWatchdog()
+                return@Runnable
             }
-
-            is com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.SwitchToMuxed -> {
-                // Backstop: never collapse a multi-quality adaptive stream (SYNTH_ADAPTIVE/DASH/HLS)
-                // to a single muxed 360p track. Rebuild the adaptive manifest with fresh URLs so ABR
-                // keeps the full quality ladder (and can still drop to a low rep on a poor network).
-                // Mark the muxed step as applied so a *repeat* exhaustion escalates past it
-                // (→ ForceHlsFallback → ShowError) instead of looping on this backstop.
-                if (com.albunyaan.tube.player.SeekTransientErrorGate.isMultiQualityAdaptive(preparedAdaptiveType)) {
-                    val refreshAllowed = viewModel.forceRefreshForAutoRecovery()
-                    if (refreshAllowed) {
-                        android.util.Log.i(
-                            "PlayerFragment",
-                            "Degradation: $preparedAdaptiveType — rebuilding adaptive manifest instead of muxed 360p collapse"
-                        )
-                        degradationManager.onDegradationApplied(videoId, action)
-                        mpdRegistry.unregisterBoth(videoId)
-                        pendingResumeStreamId = videoId
-                        pendingResumePositionMs = resumePositionMs.takeIf { it > 0L }
-                        pendingResumePlayWhenReady = wasPlayWhenReady
-                        preparedStreamKey = null
-                        preparedStreamUrl = null
-                        preparedIsAdaptive = false
-                        preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
-                        preparedQualityCapHeight = null
-                        factorySelectedVideoTrack = null
-                        player?.stop()
-                        return
-                    }
-                    android.util.Log.w("PlayerFragment", "Degradation: adaptive-rebuild backstop blocked by rate limiter; falling through to muxed")
-                }
-                android.util.Log.i("PlayerFragment", "Degradation: switching to muxed stream")
-                val state = viewModel.state.value
-                val streamState = when (val s = state.streamState) {
-                    is StreamState.Ready -> s
-                    is StreamState.Recovering -> StreamState.Ready(s.streamId, s.selection)
-                    is StreamState.RecoveryExhausted -> StreamState.Ready(s.streamId, s.selection)
-                    else -> null
-                }
-
-                if (streamState != null && streamState.selection.video?.isVideoOnly == true) {
-                    val muxedTrack = streamState.selection.resolved.videoTracks
-                        .filter { !it.isVideoOnly }
-                        .maxByOrNull { it.height ?: 0 }
-
-                    if (muxedTrack != null) {
-                        viewModel.applyAutoQualityStepDown(muxedTrack)
-                        degradationManager.onDegradationApplied(videoId, action)
-                        return
-                    }
-                }
-
-                // Couldn't switch to muxed - escalate
-                android.util.Log.w("PlayerFragment", "Switch to muxed failed, escalating to HLS fallback")
-                val nextAction = com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.ForceHlsFallback
-                handleDegradationAction(videoId, nextAction, resumePositionMs, wasPlayWhenReady)
-            }
-
-            is com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.ForceHlsFallback -> {
-                // Switch to alternate stream type by poisoning the current type:
-                // - If currently HLS → poison HLS so next resolution uses DASH/progressive
-                // - If currently DASH/synthetic/progressive → clear HLS poison to allow HLS retry
-                val isCurrentlyHls = preparedAdaptiveType == MediaSourceResult.AdaptiveType.HLS
-                if (isCurrentlyHls) {
-                    android.util.Log.i("PlayerFragment", "Degradation: HLS failing, poisoning HLS to force DASH/progressive")
-                    hlsPoisonRegistry.poisonHls(videoId, reason = "Degradation: HLS refresh budget exhausted")
-                } else {
-                    android.util.Log.i("PlayerFragment", "Degradation: DASH/synthetic/progressive failing, clearing HLS poison to try HLS")
-                    hlsPoisonRegistry.clearPoison(videoId)
-                }
-
-                // Invalidate cached MPD to force fresh extraction with potentially different URLs
-                mpdRegistry.unregisterBoth(videoId)
-                android.util.Log.d("PlayerFragment", "Invalidated cached MPD for $videoId during fallback")
-
-                degradationManager.onDegradationApplied(videoId, action)
-
-                // Store resume state and force refresh
-                pendingResumeStreamId = videoId
-                pendingResumePositionMs = resumePositionMs.takeIf { it > 0L }
-                pendingResumePlayWhenReady = wasPlayWhenReady
-
-                // Clear prepared state to force rebuild
-                preparedStreamKey = null
-                preparedStreamUrl = null
-                preparedIsAdaptive = false
-                preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
-                preparedQualityCapHeight = null
-                factorySelectedVideoTrack = null
-                adaptiveFailedForCurrentStream = null
-                player?.stop() ?: android.util.Log.w("PlayerFragment", "Degradation: player is null during ForceHlsFallback")
-
-                // Force refresh which will now use alternate stream type
-                val refreshAllowed = viewModel.forceRefreshForAutoRecovery()
-                if (!refreshAllowed) {
-                    android.util.Log.e("PlayerFragment", "Degradation: fallback refresh blocked, escalating to ShowError")
-                    handleDegradationAction(videoId, com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.ShowError, resumePositionMs, wasPlayWhenReady)
-                }
-            }
-
-            is com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.ShowError -> {
-                android.util.Log.e("PlayerFragment", "Degradation: all options exhausted, showing error")
-                degradationManager.onDegradationApplied(videoId, action)
-                // Transition to RecoveryExhausted state
-                viewModel.setRecoveryExhaustedState()
-            }
-
-            is com.albunyaan.tube.player.PlaybackDegradationManager.DegradationAction.None -> {
-                // Should not happen, but handle gracefully
-            }
+            android.util.Log.w(
+                "PlayerFragment",
+                "Buffering stall watchdog fired after ${thresholdMs}ms (buffer stuck) — re-resolving"
+            )
+            requestStreamRefreshAndResume("buffering stall")
         }
+        stallWatchdogRunnable = runnable
+        stallWatchdogHandler.postDelayed(runnable, thresholdMs)
+    }
+
+    /** Cancel the buffering-stall watchdog (non-buffering state, stream change, or destroy). */
+    private fun cancelStallWatchdog() {
+        stallWatchdogRunnable?.let { stallWatchdogHandler.removeCallbacks(it) }
+        stallWatchdogRunnable = null
+        stallWatchdogStreamId = null
     }
 
     private fun findHttpResponseCode(throwable: Throwable?): Int? {
@@ -2435,6 +2330,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             onStreamRefresh()
                             requestStreamRefreshAndResume("rate limited, retrying after ${backoffMs}ms")
                         } else {
+                            surfaceRecoveryExhausted()
                             context?.let { ctx ->
                                 Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
                             }
@@ -2452,12 +2348,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
                     if (currentStreamRefreshCount < maxStreamRefreshes) {
                         onStreamRefresh()
-                        // Phase 4: Use TTL_EXPIRED reason for budget tracking
-                        requestStreamRefreshAndResumeWithReason(
-                            reason = "URL expired (403)",
-                            refreshReason = com.albunyaan.tube.player.PlaybackDegradationManager.RefreshReason.TTL_EXPIRED
-                        )
+                        requestStreamRefreshAndResume("URL expired (403)")
                     } else {
+                        surfaceRecoveryExhausted()
                         context?.let { ctx ->
                             Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
                         }
@@ -2478,12 +2371,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         delay(backoffMs)
                         if (currentStreamRefreshCount < maxStreamRefreshes) {
                             onStreamRefresh()
-                            // Phase 4: Use HTTP_403 reason for budget tracking
-                            requestStreamRefreshAndResumeWithReason(
-                                reason = "HTTP $httpResponseCode (${failureType.name})",
-                                refreshReason = com.albunyaan.tube.player.PlaybackDegradationManager.RefreshReason.HTTP_403
-                            )
+                            requestStreamRefreshAndResume("HTTP $httpResponseCode (${failureType.name})")
                         } else {
+                            surfaceRecoveryExhausted()
                             context?.let { ctx ->
                                 Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
                             }
@@ -2501,6 +2391,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 "HTTP error (${error.errorCodeName}, http=${httpResponseCode ?: "n/a"})"
             )
         } else {
+            surfaceRecoveryExhausted()
             context?.let { ctx ->
                 Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
             }
@@ -2590,8 +2481,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Find an alternative track to try, preferring H.264/AVC (most compatible codec)
         // Strategy: First try same-resolution with more compatible codec, then fall back to lower resolution
         //
-        // NOTE: For adaptive HLS/DASH playback, codec swaps may be limited since
-        // MultiQualityMediaSourceFactory applies constraints via DefaultTrackSelector height cap
+        // NOTE: For adaptive DASH playback, codec swaps may be limited since
+        // the track selector applies constraints via DefaultTrackSelector height cap
         // rather than direct track selection. A same-height "swap" may be a no-op if the manifest
         // doesn't offer the desired codec at that resolution. This recovery is most effective for
         // progressive (URL-selected) playback.
@@ -2800,30 +2691,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         viewModel.applyDecoderErrorStepDown(lowerQualityTrack)
     }
 
-    /**
-     * Find the next lower quality track to step down to.
-     * Delegates to [com.albunyaan.tube.player.QualityStepDownHelper] for testability.
-     */
-    private fun findNextLowerQualityTrack(
-        current: com.albunyaan.tube.data.extractor.VideoTrack?,
-        available: List<com.albunyaan.tube.data.extractor.VideoTrack>
-    ): com.albunyaan.tube.data.extractor.VideoTrack? {
-        val result = com.albunyaan.tube.player.QualityStepDownHelper.findNextLowerQualityTrack(current, available)
-        if (result != null && current != null) {
-            val currentHeight = current.height ?: 0
-            val resultHeight = result.height ?: 0
-            when {
-                current.isVideoOnly && !result.isVideoOnly && resultHeight == currentHeight ->
-                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Step-down: video-only -> muxed at ${currentHeight}p")
-                resultHeight == currentHeight ->
-                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Step-down: lower bitrate at ${currentHeight}p (${current.bitrate} -> ${result.bitrate})")
-                else ->
-                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Step-down: ${currentHeight}p -> ${resultHeight}p")
-            }
-        }
-        return result
-    }
-
     private fun maybePrepareStream(state: PlayerState) {
         val streamState = state.streamState
         if (streamState !is StreamState.Ready) {
@@ -2866,7 +2733,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // - adaptive (if available): manifest URL
         // - progressive: selected video URL
         // Note: This is used for cache-hit detection. The actual prepared URL is set AFTER
-        // factory.createMediaSourceWithType() returns, based on whether adaptive succeeded.
+        // the media source is built, based on whether adaptive succeeded.
         val expectedSourceUrl = when {
             state.audioOnly -> selection.audio.url
             // If we're already prepared as adaptive, use manifest URL for comparison
@@ -2993,15 +2860,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // through the resolve, so deferred until we observe the regional 403s in
         // telemetry.
         val mediaSourceResult = try {
-            val result = mediaSourceFactory.createMediaSourceWithType(
-                resolved = resolvedForFactory,
-                audioOnly = state.audioOnly,
-                selectedQuality = selection.video,
-                userQualityCapHeight = selection.userQualityCapHeight,
-                selectionOrigin = selection.selectionOrigin,
-                forceProgressive = forceProgressive,
-                videoId = streamState.streamId // Phase 1B: for HLS poison check
-            )
+            val result = buildMediaSourceResultViaDash(resolvedForFactory, state.audioOnly, forceProgressive)
             preparedIsAdaptive = result.isAdaptive
             preparedAdaptiveType = result.adaptiveType
 
@@ -3037,50 +2896,121 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 clearTrackSelectorConstraints()
                 preparedQualityCapHeight = null
                 factorySelectedVideoTrack = result.selectedVideoTrack // Factory's actual choice
+
+                // Clean adaptive/MPD failure: the build returned progressive even though we
+                // attempted adaptive (not forced, not audio-only). Make the fallback sticky so we
+                // (a) stop re-running MPD generation on every state tick, and (b) let checkCacheHit
+                // compare against the actually-served muxed track instead of the unreachable
+                // requested high-res track — without this, a MANUAL high-res pick that can't be
+                // honored (e.g. ANDROID_VR-unplayable videos served via the NewPipe fallback)
+                // re-prepares forever, thrashing the audio/codec pipeline.
+                if (!result.isAdaptive && !forceProgressive && !state.audioOnly) {
+                    adaptiveFailedForCurrentStream = streamState.streamId
+                    if (BuildConfig.DEBUG) android.util.Log.d(
+                        "PlayerFragment",
+                        "MPD/adaptive unavailable for ${streamState.streamId} (served=${sourceIdentityForLog(result.actualSourceUrl)}); sticky progressive to prevent re-prepare loop"
+                    )
+                }
             }
 
             result
         } catch (e: Exception) {
             android.util.Log.w("PlayerFragment", "MediaSource creation failed, using fallback: ${e.message}")
-            // Mark adaptive as failed for this stream to prevent rebuild loops
-            if (!forceProgressive && (resolved.hlsUrl != null || resolved.dashUrl != null)) {
+            // Mark adaptive as failed for this stream to prevent rebuild loops. The lean primary
+            // adaptive path is synthetic LocalDash (hlsUrl/dashUrl both null), so gate on the
+            // attempt itself: any non-forced, non-audio build that threw was an adaptive attempt.
+            if (!forceProgressive && !state.audioOnly) {
                 adaptiveFailedForCurrentStream = streamState.streamId
                 android.util.Log.w("PlayerFragment", "Adaptive failed for ${streamState.streamId} - will use progressive for this stream")
             }
-            // Fallback to single quality if multi-quality fails
             // Progressive fallback - ensure preparedIsAdaptive is correctly set
             preparedIsAdaptive = false
             preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
             preparedQualityCapHeight = null
             factorySelectedVideoTrack = null
             clearTrackSelectorConstraints() // Clear any lingering constraints from previous adaptive video
-            val trackPair = selectTrack(streamState.selection, state.audioOnly)
-            if (trackPair == null) {
-                android.util.Log.e("PlayerFragment", "No video track available and audio-only not requested")
-                context?.let { ctx ->
-                    Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+
+            // Prefer the canonical progressive builder: forceProgressive skips the adaptive MPD
+            // that just failed, and it MERGES video-only + audio. The raw single-track path below
+            // would drop audio -> silent video for video-only sources (the common ANDROID_VR case).
+            // Distinguish "builder threw" (Media3 runtime error — a raw source may still work) from
+            // "builder returned null" (decide() found NO playable source, e.g. a non-VR resolve with
+            // no sustainable muxed): the latter must NOT be papered over with a doomed single track.
+            var fallbackBuilderThrew = false
+            val progressiveBuilt = if (!state.audioOnly) {
+                try {
+                    // resolvedForFactory pins the user's chosen audio language (selection.audio);
+                    // the raw resolved would let decide() re-pick audio by max bitrate, reverting a
+                    // user-selected dub on this fallback path.
+                    dashSourceBuilder.build(resolvedForFactory, forceProgressive = true)
+                } catch (fallbackError: Exception) {
+                    fallbackBuilderThrew = true
+                    android.util.Log.w("PlayerFragment", "Progressive fallback build failed: ${fallbackError.message}")
+                    null
                 }
-                preparedStreamKey = null
-                preparedStreamUrl = null
-                preparedIsAdaptive = false
-                preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
-                preparedQualityCapHeight = null
-                factorySelectedVideoTrack = null
-                return
+            } else null
+
+            when {
+                progressiveBuilt != null -> {
+                    // build(forceProgressive=true) returns Progressive for VOD, but for LIVE decide()
+                    // ignores forceProgressive and returns ServerDash/Hls — so map by decision type
+                    // rather than assuming Progressive (else a live source is mislabeled with a null
+                    // URL). Reconcile the prepared-* fields with what was actually built; the catch
+                    // preamble had assumed progressive.
+                    val mapped = when (val d = progressiveBuilt.decision) {
+                        is SourceDecision.ServerDash -> MediaSourceResult(progressiveBuilt.source, true, d.url, MediaSourceResult.AdaptiveType.DASH)
+                        is SourceDecision.Hls -> MediaSourceResult(progressiveBuilt.source, true, d.url, MediaSourceResult.AdaptiveType.HLS)
+                        is SourceDecision.LocalDash -> MediaSourceResult(progressiveBuilt.source, true, d.dataUri, MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE)
+                        is SourceDecision.Progressive -> {
+                            val progTrack = streamState.selection.resolved.videoTracks.firstOrNull { it.url == d.videoUrl }
+                            MediaSourceResult(progressiveBuilt.source, false, d.videoUrl, MediaSourceResult.AdaptiveType.NONE, progTrack)
+                        }
+                        is SourceDecision.None -> MediaSourceResult(progressiveBuilt.source, false, null, MediaSourceResult.AdaptiveType.NONE)
+                    }
+                    preparedIsAdaptive = mapped.isAdaptive
+                    preparedAdaptiveType = mapped.adaptiveType
+                    factorySelectedVideoTrack = mapped.selectedVideoTrack
+                    mapped
+                }
+
+                !state.audioOnly && !fallbackBuilderThrew -> {
+                    // build() returned null without throwing => decide() found NO sustainable source
+                    // (e.g. FALLBACK_NO_SUSTAINABLE_MUXED). A raw video-only last resort would just
+                    // 403 silently on the fallback client. failPrepare() surfaces the Error state
+                    // (not a transient Toast) and stops the re-prepare/error-spam loop.
+                    android.util.Log.e("PlayerFragment", "No sustainable source for ${streamState.streamId}")
+                    failPrepare(R.string.player_stream_error)
+                    return
+                }
+
+                else -> {
+                    // Last resort: audio-only mode, or the builder threw a Media3 error (a raw
+                    // ProgressiveMediaSource from the selected URL may still work).
+                    val trackPair = selectTrack(streamState.selection, state.audioOnly)
+                    if (trackPair == null) {
+                        android.util.Log.e("PlayerFragment", "No video track available and audio-only not requested")
+                        failPrepare(R.string.player_stream_error)
+                        return
+                    }
+                    val (url, mimeType) = trackPair
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(url)
+                        .setMimeType(mimeType)
+                        .build()
+                    val source = ProgressiveMediaSource.Factory(
+                        dataSourceFactoryProvider.forStreams(streamState.selection.resolved)
+                    ).createMediaSource(mediaItem)
+                    val lastResortTrack = streamState.selection.resolved.videoTracks.firstOrNull { it.url == url }
+                    factorySelectedVideoTrack = lastResortTrack
+                    MediaSourceResult(
+                        source = source,
+                        isAdaptive = false,
+                        actualSourceUrl = url,
+                        adaptiveType = MediaSourceResult.AdaptiveType.NONE,
+                        selectedVideoTrack = lastResortTrack
+                    )
+                }
             }
-            val (url, mimeType) = trackPair
-            val mediaItem = MediaItem.Builder()
-                .setUri(url)
-                .setMimeType(mimeType)
-                .build()
-            val source = cachedProgressiveMediaSourceFactory().createMediaSource(mediaItem)
-            // Create a fallback MediaSourceResult for the progressive source
-            MediaSourceResult(
-                source = source,
-                isAdaptive = false,
-                actualSourceUrl = url,
-                adaptiveType = MediaSourceResult.AdaptiveType.NONE
-            )
         }
 
         try {
@@ -3128,7 +3058,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         viewModel.state.value.currentItem?.streamId?.let { streamId ->
                             viewModel.metrics.onVideoRenderStall(streamId)
                         }
-                        player?.let { recoveryManager?.onVideoRenderStall(it) }
+                        requestStreamRefreshAndResume("video render stall")
                     }
                 }
             }
@@ -3149,19 +3079,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 "Stream prepared successfully: ${streamState.streamId}, isAdaptive=$preparedIsAdaptive, type=${mediaSourceResult.adaptiveType}, mutedForStream=${mutedForStreamKey != null}, actualSource=${sourceIdentityForLog(preparedStreamUrl)}"
             )
 
-            // Notify recovery manager of new stream - pass streamId, adaptive flag, and live flag
-            // Live streams use longer stall thresholds since they buffer more due to real-time data
-            recoveryManager?.onNewStream(streamState.streamId, preparedIsAdaptive, resolved.isLive)
-
-            // Notify buffer health monitor of new stream - only monitors progressive streams
-            bufferHealthMonitor?.onNewStream(streamState.streamId, preparedIsAdaptive)
-
-            // Phase 4: Initialize degradation manager for new stream (if enabled)
-            if (featureFlags.isDegradationManagerEnabled) {
-                val initialQualityHeight = factorySelectedVideoTrack?.height
-                    ?: streamState.selection.video?.height ?: 0
-                degradationManager.initVideo(streamState.streamId, initialQualityHeight)
-            }
+            // New stream: capture live flag for the stall watchdog threshold and clear any
+            // stale watchdog armed for the previous stream. Live streams buffer more, so the
+            // watchdog tolerates a longer stall before re-resolving.
+            currentStreamIsLive = resolved.isLive
+            cancelStallWatchdog()
 
             // Sync MediaSession metadata now that player has a valid media source.
             // This must happen after setMediaSource/prepare to ensure currentMediaItem exists.
@@ -3186,6 +3108,26 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
+    /**
+     * Abort the current prepare cleanly: clear first-frame mute, reset prepared-source state, and
+     * transition to the Error state. Using Error (not just a Toast) is load-bearing — maybePrepareStream
+     * early-returns on non-Ready, so this stops the state observer from re-invoking prepare on every
+     * subsequent tick (which would rebuild a doomed source and spam the error).
+     */
+    private fun failPrepare(messageRes: Int) {
+        firstFrameTimeoutRunnable?.let { firstFrameHandler.removeCallbacks(it) }
+        firstFrameTimeoutRunnable = null
+        mutedForStreamKey = null
+        player?.volume = 1f
+        preparedStreamKey = null
+        preparedStreamUrl = null
+        preparedIsAdaptive = false
+        preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
+        preparedQualityCapHeight = null
+        factorySelectedVideoTrack = null
+        viewModel.setErrorState(messageRes)
+    }
+
     private fun selectTrack(selection: PlaybackSelection, audioOnly: Boolean): Pair<String, String>? {
         return if (audioOnly) {
             val audio = selection.audio
@@ -3193,106 +3135,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         } else {
             val video = selection.video
             video?.url?.let { url -> url to (video.mimeType ?: DEFAULT_VIDEO_MIME) }
-        }
-    }
-
-    /**
-     * Creates callbacks for PlaybackRecoveryManager to handle recovery actions.
-     */
-    private fun createRecoveryCallbacks(): PlaybackRecoveryManager.RecoveryCallbacks {
-        return object : PlaybackRecoveryManager.RecoveryCallbacks {
-            override fun onRecoveryStarted(step: PlaybackRecoveryManager.RecoveryStep, attempt: Int) {
-                android.util.Log.i("PlayerFragment", "Recovery started: step=$step, attempt=$attempt")
-                streamTelemetry.recordRecoveryStep()
-                val state = viewModel.state.value
-                val streamState = state.streamState
-
-                // Handle Ready, Recovering, and RecoveryExhausted states to support multi-attempt updates and manual retry
-                val (streamId, selection) = when (streamState) {
-                    is StreamState.Ready -> streamState.streamId to streamState.selection
-                    is StreamState.Recovering -> streamState.streamId to streamState.selection
-                    is StreamState.RecoveryExhausted -> streamState.streamId to streamState.selection
-                    else -> return // Can't recover from Idle/Loading/Error states
-                }
-
-                // Transition to (or update) Recovering state for UI
-                viewModel.setRecoveringState(
-                    streamId,
-                    selection,
-                    step.toViewModelStep(),
-                    attempt
-                )
-            }
-
-            override fun onRecoverySucceeded() {
-                android.util.Log.i("PlayerFragment", "Recovery succeeded")
-                // Transition back to Ready state
-                viewModel.clearRecoveringState()
-            }
-
-            override fun onRecoveryExhausted() {
-                android.util.Log.e("PlayerFragment", "Recovery exhausted - transitioning to exhausted state")
-                // Transition to RecoveryExhausted state - UI will be updated via state observation
-                viewModel.setRecoveryExhaustedState()
-            }
-
-            override fun onRequestQualityDownshift(): Boolean {
-                val state = viewModel.state.value
-                val streamState = when (val s = state.streamState) {
-                    is StreamState.Ready -> s
-                    is StreamState.Recovering -> StreamState.Ready(s.streamId, s.selection)
-                    is StreamState.RecoveryExhausted -> StreamState.Ready(s.streamId, s.selection)
-                    else -> return false
-                }
-                // Use factory-selected track if available (may differ from selection.video in AUTO mode).
-                // This ensures downshift decisions are based on actual playing quality, not ViewModel's choice.
-                val currentTrack = factorySelectedVideoTrack ?: streamState.selection.video
-                val nextLower = findNextLowerQualityTrack(
-                    current = currentTrack,
-                    available = streamState.selection.resolved.videoTracks
-                )
-                return if (nextLower != null) {
-                    android.util.Log.i("PlayerFragment", "Recovery: stepping down to ${nextLower.qualityLabel}")
-                    // Returns false if URLs expired and refresh triggered instead
-                    viewModel.applyAutoQualityStepDown(nextLower)
-                } else {
-                    false
-                }
-            }
-
-            override fun onRequestStreamRefresh(resumePositionMs: Long) {
-                android.util.Log.i("PlayerFragment", "Recovery: refreshing stream URLs, resume at ${resumePositionMs}ms")
-                requestStreamRefreshAndResume("recovery ladder step: refresh URLs")
-            }
-
-            override fun onRequestPlayerRebuild(resumePositionMs: Long) {
-                android.util.Log.i("PlayerFragment", "Recovery: rebuilding player at ${resumePositionMs}ms")
-                // Save state, release player, recreate
-                val currentItem = viewModel.state.value.currentItem ?: return
-                pendingResumeStreamId = currentItem.streamId
-                pendingResumePositionMs = resumePositionMs.takeIf { it > 0 }
-                pendingResumePlayWhenReady = true
-
-                // Cancel existing recovery manager before rebuild to prevent duplicate callbacks
-                recoveryManager?.cancel()
-                recoveryManager = null
-
-                // Release and recreate player (setupPlayer creates new recoveryManager)
-                player?.let { playerToRelease ->
-                    player = null
-                    releasePlayerAsync(playerToRelease, "rebuild")
-                }
-                binding?.let { setupPlayer(it) }
-
-                // PR5: Force stream refresh using auto-recovery method - this is the final recovery step,
-                // uses reserved budget that won't be blocked by manual limits.
-                val refreshAllowed = viewModel.forceRefreshForAutoRecovery()
-                if (!refreshAllowed) {
-                    // Rebuild is the last recovery step - if blocked, transition to exhausted state
-                    android.util.Log.w("PlayerFragment", "Rebuild refresh blocked, setting recovery exhausted")
-                    viewModel.setRecoveryExhaustedState()
-                }
-            }
         }
     }
 
@@ -3315,62 +3157,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 playerToRelease.release()
             } catch (e: Exception) {
                 android.util.Log.e("PlayerFragment", "Player release failed ($reason): ${e.message}", e)
-            }
-        }
-    }
-
-    /**
-     * Extension to convert PlaybackRecoveryManager.RecoveryStep to viewmodel enum.
-     */
-    private fun PlaybackRecoveryManager.RecoveryStep.toViewModelStep(): RecoveryStep {
-        return when (this) {
-            PlaybackRecoveryManager.RecoveryStep.RE_PREPARE -> RecoveryStep.RE_PREPARE
-            PlaybackRecoveryManager.RecoveryStep.SEEK_TO_CURRENT -> RecoveryStep.SEEK_TO_CURRENT
-            PlaybackRecoveryManager.RecoveryStep.QUALITY_DOWNSHIFT -> RecoveryStep.QUALITY_DOWNSHIFT
-            PlaybackRecoveryManager.RecoveryStep.REFRESH_URLS -> RecoveryStep.REFRESH_URLS
-            PlaybackRecoveryManager.RecoveryStep.REBUILD_PLAYER -> RecoveryStep.REBUILD_PLAYER
-        }
-    }
-
-    /**
-     * Creates callbacks for BufferHealthMonitor to handle proactive quality downshift.
-     * Coordinated with PlaybackRecoveryManager: proactive monitoring disabled during recovery.
-     */
-    private fun createBufferHealthCallbacks(): BufferHealthMonitor.BufferHealthCallbacks {
-        return object : BufferHealthMonitor.BufferHealthCallbacks {
-            override fun onProactiveDownshiftRequested(): Boolean {
-                val state = viewModel.state.value
-                val streamState = state.streamState
-
-                // Only process when in Ready state (not during recovery)
-                if (streamState !is StreamState.Ready) {
-                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Proactive downshift skipped: not in Ready state")
-                    return false
-                }
-
-                // Use factory-selected track if available (may differ from selection.video in AUTO mode).
-                // This ensures downshift decisions are based on actual playing quality, not ViewModel's choice.
-                val currentTrack = factorySelectedVideoTrack ?: streamState.selection.video
-                val nextLower = findNextLowerQualityTrack(
-                    current = currentTrack,
-                    available = streamState.selection.resolved.videoTracks
-                )
-
-                return if (nextLower != null) {
-                    if (BuildConfig.DEBUG) android.util.Log.i("PlayerFragment", "Proactive downshift: ${currentTrack?.qualityLabel} -> ${nextLower.qualityLabel}")
-                    // Returns false if URLs expired and refresh triggered instead
-                    viewModel.applyAutoQualityStepDown(nextLower)
-                } else {
-                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Proactive downshift: no lower quality available")
-                    false
-                }
-            }
-
-            override fun isInRecoveryState(): Boolean {
-                return when (viewModel.state.value.streamState) {
-                    is StreamState.Recovering, is StreamState.RecoveryExhausted -> true
-                    else -> false
-                }
             }
         }
     }
@@ -4297,12 +4083,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     //   to detect the change and trigger rebuild. Using factorySelectedVideoTrack here
                     //   would incorrectly return "Hit" and block manual quality switches.
                     //
-                    // - AUTO_RECOVERY: BufferHealthMonitor requested downshift. Same as MANUAL - must
+                    // - AUTO_RECOVERY: automatic recovery requested downshift. Same as MANUAL - must
                     //   compare against the new selection.video to detect and apply the change.
+                    //
+                    // EXCEPTION (forceProgressive): adaptive/MPD generation has failed for this
+                    //   stream (sticky), so the requested high-res track can NEVER be served — the
+                    //   builder deterministically returns the muxed fallback. Comparing the served
+                    //   URL to the unreachable requested track would never match, re-preparing
+                    //   forever. Under sticky fallback, compare against the actually-served track
+                    //   (factorySelectedVideoTrack) for MANUAL/AUTO_RECOVERY too, exactly like AUTO.
+                    //   A real quality change still can't be honored anyway (only muxed exists), so
+                    //   treating it as a hit is correct and stops the loop.
                     val effectiveVideoUrl = when (selection.selectionOrigin) {
                         QualitySelectionOrigin.AUTO -> factorySelectedVideoTrack?.url ?: selection.video?.url
-                        QualitySelectionOrigin.MANUAL -> selection.video?.url
-                        QualitySelectionOrigin.AUTO_RECOVERY -> selection.video?.url
+                        QualitySelectionOrigin.MANUAL, QualitySelectionOrigin.AUTO_RECOVERY ->
+                            if (forceProgressive) factorySelectedVideoTrack?.url ?: selection.video?.url
+                            else selection.video?.url
                     }
                     preparedStreamUrl == effectiveVideoUrl
                 }
@@ -4363,6 +4159,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private companion object {
         private const val DEFAULT_AUDIO_MIME = "audio/mp4"
         private const val DEFAULT_VIDEO_MIME = "video/mp4"
+
+        /** Buffering-stall watchdog threshold for VOD before a re-resolve. */
+        private const val STALL_WATCHDOG_VOD_MS = 6_000L
+        /** Buffering-stall watchdog threshold for live (buffers more by nature). */
+        private const val STALL_WATCHDOG_LIVE_MS = 45_000L
 
         /** Delay before unlocking orientation after reaching target (allows stabilization) */
         private const val ORIENTATION_UNLOCK_DELAY_MS = 500L

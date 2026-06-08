@@ -59,15 +59,6 @@ class PlaybackFeatureFlagsTest {
     }
 
     @Test
-    fun `degradation manager uses build-time default when no override set`() {
-        assertEquals(
-            "Should use build-time default",
-            BuildConfig.ENABLE_DEGRADATION_MANAGER,
-            featureFlags.isDegradationManagerEnabled
-        )
-    }
-
-    @Test
     fun `ios fetch uses build-time default when no override set`() {
         assertEquals(
             "Should use build-time default",
@@ -100,18 +91,6 @@ class PlaybackFeatureFlagsTest {
     fun `mpd prefetch override to false takes precedence`() {
         featureFlags.setMpdPrefetchEnabled(false)
         assertFalse("Should be disabled with override", featureFlags.isMpdPrefetchEnabled)
-    }
-
-    @Test
-    fun `degradation manager override to true takes precedence`() {
-        featureFlags.setDegradationManagerEnabled(true)
-        assertTrue("Should be enabled with override", featureFlags.isDegradationManagerEnabled)
-    }
-
-    @Test
-    fun `degradation manager override to false takes precedence`() {
-        featureFlags.setDegradationManagerEnabled(false)
-        assertFalse("Should be disabled with override", featureFlags.isDegradationManagerEnabled)
     }
 
     @Test
@@ -152,7 +131,6 @@ class PlaybackFeatureFlagsTest {
         // Set overrides for all flags
         featureFlags.setSynthAdaptiveEnabled(!BuildConfig.ENABLE_SYNTH_ADAPTIVE)
         featureFlags.setMpdPrefetchEnabled(!BuildConfig.ENABLE_MPD_PREFETCH)
-        featureFlags.setDegradationManagerEnabled(!BuildConfig.ENABLE_DEGRADATION_MANAGER)
         featureFlags.setIosFetchEnabled(!BuildConfig.ENABLE_NPE_IOS_FETCH)
         featureFlags.setGenerousCropBudgetEnabled(true)
 
@@ -169,11 +147,6 @@ class PlaybackFeatureFlagsTest {
             "MPD prefetch should revert",
             BuildConfig.ENABLE_MPD_PREFETCH,
             featureFlags.isMpdPrefetchEnabled
-        )
-        assertEquals(
-            "Degradation manager should revert",
-            BuildConfig.ENABLE_DEGRADATION_MANAGER,
-            featureFlags.isDegradationManagerEnabled
         )
         assertEquals(
             "iOS fetch should revert",
@@ -217,17 +190,15 @@ class PlaybackFeatureFlagsTest {
 
         assertTrue("Should contain synth_adaptive", diagnostics.containsKey("synth_adaptive"))
         assertTrue("Should contain mpd_prefetch", diagnostics.containsKey("mpd_prefetch"))
-        assertTrue("Should contain degradation_manager", diagnostics.containsKey("degradation_manager"))
         assertTrue("Should contain ios_fetch", diagnostics.containsKey("ios_fetch"))
         assertTrue("Should contain generous_crop_budget", diagnostics.containsKey("generous_crop_budget"))
         assertTrue("Should contain client_rotation", diagnostics.containsKey("client_rotation"))
-        assertTrue("Should contain hls_probation", diagnostics.containsKey("hls_probation"))
         assertTrue("Should contain cronet_enabled", diagnostics.containsKey("cronet_enabled"))
         assertTrue("Should contain predictive_prefetch", diagnostics.containsKey("predictive_prefetch"))
         assertTrue("Should contain segment_preload", diagnostics.containsKey("segment_preload"))
         assertTrue("Should contain never_freeze_abr", diagnostics.containsKey("never_freeze_abr"))
         assertTrue("Should contain ttl_watcher", diagnostics.containsKey("ttl_watcher"))
-        assertEquals("Should have 12 flags", 12, diagnostics.size)
+        assertEquals("Should have 10 flags", 10, diagnostics.size)
     }
 
     // --- Generous Crop Budget Flag Tests ---

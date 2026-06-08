@@ -9,7 +9,7 @@ import org.junit.Test
  * Regression tests for the 4K-seek quality collapse (ANDROID-PLAYBACK-02).
  *
  * The bug: seeking on a 4K WiFi video (a SYNTH_ADAPTIVE multi-rep synthetic DASH stream)
- * 403'd on the video-only segment URLs; each 403 consumed PlaybackDegradationManager's
+ * 403'd on the video-only segment URLs; each 403 consumed the old degrade-to-muxed
  * refresh budget; after a handful of seeks the budget exhausted and the player fell back to
  * a single muxed 360p (itag 18) progressive track — permanently, with the quality menu
  * collapsed to one option.

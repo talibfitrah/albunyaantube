@@ -7,6 +7,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.analytics.PlaybackMetricsCollector
 import com.albunyaan.tube.data.extractor.AudioTrack
+import com.albunyaan.tube.data.extractor.ExtractionClient
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
@@ -133,7 +134,6 @@ class PlayerViewModel @Inject constructor(
     private var liveRefreshJob: Job? = null
 
     // Playlist playback state
-    private var currentPlaylistId: String? = null
     private var isPlaylistMode: Boolean = false
 
     // PR6.6: Playlist paging state for lazy loading
@@ -317,32 +317,11 @@ class PlayerViewModel @Inject constructor(
      * Deduplicates by resolution height, preferring muxed streams over video-only
      * for better reliability (no audio/video merge needed).
      */
-    fun getAvailableQualities(): List<QualityOption> {
+    fun getAvailableQualities(adaptiveActive: Boolean): List<QualityOption> {
         // Source from ready-OR-recovering so the picker is populated even while the player
         // is stalling/recovering — otherwise the user can't drop resolution during a stall.
         val selection = readyOrRecoveringSelection()?.selection ?: return emptyList()
-
-        val videoTracks = selection.resolved.videoTracks
-
-        // Deduplicate by height: prefer muxed over video-only, then highest bitrate
-        val deduped = videoTracks
-            .filter { it.height != null && it.qualityLabel != null }
-            .groupBy { it.height }
-            .mapValues { (_, tracksAtHeight) ->
-                tracksAtHeight
-                    .sortedWith(
-                        compareBy<VideoTrack> { it.isVideoOnly } // muxed first (false < true)
-                            .thenByDescending { it.bitrate ?: 0 }
-                    )
-                    .first()
-            }
-            .values
-
-        return deduped.mapNotNull { track ->
-            track.qualityLabel?.let { label ->
-                QualityOption(label, track)
-            }
-        }.sortedByDescending { it.track.height ?: 0 }
+        return buildQualityOptions(selection.resolved.videoTracks, selection.resolved.extractionClient, adaptiveActive)
     }
 
     /**
@@ -389,8 +368,7 @@ class PlayerViewModel @Inject constructor(
      *        to prevent applying settings to the wrong video.
      */
     private fun applyQualityCapInternal(track: VideoTrack, targetStreamId: String?) {
-        // Ready-or-recovering: a manual quality change during a stall must still apply.
-        // This mirrors applyAutoQualityStepDown, which already settles Recovering -> Ready.
+        // A manual quality change during a stall must still apply.
         val streamState = readyOrRecoveringSelection() ?: return
 
         // Verify we're still on the same video - user may have navigated during debounce
@@ -454,47 +432,10 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Apply automatic quality step-down during playback stalls.
-     * This does NOT change the user's quality cap - it's a temporary recovery action.
-     * Used only when playing progressive streams (not adaptive).
-     *
-     * @return true if step-down was applied, false if URLs were expired (refresh triggered)
-     */
-    fun applyAutoQualityStepDown(track: VideoTrack): Boolean {
-        val streamState = readyOrRecoveringSelection() ?: return false
-
-        val resolved = streamState.selection.resolved
-        val isProgressiveStream = resolved.hlsUrl == null && resolved.dashUrl == null
-
-        // PR4: URL Lifecycle Hardening - check if progressive URLs are expired
-        if (isProgressiveStream && resolved.areUrlsExpired()) {
-            android.util.Log.w("PlayerViewModel", "applyAutoQualityStepDown: URLs expired, forcing stream refresh instead of step-down")
-            // PR5: Use AUTO_RECOVERY for automatic quality step-down paths - ensures recovery
-            // is not blocked by manual refresh limits
-            forceRefreshForAutoRecovery()
-            return false
-        }
-
-        // Preserve user's cap if they set one - auto step-down should not override it
-        val newSelection = PlaybackSelection(
-            streamId = streamState.streamId,
-            video = track,
-            audio = streamState.selection.audio,
-            resolved = resolved,
-            userQualityCapHeight = streamState.selection.userQualityCapHeight,
-            selectionOrigin = QualitySelectionOrigin.AUTO_RECOVERY
-        )
-
-        updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
-        android.util.Log.d("PlayerViewModel", "Auto step-down to ${track.qualityLabel} (cap preserved: ${streamState.selection.userQualityCapHeight}p)")
-        return true
-    }
-
-    /**
      * Handle decoder error by stepping down quality AND clamping the user's cap.
      *
-     * Unlike [applyAutoQualityStepDown] which preserves the user's cap for network-based
-     * step-downs (where higher quality can recover), decoder errors indicate the device
+     * Unlike the network-based auto step-down (now removed) which preserved the user's cap
+     * for cases where higher quality can recover, decoder errors indicate the device
      * CANNOT play the current quality at all. We must clamp the cap to prevent the
      * track selector from immediately re-selecting the undecodable quality.
      *
@@ -539,16 +480,12 @@ class PlayerViewModel @Inject constructor(
     private fun readyOrRecoveringSelection(): StreamState.Ready? {
         return when (val streamState = _state.value.streamState) {
             is StreamState.Ready -> streamState
-            is StreamState.Recovering -> StreamState.Ready(streamState.streamId, streamState.selection)
             is StreamState.RecoveryExhausted -> StreamState.Ready(streamState.streamId, streamState.selection)
             else -> null
         }
     }
 
-    /**
-     * Legacy method - delegates to setUserQualityCap for backward compatibility.
-     * @deprecated Use setUserQualityCap instead
-     */
+    /** Apply a user-selected quality cap from the quality picker. */
     fun selectQuality(track: VideoTrack) = setUserQualityCap(track)
 
     /**
@@ -662,7 +599,6 @@ class PlayerViewModel @Inject constructor(
 
         // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
         isPlaylistMode = false
-        currentPlaylistId = null
         pagingJob?.cancel()
         pagingJob = null
         playlistPagingState = null
@@ -721,7 +657,6 @@ class PlayerViewModel @Inject constructor(
         shuffled: Boolean = false
     ) {
         isPlaylistMode = true
-        currentPlaylistId = playlistId
         consecutiveSkips = 0  // Reset auto-skip counter
 
         viewModelScope.launch(dispatcher) {
@@ -1056,7 +991,7 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Force re-resolve stream URLs for automatic recovery.
-     * Called from PlaybackRecoveryManager during REFRESH_URLS step.
+     * Called when the player needs fresh stream URLs (stall watchdog, error refresh).
      *
      * PR5: Uses AUTO_RECOVERY request kind with reserved budget that won't be
      * blocked by manual refresh limits - ensures recovery can always proceed.
@@ -1602,6 +1537,58 @@ class PlayerViewModel @Inject constructor(
          */
         @androidx.annotation.VisibleForTesting
         internal const val PREFETCH_CACHE_TTL_MS = 30_000L
+
+        /**
+         * Pure: which quality options to offer for [videoTracks] given the [extractionClient]
+         * that minted their URLs. Extracted from [getAvailableQualities] so it is unit-testable
+         * without constructing the ViewModel.
+         *
+         * On the NewPipe fallback path (`extractionClient != ANDROID_VR`) playback is served as a
+         * SINGLE progressive muxed track: `DashSourceBuilder.decide()` gates out the adaptive
+         * video-only ladder because those iOS/android-client segments 403 mid-stream (verified for
+         * One4kids "Zaky's Learning Club"). Offering the full 720p/1080p metadata list there is
+         * misleading — the cap is silently ignored and playback stays at the muxed quality (the
+         * documented forceProgressive limitation). So we offer exactly the one track decide() would
+         * serve: the highest muxed, or (if none) the highest video-only. ANDROID_VR keeps the full
+         * ladder — its adaptive segments sustain and track-selector switching works.
+         *
+         * [adaptiveActive] is the player's actual adaptive state for the current source. The full
+         * ladder is offered only when the stream is genuinely playing adaptive (ANDROID_VR with a
+         * built MPD). When ANDROID_VR's own MPD generation fails and the player falls back to a
+         * single progressive track, [adaptiveActive] is false and only the served track is offered —
+         * closing the prior "menu over-promises on MPD-gen failure" gap.
+         */
+        @androidx.annotation.VisibleForTesting
+        internal fun buildQualityOptions(
+            videoTracks: List<VideoTrack>,
+            extractionClient: ExtractionClient,
+            adaptiveActive: Boolean,
+        ): List<QualityOption> {
+            val offerable = if (extractionClient == ExtractionClient.ANDROID_VR && adaptiveActive) {
+                videoTracks
+            } else {
+                // Mirror DashSourceBuilder.decide()'s progressive pick: highest muxed, else highest video-only.
+                val playable = videoTracks.filter { !it.isVideoOnly }.maxByOrNull { it.height ?: 0 }
+                    ?: videoTracks.filter { it.isVideoOnly }.maxByOrNull { it.height ?: 0 }
+                listOfNotNull(playable)
+            }
+
+            // Deduplicate by height: prefer muxed over video-only, then highest bitrate.
+            return offerable
+                .filter { it.height != null && it.qualityLabel != null }
+                .groupBy { it.height }
+                .mapValues { (_, tracksAtHeight) ->
+                    tracksAtHeight
+                        .sortedWith(
+                            compareBy<VideoTrack> { it.isVideoOnly } // muxed first (false < true)
+                                .thenByDescending { it.bitrate ?: 0 }
+                        )
+                        .first()
+                }
+                .values
+                .mapNotNull { track -> track.qualityLabel?.let { label -> QualityOption(label, track) } }
+                .sortedByDescending { it.track.height ?: 0 }
+        }
     }
 
     private fun findDownloadFor(item: UpNextItem?, entries: List<DownloadEntry>): DownloadEntry? {
@@ -1773,28 +1760,12 @@ class PlayerViewModel @Inject constructor(
     // --- Recovery State Management ---
 
     /**
-     * Transition to Recovering state for UI to show recovery overlay.
-     * Preserves the underlying stream/selection so playback can continue.
-     */
-    fun setRecoveringState(
-        streamId: String,
-        selection: PlaybackSelection,
-        step: RecoveryStep,
-        attempt: Int
-    ) {
-        updateState { it.copy(streamState = StreamState.Recovering(streamId, selection, step, attempt)) }
-    }
-
-    /**
      * Clear recovering state and return to Ready state.
      * Called when recovery succeeds.
      */
     fun clearRecoveringState() {
         val current = _state.value.streamState
         when (current) {
-            is StreamState.Recovering -> {
-                updateState { it.copy(streamState = StreamState.Ready(current.streamId, current.selection)) }
-            }
             is StreamState.RecoveryExhausted -> {
                 updateState { it.copy(streamState = StreamState.Ready(current.streamId, current.selection)) }
             }
@@ -1804,12 +1775,12 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Transition to RecoveryExhausted state when all automatic recovery attempts fail.
-     * Called by PlaybackRecoveryManager.onRecoveryExhausted callback.
+     * Surfaced when automatic recovery is exhausted (terminal error / rate-limit) to
+     * show the manual-retry escape hatch.
      */
     fun setRecoveryExhaustedState() {
         val current = _state.value.streamState
         val (streamId, selection) = when (current) {
-            is StreamState.Recovering -> current.streamId to current.selection
             is StreamState.Ready -> current.streamId to current.selection
             else -> return // Can't transition from Idle/Loading/Error
         }
@@ -1869,17 +1840,6 @@ sealed class StreamState {
      */
     object ContentUnavailable : StreamState()
     /**
-     * Automatic recovery in progress. UI should show "Recovering..." overlay.
-     * Contains the underlying Ready state so playback can continue while recovering.
-     */
-    data class Recovering(
-        val streamId: String,
-        val selection: PlaybackSelection,
-        val step: RecoveryStep,
-        val attempt: Int
-    ) : StreamState()
-
-    /**
      * All automatic recovery attempts exhausted. UI should show manual retry option.
      * Contains the underlying selection so user can trigger manual retry.
      */
@@ -1887,17 +1847,6 @@ sealed class StreamState {
         val streamId: String,
         val selection: PlaybackSelection
     ) : StreamState()
-}
-
-/**
- * Recovery steps for automatic playback recovery.
- */
-enum class RecoveryStep {
-    RE_PREPARE,
-    SEEK_TO_CURRENT,
-    QUALITY_DOWNSHIFT,
-    REFRESH_URLS,
-    REBUILD_PLAYER
 }
 
 data class QualityOption(

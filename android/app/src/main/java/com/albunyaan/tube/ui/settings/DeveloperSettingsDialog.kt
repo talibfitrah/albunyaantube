@@ -30,7 +30,6 @@ import kotlinx.coroutines.launch
  * This dialog provides operational kill-switches for playback features:
  * - Synthetic Adaptive DASH: Multi-representation DASH from progressive streams
  * - MPD Prefetch: Pre-generate DASH MPD on video tap
- * - Degradation Manager: Per-video refresh budgets and quality step-downs
  * - iOS Client Fetch: Use iOS client for HLS manifest extraction
  *
  * Each toggle shows:
@@ -118,17 +117,6 @@ class DeveloperSettingsDialog : DialogFragment() {
             diagnostics["mpd_prefetch"]?.runtimeOverride
         ) { enabled ->
             featureFlags.setMpdPrefetchEnabled(if (enabled == BuildConfig.ENABLE_MPD_PREFETCH) null else enabled)
-        }
-
-        addFeatureToggle(
-            contentView,
-            getString(R.string.dev_settings_degradation_title),
-            getString(R.string.dev_settings_degradation_desc),
-            featureFlags.isDegradationManagerEnabled,
-            BuildConfig.ENABLE_DEGRADATION_MANAGER,
-            diagnostics["degradation_manager"]?.runtimeOverride
-        ) { enabled ->
-            featureFlags.setDegradationManagerEnabled(if (enabled == BuildConfig.ENABLE_DEGRADATION_MANAGER) null else enabled)
         }
 
         addFeatureToggle(

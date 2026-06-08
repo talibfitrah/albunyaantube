@@ -51,26 +51,34 @@ class AdaptiveBufferPolicy @Inject constructor(
         private const val LOW_MEMORY_CLASS = 128
         private const val HIGH_MEMORY_CLASS = 256
 
-        // Conservative profile (low-memory devices)
-        // Slightly higher thresholds than NORMAL/HIGH to reduce rebuffering on slow storage
-        private const val LOW_MIN_BUFFER_MS = 15_000      // 15s min buffer
-        private const val LOW_MAX_BUFFER_MS = 60_000      // 1 minute max buffer
+        // Drip-style buffering (min == max). ExoPlayer's loader fills the forward
+        // buffer to maxBufferMs, then pauses until it drains below minBufferMs. When
+        // min < max this produces a bursty fill→drain→fill cycle whose drain phase
+        // repeatedly grazes the rebuffer threshold (the observed mid-playback stalls).
+        // Setting min == max makes the loader top up continuously at a steady level —
+        // ExoPlayer's own default since v2.10 (50s/50s) and LibreTube's model. Buffer
+        // SIZE was never the problem; the min≠max burstiness was.
+
+        // Conservative profile (low-memory devices): smaller steady buffer to bound
+        // memory on ≤128MB-heap devices while still being drip-style (no burst).
+        private const val LOW_MIN_BUFFER_MS = 30_000      // 30s steady buffer
+        private const val LOW_MAX_BUFFER_MS = 30_000      // == min (drip)
         private const val LOW_PLAYBACK_BUFFER_MS = 2_000  // 2s before playback (safer for slow eMMC)
         private const val LOW_REBUFFER_BUFFER_MS = 3_500  // 3.5s after rebuffer
         private const val LOW_BACK_BUFFER_MS = 30_000     // 30s back buffer
 
-        // Balanced profile (normal devices)
-        private const val NORMAL_MIN_BUFFER_MS = 20_000   // 20s min buffer
-        private const val NORMAL_MAX_BUFFER_MS = 90_000   // 90s max buffer
+        // Balanced profile (normal devices): ExoPlayer's default 50s steady buffer.
+        private const val NORMAL_MIN_BUFFER_MS = 50_000   // 50s steady buffer
+        private const val NORMAL_MAX_BUFFER_MS = 50_000   // == min (drip)
         private const val NORMAL_PLAYBACK_BUFFER_MS = 1_500 // 1.5s before playback (fast TTFF)
         private const val NORMAL_REBUFFER_BUFFER_MS = 3_000 // 3s after rebuffer
         private const val NORMAL_BACK_BUFFER_MS = 45_000  // 45s back buffer
 
-        // High-memory profile. Samsung/flagship devices should not silently
-        // buffer 3 minutes of adaptive media; that increases allocator churn and
-        // recovery latency without proving network health.
-        private const val HIGH_MIN_BUFFER_MS = 20_000     // 20s min buffer
-        private const val HIGH_MAX_BUFFER_MS = 90_000     // 90s max buffer
+        // High-memory profile. Same 50s steady drip buffer — flagship devices gain
+        // nothing from silently holding minutes of adaptive media (allocator churn,
+        // recovery latency) and the steady level already prevents rebuffering.
+        private const val HIGH_MIN_BUFFER_MS = 50_000     // 50s steady buffer
+        private const val HIGH_MAX_BUFFER_MS = 50_000     // == min (drip)
         private const val HIGH_PLAYBACK_BUFFER_MS = 1_500 // 1.5s before playback (fast TTFF)
         private const val HIGH_REBUFFER_BUFFER_MS = 4_000 // 4s after rebuffer for stable resume
         private const val HIGH_BACK_BUFFER_MS = 45_000    // 45s back buffer
@@ -183,7 +191,7 @@ class AdaptiveBufferPolicy @Inject constructor(
      * Get the buffer configuration appropriate for this device.
      * Returns a cached configuration computed once based on device capabilities.
      */
-    fun getBufferConfig(): BufferConfig = cachedBufferConfig
+    private fun getBufferConfig(): BufferConfig = cachedBufferConfig
 
     /**
      * Build a DefaultLoadControl with adaptive buffer configuration.
@@ -201,23 +209,5 @@ class AdaptiveBufferPolicy @Inject constructor(
             .setBackBuffer(config.backBufferMs, true)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
-    }
-
-    /**
-     * Get diagnostic info about buffer policy.
-     */
-    fun getDiagnostics(): Map<String, Any> {
-        val config = getBufferConfig()
-        return mapOf(
-            "memoryClass" to memoryClass,
-            "isLowRamDevice" to isLowRamDevice,
-            "isTvOrSetTopBox" to isTvOrSetTopBox,
-            "profile" to config.profile.name,
-            "minBufferMs" to config.minBufferMs,
-            "maxBufferMs" to config.maxBufferMs,
-            "bufferForPlaybackMs" to config.bufferForPlaybackMs,
-            "bufferForPlaybackAfterRebufferMs" to config.bufferForPlaybackAfterRebufferMs,
-            "backBufferMs" to config.backBufferMs
-        )
     }
 }

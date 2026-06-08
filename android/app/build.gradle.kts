@@ -103,17 +103,9 @@ android {
         val enableMpdPrefetch = localProperties.getProperty("playback.mpd.prefetch.enabled", "true").toBoolean()
         buildConfigField("boolean", "ENABLE_MPD_PREFETCH", "$enableMpdPrefetch")
 
-        // Enable graceful degradation manager for playback recovery.
-        // Implements per-video refresh budgets and automatic quality step-downs.
-        // Default ON - disable in local.properties: playback.degradation.enabled=false
-        val enableDegradation = localProperties.getProperty("playback.degradation.enabled", "true").toBoolean()
-        buildConfigField("boolean", "ENABLE_DEGRADATION_MANAGER", "$enableDegradation")
-
         val enableClientRotation = localProperties.getProperty("playback.client.rotation.enabled", "true").toBoolean()
-        val enableHlsProbation = localProperties.getProperty("playback.hls.probation.enabled", "true").toBoolean()
         val enableCronet = localProperties.getProperty("playback.cronet.enabled", "true").toBoolean()
         buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "$enableClientRotation")
-        buildConfigField("boolean", "ENABLE_HLS_PROBATION", "$enableHlsProbation")
         buildConfigField("boolean", "ENABLE_CRONET", "$enableCronet")
         // Predictive prefetch starts extraction when list cells attach so
         // tap-to-open is instant. OFF by default — turning it on with the

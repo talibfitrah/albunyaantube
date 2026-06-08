@@ -137,7 +137,14 @@ class ShortsPlayerViewModel @AssistedInject constructor(
      * Standard quality ladder for the kebab picker. Hard-coded list (highest →
      * lowest) so the dialog renders even before the resolved-streams metadata
      * lands. Heights that the active stream doesn't actually publish are still
-     * harmless — CAP_STRICT just picks the next-lower available track.
+     * harmless — CAP just picks the next-lower available track.
+     *
+     * Known limitation (tracked follow-up): for a single-progressive-track short
+     * (an ANDROID_VR-unplayable short served via the NewPipe fallback, or an
+     * MPD-gen failure) the track selector has only one rendition, so a pick is a
+     * silent no-op — unlike the main player, this picker isn't gated on
+     * adaptive-ness because the ViewModel doesn't hold the binder's resolved
+     * streams / adaptive state to gate it. Acceptable for the rare fallback path.
      */
     fun getQualityOptions(): List<Pair<Int, String>> = listOf(
         2160 to "2160p",

@@ -31,7 +31,6 @@ import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.databinding.FragmentShortsPlayerBinding
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
-import androidx.media3.datasource.cache.SimpleCache
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.share.ShareLinks
 import com.albunyaan.tube.share.ShareMetadataPublisher
@@ -66,15 +65,10 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
 
     @Inject lateinit var playerRepository: PlayerRepository
     @Inject lateinit var downloadRepository: DownloadRepository
-    @Inject lateinit var hlsPoisonRegistry: com.albunyaan.tube.player.HlsPoisonRegistry
-    @Inject lateinit var multiRepFactory: com.albunyaan.tube.player.MultiRepSyntheticDashMediaSourceFactory
-    @Inject lateinit var coldStartQualityChooser: com.albunyaan.tube.player.ColdStartQualityChooser
     @Inject lateinit var playbackFeatureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
     @Inject lateinit var mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry
-    @Inject lateinit var probationChecker: com.albunyaan.tube.player.HlsProbationChecker
-    @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
-    @Inject lateinit var simpleCache: SimpleCache
-    @Inject lateinit var cachedHttpDataSourceFactory: com.albunyaan.tube.player.CachedHttpDataSourceFactory
+    @Inject lateinit var dashSourceBuilder: com.albunyaan.tube.player.DashSourceBuilder
+    @Inject lateinit var dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider
 
     private val viewModel: ShortsPlayerViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -255,33 +249,19 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         val bnd = FragmentShortsPlayerBinding.bind(view)
         binding = bnd
 
-        // Build the same adaptive MediaSource factory the main PlayerFragment
-        // uses — shorts get DASH/HLS with ABR + auto highest-quality selection
-        // instead of a single progressive stream.
-        val mediaSourceFactory = com.albunyaan.tube.player.MultiQualityMediaSourceFactory(
-            requireContext(),
-            hlsPoisonRegistry,
-            multiRepFactory,
-            coldStartQualityChooser,
-            playbackFeatureFlags,
-            mpdRegistry,
-            probationChecker,
-            cronetDataSourceFactory,
-            simpleCache = simpleCache
-        )
         val localBinder = PlayerBinder(
             player = viewModel.player,
             playerRepository = playerRepository,
-            mediaSourceFactory = mediaSourceFactory,
-            cachedHttpDataSourceFactory = cachedHttpDataSourceFactory,
+            dashSourceBuilder = dashSourceBuilder,
+            dataSourceFactoryProvider = dataSourceFactoryProvider,
             mpdRegistry = mpdRegistry,
             featureFlags = playbackFeatureFlags
         )
 
         // Stall watchdog: if BUFFERING persists past STALL_RECOVERY_MS, force
         // a fresh stream resolve. Common cause is expired progressive URLs
-        // returning 403 mid-segment. Mirrors the recovery intent of the main
-        // player's PlaybackRecoveryManager without hauling in its full machinery.
+        // returning 403 mid-segment. Mirrors the main player's minimal stall
+        // watchdog (re-resolve fresh URLs) without an escalation ladder.
         // Listener is held as the [stallListener] field so onDestroyView can
         // remove it — see field-level KDoc for the leak this prevents.
         viewModel.player.addListener(stallListener)
@@ -343,18 +323,19 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             showShortsKebabMenu(anchor)
         }
 
-        // Quality picker result: apply the selected cap (or clear if AUTO/0).
-        // Two steps:
-        //   1) viewModel.applyQualityCap(height) — sets the trackSelector
-        //      cap. Effective for multi-rep DASH (track selector picks a
-        //      track ≤ cap), but a no-op for single-rep synthetic DASH
-        //      (the manifest only has one video track).
-        //   2) binder.switchQuality(videoId, height) — rebuilds the
-        //      MediaSource so the synthetic-DASH builder regenerates the
-        //      manifest with a track that matches the new cap. Most
-        //      shorts hit this path because their progressive video
-        //      tracks have inconsistent containers, which makes
-        //      SYNTH_ADAPTIVE ineligible and forces single-rep.
+        // Quality picker result: apply the selected cap (or clear if AUTO/0) via the
+        // track selector ONLY — pure track-selection, no MediaSource rebuild. This is the
+        // LibreTube philosophy and matches the main PlayerFragment (build the manifest
+        // once, switch quality by capping the selector).
+        //
+        // The old path ALSO called binder.switchQuality(), which rebuilt a single-track
+        // PROGRESSIVE source on every pick (muxed caps at 720p; full stream reload). Its
+        // stated reason — "most shorts force single-rep because their tracks have
+        // inconsistent containers, making SYNTH_ADAPTIVE ineligible" — no longer holds:
+        // the include-everything MPD generator emits one AdaptationSet per container, so
+        // shorts now get a real multi-rep ladder and the track-selector CAP picks the
+        // correct rendition (ABR can still step down on congestion). Rebuilding is both
+        // unnecessary and a regression vs. the main player, so it's removed.
         childFragmentManager.setFragmentResultListener(
             com.albunyaan.tube.ui.shared.QualityPickerDialog.REQUEST_KEY,
             viewLifecycleOwner,
@@ -364,15 +345,6 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                 com.albunyaan.tube.ui.shared.QualityPickerDialog.AUTO,
             )
             viewModel.applyQualityCap(height)
-            val pos = binding?.shortsPager?.currentItem
-            val videoId = pos?.let { viewModel.items.value.getOrNull(it)?.id }
-            if (videoId != null) {
-                // Drop any cached synthetic MPD for this video so the
-                // factory regenerates with the new quality. Safe no-op
-                // for raw progressive (registry lookup misses).
-                mpdRegistry.unregisterBoth(videoId)
-                binder?.switchQuality(videoId, height)
-            }
         }
 
         // Listen for the DownloadQualityDialog's selection result and

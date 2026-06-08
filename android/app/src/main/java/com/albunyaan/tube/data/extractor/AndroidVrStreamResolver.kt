@@ -63,8 +63,13 @@ class AndroidVrStreamResolver(
         val videoTracks = ArrayList<VideoTrack>()
         val audioTracks = ArrayList<AudioTrack>()
 
-        // Adaptive (separate) video + audio. Keep AUDIO mp4-only so the synthetic-DASH muxer never
-        // hits the mp4-video / webm-audio container mismatch that breaks SYNTH_ADAPTIVE.
+        // Adaptive (separate) video + audio. Keep BOTH mp4 (AAC) and webm (Opus) audio.
+        // The multi-rep MPD generator selects the highest-resolution video codec family —
+        // which for most modern videos is VP9 (webm-only) — and then container-matches the
+        // audio AdaptationSet to the chosen video container. Dropping webm audio here starved
+        // every VP9/webm ladder of compatible audio → NO_COMPATIBLE_AUDIO → MPD generation
+        // failed → progressive 360p fallback + a re-prepare loop on high-res selection. The
+        // generator already filters audio by container, so supplying both containers is safe.
         if (adaptive != null) {
             for (i in 0 until adaptive.length()) {
                 val f = adaptive.optJSONObject(i) ?: continue
@@ -72,7 +77,7 @@ class AndroidVrStreamResolver(
                 val mime = f.optStringOrNull("mimeType") ?: continue
                 when {
                     mime.startsWith("video/") -> videoTracks.add(videoTrack(f, url, mime, videoOnly = true))
-                    mime.startsWith("audio/mp4") -> audioTracks.add(audioTrack(f, url, mime))
+                    mime.startsWith("audio/") -> audioTracks.add(audioTrack(f, url, mime))
                 }
             }
         }
@@ -104,7 +109,8 @@ class AndroidVrStreamResolver(
             hlsUrl = null,
             dashUrl = null,
             isLive = false,
-            urlGeneratedAt = urlGeneratedAt
+            urlGeneratedAt = urlGeneratedAt,
+            extractionClient = ExtractionClient.ANDROID_VR
         )
     }
 

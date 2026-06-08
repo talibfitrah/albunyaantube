@@ -2,72 +2,45 @@ package com.albunyaan.tube.player
 
 import android.util.Log
 import com.albunyaan.tube.data.extractor.AudioTrack
+import com.albunyaan.tube.data.extractor.AudioTrackKind
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SyntheticDashMetadata
 import com.albunyaan.tube.data.extractor.VideoTrack
-import java.net.URLEncoder
+import java.util.Base64
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Phase 2A: Multi-Representation Synthetic DASH MPD Generator
+ * Multi-Representation Synthetic DASH MPD Generator — LibreTube-aligned "include everything".
  *
- * Creates a DASH MPD manifest containing multiple video representations (quality levels)
- * from progressive streams. This enables ExoPlayer's ABR (Adaptive Bitrate) logic to
- * dynamically switch between qualities based on network conditions.
+ * Builds ONE DASH MPD containing every usable adaptive stream, hands it to ExoPlayer, and lets
+ * ExoPlayer's ABR / track-selection choose. This mirrors LibreTube's `DashHelper.createManifest`:
  *
- * **Key difference from SyntheticDashMediaSourceFactory:**
- * - Original: Creates single-representation DASH per stream (no quality switching)
- * - This: Creates multi-representation DASH with all eligible qualities (ABR-capable)
+ * - One video AdaptationSet **per container** (video/mp4 holds avc1 + av01; video/webm holds vp9),
+ *   each containing ALL representations for that container. No codec-family selection, no
+ *   "best container" narrowing, no minimum-representation gate.
+ * - One audio AdaptationSet per (language, role, container) group, independent of the video
+ *   container (DASH demuxes video + audio from separate AdaptationSets — mp4 video + webm/Opus
+ *   audio plays fine, and vice-versa).
+ * - DASH full profile (`urn:mpeg:dash:profile:full:2011`) — permits multiple AdaptationSets and
+ *   mixed containers in one Period.
  *
- * **How it works:**
- * 1. Filters video-only tracks with valid SyntheticDashMetadata
- * 2. Groups tracks by codec family (codec-safe ladder policy)
- * 3. Generates a DASH MPD with multiple <Representation> elements
- * 4. Uses byte-range requests for each representation (no extra network calls)
+ * Each Representation uses SegmentBase byte ranges (init + index) from [SyntheticDashMetadata], so
+ * no extra network calls are needed. Per-track byte-range validity is the ONLY filter: a track must
+ * carry valid ranges (videoOnly for video). OTF/muxed streams have range = -1 and are excluded by
+ * [SyntheticDashMetadata.hasValidRanges].
  *
- * **Codec-safe ladder policy:**
- * - Only streams with compatible codecs are grouped together
- * - Prevents codec-switching artifacts (e.g., AV1 to VP9)
- * - Codec families: H264/AVC, VP9, AV1 (ordered by preference)
- *
- * **Eligibility rules (SYNTH_ADAPTIVE):**
- * - Must have 2+ video-only tracks with valid SyntheticDashMetadata
- * - All tracks in the ladder must share compatible codec family
- * - Must have at least one audio track with valid SyntheticDashMetadata
- * - Duration must be available
+ * **Why include everything instead of picking one codec family:** narrowing to a single family +
+ * container behind a `>= 2` rep gate meant any video whose chosen ladder didn't satisfy the gate
+ * failed the WHOLE manifest and fell back to progressive 360p. LibreTube never narrows, so it never
+ * fails this way — ExoPlayer simply selects among whatever is present. Removing the narrowing is
+ * what lets high-res actually play instead of being capped at 360p.
  */
 @Singleton
 class MultiRepresentationMpdGenerator @Inject constructor() {
 
     companion object {
         private const val TAG = "MultiRepMpd"
-
-        /**
-         * Codec family groupings for ladder policy.
-         * Tracks within the same family can switch without decode errors.
-         */
-        private val CODEC_FAMILIES = mapOf(
-            "avc1" to "H264",
-            "avc3" to "H264",
-            "mp4a" to "AAC",  // Audio
-            "vp9" to "VP9",
-            "vp09" to "VP9",
-            "av01" to "AV1",
-            "opus" to "OPUS"  // Audio
-        )
-
-        /**
-         * Codec family preference order (most compatible first).
-         * When multiple codec families are available, prefer the most widely supported.
-         */
-        private val CODEC_PREFERENCE = listOf("H264", "VP9", "AV1")
-
-        /**
-         * Minimum number of representations required for multi-rep DASH.
-         * With only 1 representation, use standard single-rep synthetic DASH instead.
-         */
-        private const val MIN_REPRESENTATIONS = 2
     }
 
     /**
@@ -79,13 +52,18 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
          * @param mpdXml The raw MPD XML content
          * @param mpdDataUri The data: URI for use with Media3
          * @param videoTracks The video tracks included in the MPD (ordered by height desc)
-         * @param audioTrack The audio track included in the MPD
-         * @param codecFamily The codec family used for video representations
+         * @param audioTracks All audio tracks included in the MPD (one per language/role/container group)
+         * @param audioTrack The primary audio track (ORIGINAL if present, else highest bitrate).
+         *                   Kept for backward-compat with existing callers.
+         * @param codecFamily Descriptive label of the video containers emitted (e.g.
+         *                    "video/mp4+video/webm"). Kept non-null for registry callers; nothing
+         *                    branches on its value.
          */
         data class Success(
             val mpdXml: String,
             val mpdDataUri: String,
             val videoTracks: List<VideoTrack>,
+            val audioTracks: List<AudioTrack>,
             val audioTrack: AudioTrack,
             val codecFamily: String
         ) : Result()
@@ -100,55 +78,39 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
     /**
      * Check if resolved streams are eligible for multi-representation synthetic DASH.
      *
-     * Eligibility criteria:
-     * - 2+ video-only tracks with valid SyntheticDashMetadata in the same codec family
-     * - 1+ audio track with valid SyntheticDashMetadata
+     * Minimal LibreTube-style eligibility — presence, not narrowing:
      * - Duration available
+     * - 1+ audio track with valid SyntheticDashMetadata ranges
+     * - 1+ video-only track with valid SyntheticDashMetadata ranges
      *
-     * @param resolved The resolved streams from NewPipe
      * @return Pair of (eligible, reason) where reason explains ineligibility
      */
     fun checkEligibility(resolved: ResolvedStreams): Pair<Boolean, String> {
-        // Check duration
         if (resolved.durationSeconds == null || resolved.durationSeconds <= 0) {
             return false to "NO_DURATION"
         }
 
-        // Check audio tracks
-        val eligibleAudioTracks = resolved.audioTracks.filter {
+        val eligibleAudio = resolved.audioTracks.count {
             it.syntheticDashMetadata?.hasValidRanges() == true
         }
-        if (eligibleAudioTracks.isEmpty()) {
+        if (eligibleAudio == 0) {
             return false to "NO_ELIGIBLE_AUDIO"
         }
 
-        // Check video tracks
-        val eligibleVideoTracks = resolved.videoTracks.filter {
+        val eligibleVideo = resolved.videoTracks.count {
             it.isVideoOnly && it.syntheticDashMetadata?.hasValidRanges() == true
         }
-        if (eligibleVideoTracks.size < MIN_REPRESENTATIONS) {
-            return false to "INSUFFICIENT_VIDEO_TRACKS:${eligibleVideoTracks.size}"
+        if (eligibleVideo == 0) {
+            return false to "NO_ELIGIBLE_VIDEO"
         }
 
-        // Check codec grouping
-        val codecGroups = groupByCodecFamily(eligibleVideoTracks)
-        val bestFamily = selectBestCodecFamily(codecGroups)
-        if (bestFamily == null) {
-            return false to "NO_CODEC_FAMILY"
-        }
-
-        val tracksInFamily = codecGroups[bestFamily] ?: emptyList()
-        if (tracksInFamily.size < MIN_REPRESENTATIONS) {
-            return false to "INSUFFICIENT_SAME_CODEC:${tracksInFamily.size}"
-        }
-
-        return true to "ELIGIBLE:$bestFamily:${tracksInFamily.size}reps"
+        return true to "ELIGIBLE:${eligibleVideo}v/${eligibleAudio}a"
     }
 
     /**
      * Generate a multi-representation DASH MPD from resolved streams.
      *
-     * @param resolved The resolved streams from NewPipe
+     * @param resolved The resolved streams from NewPipe / ANDROID_VR
      * @param qualityCapHeight Optional maximum height to include (null = include all)
      * @return Result.Success with MPD content, or Result.Failure with reason
      */
@@ -156,7 +118,6 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
         resolved: ResolvedStreams,
         qualityCapHeight: Int? = null
     ): Result {
-        // Validate eligibility
         val (eligible, reason) = checkEligibility(resolved)
         if (!eligible) {
             return Result.Failure(reason)
@@ -164,138 +125,100 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
 
         val durationSeconds = resolved.durationSeconds!!.toLong()
 
-        // Get eligible video tracks
+        // Per-track eligibility: video-only + valid byte ranges. OTF/muxed (ranges = -1) are
+        // excluded by hasValidRanges() — the same per-track gate LibreTube applies (videoOnly +
+        // indexEnd > 0), just expressed through the range validity check.
         val eligibleVideoTracks = resolved.videoTracks.filter {
             it.isVideoOnly && it.syntheticDashMetadata?.hasValidRanges() == true
         }
 
-        // Apply quality cap if specified
+        // Optional quality cap (used by the adaptive cold-start / cap path).
         val cappedVideoTracks = if (qualityCapHeight != null) {
             eligibleVideoTracks.filter { (it.height ?: Int.MAX_VALUE) <= qualityCapHeight }
         } else {
             eligibleVideoTracks
         }
-
-        if (cappedVideoTracks.size < MIN_REPRESENTATIONS) {
-            return Result.Failure("INSUFFICIENT_AFTER_CAP:${cappedVideoTracks.size}")
+        if (cappedVideoTracks.isEmpty()) {
+            return Result.Failure("NO_VIDEO_AFTER_CAP:0")
         }
 
-        // Group by codec family and select best family
-        val codecGroups = groupByCodecFamily(cappedVideoTracks)
-        val bestFamily = selectBestCodecFamily(codecGroups)
-            ?: return Result.Failure("NO_CODEC_FAMILY_AFTER_CAP")
+        // INCLUDE EVERYTHING: one AdaptationSet per container, every codec inside it. No family
+        // pick, no "best container", no min-rep gate (LibreTube DashHelper parity). groupBy keeps
+        // first-seen container order; reps within a container are sorted highest-quality first.
+        val videoByContainer: Map<String, List<VideoTrack>> = cappedVideoTracks
+            .groupBy { resolveVideoContainerForTrack(it) }
+            .mapValues { (_, tracks) -> tracks.sortedByDescending { it.height ?: 0 } }
 
-        // Within the chosen codec family, pick the container that has the
-        // most tracks (and the highest top-end height as tiebreaker). This
-        // avoids INCONSISTENT_CONTAINERS failures when AV1/VP9 are emitted
-        // across both webm and mp4 wrappers — we keep one wrapper so the
-        // MPD validates and ABR can switch between qualities.
-        val familyTracks = codecGroups[bestFamily]!!
-        val byContainer = familyTracks.groupBy { track ->
-            track.mimeType?.let { normalizeContainerMimeType(it) }
-                ?: inferVideoContainerFromCodec(track.codec ?: track.syntheticDashMetadata?.codec)
-                ?: "unknown"
-        }
-        val bestContainer = byContainer.entries.maxWithOrNull(
-            compareBy<Map.Entry<String, List<VideoTrack>>> { it.value.size }
-                .thenBy { entry -> entry.value.maxOfOrNull { it.height ?: 0 } ?: 0 }
-        )?.key ?: return Result.Failure("NO_CONTAINER_FAMILY")
+        // Flat, height-desc list for Result metadata / legacy callers.
+        val videoTracksForMpd = videoByContainer.values.flatten()
+            .sortedByDescending { it.height ?: 0 }
 
-        val videoTracksForMpd = byContainer[bestContainer]!!
-            .sortedByDescending { it.height ?: 0 } // Highest quality first
-
-        // If the container filtering left us below the min-rep threshold,
-        // try the largest cross-container group as a secondary fallback.
-        if (videoTracksForMpd.size < MIN_REPRESENTATIONS) {
-            return Result.Failure("INSUFFICIENT_AFTER_CONTAINER_FILTER:${videoTracksForMpd.size}/${familyTracks.size}")
-        }
-
-        // Get best audio track
-        val audioTrack = resolved.audioTracks
+        // Audio is INDEPENDENT of the video container in DASH (separate AdaptationSets). Keep ALL
+        // valid-range audio of every container — LibreTube never matches audio to the video wrapper.
+        // Resolve each track's MIME once so the grouping key and the XML builder agree.
+        data class AudioRep(val track: AudioTrack, val mime: String)
+        val allAudioReps = resolved.audioTracks
             .filter { it.syntheticDashMetadata?.hasValidRanges() == true }
-            .maxByOrNull { it.bitrate ?: 0 }
-            ?: return Result.Failure("NO_AUDIO_TRACK")
+            .map { AudioRep(it, resolveAudioContainerMimeType(it)) }
+        if (allAudioReps.isEmpty()) {
+            return Result.Failure("NO_AUDIO_WITH_RANGES")
+        }
 
-        // Generate MPD XML
+        // Group by (language, role, container) so each distinct audio AdaptationSet survives:
+        // same-language different-role (en ORIGINAL vs en DESCRIPTIVE) AND same-language-same-role
+        // different-container (Opus/webm vs AAC/mp4) each get their own set. Within a group, take
+        // the highest-bitrate track as the single representative. Deterministic order: role, then
+        // language, then container.
+        val audioRepsForMpd = allAudioReps
+            .groupBy { Triple(it.track.language, it.track.trackType, it.mime) }
+            .map { (_, group) -> group.maxByOrNull { it.track.bitrate ?: 0 }!! }
+            .sortedWith(
+                compareBy({ roleOrder(it.track.trackType) }, { it.track.language ?: "" }, { it.mime })
+            )
+        val audioTracksForMpd: List<AudioTrack> = audioRepsForMpd.map { it.track }
+
+        // Primary (legacy) audio track: prefer ORIGINAL, else highest bitrate.
+        val primaryAudioTrack: AudioTrack =
+            audioTracksForMpd.firstOrNull { it.trackType == AudioTrackKind.ORIGINAL }
+                ?: audioTracksForMpd.maxByOrNull { it.bitrate ?: 0 }!!
+
         val mpdXml = try {
-            buildMpdXml(videoTracksForMpd, audioTrack, durationSeconds)
+            buildMpdXml(videoByContainer, audioRepsForMpd.map { Pair(it.track, it.mime) }, durationSeconds)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to generate MPD: ${e.javaClass.simpleName}")
             return Result.Failure("MPD_GENERATION_ERROR:${e.javaClass.simpleName}")
         }
 
-        // buildMpdXml returns null if tracks have inconsistent containers
-        if (mpdXml == null) {
-            return Result.Failure("INCONSISTENT_CONTAINERS")
-        }
+        // Create data: URI for Media3 — base64 encoded (works on JVM tests)
+        val mpdDataUri = "data:application/dash+xml;base64," +
+            Base64.getEncoder().encodeToString(mpdXml.toByteArray(Charsets.UTF_8))
 
-        // Create data: URI for Media3
-        val mpdDataUri = "data:application/dash+xml;charset=utf-8," +
-            URLEncoder.encode(mpdXml, "UTF-8")
-
-        Log.d(TAG, "Generated multi-rep MPD: ${videoTracksForMpd.size} video reps ($bestFamily), 1 audio rep")
+        val containersLabel = videoByContainer.keys.joinToString("+")
+        Log.d(
+            TAG,
+            "Generated multi-rep MPD: ${videoTracksForMpd.size} video reps across [$containersLabel], " +
+                "${audioTracksForMpd.size} audio set(s)"
+        )
 
         return Result.Success(
             mpdXml = mpdXml,
             mpdDataUri = mpdDataUri,
             videoTracks = videoTracksForMpd,
-            audioTrack = audioTrack,
-            codecFamily = bestFamily
+            audioTracks = audioTracksForMpd,
+            audioTrack = primaryAudioTrack,
+            codecFamily = containersLabel
         )
     }
 
     /**
-     * Group video tracks by codec family.
+     * Sort order for audio track roles (ORIGINAL first for deterministic output).
      */
-    private fun groupByCodecFamily(tracks: List<VideoTrack>): Map<String, List<VideoTrack>> {
-        return tracks.groupBy { track ->
-            getCodecFamily(track.codec ?: track.syntheticDashMetadata?.codec)
-        }.filterKeys { it != null }.mapKeys { it.key!! }
-    }
-
-    /**
-     * Get the codec family for a codec string.
-     * Returns null for unknown codecs.
-     */
-    private fun getCodecFamily(codec: String?): String? {
-        if (codec == null) return null
-
-        // Extract prefix (e.g., "avc1.64001f" -> "avc1")
-        val prefix = codec.substringBefore('.').lowercase()
-        return CODEC_FAMILIES[prefix]
-    }
-
-    /**
-     * Select the best codec family from available groups.
-     *
-     * Strategy:
-     *  1. Pick the family with the highest top-end resolution among families
-     *     that have at least [MIN_REPRESENTATIONS] tracks. YouTube typically
-     *     publishes 1080p+ only in VP9 or AV1; H.264 caps at 720p for most
-     *     videos. Picking H.264 first (the old behaviour) silently capped
-     *     adaptive playback at 720p even on devices that decode VP9/AV1
-     *     in hardware.
-     *  2. Tie-break by [CODEC_PREFERENCE] so H.264 still wins when families
-     *     reach the same height — preserves device-compat fallbacks.
-     */
-    private fun selectBestCodecFamily(codecGroups: Map<String, List<VideoTrack>>): String? {
-        val candidates = codecGroups.entries
-            .filter { it.value.size >= MIN_REPRESENTATIONS }
-        if (candidates.isEmpty()) return null
-
-        val familyRank: (String) -> Int = { name ->
-            val idx = CODEC_PREFERENCE.indexOf(name)
-            if (idx < 0) Int.MAX_VALUE else idx
-        }
-
-        return candidates.maxWithOrNull(
-            // Higher top-end first; lower rank (more preferred) wins ties.
-            compareBy<Map.Entry<String, List<VideoTrack>>> { entry ->
-                entry.value.maxOfOrNull { it.height ?: 0 } ?: 0
-            }.thenComparing(
-                compareByDescending { entry -> familyRank(entry.key) }
-            )
-        )?.key
+    private fun roleOrder(kind: AudioTrackKind?): Int = when (kind) {
+        AudioTrackKind.ORIGINAL -> 0
+        AudioTrackKind.DUBBED -> 1
+        AudioTrackKind.DUBBED_AUTO -> 2
+        AudioTrackKind.DESCRIPTIVE -> 3
+        AudioTrackKind.UNKNOWN, null -> 4
     }
 
     /**
@@ -303,69 +226,53 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
      *
      * Structure:
      * - Period
-     *   - AdaptationSet (video, with multiple Representations)
-     *   - AdaptationSet (audio, with single Representation)
+     *   - One AdaptationSet per video container (each with all its Representations)
+     *   - One AdaptationSet per audio (language, role, container) group
      *
-     * Container types are derived from track.mimeType (source of truth from extraction),
-     * not inferred from codec strings to avoid mismatch (e.g., AV1 can be in MP4 or WebM).
-     *
-     * DASH profiles:
-     * - "urn:mpeg:dash:profile:isoff-on-demand:2011" for ISO-BMFF (MP4) containers
-     * - "urn:mpeg:dash:profile:webm-on-demand:2012" for WebM containers
-     *
-     * @return The MPD XML string, or null if tracks have inconsistent containers
+     * Container types come from track.mimeType (source of truth from extraction), falling back to
+     * codec inference. Always emits the DASH full profile (matches LibreTube), which permits
+     * multiple AdaptationSets and mixed containers in one Period.
      */
     private fun buildMpdXml(
-        videoTracks: List<VideoTrack>,
-        audioTrack: AudioTrack,
+        videoByContainer: Map<String, List<VideoTrack>>,
+        audioTracks: List<Pair<AudioTrack, String>>,
         durationSeconds: Long
-    ): String? {
+    ): String {
         val durationPT = "PT${durationSeconds}S"
-
-        // Determine video container from track.mimeType (source of truth from extraction).
-        // All video tracks must share the same container for ABR switching to work.
-        val videoMimeType = resolveVideoContainerMimeType(videoTracks)
-        if (videoMimeType == null) {
-            Log.w(TAG, "buildMpdXml: video tracks have inconsistent or missing containers")
-            return null
-        }
-
-        // Determine audio container from track.mimeType
-        val audioMimeType = resolveAudioContainerMimeType(audioTrack)
-
-        // Validate container compatibility: video and audio must use the same container family.
-        // Mixed containers (e.g., video/webm + audio/mp4) may not work with a single DASH profile.
-        val isVideoWebm = videoMimeType == "video/webm"
-        val isAudioWebm = audioMimeType == "audio/webm"
-        if (isVideoWebm != isAudioWebm) {
-            Log.w(TAG, "buildMpdXml: mixed containers (video=$videoMimeType, audio=$audioMimeType) - not supported")
-            return null
-        }
-
-        // Select DASH profile based on container type.
-        // WebM uses a different profile (urn:mpeg:dash:profile:webm-on-demand:2012).
-        val dashProfile = if (isVideoWebm) {
-            "urn:mpeg:dash:profile:webm-on-demand:2012"
-        } else {
-            "urn:mpeg:dash:profile:isoff-on-demand:2011"
-        }
+        val dashProfile = "urn:mpeg:dash:profile:full:2011"
 
         return buildString {
             appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
             appendLine("""<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="$dashProfile" type="static" minBufferTime="PT1.5S" mediaPresentationDuration="$durationPT">""")
             appendLine("""  <Period duration="$durationPT">""")
 
-            // Video AdaptationSet with correct container mime type
-            appendLine("""    <AdaptationSet mimeType="$videoMimeType" segmentAlignment="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">""")
-            for (track in videoTracks) {
-                appendVideoRepresentation(track, durationSeconds)
+            // One video AdaptationSet per container; every codec / representation included.
+            for ((containerMime, tracks) in videoByContainer) {
+                appendLine("""    <AdaptationSet mimeType="${escapeXml(containerMime)}" segmentAlignment="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">""")
+                for (track in tracks) {
+                    appendVideoRepresentation(track)
+                }
+                appendLine("""    </AdaptationSet>""")
             }
-            appendLine("""    </AdaptationSet>""")
 
-            // Audio AdaptationSet with correct container mime type
-            appendLine("""    <AdaptationSet mimeType="$audioMimeType" segmentAlignment="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">""")
-            appendAudioRepresentation(audioTrack, durationSeconds)
-            appendLine("""    </AdaptationSet>""")
+            // One audio AdaptationSet per (language, role, container) group
+            for ((track, audioMimeType) in audioTracks) {
+                val langAttr = if (track.language != null) """ lang="${escapeXml(track.language)}"""" else ""
+                appendLine("""    <AdaptationSet mimeType="${escapeXml(audioMimeType)}"$langAttr segmentAlignment="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">""")
+                // Emit <Role> only when trackType is ORIGINAL, DUBBED, DUBBED_AUTO, or DESCRIPTIVE.
+                // UNKNOWN and null → omit the element entirely.
+                val roleValue = when (track.trackType) {
+                    AudioTrackKind.ORIGINAL -> "main"
+                    AudioTrackKind.DUBBED, AudioTrackKind.DUBBED_AUTO -> "dub"
+                    AudioTrackKind.DESCRIPTIVE -> "description"
+                    AudioTrackKind.UNKNOWN, null -> null
+                }
+                if (roleValue != null) {
+                    appendLine("""      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="${escapeXml(roleValue)}"/>""")
+                }
+                appendAudioRepresentation(track)
+                appendLine("""    </AdaptationSet>""")
+            }
 
             appendLine("""  </Period>""")
             appendLine("""</MPD>""")
@@ -373,30 +280,13 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
     }
 
     /**
-     * Resolve video container MIME type from tracks.
-     *
-     * Uses track.mimeType as the source of truth (from NewPipe extraction).
-     * Falls back to codec-based inference only if mimeType is unavailable.
-     * Returns null if tracks have inconsistent containers.
+     * Resolve a single video track's container MIME type (never null).
+     * Prefers track.mimeType from extraction, falls back to codec inference.
      */
-    private fun resolveVideoContainerMimeType(tracks: List<VideoTrack>): String? {
-        if (tracks.isEmpty()) return null
-
-        // Collect container types from all tracks
-        val containers = tracks.map { track ->
-            // Primary: use track.mimeType from extraction (most accurate)
-            val fromMimeType = track.mimeType?.let { normalizeContainerMimeType(it) }
-            // Fallback: infer from codec if mimeType is missing
-            fromMimeType ?: inferVideoContainerFromCodec(track.codec ?: track.syntheticDashMetadata?.codec)
-        }.distinct()
-
-        // All tracks must share the same container for ABR switching
-        if (containers.size > 1) {
-            Log.w(TAG, "resolveVideoContainerMimeType: inconsistent containers across tracks: $containers")
-            return null
-        }
-
-        return containers.firstOrNull()
+    private fun resolveVideoContainerForTrack(track: VideoTrack): String {
+        val fromMimeType = track.mimeType?.let { normalizeContainerMimeType(it) }
+        return fromMimeType
+            ?: inferVideoContainerFromCodec(track.codec ?: track.syntheticDashMetadata?.codec)
     }
 
     /**
@@ -405,11 +295,8 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
      * Uses track.mimeType as the source of truth, falling back to codec-based inference.
      */
     private fun resolveAudioContainerMimeType(track: AudioTrack): String {
-        // Primary: use track.mimeType from extraction
         val fromMimeType = track.mimeType?.let { normalizeContainerMimeType(it) }
         if (fromMimeType != null) return fromMimeType
-
-        // Fallback: infer from codec
         return inferAudioContainerFromCodec(track.codec ?: track.syntheticDashMetadata?.codec)
     }
 
@@ -433,7 +320,7 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
             // YouTube often uses WebM for VP9/Opus but may use MP4 for AV1.
             // The track.mimeType should be preferred when available.
             "vp9", "vp09" -> "video/webm"
-            "av01" -> "video/mp4" // Changed: AV1 on YouTube is typically MP4, not WebM
+            "av01" -> "video/mp4" // AV1 on YouTube is typically MP4, not WebM
             else -> "video/mp4" // H264/AVC and unknown codecs use MP4
         }
     }
@@ -455,12 +342,9 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
     /**
      * Append a video Representation element.
      *
-     * Note: We use SyntheticDashMetadata directly for byte ranges (SegmentBase).
-     * ItagItem gating was removed because it's not actually used and could silently
-     * drop reps, causing the generator to return Success with <2 reps.
+     * Uses SyntheticDashMetadata directly for byte ranges (SegmentBase).
      */
-    @Suppress("UNUSED_PARAMETER")
-    private fun StringBuilder.appendVideoRepresentation(track: VideoTrack, durationSeconds: Long) {
+    private fun StringBuilder.appendVideoRepresentation(track: VideoTrack) {
         val metadata = track.syntheticDashMetadata!!
         val codec = track.codec ?: metadata.codec ?: "avc1.64001f" // Default to H264 high profile
         val width = track.width ?: 1920
@@ -480,8 +364,7 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
     /**
      * Append an audio Representation element.
      */
-    @Suppress("UNUSED_PARAMETER")
-    private fun StringBuilder.appendAudioRepresentation(track: AudioTrack, durationSeconds: Long) {
+    private fun StringBuilder.appendAudioRepresentation(track: AudioTrack) {
         val metadata = track.syntheticDashMetadata!!
         val codec = track.codec ?: metadata.codec ?: "mp4a.40.2" // Default to AAC-LC
         val bitrate = track.bitrate ?: 128000
@@ -493,8 +376,13 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
             else -> 44100 // Default for AAC and other codecs
         }
 
-        // Generate representation ID from itag and escape for XML safety
-        val repId = escapeXml("audio_${metadata.itag}")
+        // Generate representation ID from itag PLUS language/role, then escape for XML safety.
+        // YouTube serves every dub language under the SAME itag (e.g. 140/251), so an
+        // itag-only id (`audio_140`) collides across the per-language AdaptationSets in one
+        // Period — a DASH `@id`-uniqueness violation. Disambiguate with language + trackType.
+        val langTag = track.language?.takeIf { it.isNotBlank() } ?: "und"
+        val roleTag = track.trackType?.name?.lowercase() ?: "default"
+        val repId = escapeXml("audio_${metadata.itag}_${langTag}_${roleTag}")
         val escapedCodec = escapeXml(codec)
 
         appendLine("""      <Representation id="$repId" bandwidth="$bitrate" codecs="$escapedCodec" audioSamplingRate="$sampleRate">""")

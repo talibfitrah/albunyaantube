@@ -2,7 +2,6 @@ package com.albunyaan.tube.ui.shorts
 
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.ExoPlayer
 // (Player import retained for REPEAT_MODE_ONE constant)
 import androidx.media3.exoplayer.source.MediaSource
@@ -13,7 +12,6 @@ import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.AudioTrackKind
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
-import com.albunyaan.tube.player.CachedHttpDataSourceFactory
 import com.albunyaan.tube.player.PlayerRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,9 +33,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * [bind] on page change.
  *
  * Stream resolution uses [PlayerRepository.resolveStreams]. Shorts first try the
- * same adaptive DASH/HLS factory as the regular player. Progressive playback is
- * only a fallback, and that fallback uses the configured Cronet/cache transport
- * instead of a plain uncached HTTP stack.
+ * same lean [com.albunyaan.tube.player.DashSourceBuilder] as the regular player.
+ * Progressive playback is only a fallback, and that fallback uses the configured
+ * Cronet/cache transport instead of a plain uncached HTTP stack.
  *
  * Resolution failures are exposed via [failureEvents] so the fragment can call
  * `vm.onPlaybackError(index)` without the binder holding a reference to the VM.
@@ -55,13 +53,14 @@ class PlayerBinder private constructor(
     private val player: ExoPlayer?,
     private val playerRepository: PlayerRepository,
     /**
-     * Factory that turns [ResolvedStreams] into an adaptive DASH/HLS
-     * [MediaSource]. Shorts play highest-quality by default with ABR when
-     * the factory picks an adaptive path; progressive is used only as a
-     * fallback when the factory returns a non-success result.
+     * Lean single-path builder that turns [ResolvedStreams] into a
+     * [MediaSource]. It picks exactly one source (local multi-rep DASH,
+     * server DASH, HLS, or progressive) per build; shorts play highest-quality
+     * by default via the local DASH/ABR path, and the binder's own progressive
+     * fallback covers the cases where [build] returns null.
      * Null in the test-only constructor path.
      */
-    private val mediaSourceFactory: com.albunyaan.tube.player.MultiQualityMediaSourceFactory?,
+    private val dashSourceBuilder: com.albunyaan.tube.player.DashSourceBuilder?,
     /**
      * Thin seam over the player mutations we perform from the resolve
      * coroutine. Production binds directly to the real ExoPlayer; tests
@@ -77,11 +76,13 @@ class PlayerBinder private constructor(
      */
     private val attach: PlayerViewAttach,
     /**
-     * Single source of truth for the cached HTTP transport. Non-null in
-     * production; tests pass a Mockito mock since the JVM unit-test path
-     * does not exercise progressive fallback.
+     * UA-correct, cache-wrapped transport for the progressive fallback. The factory's
+     * User-Agent is matched to the extraction client that minted the URLs
+     * ([SegmentDataSourceFactoryProvider.forStreams]), avoiding client/UA-mismatch 403s on
+     * iOS-minted streams. Non-null in production; tests pass a Mockito mock since the JVM
+     * unit-test path does not exercise progressive fallback.
      */
-    private val cachedHttpDataSourceFactory: CachedHttpDataSourceFactory,
+    private val dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider,
     private val mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry? = null,
     private val featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags? = null
 ) {
@@ -90,19 +91,19 @@ class PlayerBinder private constructor(
     constructor(
         player: ExoPlayer,
         playerRepository: PlayerRepository,
-        mediaSourceFactory: com.albunyaan.tube.player.MultiQualityMediaSourceFactory,
-        cachedHttpDataSourceFactory: CachedHttpDataSourceFactory,
+        dashSourceBuilder: com.albunyaan.tube.player.DashSourceBuilder,
+        dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider,
         mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry? = null,
         featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags? = null
     ) : this(
         player = player,
         playerRepository = playerRepository,
-        mediaSourceFactory = mediaSourceFactory,
+        dashSourceBuilder = dashSourceBuilder,
         playerOps = ExoPlayerOps(player),
         attach = PlayerViewAttach { view, attached ->
             if (attached) view.player = player else view.player = null
         },
-        cachedHttpDataSourceFactory = cachedHttpDataSourceFactory,
+        dataSourceFactoryProvider = dataSourceFactoryProvider,
         mpdRegistry = mpdRegistry,
         featureFlags = featureFlags
     )
@@ -112,8 +113,8 @@ class PlayerBinder private constructor(
         playerRepository: PlayerRepository,
         ops: PlayerOps,
         attach: PlayerViewAttach,
-        cachedHttpDataSourceFactory: CachedHttpDataSourceFactory,
-    ) : this(null, playerRepository, null, ops, attach, cachedHttpDataSourceFactory)
+        dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider,
+    ) : this(null, playerRepository, null, ops, attach, dataSourceFactoryProvider)
 
     /**
      * Minimal surface of player mutations needed for testing the rapid-swipe
@@ -449,29 +450,13 @@ class PlayerBinder private constructor(
             if (stickyTracks.isNotEmpty()) resolved.copy(audioTracks = stickyTracks) else resolved
         } else resolved
 
-        // Prefer the adaptive factory — same path the main PlayerFragment uses.
-        // When available it returns a DASH/HLS source with ABR; ExoPlayer's
-        // default track selector auto-picks highest quality that fits the
-        // bandwidth. Progressive is kept as a safety net for resolve paths
-        // where the factory can't build an adaptive source.
-        val adaptive = mediaSourceFactory?.let {
-            runCatching {
-                it.createMediaSourceWithType(
-                    resolved = effectiveResolved,
-                    audioOnly = false,
-                    selectedQuality = null,       // auto-select highest
-                    userQualityCapHeight = null,  // no cap
-                    forceProgressive = false,     // prefer adaptive
-                    videoId = videoId
-                )
-            }.onFailure { error ->
-                android.util.Log.w(
-                    "PlayerBinder",
-                    "createMediaSourceWithType failed for $videoId — falling back to progressive: ${error.javaClass.simpleName} ${error.message}"
-                )
-            }.getOrNull()
-        }
-        val source = adaptive?.source ?: buildProgressiveSource(effectiveResolved)
+        // Prefer the lean DashSourceBuilder — same single source-selection path
+        // the main PlayerFragment uses. When it produces a source it is the
+        // local DASH/ABR path (ExoPlayer's default track selector auto-picks
+        // the highest quality that fits the bandwidth). Progressive is kept as
+        // a safety net for resolve paths where the builder returns null.
+        val built = tryDashBuild(effectiveResolved)
+        val source = built?.source ?: buildProgressiveSource(effectiveResolved)
         if (source == null) {
             _failureEvents.tryEmit(videoId)
             return
@@ -489,7 +474,7 @@ class PlayerBinder private constructor(
         ttlWatcher = null
         if (featureFlags?.isTtlWatcherEnabled == true &&
             mpdRegistry != null &&
-            adaptive?.adaptiveType == com.albunyaan.tube.player.MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE) {
+            built?.decision is com.albunyaan.tube.player.SourceDecision.LocalDash) {
             ttlWatcher = com.albunyaan.tube.player.MpdTtlWatcher(
                 videoId = videoId,
                 registry = mpdRegistry,
@@ -512,7 +497,9 @@ class PlayerBinder private constructor(
         resolved: ResolvedStreams,
         qualityCapHeight: Int? = SHORTS_FALLBACK_STARTUP_MAX_HEIGHT
     ): MediaSource? {
-        val dataSourceFactory = buildFallbackDataSourceFactory()
+        // UA-matched to the client that minted these URLs (ANDROID_VR / NewPipe-iOS /
+        // NewPipe-Android). Using a fixed Android UA here 403s on iOS-minted streams.
+        val dataSourceFactory = dataSourceFactoryProvider.forStreams(resolved)
 
         // Prefer muxed (video+audio) progressive tracks. Pick a fast-start
         // quality first; shorts can upgrade through the adaptive path when it
@@ -551,8 +538,18 @@ class PlayerBinder private constructor(
         return null
     }
 
-    private fun buildFallbackDataSourceFactory(): DataSource.Factory =
-        cachedHttpDataSourceFactory.create()
+    /** Run the lean DashSourceBuilder for [resolved]; null on failure or when no builder is wired (tests). */
+    private fun tryDashBuild(resolved: ResolvedStreams): com.albunyaan.tube.player.DashSourceBuilder.BuiltSource? =
+        dashSourceBuilder?.let {
+            runCatching { it.build(resolved) }
+                .onFailure { error ->
+                    android.util.Log.w(
+                        "PlayerBinder",
+                        "DashSourceBuilder.build failed for ${resolved.streamId}: ${error.javaClass.simpleName} ${error.message}"
+                    )
+                }
+                .getOrNull()
+        }
 
     private fun chooseProgressiveTrack(
         tracks: List<VideoTrack>,
@@ -591,6 +588,12 @@ class PlayerBinder private constructor(
      * (e.g. called before the first successful resolve).
      */
     fun switchAudioTrack(videoId: String, chosen: AudioTrack) {
+        // Staleness gate: the audio-language picker can resolve a result for short A
+        // after the user has already swiped to short B (the picker stores the video id
+        // at open time). Without this guard we'd swap A's media onto the SHARED player
+        // that is now showing B. This method is synchronous up to setMediaSource, so a
+        // single entry check fully closes the race. Mirrors bind()'s generation gate.
+        if (videoId != boundVideoId) return
         val resolved = resolvedStreamsFor(videoId) ?: return
         // Pin the user's language choice so subsequent re-resolves keep the
         // same audio instead of letting the factory re-pick by bitrate.
@@ -599,24 +602,16 @@ class PlayerBinder private constructor(
         val position = playerOps.getCurrentPosition()
         val wasPlaying = playerOps.getPlayWhenReady()
 
-        val adaptive = mediaSourceFactory?.let {
-            runCatching {
-                it.createMediaSourceWithType(
-                    resolved = filtered,
-                    audioOnly = false,
-                    selectedQuality = null,
-                    userQualityCapHeight = null,
-                    forceProgressive = false,
-                    videoId = videoId
-                )
-            }.onFailure { error ->
-                android.util.Log.w(
-                    "PlayerBinder",
-                    "audio-track swap createMediaSourceWithType failed for $videoId: ${error.javaClass.simpleName} ${error.message}"
-                )
-            }.getOrNull()
-        }
-        val source = adaptive?.source ?: buildProgressiveSource(filtered, qualityCapHeight = null) ?: return
+        val built = tryDashBuild(filtered)
+        // qualityCapHeight = null on the progressive fallback: a mid-watch audio
+        // swap should keep full quality, not drop back to the startup cap.
+        val source = built?.source ?: buildProgressiveSource(filtered, qualityCapHeight = null) ?: return
+
+        // Source is ready — now abort any still-in-flight bind for this short so a resolve that
+        // completes after this swap can't resume past its generation gate and re-setMediaSource
+        // with the default audio. Done after the build so we never cancel-then-bail. Mirrors bind().
+        generation.incrementAndGet()
+        bindJob?.cancel()
 
         // Refresh cache so a subsequent download picker reflects the active
         // audio choice alongside the existing video tracks.
@@ -633,49 +628,46 @@ class PlayerBinder private constructor(
      * Switch the playback quality cap for the currently-bound video.
      * `capHeightPx == 0` (or negative) clears the cap (auto / ABR-driven).
      *
-     * Most YouTube videos on shorts end up as single-rep synthetic DASH
-     * (video tracks have inconsistent containers, so SYNTH_ADAPTIVE
-     * fails). With single-rep the manifest holds exactly one video
-     * track, so a track-selector cap can't pick a different quality —
-     * the manifest itself has to be regenerated with a different track.
-     * This rebuilds the MediaSource via the same factory path used at
-     * initial prep, passing the new cap so the synthetic-DASH builder
-     * picks the appropriate track.
+     * The lean [DashSourceBuilder.build] takes no quality cap, so a MANUAL cap
+     * is honoured by rebuilding a progressive source whose single track is
+     * chosen at the requested cap. A cleared cap (AUTO) routes through the
+     * adaptive lean path (multi-rep DASH when eligible), letting the track
+     * selector pick by bandwidth.
      *
      * Preserves position and playWhenReady so the short resumes exactly
      * where the user was. Safe no-op if there is no cached resolved-
      * streams entry for [videoId].
      */
     fun switchQuality(videoId: String, capHeightPx: Int) {
+        // Staleness gate (same race as switchAudioTrack): a quality pick for short A
+        // must not swap media onto the shared player once the user has swiped to B.
+        if (videoId != boundVideoId) return
         val resolved = resolvedStreamsFor(videoId) ?: return
         val cap = capHeightPx.takeIf { it > 0 }
-        val origin = if (cap != null) {
-            com.albunyaan.tube.data.extractor.QualitySelectionOrigin.MANUAL
-        } else {
-            com.albunyaan.tube.data.extractor.QualitySelectionOrigin.AUTO
-        }
         val position = playerOps.getCurrentPosition()
         val wasPlaying = playerOps.getPlayWhenReady()
 
-        val adaptive = mediaSourceFactory?.let {
-            runCatching {
-                it.createMediaSourceWithType(
-                    resolved = resolved,
-                    audioOnly = false,
-                    selectedQuality = null,
-                    userQualityCapHeight = cap,
-                    selectionOrigin = origin,
-                    forceProgressive = false,
-                    videoId = videoId
-                )
-            }.onFailure { error ->
-                android.util.Log.w(
-                    "PlayerBinder",
-                    "quality-switch createMediaSourceWithType failed for $videoId (cap=$cap): ${error.javaClass.simpleName} ${error.message}"
-                )
-            }.getOrNull()
-        }
-        val source = adaptive?.source ?: buildProgressiveSource(resolved, qualityCapHeight = cap) ?: return
+        // Honour the user's pinned (sticky) audio language. Without this filter
+        // the source builders re-pick audio by max bitrate, reverting a
+        // non-default dub the user explicitly chose via switchAudioTrack. Mirror
+        // the bind path's sticky-language block.
+        val stickyLang = rememberedAudioLanguage(videoId)
+        val effectiveResolved = if (!stickyLang.isNullOrBlank()) {
+            val stickyTracks = resolved.audioTracks.filter { it.language == stickyLang }
+            if (stickyTracks.isNotEmpty()) resolved.copy(audioTracks = stickyTracks) else resolved
+        } else resolved
+
+        // The lean DashSourceBuilder.build() takes no quality cap, so a MANUAL
+        // cap is honoured via the cap-aware progressive builder (it selects a
+        // single track at the cap). A cleared cap (AUTO) routes through the
+        // adaptive lean path, which lets the track selector pick by bandwidth.
+        val built = if (cap == null) tryDashBuild(effectiveResolved) else null
+        val source = built?.source ?: buildProgressiveSource(effectiveResolved, qualityCapHeight = cap) ?: return
+
+        // Source is ready — now abort any still-in-flight bind (done after the build so we never
+        // cancel-then-bail). Mirrors switchAudioTrack / bind.
+        generation.incrementAndGet()
+        bindJob?.cancel()
 
         playerOps.setMediaSource(source)
         playerOps.setRepeatModeOne()
