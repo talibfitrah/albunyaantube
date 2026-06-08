@@ -56,7 +56,6 @@ class PlaybackFeatureFlags @Inject constructor(
         const val KEY_IOS_FETCH = "ios_fetch"
         const val KEY_GENEROUS_CROP_BUDGET = "generous_crop_budget"
         const val KEY_CLIENT_ROTATION = "client_rotation"
-        const val KEY_HLS_PROBATION = "hls_probation"
         const val KEY_CRONET_ENABLED = "cronet_enabled"
         const val KEY_PREDICTIVE_PREFETCH = "predictive_prefetch"
         const val KEY_SEGMENT_PRELOAD = "segment_preload"
@@ -70,7 +69,6 @@ class PlaybackFeatureFlags @Inject constructor(
             KEY_IOS_FETCH,
             KEY_GENEROUS_CROP_BUDGET,
             KEY_CLIENT_ROTATION,
-            KEY_HLS_PROBATION,
             KEY_CRONET_ENABLED,
             KEY_PREDICTIVE_PREFETCH,
             KEY_SEGMENT_PRELOAD,
@@ -137,7 +135,6 @@ class PlaybackFeatureFlags @Inject constructor(
             .remove(KEY_IOS_FETCH)
             .remove(KEY_GENEROUS_CROP_BUDGET)
             .remove(KEY_CLIENT_ROTATION)
-            .remove(KEY_HLS_PROBATION)
             .remove(KEY_CRONET_ENABLED)
             .remove(KEY_PREDICTIVE_PREFETCH)
             .remove(KEY_SEGMENT_PRELOAD)
@@ -203,17 +200,6 @@ class PlaybackFeatureFlags @Inject constructor(
     val isClientRotationEnabled: Boolean
         get() = resolveFlag(KEY_CLIENT_ROTATION, BuildConfig.ENABLE_CLIENT_ROTATION)
 
-    /**
-     * Whether HLS probation mode is enabled.
-     *
-     * When enabled, newly selected HLS streams are evaluated in a probation
-     * period before fully committing to playback on that stream.
-     *
-     * Build-time default: [BuildConfig.ENABLE_HLS_PROBATION]
-     */
-    val isHlsProbationEnabled: Boolean
-        get() = resolveFlag(KEY_HLS_PROBATION, BuildConfig.ENABLE_HLS_PROBATION)
-
     val isCronetEnabled: Boolean
         get() = resolveFlag(KEY_CRONET_ENABLED, BuildConfig.ENABLE_CRONET)
 
@@ -274,15 +260,6 @@ class PlaybackFeatureFlags @Inject constructor(
         Log.i(TAG, "CLIENT_ROTATION override set to: $enabled (effective: $isClientRotationEnabled)")
     }
 
-    /**
-     * Set a runtime override for HLS probation.
-     * @param enabled true to enable, false to disable, null to use build-time default
-     */
-    fun setHlsProbationEnabled(enabled: Boolean?) {
-        setOverride(KEY_HLS_PROBATION, enabled)
-        Log.i(TAG, "HLS_PROBATION override set to: $enabled (effective: $isHlsProbationEnabled)")
-    }
-
     fun setCronetEnabled(enabled: Boolean?) {
         setOverride(KEY_CRONET_ENABLED, enabled)
         Log.i(TAG, "CRONET_ENABLED override set to: $enabled (effective: $isCronetEnabled)")
@@ -329,7 +306,6 @@ class PlaybackFeatureFlags @Inject constructor(
             .remove(KEY_IOS_FETCH)
             .remove(KEY_GENEROUS_CROP_BUDGET)
             .remove(KEY_CLIENT_ROTATION)
-            .remove(KEY_HLS_PROBATION)
             .remove(KEY_CRONET_ENABLED)
             .remove(KEY_PREDICTIVE_PREFETCH)
             .remove(KEY_SEGMENT_PRELOAD)
@@ -359,7 +335,6 @@ class PlaybackFeatureFlags @Inject constructor(
             KEY_IOS_FETCH to getFlagState(KEY_IOS_FETCH, BuildConfig.ENABLE_NPE_IOS_FETCH),
             KEY_GENEROUS_CROP_BUDGET to getFlagState(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra()),
             KEY_CLIENT_ROTATION to getFlagState(KEY_CLIENT_ROTATION, BuildConfig.ENABLE_CLIENT_ROTATION),
-            KEY_HLS_PROBATION to getFlagState(KEY_HLS_PROBATION, BuildConfig.ENABLE_HLS_PROBATION),
             KEY_CRONET_ENABLED to getFlagState(KEY_CRONET_ENABLED, BuildConfig.ENABLE_CRONET),
             KEY_PREDICTIVE_PREFETCH to getFlagState(KEY_PREDICTIVE_PREFETCH, BuildConfig.ENABLE_PREDICTIVE_PREFETCH),
             KEY_SEGMENT_PRELOAD to getFlagState(KEY_SEGMENT_PRELOAD, BuildConfig.ENABLE_SEGMENT_PRELOAD),

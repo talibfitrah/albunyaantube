@@ -381,6 +381,48 @@ class DashSourceBuilderTest {
         assertTrue("ANDROID_VR must keep the adaptive MPD but got: $decision", decision is SourceDecision.LocalDash)
     }
 
+    @Test
+    fun `NEWPIPE_IOS fallback with NO muxed track → None (no sustainable progressive)`() {
+        // Regression (codex P1): without a muxed itag-18, the old code served video-only + audio
+        // progressively, which 403s ~60s in on the fallback clients (same reason adaptive is
+        // skipped). There is no sustainable stream, so decide() must surface None — not a doomed
+        // source that reintroduces the 403 loop.
+        val resolved = streams(
+            videoTracks = listOf(
+                videoOnlyTrack(720, itag = 136),
+                videoOnlyTrack(1080, itag = 137),
+            ),
+            audioTracks = listOf(audioTrack(itag = 140)),
+            extractionClient = ExtractionClient.NEWPIPE_IOS,
+        )
+
+        val decision = builder.decide(resolved)
+
+        assertTrue("Expected None but got: $decision", decision is SourceDecision.None)
+        assertEquals("FALLBACK_NO_SUSTAINABLE_MUXED", (decision as SourceDecision.None).reason)
+    }
+
+    @Test
+    fun `ANDROID_VR forceProgressive with NO muxed → Progressive with merged audio (no silent video)`() {
+        // Regression (codex P2): the exception/forceProgressive fallback must MERGE audio for
+        // ANDROID_VR's video-only tracks. ANDROID_VR segments sustain, so video-only + audio is
+        // valid here (unlike the fallback clients) — and the audio url must be present.
+        val resolved = streams(
+            videoTracks = listOf(
+                videoOnlyTrack(720, itag = 136),
+                videoOnlyTrack(1080, itag = 137),
+            ),
+            audioTracks = listOf(audioTrack(itag = 140)),
+            extractionClient = ExtractionClient.ANDROID_VR,
+        )
+
+        val decision = builder.decide(resolved, forceProgressive = true)
+
+        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
+        val prog = decision as SourceDecision.Progressive
+        assertTrue("Audio must be merged (no silent video) but audioUrl was null", prog.audioUrl != null)
+    }
+
     // =========================================================================
     // decide() — forceProgressive
     // =========================================================================

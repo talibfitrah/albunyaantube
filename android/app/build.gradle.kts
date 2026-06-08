@@ -104,10 +104,8 @@ android {
         buildConfigField("boolean", "ENABLE_MPD_PREFETCH", "$enableMpdPrefetch")
 
         val enableClientRotation = localProperties.getProperty("playback.client.rotation.enabled", "true").toBoolean()
-        val enableHlsProbation = localProperties.getProperty("playback.hls.probation.enabled", "true").toBoolean()
         val enableCronet = localProperties.getProperty("playback.cronet.enabled", "true").toBoolean()
         buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "$enableClientRotation")
-        buildConfigField("boolean", "ENABLE_HLS_PROBATION", "$enableHlsProbation")
         buildConfigField("boolean", "ENABLE_CRONET", "$enableCronet")
         // Predictive prefetch starts extraction when list cells attach so
         // tap-to-open is instant. OFF by default — turning it on with the

@@ -16,6 +16,8 @@ import org.junit.Test
  *    video-only ladder 403s mid-stream and is gated out by DashSourceBuilder.decide) → offer
  *    only the one track decide() would serve, so the picker doesn't promise 720p/1080p it can't
  *    deliver.
+ *  - [adaptiveActive] = false (e.g. ANDROID_VR whose MPD generation failed and fell back to
+ *    progressive) also collapses to the single served track, even on ANDROID_VR.
  */
 class PlayerViewModelQualityOptionsTest {
 
@@ -49,7 +51,7 @@ class PlayerViewModelQualityOptionsTest {
             track(1080, isVideoOnly = true),
         )
 
-        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.ANDROID_VR)
+        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.ANDROID_VR, adaptiveActive = true)
 
         assertEquals(listOf("1080p", "720p", "360p"), labels(opts))
     }
@@ -61,11 +63,26 @@ class PlayerViewModelQualityOptionsTest {
             track(360, isVideoOnly = false),                   // muxed — must win
         )
 
-        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.ANDROID_VR)
+        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.ANDROID_VR, adaptiveActive = true)
 
         assertEquals(1, opts.size)
         assertEquals("360p", opts.first().label)
         assertFalse("Muxed must be preferred over video-only at the same height", opts.first().track.isVideoOnly)
+    }
+
+    @Test
+    fun `ANDROID_VR with adaptive inactive (MPD-gen failed) offers only the served track`() {
+        // Honesty fix: when ANDROID_VR's own MPD generation fails, the player serves a single
+        // progressive track. The menu must reflect that, not the phantom full ladder.
+        val tracks = listOf(
+            track(360, isVideoOnly = false),  // muxed served by the progressive fallback
+            track(720, isVideoOnly = true),
+            track(1080, isVideoOnly = true),
+        )
+
+        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.ANDROID_VR, adaptiveActive = false)
+
+        assertEquals("MPD-gen failure must collapse the menu to the served track", listOf("360p"), labels(opts))
     }
 
     // ── NewPipe fallback: single playable quality only ──────────────────────────
@@ -79,7 +96,7 @@ class PlayerViewModelQualityOptionsTest {
             track(1080, isVideoOnly = true),
         )
 
-        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.NEWPIPE_IOS)
+        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.NEWPIPE_IOS, adaptiveActive = false)
 
         assertEquals("Fallback must offer exactly one quality", 1, opts.size)
         assertEquals("360p", opts.first().label)
@@ -93,7 +110,7 @@ class PlayerViewModelQualityOptionsTest {
             track(1080, isVideoOnly = true),
         )
 
-        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.NEWPIPE_ANDROID)
+        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.NEWPIPE_ANDROID, adaptiveActive = false)
 
         assertEquals(listOf("360p"), labels(opts))
     }
@@ -108,7 +125,7 @@ class PlayerViewModelQualityOptionsTest {
             track(1080, isVideoOnly = true),
         )
 
-        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.NEWPIPE_IOS)
+        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.NEWPIPE_IOS, adaptiveActive = false)
 
         assertEquals(listOf("720p"), labels(opts))
     }
@@ -121,7 +138,7 @@ class PlayerViewModelQualityOptionsTest {
             track(720, isVideoOnly = true),
         )
 
-        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.NEWPIPE_IOS)
+        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.NEWPIPE_IOS, adaptiveActive = false)
 
         assertEquals(listOf("720p"), labels(opts))
         assertTrue(opts.first().track.isVideoOnly)
@@ -134,7 +151,7 @@ class PlayerViewModelQualityOptionsTest {
         for (client in ExtractionClient.values()) {
             assertTrue(
                 "Expected empty options for $client",
-                PlayerViewModel.buildQualityOptions(emptyList(), client).isEmpty(),
+                PlayerViewModel.buildQualityOptions(emptyList(), client, adaptiveActive = true).isEmpty(),
             )
         }
     }
@@ -147,7 +164,7 @@ class PlayerViewModelQualityOptionsTest {
             track(480, isVideoOnly = true),
         )
 
-        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.ANDROID_VR)
+        val opts = PlayerViewModel.buildQualityOptions(tracks, ExtractionClient.ANDROID_VR, adaptiveActive = true)
 
         assertEquals(listOf("480p"), labels(opts))
     }

@@ -317,11 +317,11 @@ class PlayerViewModel @Inject constructor(
      * Deduplicates by resolution height, preferring muxed streams over video-only
      * for better reliability (no audio/video merge needed).
      */
-    fun getAvailableQualities(): List<QualityOption> {
+    fun getAvailableQualities(adaptiveActive: Boolean): List<QualityOption> {
         // Source from ready-OR-recovering so the picker is populated even while the player
         // is stalling/recovering — otherwise the user can't drop resolution during a stall.
         val selection = readyOrRecoveringSelection()?.selection ?: return emptyList()
-        return buildQualityOptions(selection.resolved.videoTracks, selection.resolved.extractionClient)
+        return buildQualityOptions(selection.resolved.videoTracks, selection.resolved.extractionClient, adaptiveActive)
     }
 
     /**
@@ -1552,17 +1552,19 @@ class PlayerViewModel @Inject constructor(
          * serve: the highest muxed, or (if none) the highest video-only. ANDROID_VR keeps the full
          * ladder — its adaptive segments sustain and track-selector switching works.
          *
-         * Known narrow gap: an ANDROID_VR resolve whose MPD generation fails also falls back to a
-         * single progressive track, yet still shows the full ladder here. That is rare post
-         * include-everything-MPD and shares the same accepted limitation; capturing it would require
-         * threading the built source's adaptive-ness into ViewModel state.
+         * [adaptiveActive] is the player's actual adaptive state for the current source. The full
+         * ladder is offered only when the stream is genuinely playing adaptive (ANDROID_VR with a
+         * built MPD). When ANDROID_VR's own MPD generation fails and the player falls back to a
+         * single progressive track, [adaptiveActive] is false and only the served track is offered —
+         * closing the prior "menu over-promises on MPD-gen failure" gap.
          */
         @androidx.annotation.VisibleForTesting
         internal fun buildQualityOptions(
             videoTracks: List<VideoTrack>,
             extractionClient: ExtractionClient,
+            adaptiveActive: Boolean,
         ): List<QualityOption> {
-            val offerable = if (extractionClient == ExtractionClient.ANDROID_VR) {
+            val offerable = if (extractionClient == ExtractionClient.ANDROID_VR && adaptiveActive) {
                 videoTracks
             } else {
                 // Mirror DashSourceBuilder.decide()'s progressive pick: highest muxed, else highest video-only.

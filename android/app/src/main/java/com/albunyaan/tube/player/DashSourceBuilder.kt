@@ -13,6 +13,7 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.source.SingleSampleMediaSource
+import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.data.extractor.ExtractionClient
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
@@ -158,7 +159,17 @@ class DashSourceBuilder @Inject constructor(
             return SourceDecision.None("NO_VIDEO_TRACK")
         }
 
-        // No muxed — best video-only + best audio
+        // No muxed track available. A separate video-only + audio progressive build only sustains
+        // on the ANDROID_VR client; on the NewPipe fallback clients those GVS streams 403 after the
+        // initial range (the same reason the adaptive MPD is skipped above), so serving them would
+        // reintroduce the ~60s false-start + 403 loop this fix exists to kill. For a non-sustaining
+        // client with no muxed fallback there is no playable progressive stream — surface None.
+        if (!adaptiveCanSustain) {
+            return SourceDecision.None("FALLBACK_NO_SUSTAINABLE_MUXED")
+        }
+
+        // ANDROID_VR with no muxed (e.g. forceProgressive after an MPD-gen failure): best
+        // video-only + best audio — these segments sustain on this client.
         val bestVideo = resolved.videoTracks
             .filter { it.isVideoOnly }
             .maxByOrNull { it.height ?: 0 }
@@ -256,13 +267,13 @@ class DashSourceBuilder @Inject constructor(
             }
 
             is SourceDecision.ServerDash -> {
-                Log.d(TAG, "Building ServerDash MediaSource: ${decision.url}")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Building ServerDash MediaSource: ${decision.url}")
                 DashMediaSource.Factory(factory)
                     .createMediaSource(mediaItem(decision.url, MimeTypes.APPLICATION_MPD))
             }
 
             is SourceDecision.Hls -> {
-                Log.d(TAG, "Building HLS MediaSource: ${decision.url}")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Building HLS MediaSource: ${decision.url}")
                 HlsMediaSource.Factory(factory)
                     .setAllowChunklessPreparation(true)
                     .createMediaSource(mediaItem(decision.url, MimeTypes.APPLICATION_M3U8))

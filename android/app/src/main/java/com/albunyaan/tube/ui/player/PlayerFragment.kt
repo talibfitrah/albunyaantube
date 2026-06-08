@@ -1611,7 +1611,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // user pausing through 90% TTL and resuming hours later would get a
             // visible reactive 403 stall on the first segment. Refreshing during
             // pause is the lesser evil for this app's perf-focused UX.
-            onRefreshNeeded = { viewModel.forceRefreshForProactiveTtl() }
+            onRefreshNeeded = {
+                // Guard: only refresh if this stream is still current. The watcher is single-shot
+                // and cancelled on every new prepare, but capture-and-check prevents refreshing a
+                // stream the user already navigated away from (mirrors the Shorts watcher).
+                if (viewModel.state.value.currentItem?.streamId == streamId) {
+                    viewModel.forceRefreshForProactiveTtl()
+                }
+            }
         ).also { it.start(viewLifecycleOwner.lifecycleScope) }
     }
 
@@ -1787,7 +1794,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Source the list from the ViewModel, which reads ready-OR-recovering. This lets the
         // user drop resolution DURING a stall — the exact moment they most want to.
-        val allQualities = viewModel.getAvailableQualities()
+        val allQualities = viewModel.getAvailableQualities(adaptiveActive = preparedIsAdaptive)
         if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "getAvailableQualities returned: ${allQualities.size} qualities")
 
         if (allQualities.isEmpty()) {
@@ -2884,42 +2891,76 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 adaptiveFailedForCurrentStream = streamState.streamId
                 android.util.Log.w("PlayerFragment", "Adaptive failed for ${streamState.streamId} - will use progressive for this stream")
             }
-            // Fallback to single quality if multi-quality fails
             // Progressive fallback - ensure preparedIsAdaptive is correctly set
             preparedIsAdaptive = false
             preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
             preparedQualityCapHeight = null
             factorySelectedVideoTrack = null
             clearTrackSelectorConstraints() // Clear any lingering constraints from previous adaptive video
-            val trackPair = selectTrack(streamState.selection, state.audioOnly)
-            if (trackPair == null) {
-                android.util.Log.e("PlayerFragment", "No video track available and audio-only not requested")
-                context?.let { ctx ->
-                    Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+
+            // Prefer the canonical progressive builder: forceProgressive skips the adaptive MPD
+            // that just failed, and it MERGES video-only + audio. The raw single-track path below
+            // would drop audio -> silent video for video-only sources (the common ANDROID_VR case).
+            // Distinguish "builder threw" (Media3 runtime error — a raw source may still work) from
+            // "builder returned null" (decide() found NO playable source, e.g. a non-VR resolve with
+            // no sustainable muxed): the latter must NOT be papered over with a doomed single track.
+            var fallbackBuilderThrew = false
+            val progressiveBuilt = if (!state.audioOnly) {
+                try {
+                    // resolvedForFactory pins the user's chosen audio language (selection.audio);
+                    // the raw resolved would let decide() re-pick audio by max bitrate, reverting a
+                    // user-selected dub on this fallback path.
+                    dashSourceBuilder.build(resolvedForFactory, forceProgressive = true)
+                } catch (fallbackError: Exception) {
+                    fallbackBuilderThrew = true
+                    android.util.Log.w("PlayerFragment", "Progressive fallback build failed: ${fallbackError.message}")
+                    null
                 }
-                preparedStreamKey = null
-                preparedStreamUrl = null
-                preparedIsAdaptive = false
-                preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
-                preparedQualityCapHeight = null
-                factorySelectedVideoTrack = null
-                return
+            } else null
+
+            when {
+                progressiveBuilt != null -> MediaSourceResult(
+                    source = progressiveBuilt.source,
+                    isAdaptive = false,
+                    actualSourceUrl = (progressiveBuilt.decision as? SourceDecision.Progressive)?.videoUrl,
+                    adaptiveType = MediaSourceResult.AdaptiveType.NONE
+                )
+
+                !state.audioOnly && !fallbackBuilderThrew -> {
+                    // build() returned null without throwing => decide() found NO sustainable source
+                    // (e.g. FALLBACK_NO_SUSTAINABLE_MUXED). A raw video-only last resort would just
+                    // 403 silently on the fallback client. failPrepare() surfaces the Error state
+                    // (not a transient Toast) and stops the re-prepare/error-spam loop.
+                    android.util.Log.e("PlayerFragment", "No sustainable source for ${streamState.streamId}")
+                    failPrepare(R.string.player_stream_error)
+                    return
+                }
+
+                else -> {
+                    // Last resort: audio-only mode, or the builder threw a Media3 error (a raw
+                    // ProgressiveMediaSource from the selected URL may still work).
+                    val trackPair = selectTrack(streamState.selection, state.audioOnly)
+                    if (trackPair == null) {
+                        android.util.Log.e("PlayerFragment", "No video track available and audio-only not requested")
+                        failPrepare(R.string.player_stream_error)
+                        return
+                    }
+                    val (url, mimeType) = trackPair
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(url)
+                        .setMimeType(mimeType)
+                        .build()
+                    val source = ProgressiveMediaSource.Factory(
+                        dataSourceFactoryProvider.forStreams(streamState.selection.resolved)
+                    ).createMediaSource(mediaItem)
+                    MediaSourceResult(
+                        source = source,
+                        isAdaptive = false,
+                        actualSourceUrl = url,
+                        adaptiveType = MediaSourceResult.AdaptiveType.NONE
+                    )
+                }
             }
-            val (url, mimeType) = trackPair
-            val mediaItem = MediaItem.Builder()
-                .setUri(url)
-                .setMimeType(mimeType)
-                .build()
-            val source = ProgressiveMediaSource.Factory(
-                dataSourceFactoryProvider.forStreams(streamState.selection.resolved)
-            ).createMediaSource(mediaItem)
-            // Create a fallback MediaSourceResult for the progressive source
-            MediaSourceResult(
-                source = source,
-                isAdaptive = false,
-                actualSourceUrl = url,
-                adaptiveType = MediaSourceResult.AdaptiveType.NONE
-            )
         }
 
         try {
@@ -3015,6 +3056,26 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             preparedQualityCapHeight = null
             factorySelectedVideoTrack = null
         }
+    }
+
+    /**
+     * Abort the current prepare cleanly: clear first-frame mute, reset prepared-source state, and
+     * transition to the Error state. Using Error (not just a Toast) is load-bearing — maybePrepareStream
+     * early-returns on non-Ready, so this stops the state observer from re-invoking prepare on every
+     * subsequent tick (which would rebuild a doomed source and spam the error).
+     */
+    private fun failPrepare(messageRes: Int) {
+        firstFrameTimeoutRunnable?.let { firstFrameHandler.removeCallbacks(it) }
+        firstFrameTimeoutRunnable = null
+        mutedForStreamKey = null
+        player?.volume = 1f
+        preparedStreamKey = null
+        preparedStreamUrl = null
+        preparedIsAdaptive = false
+        preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
+        preparedQualityCapHeight = null
+        factorySelectedVideoTrack = null
+        viewModel.setErrorState(messageRes)
     }
 
     private fun selectTrack(selection: PlaybackSelection, audioOnly: Boolean): Pair<String, String>? {

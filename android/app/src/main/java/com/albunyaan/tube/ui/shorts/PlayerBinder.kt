@@ -607,6 +607,12 @@ class PlayerBinder private constructor(
         // swap should keep full quality, not drop back to the startup cap.
         val source = built?.source ?: buildProgressiveSource(filtered, qualityCapHeight = null) ?: return
 
+        // Source is ready — now abort any still-in-flight bind for this short so a resolve that
+        // completes after this swap can't resume past its generation gate and re-setMediaSource
+        // with the default audio. Done after the build so we never cancel-then-bail. Mirrors bind().
+        generation.incrementAndGet()
+        bindJob?.cancel()
+
         // Refresh cache so a subsequent download picker reflects the active
         // audio choice alongside the existing video tracks.
         synchronized(resolvedCache) { resolvedCache[videoId] = filtered }
@@ -657,6 +663,11 @@ class PlayerBinder private constructor(
         // adaptive lean path, which lets the track selector pick by bandwidth.
         val built = if (cap == null) tryDashBuild(effectiveResolved) else null
         val source = built?.source ?: buildProgressiveSource(effectiveResolved, qualityCapHeight = cap) ?: return
+
+        // Source is ready — now abort any still-in-flight bind (done after the build so we never
+        // cancel-then-bail). Mirrors switchAudioTrack / bind.
+        generation.incrementAndGet()
+        bindJob?.cancel()
 
         playerOps.setMediaSource(source)
         playerOps.setRepeatModeOne()
