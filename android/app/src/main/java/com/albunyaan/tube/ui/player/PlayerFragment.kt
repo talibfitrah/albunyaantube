@@ -258,6 +258,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var stallWatchdogRunnable: Runnable? = null
     /** Stream id captured when the buffering stall began (so we don't refresh a stream the user already left). */
     private var stallWatchdogStreamId: String? = null
+    /** Stream id that has reached STATE_READY at least once — gates the stall watchdog so it only
+     *  arms for mid-playback stalls, not slow cold-start buffering. */
+    private var playbackStartedStreamId: String? = null
     /** Whether the current stream is live (longer stall tolerance — live buffers more). */
     private var currentStreamIsLive: Boolean = false
 
@@ -1173,6 +1176,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     scheduleStallWatchdog()
                 } else {
                     cancelStallWatchdog()
+                }
+
+                // Mark playback as started for this stream on first READY so the stall watchdog
+                // only arms for mid-playback stalls, not slow cold-start buffering (which would
+                // otherwise re-resolve a slow-but-working initial load into a false failure).
+                if (playbackState == Player.STATE_READY) {
+                    viewModel.state.value.currentItem?.streamId?.let { playbackStartedStreamId = it }
                 }
 
                 // Cancel video render watchdog on terminal states
@@ -2136,6 +2146,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      */
     private fun scheduleStallWatchdog() {
         val streamId = viewModel.state.value.currentItem?.streamId ?: return
+        // Only arm for mid-playback stalls: a stream that hasn't reached READY yet is still in its
+        // (possibly slow) initial cold-start buffer, and re-resolving that turns a slow-but-working
+        // load into a false failure. playbackStartedStreamId is set on the first READY.
+        if (playbackStartedStreamId != streamId) return
         // Re-arm fresh on each BUFFERING transition for the current stream.
         stallWatchdogRunnable?.let { stallWatchdogHandler.removeCallbacks(it) }
         stallWatchdogStreamId = streamId
@@ -2922,19 +2936,25 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
             when {
                 progressiveBuilt != null -> {
-                    val progVideoUrl = (progressiveBuilt.decision as? SourceDecision.Progressive)?.videoUrl
-                    val progTrack = streamState.selection.resolved.videoTracks.firstOrNull { it.url == progVideoUrl }
-                    // Set the FIELD checkCacheHit() reads (not just the result), so the sticky
-                    // forceProgressive cache-hit compares served-vs-served and skips an extra
-                    // re-prepare cycle.
-                    factorySelectedVideoTrack = progTrack
-                    MediaSourceResult(
-                        source = progressiveBuilt.source,
-                        isAdaptive = false,
-                        actualSourceUrl = progVideoUrl,
-                        adaptiveType = MediaSourceResult.AdaptiveType.NONE,
-                        selectedVideoTrack = progTrack
-                    )
+                    // build(forceProgressive=true) returns Progressive for VOD, but for LIVE decide()
+                    // ignores forceProgressive and returns ServerDash/Hls — so map by decision type
+                    // rather than assuming Progressive (else a live source is mislabeled with a null
+                    // URL). Reconcile the prepared-* fields with what was actually built; the catch
+                    // preamble had assumed progressive.
+                    val mapped = when (val d = progressiveBuilt.decision) {
+                        is SourceDecision.ServerDash -> MediaSourceResult(progressiveBuilt.source, true, d.url, MediaSourceResult.AdaptiveType.DASH)
+                        is SourceDecision.Hls -> MediaSourceResult(progressiveBuilt.source, true, d.url, MediaSourceResult.AdaptiveType.HLS)
+                        is SourceDecision.LocalDash -> MediaSourceResult(progressiveBuilt.source, true, d.dataUri, MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE)
+                        is SourceDecision.Progressive -> {
+                            val progTrack = streamState.selection.resolved.videoTracks.firstOrNull { it.url == d.videoUrl }
+                            MediaSourceResult(progressiveBuilt.source, false, d.videoUrl, MediaSourceResult.AdaptiveType.NONE, progTrack)
+                        }
+                        is SourceDecision.None -> MediaSourceResult(progressiveBuilt.source, false, null, MediaSourceResult.AdaptiveType.NONE)
+                    }
+                    preparedIsAdaptive = mapped.isAdaptive
+                    preparedAdaptiveType = mapped.adaptiveType
+                    factorySelectedVideoTrack = mapped.selectedVideoTrack
+                    mapped
                 }
 
                 !state.audioOnly && !fallbackBuilderThrew -> {
