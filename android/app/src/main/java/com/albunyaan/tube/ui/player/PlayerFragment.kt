@@ -2886,8 +2886,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             result
         } catch (e: Exception) {
             android.util.Log.w("PlayerFragment", "MediaSource creation failed, using fallback: ${e.message}")
-            // Mark adaptive as failed for this stream to prevent rebuild loops
-            if (!forceProgressive && (resolved.hlsUrl != null || resolved.dashUrl != null)) {
+            // Mark adaptive as failed for this stream to prevent rebuild loops. The lean primary
+            // adaptive path is synthetic LocalDash (hlsUrl/dashUrl both null), so gate on the
+            // attempt itself: any non-forced, non-audio build that threw was an adaptive attempt.
+            if (!forceProgressive && !state.audioOnly) {
                 adaptiveFailedForCurrentStream = streamState.streamId
                 android.util.Log.w("PlayerFragment", "Adaptive failed for ${streamState.streamId} - will use progressive for this stream")
             }
@@ -2921,14 +2923,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             when {
                 progressiveBuilt != null -> {
                     val progVideoUrl = (progressiveBuilt.decision as? SourceDecision.Progressive)?.videoUrl
+                    val progTrack = streamState.selection.resolved.videoTracks.firstOrNull { it.url == progVideoUrl }
+                    // Set the FIELD checkCacheHit() reads (not just the result), so the sticky
+                    // forceProgressive cache-hit compares served-vs-served and skips an extra
+                    // re-prepare cycle.
+                    factorySelectedVideoTrack = progTrack
                     MediaSourceResult(
                         source = progressiveBuilt.source,
                         isAdaptive = false,
                         actualSourceUrl = progVideoUrl,
                         adaptiveType = MediaSourceResult.AdaptiveType.NONE,
-                        // Match the served track so cache-hit detection compares served-vs-served
-                        // (not served-vs-requested), avoiding an extra re-prepare cycle.
-                        selectedVideoTrack = streamState.selection.resolved.videoTracks.firstOrNull { it.url == progVideoUrl }
+                        selectedVideoTrack = progTrack
                     )
                 }
 
@@ -2959,12 +2964,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     val source = ProgressiveMediaSource.Factory(
                         dataSourceFactoryProvider.forStreams(streamState.selection.resolved)
                     ).createMediaSource(mediaItem)
+                    val lastResortTrack = streamState.selection.resolved.videoTracks.firstOrNull { it.url == url }
+                    factorySelectedVideoTrack = lastResortTrack
                     MediaSourceResult(
                         source = source,
                         isAdaptive = false,
                         actualSourceUrl = url,
                         adaptiveType = MediaSourceResult.AdaptiveType.NONE,
-                        selectedVideoTrack = streamState.selection.resolved.videoTracks.firstOrNull { it.url == url }
+                        selectedVideoTrack = lastResortTrack
                     )
                 }
             }
