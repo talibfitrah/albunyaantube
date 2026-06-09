@@ -53,6 +53,17 @@ class MeViewModelTest {
     private lateinit var feed: MeFeedRepository
     private lateinit var favs: NoopFavoritesRepository
 
+    // Pinned reference instant (Wed 2026-06-03, noon, system zone) so the ISO-week
+    // bucket math below is deterministic regardless of the day the suite runs. The
+    // live System.currentTimeMillis() made the weekIndex assertions fail whenever
+    // "now" sat early in an ISO week (e.g. a Tuesday: "2 days ago" = Sunday = the
+    // prior week). now-2d = Mon (week 0), now-9d = Mon (week 1), now-16d = Mon (week 2).
+    private val fixedNow: Long = LocalDate.of(2026, 6, 3)
+        .atTime(LocalTime.NOON)
+        .atZone(ZoneId.systemDefault())
+        .toInstant()
+        .toEpochMilli()
+
     @Before
     fun setUp() {
         Dispatchers.setMain(Dispatchers.Unconfined)
@@ -162,9 +173,10 @@ class MeViewModelTest {
 
     @Test
     fun `T5 init triggers first week load`() = runBlocking {
-        val now = System.currentTimeMillis()
+        val now = fixedNow
         val recent = now - (2L * 24L * 60L * 60L * 1_000L)
         val feedWithItems = repoWithFetcher(::singleItem to "u1", recent)
+            .also { it.currentTimeMillisProvider = { now } }
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         feedWithItems.refresh(force = true)
 
@@ -180,12 +192,13 @@ class MeViewModelTest {
 
     @Test
     fun `T5 loadNextWeek skips empty weeks and appends next non-empty`() = runBlocking {
-        val now = System.currentTimeMillis()
-        // Week 0 (now-7d to now): empty.
-        // Week 1: empty.
-        // Week 2: one item at ~17 days ago.
+        val now = fixedNow
+        // Pinned now = Wed 2026-06-03; ISO weeks (Mon boundaries):
+        // Week 0 = Jun 1–7 (empty), Week 1 = May 25–31 (empty),
+        // Week 2 = May 18–24 holds the single item at now-16d (Mon May 18).
         val sixteenDaysAgo = now - 16L * 24L * 60L * 60L * 1_000L
         val feedWithItems = repoWithFetcher(::singleItem to "u1", sixteenDaysAgo)
+            .also { it.currentTimeMillisProvider = { now } }
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         feedWithItems.refresh(force = true)
 
@@ -202,10 +215,11 @@ class MeViewModelTest {
 
     @Test
     fun `T5 loadNextWeek appends weeks one at a time`() = runBlocking {
-        val now = System.currentTimeMillis()
+        val now = fixedNow
         val twoDaysAgo = now - 2L * 24L * 60L * 60L * 1_000L
         val nineDaysAgo = now - 9L * 24L * 60L * 60L * 1_000L
-        // One channel; two items in different weeks.
+        // Pinned now = Wed 2026-06-03: twoDaysAgo = Mon Jun 1 (week 0),
+        // nineDaysAgo = Mon May 25 (week 1). One channel; two items in different weeks.
         val feedWithItems = MeFeedRepository(
             subscriptions = subs,
             cache = db.channelVideoCacheDao(),
@@ -226,7 +240,7 @@ class MeViewModelTest {
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
             favoritesRepository = NoopFavoritesRepository(),
-        )
+        ).also { it.currentTimeMillisProvider = { now } }
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         feedWithItems.refresh(force = true)
 
@@ -252,8 +266,9 @@ class MeViewModelTest {
 
     @Test
     fun `Bug 1 setFilter restricts each rendered week to that channel`() = runBlocking {
-        val now = System.currentTimeMillis()
+        val now = fixedNow
         val twoDaysAgo = now - 2L * 24L * 60L * 60L * 1_000L
+        // Pinned now = Wed 2026-06-03: twoDaysAgo = Mon Jun 1, ISO week 0.
         // Two channels, both with one item in the same week (week 0).
         val feedWithItems = MeFeedRepository(
             subscriptions = subs,
@@ -276,7 +291,7 @@ class MeViewModelTest {
             ioDispatcher = Dispatchers.Unconfined,
             telemetry = MeRefreshTelemetry(),
             favoritesRepository = NoopFavoritesRepository(),
-        )
+        ).also { it.currentTimeMillisProvider = { now } }
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
         feedWithItems.refresh(force = true)

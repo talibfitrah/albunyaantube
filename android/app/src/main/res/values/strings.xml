@@ -590,8 +590,6 @@
     <string name="dev_settings_overridden_on">Overridden to ON</string>
     <string name="dev_settings_overridden_off">Overridden to OFF</string>
     <string name="dev_settings_status_format">%1$s • %2$s</string>
-    <string name="dev_settings_synth_adaptive_title">Synthetic Adaptive DASH</string>
-    <string name="dev_settings_synth_adaptive_desc">Multi-rep DASH from progressive streams for ABR quality switching</string>
     <string name="dev_settings_mpd_prefetch_title">MPD Prefetch</string>
     <string name="dev_settings_mpd_prefetch_desc">Pre-generate DASH MPD on video tap for faster first-frame</string>
     <string name="dev_settings_ios_fetch_title">iOS Client Fetch</string>

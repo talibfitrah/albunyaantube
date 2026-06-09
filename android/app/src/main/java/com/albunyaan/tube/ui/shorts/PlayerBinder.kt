@@ -8,11 +8,15 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
+import com.albunyaan.tube.R
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.AudioTrackKind
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.player.applyCaptionStyle
+import com.albunyaan.tube.player.captionLineFractionForClearance
+import com.albunyaan.tube.player.normalizeSubtitleCue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -176,13 +180,14 @@ class PlayerBinder private constructor(
     private val cueRewriteListener = object : Player.Listener {
         override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
             val subView = boundView?.subtitleView ?: return
-            val rewritten = cueGroup.cues.map { cue ->
-                cue.buildUpon()
-                    .setLine(0.92f, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION)
-                    .setLineAnchor(androidx.media3.common.text.Cue.ANCHOR_TYPE_END)
-                    .build()
-            }
-            subView.setCues(rewritten)
+            // Shorts fills the whole frame, but the time-bar + channel/title
+            // overlay are raised by bottom_nav_height. Reserve that nav+title band
+            // below the caption (scaled to the measured view height) so it never
+            // hides behind them — unlike the 16:9 player, which has no such band.
+            val clearancePx = subView.resources
+                .getDimensionPixelSize(R.dimen.shorts_caption_bottom_clearance)
+            val lineFraction = captionLineFractionForClearance(subView.height, clearancePx)
+            subView.setCues(cueGroup.cues.map { normalizeSubtitleCue(it, lineFraction) })
         }
     }
 
@@ -291,6 +296,8 @@ class PlayerBinder private constructor(
             boundView?.let { attach.attach(it, attached = false) }
             attach.attach(target, attached = true)
             boundView = target
+            // Side-loaded captions: fixed readable text size + clean style.
+            target.subtitleView?.applyCaptionStyle()
             // Re-register cueRewriteListener AFTER PlayerView's internal
             // listener (which was just added by `attach.attach(target, true)`
             // → `view.player = player`). Player.Listener#onCues fires in
@@ -697,6 +704,14 @@ class PlayerBinder private constructor(
 
     /** Detach the player from any bound PlayerView. Safe to call multiple times. */
     fun detach() {
+        // Remove our cue listener from the VM-owned player (which outlives this
+        // fragment). Without this, every fragment recreation — rotation,
+        // multi-window resize, or theme change on the Shorts screen — leaks a
+        // PlayerBinder + listener on the long-lived player. Symmetric with the
+        // stallListener removal in ShortsPlayerFragment.onDestroyView. bind()
+        // re-registers (removeListener + addListener) on the next bind, so this
+        // is safe even if the binder is reused.
+        player?.removeListener(cueRewriteListener)
         boundView?.let { attach.attach(it, attached = false) }
         boundView = null
     }

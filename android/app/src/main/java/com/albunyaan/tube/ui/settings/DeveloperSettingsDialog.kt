@@ -99,17 +99,6 @@ class DeveloperSettingsDialog : DialogFragment() {
         // Create toggle for each feature flag
         addFeatureToggle(
             contentView,
-            getString(R.string.dev_settings_synth_adaptive_title),
-            getString(R.string.dev_settings_synth_adaptive_desc),
-            featureFlags.isSynthAdaptiveEnabled,
-            BuildConfig.ENABLE_SYNTH_ADAPTIVE,
-            diagnostics["synth_adaptive"]?.runtimeOverride
-        ) { enabled ->
-            featureFlags.setSynthAdaptiveEnabled(if (enabled == BuildConfig.ENABLE_SYNTH_ADAPTIVE) null else enabled)
-        }
-
-        addFeatureToggle(
-            contentView,
             getString(R.string.dev_settings_mpd_prefetch_title),
             getString(R.string.dev_settings_mpd_prefetch_desc),
             featureFlags.isMpdPrefetchEnabled,

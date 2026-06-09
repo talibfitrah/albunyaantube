@@ -69,17 +69,6 @@ class QualityTrackSelector(
     }
 
     /**
-     * Update parameters to select a specific quality (legacy - uses LOCK semantics).
-     *
-     * @param height The desired video height (e.g., 720 for 720p)
-     * @deprecated Use [applyQualityConstraint] with explicit mode instead
-     */
-    @Deprecated("Use applyQualityConstraint with explicit mode", ReplaceWith("applyQualityConstraint(height, QualityConstraintMode.LOCK)"))
-    fun selectQuality(height: Int) {
-        applyQualityConstraint(height, QualityConstraintMode.LOCK)
-    }
-
-    /**
      * Phase 3: Apply quality constraint with explicit mode.
      *
      * LOCK mode has been deprecated in favor of CAP_STRICT to prevent audio-only fallback.

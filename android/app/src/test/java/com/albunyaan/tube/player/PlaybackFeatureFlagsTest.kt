@@ -1,7 +1,6 @@
 package com.albunyaan.tube.player
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.albunyaan.tube.BuildConfig
 import org.junit.Assert.*
 import org.junit.Before
@@ -19,7 +18,8 @@ import org.robolectric.RuntimeEnvironment
  * - Clearing overrides reverts to build-time defaults
  * - Diagnostics report correct state
  *
- * Uses Robolectric for SharedPreferences support.
+ * Uses Robolectric for SharedPreferences support. `mpd_prefetch` is the canonical
+ * example flag for the generic override/clear/diagnostics mechanism tests.
  */
 @RunWith(RobolectricTestRunner::class)
 class PlaybackFeatureFlagsTest {
@@ -41,15 +41,6 @@ class PlaybackFeatureFlagsTest {
     // --- Build-time Default Tests ---
 
     @Test
-    fun `synth adaptive uses build-time default when no override set`() {
-        assertEquals(
-            "Should use build-time default",
-            BuildConfig.ENABLE_SYNTH_ADAPTIVE,
-            featureFlags.isSynthAdaptiveEnabled
-        )
-    }
-
-    @Test
     fun `mpd prefetch uses build-time default when no override set`() {
         assertEquals(
             "Should use build-time default",
@@ -68,18 +59,6 @@ class PlaybackFeatureFlagsTest {
     }
 
     // --- Runtime Override Tests ---
-
-    @Test
-    fun `synth adaptive override to true takes precedence`() {
-        featureFlags.setSynthAdaptiveEnabled(true)
-        assertTrue("Should be enabled with override", featureFlags.isSynthAdaptiveEnabled)
-    }
-
-    @Test
-    fun `synth adaptive override to false takes precedence`() {
-        featureFlags.setSynthAdaptiveEnabled(false)
-        assertFalse("Should be disabled with override", featureFlags.isSynthAdaptiveEnabled)
-    }
 
     @Test
     fun `mpd prefetch override to true takes precedence`() {
@@ -110,26 +89,25 @@ class PlaybackFeatureFlagsTest {
     @Test
     fun `setting override to null clears override`() {
         // First set an override
-        featureFlags.setSynthAdaptiveEnabled(!BuildConfig.ENABLE_SYNTH_ADAPTIVE)
+        featureFlags.setMpdPrefetchEnabled(!BuildConfig.ENABLE_MPD_PREFETCH)
         assertEquals(
             "Override should take effect",
-            !BuildConfig.ENABLE_SYNTH_ADAPTIVE,
-            featureFlags.isSynthAdaptiveEnabled
+            !BuildConfig.ENABLE_MPD_PREFETCH,
+            featureFlags.isMpdPrefetchEnabled
         )
 
         // Now clear by setting to null
-        featureFlags.setSynthAdaptiveEnabled(null)
+        featureFlags.setMpdPrefetchEnabled(null)
         assertEquals(
             "Should revert to build-time default after setting null",
-            BuildConfig.ENABLE_SYNTH_ADAPTIVE,
-            featureFlags.isSynthAdaptiveEnabled
+            BuildConfig.ENABLE_MPD_PREFETCH,
+            featureFlags.isMpdPrefetchEnabled
         )
     }
 
     @Test
     fun `clearAllOverrides reverts all flags to build-time defaults`() {
-        // Set overrides for all flags
-        featureFlags.setSynthAdaptiveEnabled(!BuildConfig.ENABLE_SYNTH_ADAPTIVE)
+        // Set overrides for several flags
         featureFlags.setMpdPrefetchEnabled(!BuildConfig.ENABLE_MPD_PREFETCH)
         featureFlags.setIosFetchEnabled(!BuildConfig.ENABLE_NPE_IOS_FETCH)
         featureFlags.setGenerousCropBudgetEnabled(true)
@@ -138,11 +116,6 @@ class PlaybackFeatureFlagsTest {
         featureFlags.clearAllOverrides()
 
         // Verify all reverted to build defaults
-        assertEquals(
-            "Synth adaptive should revert",
-            BuildConfig.ENABLE_SYNTH_ADAPTIVE,
-            featureFlags.isSynthAdaptiveEnabled
-        )
         assertEquals(
             "MPD prefetch should revert",
             BuildConfig.ENABLE_MPD_PREFETCH,
@@ -164,22 +137,22 @@ class PlaybackFeatureFlagsTest {
 
     @Test
     fun `hasOverride returns false when no override set`() {
-        assertFalse("Should not have override initially", featureFlags.hasOverride("synth_adaptive"))
+        assertFalse("Should not have override initially", featureFlags.hasOverride("mpd_prefetch"))
     }
 
     @Test
     fun `hasOverride returns true when override set`() {
-        featureFlags.setSynthAdaptiveEnabled(true)
-        assertTrue("Should have override after setting", featureFlags.hasOverride("synth_adaptive"))
+        featureFlags.setMpdPrefetchEnabled(true)
+        assertTrue("Should have override after setting", featureFlags.hasOverride("mpd_prefetch"))
     }
 
     @Test
     fun `hasOverride returns false after clearing override`() {
-        featureFlags.setSynthAdaptiveEnabled(true)
-        assertTrue("Should have override", featureFlags.hasOverride("synth_adaptive"))
+        featureFlags.setMpdPrefetchEnabled(true)
+        assertTrue("Should have override", featureFlags.hasOverride("mpd_prefetch"))
 
-        featureFlags.clearOverride("synth_adaptive")
-        assertFalse("Should not have override after clearing", featureFlags.hasOverride("synth_adaptive"))
+        featureFlags.clearOverride("mpd_prefetch")
+        assertFalse("Should not have override after clearing", featureFlags.hasOverride("mpd_prefetch"))
     }
 
     // --- Diagnostics Tests ---
@@ -188,17 +161,15 @@ class PlaybackFeatureFlagsTest {
     fun `getDiagnostics returns all flags`() {
         val diagnostics = featureFlags.getDiagnostics()
 
-        assertTrue("Should contain synth_adaptive", diagnostics.containsKey("synth_adaptive"))
         assertTrue("Should contain mpd_prefetch", diagnostics.containsKey("mpd_prefetch"))
         assertTrue("Should contain ios_fetch", diagnostics.containsKey("ios_fetch"))
         assertTrue("Should contain generous_crop_budget", diagnostics.containsKey("generous_crop_budget"))
         assertTrue("Should contain client_rotation", diagnostics.containsKey("client_rotation"))
-        assertTrue("Should contain cronet_enabled", diagnostics.containsKey("cronet_enabled"))
         assertTrue("Should contain predictive_prefetch", diagnostics.containsKey("predictive_prefetch"))
         assertTrue("Should contain segment_preload", diagnostics.containsKey("segment_preload"))
         assertTrue("Should contain never_freeze_abr", diagnostics.containsKey("never_freeze_abr"))
         assertTrue("Should contain ttl_watcher", diagnostics.containsKey("ttl_watcher"))
-        assertEquals("Should have 10 flags", 10, diagnostics.size)
+        assertEquals("Should have 8 flags", 8, diagnostics.size)
     }
 
     // --- Generous Crop Budget Flag Tests ---
@@ -236,33 +207,33 @@ class PlaybackFeatureFlagsTest {
     fun `getDiagnostics shows correct state without overrides`() {
         val diagnostics = featureFlags.getDiagnostics()
 
-        val synthState = diagnostics["synth_adaptive"]!!
-        assertEquals("effectiveValue should match build default", BuildConfig.ENABLE_SYNTH_ADAPTIVE, synthState.effectiveValue)
-        assertEquals("buildDefault should be correct", BuildConfig.ENABLE_SYNTH_ADAPTIVE, synthState.buildDefault)
-        assertNull("runtimeOverride should be null", synthState.runtimeOverride)
+        val mpdState = diagnostics["mpd_prefetch"]!!
+        assertEquals("effectiveValue should match build default", BuildConfig.ENABLE_MPD_PREFETCH, mpdState.effectiveValue)
+        assertEquals("buildDefault should be correct", BuildConfig.ENABLE_MPD_PREFETCH, mpdState.buildDefault)
+        assertNull("runtimeOverride should be null", mpdState.runtimeOverride)
     }
 
     @Test
     fun `getDiagnostics shows correct state with override`() {
-        featureFlags.setSynthAdaptiveEnabled(true)
+        featureFlags.setMpdPrefetchEnabled(true)
 
         val diagnostics = featureFlags.getDiagnostics()
-        val synthState = diagnostics["synth_adaptive"]!!
+        val mpdState = diagnostics["mpd_prefetch"]!!
 
-        assertTrue("effectiveValue should be true", synthState.effectiveValue)
-        assertEquals("buildDefault should still be build default", BuildConfig.ENABLE_SYNTH_ADAPTIVE, synthState.buildDefault)
-        assertEquals("runtimeOverride should be true", true, synthState.runtimeOverride)
+        assertTrue("effectiveValue should be true", mpdState.effectiveValue)
+        assertEquals("buildDefault should still be build default", BuildConfig.ENABLE_MPD_PREFETCH, mpdState.buildDefault)
+        assertEquals("runtimeOverride should be true", true, mpdState.runtimeOverride)
     }
 
     @Test
     fun `getDiagnostics shows disabled override correctly`() {
-        featureFlags.setSynthAdaptiveEnabled(false)
+        featureFlags.setMpdPrefetchEnabled(false)
 
         val diagnostics = featureFlags.getDiagnostics()
-        val synthState = diagnostics["synth_adaptive"]!!
+        val mpdState = diagnostics["mpd_prefetch"]!!
 
-        assertFalse("effectiveValue should be false", synthState.effectiveValue)
-        assertEquals("runtimeOverride should be false", false, synthState.runtimeOverride)
+        assertFalse("effectiveValue should be false", mpdState.effectiveValue)
+        assertEquals("runtimeOverride should be false", false, mpdState.runtimeOverride)
     }
 
     // --- Persistence Tests ---
@@ -270,22 +241,22 @@ class PlaybackFeatureFlagsTest {
     @Test
     fun `overrides persist across new instances`() {
         // Set override in first instance
-        featureFlags.setSynthAdaptiveEnabled(!BuildConfig.ENABLE_SYNTH_ADAPTIVE)
+        featureFlags.setMpdPrefetchEnabled(!BuildConfig.ENABLE_MPD_PREFETCH)
 
         // Create new instance (simulates app restart)
         val newInstance = PlaybackFeatureFlags(context)
 
         assertEquals(
             "Override should persist to new instance",
-            !BuildConfig.ENABLE_SYNTH_ADAPTIVE,
-            newInstance.isSynthAdaptiveEnabled
+            !BuildConfig.ENABLE_MPD_PREFETCH,
+            newInstance.isMpdPrefetchEnabled
         )
     }
 
     @Test
     fun `clearAllOverrides persists across new instances`() {
         // Set override
-        featureFlags.setSynthAdaptiveEnabled(!BuildConfig.ENABLE_SYNTH_ADAPTIVE)
+        featureFlags.setMpdPrefetchEnabled(!BuildConfig.ENABLE_MPD_PREFETCH)
 
         // Clear all
         featureFlags.clearAllOverrides()
@@ -295,8 +266,8 @@ class PlaybackFeatureFlagsTest {
 
         assertEquals(
             "Clear should persist - value should be build default",
-            BuildConfig.ENABLE_SYNTH_ADAPTIVE,
-            newInstance.isSynthAdaptiveEnabled
+            BuildConfig.ENABLE_MPD_PREFETCH,
+            newInstance.isMpdPrefetchEnabled
         )
     }
 }

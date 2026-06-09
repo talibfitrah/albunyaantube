@@ -74,6 +74,8 @@ import com.albunyaan.tube.player.MediaSourceResult
 import com.albunyaan.tube.player.SourceDecision
 import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.player.StreamRequestTelemetry
+import com.albunyaan.tube.player.applyCaptionStyle
+import com.albunyaan.tube.player.normalizeSubtitleCue
 import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import javax.inject.Inject
@@ -935,41 +937,29 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         player.playWhenReady = false
 
         binding.playerView.player = player
+        // Side-loaded captions: pin a readable fixed text size + clean style so the
+        // oversized fractional default doesn't make SubtitlePainter skip cues.
+        binding.playerView.subtitleView?.applyCaptionStyle()
         player.addListener(viewModel.playerListener)
 
-        // Force captions to render at the bottom of the frame regardless of
-        // the cue's embedded `line` / `lineAnchor`. YouTube TTML — auto-gen
-        // tracks especially — commonly uses `tts:displayAlign="before"`,
-        // which puts cues at the top. SubtitleView faithfully renders them
-        // at that position; there's no public flag to ignore embedded
-        // positioning, and `SubtitleView` is `final` so we can't subclass.
-        // Workaround: post a setCues with the positioning fields cleared
-        // back to defaults — `View.post` lands on the next loop tick, after
-        // PlayerView's internal listener already ran setCues synchronously,
-        // so our rewrite is the last write to win.
-        // Pin every cue to the bottom of the frame: line=0.92 (92% down
-        // from the top) with anchor at the cue's bottom edge — leaves a
-        // small breathing margin above the system bar / nav rail. DIMEN_UNSET
-        // / TYPE_UNSET is NOT equivalent: SubtitleView treats those as
-        // invalid and drops the cue entirely. Explicit fractional placement
-        // keeps the cue valid and overrides whatever line the parser produced
-        // (typically 0 for YouTube TTML's `tts:displayAlign="before"`).
+        // Re-pin every cue via normalizeSubtitleCue. YouTube auto-gen tracks
+        // arrive top-anchored (`tts:displayAlign="before"` / `position:0%`),
+        // and SubtitleView has no public flag to ignore embedded positioning
+        // (it's `final`, so we can't subclass). normalizeSubtitleCue forces
+        // bottom + full-width placement — see SubtitleStyle.kt for the geometry
+        // and why DIMEN_UNSET can't be used (SubtitleView drops such cues).
         //
-        // Listener registration order matters: PlayerView's internal
-        // listener was added by `binding.playerView.player = player` above,
-        // so adding ours afterwards means our `setCues` fires last each
-        // tick. Calling synchronously (no post) keeps the rewrite in the
-        // same frame, so users never see the unmodified top placement.
+        // Registration order is load-bearing: PlayerView's own onCues listener
+        // was added by `binding.playerView.player = player` above, and listeners
+        // fire in registration order — so adding ours afterwards makes our
+        // setCues the last write each tick. Synchronous (no View.post) keeps the
+        // rewrite in the same frame, so the unmodified top placement never shows.
         player.addListener(object : Player.Listener {
             override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
                 val subView = binding?.playerView?.subtitleView ?: return
-                val rewritten = cueGroup.cues.map { cue ->
-                    cue.buildUpon()
-                        .setLine(0.92f, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION)
-                        .setLineAnchor(androidx.media3.common.text.Cue.ANCHOR_TYPE_END)
-                        .build()
-                }
-                subView.setCues(rewritten)
+                // 16:9 player: default fraction keeps captions off the bottom edge
+                // (incl. landscape fullscreen). No nav/title band to clear here.
+                subView.setCues(cueGroup.cues.map { normalizeSubtitleCue(it) })
             }
         })
 
