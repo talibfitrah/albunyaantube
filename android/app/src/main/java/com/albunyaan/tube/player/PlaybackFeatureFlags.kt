@@ -51,12 +51,10 @@ class PlaybackFeatureFlags @Inject constructor(
 
         // Preference keys for runtime overrides (null means use build-time default)
         // Made public for API consistency with clearOverride()
-        const val KEY_SYNTH_ADAPTIVE = "synth_adaptive"
         const val KEY_MPD_PREFETCH = "mpd_prefetch"
         const val KEY_IOS_FETCH = "ios_fetch"
         const val KEY_GENEROUS_CROP_BUDGET = "generous_crop_budget"
         const val KEY_CLIENT_ROTATION = "client_rotation"
-        const val KEY_CRONET_ENABLED = "cronet_enabled"
         const val KEY_PREDICTIVE_PREFETCH = "predictive_prefetch"
         const val KEY_SEGMENT_PRELOAD = "segment_preload"
         const val KEY_NEVER_FREEZE_ABR = "never_freeze_abr"
@@ -64,12 +62,10 @@ class PlaybackFeatureFlags @Inject constructor(
 
         /** Set of all valid override keys for validation */
         private val VALID_KEYS = setOf(
-            KEY_SYNTH_ADAPTIVE,
             KEY_MPD_PREFETCH,
             KEY_IOS_FETCH,
             KEY_GENEROUS_CROP_BUDGET,
             KEY_CLIENT_ROTATION,
-            KEY_CRONET_ENABLED,
             KEY_PREDICTIVE_PREFETCH,
             KEY_SEGMENT_PRELOAD,
             KEY_NEVER_FREEZE_ABR,
@@ -130,29 +126,16 @@ class PlaybackFeatureFlags @Inject constructor(
      */
     private fun clearAllOverridesInternal() {
         prefs.edit()
-            .remove(KEY_SYNTH_ADAPTIVE)
             .remove(KEY_MPD_PREFETCH)
             .remove(KEY_IOS_FETCH)
             .remove(KEY_GENEROUS_CROP_BUDGET)
             .remove(KEY_CLIENT_ROTATION)
-            .remove(KEY_CRONET_ENABLED)
             .remove(KEY_PREDICTIVE_PREFETCH)
             .remove(KEY_SEGMENT_PRELOAD)
             .remove(KEY_NEVER_FREEZE_ABR)
             .remove(KEY_TTL_WATCHER)
             .apply()
     }
-
-    /**
-     * Whether synthetic adaptive DASH is enabled.
-     *
-     * When enabled, creates multi-representation DASH MPD from progressive streams
-     * for ABR quality switching.
-     *
-     * Build-time default: [BuildConfig.ENABLE_SYNTH_ADAPTIVE]
-     */
-    val isSynthAdaptiveEnabled: Boolean
-        get() = resolveFlag(KEY_SYNTH_ADAPTIVE, BuildConfig.ENABLE_SYNTH_ADAPTIVE)
 
     /**
      * Whether MPD pre-generation during prefetch is enabled.
@@ -200,9 +183,6 @@ class PlaybackFeatureFlags @Inject constructor(
     val isClientRotationEnabled: Boolean
         get() = resolveFlag(KEY_CLIENT_ROTATION, BuildConfig.ENABLE_CLIENT_ROTATION)
 
-    val isCronetEnabled: Boolean
-        get() = resolveFlag(KEY_CRONET_ENABLED, BuildConfig.ENABLE_CRONET)
-
     val isPredictivePrefetchEnabled: Boolean
         get() = resolveFlag(KEY_PREDICTIVE_PREFETCH, BuildConfig.ENABLE_PREDICTIVE_PREFETCH)
 
@@ -214,15 +194,6 @@ class PlaybackFeatureFlags @Inject constructor(
 
     val isTtlWatcherEnabled: Boolean
         get() = resolveFlag(KEY_TTL_WATCHER, BuildConfig.ENABLE_TTL_WATCHER)
-
-    /**
-     * Set a runtime override for synthetic adaptive DASH.
-     * @param enabled true to enable, false to disable, null to use build-time default
-     */
-    fun setSynthAdaptiveEnabled(enabled: Boolean?) {
-        setOverride(KEY_SYNTH_ADAPTIVE, enabled)
-        Log.i(TAG, "SYNTH_ADAPTIVE override set to: $enabled (effective: $isSynthAdaptiveEnabled)")
-    }
 
     /**
      * Set a runtime override for MPD prefetch.
@@ -258,11 +229,6 @@ class PlaybackFeatureFlags @Inject constructor(
     fun setClientRotationEnabled(enabled: Boolean?) {
         setOverride(KEY_CLIENT_ROTATION, enabled)
         Log.i(TAG, "CLIENT_ROTATION override set to: $enabled (effective: $isClientRotationEnabled)")
-    }
-
-    fun setCronetEnabled(enabled: Boolean?) {
-        setOverride(KEY_CRONET_ENABLED, enabled)
-        Log.i(TAG, "CRONET_ENABLED override set to: $enabled (effective: $isCronetEnabled)")
     }
 
     fun setPredictivePrefetchEnabled(enabled: Boolean?) {
@@ -301,12 +267,10 @@ class PlaybackFeatureFlags @Inject constructor(
      */
     fun clearAllOverrides() {
         prefs.edit()
-            .remove(KEY_SYNTH_ADAPTIVE)
             .remove(KEY_MPD_PREFETCH)
             .remove(KEY_IOS_FETCH)
             .remove(KEY_GENEROUS_CROP_BUDGET)
             .remove(KEY_CLIENT_ROTATION)
-            .remove(KEY_CRONET_ENABLED)
             .remove(KEY_PREDICTIVE_PREFETCH)
             .remove(KEY_SEGMENT_PRELOAD)
             .remove(KEY_NEVER_FREEZE_ABR)
@@ -330,12 +294,10 @@ class PlaybackFeatureFlags @Inject constructor(
      */
     fun getDiagnostics(): Map<String, FlagState> {
         return mapOf(
-            KEY_SYNTH_ADAPTIVE to getFlagState(KEY_SYNTH_ADAPTIVE, BuildConfig.ENABLE_SYNTH_ADAPTIVE),
             KEY_MPD_PREFETCH to getFlagState(KEY_MPD_PREFETCH, BuildConfig.ENABLE_MPD_PREFETCH),
             KEY_IOS_FETCH to getFlagState(KEY_IOS_FETCH, BuildConfig.ENABLE_NPE_IOS_FETCH),
             KEY_GENEROUS_CROP_BUDGET to getFlagState(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra()),
             KEY_CLIENT_ROTATION to getFlagState(KEY_CLIENT_ROTATION, BuildConfig.ENABLE_CLIENT_ROTATION),
-            KEY_CRONET_ENABLED to getFlagState(KEY_CRONET_ENABLED, BuildConfig.ENABLE_CRONET),
             KEY_PREDICTIVE_PREFETCH to getFlagState(KEY_PREDICTIVE_PREFETCH, BuildConfig.ENABLE_PREDICTIVE_PREFETCH),
             KEY_SEGMENT_PRELOAD to getFlagState(KEY_SEGMENT_PRELOAD, BuildConfig.ENABLE_SEGMENT_PRELOAD),
             KEY_NEVER_FREEZE_ABR to getFlagState(KEY_NEVER_FREEZE_ABR, BuildConfig.ENABLE_NEVER_FREEZE_ABR),

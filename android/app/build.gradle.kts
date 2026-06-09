@@ -91,12 +91,6 @@ android {
         //   or similar service that writes to SharedPreferences on app startup.
         // - To disable at build time (local dev/testing): set property in local.properties
         //
-        // Enable synthetic adaptive DASH from progressive streams.
-        // Creates multi-representation DASH MPD from video-only progressive streams for ABR switching.
-        // Default ON - disable in local.properties: playback.synth.adaptive.enabled=false
-        val enableSynthAdaptive = localProperties.getProperty("playback.synth.adaptive.enabled", "true").toBoolean()
-        buildConfigField("boolean", "ENABLE_SYNTH_ADAPTIVE", "$enableSynthAdaptive")
-
         // Enable MPD pre-generation during stream prefetch.
         // Pre-generates DASH MPD when user taps video to reduce first-frame latency.
         // Default ON - disable in local.properties: playback.mpd.prefetch.enabled=false
@@ -104,9 +98,7 @@ android {
         buildConfigField("boolean", "ENABLE_MPD_PREFETCH", "$enableMpdPrefetch")
 
         val enableClientRotation = localProperties.getProperty("playback.client.rotation.enabled", "true").toBoolean()
-        val enableCronet = localProperties.getProperty("playback.cronet.enabled", "true").toBoolean()
         buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "$enableClientRotation")
-        buildConfigField("boolean", "ENABLE_CRONET", "$enableCronet")
         // Predictive prefetch starts extraction when list cells attach so
         // tap-to-open is instant. OFF by default — turning it on with the
         // current controller fires for every visible cell, which on a
