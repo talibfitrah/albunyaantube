@@ -97,7 +97,15 @@ class AndroidVrStreamResolver(
         val durationSeconds = json.optJSONObject("videoDetails")
             ?.optStringOrNull("lengthSeconds")?.toIntOrNull()
 
-        val subtitleTracks = parseSubtitleTracks(json)
+        val subtitleTracks = try {
+            parseSubtitleTracks(json)
+        } catch (t: Throwable) {
+            // Captions are non-essential: a parse hiccup must never sink an
+            // otherwise-playable VR resolve (which would drop to the inferior
+            // NewPipe fallback). Degrade to no-subtitles instead.
+            Log.w(TAG, "ANDROID_VR caption parse failed for $videoId; continuing without subtitles", t)
+            emptyList()
+        }
         Log.i(
             TAG,
             "ANDROID_VR resolved $videoId: ${videoTracks.size} video, ${audioTracks.size} audio, " +

@@ -127,4 +127,13 @@ class AndroidVrSubtitleParsingTest {
             AndroidVrStreamResolver.withVttFormat("https://x/api/timedtext")
         )
     }
+
+    @Test
+    fun `withVttFormat does not match fmt inside another param name`() {
+        // Guards the ([?&]) anchor: a param like xfmt= must NOT be rewritten;
+        // the real fmt must be appended instead.
+        val out = AndroidVrStreamResolver.withVttFormat("https://x/api/timedtext?v=a&xfmt=q")
+        assertTrue("real fmt must be appended", out.endsWith("&fmt=vtt"))
+        assertTrue("the xfmt param must be left intact", out.contains("xfmt=q"))
+    }
 }
