@@ -269,6 +269,15 @@ class AndroidVrStreamResolver(
         }
 
         private const val SUBTITLE_FORMAT = "vtt"
+        /**
+         * Upper bound on parsed caption tracks. Each track becomes a
+         * SingleSampleMediaSource merged into the player's MergingMediaSource, so an
+         * absurd captionTracks[] (a compromised/MITM'd player response) would fan out
+         * unbounded. Real videos carry a handful of base tracks (manual + ASR) — the
+         * 100+ auto-translate languages live in a separate translationLanguages[] we
+         * never read — so this ceiling cannot truncate legitimate content.
+         */
+        private const val MAX_CAPTION_TRACKS = 100
         private val FMT_PARAM_REGEX = Regex("([?&])fmt=[^&]*")
 
         /**
@@ -286,8 +295,9 @@ class AndroidVrStreamResolver(
                 ?.optJSONObject("playerCaptionsTracklistRenderer")
                 ?.optJSONArray("captionTracks")
                 ?: return emptyList()
-            val result = ArrayList<SubtitleTrack>(captionTracks.length())
-            for (i in 0 until captionTracks.length()) {
+            val trackCount = minOf(captionTracks.length(), MAX_CAPTION_TRACKS)
+            val result = ArrayList<SubtitleTrack>(trackCount)
+            for (i in 0 until trackCount) {
                 val track = captionTracks.optJSONObject(i) ?: continue
                 val baseUrl = track.optStringOrNull("baseUrl") ?: continue
                 val languageCode = track.optStringOrNull("languageCode") ?: continue

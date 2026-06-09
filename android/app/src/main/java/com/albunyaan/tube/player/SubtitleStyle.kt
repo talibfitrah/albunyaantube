@@ -63,6 +63,11 @@ fun SubtitleView.applyCaptionStyle() {
  * `SubtitlePainter` compute a non-positive width and skip the cue. Forcing centre
  * + full width guarantees room to draw; the caller supplies [lineFraction] so each
  * player can clear its own bottom chrome.
+ *
+ * Centre alignment is deliberate for caption cues and matches YouTube's own
+ * rendering. It is intentionally exempt from the app's `viewStart` RTL rule, which
+ * governs UI chrome — not video captions — and it does not reverse Arabic bidi
+ * text: [SubtitleView]/[Layout] still resolve glyph direction within the cue.
  */
 fun normalizeSubtitleCue(cue: Cue, lineFraction: Float = PLAYER_CAPTION_LINE_FRACTION): Cue =
     cue.buildUpon()
@@ -80,6 +85,11 @@ fun normalizeSubtitleCue(cue: Cue, lineFraction: Float = PLAYER_CAPTION_LINE_FRA
  * app nav bar + title overlay band on any device height instead of a fixed
  * fraction. Falls back to [FALLBACK_LINE_FRACTION] before the view is measured and
  * clamps to [MIN_LINE_FRACTION]..[MAX_LINE_FRACTION] so the cue is always on-screen.
+ *
+ * Edge case: when the requested clearance exceeds the view height (a very short
+ * Shorts viewport, e.g. split-screen landscape), the lower clamp wins and the
+ * caption sits at [MIN_LINE_FRACTION]. That is a degraded "stay on-screen and
+ * readable" fallback — NOT a guarantee that the nav/title band is cleared.
  */
 fun captionLineFractionForClearance(viewHeightPx: Int, bottomClearancePx: Int): Float =
     if (viewHeightPx <= 0) {

@@ -41,7 +41,7 @@
 
     <!-- Side-loaded caption clearance for Shorts: reserve this much space below
          the caption so it sits above the bottom nav (72dp) + channel/title overlay
-         band (~104dp) plus breathing room. Converted to a line fraction against the
+         band (~104dp) + ~24dp breathing room (72+104+24=200dp). Converted to a line fraction against the
          measured SubtitleView height (captionLineFractionForClearance) so it scales
          across device heights instead of a fixed fraction. -->
     <dimen name="shorts_caption_bottom_clearance">200dp</dimen>

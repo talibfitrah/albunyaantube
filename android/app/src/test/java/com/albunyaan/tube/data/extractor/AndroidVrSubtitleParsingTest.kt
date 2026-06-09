@@ -136,4 +136,18 @@ class AndroidVrSubtitleParsingTest {
         assertTrue("real fmt must be appended", out.endsWith("&fmt=vtt"))
         assertTrue("the xfmt param must be left intact", out.contains("xfmt=q"))
     }
+
+    @Test
+    fun `caps the number of parsed caption tracks at MAX_CAPTION_TRACKS`() {
+        // A pathological/hostile captionTracks[] must not fan out unbounded into
+        // SingleSampleMediaSources downstream. Real videos stay far below the cap;
+        // the 100+ auto-translate languages live in a separate array we never read.
+        val oneTrack =
+            """{"baseUrl":"https://www.youtube.com/api/timedtext?v=a&fmt=srv3&lang=en","languageCode":"en","name":{"simpleText":"English"}}"""
+        val json = playerJson(List(250) { oneTrack }.joinToString(","))
+
+        val tracks = AndroidVrStreamResolver.parseSubtitleTracks(json)
+
+        assertEquals("must cap at MAX_CAPTION_TRACKS (100)", 100, tracks.size)
+    }
 }
