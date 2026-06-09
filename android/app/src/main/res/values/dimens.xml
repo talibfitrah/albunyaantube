@@ -39,6 +39,13 @@
          video title. -->
     <dimen name="shorts_action_rail_bottom_margin">176dp</dimen>
 
+    <!-- Side-loaded caption clearance for Shorts: reserve this much space below
+         the caption so it sits above the bottom nav (72dp) + channel/title overlay
+         band (~104dp) plus breathing room. Converted to a line fraction against the
+         measured SubtitleView height (captionLineFractionForClearance) so it scales
+         across device heights instead of a fixed fraction. -->
+    <dimen name="shorts_caption_bottom_clearance">200dp</dimen>
+
     <!-- Filter Chips -->
     <dimen name="filter_chip_height">40dp</dimen>
     <dimen name="filter_chip_radius">20dp</dimen>
