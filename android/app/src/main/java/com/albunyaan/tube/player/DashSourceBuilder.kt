@@ -300,7 +300,16 @@ class DashSourceBuilder @Inject constructor(
         }
 
         return BuiltSource(
-            source = wrapWithSideLoadSubtitles(mainSource, resolved.subtitleTracks, factory),
+            // Live streams: never side-load captions. Merging a SingleSampleMediaSource
+            // (fixed length, C.TIME_UNSET) into a dynamic/live timeline risks
+            // IllegalMergeException. The ANDROID_VR primary path is always isLive=false;
+            // this guards the rare NewPipe-fallback live stream that exposes captionTracks.
+            // Passing emptyList makes wrapWithSideLoadSubtitles return primary unwrapped.
+            source = wrapWithSideLoadSubtitles(
+                mainSource,
+                if (resolved.isLive) emptyList() else resolved.subtitleTracks,
+                factory,
+            ),
             decision = decision,
         )
     }

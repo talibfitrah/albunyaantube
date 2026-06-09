@@ -704,6 +704,14 @@ class PlayerBinder private constructor(
 
     /** Detach the player from any bound PlayerView. Safe to call multiple times. */
     fun detach() {
+        // Remove our cue listener from the VM-owned player (which outlives this
+        // fragment). Without this, every fragment recreation — rotation,
+        // multi-window resize, or theme change on the Shorts screen — leaks a
+        // PlayerBinder + listener on the long-lived player. Symmetric with the
+        // stallListener removal in ShortsPlayerFragment.onDestroyView. bind()
+        // re-registers (removeListener + addListener) on the next bind, so this
+        // is safe even if the binder is reused.
+        player?.removeListener(cueRewriteListener)
         boundView?.let { attach.attach(it, attached = false) }
         boundView = null
     }
