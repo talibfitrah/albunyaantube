@@ -150,4 +150,21 @@ class AndroidVrSubtitleParsingTest {
 
         assertEquals("must cap at MAX_CAPTION_TRACKS (100)", 100, tracks.size)
     }
+
+    @Test
+    fun `keeps exactly MAX_CAPTION_TRACKS at the boundary, no off-by-one`() {
+        val oneTrack =
+            """{"baseUrl":"https://www.youtube.com/api/timedtext?v=a&fmt=srv3&lang=en","languageCode":"en","name":{"simpleText":"English"}}"""
+        // Exactly 100 valid tracks must all survive; 101 must clamp to 100.
+        assertEquals(
+            "exactly 100 must survive at the boundary",
+            100,
+            AndroidVrStreamResolver.parseSubtitleTracks(playerJson(List(100) { oneTrack }.joinToString(","))).size
+        )
+        assertEquals(
+            "101 must clamp to 100",
+            100,
+            AndroidVrStreamResolver.parseSubtitleTracks(playerJson(List(101) { oneTrack }.joinToString(","))).size
+        )
+    }
 }

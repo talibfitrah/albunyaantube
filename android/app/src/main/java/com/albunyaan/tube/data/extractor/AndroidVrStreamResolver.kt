@@ -275,7 +275,8 @@ class AndroidVrStreamResolver(
          * absurd captionTracks[] (a compromised/MITM'd player response) would fan out
          * unbounded. Real videos carry a handful of base tracks (manual + ASR) — the
          * 100+ auto-translate languages live in a separate translationLanguages[] we
-         * never read — so this ceiling cannot truncate legitimate content.
+         * never read — so this ceiling sits far above any ordinary video's base
+         * track count and should not affect real content.
          */
         private const val MAX_CAPTION_TRACKS = 100
         private val FMT_PARAM_REGEX = Regex("([?&])fmt=[^&]*")
