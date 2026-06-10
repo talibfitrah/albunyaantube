@@ -59,10 +59,12 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
             }
         }
 
-        // Prevent Material3's internal WindowInsets listener from adding bottom padding.
-        // The parent CoordinatorLayout's fitsSystemWindows="true" already positions the nav
-        // view above the system navigation bar. Without this, on Android 15+ (mandatory
-        // edge-to-edge), Material3 adds ADDITIONAL bottom padding, compressing the icons/labels.
+        // Prevent Material3's internal WindowInsets listener from adding bottom
+        // padding. The parent CoordinatorLayout's fitsSystemWindows="true" already
+        // positions the nav view above the system navigation bar; the white strip
+        // it leaves behind the (Android-15 transparent) system nav is filled by the
+        // shell root's background_gray, not by extending the bar. Without this
+        // swallow, Material3 adds ADDITIONAL bottom padding, compressing icons/labels.
         navigationView?.let { nav ->
             ViewCompat.setOnApplyWindowInsetsListener(nav) { _, insets -> insets }
         }

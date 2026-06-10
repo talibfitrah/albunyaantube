@@ -1,11 +1,14 @@
 package com.albunyaan.tube.ui
 
 import android.content.Intent
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.bundleOf
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -60,6 +63,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        configureSystemBars()
         navController // trigger lazy init if toolbar needed later
 
         // Handle intent only on fresh launch (not recreation)
@@ -538,6 +542,34 @@ class MainActivity : AppCompatActivity() {
             else -> AppCompatDelegate.MODE_NIGHT_NO
         }
         AppCompatDelegate.setDefaultNightMode(mode)
+    }
+
+    /**
+     * Edge-to-edge system bars ("transparent draw-behind"). The shell root
+     * ([MainShellFragment]) paints background_gray, so the strips behind BOTH
+     * (Android-15 transparent) system bars — the bottom nav strip (the dead-band
+     * fix) and the top status strip — read as the nav bar's colour instead of the
+     * window background. The status strip recolour is intentional and benign: at
+     * #F5F5F5 it sits within ~3/255 of the home content (#F5F6F8), closer than the
+     * prior off-white window background. Here we just stop the framework drawing a
+     * contrast scrim over the bottom strip and match the nav-bar icon colour to the
+     * current theme so the gesture pill / buttons stay legible.
+     *
+     * Scoped to Android 15+ (VANILLA_ICE_CREAM), where edge-to-edge and a
+     * transparent navigation bar are mandatory — that is the only place the
+     * white dead band appeared. On older APIs the nav bar stays opaque and its
+     * default colour/icon handling is left untouched. Status-bar transparency +
+     * light-status-bar are set in the theme (themes.xml). Re-runs on every
+     * recreate (theme toggle), so light/dark icon colour stays correct.
+     */
+    private fun configureSystemBars() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            window.isNavigationBarContrastEnforced = false
+            val isLight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) !=
+                Configuration.UI_MODE_NIGHT_YES
+            WindowCompat.getInsetsController(window, window.decorView)
+                .isAppearanceLightNavigationBars = isLight
+        }
     }
 
     /**
