@@ -125,6 +125,7 @@ class PlayerViewModelPrefetchTtlTest {
             playbackMetrics = playbackMetrics,
             mpdRegistry = mpdRegistry,
             extractorClient = fakeExtractorClient,
+            dubAudioEnumerator = com.albunyaan.tube.data.extractor.DubAudioEnumerator(),
         )
         vm.setClockForTesting { now }
         return vm

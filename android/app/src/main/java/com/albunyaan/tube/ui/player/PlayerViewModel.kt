@@ -7,6 +7,9 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.analytics.PlaybackMetricsCollector
 import com.albunyaan.tube.data.extractor.AudioTrack
+import com.albunyaan.tube.data.extractor.AudioTrackSource
+import com.albunyaan.tube.data.extractor.DubAudioEnumerator
+import com.albunyaan.tube.data.extractor.DubLanguage
 import com.albunyaan.tube.data.extractor.ExtractionClient
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.Priority
@@ -14,6 +17,7 @@ import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.VideoTrack
+import com.albunyaan.tube.data.extractor.withDubLanguages
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadRepository
@@ -64,9 +68,48 @@ class PlayerViewModel @Inject constructor(
     private val playbackMetrics: PlaybackMetricsCollector,
     private val mpdRegistry: SyntheticDashMpdRegistry,
     private val extractorClient: ExtractorClient,
+    private val dubAudioEnumerator: DubAudioEnumerator,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
+
+    /** Cached dub languages per videoId (so a URL-refresh re-resolve keeps the globe lit). */
+    private val dubCache = java.util.concurrent.ConcurrentHashMap<String, List<DubLanguage>>()
+    private val dubEnumerating = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Fire-and-forget dub enumeration for a freshly-resolved single-audio stream
+     * (the VR-primary case the globe regression is about). If 2+ languages exist,
+     * re-emit Ready with lazy WEB_DUB tracks appended so the globe lights up. Never
+     * blocks playback; the re-emit is a fragment cache hit (no re-prepare — verified
+     * against checkCacheHit, which ignores audioTracks). Cached so a URL-refresh
+     * re-resolve re-applies without a second network call.
+     */
+    private fun maybeEnumerateDubs(selection: PlaybackSelection) {
+        val resolved = selection.resolved
+        if (resolved.audioTracks.size > 1) return
+        val streamId = resolved.streamId
+        dubCache[streamId]?.let { applyDubLanguages(streamId, it); return }
+        if (!dubEnumerating.add(streamId)) return
+        viewModelScope.launch(dispatcher) {
+            val dubs = dubAudioEnumerator.enumerate(streamId)
+            dubEnumerating.remove(streamId)
+            if (dubs.size < 2) return@launch
+            dubCache[streamId] = dubs
+            applyDubLanguages(streamId, dubs)
+        }
+    }
+
+    private fun applyDubLanguages(streamId: String, dubs: List<DubLanguage>) {
+        val cur = _state.value.streamState
+        if (cur is StreamState.Ready && cur.streamId == streamId &&
+            cur.selection.resolved.audioTracks.none { it.source == AudioTrackSource.WEB_DUB }
+        ) {
+            val augmented = cur.selection.copy(resolved = cur.selection.resolved.withDubLanguages(dubs))
+            updateState { it.copy(streamState = StreamState.Ready(streamId, augmented)) }
+            android.util.Log.d("PlayerViewModel", "dub globe lit for $streamId: ${dubs.size} languages")
+        }
+    }
 
     private val _state = MutableStateFlow(PlayerState())
     val state: StateFlow<PlayerState> = _state
@@ -1182,6 +1225,7 @@ class PlayerViewModel @Inject constructor(
                 if (selection != null) {
                     publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
                     updateState { it.copy(streamState = StreamState.Ready(tapPrefetched.streamId, selection), retryCount = 0) }
+                    maybeEnumerateDubs(selection)
                     return
                 }
                 android.util.Log.w("PlayerViewModel", "Tap-prefetched stream invalid, checking local cache")
@@ -1197,6 +1241,7 @@ class PlayerViewModel @Inject constructor(
                 if (selection != null) {
                     publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
                     updateState { it.copy(streamState = StreamState.Ready(prefetched.streamId, selection), retryCount = 0) }
+                    maybeEnumerateDubs(selection)
                     return
                 }
                 // Prefetch data was invalid, fall through to normal resolution
@@ -1295,6 +1340,7 @@ class PlayerViewModel @Inject constructor(
             rateLimiter.onExtractionSuccess(item.streamId)
             publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
             updateState { it.copy(streamState = StreamState.Ready(resolved.streamId, selection), retryCount = 0) }
+            maybeEnumerateDubs(selection)
 
             // Schedule proactive URL refresh for live streams
             scheduleLiveStreamRefresh(resolved, selection)

@@ -114,6 +114,7 @@ class PlayerViewModelPlaylistPagingTest {
             playbackMetrics = playbackMetrics,
             mpdRegistry = mpdRegistry,
             extractorClient = fakeExtractorClient,
+            dubAudioEnumerator = com.albunyaan.tube.data.extractor.DubAudioEnumerator(),
         )
     }
 
