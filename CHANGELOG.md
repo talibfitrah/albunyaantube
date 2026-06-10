@@ -5,6 +5,22 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.29] - 2026-06-10
+
+### Android
+
+- **Edge-to-edge shell: removed the white dead-band under the bottom navigation
+  bar** on Android 15. The shell root now paints `background_gray`, so the strip
+  behind the transparent system navigation reads as the nav bar's colour instead
+  of the white window background; the framework contrast scrim is dropped and the
+  nav-bar icons follow the theme. The nav bar, Shorts overlay, and labels are
+  unchanged from beta.28 (an earlier attempt that extended the bar shifted the
+  Shorts title overlay, so it was reverted in favour of this root-background fix).
+- **Fixed the band reappearing after watching a video.** `PlayerFragment` nulled
+  the shell background on teardown, reviving the dead-band on the next return to a
+  list screen (light mode / Samsung One UI). The fullscreen save/restore now
+  leaves the shell's own background intact when nothing was captured.
+
 ## [1.0.0-beta.28] - 2026-06-08
 
 ### Android

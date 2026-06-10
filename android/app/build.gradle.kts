@@ -36,8 +36,8 @@ android {
         applicationId = "com.albunyaan.tube"
         minSdk = 26
         targetSdk = 35
-        versionCode = 42
-        versionName = "1.0.0-beta.28"
+        versionCode = 43
+        versionName = "1.0.0-beta.29"
 
         testInstrumentationRunner = "com.albunyaan.tube.HiltTestRunner"
         vectorDrawables.useSupportLibrary = true

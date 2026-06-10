@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.29": {
+    "en": "Edge-to-edge polish: removed the empty white strip under the bottom navigation bar.",
+    "ar": "تحسين العرض من الحافة إلى الحافة: إزالة الشريط الأبيض الفارغ أسفل شريط التنقل السفلي.",
+    "nl": "Edge-to-edge verfijning: de lege witte strook onder de onderste navigatiebalk is verwijderd."
+  },
   "1.0.0-beta.28": {
     "en": "More videos that still wouldn't play now play ad-free; the quality menu shows only working options; steadier playback.",
     "ar": "مزيد من الفيديوهات التي لم تعمل أصبحت تعمل الآن بدون إعلانات؛ قائمة الجودة تعرض الخيارات العاملة فقط؛ تشغيل أكثر ثباتًا.",
