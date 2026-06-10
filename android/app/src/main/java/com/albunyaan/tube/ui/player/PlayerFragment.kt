@@ -738,7 +738,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     override fun onDestroyView() {
-        savedShellBackground = null
+        // NOTE: do NOT null savedShellBackground here. restoreShellRootView() below
+        // is what restores it, and on the back-while-fullscreen path the saved
+        // background (the shell's @color/background_gray) is still needed — nulling it
+        // first made the restore set the shell root background to null, which revives
+        // the white dead-band behind the transparent system nav. restoreShellRootView()
+        // clears the field itself once it has restored.
         pendingFullscreenExit = false
         pendingExitSafetyRunnable?.let { binding?.root?.removeCallbacks(it) }
         pendingExitSafetyRunnable = null
@@ -3798,14 +3803,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private fun restoreShellRootView() {
         findShellRootView()?.let { shellRoot ->
             shellRoot.fitsSystemWindows = true
-            // Restore the saved background instead of setting null.
-            // Setting null works for dark mode (window dark bg shows through) but breaks
-            // light mode on Samsung One UI where the CoordinatorLayout needs its explicit
-            // background to render correctly.
-            shellRoot.background = savedShellBackground
-            savedShellBackground = null
+            // Only restore a background we actually captured on fullscreen-enter
+            // (which swaps the shell root to black). When nothing was saved — the
+            // common case where the user never entered fullscreen, or it was already
+            // restored — leave the shell's own XML @color/background_gray in place.
+            // Setting it to null here previously revived the white dead-band behind
+            // the transparent system nav on light mode / Samsung One UI.
+            savedShellBackground?.let { saved -> shellRoot.background = saved }
             shellRoot.requestApplyInsets()
         }
+        // Always clear the capture — even if the shell root could not be found during
+        // teardown (parent shell already detached) — so a stale drawable from a prior
+        // view instance can't be re-applied on a later fullscreen cycle (cubic P3).
+        // PlayerFragment isn't retained, so this is belt-and-suspenders, but it keeps
+        // the save/restore contract airtight.
+        savedShellBackground = null
     }
 
     private fun loadMediaToCast() {
