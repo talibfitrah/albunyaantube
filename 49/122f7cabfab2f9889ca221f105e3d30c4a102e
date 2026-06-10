@@ -1,0 +1,22 @@
+android/app/src/test/java/com/albunyaan/tube/data/extractor/DubAudioEnumeratorTest.kt
+  s_c3846ab71aef74::t_5c05721314c4d9 1-58
+android/app/src/main/java/com/albunyaan/tube/data/extractor/DubAudioEnumerator.kt
+  s_c3846ab71aef74::t_90016ca0c107b4 21-39
+  s_c3846ab71aef74::t_dd947399c3896e 1-20,40-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "49122f7cabfab2f9889ca221f105e3d30c4a102e",
+  "prompts": {},
+  "sessions": {
+    "s_c3846ab71aef74": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "867a81b9-0c51-4c86-a5a2-98a3eb560c80",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
