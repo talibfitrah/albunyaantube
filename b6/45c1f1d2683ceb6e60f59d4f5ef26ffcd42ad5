@@ -1,0 +1,32 @@
+android/app/src/main/java/com/albunyaan/tube/ui/MainShellFragment.kt
+  s_e966232bb86080::t_e87a65eccbecfb 62-67
+android/app/src/main/java/com/albunyaan/tube/ui/MainActivity.kt
+  s_e966232bb86080::t_0a6a39eb435cc9 557-574
+  s_e966232bb86080::t_a2af16cc4aea40 11
+  s_e966232bb86080::t_3b2d95453a86e9 66
+  s_e966232bb86080::t_b1c3ec8fd80663 4-5
+  s_e966232bb86080::t_4b695bacebdf33 549-556
+  s_e966232bb86080::t_f4517f3165cfa2 548
+android/app/src/main/res/layout-sw720dp/fragment_main_shell.xml
+  s_e966232bb86080::t_7ebf3838da47ea 9
+android/app/src/main/res/layout/fragment_main_shell.xml
+  s_e966232bb86080::t_25c675aa2e467e 8
+android/app/src/main/res/layout-sw600dp/fragment_main_shell.xml
+  s_e966232bb86080::t_9b515bd1d0da57 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "b645c1f1d2683ceb6e60f59d4f5ef26ffcd42ad5",
+  "prompts": {},
+  "sessions": {
+    "s_e966232bb86080": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ff3a03ed-4552-4a44-be09-399c731632f5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
