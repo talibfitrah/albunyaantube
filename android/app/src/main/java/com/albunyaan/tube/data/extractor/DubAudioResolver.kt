@@ -1,9 +1,9 @@
 package com.albunyaan.tube.data.extractor
 
-import com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.schabi.newpipe.extractor.services.youtube.PoTokenProvider
 import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,7 +31,7 @@ data class DubStreamCandidate(
 @Singleton
 class DubAudioResolver @Inject constructor(
     private val enumerator: DubAudioEnumerator,
-    private val poTokenProvider: WebViewPoTokenProvider,
+    private val poTokenProvider: PoTokenProvider,
 ) {
 
     /**

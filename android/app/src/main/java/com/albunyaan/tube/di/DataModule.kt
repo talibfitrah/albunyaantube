@@ -265,6 +265,13 @@ object DataModule {
     ): com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider =
         com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider(context)
 
+    // DubAudioResolver depends on the PoTokenProvider interface (testable with a no-op fake).
+    @Provides
+    @Singleton
+    fun providePoTokenProvider(
+        webView: com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider
+    ): org.schabi.newpipe.extractor.services.youtube.PoTokenProvider = webView
+
     @Provides
     @Singleton
     fun provideNewPipeExtractorClient(

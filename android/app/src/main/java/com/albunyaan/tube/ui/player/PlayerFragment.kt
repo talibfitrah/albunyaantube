@@ -1554,20 +1554,41 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         // factory picks HLS. Poison HLS for this video so the
                         // rebuild falls through to DASH/SYNTH, which respects
                         // the single-track filter and actually swaps audio.
-                        if (preparedAdaptiveType == MediaSourceResult.AdaptiveType.HLS) {
-                            hlsPoisonRegistry.poisonHls(
-                                event.streamId,
-                                reason = "Audio language swap — HLS ignores per-rendition filter"
+                        mpdRegistry.unregisterBoth(event.streamId)
+                        if (event.newSelection.audio.source ==
+                            com.albunyaan.tube.data.extractor.AudioTrackSource.WEB_DUB
+                        ) {
+                            // Web dub: mergedResolved already carries VR-native audio + the resolved
+                            // dub — do NOT filter to one track; DashSourceBuilder merges VR video + dub
+                            // audio. Select the dub by language once the merged source is prepared.
+                            handleLiveStreamRefresh(
+                                PlayerUiEvent.LiveStreamRefreshReady(event.streamId, event.newSelection)
+                            )
+                            event.newSelection.audio.language?.let { lang ->
+                                player?.let { p ->
+                                    p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                        .setPreferredAudioLanguage(lang)
+                                        .build()
+                                }
+                            }
+                        } else {
+                            if (preparedAdaptiveType == MediaSourceResult.AdaptiveType.HLS) {
+                                hlsPoisonRegistry.poisonHls(
+                                    event.streamId,
+                                    reason = "Audio language swap — HLS ignores per-rendition filter"
+                                )
+                            }
+                            val filteredResolved = event.newSelection.resolved.copy(
+                                audioTracks = listOf(event.newSelection.audio)
+                            )
+                            val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
+                            handleLiveStreamRefresh(
+                                PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
                             )
                         }
-                        mpdRegistry.unregisterBoth(event.streamId)
-                        val filteredResolved = event.newSelection.resolved.copy(
-                            audioTracks = listOf(event.newSelection.audio)
-                        )
-                        val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
-                        handleLiveStreamRefresh(
-                            PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
-                        )
+                    }
+                    is PlayerUiEvent.DubAudioResolveFailed -> {
+                        Toast.makeText(requireContext(), R.string.player_stream_error, Toast.LENGTH_SHORT).show()
                     }
                 }
             }

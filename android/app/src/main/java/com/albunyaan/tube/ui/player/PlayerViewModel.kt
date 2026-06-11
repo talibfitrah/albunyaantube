@@ -9,6 +9,7 @@ import com.albunyaan.tube.analytics.PlaybackMetricsCollector
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.AudioTrackSource
 import com.albunyaan.tube.data.extractor.DubAudioEnumerator
+import com.albunyaan.tube.data.extractor.DubAudioResolver
 import com.albunyaan.tube.data.extractor.DubLanguage
 import com.albunyaan.tube.data.extractor.ExtractionClient
 import com.albunyaan.tube.data.extractor.PlaybackSelection
@@ -69,6 +70,7 @@ class PlayerViewModel @Inject constructor(
     private val mpdRegistry: SyntheticDashMpdRegistry,
     private val extractorClient: ExtractorClient,
     private val dubAudioEnumerator: DubAudioEnumerator,
+    private val dubAudioResolver: DubAudioResolver,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -543,6 +545,10 @@ class PlayerViewModel @Inject constructor(
      * - the picked track equals the currently-active one
      */
     fun selectAudioTrack(track: AudioTrack) {
+        if (track.source == AudioTrackSource.WEB_DUB) {
+            selectWebDubTrack(track)
+            return
+        }
         stickyAudioLanguage = track.language
         // Always emit, even when `track == ready.selection.audio`. AudioTrack
         // is a data class so equality compares URL too — and the player can
@@ -568,6 +574,39 @@ class PlayerViewModel @Inject constructor(
         updateState { it.copy(streamState = StreamState.Ready(ready.streamId, newSelection)) }
         viewModelScope.launch(dispatcher) {
             _uiEvents.emit(PlayerUiEvent.AudioTrackSwapReady(ready.streamId, newSelection))
+        }
+    }
+
+    /**
+     * Resolve and switch to a web-sourced dub. Resolves the streamable URL off the main thread
+     * (MWEB + nsig + web pot), then composes a selection carrying the VR-native audio PLUS the
+     * resolved dub so [com.albunyaan.tube.player.DashSourceBuilder] merges them (VR video + dub
+     * audio). On failure emits [PlayerUiEvent.DubAudioResolveFailed] and leaves the current audio.
+     *
+     * Known Plan-1 limitation: a later URL-refresh re-resolve drops back to the VR original (the
+     * fresh VR resolve has no dub track for stickyAudioLanguage to match). Re-tapping re-resolves.
+     * Mid-stream dub re-resolve is Plan-2 hardening.
+     */
+    private fun selectWebDubTrack(track: AudioTrack) {
+        val ready = _state.value.streamState as? StreamState.Ready ?: return
+        val lang = track.language ?: return
+        stickyAudioLanguage = lang
+        viewModelScope.launch(dispatcher) {
+            val resolvedDub = if (track.url.isNotEmpty()) track
+            else dubAudioResolver.resolveDubAudio(ready.streamId, lang)
+            if (resolvedDub == null || resolvedDub.url.isEmpty()) {
+                android.util.Log.w("PlayerViewModel", "dub resolve failed lang=$lang; staying on current audio")
+                _uiEvents.emit(PlayerUiEvent.DubAudioResolveFailed)
+                return@launch
+            }
+            val cur = _state.value.streamState as? StreamState.Ready ?: return@launch
+            if (cur.streamId != ready.streamId) return@launch
+            val vrNative = cur.selection.resolved.audioTracks.filter { it.source == AudioTrackSource.VR_NATIVE }
+            val mergedResolved = cur.selection.resolved.copy(audioTracks = vrNative + resolvedDub)
+            val newSelection = cur.selection.copy(resolved = mergedResolved, audio = resolvedDub)
+            mpdRegistry.unregisterBoth(cur.streamId)
+            updateState { it.copy(streamState = StreamState.Ready(cur.streamId, newSelection)) }
+            _uiEvents.emit(PlayerUiEvent.AudioTrackSwapReady(cur.streamId, newSelection))
         }
     }
 
@@ -2045,4 +2084,7 @@ sealed class PlayerUiEvent {
         val streamId: String,
         val newSelection: PlaybackSelection
     ) : PlayerUiEvent()
+
+    /** Emitted when a web-sourced dub audio resolve failed; fragment toasts and stays on current audio. */
+    object DubAudioResolveFailed : PlayerUiEvent()
 }

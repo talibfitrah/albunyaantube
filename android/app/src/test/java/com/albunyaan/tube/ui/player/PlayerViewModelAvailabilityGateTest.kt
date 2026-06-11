@@ -109,6 +109,10 @@ class PlayerViewModelAvailabilityGateTest {
             mpdRegistry = mpdRegistry,
             extractorClient = fakeExtractorClient,
             dubAudioEnumerator = com.albunyaan.tube.data.extractor.DubAudioEnumerator(),
+            dubAudioResolver = com.albunyaan.tube.data.extractor.DubAudioResolver(
+                com.albunyaan.tube.data.extractor.DubAudioEnumerator(),
+                com.albunyaan.tube.data.extractor.NoOpPoTokenProvider,
+            ),
         )
     }
 
