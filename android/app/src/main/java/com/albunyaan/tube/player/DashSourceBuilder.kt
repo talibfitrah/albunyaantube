@@ -14,6 +14,8 @@ import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import com.albunyaan.tube.BuildConfig
+import com.albunyaan.tube.data.extractor.AudioTrack
+import com.albunyaan.tube.data.extractor.AudioTrackSource
 import com.albunyaan.tube.data.extractor.ExtractionClient
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
@@ -73,6 +75,10 @@ class DashSourceBuilder @Inject constructor(
 ) {
     companion object {
         private const val TAG = "DashSourceBuilder"
+
+        /** True when [resolved] carries a resolved web-sourced dub audio track to merge onto VR. */
+        fun isWebDubMerge(resolved: ResolvedStreams): Boolean =
+            resolved.audioTracks.any { it.source == AudioTrackSource.WEB_DUB && it.url.isNotEmpty() }
     }
 
     // -------------------------------------------------------------------------
@@ -238,6 +244,12 @@ class DashSourceBuilder @Inject constructor(
      * This method is **not unit-tested** — it depends on Android/Media3 runtime.
      */
     fun build(resolved: ResolvedStreams, forceProgressive: Boolean = false): BuiltSource? {
+        // Web-sourced dub audio (different client UA + pot) can't live in the VR MPD — build it as a
+        // separate progressive source and MergingMediaSource it onto the VR video+audio source. The
+        // fragment selects it via setPreferredAudioLanguage(dub). The VR default path is untouched.
+        if (isWebDubMerge(resolved)) {
+            return buildWithWebDubAudio(resolved, forceProgressive)
+        }
         val factory = dataSourceFactoryProvider.forStreams(resolved)
 
         val decision = decide(resolved, forceProgressive)
@@ -312,6 +324,25 @@ class DashSourceBuilder @Inject constructor(
             ),
             decision = decision,
         )
+    }
+
+    /**
+     * Merge a web-sourced dub audio track onto the VR video+audio source. The VR source is built by
+     * recursing with the WEB_DUB tracks filtered out (so it takes the normal MPD path); the dub is a
+     * separate web-UA progressive source. Returns null if the VR source can't be built.
+     */
+    private fun buildWithWebDubAudio(resolved: ResolvedStreams, forceProgressive: Boolean): BuiltSource? {
+        val webDub = resolved.audioTracks.first { it.source == AudioTrackSource.WEB_DUB && it.url.isNotEmpty() }
+        val vrResolved = resolved.copy(
+            audioTracks = resolved.audioTracks.filter { it.source != AudioTrackSource.WEB_DUB }
+        )
+        val vrBuilt = build(vrResolved, forceProgressive) ?: return null
+        val dubAudio = ProgressiveMediaSource.Factory(dataSourceFactoryProvider.forWebDub())
+            .createMediaSource(mediaItem(webDub.url, webDub.mimeType))
+        Log.d(TAG, "Merging web dub audio (lang=${webDub.language}) onto VR source")
+        // adjustPeriodTimeOffsets + clipDurations tolerate slight video/audio duration mismatch.
+        val merged = MergingMediaSource(true, true, vrBuilt.source, dubAudio)
+        return BuiltSource(merged, vrBuilt.decision)
     }
 
     /** Build an audio-only progressive source (background/audio-only mode) using the UA-correct factory. */
