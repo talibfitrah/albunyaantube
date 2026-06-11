@@ -1,0 +1,38 @@
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPlaylistPagingTest.kt
+  s_c3846ab71aef74::t_90a67df5fcd273 118-121
+android/app/src/test/java/com/albunyaan/tube/data/extractor/NoOpPoTokenProvider.kt
+  s_c3846ab71aef74::t_0aeeb4814b3df6 1-13
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_c3846ab71aef74::t_1a15a4deaa075a 1557-1586,1589-1591
+android/app/src/main/java/com/albunyaan/tube/di/DataModule.kt
+  s_c3846ab71aef74::t_01a116203a17bf 268-274
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelAvailabilityGateTest.kt
+  s_c3846ab71aef74::t_4a3a812a585d43 112-115
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_c3846ab71aef74::t_c01683f4fed5c0 73
+  s_c3846ab71aef74::t_e9dd6b1f73ade1 12
+  s_c3846ab71aef74::t_f57ac4dc4061b7 581-612
+  s_c3846ab71aef74::t_36ef04feca14aa 2087-2089
+  s_c3846ab71aef74::t_d72b68d24096e0 548-551
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPrefetchTtlTest.kt
+  s_c3846ab71aef74::t_d16df755e6118d 129-132
+android/app/src/main/java/com/albunyaan/tube/data/extractor/DubAudioResolver.kt
+  s_c3846ab71aef74::t_d53e18e39a4e0e 34
+  s_c3846ab71aef74::t_2cfe6a83b88739 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "dff647f968318bf8556d19155b9ec214e38aa268",
+  "prompts": {},
+  "sessions": {
+    "s_c3846ab71aef74": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "867a81b9-0c51-4c86-a5a2-98a3eb560c80",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
