@@ -1,0 +1,25 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/DubAudioEnumerator.kt
+  s_c3846ab71aef74::t_fdc62e89a1e950 33-42,56,58-59
+android/app/src/main/java/com/albunyaan/tube/data/extractor/DubAudioResolver.kt
+  s_c3846ab71aef74::t_9d7fc86d04ea69 3-7,11,20-29,32-35,38-40,42-67,70-71,78-100
+android/app/src/main/java/com/albunyaan/tube/di/DataModule.kt
+  s_c3846ab71aef74::t_b9f58181452960 259-267,277-278,286
+android/app/src/test/java/com/albunyaan/tube/data/extractor/DubAudioResolverTest.kt
+  s_c3846ab71aef74::t_1253eff14d74f2 3,7-9,11-13,33-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "6ec9ebfeb2aba7e4fffc43e876e956d5c4872e90",
+  "prompts": {},
+  "sessions": {
+    "s_c3846ab71aef74": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "867a81b9-0c51-4c86-a5a2-98a3eb560c80",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
