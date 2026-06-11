@@ -36,6 +36,10 @@ class CronetDataSourceFactory @Inject constructor(
     fun createForIosUA(): DataSource.Factory =
         create(HttpConstants.YOUTUBE_IOS_USER_AGENT)
 
+    /** Mobile-web UA for web-sourced dub audio segments (must match the URL-minting UA). */
+    fun createForWebUA(): DataSource.Factory =
+        create(HttpConstants.YOUTUBE_MWEB_USER_AGENT)
+
     private fun create(userAgent: String): DataSource.Factory {
         val e = engine ?: return DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent)

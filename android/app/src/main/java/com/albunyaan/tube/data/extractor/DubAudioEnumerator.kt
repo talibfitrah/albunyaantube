@@ -102,9 +102,8 @@ class DubAudioEnumerator @Inject constructor() {
     companion object {
         private const val TAG = "DubAudioEnumerator"
         private const val MWEB_VERSION = "2.20250120.00.00"
-        private const val MWEB_USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14; SM-S938U) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+        // Shared with SegmentDataSourceFactoryProvider.forWebDub so URL-minting UA == segment UA.
+        private const val MWEB_USER_AGENT = com.albunyaan.tube.util.HttpConstants.YOUTUBE_MWEB_USER_AGENT
         private const val WEB_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"

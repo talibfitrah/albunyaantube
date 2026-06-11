@@ -31,4 +31,14 @@ object HttpConstants {
      */
     const val YOUTUBE_IOS_USER_AGENT =
         "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)"
+
+    /**
+     * User-Agent for YouTube MWEB (mobile web) dub-audio requests. The dub audio URLs are
+     * minted by the MWEB client under this UA ([DubAudioEnumerator]); the segment factory
+     * ([SegmentDataSourceFactoryProvider.forWebDub]) MUST reuse it or the GVS segment fetch
+     * 403s on UA mismatch. Verified in the spike (memory/player-dubs-phase2-spike.md).
+     */
+    const val YOUTUBE_MWEB_USER_AGENT =
+        "Mozilla/5.0 (Linux; Android 14; SM-S938U) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
 }

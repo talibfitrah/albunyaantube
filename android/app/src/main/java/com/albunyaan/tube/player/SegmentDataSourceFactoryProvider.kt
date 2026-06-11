@@ -45,4 +45,19 @@ class SegmentDataSourceFactoryProvider @Inject constructor(
         // DefaultDataSource routes data: (inline MPD) to DataSchemeDataSource and http(s): to `upstream`.
         return DefaultDataSource.Factory(context, upstream)
     }
+
+    /**
+     * Factory for web-sourced dub audio segments: mobile-web UA (matching the URL-minting
+     * client) with the GVS poToken already baked into the URL. Cached (dub audio is VOD).
+     * Used only for the [androidx.media3.exoplayer.source.MergingMediaSource] audio leg —
+     * the VR video leg keeps its own Android-UA factory via [forStreams].
+     */
+    fun forWebDub(): DataSource.Factory {
+        val http = cronetDataSourceFactory.createForWebUA()
+        val upstream: DataSource.Factory = CacheDataSource.Factory()
+            .setCache(simpleCache)
+            .setUpstreamDataSourceFactory(http)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        return DefaultDataSource.Factory(context, upstream)
+    }
 }
