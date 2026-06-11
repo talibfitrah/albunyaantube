@@ -30,7 +30,16 @@ class DubAudioEnumerator @Inject constructor() {
      * fewer than two languages. Never throws — a failed enumerate just leaves the
      * globe hidden (identical to today's behavior).
      */
-    suspend fun enumerate(videoId: String): List<DubLanguage> = withContext(Dispatchers.IO) {
+    suspend fun enumerate(videoId: String): List<DubLanguage> =
+        fetchMwebPlayerResponse(videoId)?.let { parseDubLanguages(it) } ?: emptyList()
+
+    /**
+     * Fetch the raw MWEB player response (bootstrapped visitorData + POST). Shared by
+     * [enumerate] (lists languages) and [DubAudioResolver] (extracts the chosen audio
+     * stream). Returns null on any failure. No poToken, no nsig — listing/URL extraction
+     * is free; only streaming the URLs needs the pot + nsig.
+     */
+    suspend fun fetchMwebPlayerResponse(videoId: String): JSONObject? = withContext(Dispatchers.IO) {
         try {
             val session = ensureSession()
             val headers = linkedMapOf(
@@ -44,10 +53,10 @@ class DubAudioEnumerator @Inject constructor() {
             )
             val body = playerRequestBody(videoId, session.visitorData)
             val resp = NewPipe.getDownloader().post(PLAYER_URL, headers, body.toByteArray(Charsets.UTF_8))
-            parseDubLanguages(JSONObject(resp.responseBody()))
+            JSONObject(resp.responseBody())
         } catch (t: Throwable) {
-            android.util.Log.d(TAG, "dub enumerate failed for $videoId: ${t.message}")
-            emptyList()
+            android.util.Log.d(TAG, "mweb player fetch failed for $videoId: ${t.message}")
+            null
         }
     }
 
