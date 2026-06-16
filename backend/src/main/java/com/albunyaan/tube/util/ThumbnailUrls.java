@@ -67,10 +67,30 @@ public final class ThumbnailUrls {
         if (url.contains("/pl_c/")) {
             return true;
         }
+        // Trust boundary: a usable thumbnail must be on YouTube's image CDN. Parse
+        // the host (not a substring) so path/userinfo spoofs like
+        // https://evil.example/vi/.../ or https://x@evil/vi/.../ are treated as
+        // broken and healed, never accepted as-is.
+        if (!isYouTubeImageHost(url)) {
+            return true;
+        }
         // Usable only when it resolves to a real 11-char video id. This also
         // rejects the legacy /vi/{playlistId}/ seeder shape (a 34-char id), which
         // a plain "/vi/" substring check would wrongly accept.
         return !VI_VIDEO_ID.matcher(url).find();
+    }
+
+    private static boolean isYouTubeImageHost(String url) {
+        try {
+            String host = java.net.URI.create(url).getHost();
+            if (host == null) {
+                return false;
+            }
+            host = host.toLowerCase(java.util.Locale.ROOT);
+            return host.equals("ytimg.com") || host.endsWith(".ytimg.com");
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /**

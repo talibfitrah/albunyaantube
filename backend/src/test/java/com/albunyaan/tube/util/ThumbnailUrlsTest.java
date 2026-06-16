@@ -69,6 +69,16 @@ class ThumbnailUrlsTest {
     }
 
     @Test
+    void isBrokenPlaylistThumbnail_offPlatformHost_isBroken() {
+        // A /vi/{11}/ image on a non-YouTube host (or via path/userinfo spoof) must
+        // be classified broken so it gets healed, never accepted as usable.
+        assertTrue(ThumbnailUrls.isBrokenPlaylistThumbnail(
+                "https://evil.example/vi/ABCDEFGHIJK/hqdefault.jpg"));
+        assertTrue(ThumbnailUrls.isBrokenPlaylistThumbnail(
+                "https://i.ytimg.com@evil.example/vi/ABCDEFGHIJK/hqdefault.jpg"));
+    }
+
+    @Test
     void isBrokenPlaylistThumbnail_legacyPlaylistIdInViPath_isBroken() {
         // Legacy seeder shape: a 34-char playlist id sits in the /vi/ path — there
         // is no such video, so it renders blank and must be classified broken even
