@@ -1,6 +1,7 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.ChannelDetailsDto;
+import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.PlaylistItemDto;
 import com.albunyaan.tube.dto.StreamItemDto;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -131,6 +133,28 @@ class ChannelOrchestratorTest {
             IOException exception = assertThrows(IOException.class,
                     () -> orchestrator.getPlaylistDetails("invalid"));
             assertTrue(exception.getMessage().contains("Playlist not found"));
+        }
+
+        @Test
+        @DisplayName("validateAndFetchPlaylistDto resolves a stable /vi/ thumbnail via oEmbed when NewPipe yields a volatile /pl_c/ URL")
+        void validateAndFetchPlaylistDto_hardensVolatileThumbnailViaOEmbed() throws Exception {
+            String playlistId = "PLlZazEh_c4nScNCvGBn8OEf6ujk-sDUpg";
+            Image plc = mock(Image.class);
+            when(plc.getUrl()).thenReturn(
+                    "https://i.ytimg.com/pl_c/" + playlistId + "/studio_square_thumbnail.jpg?days_since_epoch=20603");
+            PlaylistInfo playlistInfo = mock(PlaylistInfo.class);
+            when(playlistInfo.getThumbnails()).thenReturn(List.of(plc));
+            when(gateway.fetchPlaylistInfo(playlistId)).thenReturn(playlistInfo);
+
+            YouTubeOEmbedClient oEmbed = mock(YouTubeOEmbedClient.class);
+            when(oEmbed.playlistThumbnailUrl(playlistId))
+                    .thenReturn(Optional.of("https://i.ytimg.com/vi/sQMC7fkjmOA/hqdefault.jpg"));
+            ChannelOrchestrator hardened = new ChannelOrchestrator(gateway, null, null, oEmbed);
+
+            PlaylistDetailsDto dto = hardened.validateAndFetchPlaylistDto(playlistId);
+
+            assertNotNull(dto);
+            assertEquals("https://i.ytimg.com/vi/sQMC7fkjmOA/hqdefault.jpg", dto.getThumbnailUrl());
         }
     }
 

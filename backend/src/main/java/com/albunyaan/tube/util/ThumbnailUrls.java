@@ -3,6 +3,7 @@ package com.albunyaan.tube.util;
 import org.schabi.newpipe.extractor.Image;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Helpers for detecting and selecting YouTube channel-avatar / playlist
@@ -26,6 +27,14 @@ import java.util.List;
  * </ul>
  */
 public final class ThumbnailUrls {
+
+    /**
+     * A usable video thumbnail points at a real 11-char YouTube video id under
+     * {@code /vi/} or {@code /vi_webp/}. Legacy seeder rows put a 34-char
+     * playlist id (or 24-char channel id) in the {@code /vi/} path, which renders
+     * blank — those must not pass as usable.
+     */
+    private static final Pattern VI_VIDEO_ID = Pattern.compile("/vi(?:_webp)?/[A-Za-z0-9_-]{11}/");
 
     private ThumbnailUrls() {}
 
@@ -58,7 +67,10 @@ public final class ThumbnailUrls {
         if (url.contains("/pl_c/")) {
             return true;
         }
-        return !(url.contains("/vi/") || url.contains("/vi_webp/"));
+        // Usable only when it resolves to a real 11-char video id. This also
+        // rejects the legacy /vi/{playlistId}/ seeder shape (a 34-char id), which
+        // a plain "/vi/" substring check would wrongly accept.
+        return !VI_VIDEO_ID.matcher(url).find();
     }
 
     /**

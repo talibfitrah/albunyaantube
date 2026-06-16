@@ -69,6 +69,15 @@ class ThumbnailUrlsTest {
     }
 
     @Test
+    void isBrokenPlaylistThumbnail_legacyPlaylistIdInViPath_isBroken() {
+        // Legacy seeder shape: a 34-char playlist id sits in the /vi/ path — there
+        // is no such video, so it renders blank and must be classified broken even
+        // though it contains the "/vi/" substring.
+        assertTrue(ThumbnailUrls.isBrokenPlaylistThumbnail(
+                "https://i.ytimg.com/vi/PLUitXL66pnO-yT8kCjZX7fIcx8ksPkJ47/mqdefault.jpg"));
+    }
+
+    @Test
     void bestAvatarUrl_picksHighestResolution() {
         Image small = mock(Image.class);
         when(small.getUrl()).thenReturn("small");

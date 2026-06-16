@@ -34,6 +34,19 @@ class YouTubeOEmbedClientTest {
     }
 
     @Test
+    void rejectsOffPlatformHost_evenWhenShapedLikeAViThumbnail() {
+        // A /vi/{11}/ image on a non-YouTube host must not be persisted.
+        String body = "{\"thumbnail_url\":\"https://evil.example/vi/ABCDEFGHIJK/hqdefault.jpg\"}";
+        assertTrue(client.parseUsableThumbnail(body).isEmpty());
+    }
+
+    @Test
+    void rejectsLegacyPlaylistIdInViPath() {
+        String body = "{\"thumbnail_url\":\"https://i.ytimg.com/vi/PLUitXL66pnO-yT8kCjZX7fIcx8ksPkJ47/mqdefault.jpg\"}";
+        assertTrue(client.parseUsableThumbnail(body).isEmpty());
+    }
+
+    @Test
     void handlesMissingFieldAndMalformedJson() {
         assertTrue(client.parseUsableThumbnail("{\"title\":\"no thumbnail field\"}").isEmpty());
         assertTrue(client.parseUsableThumbnail("not json at all").isEmpty());

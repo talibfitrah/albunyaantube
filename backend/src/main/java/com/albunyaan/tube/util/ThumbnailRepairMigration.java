@@ -83,7 +83,8 @@ public class ThumbnailRepairMigration {
 
     public RunSummary run(String actorUid) throws Exception {
         DocumentReference lockRef = firestore.collection("system_settings").document(LOCK_DOC);
-        if (!claimLock(lockRef, actorUid)) {
+        String runToken = java.util.UUID.randomUUID().toString();
+        if (!claimLock(lockRef, actorUid, runToken)) {
             throw new IllegalStateException(
                 "Thumbnail repair is already running. Wait for completion or clear "
                 + "system_settings/" + LOCK_DOC + " if the previous run crashed.");
@@ -134,7 +135,7 @@ public class ThumbnailRepairMigration {
                 }
             }
         } finally {
-            releaseLock(lockRef);
+            releaseLock(lockRef, runToken);
         }
 
         int failures = failedChannelIds.size() + failedPlaylistIds.size();
@@ -178,6 +179,9 @@ public class ThumbnailRepairMigration {
             logger.info("Thumbnail repair: channel {} avatar -> {}", youtubeId, avatar);
             return true;
         } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             logger.warn("Thumbnail repair: channel {} failed: {}", youtubeId, e.getMessage());
             return false;
         }
@@ -197,6 +201,9 @@ public class ThumbnailRepairMigration {
             logger.info("Thumbnail repair: playlist {} thumbnail -> {}", youtubeId, thumbnail);
             return true;
         } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             logger.warn("Thumbnail repair: playlist {} failed: {}", youtubeId, e.getMessage());
             return false;
         }
@@ -212,7 +219,7 @@ public class ThumbnailRepairMigration {
                 || description.startsWith("YouTube channel: ");
     }
 
-    private boolean claimLock(DocumentReference lockRef, String actorUid) throws Exception {
+    private boolean claimLock(DocumentReference lockRef, String actorUid, String runToken) throws Exception {
         return firestore.runTransaction(tx -> {
             DocumentSnapshot snap = tx.get(lockRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (snap.exists() && Boolean.TRUE.equals(snap.getBoolean("running"))) {
@@ -230,17 +237,32 @@ public class ThumbnailRepairMigration {
                     "running", true,
                     "startedAt", Timestamp.now(),
                     "claimedBy", InetAddress.getLocalHost().getHostName(),
-                    "claimedByUid", actorUid == null ? "unknown" : actorUid
+                    "claimedByUid", actorUid == null ? "unknown" : actorUid,
+                    "runToken", runToken
             ), SetOptions.merge());
             return true;
         }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
-    private void releaseLock(DocumentReference lockRef) {
+    private void releaseLock(DocumentReference lockRef, String runToken) {
+        // CAS release: only clear the lock if THIS run still owns it. Prevents a
+        // run whose lock was reclaimed as stale (after >30 min) from later clearing
+        // a lock a newer run now holds, which would let a third run start
+        // concurrently and hammer YouTube.
         try {
-            lockRef.update("running", false, "completedAt", Timestamp.now())
-                    .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            firestore.runTransaction(tx -> {
+                DocumentSnapshot snap = tx.get(lockRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                if (snap.exists() && runToken.equals(snap.getString("runToken"))) {
+                    tx.update(lockRef, "running", false, "completedAt", Timestamp.now());
+                } else {
+                    logger.warn("Thumbnail-repair lock not released: no longer owned by this run.");
+                }
+                return null;
+            }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
         } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             logger.warn("Failed to release thumbnail-repair lock (will be reclaimed as stale): {}",
                     e.getMessage());
         }

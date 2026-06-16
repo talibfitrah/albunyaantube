@@ -1181,7 +1181,21 @@ public class ChannelOrchestrator {
      */
     public PlaylistDetailsDto validateAndFetchPlaylistDto(String youtubeId) {
         PlaylistInfo info = validateAndFetchPlaylist(youtubeId);
-        return info != null ? mapToPlaylistDetailsDto(info) : null;
+        if (info == null) {
+            return null;
+        }
+        PlaylistDetailsDto dto = mapToPlaylistDetailsDto(info);
+        // Import hardening (single-item path only): NewPipe v0.25.2 yields the
+        // volatile /pl_c/ playlist thumbnail that expires; resolve a stable /vi/
+        // thumbnail via oEmbed so imports never persist a URL that will rot. The
+        // batch validators (scheduler / bulk import) deliberately skip this to
+        // avoid a per-item network round-trip; stale rows they store are healed
+        // by the re-runnable thumbnail-repair migration.
+        if (dto != null && oEmbedClient != null
+                && ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())) {
+            oEmbedClient.playlistThumbnailUrl(youtubeId).ifPresent(dto::setThumbnailUrl);
+        }
+        return dto;
     }
 
     /**
@@ -1347,25 +1361,8 @@ public class ChannelOrchestrator {
         dto.setUploaderUrl(playlist.getUploaderUrl());
         dto.setStreamCount(playlist.getStreamCount());
 
-        // PlaylistInfo.getThumbnails() on YouTube is a signed, dated
-        // /pl_c/.../studio_square_thumbnail.jpg custom thumbnail that expires
-        // (HTTP 404). Keep it only when it is already a usable /vi/ image
-        // (e.g. a NewPipe version that resolves the first video); otherwise
-        // resolve the first video's stable /vi/ thumbnail via YouTube oEmbed so
-        // we never persist a URL that will rot.
-        String npThumbnail = (playlist.getThumbnails() != null && !playlist.getThumbnails().isEmpty())
-                ? playlist.getThumbnails().get(0).getUrl()
-                : null;
-        if (npThumbnail != null && !ThumbnailUrls.isBrokenPlaylistThumbnail(npThumbnail)) {
-            dto.setThumbnailUrl(npThumbnail);
-        } else {
-            String resolved = oEmbedClient != null
-                    ? oEmbedClient.playlistThumbnailUrl(
-                            YouTubeUrlUtils.extractYouTubeId(playlist.getUrl())).orElse(npThumbnail)
-                    : npThumbnail;
-            if (resolved != null) {
-                dto.setThumbnailUrl(resolved);
-            }
+        if (playlist.getThumbnails() != null && !playlist.getThumbnails().isEmpty()) {
+            dto.setThumbnailUrl(playlist.getThumbnails().get(0).getUrl());
         }
 
         if (playlist.getRelatedItems() != null) {

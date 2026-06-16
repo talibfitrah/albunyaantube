@@ -89,7 +89,13 @@ public class YouTubeOEmbedClient {
         try {
             JsonNode root = objectMapper.readTree(jsonBody);
             String thumbnailUrl = root.path("thumbnail_url").asText(null);
-            if (thumbnailUrl == null || ThumbnailUrls.isBrokenPlaylistThumbnail(thumbnailUrl)) {
+            // Pin to YouTube's image CDN over HTTPS: the value is only ever stored
+            // and rendered as an image src, but a host allowlist keeps a surprising
+            // oEmbed response from persisting an off-platform URL.
+            if (thumbnailUrl == null
+                    || !thumbnailUrl.startsWith("https://")
+                    || !thumbnailUrl.contains(".ytimg.com/")
+                    || ThumbnailUrls.isBrokenPlaylistThumbnail(thumbnailUrl)) {
                 return Optional.empty();
             }
             return Optional.of(thumbnailUrl);
