@@ -1,0 +1,20 @@
+docs/status/DEVELOPMENT_GUIDE.md
+  s_e4c659b38e3d15::t_ef21bcf958e73d 690-695,697
+  s_e4c659b38e3d15::t_5e2717630f8cc9 674,676-681
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "c15adfd6f67df9f0f180c0927dafd92c8d5024b9",
+  "prompts": {},
+  "sessions": {
+    "s_e4c659b38e3d15": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4bc80fe5-0c36-432c-bef2-1b54ed0d314c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
