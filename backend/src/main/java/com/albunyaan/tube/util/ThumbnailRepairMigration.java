@@ -228,6 +228,11 @@ public class ThumbnailRepairMigration {
     }
 
     private boolean claimLock(DocumentReference lockRef, String actorUid, String runToken) throws Exception {
+        // Resolve the hostname once, outside the transaction lambda, and never let
+        // it fail the claim: on hosts that can't resolve their own name (some
+        // Docker/k8s setups) InetAddress.getLocalHost() throws, and inside the
+        // lambda that would abort the whole migration over a cosmetic field.
+        String claimedBy = resolveHostname();
         return firestore.runTransaction(tx -> {
             DocumentSnapshot snap = tx.get(lockRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (snap.exists() && Boolean.TRUE.equals(snap.getBoolean("running"))) {
@@ -244,12 +249,20 @@ public class ThumbnailRepairMigration {
             tx.set(lockRef, Map.of(
                     "running", true,
                     "startedAt", Timestamp.now(),
-                    "claimedBy", InetAddress.getLocalHost().getHostName(),
+                    "claimedBy", claimedBy,
                     "claimedByUid", actorUid == null ? "unknown" : actorUid,
                     "runToken", runToken
             ), SetOptions.merge());
             return true;
         }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
+
+    private static String resolveHostname() {
+        try {
+            return InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            return "unknown-host";
+        }
     }
 
     private void releaseLock(DocumentReference lockRef, String runToken) {
