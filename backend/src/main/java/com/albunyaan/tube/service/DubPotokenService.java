@@ -72,17 +72,24 @@ public class DubPotokenService {
     private static final int MAX_CONCURRENT_MINTS = 6;
     private final Semaphore mintPermits = new Semaphore(MAX_CONCURRENT_MINTS);
 
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
+    private final HttpClient http;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final String sidecarUrl;
 
+    // @Autowired is REQUIRED: this class has a second (test-seam) constructor, so Spring can no longer
+    // pick the injection constructor implicitly and would fail with "No default constructor found".
+    @org.springframework.beans.factory.annotation.Autowired
     public DubPotokenService(
             @Value("${dub.potoken.sidecar-url:http://localhost:4416}") String sidecarUrl) {
+        this(sidecarUrl, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
+    }
+
+    /** Test seam: inject a mock {@link HttpClient} to verify validation/cache behavior without a sidecar. */
+    DubPotokenService(String sidecarUrl, HttpClient http) {
         this.sidecarUrl = sidecarUrl.endsWith("/") ? sidecarUrl.substring(0, sidecarUrl.length() - 1) : sidecarUrl;
+        this.http = http;
     }
 
     /**
