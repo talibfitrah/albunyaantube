@@ -5,6 +5,24 @@ during the beta program.
 
 ## [Unreleased]
 
+### Backend
+
+- **Fixed missing home-screen thumbnails.** Some channel avatars (e.g. Zad
+  Academy) and playlist thumbnails (e.g. O Messenger AI-Visualized Series)
+  rendered blank. Root cause: thumbnail URLs are captured once at import and
+  never refreshed, so legacy seeder stubs (`yt3.ggpht.com/ytc/{channelId}`,
+  HTTP 400) and expired playlist `/pl_c/…/studio_square_thumbnail.jpg` /
+  `no_thumbnail.jpg` URLs (HTTP 404) were served forever. Added a re-extraction
+  repair — admin migration `POST /api/admin/migrations/thumbnail-repair` (gated
+  by ADMIN role + `X-Confirm-Migration` header + feature flag, CAS-locked,
+  idempotent) — that re-fetches channel avatars via NewPipe and playlist
+  thumbnails via YouTube oEmbed (version-independent; avoids a NewPipe bump on
+  the live dub path), writing stable `/vi/` and real avatar URLs. The import
+  path now persists a stable first-video `/vi/` playlist thumbnail instead of
+  the volatile `/pl_c/` URL. Ran in production: repaired 5 channels + 12
+  playlists; the remaining playlists are genuinely thumbnail-less on YouTube
+  (first video deleted/private), so the placeholder is correct.
+
 ## [1.0.0-beta.30] - 2026-06-16
 
 ### Android
