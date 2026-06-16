@@ -356,8 +356,15 @@ class PlayerViewModel @Inject constructor(
     fun playItem(item: UpNextItem) {
         val current = currentItem
         if (current?.id == item.id) return
-        val removed = queue.remove(item)
-        if (!removed) return
+        // Match by id, not full-object equality. The on-screen up-next list holds
+        // gateChannelName() display copies (channel name blanked for unapproved
+        // standalone playlists), which are NOT equals() to the queue originals, so
+        // queue.remove(item) would silently fail and the tap would do nothing. Find
+        // and remove the real queue entry, then play it (downstream resolution,
+        // history and analytics must use the ungated original).
+        val queueIndex = queue.indexOfFirst { it.id == item.id }
+        if (queueIndex < 0) return
+        val target = queue.removeAt(queueIndex)
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
@@ -367,11 +374,11 @@ class PlayerViewModel @Inject constructor(
         liveRefreshJob?.cancel()
         liveRefreshJob = null
         current?.let { addToHistory(it) }
-        currentItem = item
+        currentItem = target
         applyQueueState()
-        hydrateCurrentItemMetadataIfNeeded(item)
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+        hydrateCurrentItemMetadataIfNeeded(target)
+        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(target, PlaybackStartReason.USER_SELECTED))
+        resolveStreamFor(target, PlaybackStartReason.USER_SELECTED)
     }
 
     fun markCurrentComplete(): Boolean = advanceToNext(PlaybackStartReason.AUTO, markComplete = true)

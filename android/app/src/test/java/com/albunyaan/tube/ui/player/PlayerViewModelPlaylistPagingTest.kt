@@ -649,6 +649,52 @@ class PlayerViewModelPlaylistPagingTest {
     }
 
     // =============================================================================
+    // Up-Next Tap Regression
+    // =============================================================================
+
+    @Test
+    fun `tapping a gated up-next item plays it`() = runTest {
+        // Standalone playlist whose parent channel is NOT in the approved registry:
+        // gateChannelName() blanks the channel name on every on-screen up-next item,
+        // so the displayed item is a copy that is NOT equals() to its queue original.
+        // Tapping it must still start playback.
+        //
+        // Regression: playItem() removed the tapped item via queue.remove(item) —
+        // full-object equality — which silently failed for gated copies. Every tap
+        // in the up-next list was a dead no-op and the user had to back out to the
+        // previous screen to change videos. FakeContentService.isInApprovedRegistry
+        // returns false by default, so gating is active here without extra mocking.
+        val items = (1..5).map { createPlaylistItem(it, "video_$it") }
+        fakePlaylistRepository.setPages(listOf(PlaylistPage(items, null)))
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_1")
+
+        val viewModel = createViewModel()
+        viewModel.loadPlaylist("PL123", startIndexHint = 0)
+        advanceUntilIdle()
+
+        // Precondition: playback starts at video_1 and the gate is active.
+        assertEquals("video_1", viewModel.state.value.currentItem?.id)
+        val shownItem = viewModel.state.value.upNext[1] // video_3 (queue is video_2..video_5)
+        assertEquals(
+            "Gate must be active for this regression: channel name is blanked on screen",
+            "",
+            shownItem.channelName,
+        )
+
+        // Act: tap the on-screen (gated) item, exactly as UpNextAdapter does.
+        fakePlayerRepository.resolvedStreams = createResolvedStreams(shownItem.streamId)
+        viewModel.playItem(shownItem)
+        advanceUntilIdle()
+
+        // Assert: the tapped video is now the current item.
+        assertEquals(
+            "Tapping a gated up-next item must start playing it",
+            shownItem.id,
+            viewModel.state.value.currentItem?.id,
+        )
+    }
+
+    // =============================================================================
     // Helper Functions
     // =============================================================================
 
