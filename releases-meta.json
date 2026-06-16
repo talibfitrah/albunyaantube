@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.31": {
+    "en": "Maintenance update to keep automatic updates smooth, plus home-screen thumbnail fixes.",
+    "ar": "تحديث صيانة للحفاظ على سلاسة التحديثات التلقائية، مع إصلاحات للصور المصغّرة في الشاشة الرئيسية.",
+    "nl": "Onderhoudsupdate voor soepele automatische updates, plus fixes voor miniaturen op het startscherm."
+  },
   "1.0.0-beta.30": {
     "en": "New: switch a video's audio language (German, Arabic, and more) when dubs are available. Also fixes empty playlists.",
     "ar": "جديد: تبديل لغة صوت الفيديو (الألمانية، العربية، وغيرها) عند توفّر الدبلجة. وإصلاح قوائم التشغيل الفارغة.",

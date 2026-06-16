@@ -5,6 +5,19 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.31] - 2026-06-16
+
+### Android
+
+- **Signing-key rotation to the production key.** The app now ships a production
+  signing key (CN=FitrahTube) via an APK Signature Scheme **v3.1 lineage**.
+  Auto-update is preserved on every supported version with **no reinstall**:
+  Android 7–12 (API 24–32) keep verifying the prior certificate through v2/v3.0,
+  and Android 13+ (API 33+) rotate to the production key via the v3.1 lineage.
+  Verified by in-place upgrade beta.30 → beta.31 on an API 28 emulator, an API 36
+  emulator, and a real Android 9 device (Honor 10 Lite / COR-L29). beta.30 had
+  already shipped the lineage-aware updater that made this seamless.
+
 ### Backend
 
 - **Fixed missing home-screen thumbnails.** Some channel avatars (e.g. Zad
