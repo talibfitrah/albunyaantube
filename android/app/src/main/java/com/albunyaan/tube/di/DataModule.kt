@@ -256,17 +256,33 @@ object DataModule {
         )
     }
 
+    // Shared WebView-minted poToken provider (one BotGuard WebView instance). Consumed by
+    // NewPipeExtractorClient (fallback streams) AND DubAudioResolver (web-dub audio GVS pot).
+    @Provides
+    @Singleton
+    fun provideWebViewPoTokenProvider(
+        @ApplicationContext context: Context
+    ): com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider =
+        com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider(context)
+
+    // DubAudioResolver depends on the PoTokenProvider interface (testable with a no-op fake).
+    @Provides
+    @Singleton
+    fun providePoTokenProvider(
+        webView: com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider
+    ): org.schabi.newpipe.extractor.services.youtube.PoTokenProvider = webView
+
     @Provides
     @Singleton
     fun provideNewPipeExtractorClient(
-        @ApplicationContext context: Context,
         // Inject the rate-limited wrapper, not the bare [OkHttpDownloader] —
         // every NewPipe HTTP call must pass through the gates (spec §4.4).
         downloader: com.albunyaan.tube.data.extractor.RateLimitedDownloader,
         cache: MetadataCache,
         metrics: ExtractorMetricsReporter,
         featureFlags: PlaybackFeatureFlags,
-        clientRotator: YoutubeClientRotator
+        clientRotator: YoutubeClientRotator,
+        poTokenProvider: com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider,
     ): NewPipeExtractorClient {
         return NewPipeExtractorClient(
             downloader,
@@ -274,8 +290,7 @@ object DataModule {
             metrics,
             featureFlags,
             clientRotator,
-            // WebView-minted poTokens for the YouTube web client (fixes the HTTP 403 stream loop).
-            com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider(context),
+            poTokenProvider,
         )
     }
 

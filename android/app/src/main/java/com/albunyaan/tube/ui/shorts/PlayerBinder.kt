@@ -11,6 +11,7 @@ import androidx.media3.ui.PlayerView
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.AudioTrackKind
+import com.albunyaan.tube.data.extractor.AudioTrackSource
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.player.PlayerRepository
@@ -605,14 +606,24 @@ class PlayerBinder private constructor(
         // Pin the user's language choice so subsequent re-resolves keep the
         // same audio instead of letting the factory re-pick by bitrate.
         rememberAudioLanguage(videoId, chosen.language)
-        val filtered = resolved.copy(audioTracks = listOf(chosen))
+        // Playback uses ONLY the chosen track (no track-selector ambiguity). But for a web-dub pick the
+        // CACHE must keep the VR-native "Original" so the picker can switch back — the Shorts picker reads
+        // Original from resolvedStreamsFor() (dubs come from its own dubLanguagesByVideoId map), so caching
+        // listOf(chosen) alone would drop Original. Non-dub switches keep the original behavior.
+        val forPlayback = resolved.copy(audioTracks = listOf(chosen))
+        val forCache = if (chosen.source == AudioTrackSource.WEB_DUB) {
+            val vrNative = resolved.audioTracks.filter { it.source == AudioTrackSource.VR_NATIVE }
+            resolved.copy(audioTracks = vrNative + chosen)
+        } else {
+            forPlayback
+        }
         val position = playerOps.getCurrentPosition()
         val wasPlaying = playerOps.getPlayWhenReady()
 
-        val built = tryDashBuild(filtered)
+        val built = tryDashBuild(forPlayback)
         // qualityCapHeight = null on the progressive fallback: a mid-watch audio
         // swap should keep full quality, not drop back to the startup cap.
-        val source = built?.source ?: buildProgressiveSource(filtered, qualityCapHeight = null) ?: return
+        val source = built?.source ?: buildProgressiveSource(forPlayback, qualityCapHeight = null) ?: return
 
         // Source is ready — now abort any still-in-flight bind for this short so a resolve that
         // completes after this swap can't resume past its generation gate and re-setMediaSource
@@ -622,7 +633,7 @@ class PlayerBinder private constructor(
 
         // Refresh cache so a subsequent download picker reflects the active
         // audio choice alongside the existing video tracks.
-        synchronized(resolvedCache) { resolvedCache[videoId] = filtered }
+        synchronized(resolvedCache) { resolvedCache[videoId] = forCache }
 
         playerOps.setMediaSource(source)
         playerOps.setRepeatModeOne()

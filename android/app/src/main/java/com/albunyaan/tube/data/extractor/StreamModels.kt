@@ -55,7 +55,9 @@ data class AudioTrack(
     /** Human-readable label NewPipe derives from the track (e.g. "English (original)", "Arabic"). */
     val trackName: String? = null,
     /** ORIGINAL / DUBBED / DESCRIPTIVE / DUBBED_AUTO — null when NewPipe doesn't classify. */
-    val trackType: AudioTrackKind? = null
+    val trackType: AudioTrackKind? = null,
+    /** Origin of this track; WEB_DUB tracks ride a different client (UA + pot) than the VR video. */
+    val source: AudioTrackSource = AudioTrackSource.VR_NATIVE
 )
 
 /**
@@ -64,6 +66,13 @@ data class AudioTrack(
  * extractor types directly.
  */
 enum class AudioTrackKind { ORIGINAL, DUBBED, DESCRIPTIVE, DUBBED_AUTO, UNKNOWN }
+
+/**
+ * Where an [AudioTrack] came from. WEB_DUB tracks are sourced from the YouTube web
+ * client (pot + nsig) and merged onto the VR video; a WEB_DUB entry may be a lazy
+ * placeholder (url == "") produced by enumeration and resolved only when selected.
+ */
+enum class AudioTrackSource { VR_NATIVE, WEB_DUB }
 
 data class SubtitleTrack(
     val url: String,

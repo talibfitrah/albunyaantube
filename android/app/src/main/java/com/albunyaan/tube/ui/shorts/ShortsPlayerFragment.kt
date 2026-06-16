@@ -26,7 +26,13 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.extractor.AudioLanguageOption
+import com.albunyaan.tube.data.extractor.AudioTrackSource
+import com.albunyaan.tube.data.extractor.DubAudioEnumerator
+import com.albunyaan.tube.data.extractor.DubAudioResolver
+import com.albunyaan.tube.data.extractor.DubLanguage
+import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.availableAudioLanguages
+import com.albunyaan.tube.data.extractor.withDubLanguages
 import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.databinding.FragmentShortsPlayerBinding
 import com.albunyaan.tube.download.DownloadRepository
@@ -69,6 +75,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     @Inject lateinit var mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry
     @Inject lateinit var dashSourceBuilder: com.albunyaan.tube.player.DashSourceBuilder
     @Inject lateinit var dataSourceFactoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider
+    @Inject lateinit var dubAudioEnumerator: DubAudioEnumerator
+    @Inject lateinit var dubAudioResolver: DubAudioResolver
 
     private val viewModel: ShortsPlayerViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -117,6 +125,19 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         mutableMapOf<String, MutableStateFlow<List<AudioLanguageOption>>>()
     /** Last-selected language code per video id, drives the dialog's "checked" state. */
     private val activeLanguageByVideoId = mutableMapOf<String, String>()
+
+    // The latest REQUESTED dub language per video, set synchronously on tap. A slower earlier resolve
+    // checks this before applying so a rapid A→B switch can't let A's late resolve override B.
+    private val pendingLanguageByVideoId = mutableMapOf<String, String>()
+    /**
+     * Dub languages discovered per video (ANDROID_VR strips dubs, so they aren't in the resolve).
+     * Cached so the globe survives a re-bind/re-resolve: switchAudioTrack strips the binder cache to the
+     * chosen track, which would otherwise collapse the option list. Mirrors the regular player's dubCache.
+     */
+    private val dubLanguagesByVideoId = mutableMapOf<String, List<DubLanguage>>()
+    /** In-flight dub-enumeration guard (removed on completion) so we never run two at once per video. */
+    // Concurrent set (matches PlayerViewModel) — removes the implicit "only touched on Main" invariant.
+    private val dubEnumerating = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private fun audioLanguageFlowFor(videoId: String): MutableStateFlow<List<AudioLanguageOption>> =
         audioLanguagesByVideoId.getOrPut(videoId) { MutableStateFlow(emptyList()) }
@@ -435,9 +456,9 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 localBinder.resolvedEvents.collect { (videoId, resolved) ->
-                    val options = resolved.availableAudioLanguages()
-                    audioLanguageFlowFor(videoId).value = options
+                    applyAudioOptions(videoId, resolved)
                     subtitleFlowFor(videoId).value = resolved.subtitleTracks
+                    maybeEnumerateDubsForShort(videoId, resolved)
                 }
             }
         }
@@ -456,7 +477,6 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             if (videoId == null) return@setFragmentResultListener
             val options = audioLanguageFlowFor(videoId).value
             val chosen = options.firstOrNull { it.language == code } ?: return@setFragmentResultListener
-            activeLanguageByVideoId[videoId] = code
 
             // Always invalidate + rebuild. We don't branch on
             // `resolved.dashUrl` / `hlsUrl` because those reflect what
@@ -471,8 +491,31 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                 "ShortsPlayerFragment",
                 "AudioLanguageDialog result: videoId=$videoId lang=$code"
             )
-            mpdRegistry.unregisterBoth(videoId)
-            binder?.switchAudioTrack(videoId, chosen.representative)
+            val rep = chosen.representative
+            // Record the latest requested language synchronously (latest pick wins) for the staleness gate.
+            pendingLanguageByVideoId[videoId] = code
+            if (rep.source == AudioTrackSource.WEB_DUB && rep.url.isEmpty()) {
+                // Lazy web dub (VR-stripped, surfaced by maybeEnumerateDubsForShort): resolve URL +
+                // nsig + pot off-main, THEN swap. On failure keep the current audio — never break
+                // playback, and don't mark the language active. switchAudioTrack's boundVideoId gate
+                // drops the swap if the user already left the short while we resolved.
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val resolvedDub = dubAudioResolver.resolveDubAudio(videoId, code)
+                    if (resolvedDub == null || resolvedDub.url.isEmpty()) {
+                        Toast.makeText(requireContext(), R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+                    // Superseded by a newer pick while we resolved → drop this stale result.
+                    if (pendingLanguageByVideoId[videoId] != code) return@launch
+                    activeLanguageByVideoId[videoId] = code
+                    mpdRegistry.unregisterBoth(videoId)
+                    binder?.switchAudioTrack(videoId, resolvedDub)
+                }
+            } else {
+                activeLanguageByVideoId[videoId] = code
+                mpdRegistry.unregisterBoth(videoId)
+                binder?.switchAudioTrack(videoId, rep)
+            }
         }
 
         // Subtitle dialog result — apply the chosen language (or null = Off)
@@ -612,8 +655,49 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
      */
     private fun pushCachedAudioLanguagesForVideo(videoId: String) {
         val cached = binder?.resolvedStreamsFor(videoId) ?: return
-        val options = cached.availableAudioLanguages()
-        audioLanguageFlowFor(videoId).value = options
+        applyAudioOptions(videoId, cached)
+        maybeEnumerateDubsForShort(videoId, cached)
+    }
+
+    /**
+     * Set the audio-language options for [videoId], re-applying any dubs discovered by
+     * [maybeEnumerateDubsForShort] so the globe persists across re-binds/re-resolves (switchAudioTrack
+     * strips the binder cache to the chosen track, which would otherwise collapse the list).
+     */
+    private fun applyAudioOptions(videoId: String, resolved: ResolvedStreams) {
+        val dubs = dubLanguagesByVideoId[videoId]
+        val augmented = if (dubs != null) resolved.withDubLanguages(dubs) else resolved
+        audioLanguageFlowFor(videoId).value = augmented.availableAudioLanguages()
+    }
+
+    /** Video id of the currently-visible short, or null. */
+    private fun currentVideoId(): String? =
+        binding?.shortsPager?.currentItem?.let { viewModel.items.value.getOrNull(it)?.id }
+
+    /**
+     * ANDROID_VR strips dub audio, so a dubbed short resolves with one (original) language and no globe.
+     * Mirror the regular player: when the VISIBLE short exposes <2 languages, enumerate its dubs once
+     * (a single MWEB fetch — same per-video cost as the main player; gated to the active short so the
+     * offscreen prefetch never triggers it). If 2+ dubs exist, re-light the globe with lazy WEB_DUB
+     * options. Default playback is untouched — a dub is only resolved when the user taps the globe and
+     * picks a language (see the AudioLanguageDialog result handler).
+     */
+    private fun maybeEnumerateDubsForShort(videoId: String, resolved: ResolvedStreams) {
+        if (resolved.availableAudioLanguages().size >= 2) return
+        if (videoId != currentVideoId()) return
+        if (dubLanguagesByVideoId.containsKey(videoId)) return
+        if (!dubEnumerating.add(videoId)) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val dubs = dubAudioEnumerator.enumerate(videoId)
+                if (dubs.size < 2) return@launch
+                dubLanguagesByVideoId[videoId] = dubs
+                binder?.resolvedStreamsFor(videoId)?.let { applyAudioOptions(videoId, it) }
+            } finally {
+                // Always release the in-flight guard, even on cancellation (view destroyed mid-enumerate).
+                dubEnumerating.remove(videoId)
+            }
+        }
     }
 
     /**

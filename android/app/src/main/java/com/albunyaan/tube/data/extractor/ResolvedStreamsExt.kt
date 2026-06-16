@@ -59,6 +59,28 @@ fun ResolvedStreams.availableAudioLanguages(): List<AudioLanguageOption> {
 }
 
 /**
+ * Append the non-original dub languages discovered by [DubAudioEnumerator] as lazy
+ * WEB_DUB [AudioTrack]s (url == "", resolved on selection). The original is dropped —
+ * it is already the VR-native track — and any language the VR resolve already exposes
+ * is skipped to avoid duplicates. No-op when [dubs] has fewer than two languages.
+ * Lights up the globe (via [availableAudioLanguages]) without touching VR playback.
+ */
+fun ResolvedStreams.withDubLanguages(dubs: List<DubLanguage>): ResolvedStreams {
+    if (dubs.size < 2) return this
+    val existing = audioTracks.mapNotNull { it.language }.toSet()
+    val lazy = dubs
+        .filter { !it.isOriginal && it.languageCode !in existing }
+        .map {
+            AudioTrack(
+                url = "", mimeType = null, bitrate = null, codec = null,
+                language = it.languageCode, trackName = it.displayName,
+                trackType = AudioTrackKind.DUBBED, source = AudioTrackSource.WEB_DUB
+            )
+        }
+    return if (lazy.isEmpty()) this else copy(audioTracks = audioTracks + lazy)
+}
+
+/**
  * Pick a label for a language group. Prefer Java's [Locale] display name
  * (which Android localizes to the current UI locale); fall back to the
  * track's human-readable [AudioTrack.trackName]; last resort "Unknown".

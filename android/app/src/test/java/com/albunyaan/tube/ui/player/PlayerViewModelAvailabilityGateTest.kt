@@ -108,6 +108,15 @@ class PlayerViewModelAvailabilityGateTest {
             playbackMetrics = playbackMetrics,
             mpdRegistry = mpdRegistry,
             extractorClient = fakeExtractorClient,
+            dubAudioEnumerator = com.albunyaan.tube.data.extractor.DubAudioEnumerator(),
+            dubAudioResolver = com.albunyaan.tube.data.extractor.DubAudioResolver(
+                com.albunyaan.tube.data.extractor.DubAudioEnumerator(),
+                com.albunyaan.tube.data.extractor.NoOpPoTokenProvider,
+                com.albunyaan.tube.data.extractor.nsig.NsigSolver(
+                    androidx.test.core.app.ApplicationProvider.getApplicationContext()
+                ),
+            ),
+            contentService = com.albunyaan.tube.data.source.FakeContentService(),
         )
     }
 

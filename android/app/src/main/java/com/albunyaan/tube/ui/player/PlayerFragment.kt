@@ -260,6 +260,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var stallWatchdogRunnable: Runnable? = null
     /** Stream id captured when the buffering stall began (so we don't refresh a stream the user already left). */
     private var stallWatchdogStreamId: String? = null
+    /**
+     * Deadline (SystemClock.elapsedRealtime) until which the stall watchdog must NOT re-resolve. A
+     * web-dub merge re-prepares the player; its legitimate multi-second re-buffer reads as a "stuck"
+     * buffer, so the watchdog refreshes, which re-resolves VR-only and drops the dub — the VM then
+     * re-attaches it, rebuilding again → stall → refresh … (the German↔English flapping the user saw).
+     * Set on each dub swap so the merge can settle without the watchdog fighting it.
+     */
+    private var dubSwapSuppressUntilMs = 0L
     /** Stream id that has reached STATE_READY at least once — gates the stall watchdog so it only
      *  arms for mid-playback stalls, not slow cold-start buffering. */
     private var playbackStartedStreamId: String? = null
@@ -1554,20 +1562,45 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         // factory picks HLS. Poison HLS for this video so the
                         // rebuild falls through to DASH/SYNTH, which respects
                         // the single-track filter and actually swaps audio.
-                        if (preparedAdaptiveType == MediaSourceResult.AdaptiveType.HLS) {
-                            hlsPoisonRegistry.poisonHls(
-                                event.streamId,
-                                reason = "Audio language swap — HLS ignores per-rendition filter"
+                        mpdRegistry.unregisterBoth(event.streamId)
+                        if (event.newSelection.audio.source ==
+                            com.albunyaan.tube.data.extractor.AudioTrackSource.WEB_DUB
+                        ) {
+                            // Grace window so the merge's re-buffer isn't read as a stall and refreshed
+                            // away (the flap). Re-armed on every swap, so re-attaches extend it.
+                            dubSwapSuppressUntilMs = android.os.SystemClock.elapsedRealtime() +
+                                DUB_SWAP_STALL_GRACE_MS
+                            // Web dub: mergedResolved already carries VR-native audio + the resolved
+                            // dub — do NOT filter to one track; DashSourceBuilder merges VR video + dub
+                            // audio. Select the dub by language once the merged source is prepared.
+                            handleLiveStreamRefresh(
+                                PlayerUiEvent.LiveStreamRefreshReady(event.streamId, event.newSelection)
+                            )
+                            event.newSelection.audio.language?.let { lang ->
+                                player?.let { p ->
+                                    p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                        .setPreferredAudioLanguage(lang)
+                                        .build()
+                                }
+                            }
+                        } else {
+                            if (preparedAdaptiveType == MediaSourceResult.AdaptiveType.HLS) {
+                                hlsPoisonRegistry.poisonHls(
+                                    event.streamId,
+                                    reason = "Audio language swap — HLS ignores per-rendition filter"
+                                )
+                            }
+                            val filteredResolved = event.newSelection.resolved.copy(
+                                audioTracks = listOf(event.newSelection.audio)
+                            )
+                            val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
+                            handleLiveStreamRefresh(
+                                PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
                             )
                         }
-                        mpdRegistry.unregisterBoth(event.streamId)
-                        val filteredResolved = event.newSelection.resolved.copy(
-                            audioTracks = listOf(event.newSelection.audio)
-                        )
-                        val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
-                        handleLiveStreamRefresh(
-                            PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
-                        )
+                    }
+                    is PlayerUiEvent.DubAudioResolveFailed -> {
+                        Toast.makeText(requireContext(), R.string.player_stream_error, Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -2167,6 +2200,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // when genuinely stuck; otherwise re-arm and keep buffering through.
             if (p.bufferedPosition > bufferedAtArm) {
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Stall watchdog: buffer advancing (slow network), re-arming instead of re-resolving")
+                scheduleStallWatchdog()
+                return@Runnable
+            }
+            // A web-dub merge just re-prepared the player; let its re-buffer finish rather than
+            // refresh-and-drop the dub (which would flap German↔English). Re-arm and re-check later.
+            if (android.os.SystemClock.elapsedRealtime() < dubSwapSuppressUntilMs) {
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Stall watchdog suppressed: web-dub merge re-buffering")
                 scheduleStallWatchdog()
                 return@Runnable
             }
@@ -4164,6 +4204,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         /** Buffering-stall watchdog threshold for VOD before a re-resolve. */
         private const val STALL_WATCHDOG_VOD_MS = 6_000L
+        /** After a web-dub swap, suppress stall-watchdog re-resolves for this long so the merge's
+         * legitimate re-buffer can settle instead of being refreshed away (German↔English flapping). */
+        private const val DUB_SWAP_STALL_GRACE_MS = 20_000L
         /** Buffering-stall watchdog threshold for live (buffers more by nature). */
         private const val STALL_WATCHDOG_LIVE_MS = 45_000L
 
