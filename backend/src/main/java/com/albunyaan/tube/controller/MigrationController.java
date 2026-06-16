@@ -1,6 +1,7 @@
 package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.security.FirebaseUserDetails;
+import com.albunyaan.tube.util.ThumbnailRepairMigration;
 import com.albunyaan.tube.util.UserBackfillMigration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,12 +32,18 @@ public class MigrationController {
     private static final Logger logger = LoggerFactory.getLogger(MigrationController.class);
 
     private final UserBackfillMigration migration;
+    private final ThumbnailRepairMigration thumbnailRepair;
 
     @Value("${app.migrations.user-backfill.enabled:false}")
     private boolean backfillEnabled;
 
-    public MigrationController(UserBackfillMigration migration) {
+    @Value("${app.migrations.thumbnail-repair.enabled:false}")
+    private boolean thumbnailRepairEnabled;
+
+    public MigrationController(UserBackfillMigration migration,
+                               ThumbnailRepairMigration thumbnailRepair) {
         this.migration = migration;
+        this.thumbnailRepair = thumbnailRepair;
     }
 
     /**
@@ -110,6 +117,64 @@ public class MigrationController {
                 "claimWriteFailures",  summary.claimWriteFailures(),
                 "startedAt",           summary.startedAt(),
                 "completedAt",         summary.completedAt()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of(
+                "code",    "MIGRATION_RUNNING",
+                "message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Trigger the thumbnail-repair migration: re-extract fresh metadata for any
+     * channel or playlist whose stored thumbnail URL is detectably broken
+     * (fabricated avatar stub, or expired/unrenderable playlist thumbnail).
+     *
+     * <p>Same gating as {@link #runUserBackfill}: ADMIN role, explicit
+     * confirm-intent header, and a feature flag so it is inert unless enabled.
+     *
+     * <ul>
+     *   <li>403 – not ADMIN (handled by {@code @PreAuthorize})</li>
+     *   <li>428 – missing the explicit confirm header</li>
+     *   <li>404 – feature flag is off</li>
+     *   <li>409 – a concurrent run already holds the lock</li>
+     *   <li>200 – completed; body contains scanned/repaired counts</li>
+     * </ul>
+     */
+    @PostMapping("/thumbnail-repair")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> runThumbnailRepair(
+            @AuthenticationPrincipal FirebaseUserDetails actor,
+            @org.springframework.web.bind.annotation.RequestHeader(
+                    value = "X-Confirm-Migration", required = false) String confirmHeader)
+            throws Exception {
+
+        if (!"run-thumbnail-repair".equals(confirmHeader)) {
+            return ResponseEntity.status(428).body(Map.of(
+                "code", "MIGRATION_CONFIRM_REQUIRED",
+                "hint", "Set X-Confirm-Migration: run-thumbnail-repair header."));
+        }
+
+        if (!thumbnailRepairEnabled) {
+            return ResponseEntity.status(404).body(Map.of(
+                "code", "MIGRATION_DISABLED",
+                "hint", "Set app.migrations.thumbnail-repair.enabled=true in the active profile."));
+        }
+
+        try {
+            ThumbnailRepairMigration.RunSummary summary = thumbnailRepair.run(actor.getUid());
+            logger.info(
+                "Migration thumbnail-repair triggered by uid={} channelsRepaired={} playlistsRepaired={} failures={}",
+                actor.getUid(), summary.channelsRepaired(), summary.playlistsRepaired(), summary.failures());
+            return ResponseEntity.ok(Map.of(
+                "channelsScanned",   summary.channelsScanned(),
+                "channelsRepaired",  summary.channelsRepaired(),
+                "playlistsScanned",  summary.playlistsScanned(),
+                "playlistsRepaired", summary.playlistsRepaired(),
+                "failures",          summary.failures(),
+                "failedChannelIds",  summary.failedChannelIds(),
+                "failedPlaylistIds", summary.failedPlaylistIds(),
+                "startedAt",         summary.startedAt(),
+                "completedAt",       summary.completedAt()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(409).body(Map.of(
                 "code",    "MIGRATION_RUNNING",

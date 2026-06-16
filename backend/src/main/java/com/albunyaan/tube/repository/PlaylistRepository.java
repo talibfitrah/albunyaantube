@@ -328,6 +328,19 @@ public class PlaylistRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
     }
 
+    /**
+     * Targeted partial update of a playlist's thumbnail without rewriting the
+     * whole document. Avoids the lost-update clobber that {@link #save(Playlist)}'s
+     * full {@code .set()} would cause if other fields are concurrently edited.
+     */
+    public void updateThumbnailUrl(String id, String thumbnailUrl)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        getCollection().document(id).update(
+                        "thumbnailUrl", thumbnailUrl,
+                        "updatedAt", com.google.cloud.Timestamp.now())
+                .get(timeoutProperties.getWrite(), java.util.concurrent.TimeUnit.SECONDS);
+    }
+
     public List<Playlist> findAllByOrderByItemCountDesc() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", STATUS_APPROVED)

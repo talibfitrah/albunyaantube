@@ -55,7 +55,7 @@ class ChannelOrchestratorTest {
     void setUp() {
         // Pass null for throttler and circuitBreaker in most tests for backward compatibility
         // The new batch validation tests will use the mocks
-        orchestrator = new ChannelOrchestrator(gateway, null, null);
+        orchestrator = new ChannelOrchestrator(gateway, null, null, null);
     }
 
     @Nested

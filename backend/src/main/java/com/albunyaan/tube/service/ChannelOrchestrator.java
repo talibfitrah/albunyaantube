@@ -8,6 +8,7 @@ import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.PlaylistItemDto;
 import com.albunyaan.tube.dto.StreamDetailsDto;
 import com.albunyaan.tube.dto.StreamItemDto;
+import com.albunyaan.tube.util.ThumbnailUrls;
 import com.albunyaan.tube.util.YouTubeUrlUtils;
 import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.ListExtractor;
@@ -58,14 +59,17 @@ public class ChannelOrchestrator {
     private final YouTubeGateway gateway;
     private final YouTubeThrottler throttler;
     private final YouTubeCircuitBreaker circuitBreaker;
+    private final YouTubeOEmbedClient oEmbedClient;
 
     public ChannelOrchestrator(
             YouTubeGateway gateway,
             @Nullable YouTubeThrottler throttler,
-            @Nullable YouTubeCircuitBreaker circuitBreaker) {
+            @Nullable YouTubeCircuitBreaker circuitBreaker,
+            @Nullable YouTubeOEmbedClient oEmbedClient) {
         this.gateway = gateway;
         this.throttler = throttler;
         this.circuitBreaker = circuitBreaker;
+        this.oEmbedClient = oEmbedClient;
         logger.info("ChannelOrchestrator initialized with throttler: {}, circuitBreaker: {}",
                 throttler != null, circuitBreaker != null);
     }
@@ -1343,8 +1347,25 @@ public class ChannelOrchestrator {
         dto.setUploaderUrl(playlist.getUploaderUrl());
         dto.setStreamCount(playlist.getStreamCount());
 
-        if (playlist.getThumbnails() != null && !playlist.getThumbnails().isEmpty()) {
-            dto.setThumbnailUrl(playlist.getThumbnails().get(0).getUrl());
+        // PlaylistInfo.getThumbnails() on YouTube is a signed, dated
+        // /pl_c/.../studio_square_thumbnail.jpg custom thumbnail that expires
+        // (HTTP 404). Keep it only when it is already a usable /vi/ image
+        // (e.g. a NewPipe version that resolves the first video); otherwise
+        // resolve the first video's stable /vi/ thumbnail via YouTube oEmbed so
+        // we never persist a URL that will rot.
+        String npThumbnail = (playlist.getThumbnails() != null && !playlist.getThumbnails().isEmpty())
+                ? playlist.getThumbnails().get(0).getUrl()
+                : null;
+        if (npThumbnail != null && !ThumbnailUrls.isBrokenPlaylistThumbnail(npThumbnail)) {
+            dto.setThumbnailUrl(npThumbnail);
+        } else {
+            String resolved = oEmbedClient != null
+                    ? oEmbedClient.playlistThumbnailUrl(
+                            YouTubeUrlUtils.extractYouTubeId(playlist.getUrl())).orElse(npThumbnail)
+                    : npThumbnail;
+            if (resolved != null) {
+                dto.setThumbnailUrl(resolved);
+            }
         }
 
         if (playlist.getRelatedItems() != null) {

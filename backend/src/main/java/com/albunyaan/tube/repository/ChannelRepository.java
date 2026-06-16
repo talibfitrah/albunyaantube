@@ -348,6 +348,28 @@ public class ChannelRepository {
         }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
+    /**
+     * Targeted partial update of a channel's metadata (thumbnail, and optionally
+     * description / subscribers) without rewriting the whole document. Avoids the
+     * lost-update clobber that {@link #save(Channel)}'s full {@code .set()} would
+     * cause if other fields are concurrently edited. {@code description} /
+     * {@code subscribers} are written only when non-null.
+     */
+    public void updateMetadata(String id, String thumbnailUrl, String description, Long subscribers)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        java.util.Map<String, Object> fields = new java.util.HashMap<>();
+        fields.put("thumbnailUrl", thumbnailUrl);
+        if (description != null) {
+            fields.put("description", description);
+        }
+        if (subscribers != null) {
+            fields.put("subscribers", subscribers);
+        }
+        fields.put("updatedAt", com.google.cloud.Timestamp.now());
+        getCollection().document(id).update(fields)
+                .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
+
     public List<Channel> findAll() throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .orderBy("createdAt", Query.Direction.DESCENDING)
