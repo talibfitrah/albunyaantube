@@ -1,0 +1,25 @@
+backend/src/test/java/com/albunyaan/tube/service/DubPotokenServiceTest.java
+  s_c3846ab71aef74::t_6609d7b29c51a6 1-81
+backend/src/main/java/com/albunyaan/tube/service/DubPotokenService.java
+  s_c3846ab71aef74::t_9cd81f22513a21 75
+  s_c3846ab71aef74::t_7e22b339e772ef 81-83
+  s_c3846ab71aef74::t_461db2c11b62c8 86-90,92
+backend/src/test/java/com/albunyaan/tube/service/DubPotokenServiceWiringTest.java
+  s_c3846ab71aef74::t_0aa19859c542b4 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "0b8e4a10f3946cdf2e980a0fd53941b0ae46b425",
+  "prompts": {},
+  "sessions": {
+    "s_c3846ab71aef74": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "867a81b9-0c51-4c86-a5a2-98a3eb560c80",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
