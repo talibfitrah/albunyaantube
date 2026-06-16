@@ -248,6 +248,15 @@ class DashSourceBuilder @Inject constructor(
         // separate progressive source and MergingMediaSource it onto the VR video+audio source. The
         // fragment selects it via setPreferredAudioLanguage(dub). The VR default path is untouched.
         if (isWebDubMerge(resolved)) {
+            // Architecture B: if the dub carries DASH SegmentBase ranges, inject it into the synthetic
+            // MPD (one DASH source, unified buffering — no MergingMediaSource stall/flap, seekable).
+            // Fall back to the progressive merge when the dub lacks ranges or MPD generation fails.
+            val dub = resolved.audioTracks.firstOrNull {
+                it.source == AudioTrackSource.WEB_DUB && it.url.isNotEmpty()
+            }
+            if (!forceProgressive && dub?.syntheticDashMetadata?.hasValidRanges() == true) {
+                buildDubViaMpd(resolved)?.let { return it }
+            }
             return buildWithWebDubAudio(resolved, forceProgressive)
         }
         val factory = dataSourceFactoryProvider.forStreams(resolved)
@@ -339,10 +348,40 @@ class DashSourceBuilder @Inject constructor(
         val vrBuilt = build(vrResolved, forceProgressive) ?: return null
         val dubAudio = ProgressiveMediaSource.Factory(dataSourceFactoryProvider.forWebDub())
             .createMediaSource(mediaItem(webDub.url, webDub.mimeType))
-        Log.d(TAG, "Merging web dub audio (lang=${webDub.language}) onto VR source")
+        Log.d("DubFlow", "Merging web dub audio lang=${webDub.language} urlLen=${webDub.url.length} onto VR source")
         // adjustPeriodTimeOffsets + clipDurations tolerate slight video/audio duration mismatch.
         val merged = MergingMediaSource(true, true, vrBuilt.source, dubAudio)
         return BuiltSource(merged, vrBuilt.decision)
+    }
+
+    /**
+     * Architecture B: build ONE DASH source whose MPD already contains the dub as a language-tagged
+     * audio AdaptationSet (next to VR video + VR original audio). [MultiRepresentationMpdGenerator]
+     * includes every audio track with valid SegmentBase ranges, so the resolved dub — kept IN
+     * resolved.audioTracks here (the merge path strips it) — becomes its own `<AdaptationSet lang="…">`.
+     * One timeline, one buffer ⇒ no MergingMediaSource stall/flap, and it's seekable. Segment UAs are
+     * routed per `c=` param by [SegmentDataSourceFactoryProvider.forDubMpd]; the fragment's
+     * `setPreferredAudioLanguage(dubLang)` selects the dub set. Returns null (→ caller falls back to the
+     * progressive merge) if MPD generation isn't possible.
+     */
+    private fun buildDubViaMpd(resolved: ResolvedStreams): BuiltSource? {
+        val decision = decide(resolved, forceProgressive = false)
+        if (decision !is SourceDecision.LocalDash) {
+            Log.d(TAG, "dub MPD injection ineligible (decision=$decision); falling back to merge")
+            return null
+        }
+        Log.d("DubFlow", "dub via MPD injection (architecture B) — single DASH source")
+        val factory = dataSourceFactoryProvider.forDubMpd(resolved)
+        val source = DashMediaSource.Factory(factory)
+            .createMediaSource(mediaItem(decision.dataUri, MimeTypes.APPLICATION_MPD))
+        return BuiltSource(
+            wrapWithSideLoadSubtitles(
+                source,
+                if (resolved.isLive) emptyList() else resolved.subtitleTracks,
+                factory,
+            ),
+            decision,
+        )
     }
 
     /** Build an audio-only progressive source (background/audio-only mode) using the UA-correct factory. */

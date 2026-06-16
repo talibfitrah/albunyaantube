@@ -18,6 +18,7 @@ import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.VideoTrack
+import com.albunyaan.tube.data.extractor.availableAudioLanguages
 import com.albunyaan.tube.data.extractor.withDubLanguages
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.download.DownloadEntry
@@ -71,6 +72,7 @@ class PlayerViewModel @Inject constructor(
     private val extractorClient: ExtractorClient,
     private val dubAudioEnumerator: DubAudioEnumerator,
     private val dubAudioResolver: DubAudioResolver,
+    @javax.inject.Named("real") private val contentService: com.albunyaan.tube.data.source.ContentService,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -78,6 +80,14 @@ class PlayerViewModel @Inject constructor(
     /** Cached dub languages per videoId (so a URL-refresh re-resolve keeps the globe lit). */
     private val dubCache = java.util.concurrent.ConcurrentHashMap<String, List<DubLanguage>>()
     private val dubEnumerating = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Last fully-resolved dub (URL + nsig + pot) per "videoId|lang", so a re-attach after a refresh
+     * reuses it instantly instead of re-running nsig (~3 s) — that re-resolve was the visible English
+     * blip during the flap. The cached URL stays valid ~6 h (its own expire); if it ever 403s the
+     * normal dub-failure path falls back to VR original.
+     */
+    private val resolvedDubCache = java.util.concurrent.ConcurrentHashMap<String, AudioTrack>()
 
     /**
      * Fire-and-forget dub enumeration for a freshly-resolved single-audio stream
@@ -89,16 +99,25 @@ class PlayerViewModel @Inject constructor(
      */
     private fun maybeEnumerateDubs(selection: PlaybackSelection) {
         val resolved = selection.resolved
-        if (resolved.audioTracks.size > 1) return
+        android.util.Log.d("DubFlow", "maybeEnumerateDubs ${resolved.streamId} audioTracks=${resolved.audioTracks.size} langs=${resolved.availableAudioLanguages().size}")
+        // Skip only if the resolve ALREADY exposes 2+ distinct languages. VR returns the single
+        // original language as multiple format variants (m4a/webm × bitrates) — so a track-count
+        // guard (size > 1) wrongly skips the enumerate on every dubbed video.
+        if (resolved.availableAudioLanguages().size >= 2) return
         val streamId = resolved.streamId
         dubCache[streamId]?.let { applyDubLanguages(streamId, it); return }
         if (!dubEnumerating.add(streamId)) return
         viewModelScope.launch(dispatcher) {
-            val dubs = dubAudioEnumerator.enumerate(streamId)
-            dubEnumerating.remove(streamId)
-            if (dubs.size < 2) return@launch
-            dubCache[streamId] = dubs
-            applyDubLanguages(streamId, dubs)
+            try {
+                val dubs = dubAudioEnumerator.enumerate(streamId)
+                if (dubs.size < 2) return@launch
+                dubCache[streamId] = dubs
+                applyDubLanguages(streamId, dubs)
+            } finally {
+                // Always release the in-flight guard — a bare remove() leaks the id on coroutine
+                // cancellation (user leaves mid-enumerate), permanently suppressing re-enumeration.
+                dubEnumerating.remove(streamId)
+            }
         }
     }
 
@@ -109,7 +128,40 @@ class PlayerViewModel @Inject constructor(
         ) {
             val augmented = cur.selection.copy(resolved = cur.selection.resolved.withDubLanguages(dubs))
             updateState { it.copy(streamState = StreamState.Ready(streamId, augmented)) }
-            android.util.Log.d("PlayerViewModel", "dub globe lit for $streamId: ${dubs.size} languages")
+            android.util.Log.d(
+                "DubFlow",
+                "dub globe lit for $streamId: ${dubs.size} dubs -> audioTracks=${augmented.resolved.audioTracks.size}"
+            )
+            // Build-order step 4 (prewarm): resolve ALL languages once now (1 nsig + 1 pot covers all),
+            // so a language pick skips the ~3 s per-switch nsig and feels instant. Fire once per video.
+            if (resolvedDubCache.keys.none { it.startsWith("$streamId|") }) {
+                viewModelScope.launch(dispatcher) {
+                    dubAudioResolver.resolveAllDubAudio(streamId).forEach { dub ->
+                        dub.language?.let { resolvedDubCache["$streamId|$it"] = dub }
+                    }
+                }
+            }
+            // Build-order step 3 — dub-aware refresh: a URL-refresh re-resolve (TTL / 403 / stall)
+            // re-resolves the VR original only, so the selected dub silently reverts to English
+            // ("played briefly then fell back"). Now that the globe is re-lit with the lazy WEB_DUB
+            // tracks, re-attach the sticky dub so it persists. The line-113 guard (only runs when no
+            // WEB_DUB present) breaks the re-merge → swap → rebuild cycle, so this can't loop.
+            val sticky = stickyAudioLanguage
+            if (sticky != null) {
+                // Prefer the cached RESOLVED dub (URL present): selectWebDubTrack reuses it without
+                // re-running nsig (~3 s), so the re-attach is instant and the flap stops being visible.
+                // Fall back to the lazy (URL-less) track, which re-resolves, if nothing is cached yet.
+                val cached = resolvedDubCache["$streamId|$sticky"]
+                val reattach = cached ?: augmented.resolved.audioTracks.firstOrNull {
+                    it.source == AudioTrackSource.WEB_DUB && it.language == sticky
+                }
+                reattach?.let {
+                    android.util.Log.d("DubFlow", "re-attaching sticky dub lang=$sticky (cached=${cached != null})")
+                    selectWebDubTrack(it)
+                }
+            }
+        } else {
+            android.util.Log.d("DubFlow", "applyDubLanguages SKIP $streamId dubs=${dubs.size} curReady=${cur is StreamState.Ready}")
         }
     }
 
@@ -173,6 +225,13 @@ class PlayerViewModel @Inject constructor(
     // retries, and playlist advances. Set by selectAudioTrack, read by toSelectionWithPreferredAudio.
     // Global (session-scoped), unlike PlayerBinder.stickyAudioLanguageByVideoId which is per-video.
     @Volatile private var stickyAudioLanguage: String? = null
+
+    /**
+     * The language of the LATEST web-dub pick, set synchronously on tap. Distinct from
+     * [stickyAudioLanguage] (which is pinned only after a dub successfully swaps in): a slow resolve
+     * checks this before applying so a rapid A→B switch can't let A override the newer B.
+     */
+    @Volatile private var pendingAudioLanguage: String? = null
     private var metadataHydrationJob: Job? = null
 
     // Live stream proactive refresh: job that schedules URL refresh before expiration
@@ -180,6 +239,21 @@ class PlayerViewModel @Inject constructor(
 
     // Playlist playback state
     private var isPlaylistMode: Boolean = false
+
+    /**
+     * True only when the current playlist's parent channel is APPROVED in the registry. A standalone
+     * playlist (curated playlist whose parent channel is NOT in our system) keeps this false so the
+     * player never surfaces the uncurated channel name (mirrors PlaylistHeader.isChannelLinkable).
+     * Fail-closed default.
+     */
+    private var playlistChannelApproved: Boolean = false
+
+    /**
+     * The playlist currently loaded, captured at load start. Guards the async channel-approval result
+     * against playlist switches: a late approval from playlist A must not flip the gate for playlist B
+     * the user has since opened.
+     */
+    private var activePlaylistId: String? = null
 
     // PR6.6: Playlist paging state for lazy loading
     private var playlistPagingState: PlaylistPagingState? = null
@@ -549,7 +623,11 @@ class PlayerViewModel @Inject constructor(
             selectWebDubTrack(track)
             return
         }
-        stickyAudioLanguage = track.language
+        // VR-native / Original: there is no web dub to re-pin after a refresh, so CLEAR the sticky
+        // web-dub language (and any pending pick). Otherwise a later refresh's reattach could match a
+        // prewarm-cached WEB_DUB entry for the original language and play a dub instead of VR audio.
+        stickyAudioLanguage = null
+        pendingAudioLanguage = null
         // Always emit, even when `track == ready.selection.audio`. AudioTrack
         // is a data class so equality compares URL too — and the player can
         // drift from the VM (ABR may pick a dubbed track without notifying
@@ -583,30 +661,57 @@ class PlayerViewModel @Inject constructor(
      * resolved dub so [com.albunyaan.tube.player.DashSourceBuilder] merges them (VR video + dub
      * audio). On failure emits [PlayerUiEvent.DubAudioResolveFailed] and leaves the current audio.
      *
-     * Known Plan-1 limitation: a later URL-refresh re-resolve drops back to the VR original (the
-     * fresh VR resolve has no dub track for stickyAudioLanguage to match). Re-tapping re-resolves.
-     * Mid-stream dub re-resolve is Plan-2 hardening.
+     * Dub-aware refresh (build-order step 3): a URL-refresh re-resolve (TTL / 403 / stall) emits a
+     * fresh VR-only selection, but [maybeEnumerateDubs] runs on every successful resolve, re-lights
+     * the globe from [dubCache], and [applyDubLanguages] re-attaches the sticky dub via the prewarmed
+     * [resolvedDubCache] — so the selected language persists across a refresh without a re-tap (kills
+     * the earlier "played briefly then fell back to English" flap). If the re-resolve itself fails the
+     * normal dub-failure path keeps the VR original (never breaks playback).
      */
     private fun selectWebDubTrack(track: AudioTrack) {
         val ready = _state.value.streamState as? StreamState.Ready ?: return
         val lang = track.language ?: return
-        stickyAudioLanguage = lang
+        android.util.Log.d("DubFlow", "selectWebDubTrack lang=$lang stream=${ready.streamId}")
+        // Latest pick wins for staleness; sticky is pinned only on a SUCCESSFUL swap (below) so a failed
+        // resolve never leaves a phantom sticky that later refreshes keep trying to reattach.
+        pendingAudioLanguage = lang
         viewModelScope.launch(dispatcher) {
             val resolvedDub = if (track.url.isNotEmpty()) track
-            else dubAudioResolver.resolveDubAudio(ready.streamId, lang)
+                else resolvedDubCache["${ready.streamId}|$lang"] // prewarmed (instant)
+                ?: dubAudioResolver.resolveDubAudio(ready.streamId, lang)
+            android.util.Log.d(
+                "DubFlow",
+                "resolveDubAudio lang=$lang -> ${if (resolvedDub != null) "OK len=${resolvedDub.url.length}" else "NULL"}"
+            )
             if (resolvedDub == null || resolvedDub.url.isEmpty()) {
-                android.util.Log.w("PlayerViewModel", "dub resolve failed lang=$lang; staying on current audio")
                 _uiEvents.emit(PlayerUiEvent.DubAudioResolveFailed)
                 return@launch
             }
+            resolvedDubCache["${ready.streamId}|$lang"] = resolvedDub
             val cur = _state.value.streamState as? StreamState.Ready ?: return@launch
             if (cur.streamId != ready.streamId) return@launch
+            // Drop a stale resolve: if the user has since picked a different language, applying this one
+            // would override the newer selection (rapid A→B tap where A resolves slower than B).
+            if (pendingAudioLanguage != lang) return@launch
+            // Success: NOW pin the sticky language. Readers (refresh-reattach, toSelectionWithPreferredAudio)
+            // only ever see a language that actually played.
+            stickyAudioLanguage = lang
             val vrNative = cur.selection.resolved.audioTracks.filter { it.source == AudioTrackSource.VR_NATIVE }
-            val mergedResolved = cur.selection.resolved.copy(audioTracks = vrNative + resolvedDub)
+            // Keep the OTHER dub languages so the globe still lists all 14 — otherwise selecting one
+            // collapses the picker to just "<that dub> + Unknown" and the user can't switch. They MUST
+            // be URL-less (lazy): DashSourceBuilder merges the FIRST WEB_DUB with a non-empty URL, so a
+            // previously-resolved dub that kept its URL would be merged instead of the just-picked one
+            // (user taps Arabic, still hears German). Stripping the URL makes them lazy placeholders
+            // that power the picker and re-resolve when picked.
+            val otherDubs = cur.selection.resolved.audioTracks.filter {
+                it.source == AudioTrackSource.WEB_DUB && it.language != resolvedDub.language
+            }.map { if (it.url.isEmpty()) it else it.copy(url = "") }
+            val mergedResolved = cur.selection.resolved.copy(audioTracks = vrNative + otherDubs + resolvedDub)
             val newSelection = cur.selection.copy(resolved = mergedResolved, audio = resolvedDub)
             mpdRegistry.unregisterBoth(cur.streamId)
             updateState { it.copy(streamState = StreamState.Ready(cur.streamId, newSelection)) }
             _uiEvents.emit(PlayerUiEvent.AudioTrackSwapReady(cur.streamId, newSelection))
+            android.util.Log.d("DubFlow", "dub swap emitted lang=$lang audioTracks=${mergedResolved.audioTracks.size}")
         }
     }
 
@@ -681,6 +786,8 @@ class PlayerViewModel @Inject constructor(
 
         // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
         isPlaylistMode = false
+        playlistChannelApproved = false
+        activePlaylistId = null
         pagingJob?.cancel()
         pagingJob = null
         playlistPagingState = null
@@ -761,6 +868,27 @@ class PlayerViewModel @Inject constructor(
      * Time budget: MAX_SCAN_TIME_MS applies to the TOTAL deep-start operation, not per-page.
      * Each subsequent page fetch gets min(PAGE_FETCH_TIMEOUT_MS, remainingBudget).
      */
+    /**
+     * Whether the current playlist's parent channel is APPROVED in our registry — the gate for showing
+     * the channel name on the player. Mirrors PlaylistDetailViewModel.resolveChannelLinkability:
+     * canonicalize the uploader id, then a backend registry check. Fail-closed: any failure (no
+     * canonical id, 404, network, exception) returns false so an uncurated channel is never surfaced.
+     */
+    private suspend fun isPlaylistChannelApproved(playlistId: String): Boolean = try {
+        val header = playlistDetailRepository.getHeader(playlistId)
+        val rawId = header.channelId
+        val canonicalId = if (rawId != null && CANONICAL_CHANNEL_ID_REGEX.matches(rawId)) {
+            rawId
+        } else {
+            playlistDetailRepository.resolveCanonicalChannelId(header.parentChannelUrl)
+        }
+        canonicalId != null && contentService.isInApprovedRegistry(
+            com.albunyaan.tube.data.source.AvailabilityCheckType.CHANNEL, canonicalId
+        )
+    } catch (e: Exception) {
+        false
+    }
+
     private suspend fun loadPlaylistWithTarget(
         playlistId: String,
         targetVideoId: String?,
@@ -768,6 +896,24 @@ class PlayerViewModel @Inject constructor(
         shuffled: Boolean
     ) {
         val startTime = System.currentTimeMillis()
+        // A standalone playlist (parent channel NOT in our registry) must not surface a channel name.
+        // Resolve approval OFF the playback-start critical path: default fail-closed (hidden — the gate
+        // lives in applyQueueState), then reveal names via a re-emit only if approved. The activePlaylistId
+        // guard drops a late result if the user has since switched playlists; if approval lands before the
+        // queue is built, initializePlaylistQueue's own emit picks up the flag (no re-emit needed).
+        activePlaylistId = playlistId
+        playlistChannelApproved = false
+        viewModelScope.launch(dispatcher) {
+            val approved = withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
+                isPlaylistChannelApproved(playlistId)
+            } ?: false
+            if (approved && activePlaylistId == playlistId) {
+                playlistChannelApproved = true
+                if (playlistPagingState?.playlistId == playlistId) {
+                    applyQueueState()
+                }
+            }
+        }
         val allItems = mutableListOf<PlaylistItem>()
         var nextPage: Page?
         var nextItemOffset: Int
@@ -901,6 +1047,7 @@ class PlayerViewModel @Inject constructor(
             UpNextItem(
                 id = playlistItem.videoId,
                 title = playlistItem.title,
+                // Raw name retained; suppression for unapproved playlists happens at emit (gateChannelName).
                 channelName = playlistItem.channelName ?: "",
                 durationSeconds = playlistItem.durationSeconds ?: 0,
                 streamId = playlistItem.videoId,
@@ -959,8 +1106,8 @@ class PlayerViewModel @Inject constructor(
         currentItem = if (queue.isNotEmpty()) queue.removeAt(0) else null
         updateState {
             it.copy(
-                currentItem = currentItem,
-                upNext = queue.toList(),
+                currentItem = currentItem?.gateChannelName(),
+                upNext = queue.map { item -> item.gateChannelName() },
                 excludedItems = excluded,
                 currentDownload = findDownloadFor(currentItem, latestDownloads),
                 hasNext = queue.isNotEmpty(),
@@ -1033,6 +1180,19 @@ class PlayerViewModel @Inject constructor(
             item.channelName.isBlank()
     }
 
+    /**
+     * Standalone playlists (curated playlist whose parent channel is NOT in our registry) must not
+     * surface a channel name anywhere on the player. Gate the name at emit time (the raw value stays in
+     * the queue) so: (a) an async approval can reveal it later via a re-emit, and (b) metadata hydration
+     * can't re-leak a suppressed name. No-op outside playlist mode — single videos keep their channel.
+     */
+    private fun UpNextItem.gateChannelName(): UpNextItem =
+        if (isPlaylistMode && !playlistChannelApproved && channelName.isNotEmpty()) {
+            copy(channelName = "")
+        } else {
+            this
+        }
+
     private fun applyQueueState() {
         // PR6.6: hasNext is true if queue has items OR if more pages can be loaded
         val pagingState = playlistPagingState
@@ -1040,8 +1200,8 @@ class PlayerViewModel @Inject constructor(
 
         updateState { state ->
             state.copy(
-                currentItem = currentItem,
-                upNext = queue.toList(),
+                currentItem = currentItem?.gateChannelName(),
+                upNext = queue.map { it.gateChannelName() },
                 currentDownload = findDownloadFor(currentItem, latestDownloads),
                 hasNext = queue.isNotEmpty() || hasMorePages,
                 hasPrevious = previousItems.isNotEmpty()
@@ -1598,6 +1758,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     companion object {
+        /** YouTube canonical channel id (UC + 22 chars). Non-UC uploader ids are resolved first. */
+        private val CANONICAL_CHANNEL_ID_REGEX = Regex("^UC[A-Za-z0-9_-]{22}$")
+
         private const val MAX_RETRY_ATTEMPTS = 3
         private const val RETRY_BASE_DELAY_MS = 1000L
         private const val EXTRACTOR_TIMEOUT_MS = 20000L // 20s timeout for extraction (NewPipe can be slow)
@@ -1812,6 +1975,7 @@ class PlayerViewModel @Inject constructor(
                 UpNextItem(
                     id = playlistItem.videoId,
                     title = playlistItem.title,
+                    // Raw name retained; suppression for unapproved playlists happens at emit (gateChannelName).
                     channelName = playlistItem.channelName ?: "",
                     durationSeconds = playlistItem.durationSeconds ?: 0,
                     streamId = playlistItem.videoId,

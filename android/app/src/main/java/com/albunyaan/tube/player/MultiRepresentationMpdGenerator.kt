@@ -91,7 +91,7 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
         }
 
         val eligibleAudio = resolved.audioTracks.count {
-            it.syntheticDashMetadata?.hasValidRanges() == true
+            it.syntheticDashMetadata?.hasValidRanges() == true && it.url.isNotEmpty()
         }
         if (eligibleAudio == 0) {
             return false to "NO_ELIGIBLE_AUDIO"
@@ -158,7 +158,10 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
         // Resolve each track's MIME once so the grouping key and the XML builder agree.
         data class AudioRep(val track: AudioTrack, val mime: String)
         val allAudioReps = resolved.audioTracks
-            .filter { it.syntheticDashMetadata?.hasValidRanges() == true }
+            // url.isNotEmpty(): a dub deselected during a switch is kept as a URL-less lazy placeholder
+            // (for the picker) but retains its syntheticDashMetadata — without this guard it would emit a
+            // phantom AdaptationSet with an empty <BaseURL>.
+            .filter { it.syntheticDashMetadata?.hasValidRanges() == true && it.url.isNotEmpty() }
             .map { AudioRep(it, resolveAudioContainerMimeType(it)) }
         if (allAudioReps.isEmpty()) {
             return Result.Failure("NO_AUDIO_WITH_RANGES")
