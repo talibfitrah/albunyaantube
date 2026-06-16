@@ -646,13 +646,49 @@ api.base.url=http://10.0.2.2:8080/
 sdk.dir=/home/user/Android/Sdk
 ```
 
-### Android Release Signing (`keystore.properties`)
+### Android Release Signing & the debug→production key migration
+
+**Signing artifacts live OUTSIDE the repo** at `~/.config/albunyaan/` (next to the
+Firebase creds — never committed): `release.keystore` (production key, `CN=FitrahTube`,
+alias `release-key`, RSA-2048, ~27 yr validity), `keystore.properties`, and
+`signing-lineage.bin` (the debug→production rotation proof). **Back up all three** —
+losing them strands every installed user on their current version.
 
 ```properties
-storeFile=../release.keystore
-storePassword=YOUR_KEYSTORE_PASSWORD
-keyAlias=albunyaan-tube
-keyPassword=YOUR_KEY_PASSWORD
+# ~/.config/albunyaan/keystore.properties  (absolute storeFile, off-repo)
+storeFile=/home/<you>/.config/albunyaan/release.keystore
+storePassword=…
+keyAlias=release-key
+keyPassword=…
+```
+
+Gradle's `rootProject` for the Android build is `android/` (its own `settings.gradle.kts`),
+so the build reads **`android/keystore.properties`**. When that file is **absent the build
+falls back to debug signing** (`build.gradle.kts` `signingConfigs`).
+
+**Status / why two steps.** beta.10–**beta.30** are **debug-signed**
+(`~/.android/debug.keystore`, CN=Android Debug). **beta.30** shipped the lineage-aware
+in-app updater (`ApkInstaller.verifySigningCertMatch`) but stayed on the debug key.
+**beta.31 (next) performs the rotation** to the production key via an APK Signature
+Scheme **v3 signing lineage**, so installed debug-signed users upgrade in place (data
+preserved) on **Android 9+**. The rotation had to be two-step because the *already-shipped*
+beta.29 updater rejects any cert change before the OS sees it — the lineage-aware updater
+must be on the device first. **Android 8.0–8.1 (API 26–27) cannot honour a v3 lineage and
+must uninstall + reinstall once** at beta.31.
+
+**Cutting the rotated release (beta.31 onward):**
+```bash
+BT=$ANDROID_SDK/build-tools/36.0.0
+cp ~/.config/albunyaan/keystore.properties android/keystore.properties   # AGP signs w/ prod key
+cd android && ./gradlew :app:assembleRelease
+APK=app/build/outputs/apk/release/fitrahtube-<ver>.apk
+# MANDATORY: re-sign WITH the lineage, else in-app updates break for every existing user.
+$BT/apksigner sign --ks ~/.config/albunyaan/release.keystore --ks-key-alias release-key \
+  --lineage ~/.config/albunyaan/signing-lineage.bin \
+  --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true "$APK"
+$BT/apksigner verify --print-certs "$APK"   # MUST list the CN=Android Debug cert in the lineage
+rm android/keystore.properties               # keep the secret out of the build tree
+# Gate before publishing: `adb install -r "$APK"` over an installed debug-signed build MUST succeed.
 ```
 
 ---

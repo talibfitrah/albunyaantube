@@ -7,6 +7,8 @@ import android.content.pm.Signature
 import android.content.pm.SigningInfo
 import android.os.Build
 import okhttp3.OkHttpClient
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -285,5 +287,83 @@ class ApkInstallerTest {
         } catch (e: SecurityException) {
             // expected
         }
+    }
+
+    /**
+     * v3 key rotation (the beta.30 debug-key -> beta.31 production-key migration). The
+     * downloaded APK is signed by a NEW key, but its verified signingCertificateHistory
+     * lineage contains the installed OLD key, proving the old key authorised the rotation.
+     * The updater MUST accept it so beta.29/30 users auto-update onto the production key.
+     */
+    @Test
+    @Config(sdk = [Build.VERSION_CODES.P])
+    fun `verifySigningCertMatch accepts a rotated APK whose lineage contains the installed cert`() {
+        val oldKey = Signature(byteArrayOf(0x0D, 0x0E, 0x0B)) // installed (debug)
+        val newKey = Signature(byteArrayOf(0x0F, 0x10, 0x12)) // downloaded current signer (production)
+        val installedSi = mock<SigningInfo> {
+            whenever(it.apkContentsSigners).thenReturn(arrayOf(oldKey))
+        }
+        val rotatedSi = mock<SigningInfo> {
+            whenever(it.apkContentsSigners).thenReturn(arrayOf(newKey))
+            whenever(it.signingCertificateHistory).thenReturn(arrayOf(oldKey, newKey))
+        }
+        val pm = mock<PackageManager> {
+            whenever(it.getPackageInfo(eq("pkg"), any<Int>())).thenReturn(packageInfoP(installedSi))
+            whenever(it.getPackageArchiveInfo(any(), any<Int>())).thenReturn(packageInfoP(rotatedSi))
+        }
+        val activity = mock<Activity> {
+            whenever(it.packageManager).thenReturn(pm)
+            whenever(it.packageName).thenReturn("pkg")
+        }
+        // Must NOT throw — installed cert is an ancestor in the verified lineage.
+        ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/rotated.apk"))
+    }
+
+    /**
+     * The lineage path must not become a blanket bypass: a rotated APK whose lineage does
+     * NOT contain the installed cert (some other key's hand-off) must still be rejected,
+     * exactly like a plain cert mismatch.
+     */
+    @Test
+    @Config(sdk = [Build.VERSION_CODES.P])
+    fun `verifySigningCertMatch rejects a rotated APK whose lineage excludes the installed cert`() {
+        val installedKey = Signature(byteArrayOf(0x11, 0x22, 0x33))
+        val strangerOld = Signature(byteArrayOf(0x44, 0x55, 0x66))
+        val newKey = Signature(byteArrayOf(0x70, 0x71, 0x72))
+        val installedSi = mock<SigningInfo> {
+            whenever(it.apkContentsSigners).thenReturn(arrayOf(installedKey))
+        }
+        val foreignRotatedSi = mock<SigningInfo> {
+            whenever(it.apkContentsSigners).thenReturn(arrayOf(newKey))
+            whenever(it.signingCertificateHistory).thenReturn(arrayOf(strangerOld, newKey))
+        }
+        val pm = mock<PackageManager> {
+            whenever(it.getPackageInfo(eq("pkg"), any<Int>())).thenReturn(packageInfoP(installedSi))
+            whenever(it.getPackageArchiveInfo(any(), any<Int>())).thenReturn(packageInfoP(foreignRotatedSi))
+        }
+        val activity = mock<Activity> {
+            whenever(it.packageManager).thenReturn(pm)
+            whenever(it.packageName).thenReturn("pkg")
+        }
+        try {
+            ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/foreign-rotated.apk"))
+            fail("Expected SecurityException — installed cert not in the downloaded lineage")
+        } catch (e: SecurityException) {
+            // expected
+        }
+    }
+
+    @Test
+    fun `isUpdateCertAcceptable accepts the same cert and a cert present in the lineage`() {
+        val installer = ApkInstaller(OkHttpClient())
+        assertTrue(installer.isUpdateCertAcceptable("AA", "AA", emptyList()))
+        assertTrue(installer.isUpdateCertAcceptable("OLD", "NEW", listOf("OLD", "NEW")))
+    }
+
+    @Test
+    fun `isUpdateCertAcceptable rejects a mismatch absent from the lineage`() {
+        val installer = ApkInstaller(OkHttpClient())
+        assertFalse(installer.isUpdateCertAcceptable("OLD", "NEW", emptyList()))
+        assertFalse(installer.isUpdateCertAcceptable("OLD", "NEW", listOf("X", "NEW")))
     }
 }

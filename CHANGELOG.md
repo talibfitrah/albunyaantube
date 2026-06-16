@@ -24,6 +24,11 @@ during the beta program.
 - **Standalone playlists no longer surface an unapproved channel's name** on the
   player; the channel name shows only for playlists whose parent channel is
   approved in the registry.
+- **Update installer now understands signing-key rotation.** The in-app updater
+  accepts an update signed with a new key when the installed key authorised the
+  rotation (APK Signature Scheme v3 lineage). This prepares a later beta to move
+  off the debug signing key without breaking auto-update for existing users on
+  Android 9+; same-key updates are unaffected.
 
 ### Backend
 

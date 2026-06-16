@@ -292,13 +292,48 @@ class ApkInstaller @Inject constructor(
             }
             throw SecurityException("No signing certificate in downloaded APK")
         }
-        if (installedSha != downloadedSha) {
-            Log.e(TAG, "Signing certificate mismatch: installed=$installedSha downloaded=$downloadedSha")
+        // v3 key-rotation support: the downloaded APK may be signed by a NEW key whose
+        // SigningCertificateLineage proves the currently-installed (older) key authorised
+        // the rotation. PackageManager only populates signingCertificateHistory after it
+        // has cryptographically verified that lineage, so a forged hand-off cannot reach
+        // here, and the platform PackageInstaller re-verifies the rotation on commit. Accept
+        // when the installed cert is the current signer OR an ancestor in the downloaded
+        // lineage. signingCertificateHistory needs the SigningInfo API (28+); pre-P never
+        // rotates (no v3), so plain equality is the whole story there.
+        val lineageShas: List<String> =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                downloaded.signingInfo?.signingCertificateHistory?.map(::sha256).orEmpty()
+            } else {
+                emptyList()
+            }
+        if (!isUpdateCertAcceptable(installedSha, downloadedSha, lineageShas)) {
+            Log.e(TAG, "Signing certificate mismatch: installed=$installedSha downloaded=$downloadedSha lineage=$lineageShas")
             throw SecurityException(
                 "Downloaded APK signing certificate does not match installed app"
             )
         }
+        if (installedSha != downloadedSha) {
+            Log.w(
+                TAG,
+                "Accepting update via signing lineage: installed cert $installedSha is an " +
+                    "ancestor of the downloaded signer $downloadedSha (v3 key rotation)"
+            )
+        }
     }
+
+    /**
+     * The update's signing cert is acceptable when it equals the installed app's cert
+     * (the normal same-key update) OR when the installed cert appears in the downloaded
+     * APK's already-verified signing lineage (a v3 key rotation the installed key
+     * authorised). Pure function over SHA-256 hex digests so the decision is unit-testable
+     * without a PackageManager.
+     */
+    @VisibleForTesting
+    internal fun isUpdateCertAcceptable(
+        installedSha: String,
+        downloadedSha: String,
+        lineageShas: List<String>
+    ): Boolean = installedSha == downloadedSha || installedSha in lineageShas
 
     /**
      * Returns SHA-256 of the package's first signing certificate, or null when
@@ -345,10 +380,14 @@ class ApkInstaller @Inject constructor(
             Log.w(TAG, "Multi-signer APK detected (count=$signerCount); [0]==[0] compare may misjudge")
         }
         val first = signatures?.firstOrNull() ?: return null
-        return MessageDigest.getInstance("SHA-256")
-            .digest(first.toByteArray())
-            .joinToString("") { "%02x".format(it) }
+        return sha256(first)
     }
+
+    /** SHA-256 hex digest of a single signing certificate. */
+    private fun sha256(sig: Signature): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(sig.toByteArray())
+            .joinToString("") { "%02x".format(it) }
 
     /** On O+ the user must grant "install unknown apps" for this app specifically. */
     fun isInstallPermissionGranted(context: Context): Boolean {
