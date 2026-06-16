@@ -363,7 +363,13 @@ class PlayerViewModel @Inject constructor(
         // and remove the real queue entry, then play it (downstream resolution,
         // history and analytics must use the ungated original).
         val queueIndex = queue.indexOfFirst { it.id == item.id }
-        if (queueIndex < 0) return
+        if (queueIndex < 0) {
+            // After the id-match fix this is unreachable for any item legitimately on
+            // screen; if it ever fires it signals a state.upNext / queue desync (e.g. a
+            // future paging or race regression). Log instead of silently swallowing.
+            android.util.Log.w("PlayerViewModel", "playItem: id=${item.id} not in queue (upNext/queue desync)")
+            return
+        }
         val target = queue.removeAt(queueIndex)
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()

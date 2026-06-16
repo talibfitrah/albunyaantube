@@ -1,5 +1,10 @@
 package com.albunyaan.tube.ui.player
 
+import androidx.test.core.app.ApplicationProvider
+import androidx.work.Configuration
+import androidx.work.WorkManager
+import androidx.work.testing.WorkManagerTestInitHelper
+import androidx.work.testing.WorkManagerTestInitHelper.ExecutorsMode
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.analytics.PlaybackMetricsCollector
 import com.albunyaan.tube.data.channel.Page
@@ -81,6 +86,19 @@ class PlayerViewModelPlaylistPagingTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
+        // Pin WorkManager to a deterministic test instance with SYNCHRONOUS executors.
+        // AlBunyaanApplication.onCreate() enqueues real periodic/cleanup work, which
+        // otherwise spins up the real constraint trackers (BatteryNotLowTracker
+        // registers a BroadcastReceiver on a WM.task-* thread) that outlive a test and
+        // fire after Robolectric teardown — surfacing as UncaughtExceptionsBeforeTest
+        // mis-attributed to whichever test runs next in the shared JVM. Synchronous
+        // executors plus draining in tearDown keep nothing in flight. Mirrors the
+        // established pattern in RefreshSchedulerTest / DownloadRepositoryTest.
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            ApplicationProvider.getApplicationContext(),
+            Configuration.Builder().build(),
+            ExecutorsMode.LEGACY_OVERRIDE_WITH_SYNCHRONOUS_EXECUTORS,
+        )
         fakePlayerRepository = FakePlayerRepository()
         fakeDownloadRepository = FakeDownloadRepository()
         fakePlaylistRepository = FakePlaylistDetailRepository()
@@ -99,7 +117,26 @@ class PlayerViewModelPlaylistPagingTest {
 
     @After
     fun tearDown() {
-        Dispatchers.resetMain()
+        // Drain before closing so no constraint tracker keeps running on a WM.task-*
+        // thread past teardown (omitting the drain re-surfaces the flake in the next
+        // test). Mirrors RefreshSchedulerTest. IllegalStateException (WorkManager
+        // already torn down by a prior test in the shared JVM) is expected and
+        // swallowed; with synchronous executors the drains complete in-call, so any
+        // other failure is a genuine error and is allowed to escape — the finally
+        // still resets Main, so the test dispatcher never leaks regardless.
+        try {
+            val wm = WorkManager.getInstance(ApplicationProvider.getApplicationContext())
+            wm.cancelAllWork().result.get()
+            wm.pruneWork().result.get()
+            WorkManagerTestInitHelper.closeWorkDatabase()
+        } catch (_: IllegalStateException) {
+            // WorkManager already torn down by a prior test; nothing to drain.
+        } finally {
+            // Always reset Main, even if the drain throws something other than
+            // IllegalStateException (e.g. ExecutionException) — otherwise the test
+            // dispatcher leaks into the next test in the shared JVM.
+            Dispatchers.resetMain()
+        }
     }
 
     private fun createViewModel(): PlayerViewModel {
