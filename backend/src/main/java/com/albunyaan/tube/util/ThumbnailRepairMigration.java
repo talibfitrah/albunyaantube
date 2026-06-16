@@ -51,7 +51,15 @@ public class ThumbnailRepairMigration {
     private static final Logger logger = LoggerFactory.getLogger(ThumbnailRepairMigration.class);
     private static final String LOCK_DOC = "migration_thumbnail_repair";
 
-    /** A lock held longer than this is treated as a crashed run and reclaimed. */
+    /**
+     * A lock held longer than this is treated as a crashed run and reclaimed.
+     * A real run is far shorter — only detectably-broken items are re-extracted,
+     * each bounded by the oEmbed/NewPipe timeouts — so this window is not reached
+     * in practice. If a pathologically large broken-catalog ever exceeded it, a
+     * second run could reclaim and run concurrently; that is harmless here because
+     * the repair is idempotent (same inputs → same writes) and the CAS release
+     * stops either run from clearing the other's lock.
+     */
     private static final long STALE_LOCK_MS = 30 * 60 * 1000L;
 
     public record RunSummary(int channelsScanned, int channelsRepaired,

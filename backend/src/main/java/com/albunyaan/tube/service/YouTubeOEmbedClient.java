@@ -3,6 +3,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.util.ThumbnailUrls;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -44,8 +45,9 @@ public class YouTubeOEmbedClient {
             String userAgent) {
         this.userAgent = userAgent;
         this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(5, TimeUnit.SECONDS)
+                .callTimeout(8, TimeUnit.SECONDS) // bound per-playlist worst case
                 .build();
     }
 
@@ -89,13 +91,18 @@ public class YouTubeOEmbedClient {
         try {
             JsonNode root = objectMapper.readTree(jsonBody);
             String thumbnailUrl = root.path("thumbnail_url").asText(null);
-            // Pin to YouTube's image CDN over HTTPS: the value is only ever stored
-            // and rendered as an image src, but a host allowlist keeps a surprising
-            // oEmbed response from persisting an off-platform URL.
-            if (thumbnailUrl == null
-                    || !thumbnailUrl.startsWith("https://")
-                    || !thumbnailUrl.contains(".ytimg.com/")
-                    || ThumbnailUrls.isBrokenPlaylistThumbnail(thumbnailUrl)) {
+            if (thumbnailUrl == null || ThumbnailUrls.isBrokenPlaylistThumbnail(thumbnailUrl)) {
+                return Optional.empty();
+            }
+            // Pin to YouTube's image CDN over HTTPS. Parse the host properly (not a
+            // substring match) so path/userinfo tricks like
+            // https://evil.example/.ytimg.com/... or https://x@evil/... are rejected.
+            HttpUrl parsed = HttpUrl.parse(thumbnailUrl);
+            if (parsed == null || !parsed.isHttps()) {
+                return Optional.empty();
+            }
+            String host = parsed.host(); // already lowercased by HttpUrl
+            if (!(host.equals("ytimg.com") || host.endsWith(".ytimg.com"))) {
                 return Optional.empty();
             }
             return Optional.of(thumbnailUrl);

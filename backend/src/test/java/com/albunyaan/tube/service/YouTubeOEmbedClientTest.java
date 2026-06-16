@@ -41,6 +41,22 @@ class YouTubeOEmbedClientTest {
     }
 
     @Test
+    void rejectsHostSpoofViaPathOrUserinfo() {
+        // ".ytimg.com/" appears in the PATH but the real host is evil.example.
+        assertTrue(client.parseUsableThumbnail(
+                "{\"thumbnail_url\":\"https://evil.example/.ytimg.com/vi/ABCDEFGHIJK/hqdefault.jpg\"}").isEmpty());
+        // userinfo trick: real host is evil.example.
+        assertTrue(client.parseUsableThumbnail(
+                "{\"thumbnail_url\":\"https://i.ytimg.com@evil.example/vi/ABCDEFGHIJK/hqdefault.jpg\"}").isEmpty());
+    }
+
+    @Test
+    void acceptsRealYtimgHostCaseInsensitively() {
+        assertTrue(client.parseUsableThumbnail(
+                "{\"thumbnail_url\":\"https://i.YTIMG.COM/vi/ABCDEFGHIJK/hqdefault.jpg\"}").isPresent());
+    }
+
+    @Test
     void rejectsLegacyPlaylistIdInViPath() {
         String body = "{\"thumbnail_url\":\"https://i.ytimg.com/vi/PLUitXL66pnO-yT8kCjZX7fIcx8ksPkJ47/mqdefault.jpg\"}";
         assertTrue(client.parseUsableThumbnail(body).isEmpty());
