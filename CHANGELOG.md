@@ -5,6 +5,33 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.30] - 2026-06-16
+
+### Android
+
+- **Multi-language dub audio (Phase 2).** Videos that offer dubbed audio now let
+  you switch the spoken language (German, Arabic, and more) from the audio
+  button, on both the main player and Shorts. The original audio stays the
+  default; dubs are opt-in and fall back to the original if a language can't
+  load (playback never breaks). Built on the VR HD video spine with the dub
+  audio injected as a DASH `AdaptationSet` (architecture B); languages are
+  prewarmed at enumerate (one nsig solve + one poToken for all of them) so
+  switching is near-instant. nsig is deobfuscated by running the full player JS
+  in a dedicated WebView.
+- **Fixed playlists that showed "Nothing here."** Bumped NewPipeExtractor to
+  0.26.3, restoring playlist-item extraction after YouTube's `lockupViewModel`
+  change (the count was correct but the list rendered empty).
+- **Standalone playlists no longer surface an unapproved channel's name** on the
+  player; the channel name shows only for playlists whose parent channel is
+  approved in the registry.
+
+### Backend
+
+- **New `/api/v1/dub-potoken` endpoint** mints the videoId-bound GVS poToken that
+  web-client dub audio needs to stream past the preview cap. Hardened on the
+  public route: 11-char videoId validation, a concurrent-mint cap, and negative
+  caching to bound abuse/cost.
+
 ## [1.0.0-beta.29] - 2026-06-10
 
 ### Android
