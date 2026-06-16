@@ -671,10 +671,14 @@ falls back to debug signing** (`build.gradle.kts` `signingConfigs`).
 in-app updater (`ApkInstaller.verifySigningCertMatch`) but stayed on the debug key.
 **beta.31 (next) performs the rotation** to the production key via an APK Signature
 Scheme **v3 signing lineage**, so installed debug-signed users upgrade in place (data
-preserved) on **Android 9+**. The rotation had to be two-step because the *already-shipped*
+preserved). The rotation had to be two-step because the *already-shipped*
 beta.29 updater rejects any cert change before the OS sees it — the lineage-aware updater
-must be on the device first. **Android 8.0–8.1 (API 26–27) cannot honour a v3 lineage and
-must uninstall + reinstall once** at beta.31.
+(beta.30) had to be on the device first. **Auto-update is preserved on EVERY supported
+version with NO reinstall** (an earlier note claimed 8.0–8.1 must reinstall — that was wrong,
+based on a single prod-signer): the multi-signer sign keeps the OLD debug key on v2/v3.0 (API
+24–32 / Android 7–12 verify the prior cert → update in place) and puts the PROD key on v3.1 +
+lineage (API 33+ / Android 13+ rotate). Verified beta.30→beta.31 in place on an API 28
+emulator, an API 36 emulator, and a real Android 9 device (COR-L29). SHIPPED beta.31 2026-06-16.
 
 **Cutting the rotated release (beta.31 onward):**
 ```bash
@@ -683,9 +687,14 @@ cp ~/.config/albunyaan/keystore.properties android/keystore.properties   # AGP s
 cd android && ./gradlew :app:assembleRelease
 APK=app/build/outputs/apk/release/fitrahtube-<ver>.apk
 # MANDATORY: re-sign WITH the lineage, else in-app updates break for every existing user.
-$BT/apksigner sign --ks ~/.config/albunyaan/release.keystore --ks-key-alias release-key \
+# MULTI-SIGNER: oldest=debug (signs v2/v3.0 so API 24-32 keep the prior cert) + current=prod
+# (v3.1 + lineage so API 33+ rotate). The single-signer form FAILS with "the oldest signer in
+# the SigningCertificateLineage is missing". v1 stays OFF (matches beta.30; minSdk 26 → v2 covers it).
+$BT/apksigner sign \
+  --ks ~/.config/albunyaan/debug.keystore --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android \
+  --next-signer --ks ~/.config/albunyaan/release.keystore --ks-key-alias release-key \
   --lineage ~/.config/albunyaan/signing-lineage.bin \
-  --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true "$APK"
+  --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true "$APK"
 $BT/apksigner verify --print-certs "$APK"   # MUST list the CN=Android Debug cert in the lineage
 rm android/keystore.properties               # keep the secret out of the build tree
 # Gate before publishing: `adb install -r "$APK"` over an installed debug-signed build MUST succeed.
