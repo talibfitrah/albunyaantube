@@ -5,6 +5,24 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.32] - 2026-06-16
+
+### Android
+
+- **Fixed: playlist videos under the player were not tappable.** When watching a
+  video opened from a playlist, the "up next" list shown beneath the player did
+  nothing when tapped — you had to return to the previous screen to play a
+  different video. Root cause: `PlayerViewModel.playItem()` located the tapped
+  video in its internal queue by full-object equality, but the on-screen list
+  holds display copies with the channel name blanked for standalone playlists
+  whose parent channel isn't in the approved registry (a fail-closed privacy
+  gate). The blanked copy never equalled its queue original, so the lookup
+  silently failed and every tap was a no-op. The player now matches by video id
+  and plays the real (ungated) queue entry, so tapping any up-next video works.
+  Also adds a desync warning log on the now-unreachable miss path and pins a
+  deterministic test WorkManager (synchronous executors + drain) to de-flake the
+  affected test class.
+
 ## [1.0.0-beta.31] - 2026-06-16
 
 ### Android
