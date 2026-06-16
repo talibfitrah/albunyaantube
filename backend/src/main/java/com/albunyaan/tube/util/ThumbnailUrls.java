@@ -87,7 +87,10 @@ public final class ThumbnailUrls {
                 return false;
             }
             host = host.toLowerCase(java.util.Locale.ROOT);
-            return host.equals("ytimg.com") || host.endsWith(".ytimg.com");
+            // YouTube serves video thumbnails from the ytimg CDN (i/i9.ytimg.com)
+            // and from img.youtube.com — both are legitimate.
+            return host.equals("ytimg.com") || host.endsWith(".ytimg.com")
+                    || host.equals("img.youtube.com");
         } catch (RuntimeException e) {
             return false;
         }

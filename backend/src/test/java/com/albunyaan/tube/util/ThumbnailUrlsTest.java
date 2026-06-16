@@ -66,6 +66,9 @@ class ThumbnailUrlsTest {
         // webp variant lives under /vi_webp/ — also usable.
         assertFalse(ThumbnailUrls.isBrokenPlaylistThumbnail(
                 "https://i.ytimg.com/vi_webp/ABCDEFGHIJK/hqdefault.webp"));
+        // img.youtube.com is also a legitimate YouTube thumbnail host.
+        assertFalse(ThumbnailUrls.isBrokenPlaylistThumbnail(
+                "https://img.youtube.com/vi/ABCDEFGHIJK/hqdefault.jpg"));
     }
 
     @Test
