@@ -31,6 +31,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -208,6 +209,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var mutedForStreamKey: Pair<String, Boolean>? = null
     private val firstFrameHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var firstFrameTimeoutRunnable: Runnable? = null
+    /**
+     * TV silent-audio recovery guard. Holds the streamId we already attempted an
+     * audio re-resolve for, so [maybeRecoverSilentAudio] fires at most once per
+     * stream — a genuinely audioless or undecodable source can't loop the refresh.
+     */
+    private var audioRecoveryStreamId: String? = null
     /** Video render watchdog: detects audio-playing-but-no-video-frame within 5s and
      *  re-resolves via [requestStreamRefreshAndResume]. */
     private var videoFrameRendered = false
@@ -1250,6 +1257,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 streamTelemetry.recordFirstFrame()
             }
 
+            override fun onTracksChanged(tracks: Tracks) {
+                maybeRecoverSilentAudio(tracks)
+            }
+
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onVideoSizeChanged: width=${videoSize.width}, height=${videoSize.height}, " +
                     "pixelWidthHeightRatio=${videoSize.pixelWidthHeightRatio}, " +
@@ -2089,6 +2100,44 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      */
     private fun surfaceRecoveryExhausted() {
         viewModel.setRecoveryExhaustedState()
+    }
+
+    /**
+     * Android-TV "starts silent" recovery. On some TV boxes (reported on Android 9 HDMI
+     * boxes) the audio adaptation set is not selected on the first prepare — the HDMI
+     * sink's AudioCapabilities resolve AFTER track selection has already run — so the
+     * video plays with no sound. The manual "audio only" toggle fixed it only because it
+     * forced a full re-resolve + rebuild. This automates that: once playback is READY, if
+     * the source has audio tracks but none is both selected AND supported, re-resolve the
+     * stream once. Guarded per streamId so a genuinely audioless or undecodable source
+     * cannot loop the refresh.
+     */
+    private fun maybeRecoverSilentAudio(tracks: Tracks) {
+        val state = viewModel.state.value
+        if (state.audioOnly) return
+        val streamId = state.currentItem?.streamId ?: return
+        if (audioRecoveryStreamId == streamId) return
+        // No playbackState gate on purpose: onTracksChanged fires when selection runs,
+        // which is during BUFFERING (before READY). Gating on READY would skip the very
+        // emission that reports "audio present but unselected" and the recovery would
+        // never fire. The checks below only match after selection has run (groups known),
+        // so an early empty-Tracks emission is harmless.
+        val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        // The bug is "audio EXISTS but isn't playing", so only act when audio groups are
+        // present. A genuinely silent clip (no audio groups) is left alone.
+        if (audioGroups.isEmpty()) return
+        val hasPlayableAudio = audioGroups.any { group ->
+            (0 until group.length).any { i -> group.isTrackSupported(i) && group.isTrackSelected(i) }
+        }
+        if (hasPlayableAudio) return
+
+        audioRecoveryStreamId = streamId
+        android.util.Log.w(
+            "PlayerFragment",
+            "Audio present but no selected+supported track for $streamId " +
+                "(TV silent-audio); re-resolving once. audioGroups=${audioGroups.size}"
+        )
+        requestStreamRefreshAndResume("audio track not selected on first prepare")
     }
 
     /**
