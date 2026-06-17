@@ -5,6 +5,27 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.36] - 2026-06-18
+
+### Android
+
+- **Auto-update fixed fleet-wide: the in-app updater no longer false-rejects a
+  valid update.** On some OEM ROMs the app's pre-install signature check threw a
+  hard error and showed a "signature mismatch" toast, so the update never
+  installed — confirmed on a real Huawei/Honor EMUI 9.1 device (API 28), where
+  `getPackageArchiveInfo()` returns a null `SigningInfo` for the downloaded APK
+  (and likewise on some Android-13+ OEM builds that don't expose the v3 signing
+  lineage for a file). The app cannot reliably read the downloaded cert from a
+  file parse on those ROMs, so it now defers to the OS `PackageInstaller`, the
+  authoritative verifier: it accepts a legitimately key-rotated update and
+  rejects a foreign-signed one (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). Verified
+  the in-place install succeeds on the real EMUI device and on API 28/35
+  emulators. App-level guards (HTTPS-only download, size verification, package
+  name match, installed-cert readable) are unchanged.
+  - Note: a device still on beta.35 or earlier runs the *old* updater, so it
+    needs one manual install of beta.36 (download the APK and tap it — the OS
+    accepts it); after that, in-app auto-update works normally.
+
 ## [1.0.0-beta.35] - 2026-06-17
 
 ### Android

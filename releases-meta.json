@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.36": {
+    "en": "Fixes auto-update on phones that showed a 'signature mismatch' error (e.g. Huawei/Honor). Updates now install reliably.",
+    "ar": "إصلاح التحديث التلقائي على الأجهزة التي أظهرت خطأ \"عدم تطابق التوقيع\" (مثل هواوي/هونر). أصبحت التحديثات تُثبَّت الآن بشكل موثوق.",
+    "nl": "Repareert auto-updates die op sommige telefoons (o.a. Huawei/Honor) een 'handtekening'-fout gaven. Updates installeren nu betrouwbaar."
+  },
   "1.0.0-beta.35": {
     "en": "Android TV: a video that starts without sound now recovers audio automatically by switching to a more compatible format.",
     "ar": "تلفزيون أندرويد: الفيديو الذي يبدأ بدون صوت يستعيد الصوت تلقائيًا الآن بالتبديل إلى تنسيق أكثر توافقًا.",
