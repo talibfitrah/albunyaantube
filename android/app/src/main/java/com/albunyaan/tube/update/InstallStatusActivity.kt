@@ -1,9 +1,13 @@
 package com.albunyaan.tube.update
 
+import android.app.ActivityManager
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -49,6 +53,7 @@ class InstallStatusActivity : AppCompatActivity() {
                         startActivity(confirmIntent)
                     } catch (t: Throwable) {
                         Log.e(TAG, "Failed to start install confirmation", t)
+                        toastInstallFailure("could not show install confirmation")
                         recordAndFinish(targetVersion, "could not show install confirmation")
                         return
                     }
@@ -73,16 +78,7 @@ class InstallStatusActivity : AppCompatActivity() {
                         }
                     } finally {
                         finish()
-                        // DEX-restore mitigation: Samsung/Xiaomi keep the pre-update
-                        // process alive, so a later cold launch can restore the OLD
-                        // code ("install did nothing"). Now that the install is
-                        // CONFIRMED successful, end the old process so the next launch
-                        // loads the freshly-installed APK. This replaces the previous
-                        // blind 2s-after-commit self-kill in UpdatePromptFlow, which
-                        // fired while the user was still on the system install
-                        // confirmation and tore the install down on slow / OEM devices
-                        // ("downloading then nothing").
-                        android.os.Process.killProcess(android.os.Process.myPid())
+                        scheduleDexRestoreSelfKill()
                     }
                 }
             }
@@ -125,6 +121,29 @@ class InstallStatusActivity : AppCompatActivity() {
         ).show()
     }
 
+    /**
+     * DEX-restore mitigation. Samsung/Xiaomi keep the pre-update process alive, so a later
+     * cold launch can restore the OLD code ("install did nothing"). After a CONFIRMED-
+     * successful install, end the old process so the next launch loads the new APK — but
+     * ONLY if the user is not back in an active session. The visibility re-check runs after
+     * a short delay (post-finish, so this transparent trampoline isn't itself counted as
+     * foreground): if the user tapped "Open" and is now using the app, importance is
+     * FOREGROUND/VISIBLE and we skip the kill instead of killing a fresh launch or live
+     * playback. Replaces the old blind 2s-after-commit kill in UpdatePromptFlow, which
+     * fired before the user had even confirmed the install on slow / OEM devices.
+     */
+    private fun scheduleDexRestoreSelfKill() {
+        Handler(Looper.getMainLooper()).postDelayed({
+            val info = ActivityManager.RunningAppProcessInfo()
+            ActivityManager.getMyMemoryState(info)
+            if (info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) {
+                Log.d(TAG, "App foreground/visible post-install — skipping DEX-restore self-kill")
+                return@postDelayed
+            }
+            Process.killProcess(Process.myPid())
+        }, SELF_KILL_DELAY_MS)
+    }
+
     @Suppress("DEPRECATION")
     private fun extraIntent(intent: Intent): Intent? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -154,5 +173,9 @@ class InstallStatusActivity : AppCompatActivity() {
         const val ACTION_INSTALL_STATUS = "com.albunyaan.tube.update.action.INSTALL_STATUS"
         const val EXTRA_TARGET_VERSION = "com.albunyaan.tube.update.extra.TARGET_VERSION"
         private const val MAX_VERSION_NAME_LENGTH = 64
+
+        /** Delay before the post-install self-kill so the trampoline finishes and the
+         *  process settles to background — a fast "Open" tap is then seen as foreground. */
+        private const val SELF_KILL_DELAY_MS = 2_000L
     }
 }
