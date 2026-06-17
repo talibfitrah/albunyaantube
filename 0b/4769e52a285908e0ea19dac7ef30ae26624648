@@ -1,0 +1,30 @@
+android/app/src/test/java/com/albunyaan/tube/update/UpdateCheckerTest.kt
+  s_188fada08d38e3::t_bd0a1566981a2e 12
+  s_188fada08d38e3::t_3028063c1f39d1 192-243
+android/app/src/main/java/com/albunyaan/tube/update/UpdateChecker.kt
+  s_188fada08d38e3::t_cf0b6968bd5022 180-183
+  s_188fada08d38e3::t_3f93e9b0718365 75,78,80-92
+android/app/build.gradle.kts
+  s_188fada08d38e3::t_c2452ac0aadea1 39-40
+releases-meta.json
+  s_188fada08d38e3::t_3f22cf1c3b1ef9 2-6
+CHANGELOG.md
+  s_188fada08d38e3::t_cd484cb84b1bbd 30-38
+  s_188fada08d38e3::t_fd454c6711cc0d 8-29,39-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "0b4769e52a285908e0ea19dac7ef30ae26624648",
+  "prompts": {},
+  "sessions": {
+    "s_188fada08d38e3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5596c250-6c5c-42ad-9d67-218f134d6663",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
