@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.35": {
+    "en": "Android TV: a video that starts without sound now recovers audio automatically by switching to a more compatible format.",
+    "ar": "تلفزيون أندرويد: الفيديو الذي يبدأ بدون صوت يستعيد الصوت تلقائيًا الآن بالتبديل إلى تنسيق أكثر توافقًا.",
+    "nl": "Android-tv: een video die zonder geluid start, herstelt het geluid nu automatisch door over te schakelen naar een beter compatibel formaat."
+  },
   "1.0.0-beta.34": {
     "en": "Live streams now play. Live broadcasts that previously failed to start now work.",
     "ar": "أصبح البث المباشر يعمل الآن. عمليات البث المباشر التي لم تكن تبدأ من قبل تعمل الآن.",

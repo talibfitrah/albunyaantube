@@ -5,6 +5,24 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.35] - 2026-06-17
+
+### Android
+
+- **Android TV silent-audio: automatic recovery to a compatible format.** On
+  some Android-9 TV boxes a video starts with no sound because the adaptive
+  (synthetic-DASH) audio track is not selected/decodable on that hardware, while
+  the same audio plays fine through the progressive path (the one behind the
+  "audio only" toggle). When the player detects audio present but no
+  selected+supported track, it now forces the muxed (itag 18/22, AAC)
+  progressive path on a single re-prepare — the proven-working path on that box.
+  Isolated onto a dedicated flag so the adaptive-fallback path is byte-for-byte
+  unchanged: it can only arm when audio is already unplayable, so normal phone /
+  Shorts / VOD playback is unaffected. The beta.33/34 recovery was ineffective
+  because it re-prepared the same adaptive path. Passed the full review pipeline
+  (code-review, security, codex ×2, cubic, adversarial — all SHIP-SAFE). Note:
+  evidence-based fix, not yet confirmed on the specific box (no device access).
+
 ## [1.0.0-beta.34] - 2026-06-17
 
 ### Android
