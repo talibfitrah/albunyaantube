@@ -344,17 +344,14 @@ class ChannelDetailViewModelTest {
     }
 
     @Test
-    fun `videos append after UU fallback continues on channel-tab path not UU`() = runTest {
-        // Regression: when the UU uploads-playlist path is unavailable on the initial
-        // load, the stored continuation is a CHANNEL-TAB token. The append loop must
-        // continue via getVideosViaChannelTab — routing it back through getVideos (the
-        // UU path) mis-feeds the channel-tab token into the playlist getMoreItems and
-        // silently breaks pagination ("only the first set loads, scrolling adds nothing").
+    fun `videos tab paginates via channel-tab deep path not the broken UU playlist`() = runTest {
+        // The Videos tab must page all the way to the first upload. NewPipe's UU uploads-
+        // playlist getMoreItems NPEs after page 1 (browseMetadataResponse null, v0.26.3), so
+        // the Videos tab uses the channel-tab path (fixed in v0.26.2), which pages deeply.
+        // Verify initial AND append both go through getVideosViaChannelTab and never touch
+        // getVideos (the broken UU path) when the channel tab is available.
         val tabNextPage = Page("http://channel-tab-next", null, null, null)
         fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
-        // UU probe returns empty -> initial load falls back to the channel-tab path.
-        fakeRepository.videosResponse = ChannelPage(emptyList(), null)
-        // Channel-tab: page 1 (with a continuation) then page 2 (terminal).
         fakeRepository.channelTabPagedResponses = listOf(
             ChannelPage(listOf(createTestVideo("v1", "Video 1")), tabNextPage),
             ChannelPage(listOf(createTestVideo("v2", "Video 2")), null),
@@ -364,19 +361,39 @@ class ChannelDetailViewModelTest {
         advanceUntilIdle()
 
         var state = viewModel.videosState.value as ChannelDetailViewModel.PaginatedState.Loaded
-        assertEquals("First page should come from the channel-tab fallback", 1, state.items.size)
+        assertEquals("First page via channel-tab", 1, state.items.size)
 
         advanceTimeBy(1100L)
         viewModel.loadNextPage(ChannelTab.VIDEOS)
         advanceUntilIdle()
 
         state = viewModel.videosState.value as ChannelDetailViewModel.PaginatedState.Loaded
-        assertEquals("Append must add the channel-tab page-2 item", 2, state.items.size)
+        assertEquals("Append adds the channel-tab page-2 item", 2, state.items.size)
         assertEquals("Video 1", state.items[0].title)
         assertEquals("Video 2", state.items[1].title)
-        // Append went through the channel-tab path (initial + append = 2 calls)...
+        // Initial + append both go through the channel-tab path...
         assertEquals(2, fakeRepository.channelTabCallCount)
-        // ...and did NOT re-route through getVideos' UU path (only the initial probe).
+        // ...and the broken UU path (getVideos) is never called when channel-tab works.
+        assertEquals(0, fakeRepository.videosCallCount)
+    }
+
+    @Test
+    fun `videos falls back to UU page-1 when channel-tab is unavailable`() = runTest {
+        // Rare-channel safety net: if the channel tab errors, show the UU uploads-playlist
+        // page 1 (latest uploads) rather than a blank screen, even though its getMoreItems
+        // can't paginate deeper.
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.channelTabError = RuntimeException("channel-tab unavailable")
+        fakeRepository.videosResponse = ChannelPage(listOf(createTestVideo("v1", "Video 1")), null)
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        val state = viewModel.videosState.value as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals("UU page-1 shown as fallback", 1, state.items.size)
+        assertEquals("Video 1", state.items[0].title)
+        // Channel tab was attempted (and failed), then UU was used as the fallback.
+        assertTrue(fakeRepository.channelTabCallCount >= 1)
         assertEquals(1, fakeRepository.videosCallCount)
     }
 
@@ -608,8 +625,8 @@ class ChannelDetailViewModelTest {
         val viewModel = createViewModel("UCtest123")
         advanceUntilIdle()
 
-        // Reset call count after initial load
-        fakeRepository.videosCallCount = 0
+        // Reset call count after initial load (Videos uses the channel-tab path now)
+        fakeRepository.channelTabCallCount = 0
 
         // Advance time to allow first request, then rapid fire at same time
         advanceTimeBy(1100L)
@@ -621,7 +638,7 @@ class ChannelDetailViewModelTest {
         advanceUntilIdle()
 
         // Only first request should have been processed due to rate limiting
-        assertEquals("Only 1 pagination call expected due to rate limiting", 1, fakeRepository.videosCallCount)
+        assertEquals("Only 1 pagination call expected due to rate limiting", 1, fakeRepository.channelTabCallCount)
     }
 
     // Shorts Tab Tests
@@ -815,14 +832,14 @@ class ChannelDetailViewModelTest {
         val viewModel = createViewModel("UCtest123")
         advanceUntilIdle()
 
-        fakeRepository.videosCallCount = 0
+        fakeRepository.channelTabCallCount = 0
         fakeRepository.videosPagedResponses = emptyContinuationPages
         advanceTimeBy(1100L)
 
         assertTrue(viewModel.loadNextPage(ChannelTab.VIDEOS))
         advanceUntilIdle()
 
-        assertEquals("Append should stop at the empty-page cap", 5, fakeRepository.videosCallCount)
+        assertEquals("Append should stop at the empty-page cap", 5, fakeRepository.channelTabCallCount)
         val state = viewModel.videosState.value
         assertTrue("Expected Loaded state", state is ChannelDetailViewModel.PaginatedState.Loaded)
         val loaded = state as ChannelDetailViewModel.PaginatedState.Loaded
@@ -946,7 +963,7 @@ class ChannelDetailViewModelTest {
         val viewModel = createViewModel("UCtest123")
         advanceUntilIdle()
 
-        fakeRepository.videosCallCount = 0
+        fakeRepository.channelTabCallCount = 0
         fakeRepository.videosResponse = ChannelPage(emptyList(), null)
 
         // Advance fake clock past rate limit
@@ -957,7 +974,7 @@ class ChannelDetailViewModelTest {
         advanceUntilIdle()
 
         // Should trigger pagination
-        assertEquals(1, fakeRepository.videosCallCount)
+        assertEquals(1, fakeRepository.channelTabCallCount)
     }
 
     @Test
@@ -1184,6 +1201,7 @@ class ChannelDetailViewModelTest {
             channelTabCallCount++
             (channelTabError ?: videosError)?.let { throw it }
             return channelTabPagedResponses?.getOrNull(callIndex)
+                ?: videosPagedResponses?.getOrNull(callIndex)
                 ?: channelTabResponse
                 ?: videosResponse
         }

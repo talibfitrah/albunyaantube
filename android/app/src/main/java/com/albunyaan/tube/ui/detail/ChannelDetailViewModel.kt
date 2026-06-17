@@ -410,92 +410,62 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 Log.d(TAG, "Videos initial: emitted ${cached.size} cached items pre-NewPipe")
             }
 
-            // Race the slow UU uploads-playlist path against the fast
-            // channel-tab path. The UU response is ~3-5x larger and YouTube
-            // sometimes serves it slowly (notably for long-running channels);
-            // the channel-tab response is small and fast but its continuation
-            // tokens are unreliable past the first batch in NewPipe v0.26.
-            //
-            // First arrival paints. UU's result wins the final state because
-            // its continuation token is what we need for deep pagination.
-            // Behaviour matches beta.2 first-paint speed without re-introducing
-            // beta.2's ~30-item pagination cap.
-            coroutineScope {
-                val uuDeferred = async {
-                    runCatching { repository.getVideos(channelId, null) }
-                }
-                val tabDeferred = async {
-                    runCatching { repository.getVideosViaChannelTab(channelId) }
-                }
-
-                // Fast paint: if channel-tab returns first with items and UU
-                // is still in flight, paint the channel-tab result so the user
-                // sees something quickly. UU will replace it below.
-                launch {
-                    val tabResult = tabDeferred.await().getOrNull()
-                    if (tabResult != null && tabResult.items.isNotEmpty() && !uuDeferred.isCompleted) {
+            // Channel-tab is the reliable deep-pagination path for the Videos tab. NewPipe
+            // v0.26.2 (#1492) fixed channel tabs, and a JVM probe confirmed the Videos tab
+            // pages a 5000+ upload channel to the end with no early cap. The UU uploads-
+            // playlist is now the broken one: getInfo returns page 1 but getMoreItems NPEs
+            // (browseMetadataResponse null) after page 1 in v0.26.3, so it only ever surfaces
+            // the latest ~100 uploads and never reaches older ones (the reported "only a first
+            // set, scrolling loads nothing"). Prefer the channel tab; fall back to UU page 1
+            // only when the tab is genuinely unavailable (content beats a blank screen).
+            pageFetches = 1
+            val tabResult = runCatching { repository.getVideosViaChannelTab(channelId) }
+            val tab = tabResult.getOrNull()
+            if (tab != null && tab.items.isNotEmpty()) {
+                accumulatedItems = tab.items
+                controller.nextPage = tab.nextPage
+                controller.hasReachedEnd = tab.nextPage == null
+                controller.videosUseChannelTab = true
+                _videosState.value = PaginatedState.Loaded(
+                    tab.items,
+                    tab.nextPage,
+                    showLoadMoreFooter = false,
+                )
+                Log.d(TAG, "Videos initial: ${tab.items.size} items via channel-tab, hasMore=${tab.nextPage != null}")
+            } else {
+                // Channel-tab unavailable: fall back to the UU uploads-playlist page 1. Its
+                // getMoreItems NPEs so deep pagination won't work in this rare case, but the
+                // latest uploads still show instead of a blank screen.
+                val uuResult = runCatching { repository.getVideos(channelId, null) }
+                val uu = uuResult.getOrNull()
+                when {
+                    uu != null && uu.items.isNotEmpty() -> {
+                        accumulatedItems = uu.items
+                        controller.nextPage = uu.nextPage
+                        controller.hasReachedEnd = uu.nextPage == null
+                        controller.videosUseChannelTab = false
                         _videosState.value = PaginatedState.Loaded(
-                            tabResult.items,
-                            nextPage = null,
+                            uu.items,
+                            uu.nextPage,
                             showLoadMoreFooter = false,
                         )
-                        Log.d(TAG, "Videos initial: fast paint ${tabResult.items.size} items via channel-tab")
+                        Log.d(TAG, "Videos initial: ${uu.items.size} items via UU fallback (channel-tab unavailable), hasMore=${uu.nextPage != null}")
                     }
-                }
-
-                pageFetches = 1
-                val uuResult = uuDeferred.await()
-                val uu = uuResult.getOrNull()
-                if (uu != null && uu.items.isNotEmpty()) {
-                    accumulatedItems = uu.items
-                    controller.nextPage = uu.nextPage
-                    controller.hasReachedEnd = uu.nextPage == null
-                    controller.videosUseChannelTab = false
-                    _videosState.value = PaginatedState.Loaded(
-                        uu.items,
-                        uu.nextPage,
-                        showLoadMoreFooter = false,
-                    )
-                    Log.d(TAG, "Videos initial: ${uu.items.size} items via UU, hasMore=${uu.nextPage != null}")
-                } else {
-                    // UU failed or returned empty. Wait for channel-tab and use
-                    // it as the final state — even with limited deep pagination
-                    // it beats an empty screen.
-                    val tabResult = tabDeferred.await()
-                    val tab = tabResult.getOrNull()
-                    when {
-                        tab != null && tab.items.isNotEmpty() -> {
-                            accumulatedItems = tab.items
-                            controller.nextPage = tab.nextPage
-                            controller.hasReachedEnd = tab.nextPage == null
-                            // UU was unavailable: nextPage is a channel-tab token, so the
-                            // append loop must stay on the channel-tab path (see
-                            // loadVideosNextPage) rather than re-route through getVideos's UU.
-                            controller.videosUseChannelTab = true
-                            _videosState.value = PaginatedState.Loaded(
-                                tab.items,
-                                tab.nextPage,
-                                showLoadMoreFooter = false,
-                            )
-                            Log.d(TAG, "Videos initial: ${tab.items.size} items via channel-tab fallback, hasMore=${tab.nextPage != null}")
-                        }
-                        // Both paths threw: surface the failure so loadInitial's
-                        // catch can route it to ErrorInitial (no cache) or
-                        // ErrorAppend (cached items still visible).
-                        uuResult.isFailure && tabResult.isFailure -> {
-                            throw uuResult.exceptionOrNull()
-                                ?: tabResult.exceptionOrNull()
-                                ?: java.io.IOException("Channel videos fetch failed via both paths")
-                        }
-                        cachedEmittedCount > 0 -> {
-                            Log.w(
-                                TAG,
-                                "Videos initial: both NewPipe paths returned 0 items but $cachedEmittedCount cached items already shown — preserving cached state",
-                            )
-                        }
-                        else -> {
-                            _videosState.value = PaginatedState.Empty
-                        }
+                    // Both paths failed: surface it so loadInitial's catch routes to
+                    // ErrorInitial (no cache) or ErrorAppend (cached items still visible).
+                    tabResult.isFailure && uuResult.isFailure -> {
+                        throw tabResult.exceptionOrNull()
+                            ?: uuResult.exceptionOrNull()
+                            ?: java.io.IOException("Channel videos fetch failed via both paths")
+                    }
+                    cachedEmittedCount > 0 -> {
+                        Log.w(
+                            TAG,
+                            "Videos initial: both NewPipe paths returned 0 items but $cachedEmittedCount cached items already shown — preserving cached state",
+                        )
+                    }
+                    else -> {
+                        _videosState.value = PaginatedState.Empty
                     }
                 }
             }
