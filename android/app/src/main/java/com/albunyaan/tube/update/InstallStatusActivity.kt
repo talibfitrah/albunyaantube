@@ -58,22 +58,42 @@ class InstallStatusActivity : AppCompatActivity() {
                 finish()
             }
             PackageInstaller.STATUS_SUCCESS -> {
-                if (targetVersion != null) {
-                    lifecycleScope.launch {
-                        try {
+                lifecycleScope.launch {
+                    try {
+                        if (targetVersion != null) {
                             withContext(NonCancellable) {
                                 lastInstallAttempt.recordSuccess(targetVersion)
                             }
-                        } finally {
-                            finish()
                         }
+                    } finally {
+                        finish()
+                        // DEX-restore mitigation: Samsung/Xiaomi keep the pre-update
+                        // process alive, so a later cold launch can restore the OLD
+                        // code ("install did nothing"). Now that the install is
+                        // CONFIRMED successful, end the old process so the next launch
+                        // loads the freshly-installed APK. This replaces the previous
+                        // blind 2s-after-commit self-kill in UpdatePromptFlow, which
+                        // fired while the user was still on the system install
+                        // confirmation and tore the install down on slow / OEM devices
+                        // ("downloading then nothing").
+                        android.os.Process.killProcess(android.os.Process.myPid())
                     }
-                } else {
-                    finish()
                 }
             }
             else -> {
-                recordAndFinish(targetVersion, describeFailure(status, message))
+                val reason = describeFailure(status, message)
+                // Surface non-cancellation failures immediately. Without this the user
+                // sees the progress dialog vanish with no explanation ("downloading
+                // then nothing"); the only prior feedback was a banner on the NEXT cold
+                // start. STATUS_FAILURE_ABORTED is the user backing out — no nag there.
+                if (status != PackageInstaller.STATUS_FAILURE_ABORTED) {
+                    android.widget.Toast.makeText(
+                        applicationContext,
+                        getString(com.albunyaan.tube.R.string.update_install_failed, reason),
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+                recordAndFinish(targetVersion, reason)
             }
         }
     }

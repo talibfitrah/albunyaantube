@@ -1,14 +1,12 @@
 package com.albunyaan.tube.update
 
 import android.app.Activity
-import android.app.ActivityManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import android.os.Process
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -464,12 +462,13 @@ class UpdatePromptFlow @Inject constructor(
                     // defaults to Main (Stage 3 review pipeline round 1 P1).
                     lastInstallAttempt.recordPending(info.versionName)
                     installer.launchInstaller(activity, file, info.versionName)
-                    // After launchInstaller's internal withContext(IO) returns,
-                    // we're back on the lifecycleScope's default Main.immediate
-                    // dispatcher — no wrapper needed. scheduleSelfKillAfterInstall
-                    // just posts a Runnable to a MainLooper Handler, which is
-                    // thread-safe regardless (Stage 7 cubic P3).
-                    scheduleSelfKillAfterInstall()
+                    // The DEX-restore self-kill (Samsung/Xiaomi keep the pre-update
+                    // process alive) now fires from InstallStatusActivity on
+                    // STATUS_SUCCESS — only AFTER the user confirms the system install.
+                    // Killing here, a blind 2s after commit, raced the confirmation
+                    // dialog: on slow / OEM devices the kill landed before the user had
+                    // even confirmed, tearing the install down ("downloading then
+                    // nothing"). See InstallStatusActivity.STATUS_SUCCESS.
                 }
             } catch (ce: CancellationException) {
                 throw ce
@@ -506,45 +505,6 @@ class UpdatePromptFlow @Inject constructor(
         android.widget.Toast.makeText(activity, res, android.widget.Toast.LENGTH_LONG).show()
     }
 
-    /**
-     * Kills our process ~2 s after the system installer takes over. Mitigates
-     * Samsung/Xiaomi/Huawei aggressive process retention where the old DEX is restored
-     * when the user re-opens the app post-install, leaving them on the prior version
-     * ("install did nothing"). Standard "self-restart" pattern for sideload updaters.
-     *
-     * The 2 s delay gives the system PackageInstaller activity time to take focus
-     * before we go away. At the kill instant we re-check process importance — if the
-     * user backed out of the installer in <2 s and our app is back in any visible
-     * state, we skip the kill so we do not yank them out of their session (codex C3 /
-     * code-reviewer C1). The Samsung-restore case only applies when the install
-     * actually proceeded, which always leaves us at IMPORTANCE_CACHED or worse.
-     */
-    private fun scheduleSelfKillAfterInstall() {
-        Handler(Looper.getMainLooper(), null).postDelayed({
-            if (isAppForegroundOrVisible()) {
-                Log.d(TAG, "User returned before self-kill window elapsed — skipping")
-                return@postDelayed
-            }
-            Process.killProcess(Process.myPid())
-        }, SELF_KILL_DELAY_MS)
-    }
-
-    /**
-     * True when our process is foreground or directly visible to the user. AOSP importance
-     * values: FOREGROUND=100, FOREGROUND_SERVICE=125, VISIBLE=200 — covered by `<= 200`.
-     * Higher values (PERCEPTIBLE=230, TOP_SLEEPING=325, CACHED=400, GONE=1000) indicate
-     * the user is not actively interacting with us — safe to kill.
-     *
-     * Threshold tuned for the "user backed out of installer" case (codex round-2 minor):
-     * strict `== IMPORTANCE_FOREGROUND` missed the ~100-300 ms transitional window on
-     * slower devices where the OS has not yet restored full foreground importance.
-     */
-    private fun isAppForegroundOrVisible(): Boolean {
-        val info = ActivityManager.RunningAppProcessInfo()
-        ActivityManager.getMyMemoryState(info)
-        return info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
-    }
-
     companion object {
         private const val TAG = "UpdatePromptFlow"
 
@@ -552,9 +512,5 @@ class UpdatePromptFlow @Inject constructor(
          * stall cold start on a flaky network. The check runs in parallel with splash
          * animations (≈2.7 s), so this typically resolves before we need the result. */
         private const val CHECK_TIMEOUT_MS = 2_000L
-
-        /** Hand-off window before we kill the process so the system installer Activity
-         * has time to take focus. Empirically 2 s covers slow OEM launchers. */
-        private const val SELF_KILL_DELAY_MS = 2_000L
     }
 }
