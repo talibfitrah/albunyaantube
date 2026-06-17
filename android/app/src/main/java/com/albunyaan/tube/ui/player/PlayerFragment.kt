@@ -105,6 +105,35 @@ internal fun audioPresentButUnplayable(tracks: Tracks): Boolean {
     }
 }
 
+/**
+ * Per-track diagnostic for the "starts silent" path. On the reported Android-9 TV box the
+ * synthetic-DASH audio is neither selected nor supported, yet the identical audio plays fine
+ * through the progressive audio-only source — so the renderer's per-track verdict (codec,
+ * channels, sample rate, and the [C] FormatSupport code) is the one datum that pins the cause.
+ * Release-visible (logged at WARN) because the box can't run a debug build over HDMI easily.
+ */
+internal fun describeAudioTracks(tracks: Tracks): String {
+    val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+    if (audioGroups.isEmpty()) return "no audio groups"
+    return audioGroups.joinToString(" | ") { group ->
+        (0 until group.length).joinToString(",") { i ->
+            val f = group.getTrackFormat(i)
+            "[codec=${f.sampleMimeType} lang=${f.language} ch=${f.channelCount} hz=${f.sampleRate} " +
+                "br=${f.bitrate} support=${formatSupportName(group.getTrackSupport(i))} " +
+                "sel=${group.isTrackSelected(i)}]"
+        }
+    }
+}
+
+private fun formatSupportName(@C.FormatSupport support: Int): String = when (support) {
+    C.FORMAT_HANDLED -> "HANDLED"
+    C.FORMAT_EXCEEDS_CAPABILITIES -> "EXCEEDS_CAPABILITIES"
+    C.FORMAT_UNSUPPORTED_DRM -> "UNSUPPORTED_DRM"
+    C.FORMAT_UNSUPPORTED_SUBTYPE -> "UNSUPPORTED_SUBTYPE"
+    C.FORMAT_UNSUPPORTED_TYPE -> "UNSUPPORTED_TYPE"
+    else -> "UNKNOWN($support)"
+}
+
 @AndroidEntryPoint
 @OptIn(UnstableApi::class)
 class PlayerFragment : Fragment(R.layout.fragment_player) {
@@ -2141,7 +2170,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         android.util.Log.w(
             "PlayerFragment",
             "Audio present but no selected+supported track for $streamId " +
-                "(TV silent-audio); re-resolving once."
+                "(TV silent-audio); re-resolving once. audioTracks=${describeAudioTracks(tracks)}"
         )
         // Burn the one-shot guard only if the refresh actually started. A rate-limit
         // Blocked refresh returns false and stays recoverable on the next onTracksChanged
