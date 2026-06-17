@@ -1,0 +1,28 @@
+android/app/src/main/java/com/albunyaan/tube/update/ApkInstaller.kt
+  s_78b56bd29877cd::t_df7d872fd7381d 310-319
+  s_78b56bd29877cd::t_2e8c974f9b2ab9 275-300
+  s_78b56bd29877cd::t_9649402d1e9c08 327-350,352
+android/app/src/test/java/com/albunyaan/tube/update/ApkInstallerTest.kt
+  s_78b56bd29877cd::t_c82e77998e0cb6 264-267,270
+  s_78b56bd29877cd::t_d9b66e10f1aa18 358-366,370,389-390
+  s_78b56bd29877cd::t_1c2e22e5a209c8 281-294,302-303
+  s_78b56bd29877cd::t_20795d19b3295b 187-193,195,199-202,205,208,214-215
+  s_78b56bd29877cd::t_d8161ee16bc057 249-255,259,276-277
+  s_78b56bd29877cd::t_68046e3c5844cc 62,73-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "0f365fdf02b048e3b98dbcaccad68d95be2c09f6",
+  "prompts": {},
+  "sessions": {
+    "s_78b56bd29877cd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "42851ca0-463a-471f-9406-a049a4c5b6c0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
