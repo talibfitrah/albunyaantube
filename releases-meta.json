@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.33": {
+    "en": "Channels now load their full video history, not just the latest. Plus auto-update reliability and TV audio fixes.",
+    "ar": "القنوات الآن تُحمِّل كامل سجل الفيديوهات، لا الأحدث فقط. مع إصلاحات لموثوقية التحديث التلقائي وصوت التلفزيون.",
+    "nl": "Kanalen laden nu hun volledige videogeschiedenis, niet alleen de nieuwste. Plus fixes voor auto-updates en tv-audio."
+  },
   "1.0.0-beta.32": {
     "en": "Fixed: tapping a video in the up-next list under the player now plays it (it previously did nothing).",
     "ar": "إصلاح: النقر على فيديو في قائمة \"التالي\" أسفل المشغّل يشغّله الآن (كان لا يفعل شيئًا من قبل).",

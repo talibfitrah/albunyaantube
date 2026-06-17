@@ -9,6 +9,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -184,6 +185,59 @@ class UpdateCheckerTest {
         assertEquals("1.0.0-beta.11", info[2].versionName)
         assertEquals(java.time.Instant.parse("2026-05-24T10:00:00Z"), info[0].publishedAt)
         assertNull(info[1].publishedAt)  // beta-13 has no published_at in this fixture
+        server.shutdown()
+    }
+
+    @Test
+    fun `checkForUpdate offers the newest prerelease, not GitHub releases-latest`() = runTest {
+        // Regression: checkForUpdate used GitHub's /releases/latest, which returns the latest
+        // NON-prerelease. Every FitrahTube beta is a prerelease, so that endpoint returned an
+        // ancient beta and the auto-check never offered any newer beta. It now scans the
+        // releases LIST and returns the newest release newer than the installed build.
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("""
+            [
+              {"tag_name":"v1.0.0-beta.33","name":"beta-33","body":"","prerelease":true,
+               "assets":[{"name":"fitrahtube-1.0.0-beta.33.apk","browser_download_url":"https://example/33.apk","size":2048,"content_type":"application/vnd.android.package-archive"}]},
+              {"tag_name":"v1.0.0-beta.32","name":"beta-32","body":"","prerelease":true,
+               "assets":[{"name":"fitrahtube-1.0.0-beta.32.apk","browser_download_url":"https://example/32.apk","size":2048,"content_type":"application/vnd.android.package-archive"}]}
+            ]
+        """.trimIndent()))
+        server.start()
+
+        val checker = UpdateChecker(
+            okHttpClient = OkHttpClient(),
+            installSource = mock { on { isPlayStore() } doReturn false }
+        )
+        checker.apiBaseUrlForTest = server.url("/").toString()
+        checker.currentVersionForTest = "1.0.0-beta.31"
+
+        val info = checker.checkForUpdate().getOrThrow()
+        assertNotNull("Expected beta.33 to be offered", info)
+        assertEquals("1.0.0-beta.33", info!!.versionName)
+        assertEquals("https://example/33.apk", info.apkUrl)
+        server.shutdown()
+    }
+
+    @Test
+    fun `checkForUpdate returns null when already on the newest release`() = runTest {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("""
+            [
+              {"tag_name":"v1.0.0-beta.33","name":"beta-33","body":"","prerelease":true,
+               "assets":[{"name":"fitrahtube-1.0.0-beta.33.apk","browser_download_url":"https://example/33.apk","size":2048,"content_type":"application/vnd.android.package-archive"}]}
+            ]
+        """.trimIndent()))
+        server.start()
+
+        val checker = UpdateChecker(
+            okHttpClient = OkHttpClient(),
+            installSource = mock { on { isPlayStore() } doReturn false }
+        )
+        checker.apiBaseUrlForTest = server.url("/").toString()
+        checker.currentVersionForTest = "1.0.0-beta.33"
+
+        assertNull(checker.checkForUpdate().getOrThrow())
         server.shutdown()
     }
 

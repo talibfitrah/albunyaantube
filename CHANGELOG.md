@@ -5,6 +5,49 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.33] - 2026-06-17
+
+### Android
+
+- **Fixed: a channel's Videos list now loads its full history, not just the
+  latest page.** Opening a channel and scrolling its Videos tab stopped after
+  the first set (~100 videos) and loaded nothing more, even on channels with
+  thousands of uploads. Root cause: NewPipe v0.26.3's uploads-playlist
+  continuation (`PlaylistInfo.getMoreItems`) throws a NullPointerException
+  (`browseMetadataResponse` null) after page 1, so the Videos tab — which paged
+  through that uploads playlist — could never reach older uploads. The Videos
+  tab now pages through the channel's "Videos" tab (`ChannelTabInfo`, fixed in
+  NewPipe v0.26.2), which reaches the first upload with no error; the broken
+  uploads-playlist is kept only as a page-1 fallback. Live, Shorts, and
+  Playlists already used this path and were unaffected. Verified with a
+  real-network NewPipe probe (uploads-playlist dies at page 1; channel tab pages
+  300+ and counting) plus channel-pagination unit tests.
+- **Fixed: video sometimes starting silent on Android TV boxes.** On some
+  Android 9 TV boxes a video would start with no sound until you toggled
+  audio-only on and off. The player now detects when audio is present but no
+  audio track is selected/decodable on the first prepare and re-resolves the
+  stream once automatically (guarded per stream so it cannot loop).
+- **Fixed: the in-app updater never found any beta past beta.18.** The update
+  check (splash auto-check and Settings → Check for updates) queried GitHub's
+  `/releases/latest`, which only ever returns the latest *non-prerelease* — and
+  every FitrahTube beta is a pre-release, so it always saw beta.18 and reported
+  "up to date" no matter how many newer betas had shipped. It now scans the
+  releases list and offers the newest release newer than the installed build, so
+  beta→beta auto-updates actually work. (Existing installs need one manual update
+  via Settings → Available Updates to pick up this fix; after that it is
+  automatic.)
+- **Fixed: in-app update "downloading then nothing".** The post-install process
+  self-kill (a Samsung/Xiaomi DEX-restore mitigation) fired a blind 2 seconds
+  after the install was committed — on slower/OEM devices that landed before the
+  user had even confirmed the system install prompt, tearing the install down.
+  It now fires only after the OS confirms the install succeeded, and is guarded
+  so it cannot kill a freshly-reopened session or live playback. Install
+  failures now also surface an immediate message instead of silently doing
+  nothing.
+- Hardening from a full code-review pass (code-reviewer, security, codex, and
+  cubic): cursor-family safety in channel pagination, a rate-limit-aware
+  audio-recovery guard, and louder update-failure reporting.
+
 ## [1.0.0-beta.32] - 2026-06-16
 
 ### Android

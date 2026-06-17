@@ -68,62 +68,29 @@ class UpdateChecker @Inject constructor(
     internal var currentVersionForTest: String? = null  // production callers MUST NOT set this
 
     private val moshi: Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
-    private val adapter = moshi.adapter(GithubReleaseDto::class.java)
     private val listAdapter = moshi.adapter<List<GithubReleaseDto>>(
         Types.newParameterizedType(List::class.java, GithubReleaseDto::class.java)
     )
 
-    suspend fun checkForUpdate(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
+    suspend fun checkForUpdate(): Result<UpdateInfo?> {
         if (installSource.isPlayStore()) {
             Log.d(TAG, "Installed from Play Store — skipping GitHub update check")
-            return@withContext Result.success(null)
+            return Result.success(null)
         }
-        runCatchingCoroutine {
-            val request = Request.Builder()
-                .url(RELEASES_URL)
-                .header("Accept", "application/vnd.github+json")
-                .header("X-GitHub-Api-Version", "2022-11-28")
-                .build()
-            val call = okHttpClient.newCall(request).cancelWhenCoroutineCancels()
-            call.execute().use { response ->
-                if (!response.isSuccessful) {
-                    Log.w(TAG, "GitHub releases API returned HTTP ${response.code}")
-                    return@use null
+        // Use the releases LIST, not GitHub's /releases/latest. /releases/latest returns
+        // ONLY the latest non-prerelease, but every FitrahTube beta is a prerelease — so it
+        // returned an ancient beta.18 and the auto-check / "Check for updates" never offered
+        // any newer beta to anyone (the core "auto-update not working"). listReleases pulls
+        // the actual newest releases (prerelease-eligible for beta builds, each with an APK);
+        // pick the newest one strictly newer than the installed build.
+        val currentVersion = currentVersionForTest ?: BuildConfig.VERSION_NAME
+        return listReleases(limit = LATEST_SCAN_LIMIT).map { releases ->
+            releases.firstOrNull { isNewerVersion(it.versionName, currentVersion) }.also { info ->
+                if (info == null) {
+                    Log.d(TAG, "No update newer than $currentVersion among latest releases")
+                } else {
+                    Log.d(TAG, "Update available: ${info.versionName} (current $currentVersion)")
                 }
-                val body = response.body?.string() ?: return@use null
-                val release = adapter.fromJson(body) ?: return@use null
-                val remoteVersion = release.tag_name.removePrefix("v").removePrefix("V").trim()
-                val currentVersion = BuildConfig.VERSION_NAME
-                // CodeRabbit #8: if the current build is a stable release (no prerelease
-                // suffix) and GitHub marks the candidate as prerelease, don't auto-prompt
-                // — users on stable channels shouldn't be nagged to switch to beta/rc
-                // unless they opt in. Users on a prerelease build (current has `-beta`,
-                // `-rc`, etc.) still receive prerelease updates so beta→rc upgrades work.
-                val currentIsPrerelease = currentVersion.contains('-')
-                if (release.prerelease && !currentIsPrerelease) {
-                    Log.d(TAG, "Skipping prerelease $remoteVersion for stable channel $currentVersion")
-                    return@use null
-                }
-                if (!isNewerVersion(remoteVersion, currentVersion)) {
-                    Log.d(TAG, "No update (remote=$remoteVersion, current=$currentVersion)")
-                    return@use null
-                }
-                val apkAsset = release.assets.firstOrNull {
-                    it.name.endsWith(".apk", ignoreCase = true)
-                }
-                if (apkAsset == null) {
-                    Log.w(TAG, "Update $remoteVersion has no APK asset")
-                    return@use null
-                }
-                UpdateInfo(
-                    versionName = remoteVersion,
-                    releaseName = release.name ?: release.tag_name,
-                    apkUrl = apkAsset.browser_download_url,
-                    apkSizeBytes = apkAsset.size,
-                    publishedAt = release.published_at?.let {
-                        runCatching { java.time.Instant.parse(it) }.getOrNull()
-                    },
-                )
             }
         }
     }
@@ -210,8 +177,10 @@ class UpdateChecker @Inject constructor(
          *  [UpdatePromptFlow] for the "View full changelog" deep-link URL
          *  (S1 M5 — was duplicated as a private const at both ends). */
         const val GITHUB_REPO = "talibfitrah/albunyaantube"
-        private const val RELEASES_URL =
-            "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+        /** How many of the newest releases [checkForUpdate] scans for the newest one
+         *  strictly newer than the installed build. Small: the newest eligible release is
+         *  near the top; a handful absorbs prerelease-filtering and no-APK skips. */
+        private const val LATEST_SCAN_LIMIT = 5
         /** GitHub's documented maximum `per_page` for paginated REST endpoints
          *  (https://docs.github.com/en/rest/releases/releases#list-releases). */
         private const val GITHUB_MAX_PER_PAGE = 100
