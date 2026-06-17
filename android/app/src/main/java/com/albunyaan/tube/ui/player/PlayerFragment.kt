@@ -91,6 +91,20 @@ import java.io.File
  * Phase 8 scaffold for the playback screen. Hooks Media3 ExoPlayer with audio-only toggle state managed
  * by [PlayerViewModel]; real media sources will be supplied once backend wiring is available.
  */
+/**
+ * True when [tracks] has audio track group(s) but none with a track that is BOTH
+ * selected AND supported — i.e. the media has audio that won't actually play (the
+ * Android-TV "starts silent" state). Pure + internal so it is unit-testable without a
+ * player. Used by [PlayerFragment.maybeRecoverSilentAudio].
+ */
+internal fun audioPresentButUnplayable(tracks: Tracks): Boolean {
+    val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+    if (audioGroups.isEmpty()) return false
+    return audioGroups.none { group ->
+        (0 until group.length).any { i -> group.isTrackSupported(i) && group.isTrackSelected(i) }
+    }
+}
+
 @AndroidEntryPoint
 @OptIn(UnstableApi::class)
 class PlayerFragment : Fragment(R.layout.fragment_player) {
@@ -2120,24 +2134,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // No playbackState gate on purpose: onTracksChanged fires when selection runs,
         // which is during BUFFERING (before READY). Gating on READY would skip the very
         // emission that reports "audio present but unselected" and the recovery would
-        // never fire. The checks below only match after selection has run (groups known),
-        // so an early empty-Tracks emission is harmless.
-        val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
-        // The bug is "audio EXISTS but isn't playing", so only act when audio groups are
-        // present. A genuinely silent clip (no audio groups) is left alone.
-        if (audioGroups.isEmpty()) return
-        val hasPlayableAudio = audioGroups.any { group ->
-            (0 until group.length).any { i -> group.isTrackSupported(i) && group.isTrackSelected(i) }
-        }
-        if (hasPlayableAudio) return
+        // never fire. audioPresentButUnplayable only matches after selection has run
+        // (groups known), so an early empty-Tracks emission is ignored.
+        if (!audioPresentButUnplayable(tracks)) return
 
-        audioRecoveryStreamId = streamId
         android.util.Log.w(
             "PlayerFragment",
             "Audio present but no selected+supported track for $streamId " +
-                "(TV silent-audio); re-resolving once. audioGroups=${audioGroups.size}"
+                "(TV silent-audio); re-resolving once."
         )
-        requestStreamRefreshAndResume("audio track not selected on first prepare")
+        // Burn the one-shot guard only if the refresh actually started. A rate-limit
+        // Blocked refresh must stay recoverable on the next onTracksChanged rather than
+        // silently giving up for the rest of the stream (codex Stage-3 P3).
+        if (requestStreamRefreshAndResume("audio track not selected on first prepare")) {
+            audioRecoveryStreamId = streamId
+        }
     }
 
     /**
@@ -2148,9 +2159,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      *
      * @param reason Human-readable reason for logging
      */
-    private fun requestStreamRefreshAndResume(reason: String) {
-        val currentItem = viewModel.state.value.currentItem ?: return
-        val currentPlayer = player ?: return
+    private fun requestStreamRefreshAndResume(reason: String): Boolean {
+        val currentItem = viewModel.state.value.currentItem ?: return false
+        val currentPlayer = player ?: return false
 
         val resumePosition = currentPlayer.currentPosition.coerceAtLeast(0L)
         val wasPlayWhenReady = currentPlayer.playWhenReady
@@ -2189,7 +2200,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             context?.let { ctx ->
                 Toast.makeText(ctx, R.string.player_refresh_rate_limited, Toast.LENGTH_SHORT).show()
             }
-            return
+            return false
         }
 
         // Refresh is proceeding - now safe to stop player and clear state
@@ -2217,6 +2228,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         context?.let { ctx ->
             Toast.makeText(ctx, R.string.player_status_resolving, Toast.LENGTH_SHORT).show()
         }
+        return true
     }
 
     /**
