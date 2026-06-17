@@ -193,6 +193,11 @@ class ChannelDetailViewModel @AssistedInject constructor(
         controller.isInitialLoading = true
         controller.hasReachedEnd = false
         controller.nextPage = null
+        // Reset the Videos cursor-family flag with the cursor it gates: loadVideosInitial
+        // re-sets it per load, but resetting here keeps flag and token in lockstep so a
+        // future branch that sets nextPage without the flag can't silently re-introduce
+        // the cross-family append bug (Stage-1 P3).
+        controller.videosUseChannelTab = false
 
         viewModelScope.launch {
             try {

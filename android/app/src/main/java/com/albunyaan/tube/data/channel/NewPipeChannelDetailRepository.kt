@@ -231,11 +231,13 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 // tried, skip straight to the channel-tab path — repeating
                 // the same HTTP would just produce the same failure.
                 if (playlistUrl == null || playlistUrl == canonicalUuUrl) {
-                    return@withContext fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
-                        (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.also {
-                            keptForCache.add(it)
-                        }?.toChannelVideo()
-                    }
+                    // UU-only: no derivable uploads playlist here. Do NOT fall back to the
+                    // channel tab — getVideos must return only UU-cursor pages, else the
+                    // ViewModel mislabels channel-tab data as UU and mis-feeds the cursor on
+                    // the next append (codex Stage-3 P2). The ViewModel races
+                    // getVideosViaChannelTab() and owns the channel-tab fallback with correct
+                    // provenance (videosUseChannelTab).
+                    throw IOException("No uploads playlist for $channelId; caller uses channel-tab path")
                 }
                 retryNewPipeRateLimiterTimeout("uploads playlist for $channelId") {
                     NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
@@ -245,12 +247,12 @@ class NewPipeChannelDetailRepository @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "Uploads playlist fetch failed for $channelId, falling back to channel-tab: ${e.message}")
-                fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
-                    (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.also {
-                        keptForCache.add(it)
-                    }?.toChannelVideo()
-                }
+                // UU-only: surface the failure rather than cross-feed the UU cursor into the
+                // channel tab (codex Stage-3 P2). The ViewModel's getVideosViaChannelTab race
+                // owns the channel-tab fallback with correct provenance; on append this becomes
+                // a retryable ErrorAppend instead of a silent cursor-family mismatch.
+                Log.w(TAG, "Uploads playlist fetch failed for $channelId: ${e.message}")
+                throw e
             }
         }
         // Persist kept videos to local cache so the next channel open can paint
