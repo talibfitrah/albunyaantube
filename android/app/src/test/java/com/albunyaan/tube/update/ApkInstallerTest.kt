@@ -59,7 +59,7 @@ class ApkInstallerTest {
     }
 
     @Test
-    fun `verifySigningCertMatch throws SecurityException when certs differ`() {
+    fun `verifySigningCertMatch defers to the OS when certs differ (legacy pre-P)`() {
         val installed = Signature(byteArrayOf(0x01, 0x02, 0x03, 0x04))
         val attacker = Signature(byteArrayOf(0x05, 0x06, 0x07, 0x08))
         val pm = mock<PackageManager> {
@@ -70,12 +70,12 @@ class ApkInstallerTest {
             whenever(it.packageManager).thenReturn(pm)
             whenever(it.packageName).thenReturn("pkg")
         }
-        try {
-            ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/evil.apk"))
-            fail("Expected SecurityException for mismatched signing certificates")
-        } catch (e: SecurityException) {
-            // expected
-        }
+        // Must NOT throw. A differing cert is not something the app can adjudicate from a
+        // file parse (it cannot see a v3 rotation lineage on pre-P at all), so it defers to
+        // the OS PackageInstaller, which enforces signing-certificate equality / rotation on
+        // every update install and rejects a genuinely foreign APK at commit. Hard-throwing
+        // here false-blocked legitimate rotated updates for entire device fleets.
+        ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/differ.apk"))
     }
 
     @Test
@@ -184,31 +184,35 @@ class ApkInstallerTest {
 
     @Test
     @Config(sdk = [Build.VERSION_CODES.P])
-    fun `verifySigningCertMatch on API P throws when signingInfo certs differ`() {
+    fun `verifySigningCertMatch defers on API P when a rotated signer is unprovable from the archive lineage`() {
+        // This is the exact field failure: an installed debug-key build is offered a
+        // prod-key-rotated update, but getPackageArchiveInfo() returns the new signer with an
+        // EMPTY signingCertificateHistory (observed on Huawei EMUI; stock AOSP returns the full
+        // lineage and the sibling "accepts a rotated APK" test covers that path). The app cannot
+        // prove the rotation here, so it must NOT hard-block — it defers to the OS, which
+        // verifies the v3 lineage cryptographically on commit and installs the valid rotation.
         val installedSig = Signature(byteArrayOf(0x0A))
-        val attackerSig = Signature(byteArrayOf(0xB.toByte()))
+        val rotatedSig = Signature(byteArrayOf(0xB.toByte()))
         val installedSi = mock<SigningInfo> {
             whenever(it.apkContentsSigners).thenReturn(arrayOf(installedSig))
         }
-        val attackerSi = mock<SigningInfo> {
-            whenever(it.apkContentsSigners).thenReturn(arrayOf(attackerSig))
+        val rotatedSi = mock<SigningInfo> {
+            whenever(it.apkContentsSigners).thenReturn(arrayOf(rotatedSig))
+            // history empty / unreadable from the archive on this ROM
+            whenever(it.signingCertificateHistory).thenReturn(null)
         }
         val installedInfo = packageInfoP(installedSi)
-        val attackerInfo = packageInfoP(attackerSi)
+        val rotatedInfo = packageInfoP(rotatedSi)
         val pm = mock<PackageManager> {
             whenever(it.getPackageInfo(eq("pkg"), any<Int>())).thenReturn(installedInfo)
-            whenever(it.getPackageArchiveInfo(any(), any<Int>())).thenReturn(attackerInfo)
+            whenever(it.getPackageArchiveInfo(any(), any<Int>())).thenReturn(rotatedInfo)
         }
         val activity = mock<Activity> {
             whenever(it.packageManager).thenReturn(pm)
             whenever(it.packageName).thenReturn("pkg")
         }
-        try {
-            ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/p-evil.apk"))
-            fail("Expected SecurityException for mismatched signing certificates on API P")
-        } catch (e: SecurityException) {
-            // expected
-        }
+        // Must NOT throw — defer to the OS PackageInstaller.
+        ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/p-rotated-noLineage.apk"))
     }
 
     @Suppress("DEPRECATION")
@@ -242,21 +246,52 @@ class ApkInstallerTest {
     }
 
     /**
-     * The pre-P fail-open must be scoped to pre-P only. On API P+ the archive cert
-     * is always readable via apkContentsSigners, so a null there is a genuine
-     * problem and must still abort — no fail-open on modern Android.
+     * On API P+ an unreadable archive cert (null SigningInfo from getPackageArchiveInfo)
+     * must ALSO fail open. The earlier assumption that "the archive cert is always readable
+     * on API 28+" is false on some OEM ROMs: a real Huawei/Honor EMUI 9.1 device (API 28)
+     * returns signingInfo == null for the update archive, which made the app hard-throw
+     * "No signing certificate in downloaded APK" and surface a bogus "signature mismatch"
+     * toast — killing auto-update on every EMUI device. The OS PackageInstaller reads the
+     * real signature on install and enforces it, so the app defers instead of false-blocking.
      */
     @Test
     @Config(sdk = [Build.VERSION_CODES.P])
-    fun `verifySigningCertMatch still throws on API P when archive cert unreadable`() {
+    fun `verifySigningCertMatch defers on API P plus when archive cert unreadable (EMUI null SigningInfo)`() {
         val installedSig = Signature(byteArrayOf(0x0A))
         val installedSi = mock<SigningInfo> {
             whenever(it.apkContentsSigners).thenReturn(arrayOf(installedSig))
         }
-        // No stub for apkContentsSigners -> returns null (unreadable archive cert).
-        val downloadedSi = mock<SigningInfo>()
+        // Faithful to the measured device behaviour: EMUI 9.1 (real Honor COR-L29, API 28)
+        // returns a PackageInfo whose signingInfo is NULL for the update archive, so
+        // certSha256(downloaded) resolves to null and the downloadedSha==null branch runs.
+        val downloadedInfo = PackageInfo().apply { packageName = "pkg" } // signingInfo defaults to null
         val pm = mock<PackageManager> {
             whenever(it.getPackageInfo(eq("pkg"), any<Int>())).thenReturn(packageInfoP(installedSi))
+            whenever(it.getPackageArchiveInfo(any(), any<Int>())).thenReturn(downloadedInfo)
+        }
+        val activity = mock<Activity> {
+            whenever(it.packageManager).thenReturn(pm)
+            whenever(it.packageName).thenReturn("pkg")
+        }
+        // Must NOT throw — defer to the OS PackageInstaller, which enforces the signature.
+        ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/p-noreadcert.apk"))
+    }
+
+    /**
+     * The defer-to-OS fix narrows the app's role, but the INSTALLED app's signer is read from
+     * system records (not the OEM-unreliable archive file parse), so an unreadable installed
+     * cert is a genuine "can't identify our own signer" failure and must STILL hard-abort.
+     * This pins the last app-level cert guard so a future change can't silently weaken it.
+     */
+    @Test
+    @Config(sdk = [Build.VERSION_CODES.P])
+    fun `verifySigningCertMatch still throws when the installed app cert is unreadable`() {
+        val installedNoSi = PackageInfo().apply { packageName = "pkg" } // signingInfo null
+        val downloadedSi = mock<SigningInfo> {
+            whenever(it.apkContentsSigners).thenReturn(arrayOf(Signature(byteArrayOf(0x0A))))
+        }
+        val pm = mock<PackageManager> {
+            whenever(it.getPackageInfo(eq("pkg"), any<Int>())).thenReturn(installedNoSi)
             whenever(it.getPackageArchiveInfo(any(), any<Int>())).thenReturn(packageInfoP(downloadedSi))
         }
         val activity = mock<Activity> {
@@ -264,8 +299,8 @@ class ApkInstallerTest {
             whenever(it.packageName).thenReturn("pkg")
         }
         try {
-            ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/p-noreadcert.apk"))
-            fail("Expected SecurityException — P+ must not fail open on unreadable cert")
+            ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/installed-nosig.apk"))
+            fail("Expected SecurityException — unreadable installed signer must still abort")
         } catch (e: SecurityException) {
             // expected
         }
@@ -320,13 +355,19 @@ class ApkInstallerTest {
     }
 
     /**
-     * The lineage path must not become a blanket bypass: a rotated APK whose lineage does
-     * NOT contain the installed cert (some other key's hand-off) must still be rejected,
-     * exactly like a plain cert mismatch.
+     * A rotated APK whose lineage does NOT contain the installed cert (some other key's
+     * hand-off) is a genuinely foreign update. The app no longer adjudicates this from the
+     * archive — it defers to the OS PackageInstaller, which rejects the foreign rotation at
+     * commit (cryptographically verified, unlike the app's unreliable file-parse). The app
+     * MUST defer rather than hard-throw here, because the same "installed cert absent from
+     * the archive lineage" shape is produced by a perfectly valid rotation on OEM ROMs that
+     * don't surface signingCertificateHistory for a file — and false-blocking those killed
+     * auto-update fleet-wide. OS-level rejection of a truly foreign signer is verified out of
+     * band (an `adb install -r` of a foreign-signed APK over the install fails).
      */
     @Test
     @Config(sdk = [Build.VERSION_CODES.P])
-    fun `verifySigningCertMatch rejects a rotated APK whose lineage excludes the installed cert`() {
+    fun `verifySigningCertMatch defers when a rotated APK's lineage excludes the installed cert`() {
         val installedKey = Signature(byteArrayOf(0x11, 0x22, 0x33))
         val strangerOld = Signature(byteArrayOf(0x44, 0x55, 0x66))
         val newKey = Signature(byteArrayOf(0x70, 0x71, 0x72))
@@ -345,12 +386,8 @@ class ApkInstallerTest {
             whenever(it.packageManager).thenReturn(pm)
             whenever(it.packageName).thenReturn("pkg")
         }
-        try {
-            ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/foreign-rotated.apk"))
-            fail("Expected SecurityException — installed cert not in the downloaded lineage")
-        } catch (e: SecurityException) {
-            // expected
-        }
+        // Must NOT throw — the app defers; the OS rejects a foreign rotation on commit.
+        ApkInstaller(OkHttpClient()).verifySigningCertMatch(activity, File("/tmp/foreign-rotated.apk"))
     }
 
     @Test

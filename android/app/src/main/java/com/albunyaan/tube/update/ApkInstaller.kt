@@ -272,25 +272,32 @@ class ApkInstaller @Inject constructor(
             ?: throw SecurityException("No signing certificate on installed app")
         val downloadedSha = certSha256(downloaded)
         if (downloadedSha == null) {
-            // Pre-P only (SDK_INT < P == API < 28, i.e. Android <= 8.1; API 26-27 given
-            // minSdk 26). There the updater uses getPackageArchiveInfo(GET_SIGNATURES),
-            // which can only read v1 (JAR) signatures from the APK *file*; a v2-only
-            // archive yields no readable cert. Rather than hard-block the update (the
-            // historical old-Android install failure), fail open: the OS PackageInstaller
-            // still enforces signing-certificate equality against the installed app on
-            // every update, so a mismatched/tampered APK is rejected by the platform
-            // regardless. On API 28+ the archive cert is always readable via
-            // apkContentsSigners, so a null there is a genuine problem and still aborts.
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-                Log.w(
-                    TAG,
-                    "Downloaded APK cert unreadable on API ${Build.VERSION.SDK_INT} " +
-                        "(v2-only archive on pre-P); skipping app-level cert check — " +
-                        "PackageInstaller enforces signature match on update"
-                )
-                return
-            }
-            throw SecurityException("No signing certificate in downloaded APK")
+            // The downloaded APK's signing certificate could not be read from the archive.
+            // Two known situations produce this, and in BOTH the OS PackageInstaller still
+            // reads the real signature and enforces equality/rotation at install time:
+            //   1) pre-P (API < 28): getPackageArchiveInfo uses the legacy GET_SIGNATURES path,
+            //      which reads only v1 (JAR) signatures; our release APKs are v2/v3-only, so the
+            //      archive cert is unreadable there.
+            //   2) Some OEM ROMs return a NULL SigningInfo from getPackageArchiveInfo(
+            //      GET_SIGNING_CERTIFICATES) even on API >= 28. CONFIRMED on a real Huawei/Honor
+            //      EMUI 9.1 device (API 28): signingInfo == null -> apkContentsSigners empty ->
+            //      downloadedSha null. The old code only failed open on pre-P (on the false
+            //      assumption that the archive cert is always readable on API 28+), so EMUI fell
+            //      through to the throw below and surfaced the bogus "signature mismatch" toast —
+            //      auto-update was dead on every EMUI device in the field (the reported symptom).
+            //
+            // Defer to the OS in BOTH cases rather than hard-block on a read the app simply cannot
+            // perform on these ROMs. The platform is the authoritative verifier and accepts the
+            // legitimate update (verified: the published build installs in place over the prior
+            // version on a real EMUI 9.1 device, and on API 28/35 emulators). The HTTPS-only +
+            // size-verified download and the packageName equality check above remain the guards.
+            Log.w(
+                TAG,
+                "Downloaded APK signing cert unreadable from the archive on API " +
+                    "${Build.VERSION.SDK_INT} (null/empty SigningInfo, e.g. EMUI / pre-P v2-only); " +
+                    "deferring to the OS PackageInstaller, which enforces the signature on install"
+            )
+            return
         }
         // v3 key-rotation support: the downloaded APK may be signed by a NEW key whose
         // SigningCertificateLineage proves the currently-installed (older) key authorised
@@ -300,6 +307,16 @@ class ApkInstaller @Inject constructor(
         // when the installed cert is the current signer OR an ancestor in the downloaded
         // lineage. signingCertificateHistory needs the SigningInfo API (28+); pre-P never
         // rotates (no v3), so plain equality is the whole story there.
+        //
+        // NOTE: from here down the cert comparison is DIAGNOSTIC-ONLY — it no longer BLOCKS the
+        // install. Both outcomes proceed to the OS: an acceptable cert falls through, an
+        // unacceptable one logs and returns (defers). isUpdateCertAcceptable + lineageShas just
+        // choose which log line prints. Do NOT turn the `return` below back into a `throw`: the
+        // file-parsed lineage is unreliable on OEM ROMs, so a throw here re-bricks auto-update
+        // fleet-wide (the exact bug this fixed). A genuinely foreign/tampered APK is still
+        // rejected — by the OS PackageInstaller on commit (system INSTALL_FAILED_UPDATE_INCOMPATIBLE
+        // dialog) rather than the old in-app toast: an intentional, accepted trade of a nicer
+        // error message for not false-blocking legitimate updates.
         val lineageShas: List<String> =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 downloaded.signingInfo?.signingCertificateHistory?.map(::sha256).orEmpty()
@@ -307,10 +324,32 @@ class ApkInstaller @Inject constructor(
                 emptyList()
             }
         if (!isUpdateCertAcceptable(installedSha, downloadedSha, lineageShas)) {
-            Log.e(TAG, "Signing certificate mismatch: installed=$installedSha downloaded=$downloadedSha lineage=$lineageShas")
-            throw SecurityException(
-                "Downloaded APK signing certificate does not match installed app"
+            // The downloaded signer differs from the installed one AND we could not prove a
+            // key rotation from the APK *file*'s signing lineage. This is NOT a reliable
+            // signal of a real mismatch: PackageManager.getPackageArchiveInfo() surfaces
+            // signingCertificateHistory for an APK *file* inconsistently across OEM ROMs.
+            // On stock AOSP (verified on an API 35 image) the debug->prod v3.1 lineage IS
+            // returned here and the check passes; but on some OEM builds (Huawei EMUI,
+            // reported in the field) the history comes back empty, so a perfectly valid
+            // rotated update reads as "installed cert absent from lineage" and EVERY existing
+            // user is hard-blocked with a bogus "signature mismatch" toast — auto-update dead
+            // on those devices, which was the whole-fleet update failure this fixes.
+            //
+            // The OS PackageInstaller is the authoritative signature/rotation verifier: it
+            // re-checks the v3 lineage cryptographically on commit, ACCEPTING a genuine
+            // rotation (verified: in-place beta.30->beta.35 install succeeds on API 28 and 35)
+            // and REJECTING a foreign-key APK. So rather than trust an unreliable file-parse
+            // and false-block, log and defer to the platform — the same fail-open posture used
+            // above when the archive cert is unreadable on pre-P. The HTTPS-only + size-checked
+            // download and the packageName equality check above remain the app-level guards;
+            // enforcing the signing certificate is the OS's job and it does it on every device.
+            Log.w(
+                TAG,
+                "Downloaded signer $downloadedSha differs from installed $installedSha and a " +
+                    "rotation is not provable from the archive lineage ($lineageShas); deferring " +
+                    "to the OS PackageInstaller, which verifies the rotation on commit"
             )
+            return
         }
         if (installedSha != downloadedSha) {
             Log.w(
