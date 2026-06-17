@@ -2144,8 +2144,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 "(TV silent-audio); re-resolving once."
         )
         // Burn the one-shot guard only if the refresh actually started. A rate-limit
-        // Blocked refresh must stay recoverable on the next onTracksChanged rather than
-        // silently giving up for the rest of the stream (codex Stage-3 P3).
+        // Blocked refresh returns false and stays recoverable on the next onTracksChanged
+        // (codex Stage-3 P3). Accepted edge (cubic R2/R3 P3): a Delayed refresh returns true
+        // and burns the guard though it only SCHEDULED the re-resolve; if that delayed job is
+        // itself Blocked later, the stream stays silent. Rare (double rate-limit), no worse
+        // than not having the feature, and not worth widening forceRefreshForAutoRecovery's
+        // Boolean->enum contract across its 9 callers.
         if (requestStreamRefreshAndResume("audio track not selected on first prepare")) {
             audioRecoveryStreamId = streamId
         }
