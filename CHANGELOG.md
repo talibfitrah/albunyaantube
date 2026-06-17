@@ -5,6 +5,31 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.34] - 2026-06-17
+
+### Android
+
+- **Fixed: live streams would not play.** Every live broadcast failed to start.
+  Root cause: when the ANDROID_VR client became the primary stream resolver, it
+  resolved live streams as ordinary video-on-demand — it hardcoded `isLive=false`
+  and built a synthetic DASH manifest from fixed byte ranges, which cannot
+  represent a moving live edge, so the live branch that consumes YouTube's real
+  rolling HLS/DASH manifest (via the NewPipe path) was never reached. The
+  resolver now detects a live response (`videoDetails.isLive`, or a
+  `hlsManifestUrl`/`dashManifestUrl` in `streamingData`) and defers to the
+  NewPipe path, which yields a `LIVE_STREAM` with a real live manifest. Finished
+  recordings of past live streams (which carry no rolling manifest) keep using
+  the fast byte-range path. Verified end-to-end with a real-network probe
+  (NewPipe resolves a currently-live stream as `LIVE_STREAM` with both DASH and
+  HLS manifest URLs) plus unit tests for the live/VOD detection boundary.
+- **Diagnostics: Android-TV silent-audio.** The automatic silent-audio recovery
+  added in beta.33 did not resolve the reported Android-9 TV-box case. This
+  release adds a release-visible per-audio-track log (codec, channels, sample
+  rate, and the renderer's support verdict) at the recovery point, so the exact
+  reason the synthetic-DASH audio is rejected on that box — while the identical
+  audio plays through the progressive audio-only path — can be pinned from a
+  single logcat. No behavioural change to playback.
+
 ## [1.0.0-beta.33] - 2026-06-17
 
 ### Android
