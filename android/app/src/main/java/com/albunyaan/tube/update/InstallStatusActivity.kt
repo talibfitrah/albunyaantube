@@ -53,7 +53,13 @@ class InstallStatusActivity : AppCompatActivity() {
                         return
                     }
                 } else {
+                    // No confirmation intent means the OS can't show the install prompt —
+                    // another silent "downloaded then nothing" path. Surface it and record a
+                    // failure instead of finishing as if nothing was wrong (codex Stage-3 P3).
                     Log.w(TAG, "STATUS_PENDING_USER_ACTION with no EXTRA_INTENT")
+                    toastInstallFailure("missing install confirmation")
+                    recordAndFinish(targetVersion, "missing install confirmation")
+                    return
                 }
                 finish()
             }
@@ -87,11 +93,7 @@ class InstallStatusActivity : AppCompatActivity() {
                 // then nothing"); the only prior feedback was a banner on the NEXT cold
                 // start. STATUS_FAILURE_ABORTED is the user backing out — no nag there.
                 if (status != PackageInstaller.STATUS_FAILURE_ABORTED) {
-                    android.widget.Toast.makeText(
-                        applicationContext,
-                        getString(com.albunyaan.tube.R.string.update_install_failed, reason),
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
+                    toastInstallFailure(reason)
                 }
                 recordAndFinish(targetVersion, reason)
             }
@@ -112,6 +114,15 @@ class InstallStatusActivity : AppCompatActivity() {
         } else {
             finish()
         }
+    }
+
+    /** Loud, immediate feedback so a failed install isn't a silent "nothing happened". */
+    private fun toastInstallFailure(reason: String) {
+        android.widget.Toast.makeText(
+            applicationContext,
+            getString(com.albunyaan.tube.R.string.update_install_failed, reason),
+            android.widget.Toast.LENGTH_LONG
+        ).show()
     }
 
     @Suppress("DEPRECATION")
