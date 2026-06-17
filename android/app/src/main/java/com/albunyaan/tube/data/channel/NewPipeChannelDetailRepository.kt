@@ -352,15 +352,17 @@ class NewPipeChannelDetailRepository @Inject constructor(
         return itemUrl.contains("/shorts/")
     }
 
-    override suspend fun getVideosViaChannelTab(channelId: String): ChannelPage<ChannelVideo> {
-        // Channel-tab path only — used for the fast first-paint phase of
-        // [ChannelDetailViewModel.loadVideosInitial]. Avoids the UU uploads
-        // playlist's larger response (~3-5x the bytes) so the user sees
-        // something painted before the slower UU fetch completes. The
-        // ViewModel finalises state with the UU result for reliable
-        // continuation tokens; this method is single-page only.
+    override suspend fun getVideosViaChannelTab(channelId: String, page: Page?): ChannelPage<ChannelVideo> {
+        // Channel-tab path. With page == null it serves the fast first-paint phase of
+        // [ChannelDetailViewModel.loadVideosInitial] (smaller than the UU uploads
+        // playlist, ~3-5x fewer bytes, so the user sees something before the slower UU
+        // fetch completes). With a non-null page it continues channel-tab pagination —
+        // the Videos append loop routes here instead of [getVideos] when the initial
+        // load fell back to the channel tab, so the channel-tab continuation token is
+        // not mis-fed into the UU playlist's getMoreItems. The ViewModel prefers UU for
+        // deep pagination whenever it is available.
         return withContext(Dispatchers.IO) {
-            fetchTabContent(channelId, ChannelTabs.VIDEOS, page = null) { item ->
+            fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
                 (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
             }
         }

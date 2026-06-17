@@ -445,6 +445,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
                     accumulatedItems = uu.items
                     controller.nextPage = uu.nextPage
                     controller.hasReachedEnd = uu.nextPage == null
+                    controller.videosUseChannelTab = false
                     _videosState.value = PaginatedState.Loaded(
                         uu.items,
                         uu.nextPage,
@@ -462,6 +463,10 @@ class ChannelDetailViewModel @AssistedInject constructor(
                             accumulatedItems = tab.items
                             controller.nextPage = tab.nextPage
                             controller.hasReachedEnd = tab.nextPage == null
+                            // UU was unavailable: nextPage is a channel-tab token, so the
+                            // append loop must stay on the channel-tab path (see
+                            // loadVideosNextPage) rather than re-route through getVideos's UU.
+                            controller.videosUseChannelTab = true
                             _videosState.value = PaginatedState.Loaded(
                                 tab.items,
                                 tab.nextPage,
@@ -540,7 +545,15 @@ class ChannelDetailViewModel @AssistedInject constructor(
 
             while (pageFetches < MAX_APPEND_EMPTY_PAGE_FETCHES && currentNextPage != null) {
                 pageFetches++
-                val page = repository.getVideos(channelId, currentNextPage)
+                // Continue on the same path the initial load settled on: the channel-tab
+                // continuation token is only valid for getVideosViaChannelTab, while the
+                // UU uploads-playlist token is only valid for getVideos. Mixing them
+                // silently breaks append (the reported "only the first set loads").
+                val page = if (controller.videosUseChannelTab) {
+                    repository.getVideosViaChannelTab(channelId, currentNextPage)
+                } else {
+                    repository.getVideos(channelId, currentNextPage)
+                }
                 accumulatedNewItems = accumulatedNewItems + page.items
 
                 controller.nextPage = page.nextPage
@@ -1128,7 +1141,15 @@ class ChannelDetailViewModel @AssistedInject constructor(
         var isAppending: Boolean = false,
         var nextPage: Page? = null,
         var hasReachedEnd: Boolean = false,
-        var lastAppendRequestMs: Long = 0L
+        var lastAppendRequestMs: Long = 0L,
+        /**
+         * Videos tab only: true when the initial load fell back to the channel-tab
+         * path (the UU uploads-playlist path was unavailable), so [nextPage] holds a
+         * channel-tab continuation token. The append loop must then continue via
+         * [ChannelDetailRepository.getVideosViaChannelTab], not [getVideos]'s UU path,
+         * which would mis-feed the channel-tab token into the playlist getMoreItems.
+         */
+        var videosUseChannelTab: Boolean = false
     )
 
     @AssistedFactory

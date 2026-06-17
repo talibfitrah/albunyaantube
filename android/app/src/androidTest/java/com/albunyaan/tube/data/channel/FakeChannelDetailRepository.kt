@@ -110,7 +110,7 @@ class FakeChannelDetailRepository : ChannelDetailRepository {
         return ChannelPage(items = videosToReturn, nextPage = null)
     }
 
-    override suspend fun getVideosViaChannelTab(channelId: String): ChannelPage<ChannelVideo> {
+    override suspend fun getVideosViaChannelTab(channelId: String, page: Page?): ChannelPage<ChannelVideo> {
         // Tests use the same items list for both paths — the production
         // hybrid races UU and channel-tab; emitting identical data keeps
         // existing test assertions valid.

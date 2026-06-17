@@ -344,6 +344,43 @@ class ChannelDetailViewModelTest {
     }
 
     @Test
+    fun `videos append after UU fallback continues on channel-tab path not UU`() = runTest {
+        // Regression: when the UU uploads-playlist path is unavailable on the initial
+        // load, the stored continuation is a CHANNEL-TAB token. The append loop must
+        // continue via getVideosViaChannelTab — routing it back through getVideos (the
+        // UU path) mis-feeds the channel-tab token into the playlist getMoreItems and
+        // silently breaks pagination ("only the first set loads, scrolling adds nothing").
+        val tabNextPage = Page("http://channel-tab-next", null, null, null)
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        // UU probe returns empty -> initial load falls back to the channel-tab path.
+        fakeRepository.videosResponse = ChannelPage(emptyList(), null)
+        // Channel-tab: page 1 (with a continuation) then page 2 (terminal).
+        fakeRepository.channelTabPagedResponses = listOf(
+            ChannelPage(listOf(createTestVideo("v1", "Video 1")), tabNextPage),
+            ChannelPage(listOf(createTestVideo("v2", "Video 2")), null),
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        var state = viewModel.videosState.value as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals("First page should come from the channel-tab fallback", 1, state.items.size)
+
+        advanceTimeBy(1100L)
+        viewModel.loadNextPage(ChannelTab.VIDEOS)
+        advanceUntilIdle()
+
+        state = viewModel.videosState.value as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals("Append must add the channel-tab page-2 item", 2, state.items.size)
+        assertEquals("Video 1", state.items[0].title)
+        assertEquals("Video 2", state.items[1].title)
+        // Append went through the channel-tab path (initial + append = 2 calls)...
+        assertEquals(2, fakeRepository.channelTabCallCount)
+        // ...and did NOT re-route through getVideos' UU path (only the initial probe).
+        assertEquals(1, fakeRepository.videosCallCount)
+    }
+
+    @Test
     fun `videos pagination stops when no next page`() = runTest {
         val videos = listOf(createTestVideo("v1", "Video 1"))
         fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
@@ -1139,10 +1176,16 @@ class ChannelDetailViewModelTest {
         var channelTabResponse: ChannelPage<ChannelVideo>? = null
         var channelTabError: Exception? = null
         var channelTabCallCount = 0
-        override suspend fun getVideosViaChannelTab(channelId: String): ChannelPage<ChannelVideo> {
+        // Paged channel-tab responses, indexed by channelTabCallCount, for asserting
+        // that Videos append continues on the channel-tab path after a UU fallback.
+        var channelTabPagedResponses: List<ChannelPage<ChannelVideo>>? = null
+        override suspend fun getVideosViaChannelTab(channelId: String, page: Page?): ChannelPage<ChannelVideo> {
+            val callIndex = channelTabCallCount
             channelTabCallCount++
             (channelTabError ?: videosError)?.let { throw it }
-            return channelTabResponse ?: videosResponse
+            return channelTabPagedResponses?.getOrNull(callIndex)
+                ?: channelTabResponse
+                ?: videosResponse
         }
 
         override suspend fun getLiveStreams(channelId: String, page: Page?): ChannelPage<ChannelLiveStream> {

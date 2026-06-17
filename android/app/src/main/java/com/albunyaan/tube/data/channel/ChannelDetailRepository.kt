@@ -24,13 +24,16 @@ interface ChannelDetailRepository {
     suspend fun getVideos(channelId: String, page: Page?): ChannelPage<ChannelVideo>
 
     /**
-     * Fast-path first page only: fetch the channel-tab Videos response
-     * (~30 items, smaller payload than the UU uploads playlist). The
-     * channel-tab continuation tokens are unreliable past 1-2 batches in
-     * NewPipe v0.26 — call this only for the initial paint, then switch
-     * to [getVideos] for deep pagination.
+     * Fetch the channel-tab Videos response (~30 items, smaller payload than the
+     * UU uploads playlist). With [page] null this is the fast first-paint path;
+     * with a non-null [page] it continues channel-tab pagination — used by the
+     * Videos append loop when the UU uploads-playlist path was unavailable on the
+     * initial load, so the stored continuation is a channel-tab token (feeding it
+     * back into [getVideos]'s UU path would be a token mismatch). Channel-tab
+     * continuation tokens are unreliable past 1-2 batches in NewPipe, so the UU
+     * path remains preferred whenever it is available.
      */
-    suspend fun getVideosViaChannelTab(channelId: String): ChannelPage<ChannelVideo>
+    suspend fun getVideosViaChannelTab(channelId: String, page: Page? = null): ChannelPage<ChannelVideo>
 
     /**
      * Fetch live streams from the channel's Live tab.
