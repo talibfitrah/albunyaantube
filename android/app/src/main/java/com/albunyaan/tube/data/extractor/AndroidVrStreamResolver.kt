@@ -51,27 +51,12 @@ class AndroidVrStreamResolver(
     }
 
     private fun mapResponse(videoId: String, json: JSONObject, urlGeneratedAt: Long): ResolvedStreams? {
-        val playabilityStatus = json.optJSONObject("playabilityStatus")
-        val status = playabilityStatus?.optStringOrNull("status")
+        val status = json.optJSONObject("playabilityStatus")?.optStringOrNull("status")
         if (status != null && status != "OK") {
             Log.w(TAG, "ANDROID_VR playabilityStatus=$status for $videoId")
             return null
         }
         val streamingData = json.optJSONObject("streamingData") ?: return null
-
-        // Live (and post-live DVR) streams use a rolling live manifest instead of the fixed
-        // byte-range adaptiveFormats this resolver builds synthetic DASH from. A static byte-range
-        // VOD can't represent a moving live edge, so ANDROID_VR was silently playing live as broken
-        // VOD (isLive was hardcoded false → DashSourceBuilder treated it as VOD → no playback).
-        // Defer live to the NewPipe path, which consumes YouTube's real live manifest — verified:
-        // NewPipe yields LIVE_STREAM + dash/hls for a live video and DashSourceBuilder's live
-        // branch plays it.
-        val videoDetails = json.optJSONObject("videoDetails")
-        if (isLiveStream(playabilityStatus, videoDetails, streamingData)) {
-            Log.i(TAG, "ANDROID_VR sees live stream $videoId; deferring to NewPipe for live manifest")
-            return null
-        }
-
         val adaptive = streamingData.optJSONArray("adaptiveFormats")
         val progressive = streamingData.optJSONArray("formats")
 
@@ -109,7 +94,8 @@ class AndroidVrStreamResolver(
 
         if (videoTracks.isEmpty() && audioTracks.isEmpty()) return null
 
-        val durationSeconds = videoDetails?.optStringOrNull("lengthSeconds")?.toIntOrNull()
+        val durationSeconds = json.optJSONObject("videoDetails")
+            ?.optStringOrNull("lengthSeconds")?.toIntOrNull()
 
         val subtitleTracks = try {
             parseSubtitleTracks(json)
@@ -268,33 +254,6 @@ class AndroidVrStreamResolver(
 
         private fun JSONObject.optStringOrNull(key: String): String? =
             if (has(key) && !isNull(key)) optString(key).ifEmpty { null } else null
-
-        /**
-         * True if the player response describes a currently-live or post-live-DVR stream — those
-         * use a rolling live manifest the byte-range synthetic-DASH path here can't represent, so
-         * they must be deferred to the NewPipe live path.
-         *
-         * Classified from authoritative live *metadata*, not manifest presence alone:
-         *  - `videoDetails.isLive` — currently live.
-         *  - `videoDetails.isPostLiveDvr` — the just-ended DVR window (still a rolling manifest).
-         *  - `playabilityStatus.liveStreamability` — YouTube attaches this renderer to live/DVR
-         *    content; it is absent on ordinary VODs.
-         *  - `streamingData.hlsManifestUrl` — YouTube emits HLS only for live/DVR, never plain VOD.
-         *
-         * Deliberately NOT keyed on `isLiveContent` (stays true for finished VODs of past streams,
-         * which play fine on the fast byte-range path) and NOT on `dashManifestUrl` — YouTube also
-         * serves server-side DASH manifests for ordinary VODs (yt-dlp's `youtube_include_dash_manifest`),
-         * so its presence is not proof of live and would needlessly drop VODs to the slower path.
-         */
-        internal fun isLiveStream(
-            playabilityStatus: JSONObject?,
-            videoDetails: JSONObject?,
-            streamingData: JSONObject
-        ): Boolean =
-            videoDetails?.optBoolean("isLive", false) == true ||
-                videoDetails?.optBoolean("isPostLiveDvr", false) == true ||
-                playabilityStatus?.has("liveStreamability") == true ||
-                streamingData.optStringOrNull("hlsManifestUrl") != null
 
         private fun setCookieValue(
             headers: Map<String, List<String>>,
