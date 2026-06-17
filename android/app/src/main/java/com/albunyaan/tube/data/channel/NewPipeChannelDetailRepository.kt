@@ -251,6 +251,10 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 // channel tab (codex Stage-3 P2). The ViewModel's getVideosViaChannelTab race
                 // owns the channel-tab fallback with correct provenance; on append this becomes
                 // a retryable ErrorAppend instead of a silent cursor-family mismatch.
+                // Accepted tradeoff (cubic R2 P3): the old channel-tab fallback here also wrote
+                // keptForCache, so a UU-unavailable channel no longer pre-paints from disk on the
+                // next cold open. Cosmetic + rare (channels with no uploads playlist); the fetch
+                // still repopulates within ~1s. Not restored to avoid common-case cache churn.
                 Log.w(TAG, "Uploads playlist fetch failed for $channelId: ${e.message}")
                 throw e
             }
