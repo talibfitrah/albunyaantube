@@ -299,6 +299,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var adaptiveFailedForCurrentStream: String? = null
 
     /**
+     * TV silent-audio recovery: force the muxed/progressive path for this streamId, sticky until
+     * the stream changes. DELIBERATELY SEPARATE from [adaptiveFailedForCurrentStream] so the
+     * battle-tested adaptive-fallback path (and its !isSameStream clear) stays byte-for-byte
+     * unchanged — the TV-audio fix must have zero blast radius on normal VOD/Shorts playback.
+     * Only ever set when [audioPresentButUnplayable] fired, so it cannot affect a healthy stream.
+     */
+    private var silentAudioProgressiveStreamId: String? = null
+
+    /**
      * Minimal buffering-stall watchdog (replaces the old multi-step recovery
      * stall ladder). When the player sits in STATE_BUFFERING past a threshold and the
      * current stream is unchanged, route through the battle-tested re-resolve path
@@ -643,6 +652,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding.playerRefreshStreamButton.setOnClickListener {
             // Reset adaptive fallback flag - manual refresh should retry adaptive
             adaptiveFailedForCurrentStream = null
+            silentAudioProgressiveStreamId = null
+            // Also clear the silent-audio recovery one-shot guard: a manual refresh deliberately
+            // abandons the working progressive path to retry adaptive, so re-enable auto-recovery
+            // in case that adaptive retry comes up silent again (cubic P3 — else the burned guard
+            // would leave the stream silent until another manual refresh / audio-only toggle).
+            audioRecoveryStreamId = null
             // Manual refresh: ALWAYS invalidate MPD first, regardless of rate limit.
             // This is intentional - user-initiated refresh should clear stale URLs even if
             // rate-limited, so the next allowed refresh uses fresh URLs.
@@ -662,6 +677,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             viewModel.clearRecoveringState()
             // Reset adaptive fallback flag - manual retry should retry adaptive
             adaptiveFailedForCurrentStream = null
+            silentAudioProgressiveStreamId = null
+            // Clear the silent-audio recovery one-shot guard too (cubic P3) — see the manual-refresh
+            // handler above; a manual retry re-enables auto-recovery if adaptive is silent again.
+            audioRecoveryStreamId = null
             // Manual retry: ALWAYS invalidate MPD first, regardless of rate limit.
             // Same reasoning as refresh button - user action clears stale URLs.
             viewModel.state.value.currentItem?.streamId?.let { videoId ->
@@ -879,6 +898,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         preparedQualityCapHeight = null
         factorySelectedVideoTrack = null
         adaptiveFailedForCurrentStream = null
+        silentAudioProgressiveStreamId = null
         lastMetadataSyncedItemId = null
 
         // Cancel any pending artwork loading and clear callback
@@ -2147,13 +2167,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     /**
      * Android-TV "starts silent" recovery. On some TV boxes (reported on Android 9 HDMI
-     * boxes) the audio adaptation set is not selected on the first prepare — the HDMI
-     * sink's AudioCapabilities resolve AFTER track selection has already run — so the
-     * video plays with no sound. The manual "audio only" toggle fixed it only because it
-     * forced a full re-resolve + rebuild. This automates that: once playback is READY, if
-     * the source has audio tracks but none is both selected AND supported, re-resolve the
-     * stream once. Guarded per streamId so a genuinely audioless or undecodable source
-     * cannot loop the refresh.
+     * boxes) no audio track in the adaptive (synthetic-DASH) source is both selected AND
+     * supported on first prepare, so the video plays with no sound. Key evidence: the manual
+     * "audio only" toggle restores sound, and it plays through a [ProgressiveMediaSource] —
+     * the SAME mechanism the muxed fallback uses — which proves the device CAN decode the
+     * audio; the failure is specific to the DASH audio path, not the codec.
+     *
+     * So once playback is READY, if [audioPresentButUnplayable], we force the progressive
+     * (muxed itag-18/22 AAC) path on a single re-prepare via [silentAudioProgressiveStreamId]
+     * — a SEPARATE flag from [adaptiveFailedForCurrentStream] so the adaptive-fallback path stays
+     * untouched — NOT just a plain re-resolve, which re-prepares the same adaptive path and stays
+     * silent (the beta.33/34 recovery's blind spot). Guarded per streamId so a genuinely audioless
+     * or undecodable source cannot loop. NOTE: still unverified on the reporting box (no device
+     * access); evidence-based fallback to the proven-working progressive path.
      */
     private fun maybeRecoverSilentAudio(tracks: Tracks) {
         val state = viewModel.state.value
@@ -2172,15 +2198,27 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             "Audio present but no selected+supported track for $streamId " +
                 "(TV silent-audio); re-resolving once. audioTracks=${describeAudioTracks(tracks)}"
         )
-        // Burn the one-shot guard only if the refresh actually started. A rate-limit
-        // Blocked refresh returns false and stays recoverable on the next onTracksChanged
-        // (codex Stage-3 P3). Accepted edge (cubic R2/R3 P3): a Delayed refresh returns true
-        // and burns the guard though it only SCHEDULED the re-resolve; if that delayed job is
-        // itself Blocked later, the stream stays silent. Rare (double rate-limit), no worse
-        // than not having the feature, and not worth widening forceRefreshForAutoRecovery's
-        // Boolean->enum contract across its 9 callers.
-        if (requestStreamRefreshAndResume("audio track not selected on first prepare")) {
+        // Force the MUXED progressive path (itag 18/22 = H.264+AAC via ProgressiveMediaSource,
+        // or separate video-only+progressive-audio) on the re-prepare. This is the fix for the
+        // recovery being INEFFECTIVE in beta.33/34: the old recovery re-resolved but re-prepared
+        // on the SAME adaptive (synthetic-DASH) path, so the device rejected the audio again.
+        // The reporting box plays audio fine in audio-only mode — which uses the very same
+        // ProgressiveMediaSource — so the failure is specific to DASH audio, not the codec.
+        // Uses a SEPARATE sticky flag (not adaptiveFailedForCurrentStream) so the battle-tested
+        // adaptive-fallback path is untouched; maybePrepareStream OR's it into forceProgressive.
+        silentAudioProgressiveStreamId = streamId
+        // Burn the one-shot guard only if the refresh actually started. A rate-limit Blocked
+        // refresh returns false and stays recoverable on the next onTracksChanged (codex Stage-3
+        // P3). Accepted edge (cubic R2/R3 P3): a Delayed refresh returns true and burns the guard
+        // though it only SCHEDULED the re-resolve; if that delayed job is itself Blocked later, the
+        // stream stays silent. Rare (double rate-limit), no worse than not having the feature.
+        if (requestStreamRefreshAndResume("audio unsupported in adaptive — forcing progressive muxed")) {
             audioRecoveryStreamId = streamId
+        } else if (silentAudioProgressiveStreamId == streamId) {
+            // Refresh was rate-limited / blocked: no re-prepare started, so roll the force-progressive
+            // flag back rather than leave it armed to fire on some later unrelated prepare of this
+            // stream (codex P3). The guard isn't burned, so the next onTracksChanged retries cleanly.
+            silentAudioProgressiveStreamId = null
         }
     }
 
@@ -2878,8 +2916,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val isAudioModeChange = isSameStream && preparedStreamKey?.second != key.second
         val isQualitySwitch = isQualityChange || isAudioModeChange
 
-        // Check if adaptive failed for this stream previously (sticky fallback)
-        val forceProgressive = adaptiveFailedForCurrentStream == streamState.streamId
+        // Check if adaptive failed for this stream previously (sticky fallback), OR the TV
+        // silent-audio recovery asked to force progressive for this stream (separate flag so the
+        // adaptive-fallback path is untouched).
+        val forceProgressive = adaptiveFailedForCurrentStream == streamState.streamId ||
+            silentAudioProgressiveStreamId == streamState.streamId
 
         // Check if the currently prepared source matches what we would create
         when (val cacheHit = checkCacheHit(key, state, selection, resolved, forceProgressive)) {
@@ -2913,6 +2954,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // (cubic P2). A same-streamId re-prepare keeps the guard => one-shot per stream.
         if (audioRecoveryStreamId != null && audioRecoveryStreamId != streamState.streamId) {
             audioRecoveryStreamId = null
+        }
+
+        // Clear the TV silent-audio force-progressive flag only on a genuine stream CHANGE, never
+        // on a same-stream re-prepare. The recovery's re-resolve re-prepares the SAME streamId with
+        // preparedStreamKey nulled (isSameStream=false); a clear keyed on !isSameStream would drop
+        // the flag mid-recovery, so a later same-stream quality change would rebuild adaptive, go
+        // silent again, and the burned audioRecoveryStreamId guard would block a second recovery —
+        // permanent silence (codex P2). streamId-keyed keeps progressive sticky for the recovered
+        // stream. forceProgressive is read above before this runs, so a real new stream still
+        // evaluates false there. (adaptiveFailedForCurrentStream keeps its own !isSameStream clear
+        // below — untouched.)
+        if (silentAudioProgressiveStreamId != null &&
+            silentAudioProgressiveStreamId != streamState.streamId) {
+            silentAudioProgressiveStreamId = null
         }
 
         // Reset state when switching to a different stream (not quality switch)
