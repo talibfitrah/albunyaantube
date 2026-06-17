@@ -1,0 +1,23 @@
+android/app/src/main/java/com/albunyaan/tube/update/InstallStatusActivity.kt
+  s_188fada08d38e3::t_1724eed8d88470 3,8-10
+  s_188fada08d38e3::t_d23f19233005e4 56
+  s_188fada08d38e3::t_c6720cd9edbb48 81
+  s_188fada08d38e3::t_174395bc00870c 176-179
+  s_188fada08d38e3::t_f9be5fbdbb7a19 124-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "f8b87302a81c7b412d62beb4c981cc2a9c37c331",
+  "prompts": {},
+  "sessions": {
+    "s_188fada08d38e3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5596c250-6c5c-42ad-9d67-218f134d6663",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
