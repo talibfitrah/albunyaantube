@@ -1,0 +1,35 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/AndroidVrStreamResolver.kt
+  s_188fada08d38e3::t_43a4c60d15e14a 54-55,62,70
+  s_188fada08d38e3::t_108ecffb85e074 272,288,294,298
+  s_188fada08d38e3::t_f0bb4d9f8da9eb 273-287,289-293,295-297
+  s_188fada08d38e3::t_650e833e3575c7 112
+  s_188fada08d38e3::t_00c635d84927e2 61,63-69,71-74
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_188fada08d38e3::t_61a8f2b7c14b7b 108-136
+  s_188fada08d38e3::t_fe1a6383ff01be 2173
+android/app/src/test/java/com/albunyaan/tube/data/extractor/AndroidVrLiveDetectionTest.kt
+  s_188fada08d38e3::t_8daedcfc6bbe4b 1-13,17,22-28,47,49-50,52-53,57-61,63-64,66,68-72,74-75,95-102,104-111,114-118,120-126,128-129,131-136
+  s_188fada08d38e3::t_6bc81a18a3d209 14-16,18-21,29-46,48,51,54-56,62,65,67,73,76-94,103,112-113,119,127,130
+releases-meta.json
+  s_188fada08d38e3::t_ddf2162bf6479f 2-6
+android/app/build.gradle.kts
+  s_188fada08d38e3::t_13cbb389178511 39-40
+CHANGELOG.md
+  s_188fada08d38e3::t_4980075ebbaffb 8-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "341d69bc2b0a4ecc2fe0469ca0c65e494186bd00",
+  "prompts": {},
+  "sessions": {
+    "s_188fada08d38e3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5596c250-6c5c-42ad-9d67-218f134d6663",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
