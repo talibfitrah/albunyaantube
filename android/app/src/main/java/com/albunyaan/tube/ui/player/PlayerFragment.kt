@@ -2873,6 +2873,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Preparing stream: id=${key.first}, audioOnly=${key.second}, expectedUrl=${sourceIdentityForLog(expectedSourceUrl)}, isQualitySwitch=$isQualitySwitch")
 
+        // Re-arm TV silent-audio recovery only when the stream genuinely CHANGES (different
+        // streamId). Deliberately NOT keyed on isSameStream: the recovery's own re-resolve
+        // nulls preparedStreamKey, making isSameStream false for the SAME stream, so a reset
+        // there would clear the guard mid-recovery and loop on an undecodable source
+        // (cubic P2). A same-streamId re-prepare keeps the guard => one-shot per stream.
+        if (audioRecoveryStreamId != null && audioRecoveryStreamId != streamState.streamId) {
+            audioRecoveryStreamId = null
+        }
+
         // Reset state when switching to a different stream (not quality switch)
         if (!isSameStream) {
             // Telemetry: end the previous session (if any) and start a fresh one
@@ -2881,12 +2890,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
             // Phase 1B: Reset playback start time for HLS early 403 detection
             streamPlaybackStartTimeMs = 0L
-
-            // Re-arm TV silent-audio recovery for the new stream so a previously-recovered
-            // stream can recover again when revisited (A->B->A). Gated on !isSameStream (not
-            // every prepare) so the recovery's OWN same-stream re-resolve can't clear the
-            // guard and loop.
-            audioRecoveryStreamId = null
 
             // Reset sticky fallback flag for adaptive streams
             if (adaptiveFailedForCurrentStream != null) {
