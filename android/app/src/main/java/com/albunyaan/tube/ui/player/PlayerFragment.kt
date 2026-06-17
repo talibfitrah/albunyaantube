@@ -2882,6 +2882,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Phase 1B: Reset playback start time for HLS early 403 detection
             streamPlaybackStartTimeMs = 0L
 
+            // Re-arm TV silent-audio recovery for the new stream so a previously-recovered
+            // stream can recover again when revisited (A->B->A). Gated on !isSameStream (not
+            // every prepare) so the recovery's OWN same-stream re-resolve can't clear the
+            // guard and loop.
+            audioRecoveryStreamId = null
+
             // Reset sticky fallback flag for adaptive streams
             if (adaptiveFailedForCurrentStream != null) {
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Clearing adaptive fallback flag (new stream)")
