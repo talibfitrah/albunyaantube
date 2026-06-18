@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.37": {
+    "en": "Restores smooth dubbing and subtitle switching plus overall player stability. Live streams keep playing.",
+    "ar": "استعادة التبديل السلس للدبلجة والترجمة واستقرار المشغّل بشكل عام، مع استمرار تشغيل البث المباشر.",
+    "nl": "Herstelt soepel wisselen van nasynchronisatie en ondertitels en algehele stabiliteit. Livestreams blijven werken."
+  },
   "1.0.0-beta.36": {
     "en": "Fixes auto-update on phones that showed a 'signature mismatch' error (e.g. Huawei/Honor). Updates now install reliably.",
     "ar": "إصلاح التحديث التلقائي على الأجهزة التي أظهرت خطأ \"عدم تطابق التوقيع\" (مثل هواوي/هونر). أصبحت التحديثات تُثبَّت الآن بشكل موثوق.",

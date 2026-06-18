@@ -5,6 +5,28 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.37] - 2026-06-18
+
+### Android
+
+- **Player stability restored: smooth audio-language (dub) and subtitle
+  switching is back.** The Android-TV silent-audio recovery added in
+  beta.33–35 ran on *every* device with no TV gate; when it judged audio
+  "unplayable" it forced the muxed path (one baked-in AAC track) and
+  re-prepared mid-playback — which on normal phones/tablets broke dub/subtitle
+  switching and destabilized playback. Reverted to the last known-stable
+  baseline (beta.30). The unverified Android-9 TV-box silent-audio case is no
+  longer auto-handled; it will be re-addressed later behind a proper TV-only
+  gate.
+- **Live streams still play, without misrouting normal videos.** Live detection
+  now keys only on YouTube's authoritative live flags (`isLive` /
+  `isPostLiveDvr`), no longer on the `hlsManifestUrl` / `liveStreamability`
+  heuristics that also appear on some ordinary videos and were pushing them onto
+  the fallback path that drops dub audio tracks.
+- Passed the full review pipeline (code-review, security, codex, `/review`
+  adversarial, cubic) and the 1352-test unit suite. The beta.36 auto-update fix
+  is unchanged.
+
 ## [1.0.0-beta.36] - 2026-06-18
 
 ### Android
