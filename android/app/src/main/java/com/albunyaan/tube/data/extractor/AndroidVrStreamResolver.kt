@@ -57,6 +57,20 @@ class AndroidVrStreamResolver(
             return null
         }
         val streamingData = json.optJSONObject("streamingData") ?: return null
+
+        // Live / post-live-DVR streams use a rolling live manifest that this resolver's fixed
+        // byte-range synthetic-DASH path can't represent. ANDROID_VR hardcodes isLive=false, so
+        // DashSourceBuilder would treat live as VOD and fail to play it. Defer ONLY genuine live
+        // to the NewPipe live-manifest path, keyed strictly on the authoritative
+        // videoDetails.isLive / isPostLiveDvr flags. Deliberately NOT keyed on hlsManifestUrl or
+        // playabilityStatus.liveStreamability: YouTube also attaches those to some ordinary VODs,
+        // and dropping a VOD onto the NewPipe fallback strips its dub audio tracks.
+        val videoDetails = json.optJSONObject("videoDetails")
+        if (isLiveStream(videoDetails)) {
+            Log.i(TAG, "ANDROID_VR sees live stream $videoId; deferring to NewPipe for live manifest")
+            return null
+        }
+
         val adaptive = streamingData.optJSONArray("adaptiveFormats")
         val progressive = streamingData.optJSONArray("formats")
 
@@ -94,8 +108,7 @@ class AndroidVrStreamResolver(
 
         if (videoTracks.isEmpty() && audioTracks.isEmpty()) return null
 
-        val durationSeconds = json.optJSONObject("videoDetails")
-            ?.optStringOrNull("lengthSeconds")?.toIntOrNull()
+        val durationSeconds = videoDetails?.optStringOrNull("lengthSeconds")?.toIntOrNull()
 
         val subtitleTracks = try {
             parseSubtitleTracks(json)
@@ -254,6 +267,20 @@ class AndroidVrStreamResolver(
 
         private fun JSONObject.optStringOrNull(key: String): String? =
             if (has(key) && !isNull(key)) optString(key).ifEmpty { null } else null
+
+        /**
+         * True only for a genuinely live or post-live-DVR stream, classified from the
+         * authoritative live flags in videoDetails. Such streams use a rolling live manifest
+         * the byte-range synthetic-DASH path here can't build, so they must defer to NewPipe.
+         *
+         * Deliberately NARROW: not keyed on playabilityStatus.liveStreamability or
+         * streamingData.hlsManifestUrl. YouTube attaches both to some ordinary VODs too, so
+         * using them would wrongly drop normal videos onto the NewPipe fallback (which strips
+         * dub audio tracks). isLive / isPostLiveDvr are set only for actual live content.
+         */
+        internal fun isLiveStream(videoDetails: JSONObject?): Boolean =
+            videoDetails?.optBoolean("isLive", false) == true ||
+                videoDetails?.optBoolean("isPostLiveDvr", false) == true
 
         private fun setCookieValue(
             headers: Map<String, List<String>>,
