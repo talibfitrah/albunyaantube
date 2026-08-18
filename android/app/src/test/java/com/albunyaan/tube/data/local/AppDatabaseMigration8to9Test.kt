@@ -37,7 +37,7 @@ class AppDatabaseMigration8to9Test {
             db.execSQL(
                 "INSERT INTO sync_state(entityType, user_id, last_cursor, last_sync_at) " +
                     "VALUES (?, ?, ?, ?)",
-                arrayOf("subscriptions", "u1", 12345L, System.currentTimeMillis())
+                arrayOf<Any?>("subscriptions", "u1", 12345L, System.currentTimeMillis())
             )
         }
 
@@ -59,7 +59,7 @@ class AppDatabaseMigration8to9Test {
             db.execSQL(
                 "INSERT INTO sync_state(entityType, user_id, last_cursor, last_doc_id, last_sync_at) " +
                     "VALUES (?, ?, ?, ?, ?)",
-                arrayOf("favorites", "u2", 99L, "doc-xyz", System.currentTimeMillis())
+                arrayOf<Any?>("favorites", "u2", 99L, "doc-xyz", System.currentTimeMillis())
             )
             db.query("SELECT last_doc_id FROM sync_state WHERE user_id='u2'").use {
                 assertTrue(it.moveToFirst())

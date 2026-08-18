@@ -150,7 +150,7 @@ class MeChipsAdapter(
                 )
                 binding.chipRoot.strokeColor = MaterialColors.getColor(
                     binding.chipRoot,
-                    com.google.android.material.R.attr.colorPrimary,
+                    androidx.appcompat.R.attr.colorPrimary,
                 )
             } else {
                 binding.chipRoot.setCardBackgroundColor(

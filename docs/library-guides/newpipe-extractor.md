@@ -1,6 +1,6 @@
 # NewPipeExtractor Library Reference
 
-> **Version**: 0.24.8
+> **Version**: 0.26.5
 > **Purpose**: Java framework for scraping video platform websites as a structured API
 > **No API Keys Required**: Extracts data directly from public web pages
 > **JavaDoc**: https://teamnewpipe.github.io/NewPipeExtractor/javadoc/

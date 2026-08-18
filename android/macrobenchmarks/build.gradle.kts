@@ -4,9 +4,15 @@ plugins {
     id("androidx.baselineprofile")
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
 android {
     namespace = "com.albunyaan.tube.macrobenchmarks"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 24
@@ -50,9 +56,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     packaging {
         resources {
@@ -63,11 +66,11 @@ android {
 
 dependencies {
     implementation(project(":app"))
-    implementation("androidx.benchmark:benchmark-macro-junit4:1.3.1")
-    implementation("androidx.benchmark:benchmark-junit4:1.3.1")
-    implementation("androidx.test.ext:junit:1.2.1")
-    implementation("androidx.test:runner:1.6.2")
-    implementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    implementation("androidx.benchmark:benchmark-macro-junit4:1.4.1")
+    implementation("androidx.benchmark:benchmark-junit4:1.4.1")
+    implementation("androidx.test.ext:junit:1.3.0")
+    implementation("androidx.test:runner:1.7.0")
+    implementation("androidx.test.uiautomator:uiautomator:2.4.0")
     implementation("io.coil-kt:coil:2.7.0")
 }
 
