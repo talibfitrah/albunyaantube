@@ -25,6 +25,16 @@ during the beta program.
 
 ### Android
 
+- **Videos no longer stop after one minute.** Playback died at ~60s with
+  "Unable to recover playback automatically" because YouTube extended its
+  proof-of-origin requirement to the Oculus/VR client this app used to fetch
+  streams with, so its links expired mid-playback. Stream fetching now goes
+  through NewPipeExtractor, whose links keep working — and the HD quality
+  ladder, resolution switching and audio-language switching come with it.
+  (The same failure was reproduced on the previous release, so it was not
+  caused by the dependency upgrade.)
+- Downloads and startup pre-buffering now identify themselves as the same
+  client that produced the link, which is what YouTube requires to serve it.
 - **Bottom navigation labels are readable again.** Material 1.13/1.14's
   navigation-bar rework sized the bar to ~42dp whatever height the layout
   asked for, cutting every tab label ("Home", "Channels", "Me", "Playlists",
