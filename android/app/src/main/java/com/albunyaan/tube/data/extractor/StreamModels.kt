@@ -202,9 +202,11 @@ enum class ExtractionClient {
 
     /**
      * The User-Agent that must be sent when fetching URLs minted by this client — a mismatch is
-     * what makes googlevideo 403 the fetch. Shared so the download path and the playback path
-     * (CronetDataSourceFactory.createForAndroidUA / createForIosUA, selected by
-     * SegmentDataSourceFactoryProvider.forClient) cannot drift apart.
+     * what makes googlevideo 403 the fetch. Used by the download path (DownloadWorker), which
+     * needs the UA as a header string. Playback needs a whole DataSource.Factory rather than a
+     * string, so SegmentDataSourceFactoryProvider.forClient picks between
+     * CronetDataSourceFactory.createForIosUA / createForAndroidUA off the same
+     * [usesIosUserAgent] predicate — ExtractionClientTest pins the two in agreement.
      */
     fun userAgent(): String =
         if (usesIosUserAgent()) HttpConstants.YOUTUBE_IOS_USER_AGENT

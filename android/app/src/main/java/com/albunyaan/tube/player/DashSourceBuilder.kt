@@ -113,7 +113,7 @@ class DashSourceBuilder @Inject constructor(
         // YouTube extended its GVS poToken requirement to ANDROID_VR too and the VR resolve path
         // was removed (see NewPipeExtractorClient.resolveStreams). NewPipeExtractor 0.26.5's own
         // adaptive video-only segments were then re-verified to sustain — HTTP 206 on a range
-        // request at t+70s with no poToken provider registered at all (backend PoTokenProbeTest).
+        // request at t+70s with no poToken provider registered at all, then 1:49+ on-device.
         //
         // Leaving the old gate in place after the VR removal silently pinned every video to the
         // muxed 360p itag-18 stream: no HD ladder, no quality switching, no dub swapping. Verified

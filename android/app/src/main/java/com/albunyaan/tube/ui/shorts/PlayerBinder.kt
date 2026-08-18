@@ -505,7 +505,7 @@ class PlayerBinder private constructor(
         resolved: ResolvedStreams,
         qualityCapHeight: Int? = SHORTS_FALLBACK_STARTUP_MAX_HEIGHT
     ): MediaSource? {
-        // UA-matched to the client that minted these URLs (ANDROID_VR / NewPipe-iOS /
+        // UA-matched to the client that minted these URLs (NewPipe-iOS /
         // NewPipe-Android). Using a fixed Android UA here 403s on iOS-minted streams.
         val dataSourceFactory = dataSourceFactoryProvider.forStreams(resolved)
 

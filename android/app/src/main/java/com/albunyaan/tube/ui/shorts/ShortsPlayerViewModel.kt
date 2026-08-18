@@ -140,7 +140,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
      * harmless — CAP just picks the next-lower available track.
      *
      * Known limitation (tracked follow-up): for a single-progressive-track short
-     * (an ANDROID_VR-unplayable short served via the NewPipe fallback, or an
+     * (a short whose adaptive build isn't available, or an
      * MPD-gen failure) the track selector has only one rendition, so a pick is a
      * silent no-op — unlike the main player, this picker isn't gated on
      * adaptive-ness because the ViewModel doesn't hold the binder's resolved
