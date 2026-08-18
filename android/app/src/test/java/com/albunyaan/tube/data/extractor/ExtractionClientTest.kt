@@ -27,7 +27,7 @@ class ExtractionClientTest {
     // --- ResolvedStreams default extractionClient ---
 
     @Test
-    fun `ResolvedStreams default extractionClient is ANDROID_VR`() {
+    fun `ResolvedStreams default extractionClient uses the Android User-Agent`() {
         val streams = ResolvedStreams(
             streamId = "test_id",
             videoTracks = emptyList(),
@@ -41,6 +41,10 @@ class ExtractionClientTest {
             ),
             durationSeconds = 60
         )
-        assertEquals(ExtractionClient.ANDROID_VR, streams.extractionClient)
+        // The safety property is the User-Agent, not which constant is named: a UA mismatch
+        // against the minting client is what 403s every segment. The default moved off the
+        // retired ANDROID_VR to NEWPIPE_ANDROID (2026-08-18) and both are Android-UA, so this
+        // asserts the invariant that survives that rename rather than the constant itself.
+        assertFalse(streams.extractionClient.usesIosUserAgent())
     }
 }

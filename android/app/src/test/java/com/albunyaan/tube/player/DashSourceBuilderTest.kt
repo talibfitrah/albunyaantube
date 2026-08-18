@@ -9,6 +9,7 @@ import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.SyntheticDashMetadata
 import com.albunyaan.tube.data.extractor.VideoTrack
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -54,6 +55,10 @@ class DashSourceBuilderTest {
     )
 
     /** Muxed (non video-only) track, e.g. itag 18 / 22. */
+    /** Video-only track with NO SegmentBase ranges — makes multi-rep MPD generation fail. */
+    private fun rangelessVideoOnlyTrack(height: Int, itag: Int) =
+        videoOnlyTrack(height, itag).copy(syntheticDashMetadata = null)
+
     private fun muxedTrack(height: Int, itag: Int, url: String = "https://example.com/muxed$itag") = VideoTrack(
         url = url,
         mimeType = "video/mp4",
@@ -325,18 +330,19 @@ class DashSourceBuilderTest {
     }
 
     // =========================================================================
-    // decide() — extractionClient gate (adaptive only sustains on ANDROID_VR)
+    // decide() — adaptive ladder is client-independent
     // =========================================================================
     //
-    // The NewPipe poToken fallback clients (iOS / android) mint GVS segment URLs whose adaptive
-    // ranges YouTube only honors for the *initial* ~60s — later segments 403 (verified on-device +
-    // yt-dlp for One4kids "Zaky's Learning Club" and a control video). Only ANDROID_VR's adaptive
-    // segments sustain. So a fallback resolve must SKIP the (doomed) adaptive MPD and serve the
-    // always-present muxed itag-18 progressive stream directly — even when the tracks would
-    // otherwise be LocalDash-eligible. ANDROID_VR keeps its full HD/4K adaptive ladder.
+    // History: adaptive used to be gated to ANDROID_VR, because the other clients' GVS segment
+    // URLs were only honored for the initial ~60s and later segments 403'd. On 2026-08-18 YouTube
+    // extended the same poToken requirement to ANDROID_VR itself, that resolve path was removed,
+    // and NewPipeExtractor 0.26.5's adaptive segments were re-verified to sustain (HTTP 206 on a
+    // range request at t+70s; on-device the player then ran 1:49+ on SYNTH_ADAPTIVE with zero
+    // 403s). The gate now keys only on whether the MPD can be built, so these tests pin the
+    // ladder for every client — the thing that keeps quality switching and dub swapping alive.
 
     /** The Ep3 fallback shape: MPD-eligible video-only tracks + muxed itag 18 + audio. */
-    private fun fallbackEligibleStreams(extractionClient: ExtractionClient) = streams(
+    private fun mpdEligibleStreams(extractionClient: ExtractionClient) = streams(
         videoTracks = listOf(
             videoOnlyTrack(360, itag = 134),
             videoOnlyTrack(720, itag = 136),
@@ -348,58 +354,43 @@ class DashSourceBuilderTest {
     )
 
     @Test
-    fun `NEWPIPE_IOS fallback + LocalDash-eligible tracks → Progressive muxed 360p (adaptive skipped)`() {
-        val decision = builder.decide(fallbackEligibleStreams(ExtractionClient.NEWPIPE_IOS))
-
-        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
-        val prog = decision as SourceDecision.Progressive
-        assertEquals(
-            "Fallback must serve the sustaining muxed itag-18 stream, not the doomed adaptive ladder",
-            "https://example.com/muxed18",
-            prog.videoUrl,
-        )
-        assertNull("Muxed track carries its own audio — no separate audio url", prog.audioUrl)
+    fun `MPD-eligible tracks build the adaptive ladder on every client`() {
+        // Inverted on 2026-08-18: adaptive used to be gated to ANDROID_VR because only its segments
+        // sustained. YouTube then required a GVS poToken on ANDROID_VR too, that resolve path was
+        // removed, and NewPipeExtractor's own adaptive segments were re-verified to sustain (HTTP
+        // 206 at t+70s). Keeping the gate would have pinned every video to muxed 360p, so the
+        // invariant is now: eligible tracks -> LocalDash regardless of which client minted them.
+        for (client in listOf(
+            ExtractionClient.NEWPIPE_IOS,
+            ExtractionClient.NEWPIPE_ANDROID,
+            ExtractionClient.ANDROID_VR,
+        )) {
+            val decision = builder.decide(mpdEligibleStreams(client))
+            assertTrue("Expected LocalDash for $client but got: $decision", decision is SourceDecision.LocalDash)
+        }
     }
 
     @Test
-    fun `NEWPIPE_ANDROID fallback + LocalDash-eligible tracks → Progressive (adaptive skipped)`() {
-        // The gate is `== ANDROID_VR`, so the android fallback client is treated like iOS here.
-        val decision = builder.decide(fallbackEligibleStreams(ExtractionClient.NEWPIPE_ANDROID))
-
-        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
-        assertEquals(
-            "https://example.com/muxed18",
-            (decision as SourceDecision.Progressive).videoUrl,
-        )
-    }
-
-    @Test
-    fun `same eligible fixture on ANDROID_VR → LocalDash (proves the client is the only difference)`() {
-        // Contrast guard: identical tracks, only extractionClient differs. ANDROID_VR keeps adaptive.
-        val decision = builder.decide(fallbackEligibleStreams(ExtractionClient.ANDROID_VR))
-
-        assertTrue("ANDROID_VR must keep the adaptive MPD but got: $decision", decision is SourceDecision.LocalDash)
-    }
-
-    @Test
-    fun `NEWPIPE_IOS fallback with NO muxed track → None (no sustainable progressive)`() {
-        // Regression (codex P1): without a muxed itag-18, the old code served video-only + audio
-        // progressively, which 403s ~60s in on the fallback clients (same reason adaptive is
-        // skipped). There is no sustainable stream, so decide() must surface None — not a doomed
-        // source that reintroduces the 403 loop.
+    fun `MPD-generation failure with no muxed track falls back to video-only plus audio`() {
+        // Previously None("FALLBACK_NO_SUSTAINABLE_MUXED") for the non-VR clients, because their
+        // video-only segments 403'd mid-stream. That premise died with the ANDROID_VR removal
+        // (see the adaptive test above), so a video-only + audio pair is playable again — and
+        // surfacing None here would strand videos that ship no muxed itag at all.
+        //
+        // Deliberately exercises the forceProgressive = FALSE path with MPD-ineligible ranges, so
+        // it covers the real "adaptive attempted, generation failed" branch rather than repeating
+        // the forceProgressive case already covered below.
         val resolved = streams(
-            videoTracks = listOf(
-                videoOnlyTrack(720, itag = 136),
-                videoOnlyTrack(1080, itag = 137),
-            ),
+            videoTracks = listOf(rangelessVideoOnlyTrack(720, itag = 136)),
             audioTracks = listOf(audioTrack(itag = 140)),
             extractionClient = ExtractionClient.NEWPIPE_IOS,
         )
 
         val decision = builder.decide(resolved)
 
-        assertTrue("Expected None but got: $decision", decision is SourceDecision.None)
-        assertEquals("FALLBACK_NO_SUSTAINABLE_MUXED", (decision as SourceDecision.None).reason)
+        assertTrue("Expected Progressive but got: $decision", decision is SourceDecision.Progressive)
+        val prog = decision as SourceDecision.Progressive
+        assertNotNull("video-only build must carry a separate audio url", prog.audioUrl)
     }
 
     @Test

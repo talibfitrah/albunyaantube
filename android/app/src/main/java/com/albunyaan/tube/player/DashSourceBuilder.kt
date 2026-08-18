@@ -16,7 +16,6 @@ import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.AudioTrackSource
-import com.albunyaan.tube.data.extractor.ExtractionClient
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import javax.inject.Inject
@@ -106,20 +105,21 @@ class DashSourceBuilder @Inject constructor(
             }
         }
 
-        // VOD — try multi-rep adaptive MPD first, UNLESS forced to progressive or the streams came
-        // from the NewPipe poToken fallback. The ANDROID_VR primary client's adaptive segments
-        // sustain full playback; the fallback clients' adaptive segments do NOT. YouTube only honors
-        // our WebView (web-context) poToken for the *initial* range of iOS/android-client GVS
-        // segments — sustained adaptive streaming needs native client attestation we can't produce on
-        // Android — so an adaptive build on the fallback path plays ~60s then 403s on every later
-        // segment (verified on-device + via yt-dlp for One4kids "Zaky's Learning Club", and even for a
-        // normal control video). The muxed itag-18/22 progressive stream, always present via the
-        // ANDROID client NewPipe fetches, DOES sustain a full ad-free download. So for fallback
-        // resolves skip the doomed adaptive manifest and serve progressive directly (360p) — it plays
-        // immediately instead of a 60s false-start + 403 recovery loop. ANDROID_VR (the common path)
-        // is unaffected and keeps its full HD/4K adaptive ladder.
-        val adaptiveCanSustain = resolved.extractionClient == ExtractionClient.ANDROID_VR
-        if (!forceProgressive && adaptiveCanSustain) {
+        // VOD — try the multi-representation adaptive MPD first unless the caller forced progressive.
+        //
+        // This was gated to ExtractionClient.ANDROID_VR while that client was the only one whose
+        // adaptive segments sustained: everything else 403'd after the initial range, so an
+        // adaptive build elsewhere played ~60s and died. That premise INVERTED on 2026-08-18, when
+        // YouTube extended its GVS poToken requirement to ANDROID_VR too and the VR resolve path
+        // was removed (see NewPipeExtractorClient.resolveStreams). NewPipeExtractor 0.26.5's own
+        // adaptive video-only segments were then re-verified to sustain — HTTP 206 on a range
+        // request at t+70s with no poToken provider registered at all (backend PoTokenProbeTest).
+        //
+        // Leaving the old gate in place after the VR removal silently pinned every video to the
+        // muxed 360p itag-18 stream: no HD ladder, no quality switching, no dub swapping. Verified
+        // on-device before/after (SyntheticDASH summary reported mpdOKVideo=12 up to 1080p while
+        // the builder was still returning PROGRESSIVE).
+        if (!forceProgressive) {
             when (val mpdResult = mpdGenerator.generateMpd(resolved)) {
                 is MultiRepresentationMpdGenerator.Result.Success ->
                     return SourceDecision.LocalDash(mpdResult.mpdDataUri)
@@ -165,17 +165,10 @@ class DashSourceBuilder @Inject constructor(
             return SourceDecision.None("NO_VIDEO_TRACK")
         }
 
-        // No muxed track available. A separate video-only + audio progressive build only sustains
-        // on the ANDROID_VR client; on the NewPipe fallback clients those GVS streams 403 after the
-        // initial range (the same reason the adaptive MPD is skipped above), so serving them would
-        // reintroduce the ~60s false-start + 403 loop this fix exists to kill. For a non-sustaining
-        // client with no muxed fallback there is no playable progressive stream — surface None.
-        if (!adaptiveCanSustain) {
-            return SourceDecision.None("FALLBACK_NO_SUSTAINABLE_MUXED")
-        }
-
-        // ANDROID_VR with no muxed (e.g. forceProgressive after an MPD-gen failure): best
-        // video-only + best audio — these segments sustain on this client.
+        // No muxed track available (e.g. forceProgressive after an MPD-gen failure): best
+        // video-only + best audio. The client gate that used to reject this combination for
+        // non-VR clients was removed with ANDROID_VR itself — these segments sustain now, for
+        // the same re-verified reason as the adaptive MPD above.
         val bestVideo = resolved.videoTracks
             .filter { it.isVideoOnly }
             .maxByOrNull { it.height ?: 0 }
@@ -323,8 +316,8 @@ class DashSourceBuilder @Inject constructor(
         return BuiltSource(
             // Live streams: never side-load captions. Merging a SingleSampleMediaSource
             // (fixed length, C.TIME_UNSET) into a dynamic/live timeline risks
-            // IllegalMergeException. The ANDROID_VR primary path is always isLive=false;
-            // this guards the rare NewPipe-fallback live stream that exposes captionTracks.
+            // IllegalMergeException. Since the ANDROID_VR removal every resolve is a NewPipe
+            // one, so this guards the main path's live streams that expose captionTracks.
             // Passing emptyList makes wrapWithSideLoadSubtitles return primary unwrapped.
             source = wrapWithSideLoadSubtitles(
                 mainSource,

@@ -109,9 +109,13 @@ data class ResolvedStreams(
     /**
      * Which YouTube innertube client minted these stream URLs. Determines the
      * User-Agent that must be used when fetching segments (UA mismatch → HTTP 403).
-     * Defaults to ANDROID_VR because that is the primary resolver.
+     *
+     * Production always passes this explicitly (see NewPipeExtractorClient.toResolvedStreams).
+     * The default only covers omissions; it names NEWPIPE_ANDROID rather than the retired
+     * ANDROID_VR so it no longer points at a client nothing produces. Both map to the Android
+     * User-Agent, so this default carries the exact UA behaviour the old one did.
      */
-    val extractionClient: ExtractionClient = ExtractionClient.ANDROID_VR
+    val extractionClient: ExtractionClient = ExtractionClient.NEWPIPE_ANDROID
 ) {
     companion object {
         /**
@@ -181,7 +185,11 @@ data class ResolvedStreams(
  * a UA mismatch causes HTTP 403 on segment requests.
  */
 enum class ExtractionClient {
-    /** Primary resolver; Android UA. */
+    /**
+     * Retired 2026-08-18: YouTube extended its GVS poToken requirement to this client, so its
+     * URLs serve ~60s then 403. Kept for the parsing helpers still under test; no resolve path
+     * produces it. Android UA.
+     */
     ANDROID_VR,
     /** NewPipe iOS client; iOS UA. */
     NEWPIPE_IOS,
