@@ -2,6 +2,7 @@ package com.albunyaan.tube.data.extractor
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -41,10 +42,14 @@ class ExtractionClientTest {
             ),
             durationSeconds = 60
         )
-        // The safety property is the User-Agent, not which constant is named: a UA mismatch
-        // against the minting client is what 403s every segment. The default moved off the
-        // retired ANDROID_VR to NEWPIPE_ANDROID (2026-08-18) and both are Android-UA, so this
-        // asserts the invariant that survives that rename rather than the constant itself.
+        // Two things matter here, so both are asserted:
+        // 1. The default must not name ANDROID_VR — that client was retired on 2026-08-18 and no
+        //    resolve path produces it, so defaulting to it would mislabel every stream that omits
+        //    the argument (this is the change the test was rewritten for).
+        // 2. The default must keep the Android User-Agent, because a UA mismatch against the
+        //    minting client is what 403s every segment. That is the property that must survive
+        //    any future rename of the constant.
+        assertNotEquals(ExtractionClient.ANDROID_VR, streams.extractionClient)
         assertFalse(streams.extractionClient.usesIosUserAgent())
     }
 }

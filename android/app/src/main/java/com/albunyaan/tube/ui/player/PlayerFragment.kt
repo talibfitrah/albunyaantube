@@ -2967,10 +2967,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
             // Prefer the canonical progressive builder: forceProgressive skips the adaptive MPD
             // that just failed, and it MERGES video-only + audio. The raw single-track path below
-            // would drop audio -> silent video for video-only sources (the common ANDROID_VR case).
+            // would drop audio -> silent video for video-only sources, which is the common case.
             // Distinguish "builder threw" (Media3 runtime error — a raw source may still work) from
-            // "builder returned null" (decide() found NO playable source, e.g. a non-VR resolve with
-            // no sustainable muxed): the latter must NOT be papered over with a doomed single track.
+            // "builder returned null" (decide() found NO playable source at all): the latter must
+            // NOT be papered over with a doomed single track.
             var fallbackBuilderThrew = false
             val progressiveBuilt = if (!state.audioOnly) {
                 try {

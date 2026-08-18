@@ -394,10 +394,10 @@ class DashSourceBuilderTest {
     }
 
     @Test
-    fun `ANDROID_VR forceProgressive with NO muxed → Progressive with merged audio (no silent video)`() {
+    fun `forceProgressive with NO muxed → Progressive with merged audio (no silent video)`() {
         // Regression (codex P2): the exception/forceProgressive fallback must MERGE audio for
-        // ANDROID_VR's video-only tracks. ANDROID_VR segments sustain, so video-only + audio is
-        // valid here (unlike the fallback clients) — and the audio url must be present.
+        // video-only tracks, or the user gets silent video. Was written when only ANDROID_VR
+        // reached this branch; since that client's retirement it guards every resolve.
         val resolved = streams(
             videoTracks = listOf(
                 videoOnlyTrack(720, itag = 136),
