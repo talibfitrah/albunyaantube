@@ -368,9 +368,9 @@ object DataModule {
     fun provideSegmentPreBuffer(
         @ApplicationContext context: Context,
         cache: SimpleCache,
-        cronetDataSourceFactory: CronetDataSourceFactory
+        factoryProvider: com.albunyaan.tube.player.SegmentDataSourceFactoryProvider,
     ): SegmentPreBuffer {
-        return SegmentPreBuffer(context, cache, cronetDataSourceFactory.createForAndroidUA())
+        return SegmentPreBuffer(context, cache, factoryProvider)
     }
 
     /**

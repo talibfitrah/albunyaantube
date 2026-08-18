@@ -433,7 +433,7 @@ class DefaultStreamPrefetchService @Inject constructor(
                             .minByOrNull { it.bitrate ?: Int.MAX_VALUE }
                             ?.url
                         if (!lowestTrackUrl.isNullOrBlank()) {
-                            serviceScope.launch { segmentPreBuffer.preBuffer(lowestTrackUrl) }
+                            serviceScope.launch { segmentPreBuffer.preBuffer(lowestTrackUrl, resolved.extractionClient) }
                         }
                     }
                 }

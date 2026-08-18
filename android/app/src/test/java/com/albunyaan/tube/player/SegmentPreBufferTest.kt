@@ -1,10 +1,10 @@
 package com.albunyaan.tube.player
 
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.database.StandaloneDatabaseProvider
 import kotlinx.coroutines.runBlocking
+import com.albunyaan.tube.data.extractor.ExtractionClient
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -30,7 +30,11 @@ class SegmentPreBufferTest {
         val context = RuntimeEnvironment.getApplication()
         val dbProvider = StandaloneDatabaseProvider(context)
         cache = SimpleCache(tmpFolder.newFolder("cache"), NoOpCacheEvictor(), dbProvider)
-        segmentPreBuffer = SegmentPreBuffer(context, cache, DefaultHttpDataSource.Factory())
+        segmentPreBuffer = SegmentPreBuffer(
+            context,
+            cache,
+            SegmentDataSourceFactoryProvider(context, CronetDataSourceFactory(context), cache),
+        )
     }
 
     @After
@@ -41,13 +45,17 @@ class SegmentPreBufferTest {
     @Test
     fun `preBuffer swallows IOException without throwing`() = runBlocking {
         // A non-existent URL will cause IOException — must not propagate
-        segmentPreBuffer.preBuffer("http://localhost:9999/no-such-url", durationMs = 1000)
+        segmentPreBuffer.preBuffer(
+            "http://localhost:9999/no-such-url",
+            ExtractionClient.NEWPIPE_ANDROID,
+            durationMs = 1000,
+        )
         // Reaching here means no exception was thrown
     }
 
     @Test
     fun `preBuffer swallows all errors without throwing`() = runBlocking {
-        segmentPreBuffer.preBuffer("", durationMs = 500)
-        segmentPreBuffer.preBuffer("not-a-url", durationMs = 500)
+        segmentPreBuffer.preBuffer("", ExtractionClient.NEWPIPE_ANDROID, durationMs = 500)
+        segmentPreBuffer.preBuffer("not-a-url", ExtractionClient.NEWPIPE_IOS, durationMs = 500)
     }
 }
