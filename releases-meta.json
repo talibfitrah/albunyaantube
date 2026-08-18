@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.38": {
+    "en": "Videos no longer stop after a minute. Live channels play without interruption, and audio-language switching is instant.",
+    "ar": "الفيديوهات لم تعد تتوقف بعد دقيقة. القنوات المباشرة تعمل دون انقطاع، وتبديل لغة الصوت صار فوريًا.",
+    "nl": "Video's stoppen niet meer na een minuut. Live kanalen spelen zonder onderbreking en wisselen van audiotaal gaat direct."
+  },
   "1.0.0-beta.37": {
     "en": "Restores smooth dubbing and subtitle switching plus overall player stability. Live streams keep playing.",
     "ar": "استعادة التبديل السلس للدبلجة والترجمة واستقرار المشغّل بشكل عام، مع استمرار تشغيل البث المباشر.",

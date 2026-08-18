@@ -5,6 +5,8 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.38] - 2026-08-19
+
 ### All modules
 
 - **Dependency upgrade sweep (latest within current majors).**
