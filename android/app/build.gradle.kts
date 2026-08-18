@@ -247,10 +247,15 @@ android {
     // testDebugUnitTest + testBenchmarkUnitTest already exercise every
     // AppDatabase migration path. Excluding these tests from the release
     // unit-test task keeps the suite green without compromising coverage.
+    // ImportMigrationTest (10->11, ANDROID-IMPORT-01) is a MigrationTestHelper
+    // test too but doesn't match the AppDatabaseMigration* naming, so it needs
+    // its own exclude entry — any future schema-backed migration test must
+    // either follow the naming or be added here.
     testOptions {
         unitTests.all {
             if (it.name == "testReleaseUnitTest") {
                 it.exclude("**/AppDatabaseMigration*Test*")
+                it.exclude("**/ImportMigrationTest*")
             }
         }
     }
