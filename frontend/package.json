@@ -2,6 +2,9 @@
   "name": "albunyaan-tube-admin",
   "version": "1.0.0-beta.14",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,31 +19,31 @@
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",
-    "axios": "^1.16.1",
-    "firebase": "^12.9.0",
-    "papaparse": "^5.5.3",
-    "pinia": "^2.3.0",
-    "vue": "^3.5.13",
-    "vue-i18n": "^9.14.2",
-    "vue-router": "^4.5.0",
-    "zod": "^3.24.2"
+    "axios": "^1.19.0",
+    "firebase": "^12.17.1",
+    "papaparse": "^5.6.0",
+    "pinia": "^2.3.1",
+    "vue": "^3.5.41",
+    "vue-i18n": "^9.14.5",
+    "vue-router": "^4.6.4",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.10.0",
-    "@playwright/test": "^1.49.1",
-    "@testing-library/jest-dom": "^6.6.3",
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
+    "@testing-library/jest-dom": "^6.10.0",
     "@testing-library/vue": "^8.1.0",
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.20.1",
     "@types/papaparse": "^5.5.2",
     "@types/testing-library__jest-dom": "^5.14.5",
-    "@vitejs/plugin-vue": "^5.2.1",
-    "@vue/test-utils": "^2.4.6",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "@vue/test-utils": "^2.4.11",
     "jsdom": "^25.0.1",
     "openapi-typescript": "^7.13.0",
-    "terser": "^5.44.0",
-    "typescript": "^5.7.3",
-    "vite": "^6.4.2",
-    "vitest": "^3.2.4",
-    "vue-tsc": "^2.1.10"
+    "terser": "^5.50.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7",
+    "vue-tsc": "^2.2.12"
   }
 }

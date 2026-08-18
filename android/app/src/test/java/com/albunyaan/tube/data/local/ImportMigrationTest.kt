@@ -48,7 +48,7 @@ class ImportMigrationTest {
                     "(channelId, channelUrl, name, avatarUrl, subscribedAt, " +
                     " user_id, updated_at, deleted, dirty) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                arrayOf("UCtest1", "https://yt.com/c/test1", "Test Chan", null,
+                arrayOf<Any?>("UCtest1", "https://yt.com/c/test1", "Test Chan", null,
                     1000L, "", 0L, 0, 0)
             )
         }
@@ -78,7 +78,7 @@ class ImportMigrationTest {
                     "(playlistId, playlistUrl, name, thumbnailUrl, uploaderName, " +
                     " savedAt, user_id, updated_at, deleted, dirty) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                arrayOf("PLtest1", "https://yt.com/playlist?list=PLtest1",
+                arrayOf<Any?>("PLtest1", "https://yt.com/playlist?list=PLtest1",
                     "Test Playlist", null, null, 2000L, "", 0L, 0, 0)
             )
         }
@@ -109,7 +109,7 @@ class ImportMigrationTest {
                     "(videoId, title, channelName, thumbnailUrl, durationSeconds, " +
                     " addedAt, user_id, updated_at, deleted, dirty) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                arrayOf("vid1", "Test Video", "Test Channel", null,
+                arrayOf<Any?>("vid1", "Test Video", "Test Channel", null,
                     120, 3000L, "", 0L, 0, 0)
             )
         }

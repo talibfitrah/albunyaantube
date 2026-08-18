@@ -28,6 +28,12 @@ if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
 android {
     namespace = "com.albunyaan.tube"
     compileSdk = 36
@@ -199,9 +205,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     ksp {
         // Room schema export location for migration testing
@@ -307,24 +310,24 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.2.1")
+    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.appcompat:appcompat:1.8.0")
+    implementation("com.google.android.material:material:1.14.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0")
-    implementation("androidx.navigation:navigation-fragment-ktx:2.8.5")
-    implementation("androidx.navigation:navigation-ui-ktx:2.8.5")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
-    implementation("androidx.fragment:fragment-ktx:1.8.6")
-    implementation("androidx.paging:paging-runtime-ktx:3.3.5")
+    implementation("androidx.navigation:navigation-fragment-ktx:2.9.8")
+    implementation("androidx.navigation:navigation-ui-ktx:2.9.8")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.11.0")
+    implementation("androidx.fragment:fragment-ktx:1.9.0")
+    implementation("androidx.paging:paging-runtime-ktx:3.5.1")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     // Single source of truth for the coroutines stack — kotlinx-coroutines-android
     // and the play-services bridge below must stay aligned (structured concurrency
     // misbehaves on version drift).
-    val coroutinesVersion = "1.9.0"
+    val coroutinesVersion = "1.11.0"
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
     // Transitive override: kotlinx-serialization-core is pulled in by
     // kotlin-reflect / Firebase. We never import @Serializable directly — this
@@ -344,79 +347,77 @@ dependencies {
     //
     // `strictly` (not a plain version request) makes this a hard fail if any
     // future transitive bump tries to drag us back to 1.6.x OR ahead into a
-    // 2.x major that may break Kotlin 2.0.21 binary compat. Without strictly,
+    // 2.x major that may break Kotlin 2.3.21 binary compat. Without strictly,
     // Gradle's conflict-resolution silently picks the higher version and the
     // protection evaporates without a build warning (Stage 1 review P1).
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core") {
-        version { strictly("1.7.3") }
+        version { strictly("1.11.0") }
         because(
-            "Block 1.6.x ClassValue crash on Android < 12. Exact pin (not range) because " +
-                "an ancestor BOM transitively bumps to 1.11.0 which is untested against " +
-                "Kotlin 2.0.21 binary compat — bump deliberately when ready."
+            "Block 1.6.x ClassValue crash on Android < 12. Exact pin (not range) so any " +
+                "future transitive bump — a 1.6.x downgrade or an untested 2.x major — " +
+                "fails the build loudly instead of resolving silently."
         )
     }
     // Plan B (ANDROID-AUTH-01) T1: Firebase Auth + Google Sign-In.
     // BoM pins all firebase-* artifact versions transitively — DO NOT add
     // explicit versions to firebase-auth or other firebase- modules below.
     //
-    // Pinned to 34.12.0 (firebase-auth 24.0.1) rather than the absolute
-    // latest. BoM 34.13.0 ships firebase-auth 24.1.0 which was compiled
-    // with Kotlin 2.3.0; this project is on Kotlin 2.0.21 (root
-    // build.gradle.kts) and KSP fails on the newer .kotlin_module metadata
-    // ("binary version 2.3.0, expected 2.0.0"). When bumping Kotlin or the
-    // Firebase BoM, re-verify ABI compatibility, not just version recency.
-    implementation(platform("com.google.firebase:firebase-bom:34.12.0"))
+    // BoM 34.13.0+ ships firebase-auth compiled with Kotlin 2.3.0 metadata,
+    // which requires the project Kotlin to be >= 2.3 (root build.gradle.kts,
+    // currently 2.3.21). When bumping Kotlin or the Firebase BoM, re-verify
+    // ABI compatibility, not just version recency.
+    implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
     implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.android.gms:play-services-auth:21.5.1")
+    implementation("com.google.android.gms:play-services-auth:21.6.0")
     // play-services-tasks ↔ kotlin coroutines bridge (`Task<T>.await()`).
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:$coroutinesVersion")
     // AndroidX Media3 (replaces ExoPlayer 2.x)
     // Media3 1.10.1 includes the fix for the HLS chunk-load regression
     // tracked as androidx/media#3161, so the old 1.9.3 safety pin can move.
-    val media3Version = "1.10.1"
+    val media3Version = "1.11.0"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-session:$media3Version")
     implementation("androidx.media3:media3-datasource-cronet:$media3Version")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
     implementation("com.squareup.moshi:moshi:1.15.2")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    // NewPipeExtractor v0.26.3: includes PR #1503 — fixes playlist-item extraction
-    // (and lockup view-model properties) after YouTube moved playlist items to
-    // lockupViewModel, which made PlaylistInfo report a correct streamCount but an
-    // empty item list ("Nothing here"). Continues v0.26.2's channel-tab fix
-    // (PR #1492) for the same lockupViewModel rollout, now covering playlists.
-    // Release notes: https://github.com/TeamNewPipe/NewPipeExtractor/releases/tag/v0.26.3
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    // NewPipeExtractor v0.26.5 (hotfix on v0.26.4, which fixes YouTube playlist
+    // continuations — PR #1518). Carries forward v0.26.3's lockupViewModel
+    // playlist-item fix (PR #1503) and v0.26.2's channel-tab fix (PR #1492):
+    // YouTube moved playlist items to lockupViewModel, which made PlaylistInfo
+    // report a correct streamCount but an empty item list ("Nothing here").
+    // Release notes: https://github.com/TeamNewPipe/NewPipeExtractor/releases/tag/v0.26.5
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("io.coil-kt:coil:2.7.0")
-    implementation("io.michaelrocks:libphonenumber-android:8.13.35")
+    implementation("io.michaelrocks:libphonenumber-android:8.13.55")
 
     // Hilt Dependency Injection
-    implementation("com.google.dagger:hilt-android:2.54")
-    ksp("com.google.dagger:hilt-compiler:2.54")
-    implementation("androidx.hilt:hilt-work:1.2.0")
-    ksp("androidx.hilt:hilt-compiler:1.2.0")
+    implementation("com.google.dagger:hilt-android:2.58")
+    ksp("com.google.dagger:hilt-compiler:2.58")
+    implementation("androidx.hilt:hilt-work:1.4.0")
+    ksp("androidx.hilt:hilt-compiler:1.4.0")
 
     // Google Cast SDK
-    implementation("com.google.android.gms:play-services-cast-framework:21.5.0")
-    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
+    implementation("androidx.mediarouter:mediarouter:1.8.1")
 
     // FFmpeg-kit for audio/video merging (min-gpl variant)
     // Using community fork since original arthenica/ffmpeg-kit was archived (June 2025)
     // https://central.sonatype.com/artifact/io.github.trongnhan136/ffmpeg-kit-min-gpl
-    implementation("io.github.trongnhan136:ffmpeg-kit-min-gpl:7.1.2")
+    implementation("io.github.trongnhan136:ffmpeg-kit-min-gpl:7.1.5")
     implementation("com.arthenica:smart-exception-java:0.2.1")
 
     // Room Database for local persistence (favorites, watch history)
     // Note: room-ktx merged into room-runtime in 2.7.0
-    val roomVersion = "2.7.0"
+    val roomVersion = "2.8.4"
     implementation("androidx.room:room-runtime:$roomVersion")
     // ANDROID-PERSONAL-03 / T7: room-paging removed. The Me-feed grid no
     // longer uses Room's PagingSource<Int, T> return type — it observes
@@ -429,48 +430,48 @@ dependencies {
 
     // Core library desugaring for Java 10+ APIs (including java.nio for NewPipeExtractor compatibility)
     // Using desugar_jdk_libs_nio to include URLEncoder.encode(String, Charset) support
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.4")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutinesVersion")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
-    testImplementation("org.mockito:mockito-core:5.15.2")
-    testImplementation("androidx.work:work-testing:2.10.0")
-    testImplementation("androidx.test:core:1.6.1")
-    testImplementation("androidx.test.ext:junit:1.2.1")
-    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("org.mockito:mockito-core:5.23.0")
+    testImplementation("androidx.work:work-testing:2.11.2")
+    testImplementation("androidx.test:core:1.7.0")
+    testImplementation("androidx.test.ext:junit:1.3.0")
+    testImplementation("org.robolectric:robolectric:4.16.1")
     // ATOM fetcher unit tests use MockWebServer to drive 200/304/429/5xx
     // responses without touching YouTube. The androidTest classpath already
     // pulls this in; adding it to testImplementation makes it available to
     // the JVM/Robolectric source set as well. (ANDROID-PERSONAL-02 / T2)
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-    androidTestImplementation("androidx.test:core:1.6.1")
-    androidTestImplementation("androidx.test:core-ktx:1.6.1")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    androidTestImplementation("androidx.test.espresso:espresso-contrib:3.6.1")
+    androidTestImplementation("androidx.test:core:1.7.0")
+    androidTestImplementation("androidx.test:core-ktx:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation("androidx.test.espresso:espresso-contrib:3.7.0")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-    androidTestImplementation("androidx.test:rules:1.6.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("com.google.dagger:hilt-android-testing:2.54")
-    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
-    kspAndroidTest("com.google.dagger:hilt-compiler:2.54")
-    debugImplementation("androidx.fragment:fragment-testing:1.8.6")
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("com.google.dagger:hilt-android-testing:2.58")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutinesVersion")
+    kspAndroidTest("com.google.dagger:hilt-compiler:2.58")
+    debugImplementation("androidx.fragment:fragment-testing:1.9.0")
 }
 
 // Force consistent AndroidX test versions across debug and androidTest configurations.
-// fragment-testing:1.8.6 (debugImplementation) pulls test:core:1.5.0 / monitor:1.6.0 into the
+// fragment-testing:1.9.0 (debugImplementation) pulls older test:core / monitor into the
 // runtime classpath. The Gradle consistent resolution strategy then creates {strictly X} constraints
-// that conflict with the newer versions required by runner:1.6.2 and espresso:3.6.1.
+// that conflict with the newer versions required by runner:1.7.0 and espresso:3.7.0.
 // Fix: force all configurations to align on the versions required by the test dependencies.
 configurations.all {
     resolutionStrategy {
         force(
-            "androidx.test:core:1.6.1",
-            "androidx.test:core-ktx:1.6.1",
-            "androidx.test:monitor:1.7.2",
-            "androidx.test:runner:1.6.2",
-            "androidx.test:rules:1.6.1"
+            "androidx.test:core:1.7.0",
+            "androidx.test:core-ktx:1.7.0",
+            "androidx.test:monitor:1.8.0",
+            "androidx.test:runner:1.7.0",
+            "androidx.test:rules:1.7.0"
         )
     }
 }
