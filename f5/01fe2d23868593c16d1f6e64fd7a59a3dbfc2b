@@ -1,0 +1,20 @@
+android/app/build.gradle.kts
+  s_ff9bdf102dfe37::t_5bc7eeb0e10164 250
+  s_ff9bdf102dfe37::t_a4bb12f4b6678d 251-253,258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "f501fe2d23868593c16d1f6e64fd7a59a3dbfc2b",
+  "prompts": {},
+  "sessions": {
+    "s_ff9bdf102dfe37": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "05d94ce0-7857-4acd-872d-f8bbf419b221",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
