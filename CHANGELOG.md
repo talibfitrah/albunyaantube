@@ -33,6 +33,13 @@ during the beta program.
   ladder, resolution switching and audio-language switching come with it.
   (The same failure was reproduced on the previous release, so it was not
   caused by the dependency upgrade.)
+- **Live channels no longer keep interrupting with "Resolving stream…".** Two
+  causes: reopening a live channel replayed a cached, minutes-old stream that
+  YouTube no longer serves, and live used a delivery format whose segments
+  YouTube cut off after about a minute. Live now always fetches fresh, and uses
+  the format YouTube serves reliably. Verified on a real live channel: over
+  three minutes of continuous playback with no interruption, where before it
+  broke roughly every 78 seconds.
 - **Switching the audio language is now instant.** Picking a dub used to
   rebuild the whole stream; the player now carries every language in one
   manifest and simply switches track, the same way changing resolution
