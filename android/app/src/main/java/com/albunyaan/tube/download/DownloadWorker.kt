@@ -52,6 +52,15 @@ class DownloadWorker @AssistedInject constructor(
      * OkHttpClient configured for large file downloads.
      *
      * - User-Agent: YouTube may block requests without a proper User-Agent (HTTP 403)
+     *
+     * KNOWN GAP (raised by review 2026-08-18, deliberately NOT changed blind): this sends one
+     * fixed Chrome UA for every download, while [ResolvedStreams.extractionClient] records the
+     * client that actually minted the URL and a UA mismatch is what 403s googlevideo segments.
+     * The mismatch is NOT new — this UA has never matched the minting client — which is why it is
+     * documented rather than "fixed" as part of the ANDROID_VR retirement. Correct fix when
+     * someone can verify a real download on a device: take the UA from the resolved streams
+     * (resolveStreams already returns them here) instead of the constant, exactly as
+     * SegmentDataSourceFactoryProvider.forClient does for playback.
      * - Extended timeouts: Large video files may take time to download, especially on
      *   slower connections. Default OkHttp timeout (10s) is too aggressive for downloads.
      *   Read timeout is set longer since data transfer can stall during download.

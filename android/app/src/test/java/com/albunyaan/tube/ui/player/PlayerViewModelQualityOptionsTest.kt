@@ -41,7 +41,7 @@ class PlayerViewModelQualityOptionsTest {
 
     private fun labels(opts: List<QualityOption>) = opts.map { it.label }
 
-    // ── ANDROID_VR: full ladder preserved ──────────────────────────────────────
+    // ── adaptive active: full ladder offered ───────────────────────────────────
 
     @Test
     fun `adaptive active offers the full video-only ladder, highest first`() {

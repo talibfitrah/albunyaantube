@@ -431,8 +431,8 @@ class DashSourceBuilder @Inject constructor(
                 // timedtext URL) must never become a fatal player error — captions
                 // are non-essential. Treat load errors as end-of-stream so a bad
                 // track silently shows nothing instead of killing playback. This
-                // matters now that ANDROID_VR populates captions for the primary
-                // path (previously empty), so this merge is hot for most videos.
+                // matters because captions are populated for the primary path, so
+                // this merge is hot for most videos.
                 .setTreatLoadErrorsAsEndOfStream(true)
                 .createMediaSource(config, C.TIME_UNSET)
         }

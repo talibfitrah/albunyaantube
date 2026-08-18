@@ -3009,10 +3009,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
 
                 !state.audioOnly && !fallbackBuilderThrew -> {
-                    // build() returned null without throwing => decide() found NO sustainable source
-                    // (e.g. FALLBACK_NO_SUSTAINABLE_MUXED). A raw video-only last resort would just
-                    // 403 silently on the fallback client. failPrepare() surfaces the Error state
-                    // (not a transient Toast) and stops the re-prepare/error-spam loop.
+                    // build() returned null without throwing => decide() found NO playable source
+                    // (e.g. NO_VIDEO_TRACK). A raw video-only last resort would just fail silently,
+                    // so failPrepare() surfaces the Error state (not a transient Toast) and stops
+                    // the re-prepare/error-spam loop.
                     android.util.Log.e("PlayerFragment", "No sustainable source for ${streamState.streamId}")
                     failPrepare(R.string.player_stream_error)
                     return
