@@ -6,11 +6,11 @@ import android.net.Uri
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.SimpleCache
+import com.albunyaan.tube.data.extractor.ExtractionClient
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,7 +22,7 @@ import javax.inject.Singleton
 class SegmentPreBuffer @Inject constructor(
     @ApplicationContext private val context: Context,
     private val cache: SimpleCache,
-    private val httpFactory: DataSource.Factory
+    private val factoryProvider: SegmentDataSourceFactoryProvider,
 ) {
     companion object {
         private const val TAG = "SegmentPreBuffer"
@@ -34,7 +34,19 @@ class SegmentPreBuffer @Inject constructor(
         (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).isLowRamDevice
     }
 
-    suspend fun preBuffer(videoUrl: String, durationMs: Long = DEFAULT_DURATION_MS) {
+    /**
+     * Warm the segment cache for [videoUrl].
+     *
+     * [extractionClient] must be the client that minted the URL: googlevideo 403s a fetch whose
+     * User-Agent doesn't match, and this used to be pinned to the Android UA, so warming silently
+     * failed for iOS-minted URLs. Selecting through [SegmentDataSourceFactoryProvider] reuses the
+     * exact rule playback uses, so the two cannot drift apart.
+     */
+    suspend fun preBuffer(
+        videoUrl: String,
+        extractionClient: ExtractionClient,
+        durationMs: Long = DEFAULT_DURATION_MS,
+    ) {
         if (videoUrl.isBlank()) return
         if (isLowRamDevice) return
         withContext(Dispatchers.IO) {
@@ -47,7 +59,7 @@ class SegmentPreBuffer @Inject constructor(
                     .build()
                 val cacheDataSourceFactory = CacheDataSource.Factory()
                     .setCache(cache)
-                    .setUpstreamDataSourceFactory(httpFactory)
+                    .setUpstreamDataSourceFactory(factoryProvider.forClient(extractionClient, cache = false))
                     .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
                 val writer = CacheWriter(
                     cacheDataSourceFactory.createDataSource() as CacheDataSource,

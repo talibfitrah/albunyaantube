@@ -2937,7 +2937,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 // (a) stop re-running MPD generation on every state tick, and (b) let checkCacheHit
                 // compare against the actually-served muxed track instead of the unreachable
                 // requested high-res track — without this, a MANUAL high-res pick that can't be
-                // honored (e.g. ANDROID_VR-unplayable videos served via the NewPipe fallback)
+                // honored (e.g. a video whose MPD generation fails and is served progressively)
                 // re-prepares forever, thrashing the audio/codec pipeline.
                 if (!result.isAdaptive && !forceProgressive && !state.audioOnly) {
                     adaptiveFailedForCurrentStream = streamState.streamId
@@ -2967,10 +2967,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
             // Prefer the canonical progressive builder: forceProgressive skips the adaptive MPD
             // that just failed, and it MERGES video-only + audio. The raw single-track path below
-            // would drop audio -> silent video for video-only sources (the common ANDROID_VR case).
+            // would drop audio -> silent video for video-only sources, which is the common case.
             // Distinguish "builder threw" (Media3 runtime error — a raw source may still work) from
-            // "builder returned null" (decide() found NO playable source, e.g. a non-VR resolve with
-            // no sustainable muxed): the latter must NOT be papered over with a doomed single track.
+            // "builder returned null" (decide() found NO playable source at all): the latter must
+            // NOT be papered over with a doomed single track.
             var fallbackBuilderThrew = false
             val progressiveBuilt = if (!state.audioOnly) {
                 try {
@@ -3009,10 +3009,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
 
                 !state.audioOnly && !fallbackBuilderThrew -> {
-                    // build() returned null without throwing => decide() found NO sustainable source
-                    // (e.g. FALLBACK_NO_SUSTAINABLE_MUXED). A raw video-only last resort would just
-                    // 403 silently on the fallback client. failPrepare() surfaces the Error state
-                    // (not a transient Toast) and stops the re-prepare/error-spam loop.
+                    // build() returned null without throwing => decide() found NO playable source
+                    // (e.g. NO_VIDEO_TRACK). A raw video-only last resort would just fail silently,
+                    // so failPrepare() surfaces the Error state (not a transient Toast) and stops
+                    // the re-prepare/error-spam loop.
                     android.util.Log.e("PlayerFragment", "No sustainable source for ${streamState.streamId}")
                     failPrepare(R.string.player_stream_error)
                     return

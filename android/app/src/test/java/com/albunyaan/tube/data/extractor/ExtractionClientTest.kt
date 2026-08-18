@@ -2,7 +2,9 @@ package com.albunyaan.tube.data.extractor
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import com.albunyaan.tube.util.HttpConstants
 import org.junit.Test
 
 class ExtractionClientTest {
@@ -27,7 +29,7 @@ class ExtractionClientTest {
     // --- ResolvedStreams default extractionClient ---
 
     @Test
-    fun `ResolvedStreams default extractionClient is ANDROID_VR`() {
+    fun `ResolvedStreams default extractionClient uses the Android User-Agent`() {
         val streams = ResolvedStreams(
             streamId = "test_id",
             videoTracks = emptyList(),
@@ -41,6 +43,28 @@ class ExtractionClientTest {
             ),
             durationSeconds = 60
         )
-        assertEquals(ExtractionClient.ANDROID_VR, streams.extractionClient)
+        // Two things matter here, so both are asserted:
+        // 1. The default must not name ANDROID_VR — that client was retired on 2026-08-18 and no
+        //    resolve path produces it, so defaulting to it would mislabel every stream that omits
+        //    the argument (this is the change the test was rewritten for).
+        // 2. The default must keep the Android User-Agent, because a UA mismatch against the
+        //    minting client is what 403s every segment. That is the property that must survive
+        //    any future rename of the constant.
+        assertNotEquals(ExtractionClient.ANDROID_VR, streams.extractionClient)
+        assertFalse(streams.extractionClient.usesIosUserAgent())
+    }
+
+    // --- userAgent() mapping (download + playback must agree) ---
+
+    @Test
+    fun `userAgent matches the usesIosUserAgent decision for every client`() {
+        // The download path sets its request UA from userAgent() while playback picks the Cronet
+        // factory from usesIosUserAgent(); if those two ever disagree, downloads 403 while
+        // playback works (or vice versa), which is painful to diagnose. Pin them together.
+        for (client in ExtractionClient.values()) {
+            val expected = if (client.usesIosUserAgent()) HttpConstants.YOUTUBE_IOS_USER_AGENT
+                           else HttpConstants.YOUTUBE_USER_AGENT
+            assertEquals("wrong UA for $client", expected, client.userAgent())
+        }
     }
 }

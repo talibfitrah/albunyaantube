@@ -49,9 +49,25 @@ class DownloadWorker @AssistedInject constructor(
     private val notifications = DownloadNotifications(appContext)
 
     /**
+     * User-Agent for stream fetches, set once the streams are resolved so it matches the client
+     * that minted the URLs. One DownloadWorker instance handles one download, so this is not
+     * shared state between downloads.
+     */
+    @Volatile
+    private var streamUserAgent: String = HttpConstants.YOUTUBE_USER_AGENT
+
+
+    /**
      * OkHttpClient configured for large file downloads.
      *
      * - User-Agent: YouTube may block requests without a proper User-Agent (HTTP 403)
+     *
+     *   The UA must match the innertube client that minted the URL, or googlevideo 403s the
+     *   fetch. It is therefore taken from the resolved streams ([streamUserAgent], set in
+     *   resolveStreamViaExtractor) rather than hardcoded — the same rule
+     *   SegmentDataSourceFactoryProvider.forClient applies for playback, where these exact URLs
+     *   are already proven to fetch with the client-matched UA. Every request this worker makes
+     *   happens after resolution, so the initial value is only a never-exercised safe default.
      * - Extended timeouts: Large video files may take time to download, especially on
      *   slower connections. Default OkHttp timeout (10s) is too aggressive for downloads.
      *   Read timeout is set longer since data transfer can stall during download.
@@ -63,7 +79,7 @@ class DownloadWorker @AssistedInject constructor(
             .writeTimeout(30, TimeUnit.SECONDS)    // Request body write (minimal for downloads)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
-                    .header("User-Agent", HttpConstants.YOUTUBE_USER_AGENT)
+                    .header("User-Agent", streamUserAgent)
                     .build()
                 chain.proceed(request)
             }
@@ -319,6 +335,8 @@ class DownloadWorker @AssistedInject constructor(
             forceRefresh = true,
             priority = Priority.USER_FOREGROUND,
         ) ?: return null
+        // Match the minting client's UA (see [streamUserAgent]); a mismatch 403s every fetch.
+        streamUserAgent = resolved.extractionClient.userAgent()
 
         // For audio-only, prefer AAC/M4A but fall back to any audio if not available
         val mp4CompatibleAudio = resolved.audioTracks.filter { isAudioMp4Compatible(it) }

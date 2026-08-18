@@ -11,7 +11,6 @@ import com.albunyaan.tube.data.extractor.AudioTrackSource
 import com.albunyaan.tube.data.extractor.DubAudioEnumerator
 import com.albunyaan.tube.data.extractor.DubAudioResolver
 import com.albunyaan.tube.data.extractor.DubLanguage
-import com.albunyaan.tube.data.extractor.ExtractionClient
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
@@ -453,7 +452,7 @@ class PlayerViewModel @Inject constructor(
         // Source from ready-OR-recovering so the picker is populated even while the player
         // is stalling/recovering — otherwise the user can't drop resolution during a stall.
         val selection = readyOrRecoveringSelection()?.selection ?: return emptyList()
-        return buildQualityOptions(selection.resolved.videoTracks, selection.resolved.extractionClient, adaptiveActive)
+        return buildQualityOptions(selection.resolved.videoTracks, adaptiveActive)
     }
 
     /**
@@ -1800,32 +1799,29 @@ class PlayerViewModel @Inject constructor(
         internal const val PREFETCH_CACHE_TTL_MS = 30_000L
 
         /**
-         * Pure: which quality options to offer for [videoTracks] given the [extractionClient]
-         * that minted their URLs. Extracted from [getAvailableQualities] so it is unit-testable
-         * without constructing the ViewModel.
+         * Pure: which quality options to offer for [videoTracks]. Extracted from
+         * [getAvailableQualities] so it is unit-testable without constructing the ViewModel.
          *
-         * On the NewPipe fallback path (`extractionClient != ANDROID_VR`) playback is served as a
-         * SINGLE progressive muxed track: `DashSourceBuilder.decide()` gates out the adaptive
-         * video-only ladder because those iOS/android-client segments 403 mid-stream (verified for
-         * One4kids "Zaky's Learning Club"). Offering the full 720p/1080p metadata list there is
-         * misleading — the cap is silently ignored and playback stays at the muxed quality (the
-         * documented forceProgressive limitation). So we offer exactly the one track decide() would
-         * serve: the highest muxed, or (if none) the highest video-only. ANDROID_VR keeps the full
-         * ladder — its adaptive segments sustain and track-selector switching works.
+         * When `DashSourceBuilder.decide()` serves a SINGLE progressive track,
+         * offering the full 720p/1080p metadata list is misleading — the cap is silently ignored and
+         * playback stays at the muxed quality (the documented forceProgressive limitation). So we
+         * offer exactly the one track decide() would serve: the highest muxed, or (if none) the
+         * highest video-only.
          *
-         * [adaptiveActive] is the player's actual adaptive state for the current source. The full
-         * ladder is offered only when the stream is genuinely playing adaptive (ANDROID_VR with a
-         * built MPD). When ANDROID_VR's own MPD generation fails and the player falls back to a
-         * single progressive track, [adaptiveActive] is false and only the served track is offered —
-         * closing the prior "menu over-promises on MPD-gen failure" gap.
+         * [adaptiveActive] — the player's actual adaptive state for the current source — is the ONLY
+         * condition for the full ladder, because it is precisely the state in which the track
+         * selector can switch. This used to additionally require ExtractionClient.ANDROID_VR, back
+         * when VR was the only client whose adaptive segments sustained. That client was removed on
+         * 2026-08-18 (YouTube extended GVS poToken enforcement to it — see
+         * NewPipeExtractorClient.resolveStreams), which would have left this branch permanently
+         * false and collapsed the quality menu to a single entry on every video.
          */
         @androidx.annotation.VisibleForTesting
         internal fun buildQualityOptions(
             videoTracks: List<VideoTrack>,
-            extractionClient: ExtractionClient,
             adaptiveActive: Boolean,
         ): List<QualityOption> {
-            val offerable = if (extractionClient == ExtractionClient.ANDROID_VR && adaptiveActive) {
+            val offerable = if (adaptiveActive) {
                 videoTracks
             } else {
                 // Mirror DashSourceBuilder.decide()'s progressive pick: highest muxed, else highest video-only.

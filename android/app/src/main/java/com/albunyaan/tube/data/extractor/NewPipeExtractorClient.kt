@@ -76,9 +76,6 @@ class NewPipeExtractorClient(
     }
     private val streamCacheLock = Any()
 
-    /** Primary stream resolver — ANDROID_VR client (poToken-free). See [AndroidVrStreamResolver]. */
-    private val androidVrResolver = AndroidVrStreamResolver(clock)
-
     init {
         initializeNewPipe()
     }
@@ -109,16 +106,21 @@ class NewPipeExtractorClient(
         // and keeping it preserves fallback data if fresh fetch fails
         metrics.onCacheMiss(ContentType.VIDEOS, 1)
         val start = clock()
-        // Primary path: ANDROID_VR client. YouTube began requiring a poToken on NewPipe's
-        // WEB/IOS/ANDROID clients (~2026-06) → HTTP 403 "Resolving stream" loop. ANDROID_VR is not
-        // poToken-gated and returns directly-playable URLs (no WebView). Falls through to the
-        // NewPipe path below on any miss.
-        androidVrResolver.resolve(videoId, start)?.let { vr ->
-            synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(vr, start) }
-            clientRotator.reset(videoId)
-            metrics.onStreamResolveSuccess(videoId, clock() - start)
-            return@withContext vr
-        }
+        // Stream resolution goes through NewPipe (below). The hand-rolled ANDROID_VR fast path
+        // that used to run first was REMOVED on 2026-08-18: YouTube extended its GVS poToken
+        // requirement to ANDROID_VR, so its URLs now serve ~60s of media and then 403 every
+        // subsequent range request — the "Resolving stream…/Unable to recover playback" report.
+        // The VR path still *resolved* fine (tracks and all), so it never fell through to here;
+        // it just handed the player URLs that die a minute in.
+        //
+        // Verified rather than assumed (throwaway probe run against live YouTube, 2026-08-18,
+        // plus on-device playback; see memory/youtube-403-at-60s-vr-potoken.md): appending a
+        // backend-minted poToken to a VR URL still 403s, and so does sending one in the VR player
+        // request — VR needs an Android-attested token this app cannot mint. NewPipeExtractor
+        // 0.26.5's own extraction sustains past the boundary (HTTP 206 at t+70s) with NO poToken
+        // provider registered at all, so the fix is to stop bypassing it. On-device this then
+        // played 1:49+ on a 1080p SYNTH_ADAPTIVE source with zero 403s. yt-dlp now marks every
+        // client GVS-poToken-required, so do not reintroduce a "token-free client" fast path.
         try {
             val handler = streamLinkHandlerFactory.fromId(videoId)
             val extractor = youtubeService.getStreamExtractor(handler)
@@ -910,8 +912,9 @@ class NewPipeExtractorClient(
             // PO Token on stream URLs; without one, every stream URL returns HTTP 403 and playback
             // falls into the "Resolving stream…" retry loop. Registered once, globally, on the
             // static extractor. See WebViewPoTokenProvider.
-            // poToken provider is the FALLBACK now (ANDROID_VR is the primary resolve path). It's
-            // registered but minted lazily — no eager startup WebView spin-up.
+            // Registered but minted lazily — no eager startup WebView spin-up. NewPipe 0.26.5
+            // currently resolves sustainable URLs without needing it (see resolveStreams), so this
+            // is belt-and-braces for the next time YouTube tightens enforcement.
             poTokenProvider?.let { provider ->
                 YoutubeStreamExtractor.setPoTokenProvider(provider)
                 android.util.Log.i(
