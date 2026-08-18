@@ -130,7 +130,9 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     // checks this before applying so a rapid A→B switch can't let A's late resolve override B.
     private val pendingLanguageByVideoId = mutableMapOf<String, String>()
     /**
-     * Dub languages discovered per video (ANDROID_VR strips dubs, so they aren't in the resolve).
+     * Dub languages discovered per video. Written when ANDROID_VR stripped dubs from the resolve;
+     * since its retirement (2026-08-18) NewPipe populates AudioTrack.language natively, so a
+     * dubbed video may already expose its languages — this enumeration is then a no-op.
      * Cached so the globe survives a re-bind/re-resolve: switchAudioTrack strips the binder cache to the
      * chosen track, which would otherwise collapse the option list. Mirrors the regular player's dubCache.
      */
@@ -675,7 +677,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         binding?.shortsPager?.currentItem?.let { viewModel.items.value.getOrNull(it)?.id }
 
     /**
-     * ANDROID_VR strips dub audio, so a dubbed short resolves with one (original) language and no globe.
+     * Written when ANDROID_VR stripped dub audio (a dubbed short then resolved with one language
+     * and no globe). Since its retirement NewPipe may supply the languages directly.
      * Mirror the regular player: when the VISIBLE short exposes <2 languages, enumerate its dubs once
      * (a single MWEB fetch — same per-video cost as the main player; gated to the active short so the
      * offscreen prefetch never triggers it). If 2+ dubs exist, re-light the globe with lazy WEB_DUB

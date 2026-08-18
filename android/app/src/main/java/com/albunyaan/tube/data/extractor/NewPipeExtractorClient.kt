@@ -113,11 +113,13 @@ class NewPipeExtractorClient(
         // The VR path still *resolved* fine (tracks and all), so it never fell through to here;
         // it just handed the player URLs that die a minute in.
         //
-        // Verified rather than assumed (backend PoTokenProbeTest, 2026-08-18): appending a
+        // Verified rather than assumed (throwaway probe run against live YouTube, 2026-08-18,
+        // plus on-device playback; see memory/youtube-403-at-60s-vr-potoken.md): appending a
         // backend-minted poToken to a VR URL still 403s, and so does sending one in the VR player
         // request — VR needs an Android-attested token this app cannot mint. NewPipeExtractor
         // 0.26.5's own extraction sustains past the boundary (HTTP 206 at t+70s) with NO poToken
-        // provider registered at all, so the fix is to stop bypassing it. yt-dlp now marks every
+        // provider registered at all, so the fix is to stop bypassing it. On-device this then
+        // played 1:49+ on a 1080p SYNTH_ADAPTIVE source with zero 403s. yt-dlp now marks every
         // client GVS-poToken-required, so do not reintroduce a "token-free client" fast path.
         try {
             val handler = streamLinkHandlerFactory.fromId(videoId)

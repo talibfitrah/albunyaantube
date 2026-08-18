@@ -237,9 +237,9 @@ class DashSourceBuilder @Inject constructor(
      * This method is **not unit-tested** — it depends on Android/Media3 runtime.
      */
     fun build(resolved: ResolvedStreams, forceProgressive: Boolean = false): BuiltSource? {
-        // Web-sourced dub audio (different client UA + pot) can't live in the VR MPD — build it as a
-        // separate progressive source and MergingMediaSource it onto the VR video+audio source. The
-        // fragment selects it via setPreferredAudioLanguage(dub). The VR default path is untouched.
+        // Web-sourced dub audio (different client UA + pot) can't live in the synthetic MPD — build
+        // it as a separate progressive source and MergingMediaSource it onto the video+audio source.
+        // The fragment selects it via setPreferredAudioLanguage(dub). The default path is untouched.
         if (isWebDubMerge(resolved)) {
             // Architecture B: if the dub carries DASH SegmentBase ranges, inject it into the synthetic
             // MPD (one DASH source, unified buffering — no MergingMediaSource stall/flap, seekable).

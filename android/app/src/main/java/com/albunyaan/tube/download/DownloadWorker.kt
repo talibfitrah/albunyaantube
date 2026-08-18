@@ -49,6 +49,15 @@ class DownloadWorker @AssistedInject constructor(
     private val notifications = DownloadNotifications(appContext)
 
     /**
+     * User-Agent for stream fetches, set once the streams are resolved so it matches the client
+     * that minted the URLs. One DownloadWorker instance handles one download, so this is not
+     * shared state between downloads.
+     */
+    @Volatile
+    private var streamUserAgent: String = HttpConstants.YOUTUBE_USER_AGENT
+
+
+    /**
      * OkHttpClient configured for large file downloads.
      *
      * - User-Agent: YouTube may block requests without a proper User-Agent (HTTP 403)
@@ -63,14 +72,6 @@ class DownloadWorker @AssistedInject constructor(
      *   slower connections. Default OkHttp timeout (10s) is too aggressive for downloads.
      *   Read timeout is set longer since data transfer can stall during download.
      */
-    /**
-     * User-Agent for stream fetches, set once the streams are resolved so it matches the client
-     * that minted the URLs. One DownloadWorker instance handles one download, so this is not
-     * shared state between downloads.
-     */
-    @Volatile
-    private var streamUserAgent: String = HttpConstants.YOUTUBE_USER_AGENT
-
     private val httpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)  // Connection establishment
