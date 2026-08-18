@@ -92,7 +92,6 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
         if (FirebaseApp.getApps(this).isEmpty()) {
             FirebaseApp.initializeApp(this)
         }
-        applyAuthEmulatorOverrideIfConfigured()
     }
 
     /**
@@ -101,6 +100,13 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
      * (release builds must never hit an emulator) AND a non-empty
      * AUTH_EMULATOR_HOST (so dev builds default to live unless explicitly set
      * in local.properties).
+     *
+     * Called from onCreate, NOT attachBaseContext: firebase-auth 24.2.0 (Firebase BoM 34.17.0)
+     * builds a SharedPreferences-backed store inside getInstance(), which NPEs when the
+     * Application context is not yet attached. Doing it here still runs before Hilt injection
+     * and any UI, so auth is pointed at the emulator before anything can use it. The catch is
+     * deliberately broad for the same reason: a broken dev-only override must never take the
+     * app down (the old catch only handled IllegalStateException and the NPE crashed startup).
      */
     private fun applyAuthEmulatorOverrideIfConfigured() {
         if (!BuildConfig.DEBUG) return
@@ -112,11 +118,14 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
         } catch (e: IllegalStateException) {
             // Already configured (hot reload / re-create). Safe to ignore.
             Log.d(TAG, "Auth emulator override no-op: ${e.message}")
+        } catch (t: Throwable) {
+            Log.w(TAG, "Auth emulator override failed; staying on live auth", t)
         }
     }
 
     override fun onCreate() {
         super<Application>.onCreate()
+        applyAuthEmulatorOverrideIfConfigured()
         Log.d(TAG, "Application initialized with Hilt DI")
 
         // Register process-level foreground tracker (ANDROID-PERSONAL-02 T8)
