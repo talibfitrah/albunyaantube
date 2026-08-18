@@ -57,8 +57,8 @@ class DownloadWorker @AssistedInject constructor(
      *   fetch. It is therefore taken from the resolved streams ([streamUserAgent], set in
      *   resolveStreamViaExtractor) rather than hardcoded — the same rule
      *   SegmentDataSourceFactoryProvider.forClient applies for playback, where these exact URLs
-     *   are already proven to fetch with the client-matched UA. The constant below is only the
-     *   pre-resolve default (used by nothing but a HEAD probe before streams are known).
+     *   are already proven to fetch with the client-matched UA. Every request this worker makes
+     *   happens after resolution, so the initial value is only a never-exercised safe default.
      * - Extended timeouts: Large video files may take time to download, especially on
      *   slower connections. Default OkHttp timeout (10s) is too aggressive for downloads.
      *   Read timeout is set longer since data transfer can stall during download.
@@ -335,11 +335,7 @@ class DownloadWorker @AssistedInject constructor(
             priority = Priority.USER_FOREGROUND,
         ) ?: return null
         // Match the minting client's UA (see [streamUserAgent]); a mismatch 403s every fetch.
-        streamUserAgent = if (resolved.extractionClient.usesIosUserAgent()) {
-            HttpConstants.YOUTUBE_IOS_USER_AGENT
-        } else {
-            HttpConstants.YOUTUBE_USER_AGENT
-        }
+        streamUserAgent = resolved.extractionClient.userAgent()
 
         // For audio-only, prefer AAC/M4A but fall back to any audio if not available
         val mp4CompatibleAudio = resolved.audioTracks.filter { isAudioMp4Compatible(it) }

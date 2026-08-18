@@ -1,5 +1,6 @@
 package com.albunyaan.tube.data.extractor
 
+import com.albunyaan.tube.util.HttpConstants
 import android.os.SystemClock
 
 /**
@@ -198,6 +199,16 @@ enum class ExtractionClient {
 
     /** Only the NewPipe iOS client needs the iOS UA; everything else uses the Android UA. */
     fun usesIosUserAgent(): Boolean = this == NEWPIPE_IOS
+
+    /**
+     * The User-Agent that must be sent when fetching URLs minted by this client — a mismatch is
+     * what makes googlevideo 403 the fetch. Shared so the download path and the playback path
+     * (CronetDataSourceFactory.createForAndroidUA / createForIosUA, selected by
+     * SegmentDataSourceFactoryProvider.forClient) cannot drift apart.
+     */
+    fun userAgent(): String =
+        if (usesIosUserAgent()) HttpConstants.YOUTUBE_IOS_USER_AGENT
+        else HttpConstants.YOUTUBE_USER_AGENT
 }
 
 /**

@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import com.albunyaan.tube.util.HttpConstants
 import org.junit.Test
 
 class ExtractionClientTest {
@@ -51,5 +52,19 @@ class ExtractionClientTest {
         //    any future rename of the constant.
         assertNotEquals(ExtractionClient.ANDROID_VR, streams.extractionClient)
         assertFalse(streams.extractionClient.usesIosUserAgent())
+    }
+
+    // --- userAgent() mapping (download + playback must agree) ---
+
+    @Test
+    fun `userAgent matches the usesIosUserAgent decision for every client`() {
+        // The download path sets its request UA from userAgent() while playback picks the Cronet
+        // factory from usesIosUserAgent(); if those two ever disagree, downloads 403 while
+        // playback works (or vice versa), which is painful to diagnose. Pin them together.
+        for (client in ExtractionClient.values()) {
+            val expected = if (client.usesIosUserAgent()) HttpConstants.YOUTUBE_IOS_USER_AGENT
+                           else HttpConstants.YOUTUBE_USER_AGENT
+            assertEquals("wrong UA for $client", expected, client.userAgent())
+        }
     }
 }
