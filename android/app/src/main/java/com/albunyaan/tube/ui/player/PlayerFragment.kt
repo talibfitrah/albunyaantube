@@ -1583,6 +1583,32 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                                         .build()
                                 }
                             }
+                        } else if (
+                            // AdaptiveType has BOTH SYNTHETIC_DASH and SYNTH_ADAPTIVE and the
+                            // synthetic-DASH pipeline reports the latter, so accept either rather
+                            // than depend on which one a given call site happened to set.
+                            (preparedAdaptiveType == MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE ||
+                                preparedAdaptiveType == MediaSourceResult.AdaptiveType.SYNTHETIC_DASH) &&
+                            event.newSelection.audio.language != null
+                        ) {
+                            // Synthetic DASH carries every language as its own AdaptationSet (see
+                            // resolvedForFactory in maybePrepareStream), so steer the track selector
+                            // instead of rebuilding: the swap is seamless, with no re-resolve, no new
+                            // MediaSource and no re-buffer — the same in-place mechanism a quality
+                            // change uses. The blanket rebuild existed for androidx/media#3161, an
+                            // ArrayIndexOutOfBoundsException during HLS stream fallback; that is an
+                            // HLS-extension bug (fixed in Media3 1.10.1, and this app is on 1.11.0),
+                            // so it never applied to DASH. HLS keeps the rebuild path below.
+                            val lang = event.newSelection.audio.language
+                            player?.let { p ->
+                                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                    .setPreferredAudioLanguage(lang)
+                                    .build()
+                            }
+                            if (BuildConfig.DEBUG) android.util.Log.d(
+                                "PlayerFragment",
+                                "Audio swap steered in place (no rebuild): lang=$lang"
+                            )
                         } else {
                             if (preparedAdaptiveType == MediaSourceResult.AdaptiveType.HLS) {
                                 hlsPoisonRegistry.poisonHls(
@@ -2870,14 +2896,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Create multi-quality MediaSource from resolved streams
         // Apply user quality cap via track selector for adaptive streams, or select specific track for progressive
-        // Pin the user's audio choice into the resolved view we hand to the
-        // factory. The synthetic-DASH MPD generator picks audio by max
-        // bitrate; on an audio-language swap the user-selected track may
-        // not be max-bitrate, so without this filter the rebuilt MPD
-        // serves the wrong language. No-op when selection.audio is the
-        // only / max-bitrate track. Skipped when audio isn't in the list
-        // (defensive — can happen on stale state after a re-resolve).
-        val resolvedForFactory = if (selection.resolved.audioTracks.contains(selection.audio)) {
+        //
+        // Audio handed to the factory:
+        //  - Adaptive: ALL languages. MultiRepresentationMpdGenerator emits one AdaptationSet per
+        //    (language, role, container) with a lang= attribute, so a multi-language manifest lets
+        //    the track selector switch dubs in place (setPreferredAudioLanguage) instead of
+        //    rebuilding the source. Narrowing to one track here is what used to force the rebuild.
+        //  - Progressive: still pinned to the selected track. That path plays a single audio URL
+        //    chosen by bitrate, so leaving every language in could serve the wrong one.
+        // Skipped when audio isn't in the list (defensive — stale state after a re-resolve).
+        val resolvedForFactory = if (forceProgressive && selection.resolved.audioTracks.contains(selection.audio)) {
             selection.resolved.copy(audioTracks = listOf(selection.audio))
         } else {
             selection.resolved

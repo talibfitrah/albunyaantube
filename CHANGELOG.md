@@ -33,6 +33,11 @@ during the beta program.
   ladder, resolution switching and audio-language switching come with it.
   (The same failure was reproduced on the previous release, so it was not
   caused by the dependency upgrade.)
+- **Switching the audio language is now instant.** Picking a dub used to
+  rebuild the whole stream; the player now carries every language in one
+  manifest and simply switches track, the same way changing resolution
+  already works — no reload, no re-buffer. Verified on-device across 14
+  languages.
 - Downloads and startup pre-buffering now identify themselves as the same
   client that produced the link, which is what YouTube requires to serve it.
 - **Bottom navigation labels are readable again.** Material 1.13/1.14's
