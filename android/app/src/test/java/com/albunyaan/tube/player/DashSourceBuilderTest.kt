@@ -90,7 +90,7 @@ class DashSourceBuilderTest {
         isLive: Boolean = false,
         hlsUrl: String? = null,
         dashUrl: String? = null,
-        extractionClient: ExtractionClient = ExtractionClient.ANDROID_VR,
+        extractionClient: ExtractionClient = ExtractionClient.NEWPIPE_ANDROID,
     ) = ResolvedStreams(
         streamId = "test-stream",
         videoTracks = videoTracks,

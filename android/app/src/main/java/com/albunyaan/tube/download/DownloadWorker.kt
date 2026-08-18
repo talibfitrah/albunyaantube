@@ -53,18 +53,24 @@ class DownloadWorker @AssistedInject constructor(
      *
      * - User-Agent: YouTube may block requests without a proper User-Agent (HTTP 403)
      *
-     * KNOWN GAP (raised by review 2026-08-18, deliberately NOT changed blind): this sends one
-     * fixed Chrome UA for every download, while [ResolvedStreams.extractionClient] records the
-     * client that actually minted the URL and a UA mismatch is what 403s googlevideo segments.
-     * The mismatch is NOT new — this UA has never matched the minting client — which is why it is
-     * documented rather than "fixed" as part of the ANDROID_VR retirement. Correct fix when
-     * someone can verify a real download on a device: take the UA from the resolved streams
-     * (resolveStreams already returns them here) instead of the constant, exactly as
-     * SegmentDataSourceFactoryProvider.forClient does for playback.
+     *   The UA must match the innertube client that minted the URL, or googlevideo 403s the
+     *   fetch. It is therefore taken from the resolved streams ([streamUserAgent], set in
+     *   resolveStreamViaExtractor) rather than hardcoded — the same rule
+     *   SegmentDataSourceFactoryProvider.forClient applies for playback, where these exact URLs
+     *   are already proven to fetch with the client-matched UA. The constant below is only the
+     *   pre-resolve default (used by nothing but a HEAD probe before streams are known).
      * - Extended timeouts: Large video files may take time to download, especially on
      *   slower connections. Default OkHttp timeout (10s) is too aggressive for downloads.
      *   Read timeout is set longer since data transfer can stall during download.
      */
+    /**
+     * User-Agent for stream fetches, set once the streams are resolved so it matches the client
+     * that minted the URLs. One DownloadWorker instance handles one download, so this is not
+     * shared state between downloads.
+     */
+    @Volatile
+    private var streamUserAgent: String = HttpConstants.YOUTUBE_USER_AGENT
+
     private val httpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)  // Connection establishment
@@ -72,7 +78,7 @@ class DownloadWorker @AssistedInject constructor(
             .writeTimeout(30, TimeUnit.SECONDS)    // Request body write (minimal for downloads)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
-                    .header("User-Agent", HttpConstants.YOUTUBE_USER_AGENT)
+                    .header("User-Agent", streamUserAgent)
                     .build()
                 chain.proceed(request)
             }
@@ -328,6 +334,12 @@ class DownloadWorker @AssistedInject constructor(
             forceRefresh = true,
             priority = Priority.USER_FOREGROUND,
         ) ?: return null
+        // Match the minting client's UA (see [streamUserAgent]); a mismatch 403s every fetch.
+        streamUserAgent = if (resolved.extractionClient.usesIosUserAgent()) {
+            HttpConstants.YOUTUBE_IOS_USER_AGENT
+        } else {
+            HttpConstants.YOUTUBE_USER_AGENT
+        }
 
         // For audio-only, prefer AAC/M4A but fall back to any audio if not available
         val mp4CompatibleAudio = resolved.audioTracks.filter { isAudioMp4Compatible(it) }

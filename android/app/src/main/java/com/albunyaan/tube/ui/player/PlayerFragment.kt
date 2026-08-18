@@ -2937,7 +2937,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 // (a) stop re-running MPD generation on every state tick, and (b) let checkCacheHit
                 // compare against the actually-served muxed track instead of the unreachable
                 // requested high-res track — without this, a MANUAL high-res pick that can't be
-                // honored (e.g. ANDROID_VR-unplayable videos served via the NewPipe fallback)
+                // honored (e.g. a video whose MPD generation fails and is served progressively)
                 // re-prepares forever, thrashing the audio/codec pipeline.
                 if (!result.isAdaptive && !forceProgressive && !state.audioOnly) {
                     adaptiveFailedForCurrentStream = streamState.streamId
