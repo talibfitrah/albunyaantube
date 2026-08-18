@@ -93,8 +93,11 @@ class NewPipeExtractorClient(
         if (!forceRefresh) {
             val cached = synchronized(streamCacheLock) {
                 streamCache[videoId]?.takeIf { entry ->
-                    entry.timebaseVersion == CACHE_TIMEBASE_VERSION &&
-                        (now - entry.timestamp) <= STREAM_CACHE_TTL_MILLIS
+                    isStreamCacheUsable(
+                        isLive = entry.value.isLive,
+                        ageMillis = now - entry.timestamp,
+                        timebaseMatches = entry.timebaseVersion == CACHE_TIMEBASE_VERSION,
+                    )
                 }
             }
             if (cached != null) {
@@ -155,7 +158,10 @@ class NewPipeExtractorClient(
                 clientRotator.reset(videoId)
                 return@withContext null
             }
-            synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt) }
+            // Live is never cached — see isStreamCacheUsable.
+            if (!resolved.isLive) {
+                synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt) }
+            }
             // Reset per-video rotation state — safe no-op if rotator was never advanced for this video
             clientRotator.reset(videoId)
             metrics.onStreamResolveSuccess(videoId, clock() - start)
@@ -199,7 +205,7 @@ class NewPipeExtractorClient(
                     val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt, retryClient.toExtractionClient())
                     if (resolved != null) {
                         synchronized(streamCacheLock) {
-                            streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt)
+                            if (!resolved.isLive) streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt)
                         }
                         clientRotator.reset(videoId)
                         metrics.onStreamResolveSuccess(videoId, clock() - start)
@@ -1017,6 +1023,24 @@ class NewPipeExtractorClient(
         // Increased cache TTL to 30 minutes for better performance
         // YouTube stream URLs typically expire after 6 hours
         private const val STREAM_CACHE_TTL_MILLIS = 30 * 60 * 1000L
+
+        /**
+         * Whether a cached resolve may be reused.
+         *
+         * [isLive] is the important one: the 6-hour URL lifetime the TTL above is built on holds
+         * for VOD, but a LIVE manifest is only usable at the live edge. Reusing one minutes later
+         * makes the very first segment fetch 403, and the player then force-re-resolves — which is
+         * the "Resolving stream…" interruption users kept reporting on live channels. Measured
+         * on-device: a 5-minute-old live manifest 403'd 3.7s into playback, and the refreshed one
+         * played. So live always re-resolves; the app already applies the same rule to the segment
+         * cache (SegmentDataSourceFactoryProvider.forStreams uses cache = !isLive).
+         */
+        @androidx.annotation.VisibleForTesting
+        internal fun isStreamCacheUsable(
+            isLive: Boolean,
+            ageMillis: Long,
+            timebaseMatches: Boolean,
+        ): Boolean = timebaseMatches && ageMillis <= STREAM_CACHE_TTL_MILLIS && !isLive
         private const val MAX_STREAM_CACHE_SIZE = 50
         private val YOUTUBE_ID_PATTERN: Pattern = Pattern.compile("^[a-zA-Z0-9_-]{11}")
 

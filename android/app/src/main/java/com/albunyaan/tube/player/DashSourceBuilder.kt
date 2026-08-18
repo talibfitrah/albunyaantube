@@ -96,11 +96,18 @@ class DashSourceBuilder @Inject constructor(
      */
     fun decide(resolved: ResolvedStreams, forceProgressive: Boolean = false): SourceDecision {
         if (resolved.isLive) {
-            // Prefer server-side DASH for live streams — follows LibreTube's OnlinePlayerService
-            // which uses the server DASH MPD for live, giving better segment availability and timing.
+            // Prefer HLS for live. This used to prefer server DASH (following LibreTube's
+            // OnlinePlayerService), but measured on a real live channel on-device 2026-08-18:
+            // the live DASH manifest's segment BaseURLs carry NO poToken, so YouTube served
+            // ~78s and then 403'd every segment; the player force-re-resolved each time, which
+            // is the "Resolving stream…" interruption users reported on live channels. It is the
+            // same GVS enforcement that retired ANDROID_VR, and refreshing does not help — the
+            // MPD is already type=dynamic minimumUpdatePeriod=PT5S, so ExoPlayer was re-fetching
+            // it anyway. HLS is YouTube's mainstream live path and is not gated that way: a
+            // 200-second soak on the same channel gave 0 x 403 and 0 refreshes.
             return when {
-                resolved.dashUrl != null -> SourceDecision.ServerDash(resolved.dashUrl)
                 resolved.hlsUrl != null  -> SourceDecision.Hls(resolved.hlsUrl)
+                resolved.dashUrl != null -> SourceDecision.ServerDash(resolved.dashUrl)
                 else                     -> SourceDecision.None("LIVE_NO_MANIFEST")
             }
         }

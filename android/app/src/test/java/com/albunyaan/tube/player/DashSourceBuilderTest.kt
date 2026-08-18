@@ -269,7 +269,13 @@ class DashSourceBuilderTest {
     }
 
     @Test
-    fun `Live with BOTH dashUrl and hlsUrl → ServerDash (DASH preferred)`() {
+    fun `Live with BOTH dashUrl and hlsUrl → Hls (HLS preferred)`() {
+        // Inverted 2026-08-18 after measuring a real live channel on-device. The live DASH
+        // manifest's segment BaseURLs carry no poToken, so YouTube served ~78s and then 403'd
+        // every segment, and the player force-re-resolved in front of the user ("Resolving
+        // stream…" — the interruption users reported). Same enforcement that retired ANDROID_VR.
+        // HLS is YouTube's mainstream live path and is not gated that way: a 200-second soak on
+        // the same channel produced 0 x 403 and 0 refreshes, where DASH failed every ~78s.
         val resolved = streams(
             videoTracks = emptyList(),
             audioTracks = emptyList(),
@@ -280,11 +286,11 @@ class DashSourceBuilderTest {
 
         val decision = builder.decide(resolved)
 
-        assertTrue("Expected ServerDash but got: $decision", decision is SourceDecision.ServerDash)
+        assertTrue("Expected Hls but got: $decision", decision is SourceDecision.Hls)
         assertEquals(
-            "DASH must be preferred over HLS for live when both are present",
-            "https://manifest.googlevideo.com/api/manifest/dash/id/live123",
-            (decision as SourceDecision.ServerDash).url
+            "HLS must be preferred over DASH for live when both are present",
+            "https://manifest.googlevideo.com/api/manifest/hls_playlist/id/live123",
+            (decision as SourceDecision.Hls).url
         )
     }
 
