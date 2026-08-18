@@ -54,11 +54,11 @@ class DashSourceBuilderTest {
         codec = "avc1.64001f"
     )
 
-    /** Muxed (non video-only) track, e.g. itag 18 / 22. */
     /** Video-only track with NO SegmentBase ranges — makes multi-rep MPD generation fail. */
     private fun rangelessVideoOnlyTrack(height: Int, itag: Int) =
         videoOnlyTrack(height, itag).copy(syntheticDashMetadata = null)
 
+    /** Muxed (non video-only) track, e.g. itag 18 / 22. */
     private fun muxedTrack(height: Int, itag: Int, url: String = "https://example.com/muxed$itag") = VideoTrack(
         url = url,
         mimeType = "video/mp4",

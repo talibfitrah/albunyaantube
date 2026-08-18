@@ -54,7 +54,7 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
         // runBlocking here would deadlock on the main thread: the WebView callbacks that resolve the
         // awaited deferred are posted to the main looper, which is the very thread we'd be blocking.
         // Extraction always runs on Dispatchers.IO, so a main-thread call is a programming error —
-        // degrade to a tokenless result (ANDROID_VR fallback) rather than ANR.
+        // degrade to a tokenless result rather than ANR — NewPipe resolves fine without a token.
         if (Looper.myLooper() == Looper.getMainLooper()) {
             Log.e(TAG, "poToken requested on main thread; returning null to avoid deadlock ($videoId)")
             return null
@@ -138,12 +138,15 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
         // GVS (streaming-data) poToken binding. YouTube's `html5_generate_content_po_token`
         // experiment — active on a subset of videos (e.g. One4kids / "Zaky's Learning Club") —
         // requires the GVS `&pot=` token bound to the VIDEO ID, not the visitorData. Those videos
-        // are also ANDROID_VR-UNPLAYABLE, so they fall through to this NewPipe poToken path; a
+        // were also ANDROID_VR-UNPLAYABLE back when that client existed; a
         // visitorData-bound GVS token then makes every segment fetch 403 (verified the video plays
         // with a video-id-bound GVS token via yt-dlp + bgutil). The video-id binding is exactly the
-        // player token's binding, so reuse [playerPot] for the streaming slot. This only affects the
-        // fallback path (the ANDROID_VR primary uses no poToken at all). visitorData is still passed
-        // as arg 1 for the session (X-Goog-Visitor-Id) header.
+        // player token's binding, so reuse [playerPot] for the streaming slot. visitorData is still
+        // passed as arg 1 for the session (X-Goog-Visitor-Id) header.
+        //
+        // Since the ANDROID_VR retirement (2026-08-18) this is the only token path, but it is NOT
+        // on the critical path: NewPipe resolves sustainable URLs without a token, and minting is
+        // lazy — on-device the media source was created 6.2s BEFORE the (failing) mint attempt.
         val streamingDataPot = playerPot
 
         Log.i(

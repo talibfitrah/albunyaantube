@@ -5,6 +5,21 @@ import org.json.JSONObject
 import org.schabi.newpipe.extractor.NewPipe
 
 /**
+ * RETIRED 2026-08-18 — NOT USED BY ANY PRODUCTION PATH. Do not re-wire it without new evidence.
+ *
+ * The premise below ("ANDROID_VR is NOT poToken-gated") stopped being true: YouTube extended the
+ * GVS poToken requirement to this client too, so its URLs now serve ~60s of media and then 403
+ * every later range request. Re-verified before removal — 403 with no token, with a backend
+ * poToken appended to the URL, with one sent in the player request, and with both; yt-dlp master
+ * likewise marks android_vr GVS-poToken-required at the same clientVersion we pin, so bumping the
+ * version does not help. Stream resolution now goes through NewPipeExtractor
+ * (NewPipeExtractorClient.resolveStreams), whose segments were verified to sustain.
+ *
+ * The class is kept only because [parseSubtitleTracks], [withVttFormat] and [isLiveStream] are
+ * pure helpers still covered by AndroidVrSubtitleParsingTest / AndroidVrLiveDetectionTest.
+ *
+ * Historical rationale follows.
+ *
  * Resolves YouTube stream URLs via the **ANDROID_VR** innertube client.
  *
  * Why this exists: around 2026-06-06 YouTube began requiring a GVS **poToken** on the WEB / IOS /
