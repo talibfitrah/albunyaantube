@@ -13,6 +13,7 @@ Ad-free, admin-curated halal YouTube client. Native Android app + Vue 3 admin da
 2. Provide a high-level explanation at every step.
 3. Make changes minimal — only what the task requires.
 4. **Find root causes; never patch over symptoms.** No temp fixes.
+5. **After any coding work that changes repo files, run the mandatory 9-stage review pipeline** (defined in `AGENTS.md` → "Mandatory Post-Coding Review Pipeline"). If a stage can't run, say which and why — never skip silently.
 
 ---
 
@@ -118,7 +119,8 @@ Key routing rules:
 - Strategy/scope → invoke /plan-ceo-review
 - Architecture → invoke /plan-eng-review
 - Design system/plan review → invoke /design-consultation or /plan-design-review
-- Full review pipeline → invoke /autoplan
+- Full review pipeline → invoke /autoplan (or the 9-stage pipeline above)
+- Bloat / dead code / simplify / dedupe → invoke /code-upgrade (its Bloat Audit is pipeline stages 1 and 8)
 - Bugs/errors → invoke /investigate
 - QA/testing site behavior → invoke /qa or /qa-only
 - Code review/diff check → invoke /review

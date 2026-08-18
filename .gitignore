@@ -184,3 +184,6 @@ synthetic_dash_data.json
 # Claude Code runtime state (lockfiles, per-user settings) — workflow.md stays tracked
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
+
+# Internal reference docs (session prompts, handoffs) — not versioned
+/local-docs/

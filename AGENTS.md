@@ -74,26 +74,42 @@ When responding, structure your review with clear headings such as:
 ## Mandatory Post-Coding Review Pipeline
 
 After **any coding work that changes repository files**, Codex must run the project
-7-stage review pipeline before treating the work as complete. This applies to
+9-stage review pipeline before treating the work as complete. This applies to
 backend, frontend, Android, scripts, docs that affect implementation, and config
 changes.
 
-Use the pipeline already referenced by `CLAUDE.md` / Superpowers:
+Stages 1 and 8 use the **Bloat Audit** from the user-level `code-upgrade` skill
+(`~/.claude/skills/code-upgrade/bloat-audit.md`). It hunts what AI coders
+over-produce: dead code, helpers used once, safety checks for impossible
+problems, re-validation of already-validated data, middleman functions, "just in
+case" leftovers, and settings nobody changes. Its rules apply as written: plain
+language, investigate before flagging (watch for dynamic call sites — Hilt
+injection, reflection, Retrofit/Jackson-bound DTOs, layout-inflated views), and
+**never delete pre-existing code without an explicit yes from the user**. Bloat
+introduced by the current change may be removed directly.
 
-1. **Baseline**: inspect `git status`, identify the changed files, and run the
-   relevant unit/integration/build checks for the touched platform.
-2. **Code reviewer**: run a cold code-review pass over the diff against the
+1. **Bloat audit (pre)**: run the `code-upgrade` Bloat Audit scoped to the diff
+   and the files just touched, before any other review. Strip self-introduced
+   bloat now; queue pre-existing findings as questions for the user.
+2. **Baseline**: inspect `git status`, identify the changed files, and run the
+   relevant unit/integration/build checks for the touched platform. If it does
+   not compile, stop and fix before any reviewer runs.
+3. **Code reviewer**: run a cold code-review pass over the diff against the
    appropriate base branch, prioritizing bugs/security/correctness.
-3. **Security review**: run the `cso`/security-focused review when the change
+4. **Security review**: run the `cso`/security-focused review when the change
    touches auth, permissions, network input, storage, admin paths, parsers,
    external URLs, secrets, billing, or other trust boundaries.
-4. **Adversarial challenge**: run a second-opinion challenge pass, preferably
+5. **Adversarial challenge**: run a second-opinion challenge pass, preferably
    Codex challenge or the closest available agent/tool fallback.
-5. **Consolidate findings**: merge findings, remove duplicates, classify
+6. **Consolidate findings**: merge findings, remove duplicates, classify
    severity, and decide what must be fixed before completion.
-6. **Patch and re-review**: fix all Critical/Important/actionable findings and
+7. **Patch and re-review**: fix all Critical/Important/actionable findings and
    re-run targeted checks/review until they are closed.
-7. **gstack /review + Cubic**: run gstack `/review`, then run Cubic as the
+8. **Bloat audit (post)**: re-run the Bloat Audit over the final cumulative
+   diff. Fix rounds breed bloat too — orphaned helpers, dead branches left by
+   reworked fixes, tests kept for deleted paths. Clean it here so the final gate
+   reviews lean code. Same rules as stage 1.
+9. **gstack /review + Cubic**: run gstack `/review`, then run Cubic as the
    final review stage. Cubic replaced CodeRabbit for this project on
    2026-05-15. Use `cubic review --base <base-sha> --json` or
    `cubic review -b <base-sha> -j` from the repo root. Cubic is stochastic:
