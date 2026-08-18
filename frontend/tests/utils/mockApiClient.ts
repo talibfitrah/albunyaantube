@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import type { Mocked } from 'vitest';
 import type { AxiosInstance } from 'axios';
 
 /**
@@ -12,7 +13,7 @@ import type { AxiosInstance } from 'axios';
  * mockClient.get.mockResolvedValue({ data: { id: '1', name: 'Test' } });
  * ```
  */
-export function createMockApiClient(): jest.Mocked<AxiosInstance> {
+export function createMockApiClient(): Mocked<AxiosInstance> {
   return {
     get: vi.fn(),
     post: vi.fn(),

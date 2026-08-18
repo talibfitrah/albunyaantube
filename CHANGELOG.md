@@ -12,14 +12,27 @@ during the beta program.
   playlist-continuation fixes (0.26.4 #1518) on top of the 0.26.3
   lockupViewModel fixes. Android toolchain: Kotlin 2.3.21, AGP 8.13.2,
   KSP 2.3.11, Hilt 2.58, Firebase BoM 34.17.0, Media3 1.11.0, Room 2.8.4,
-  Gradle 8.14.5 and the rest of the androidx stack. Backend: Spring Boot
+  Gradle 8.14.5 and the rest of the androidx stack (Material stays on 1.12.0
+  — see below). Backend: Spring Boot
   3.5.16, firebase-admin 9.10.0, protobuf runtime aligned to NewPipe's
   generator (4.35.1), Microsoft mail stack pinned to tested stables (the old
   floating ranges resolved azure-identity to a beta). Frontend: minor bumps +
   npm audit clean; CI Node 18→22. Fixed the pre-existing red
   testReleaseUnitTest (ImportMigrationTest never matched the release-variant
   exclusion glob). Majors deferred: AGP 9, Spring Boot 4, TS 6/7, Vite 7/8,
-  Retrofit 3, OkHttp 5, Pinia 3/4, vue-router 5, vue-i18n 10/11, zod 4.
+  Retrofit 3, OkHttp 5, Pinia 3/4, vue-router 5, vue-i18n 10/11, zod 4,
+  Material 1.13/1.14.
+
+### Android
+
+- **Bottom navigation labels are readable again.** Material 1.13/1.14's
+  navigation-bar rework sized the bar to ~42dp whatever height the layout
+  asked for, cutting every tab label ("Home", "Channels", "Me", "Playlists",
+  "Videos") down to a sliver. Material is pinned back to 1.12.0 until the nav
+  can be restyled deliberately.
+- The active tab no longer shows a stray purple pill behind its icon; it uses
+  the app's green, matching the tablet navigation rail. (Pre-existing, fixed
+  in passing.)
 
 ## [1.0.0-beta.37] - 2026-06-18
 

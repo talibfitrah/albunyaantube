@@ -312,7 +312,27 @@ android {
 dependencies {
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.appcompat:appcompat:1.8.0")
-    implementation("com.google.android.material:material:1.14.0")
+    // Pinned to 1.12.0 deliberately. Material 1.13/1.14 ship the M3 Expressive
+    // NavigationBarView rework: the new item layout measures the bottom nav at
+    // ~42dp regardless of the view's height (fixed 72dp or wrap_content), which
+    // clips the tab labels to ~2dp. Verified on-device (COR-L29, sw360dp/480dpi).
+    //
+    // Moving off 1.12.0 is a nav restyle, not a version bump. What must change
+    // together: layout/fragment_main_shell.xml (mainBottomNav height — 72dp is
+    // below the library's own m3_bottom_nav_min_height of 80dp) and
+    // @dimen/bottom_nav_height, which ~40 layouts including item_shorts_page.xml
+    // consume as list bottom clearance, so it cannot move on its own.
+    //
+    // `strictly` (not a plain version request) so a future transitive bump fails
+    // the build loudly instead of silently reintroducing the clipped labels —
+    // same reasoning as the kotlinx-serialization-core pin above.
+    implementation("com.google.android.material:material") {
+        version { strictly("1.12.0") }
+        because(
+            "1.13+ NavigationBarView rework clips bottom-nav labels at this app's " +
+                "nav height; re-attempt only with a deliberate nav restyle."
+        )
+    }
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0")
