@@ -35,7 +35,6 @@
     "@testing-library/vue": "^8.1.0",
     "@types/node": "^22.20.1",
     "@types/papaparse": "^5.5.2",
-    "@types/testing-library__jest-dom": "^5.14.5",
     "@vitejs/plugin-vue": "^5.2.4",
     "@vue/test-utils": "^2.4.11",
     "jsdom": "^25.0.1",

@@ -53,6 +53,10 @@
 
     </LinearLayout>
 
+    <!-- itemActiveIndicatorStyle=@null matches the sw600dp/sw720dp rails, which
+         disable the M3 pill indicator "to match phone BottomNav behavior". The
+         phone layout never set it, so the active tab drew Material's baseline
+         purple pill (the theme defines no colorSecondaryContainer). -->
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/mainBottomNav"
         android:layout_width="match_parent"
@@ -65,6 +69,7 @@
         app:itemIconTint="@color/bottom_nav_item_color"
         app:itemTextColor="@color/bottom_nav_item_color"
         app:itemRippleColor="@android:color/transparent"
+        app:itemActiveIndicatorStyle="@null"
         app:itemHorizontalTranslationEnabled="false"
         app:labelVisibilityMode="labeled"
         app:menu="@menu/bottom_nav_menu" />
