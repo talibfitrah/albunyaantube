@@ -89,4 +89,40 @@ class ResolvedStreamsExtTest {
         assertNotNull(options[0].displayName)
         assertTrue("display name should be non-blank", options[0].displayName.isNotBlank())
     }
+
+    @Test
+    fun `real NewPipe dub shape surfaces every language with the original first`() {
+        // Pinned to what NewPipeExtractor 0.26.5 actually returns for a multi-dub video
+        // (measured 2026-08-18 on DW-00ckCAPI: 70 audio streams, 14 distinct locales, each
+        // tagged ORIGINAL/DUBBED). Before the ANDROID_VR retirement the resolve exposed a
+        // single language and the dubs had to be re-fetched by hand, so this is the shape the
+        // picker must keep handling — several bitrates per language, one original among them.
+        val langs = listOf(
+            "ar", "bn", "de", "es", "fa", "fr", "hi", "id", "ru", "tr", "ur", "uz", "zh",
+        )
+        val tracks = buildList {
+            // multiple bitrates per language, as YouTube serves them
+            langs.forEach { code ->
+                add(audio(url = "https://example.test/$code-low.m4a", bitrate = 48_000,
+                    language = code, trackType = AudioTrackKind.DUBBED))
+                add(audio(url = "https://example.test/$code-high.m4a", bitrate = 128_000,
+                    language = code, trackType = AudioTrackKind.DUBBED))
+            }
+            add(audio(url = "https://example.test/en.m4a", bitrate = 128_000,
+                language = "en", trackType = AudioTrackKind.ORIGINAL))
+        }
+
+        val options = resolved(tracks).availableAudioLanguages()
+
+        assertEquals("every distinct language must be offered exactly once",
+            langs.size + 1, options.size)
+        assertEquals("the original language must sort first", "en", options.first().language)
+        assertTrue("the original must be flagged as such", options.first().isOriginal)
+        assertEquals("each language collapses to one option",
+            options.size, options.map { it.language }.distinct().size)
+        // the picker plays the representative, so it must be the best bitrate of that language
+        val arabic = options.first { it.language == "ar" }
+        assertEquals(128_000, arabic.representative.bitrate)
+        assertEquals(AudioTrackKind.DUBBED, arabic.trackKind)
+    }
 }
