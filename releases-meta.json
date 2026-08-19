@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.40": {
+    "en": "Approved content now shows up right away, and your Me screen splits into Content and Pending tabs.",
+    "ar": "المحتوى المعتمد يظهر فورًا، وشاشة “أنا” صارت تبويبَين: المحتوى وقيد المراجعة.",
+    "nl": "Goedgekeurde inhoud verschijnt nu meteen, en je Me-scherm splitst in tabbladen Inhoud en In afwachting."
+  },
   "1.0.0-beta.39": {
     "en": "My Submissions no longer runs text into the screen edges. Admin content library fixes on the server side.",
     "ar": "شاشة إرسالاتي لم تعد تلصق النص بحواف الشاشة. مع إصلاحات لمكتبة المحتوى في لوحة الإدارة.",

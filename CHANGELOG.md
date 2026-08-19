@@ -5,6 +5,8 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.40] - 2026-08-19
+
 ### Admin dashboard
 
 - **Approving an item threw you back to the top of the queue.** Every approve and
