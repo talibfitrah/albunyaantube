@@ -243,7 +243,11 @@
               <div v-if="addModalTruncated" class="truncation-warning">
                 <p>{{ t('contentSorting.addContentTruncated', { count: addModalAvailable.length }) }}</p>
               </div>
-              <div v-if="addModalLoading" class="loading-state">
+              <div v-if="addModalMatches.length > addModalFiltered.length" class="truncation-warning">
+                <p>{{ t('contentSorting.addContentClipped', { shown: addModalFiltered.length, total: addModalMatches.length }) }}</p>
+              </div>
+              <div v-if="addModalLoading" class="loading-state" role="status" aria-live="polite">
+                <span class="spinner" aria-hidden="true"></span>
                 <p>{{ t('contentSorting.addContentLoading') }}</p>
               </div>
               <div v-else-if="addModalFiltered.length === 0" class="empty-state">
@@ -431,7 +435,11 @@ const { activate: activateFocusTrap, deactivate: deactivateFocusTrap } = useFocu
   onEscape: () => closeAddContentModal()
 });
 
-const addModalFiltered = computed(() => {
+/** Rows drawn at once in the add-content modal. Beyond this, the reviewer searches. */
+const ADD_MODAL_RENDER_LIMIT = 300;
+
+/** Everything matching the current filters, before the render cap. */
+const addModalMatches = computed(() => {
   let items = addModalAvailable.value;
 
   if (addModalTypeFilter.value !== 'all') {
@@ -445,6 +453,14 @@ const addModalFiltered = computed(() => {
 
   return items;
 });
+
+/**
+ * What is actually drawn. The list is a plain v-for, and the picker now fetches the whole
+ * approved registry in one request rather than the first twenty pages of it, so rendering every
+ * row of a large library would put thousands of nodes in the modal. The clip is stated in the UI
+ * — a silent one would read as content missing from the registry.
+ */
+const addModalFiltered = computed(() => addModalMatches.value.slice(0, ADD_MODAL_RENDER_LIMIT));
 
 // ==================== Data loading ====================
 
@@ -1160,6 +1176,37 @@ tr.drag-over {
 .content-empty {
   padding: 2rem;
   color: var(--color-text-secondary);
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.loading-state p {
+  margin: 0;
+}
+
+.spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-brand);
+  border-radius: 50%;
+  animation: sort-spin 0.8s linear infinite;
+}
+
+@keyframes sort-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Respect a reduced-motion preference: keep the indicator, drop the rotation. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }
 
 .error-state,

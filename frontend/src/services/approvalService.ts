@@ -22,7 +22,13 @@ export interface PendingApproval {
   videoCount?: number;
   categories: string[];
   submittedAt: string;
+  /** Raw submitter uid — kept for filtering the queue by submitter. */
   submittedBy: string;
+  /**
+   * Who to show as the submitter: display name, else email, else the raw uid. A uid on its own
+   * tells the reviewer nothing about who sent the item.
+   */
+  submittedByLabel: string;
   /** Optional free-text note the submitter attached at submit time or via edit. */
   submitterNote?: string;
   /**
@@ -114,6 +120,14 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
     categories,
     submittedAt: dto.submittedAt || new Date().toISOString(),
     submittedBy: dto.submittedBy || '',
+    // The backend resolves the submitter against the user registry and puts the name and email
+    // on the DTO; the OpenAPI schema hasn't been regenerated to declare them, hence the index
+    // access (same reason as submitterNote/source above).
+    submittedByLabel:
+      ((dto as unknown as Record<string, unknown>)['submittedByDisplayName'] as string | undefined) ||
+      ((dto as unknown as Record<string, unknown>)['submittedByEmail'] as string | undefined) ||
+      dto.submittedBy ||
+      '',
     // The generated DTO type doesn't yet include submitterNote (OpenAPI spec hasn't
     // been regenerated). Read it via index access so runtime works without a
     // regen-and-commit step holding up the feature.
@@ -203,14 +217,47 @@ export interface PaginatedApprovals {
 }
 
 /**
+ * One person with imported content waiting for review, for the by-user tab.
+ */
+export interface PendingSubmitter {
+  uid: string;
+  /** Display name, else email, else the raw uid — resolved server-side. */
+  label: string;
+  email?: string;
+  pendingCount: number;
+}
+
+/**
+ * Who has imported content still waiting for review, and how much each of them has.
+ * Only USER_IMPORT submissions are rolled up; moderator/admin ones stay in the main queue.
+ */
+export async function getPendingSubmitters(): Promise<PendingSubmitter[]> {
+  const response = await apiClient.get<PendingSubmitter[]>('/api/admin/approvals/pending-by-user');
+  return response.data ?? [];
+}
+
+/**
  * Get pending approvals using the proper approval endpoint.
  * Supports cursor-based pagination.
+ *
+ * Passing `submittedBy` narrows the queue to one person's pending submissions — the drill-down
+ * from the by-user tab.
  */
+/**
+ * Which half of the queue to ask for. Submissions arrive either from a moderator working in the
+ * dashboard or from someone importing in bulk on their phone, and the two are reviewed
+ * differently. The split is applied server-side — filtering a fetched page here let the list come
+ * back empty with more pages behind it.
+ */
+export type SourceScope = 'MODERATOR_QUEUE' | 'USER_IMPORTS';
+
 export async function getPendingApprovals(filters?: {
   type?: 'all' | 'channels' | 'playlists' | 'videos';
   category?: string;
   cursor?: string;
   limit?: number;
+  submittedBy?: string;
+  scope?: SourceScope;
 }): Promise<PaginatedApprovals> {
   // Map frontend filter type to backend type param
   let typeParam: string | undefined;
@@ -221,6 +268,8 @@ export async function getPendingApprovals(filters?: {
   const params: Record<string, string | number> = {};
   if (typeParam) params.type = typeParam;
   if (filters?.category) params.category = filters.category;
+  if (filters?.submittedBy) params.submittedBy = filters.submittedBy;
+  if (filters?.scope) params.scope = filters.scope;
   params.limit = filters?.limit || 20;
   if (filters?.cursor) params.cursor = filters.cursor;
 
@@ -253,17 +302,21 @@ export async function approveItem(
 }
 
 /**
- * Reject an item using the proper approval endpoint
+ * Reject an item using the proper approval endpoint.
+ *
+ * `reason` is optional — an admin may reject without writing feedback. A blank reason is sent
+ * as absent rather than coerced to "OTHER", which would have put a reason the admin never gave
+ * in front of the submitter.
  */
 export async function rejectItem(
   itemId: string,
   itemType: 'channel' | 'playlist' | 'video',
-  reason: string,
+  reason?: string,
   reviewNotes?: string
 ): Promise<void> {
   // Note: reviewNotes param kept for backward compatibility but not in RejectionRequestDto schema
   const payload: RejectionRequestDto = {
-    reason: reason || 'OTHER'
+    reason: reason?.trim() || undefined
   };
 
   await apiClient.post(`/api/admin/approvals/${itemId}/reject`, payload);

@@ -28,6 +28,13 @@ import java.util.concurrent.TimeoutException;
 @Service
 public class ApprovalService {
 
+    /**
+     * Documents read per collection when rolling up pending work by submitter. A queue deeper
+     * than this is already past what an admin can review by hand; the roll-up under-reports
+     * rather than issuing an unbounded scan.
+     */
+    private static final int SUBMITTER_SCAN_CAP = 2000;
+
     private static final Logger log = LoggerFactory.getLogger(ApprovalService.class);
 
     private static final java.util.Set<String> VALID_TYPES = java.util.Set.of("CHANNEL", "PLAYLIST", "VIDEO");
@@ -73,6 +80,127 @@ public class ApprovalService {
      * For mixed-type queries (type=null), uses a merge-sort approach with
      * separate cursors for each collection to ensure monotonic pagination.
      */
+    /**
+     * Which half of the review queue a caller wants.
+     *
+     * <p>Submissions arrive on two paths that are reviewed differently: a moderator adding
+     * content through the dashboard, and someone importing in bulk from their phone. Every row
+     * records which, so the two separate cleanly.
+     */
+    public enum SourceScope {
+        /** Everything except phone imports. Submissions from before we recorded a source land here. */
+        MODERATOR_QUEUE,
+        /** Only phone imports — the by-user tab and its per-person drill-down. */
+        USER_IMPORTS
+    }
+
+    /** Marker written on a submission that came in through the phone's import flow. */
+    private static final String USER_IMPORT_SOURCE = "USER_IMPORT";
+
+    /**
+     * Pages to look through before handing back a short page.
+     *
+     * <p>Filtering a single fetched page and stopping is what let the queue return nothing while
+     * more pages waited behind it. Bounded so a queue made entirely of the other kind cannot walk
+     * the whole collection in one request.
+     */
+    private static final int MAX_SOURCE_FILTER_PAGES = 10;
+
+    /**
+     * Split the queue by where a submission came from.
+     *
+     * <p>Done here rather than in the browser: filtering after the fact let a page come back empty
+     * with more behind it, and left the pending badge counting rows the queue did not show.
+     * Firestore cannot express "source is not X" — an inequality skips documents missing the field
+     * entirely, which is exactly the older rows that must not disappear — so the predicate is
+     * applied to fetched pages and the fetch continues until the page is filled.
+     *
+     * <p>May return up to twice {@code limit}: the page that crosses the threshold is kept whole
+     * rather than trimmed, because trimming would need a cursor for the trim point and dropping
+     * the remainder would skip items outright. Nothing is lost or repeated, and the caller is an
+     * append-as-you-scroll list that does not depend on an exact page size.
+     */
+    public CursorPageDto<PendingApprovalDto> getPendingApprovals(
+            String type,
+            String category,
+            Integer limit,
+            String cursor,
+            SourceScope scope) throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (scope == null) {
+            return getPendingApprovals(type, category, limit, cursor);
+        }
+
+        int pageSize = Math.min((limit != null && limit > 0) ? limit : 20, 100);
+        List<PendingApprovalDto> kept = new ArrayList<>();
+        String next = cursor;
+
+        for (int page = 0; page < MAX_SOURCE_FILTER_PAGES && kept.size() < pageSize; page++) {
+            CursorPageDto<PendingApprovalDto> fetched = getPendingApprovals(type, category, pageSize, next);
+            for (PendingApprovalDto dto : fetched.getData()) {
+                if (inScope(scope, dto.getSource())) {
+                    kept.add(dto);
+                }
+            }
+            next = fetched.getPageInfo() != null ? fetched.getPageInfo().getNextCursor() : null;
+            if (next == null) {
+                break;
+            }
+        }
+
+        CursorPageDto<PendingApprovalDto> response = new CursorPageDto<>();
+        response.setData(kept);
+        response.setPageInfo(new CursorPageDto.PageInfo(next));
+        return response;
+    }
+
+    /**
+     * One person's pending submissions, narrowed to a source. Backs the by-user drill-down, whose
+     * count comes from the imports roll-up — showing them anything else there would contradict it.
+     */
+    public CursorPageDto<PendingApprovalDto> getMySubmissionsInScope(
+            String submittedBy,
+            String type,
+            Integer limit,
+            String cursor,
+            SourceScope scope) throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (scope == null) {
+            return getMySubmissions(submittedBy, "PENDING", type, limit, cursor);
+        }
+
+        int pageSize = Math.min((limit != null && limit > 0) ? limit : 20, 100);
+        List<PendingApprovalDto> kept = new ArrayList<>();
+        String next = cursor;
+
+        // Same fill loop as the queue: filtering one fetched page and stopping hands back an
+        // empty page with more behind it, which reads as "this person has nothing".
+        for (int page = 0; page < MAX_SOURCE_FILTER_PAGES && kept.size() < pageSize; page++) {
+            CursorPageDto<PendingApprovalDto> fetched =
+                    getMySubmissions(submittedBy, "PENDING", type, pageSize, next);
+            for (PendingApprovalDto dto : fetched.getData()) {
+                if (inScope(scope, dto.getSource())) {
+                    kept.add(dto);
+                }
+            }
+            next = fetched.getPageInfo() != null ? fetched.getPageInfo().getNextCursor() : null;
+            if (next == null) {
+                break;
+            }
+        }
+
+        CursorPageDto<PendingApprovalDto> filtered = new CursorPageDto<>();
+        filtered.setData(kept);
+        filtered.setPageInfo(new CursorPageDto.PageInfo(next));
+        return filtered;
+    }
+
+    /** A missing source means the row predates source tracking: it belongs to the moderator queue. */
+    private static boolean inScope(SourceScope scope, String source) {
+        boolean isUserImport = USER_IMPORT_SOURCE.equalsIgnoreCase(source);
+        return scope == SourceScope.USER_IMPORTS ? isUserImport : !isUserImport;
+    }
+
     public CursorPageDto<PendingApprovalDto> getPendingApprovals(
             String type,
             String category,
@@ -1097,8 +1225,7 @@ public class ApprovalService {
         boolean personal = request.isPersonalScope();
 
         if (!personal) {
-            // Require at least one category — either from the item or from the override.
-            requireCategoryOrOverride(channel.getCategoryIds(), request);
+            validateCategoryOverride(request);
         }
 
         // Update status
@@ -1189,8 +1316,7 @@ public class ApprovalService {
         boolean personal = request.isPersonalScope();
 
         if (!personal) {
-            // Require at least one category — either from the item or from the override.
-            requireCategoryOrOverride(playlist.getCategoryIds(), request);
+            validateCategoryOverride(request);
         }
 
         // Update status
@@ -1387,8 +1513,7 @@ public class ApprovalService {
         boolean personal = request.isPersonalScope();
 
         if (!personal) {
-            // Require at least one category — either from the item or from the override.
-            requireCategoryOrOverride(video.getCategoryIds(), request);
+            validateCategoryOverride(request);
         }
 
         video.setStatus("APPROVED");
@@ -1525,21 +1650,69 @@ public class ApprovalService {
     }
 
     /**
-     * Guard: throw 400 if neither existing categoryIds nor a categoryOverride are present.
-     * Called at the start of each approveChannel/approvePlaylist/approveVideo.
+     * Who has content waiting for review, and how much — the by-user approvals tab.
+     *
+     * <p>Only USER_IMPORT submissions are rolled up here. Moderator and admin submissions (and
+     * legacy rows with no recorded source) stay in the main queue, where they are reviewed as a
+     * chronological stream rather than per-person.
+     *
+     * <p>Sorted by pending count descending so the biggest backlog is the first thing an admin
+     * sees; ties fall back to the label for a stable order across requests.
      */
-    private void requireCategoryOrOverride(List<String> existingCategoryIds, ApprovalRequestDto request)
+    public List<PendingSubmitterDto> getPendingSubmitters()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        // Imports only — the drill-down shows a person's imports and nothing else, so counting
+        // anything wider would print a number that view then contradicts.
+        Map<String, Long> countsByUid = new LinkedHashMap<>();
+        for (ApprovalRepository.PendingSubmitterRow row : approvalRepository.findPendingSubmitterRows(SUBMITTER_SCAN_CAP)) {
+            if (row.submittedBy() == null || row.submittedBy().isBlank()
+                    || !USER_IMPORT_SOURCE.equalsIgnoreCase(row.source())) {
+                continue;
+            }
+            countsByUid.merge(row.submittedBy(), 1L, Long::sum);
+        }
+
+        List<PendingSubmitterDto> submitters = new ArrayList<>(countsByUid.size());
+        for (Map.Entry<String, Long> entry : countsByUid.entrySet()) {
+            String uid = entry.getKey();
+            String displayName = null;
+            String email = null;
+            try {
+                var user = userRepository.findByUid(uid);
+                if (user.isPresent()) {
+                    displayName = user.get().getDisplayName();
+                    email = user.get().getEmail();
+                }
+            } catch (Exception e) {
+                // A lookup failure must not hide the pending work — the row still lists, by uid.
+                log.warn("Could not resolve submitter {}: {}", uid, e.getMessage());
+            }
+            submitters.add(new PendingSubmitterDto(uid, displayName, email, entry.getValue()));
+        }
+
+        submitters.sort(Comparator
+                .comparingLong(PendingSubmitterDto::getPendingCount).reversed()
+                .thenComparing(PendingSubmitterDto::getLabel, Comparator.nullsLast(Comparator.naturalOrder())));
+        return submitters;
+    }
+
+    /**
+     * Validate the optional category override. Called at the start of each
+     * approveChannel/approvePlaylist/approveVideo.
+     *
+     * <p>A category is NOT required to approve: an item with no categories and no override is
+     * approved uncategorized. It stays reachable through the type listings and search — the
+     * public {@code /api/v1/content} feed does not filter on category — but it appears under no
+     * category until one is assigned. Requiring one here made every uncategorized submission a
+     * two-step action for the admin, which is the cost this trade removes.
+     *
+     * <p>F11: a provided override must still reference a real category — otherwise a typo'd or
+     * stale id would silently become the content's only category.
+     */
+    private void validateCategoryOverride(ApprovalRequestDto request)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         String override = request.getCategoryOverride();
         boolean overridePresent = override != null && !override.isBlank();
-        boolean hasCategories = existingCategoryIds != null && !existingCategoryIds.isEmpty();
-        if (!overridePresent && !hasCategories) {
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.BAD_REQUEST,
-                    "Category required to approve this submission");
-        }
-        // F11: a provided override must reference a real category — otherwise a typo'd or
-        // stale id would silently become the content's only category.
         if (overridePresent && categoryRepository.findById(override.strip()).isEmpty()) {
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.BAD_REQUEST,

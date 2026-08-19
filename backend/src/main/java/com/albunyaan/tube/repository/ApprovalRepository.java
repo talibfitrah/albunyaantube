@@ -29,6 +29,8 @@ import java.util.function.BiConsumer;
 @Repository
 public class ApprovalRepository {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ApprovalRepository.class);
+
     private static final String CHANNELS_COLLECTION = "channels";
     private static final String PLAYLISTS_COLLECTION = "playlists";
     private static final String VIDEOS_COLLECTION = "videos";
@@ -180,6 +182,50 @@ public class ApprovalRepository {
         long videos = videosFuture.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getCount();
         return channels + playlists + videos;
     }
+
+    /**
+     * Submitter uid + source for every PENDING document across all three collections.
+     *
+     * <p>Projected to the two fields the by-user roll-up needs, so a queue of a few thousand
+     * costs a projection scan rather than three full document reads. Firestore has no group-by;
+     * the counting is done by the caller.
+     *
+     * <p>Only {@code status} is filtered server-side — a second equality filter on {@code source}
+     * would need a composite index deployed before this could work, and the source split is cheap
+     * to apply in memory over an already-bounded scan.
+     *
+     * @param scanCap maximum documents read per collection
+     */
+    public List<PendingSubmitterRow> findPendingSubmitterRows(int scanCap)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<PendingSubmitterRow> rows = new ArrayList<>();
+        for (CollectionReference collection :
+                List.of(getChannelsCollection(), getPlaylistsCollection(), getVideosCollection())) {
+            var snapshot = collection
+                    .whereEqualTo("status", "PENDING")
+                    // Newest first, matching the queue's own order: without it the cap keeps an
+                    // arbitrary slice of document ids, so which submitters appear would depend on
+                    // Firestore's internal ordering. Reuses the (status, createdAt, __name__)
+                    // index the pending queries already need.
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING)
+                    .select("submittedBy", "source")
+                    .limit(scanCap)
+                    .get()
+                    .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+            if (snapshot.size() >= scanCap) {
+                log.warn("Pending submitter scan hit its {}-doc cap on {} — the by-user tab "
+                        + "under-reports older submissions", scanCap, collection.getId());
+            }
+            for (var doc : snapshot.getDocuments()) {
+                rows.add(new PendingSubmitterRow(doc.getString("submittedBy"), doc.getString("source")));
+            }
+        }
+        return rows;
+    }
+
+    /** A pending document reduced to who submitted it and through which path. */
+    public record PendingSubmitterRow(String submittedBy, String source) {}
 
     // ========================================================================
     // Generic pagination helper

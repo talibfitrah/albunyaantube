@@ -1,12 +1,12 @@
 /**
- * [ADMIN-IMPORT-01] PendingApprovalsView — User-import badge + category-required approve gate
+ * [ADMIN-IMPORT-01] PendingApprovalsView — user-import badge + the optional category on approve
  *
  * Tests:
  * 1. A USER_IMPORT item renders the "User import" badge.
  * 2. A non-USER_IMPORT item does not render the badge.
- * 3. Approve button is disabled for an empty-category item until a category is selected.
- * 4. Approve button is immediately enabled for an item that already has categories.
- * 5. On approve, the selected category is sent as categoryOverride.
+ * 3. Approve is available whether or not the item has a category.
+ * 4. An uncategorised item approved with no category sends no override.
+ * 5. On approve, a picked category is sent as categoryOverride.
  * 6. On approve for a pre-categorised item, categoryOverride is NOT sent.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -134,7 +134,7 @@ describe('PendingApprovalsView — User-import badge', () => {
   });
 });
 
-describe('PendingApprovalsView — category-required approve gate', () => {
+describe('PendingApprovalsView — category is optional when approving', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     approveItemMock.mockResolvedValue(undefined);
@@ -144,71 +144,48 @@ describe('PendingApprovalsView — category-required approve gate', () => {
     ]);
   });
 
-  it('approve button is disabled when item has no categories and no override selected', async () => {
-    await renderView([makeItem({ source: 'USER_IMPORT', categories: [] })]);
+  it('approve is available for an item with no categories', async () => {
+    await renderView([makeItem({ source: 'MODERATOR', categories: [] })]);
 
-    await waitFor(() => {
-      const approveBtn = screen.getByRole('button', { name: /^approve$/i });
-      expect(approveBtn).toBeDisabled();
-    });
-  });
-
-  it('approve button is enabled immediately for an item that already has categories', async () => {
-    await renderView([makeItem({ source: 'ADMIN', categories: ['cat-1'] })]);
-
-    await waitFor(() => {
-      const approveBtn = screen.getByRole('button', { name: /^approve$/i });
-      expect(approveBtn).not.toBeDisabled();
-    });
-  });
-
-  it('approve button is enabled after admin selects a category override', async () => {
-    await renderView([makeItem({ id: 'item-gate', source: 'USER_IMPORT', categories: [] })]);
-
-    // Wait for approve button to appear disabled
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /^approve$/i })).toBeDisabled();
-    });
-
-    // The category-override select has a unique label
-    const label = screen.getByText('Select a category to approve');
-    const selectId = label.getAttribute('for');
-    const select = document.getElementById(selectId!) as HTMLSelectElement;
-    expect(select).toBeTruthy();
-
-    // Select a category
-    await fireEvent.change(select, { target: { value: 'cat-1' } });
-
-    // Approve button should now be enabled
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /^approve$/i })).not.toBeDisabled();
     });
   });
 
-  it('sends categoryOverride when approving an empty-category item', async () => {
+  it('approve is available for an item that already has categories', async () => {
+    await renderView([makeItem({ source: 'ADMIN', categories: ['cat-1'] })]);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^approve$/i })).not.toBeDisabled();
+    });
+  });
+
+  it('approves an uncategorised item with no override when none is picked', async () => {
+    await renderView([makeItem({ id: 'ch-bare', source: 'MODERATOR', categories: [] })]);
+
+    const approve = await waitFor(() => screen.getByRole('button', { name: /^approve$/i }));
+    await fireEvent.click(approve);
+
+    await waitFor(() => {
+      expect(approveItemMock).toHaveBeenCalledWith('ch-bare', 'channel', undefined);
+    });
+  });
+
+  it('sends the picked category as categoryOverride for an empty-category item', async () => {
     getPendingApprovalsMock.mockResolvedValue({
-      items: [makeItem({ id: 'ch-99', source: 'USER_IMPORT', categories: [] })],
+      items: [makeItem({ id: 'ch-99', source: 'MODERATOR', categories: [] })],
       nextCursor: null
     });
 
     const { default: PendingApprovalsView } = await import('@/views/PendingApprovalsView.vue');
     render(PendingApprovalsView, { global: { plugins: [buildI18n()] } });
 
-    // Wait for the category selector label to appear
-    await waitFor(() => screen.getByText('Select a category to approve'));
-
-    // Select the override category via the labelled select
-    const label = screen.getByText('Select a category to approve');
+    // The optional per-card category selector is still offered.
+    const label = await waitFor(() => screen.getByText('Category (optional)'));
     const select = document.getElementById(label.getAttribute('for')!) as HTMLSelectElement;
     await fireEvent.change(select, { target: { value: 'cat-1' } });
 
-    // Wait for approve to be enabled then click it
-    const approveBtn = await waitFor(() => {
-      const btn = screen.getByRole('button', { name: /^approve$/i });
-      expect(btn).not.toBeDisabled();
-      return btn;
-    });
-    await fireEvent.click(approveBtn);
+    await fireEvent.click(screen.getByRole('button', { name: /^approve$/i }));
 
     await waitFor(() => {
       expect(approveItemMock).toHaveBeenCalledWith('ch-99', 'channel', 'cat-1');
@@ -225,8 +202,7 @@ describe('PendingApprovalsView — category-required approve gate', () => {
     render(PendingApprovalsView, { global: { plugins: [buildI18n()] } });
 
     await waitFor(() => {
-      const btn = screen.getByRole('button', { name: /^approve$/i });
-      expect(btn).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: /^approve$/i })).not.toBeDisabled();
     });
 
     await fireEvent.click(screen.getByRole('button', { name: /^approve$/i }));
