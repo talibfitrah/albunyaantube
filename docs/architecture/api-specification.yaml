@@ -2341,9 +2341,11 @@ paths:
         - Description text (e.g., "arabic" matches items with "arabic" in description)
 
         **Query Limits (Important):**
-        To prevent Firestore quota exhaustion, this endpoint uses bounded queries that
-        limit results to a maximum of 200 items per content type. When the `truncated`
-        field in the response is `true`, there may be more matching items than shown.
+        To prevent Firestore quota exhaustion, this endpoint uses bounded queries.
+        Browsing is bounded at 2000 items per content type; a search scans at most 200
+        per type. When the `truncated` field in the response is `true`, there may be
+        more matching items than shown — call GET /api/admin/content/totals for the
+        real size.
 
         **Best Practices for Large Datasets:**
         - Use specific type filters (`types=channel`) instead of fetching all types
@@ -2375,8 +2377,9 @@ paths:
           in: query
           description: |
             Search term to filter results. Matches against title, keywords, and description
-            using case-insensitive contains matching. Note: Search is applied after bounded
-            fetch, so results are limited to the most recent 200 items per content type.
+            using case-insensitive contains matching. Note: a search issues two bounded
+            queries per content type at 200 each, so it scans at most 400 documents per
+            type, independently of the browse ceiling.
           schema:
             type: string
         - name: sort
@@ -2406,6 +2409,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ContentLibraryResponse'
+
+  /admin/content/totals:
+    get:
+      summary: Registry-wide content counts per type
+      description: |
+        Per-type counts of everything in the registry, from server-side aggregation.
+        Separate from the listing endpoint on purpose: the counts depend on no listing
+        parameter, so keeping them off that request means a slow or failing count never
+        delays or fails the content itself. Unaffected by filters, paging or the listing
+        query bounds.
+      operationId: getContentTotals
+      tags: [Content Library]
+      responses:
+        '200':
+          description: Registry-wide counts per content type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistryTotals'
 
   /admin/content/bulk/approve:
     post:
@@ -3612,8 +3634,10 @@ components:
       type: object
       description: |
         Paginated response for content library. The `truncated` field indicates whether
-        results may be incomplete due to bounded query limits (max 200 per content type).
-        UI should display a warning to users when `truncated` is true.
+        results may be incomplete due to bounded query limits (browse: max 2000 per
+        content type; search: two queries of 200 per type, so max 400 scanned per type). UI should display a warning to users
+        when `truncated` is true. GET /api/admin/content/totals carries the real
+        registry size, counted independently of those bounds.
       properties:
         content:
           type: array
@@ -3639,6 +3663,28 @@ components:
             and there may be more items matching the filters than shown. UI should
             display a message like "Showing most recent results. Use filters or search
             to find specific items." when this is true.
+
+    RegistryTotals:
+      type: object
+      description: |
+        Registry-wide counts per content type, from server-side aggregation. Served by
+        GET /api/admin/content/totals, deliberately separate from the listing response so
+        a slow count never delays or fails the content itself. Deliberately
+        NOT filtered by status/category/search, so they stay stable while the user filters
+        and may legitimately exceed the number of rows shown. `videos` counts only
+        individually-curated video documents — approving a channel or playlist does not
+        create video documents, so videos reachable through a channel or playlist are not
+        counted here.
+      properties:
+        channels:
+          type: integer
+          format: int64
+        playlists:
+          type: integer
+          format: int64
+        videos:
+          type: integer
+          format: int64
 
     ContentItem:
       type: object

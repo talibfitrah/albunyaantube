@@ -4,6 +4,26 @@
       <div class="header-content">
         <h1 class="heading">{{ t('contentLibrary.heading') }}</h1>
         <p class="subtitle">{{ t('contentLibrary.subtitle') }}</p>
+        <!-- Registry-wide totals from the server, independent of filters and of the fetch
+             bound, so they stay exact even when the result list is truncated. The caption says so
+             explicitly: filtered to PENDING, these numbers are legitimately larger than the list. -->
+        <div v-if="registryTotals" class="registry-totals-block">
+          <p class="registry-totals-caption">{{ t('contentLibrary.totalsCaption') }}</p>
+          <dl class="registry-totals">
+            <div class="registry-total">
+              <dt>{{ t('contentLibrary.totalsChannels') }}</dt>
+              <dd>{{ formatNumber(registryTotals.channels, locale) }}</dd>
+            </div>
+            <div class="registry-total">
+              <dt>{{ t('contentLibrary.totalsPlaylists') }}</dt>
+              <dd>{{ formatNumber(registryTotals.playlists, locale) }}</dd>
+            </div>
+            <div class="registry-total">
+              <dt>{{ t('contentLibrary.totalsVideos') }}</dt>
+              <dd>{{ formatNumber(registryTotals.videos, locale) }}</dd>
+            </div>
+          </dl>
+        </div>
       </div>
       <div class="header-actions">
         <!-- Mobile Filter Button -->
@@ -547,7 +567,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import apiClient from '@/services/api/client';
-import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
+import { getThumbnailUrl, getThumbnailFallbacks, formatNumber } from '@/utils/formatters';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
@@ -555,7 +575,7 @@ import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import * as contentLibraryService from '@/services/contentLibrary';
 import type { ReorderItem } from '@/services/contentLibrary';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 interface ContentItem {
   id: string;
@@ -600,6 +620,9 @@ const isTruncated = ref(false);
 // Reorder safety - tracks whether the current view can safely be reordered
 // Reorder is unsafe when: truncated, paginated (totalItems > displayed), search active, filters active, or non-approved items visible
 const totalItemsFromServer = ref(0);
+// Registry-wide per-type totals, fetched once. Null until loaded, and left null on failure —
+// the header simply doesn't render rather than blocking or breaking the listing.
+const registryTotals = ref<contentLibraryService.RegistryTotals | null>(null);
 const isReorderSafe = computed(() => {
   // Cannot reorder if results are truncated (server hit safety limit)
   if (isTruncated.value) return false;
@@ -907,6 +930,9 @@ async function bulkDelete() {
 
     clearSelection();
     await loadContent();
+    // Delete is a hard Firestore delete, so it is the one bulk action that moves the registry
+    // counts. Approve/reject don't — the totals span all statuses.
+    loadRegistryTotals();
   } catch (err: any) {
     alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
   } finally {
@@ -948,6 +974,7 @@ async function confirmDelete(item: ContentItem) {
     if (result.successCount > 0) {
       alert(t('contentLibrary.deleteSuccess'));
       await loadContent();
+      loadRegistryTotals();
     } else if (result.errors.length > 0) {
       alert(t('contentLibrary.errorBulkAction') + ': ' + result.errors[0]);
     }
@@ -1390,9 +1417,22 @@ async function saveOrder() {
   }
 }
 
+/**
+ * Header counts are decorative relative to the listing, so a failure is logged and swallowed —
+ * the totals row just stays hidden. Never surfaced as an error banner over working content.
+ */
+async function loadRegistryTotals() {
+  try {
+    registryTotals.value = await contentLibraryService.fetchRegistryTotals();
+  } catch (err) {
+    console.warn('Registry totals unavailable', err);
+  }
+}
+
 onMounted(() => {
   loadCategories();
   loadContent();
+  loadRegistryTotals();
   window.addEventListener('resize', handleResize);
 });
 
@@ -1436,6 +1476,44 @@ onUnmounted(() => {
 .subtitle {
   font-size: 0.9375rem;
   color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.registry-totals-block {
+  margin-top: 0.75rem;
+}
+
+.registry-totals-caption {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.25rem 0;
+}
+
+.registry-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin: 0;
+}
+
+.registry-total {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.registry-total dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.registry-total dd {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
   margin: 0;
 }
 

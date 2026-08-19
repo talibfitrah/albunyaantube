@@ -739,6 +739,15 @@ public class PlaylistRepository {
     }
 
     /**
+     * Count all playlists using server-side aggregation
+     */
+    public long countAll() throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection().count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
+
+    /**
      * Count playlists by validation status using server-side aggregation.
      *
      * @param status ValidationStatus to count

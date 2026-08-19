@@ -114,3 +114,19 @@ export async function bulkReorder(items: ReorderItem[]): Promise<BulkActionRespo
   // Return the body regardless of status code - caller handles errors via successCount/errors
   return body;
 }
+
+/**
+ * Registry-wide per-type counts for the Content Library header.
+ *
+ * Its own request, not a field on the listing: the counts are independent of every listing
+ * parameter, so keeping them off that path means a slow count never delays the content itself.
+ */
+export interface RegistryTotals {
+  channels: number;
+  playlists: number;
+  videos: number;
+}
+
+export async function fetchRegistryTotals(): Promise<RegistryTotals> {
+  return await authorizedJsonFetch('/api/admin/content/totals');
+}

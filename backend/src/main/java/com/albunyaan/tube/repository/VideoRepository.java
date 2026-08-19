@@ -783,6 +783,15 @@ public class VideoRepository {
     }
 
     /**
+     * Count all videos using server-side aggregation
+     */
+    public long countAll() throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection().count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
+
+    /**
      * Count videos by validation status using server-side aggregation.
      *
      * @param status ValidationStatus to count

@@ -81,6 +81,26 @@ public class ContentLibraryController {
     }
 
     /**
+     * Registry-wide per-type counts for the Content Library header.
+     *
+     * <p>Deliberately its own request rather than a field on the listing response. The counts do
+     * not depend on any listing parameter, and the client needs them once — piggybacking them put
+     * three serialized aggregation round-trips on the listing's critical path, where they were
+     * recomputed on every debounced search keystroke, discarded on every infinite-scroll page, and
+     * able to fail a listing that had already been fetched and sorted. On their own endpoint a
+     * slow or failing count costs nothing but an unpopulated header.</p>
+     */
+    @GetMapping("/totals")
+    public ResponseEntity<RegistryTotals> getTotals()
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        return ResponseEntity.ok(new RegistryTotals(
+                channelRepository.countAll(),
+                playlistRepository.countAll(),
+                videoRepository.countAll()
+        ));
+    }
+
+    /**
      * Helper to fetch category IDs for a content item.
      */
     private List<String> getCategoryIdsForItem(String type, String id)
@@ -98,11 +118,37 @@ public class ContentLibraryController {
     }
 
     /**
-     * Maximum items to fetch per content type to prevent quota exhaustion.
-     * This provides a bounded query instead of full collection scans.
-     * Admin UI should use pagination for larger datasets.
+     * Ceiling on how deep browse pagination can reach per content type, so a page request can
+     * never turn into an unbounded collection scan. Only reached by paging that deep, because
+     * {@code fetchLimit} grows with the requested page.
+     *
+     * <p>It was 200, which silently hid every item past the 200th and made {@code totalItems}
+     * report the cap as the true size. {@code GET /api/admin/content/totals} counts the registry
+     * with server-side aggregation, independently of this bound, so it stays exact even when a
+     * fetch is truncated. Past this ceiling the old symptom returns (empty deep pages, {@code
+     * totalItems} pinned at the cap).</p>
+     *
+     * <p>COST: paging here is offset-based, not cursor-based — every page re-reads the whole
+     * prefix — so cumulative reads for a full scroll are quadratic in depth, and this ceiling is
+     * what bounds that quadratic. Scrolling a 6000-item library (3 types) end to end costs roughly
+     * 1.2M document reads at 2000, against 13k at the old 200 — but the old 200 only ever showed
+     * 600 of those items. Per item actually viewed the cost is ~9x worse; the structural fix is
+     * per-type cursor pagination, which removes the re-read entirely. Raising this constant
+     * further multiplies the same quadratic.</p>
+     *
+     * <p>Search does NOT use this bound — see {@link #MAX_SEARCH_SCAN_PER_TYPE}.</p>
      */
-    private static final int MAX_ITEMS_PER_TYPE = 200;
+    private static final int MAX_ITEMS_PER_TYPE = 2000;
+
+    /**
+     * Ceiling on how many documents a single search scans per content type.
+     *
+     * <p>Deliberately separate from {@link #MAX_ITEMS_PER_TYPE}: the search branches issue two
+     * queries per type at this limit regardless of the requested page, and search runs on every
+     * debounced keystroke in the admin UI. Tying it to the browse ceiling would multiply the cost
+     * of the most frequently exercised path by the same factor the browse ceiling was raised.</p>
+     */
+    private static final int MAX_SEARCH_SCAN_PER_TYPE = 200;
 
     /**
      * Helper class to track fetch results including truncation detection.
@@ -130,7 +176,8 @@ public class ContentLibraryController {
      * - page: Page number (0-indexed)
      * - size: Page size (default 20, max 100)
      *
-     * NOTE: For large datasets, this endpoint uses bounded queries (max 200 per type)
+     * NOTE: For large datasets, this endpoint uses bounded queries (browse: max
+     * MAX_ITEMS_PER_TYPE per type; search: max MAX_SEARCH_SCAN_PER_TYPE per type)
      * to prevent Firestore quota exhaustion. Use specific type filters and pagination.
      */
     @GetMapping
@@ -331,8 +378,8 @@ public class ContentLibraryController {
         // across the ENTIRE collection, not just the first 200 items.
         if (search != null && !search.isBlank()) {
             String searchLower = search.toLowerCase(java.util.Locale.ROOT);
-            List<Channel> keywordResults = channelRepository.searchByKeyword(searchLower, MAX_ITEMS_PER_TYPE);
-            List<Channel> nameResults = channelRepository.searchByNameLower(searchLower, MAX_ITEMS_PER_TYPE);
+            List<Channel> keywordResults = channelRepository.searchByKeyword(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
+            List<Channel> nameResults = channelRepository.searchByNameLower(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
             // Merge and deduplicate by ID
             Map<String, Channel> merged = new java.util.LinkedHashMap<>();
             for (Channel ch : nameResults) merged.put(ch.getId(), ch);
@@ -345,9 +392,9 @@ public class ContentLibraryController {
             if (!"all".equalsIgnoreCase(status)) {
                 results.removeIf(ch -> !status.equalsIgnoreCase(ch.getStatus()));
             }
-            // Detect truncation: if either query returned exactly MAX_ITEMS_PER_TYPE, more may exist
-            boolean hitLimit = keywordResults.size() >= MAX_ITEMS_PER_TYPE
-                    || nameResults.size() >= MAX_ITEMS_PER_TYPE
+            // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
+            boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
+                    || nameResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
                     || results.size() > limit;
             if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
             return new BoundedFetchResult<>(results, hitLimit);
@@ -407,8 +454,8 @@ public class ContentLibraryController {
         // When search is active, use Firestore-level keyword + title search
         if (search != null && !search.isBlank()) {
             String searchLower = search.toLowerCase(java.util.Locale.ROOT);
-            List<Playlist> keywordResults = playlistRepository.searchByKeyword(searchLower, MAX_ITEMS_PER_TYPE);
-            List<Playlist> titleResults = playlistRepository.searchByTitleLower(searchLower, MAX_ITEMS_PER_TYPE);
+            List<Playlist> keywordResults = playlistRepository.searchByKeyword(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
+            List<Playlist> titleResults = playlistRepository.searchByTitleLower(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
             // Merge and deduplicate by ID (title results first for relevance)
             Map<String, Playlist> merged = new java.util.LinkedHashMap<>();
             for (Playlist pl : titleResults) merged.put(pl.getId(), pl);
@@ -420,9 +467,9 @@ public class ContentLibraryController {
             if (!"all".equalsIgnoreCase(status)) {
                 results.removeIf(pl -> !status.equalsIgnoreCase(pl.getStatus()));
             }
-            // Detect truncation: if either query returned exactly MAX_ITEMS_PER_TYPE, more may exist
-            boolean hitLimit = keywordResults.size() >= MAX_ITEMS_PER_TYPE
-                    || titleResults.size() >= MAX_ITEMS_PER_TYPE
+            // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
+            boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
+                    || titleResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
                     || results.size() > limit;
             if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
             return new BoundedFetchResult<>(results, hitLimit);
@@ -482,8 +529,8 @@ public class ContentLibraryController {
         // When search is active, use Firestore-level keyword + title search
         if (search != null && !search.isBlank()) {
             String searchLower = search.toLowerCase(java.util.Locale.ROOT);
-            List<Video> keywordResults = videoRepository.searchByKeyword(searchLower, MAX_ITEMS_PER_TYPE);
-            List<Video> titleResults = videoRepository.searchByTitleLower(searchLower, MAX_ITEMS_PER_TYPE);
+            List<Video> keywordResults = videoRepository.searchByKeyword(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
+            List<Video> titleResults = videoRepository.searchByTitleLower(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
             // Merge and deduplicate by ID (title results first for relevance)
             Map<String, Video> merged = new java.util.LinkedHashMap<>();
             for (Video v : titleResults) merged.put(v.getId(), v);
@@ -495,9 +542,9 @@ public class ContentLibraryController {
             if (!"all".equalsIgnoreCase(status)) {
                 results.removeIf(v -> !status.equalsIgnoreCase(v.getStatus()));
             }
-            // Detect truncation: if either query returned exactly MAX_ITEMS_PER_TYPE, more may exist
-            boolean hitLimit = keywordResults.size() >= MAX_ITEMS_PER_TYPE
-                    || titleResults.size() >= MAX_ITEMS_PER_TYPE
+            // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
+            boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
+                    || titleResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
                     || results.size() > limit;
             if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
             return new BoundedFetchResult<>(results, hitLimit);
@@ -553,7 +600,6 @@ public class ContentLibraryController {
         public int totalPages;
         /** True if results may be incomplete due to bounded query limits */
         public boolean truncated;
-
         public ContentLibraryResponse(List<ContentItem> content, int totalItems, int currentPage, int pageSize, int totalPages, boolean truncated) {
             this.content = content;
             this.totalItems = totalItems;
@@ -561,6 +607,27 @@ public class ContentLibraryController {
             this.pageSize = pageSize;
             this.totalPages = totalPages;
             this.truncated = truncated;
+        }
+    }
+
+    /**
+     * Registry-wide counts per content type, from Firestore server-side aggregation.
+     *
+     * <p>Deliberately NOT filtered by status/category/search: these answer "how much is in the
+     * library", which is why they stay stable while the user filters, and why they are counted
+     * separately from the listing rather than derived from them. {@code videos} counts only
+     * individually-curated video documents — approving a channel or playlist does not create
+     * Video documents, so videos reachable through a channel or playlist are not counted here.</p>
+     */
+    public static class RegistryTotals {
+        public long channels;
+        public long playlists;
+        public long videos;
+
+        public RegistryTotals(long channels, long playlists, long videos) {
+            this.channels = channels;
+            this.playlists = playlists;
+            this.videos = videos;
         }
     }
 
