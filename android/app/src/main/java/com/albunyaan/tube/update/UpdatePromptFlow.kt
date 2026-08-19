@@ -6,8 +6,10 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Handler
+import android.os.SystemClock
 import android.os.Looper
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.WindowManager
@@ -129,8 +131,33 @@ class UpdatePromptFlow @Inject constructor(
      * screen reuses the same network call without an extra roundtrip.
      */
     suspend fun checkForUpdate(): UpdateInfo? {
-        if (promptDismissedThisProcess) return null
-        return withTimeoutOrNull(CHECK_TIMEOUT_MS) { catalog.latest() }
+        if (promptDismissedThisProcess) {
+            Log.d(TAG, "probe skipped: prompt already handled this process")
+            return null
+        }
+        // Log the outcome: this path was entirely silent, so a timed-out probe looked
+        // exactly like "already up to date" in logcat — which is why a fleet-wide
+        // missed update went unnoticed. `completed` separates them, since
+        // withTimeoutOrNull returns null for both.
+        var found: UpdateInfo? = null
+        var completed = false
+        val startedAt = SystemClock.elapsedRealtime()
+        // Capture inside the block: if the timeout fires between latest() returning and
+        // withTimeoutOrNull delivering, the outer value is null even though we DID find
+        // a release. Returning `found` keeps that result instead of discarding it.
+        withTimeoutOrNull(CHECK_TIMEOUT_MS) {
+            catalog.latest().also { found = it; completed = true }
+        }
+        val tookMs = SystemClock.elapsedRealtime() - startedAt
+        when {
+            !completed -> Log.w(TAG, "probe TIMED OUT after ${tookMs}ms — no prompt shown")
+            found != null -> Log.d(TAG, "probe found ${found?.versionName} in ${tookMs}ms")
+            // latest() returns null both for "nothing newer" and for a failed fetch, so
+            // do not claim the former. Overclaiming here would recreate the ambiguity
+            // this logging exists to remove.
+            else -> Log.d(TAG, "probe: no update offered — up to date or fetch failed (${tookMs}ms)")
+        }
+        return if (completed) found else null
     }
 
     /**
@@ -508,9 +535,23 @@ class UpdatePromptFlow @Inject constructor(
     companion object {
         private const val TAG = "UpdatePromptFlow"
 
-        /** Splash budget — long enough for a healthy GitHub response, short enough to not
-         * stall cold start on a flaky network. The check runs in parallel with splash
-         * animations (≈2.7 s), so this typically resolves before we need the result. */
-        private const val CHECK_TIMEOUT_MS = 2_000L
+        /**
+         * Splash probe budget, deliberately equal to [SplashFragment.SPLASH_PRE_AWAIT_MS]
+         * (2750 ms): the result is awaited only after those animations, so this costs
+         * zero cold-start latency while being the largest window available for free.
+         * Going higher buys a little reach at the price of a visible splash hold on
+         * every slow-network cold start, update or not — a bad trade when
+         * Settings > Available updates is an untimed fallback.
+         *
+         * It was 2000 ms — 750 ms SHORTER than the animation — so the probe was killed
+         * before the splash wanted the answer and [withTimeoutOrNull] made that a
+         * silent null: no prompt, no log, indistinguishable from "up to date".
+         * UpdatePromptFlowTest pins this against the splash constant. Caveat: this
+         * bounds cancellable work, not a socket already stalled inside
+         * Call.execute() — see [cancelWhenCoroutineCancels]. Bounding that needs an
+         * OkHttp callTimeout on the shared client, which is a separate change.
+         */
+        @VisibleForTesting
+        internal const val CHECK_TIMEOUT_MS = 2_750L
     }
 }

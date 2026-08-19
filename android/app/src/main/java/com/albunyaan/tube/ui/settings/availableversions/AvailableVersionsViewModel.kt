@@ -11,6 +11,8 @@ import com.albunyaan.tube.update.RowState
 import com.albunyaan.tube.update.UpdateChecker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -96,8 +98,13 @@ class AvailableVersionsViewModel @Inject constructor(
         inFlightLoad = viewModelScope.launch {
             _loading.value = true
             try {
-                val releases = catalog.list(limit = PICKER_PAGE_SIZE)
-                val summaries = catalog.summaries()
+                // Two different hosts, cached independently — fetch them together so
+                // splitting the cache did not make the picker twice as slow to open.
+                val (releases, summaries) = coroutineScope {
+                    val r = async { catalog.list(limit = PICKER_PAGE_SIZE) }
+                    val s = async { catalog.summaries() }
+                    r.await() to s.await()
+                }
                 _rows.value = releases.map { info ->
                     val remote = info.versionName.trim()
                     ReleaseRow(

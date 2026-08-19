@@ -1,10 +1,14 @@
 package com.albunyaan.tube.update
 
+import com.albunyaan.tube.ui.SplashFragment
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
@@ -89,6 +93,68 @@ class UpdatePromptFlowTest {
             lifecycleOwner = mock(),
             info = nonLatest,
         )
+    }
+
+    /**
+     * Regression: the splash probe must outlive a realistic cold-start fetch.
+     *
+     * SplashFragment animates for [SplashFragment.SPLASH_PRE_AWAIT_MS] (2750 ms) and
+     * only THEN awaits this result, so a probe finishing inside that window is on
+     * time and costs the user nothing. The budget used to be 2000 ms, which killed
+     * the probe before the splash even wanted the answer, and withTimeoutOrNull
+     * reports that as null — no dialog, no log, indistinguishable from "up to date".
+     * This delay sits above the old budget and below the new one, so it fails on the
+     * old constant and passes on the new one.
+     */
+    @Test
+    fun `probe slower than the old budget still yields a prompt`() = runTest {
+        val info = updateInfo()
+        val catalog = mock<ReleaseCatalogCache> {
+            onBlocking { latest() } doSuspendableAnswer {
+                delay(2_500)
+                info
+            }
+        }
+
+        val flow = UpdatePromptFlow(mock(), mock(), catalog, mock())
+
+        assertEquals(info, flow.checkForUpdate())
+    }
+
+    /**
+     * Guards the direction that actually gets edited: nobody should lower
+     * CHECK_TIMEOUT_MS back under the splash animation, which is the gap that caused
+     * the missed-update bug. It compares two hand-maintained constants, so it does NOT
+     * catch someone ADDING a splash phase without updating SPLASH_PRE_AWAIT_MS — that
+     * one is covered only by the warning on the constant itself.
+     */
+    @Test
+    fun `probe budget is not shorter than the splash animation it runs behind`() {
+        assertTrue(
+            "CHECK_TIMEOUT_MS (${UpdatePromptFlow.CHECK_TIMEOUT_MS}) must be >= " +
+                "SPLASH_PRE_AWAIT_MS (${SplashFragment.SPLASH_PRE_AWAIT_MS})",
+            UpdatePromptFlow.CHECK_TIMEOUT_MS >= SplashFragment.SPLASH_PRE_AWAIT_MS,
+        )
+    }
+
+    /**
+     * The budget is bounded for CANCELLABLE work. Note this shape cannot reproduce the
+     * production stall, where a thread is parked in Call.execute() and coroutine
+     * cancellation cannot unwind it (see cancelWhenCoroutineCancels) — bounding that
+     * needs an OkHttp callTimeout, which is a separate change.
+     */
+    @Test
+    fun `probe that outruns the budget gives up (cancellable work only)`() = runTest {
+        val catalog = mock<ReleaseCatalogCache> {
+            onBlocking { latest() } doSuspendableAnswer {
+                delay(60_000)
+                updateInfo()
+            }
+        }
+
+        val flow = UpdatePromptFlow(mock(), mock(), catalog, mock())
+
+        assertNull(flow.checkForUpdate())
     }
 
     private fun updateInfo() = UpdateInfo(

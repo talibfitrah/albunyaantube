@@ -5,6 +5,39 @@ during the beta program.
 
 ## [Unreleased]
 
+### Android
+
+- **In-app auto-update no longer silently skips itself.** On cold start the
+  splash probes GitHub for a newer release, but the probe was capped at 2000 ms
+  while the splash animates for 2750 ms before it even reads the answer — so the
+  probe was cancelled 750 ms *before* it was needed, and `withTimeoutOrNull`
+  turned that into a silent "no update available": no dialog, no log entry.
+  Whether a device got the prompt came down to whether it won a race it was
+  given too little time to win, which is why it worked on some phones and not
+  others. Confirmed on a Honor COR-L29 (API 28) sitting on beta.37 with beta.38
+  published: cold start offered nothing, while Settings → Available updates —
+  the same lookup without the timeout — listed beta.38 correctly. The budget is
+  now 2750 ms — exactly the animation length, so it costs no cold-start latency at
+  all — and the update check no longer downloads 30 releases to use 5.
+- **A blocked release-notes host no longer suppresses updates entirely.** The update
+  check pulled the release list (`api.github.com`) and the localized release notes
+  (`raw.githubusercontent.com`) as a single all-or-nothing unit, so a failure or stall
+  of *either* meant "no update available". The notes are purely cosmetic — the
+  cold-start prompt doesn't even display them — yet a network that reached GitHub's
+  API but not `raw.githubusercontent.com` (throttling and filtering of that host is
+  common on some carriers and in some regions this app serves) froze the device on its
+  installed version. The two are now fetched and cached independently: update
+  detection depends only on the release list, and the notes can fail without anyone
+  noticing beyond a missing subtitle in Available updates.
+- **The update check downloads a third of what it used to.** It requested 30 releases
+  to display 5 — an envelope sized to absorb a filter that, on a beta build, drops
+  nothing at all. That payload grew with every release published (~150 KB by beta.38)
+  and was parsed on the device during cold start, which is what gradually pushed the
+  check past the budget above. Prerelease builds now request 10.
+- **The update check reports what it did.** It was completely silent, so a check that
+  gave up looked exactly like "you're up to date" in the logs — the reason this went
+  unnoticed for so long. It now logs its outcome and how long it took.
+
 ## [1.0.0-beta.38] - 2026-08-19
 
 ### All modules

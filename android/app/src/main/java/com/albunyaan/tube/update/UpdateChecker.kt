@@ -110,7 +110,9 @@ class UpdateChecker @Inject constructor(
      *    Moshi JsonDataException on a malformed but non-null body) propagate as `Result.failure`.
      *  - Play Store installs short-circuit to `Result.success(emptyList())` before the network call.
      *
-     * Pagination: `per_page` is bumped to `limit * 6` (capped at GitHub's 100/page
+     * Pagination: `per_page` is bumped to `limit * 2` on prerelease builds and
+     * `limit * 6` on stable ones (only stable builds can have rows dropped by the
+     * prerelease filter) (capped at GitHub's 100/page
      * maximum). The `.take(limit)` after filtering ensures the caller still gets at
      * most [limit] post-filter entries. Without overfetching, a feed where the top
      * N entries are prereleases-on-stable-build or no-APK would silently produce
@@ -129,7 +131,15 @@ class UpdateChecker @Inject constructor(
             // caller passing a near-MAX_VALUE limit; coerce back into the
             // 1..GITHUB_MAX_PER_PAGE window so `per_page` is always a valid
             // GitHub API value (codex stage-6 MEDIUM).
-            val pageSize = (limit.toLong() * 6L).coerceIn(1L, GITHUB_MAX_PER_PAGE.toLong()).toInt()
+            val currentVersion = currentVersionForTest ?: BuildConfig.VERSION_NAME
+            val currentIsPrerelease = currentVersion.contains('-')
+            // The envelope absorbs the two filters below. On a prerelease build the
+            // prerelease filter drops nothing (every beta IS a prerelease), leaving
+            // only the rare APK-less release — so 6x was pure waste, and not free: the
+            // payload grows with every release and had reached ~150 KB to use ~25 KB,
+            // parsed on-device during cold start, squeezing the splash probe's budget.
+            val overfetch = if (currentIsPrerelease) 2L else 6L
+            val pageSize = (limit.toLong() * overfetch).coerceIn(1L, GITHUB_MAX_PER_PAGE.toLong()).toInt()
             val url = "${base.trimEnd('/')}/repos/$GITHUB_REPO/releases?per_page=$pageSize"
             val request = Request.Builder()
                 .url(url)
@@ -139,7 +149,7 @@ class UpdateChecker @Inject constructor(
             val call = okHttpClient.newCall(request).cancelWhenCoroutineCancels()
             call.execute().use { response ->
                 if (!response.isSuccessful) {
-                    // Throw inside runCatching so ReleaseCatalogCache.current() reads
+                    // Throw inside runCatching so ReleaseCatalogCache's read-through cache reads
                     // Result.failure and does not cache an empty snapshot (codex C-3).
                     throw java.io.IOException(
                         "GitHub releases API returned HTTP ${response.code}"
@@ -147,8 +157,6 @@ class UpdateChecker @Inject constructor(
                 }
                 val body = response.body?.string() ?: return@use emptyList<UpdateInfo>()
                 val list = listAdapter.fromJson(body) ?: return@use emptyList<UpdateInfo>()
-                val currentVersion = currentVersionForTest ?: BuildConfig.VERSION_NAME
-                val currentIsPrerelease = currentVersion.contains('-')
                 list.asSequence()
                     .filterNot { it.prerelease && !currentIsPrerelease }
                     .mapNotNull { release ->

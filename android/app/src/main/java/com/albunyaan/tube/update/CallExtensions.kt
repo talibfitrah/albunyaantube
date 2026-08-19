@@ -16,6 +16,14 @@ import okhttp3.Call
  * holding an IO dispatcher thread for tens of seconds per stalled cold start.
  */
 internal suspend fun Call.cancelWhenCoroutineCancels(): Call = this.also { call ->
+    // NOTE: fires on job COMPLETION, so it frees the socket once a call returns or
+    // throws — it does NOT bound a call that is already blocked. Coroutine
+    // cancellation cannot unwind a thread parked in Call.execute(), and the
+    // onCancelling variant of invokeOnCompletion is internal kotlinx API. So a
+    // withTimeoutOrNull wrapped around one of these calls is best-effort: it returns
+    // promptly only once the underlying call unblocks. Bounding a stalled socket
+    // needs an OkHttp callTimeout on the client, which the shared NetworkModule
+    // client does not set (connect 15 s / read 20 s, callTimeout disabled).
     currentCoroutineContext()[Job]?.invokeOnCompletion { cause ->
         if (cause != null) call.cancel()
     }

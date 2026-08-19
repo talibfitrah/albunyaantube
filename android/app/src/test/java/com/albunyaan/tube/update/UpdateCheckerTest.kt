@@ -333,12 +333,43 @@ class UpdateCheckerTest {
             installSource = mock { on { isPlayStore() } doReturn false }
         )
         checker.apiBaseUrlForTest = server.url("/").toString()
+        // A stable build applies the full 6x envelope (the prerelease filter can
+        // actually drop rows there); prerelease builds use 2x, see the test below.
+        checker.currentVersionForTest = "1.0.0"
 
         checker.listReleases(limit = 20).getOrThrow()  // 20*6 = 120 → clamp to 100
         val request = server.takeRequest()
         assertTrue(
             "Expected per_page=100 (cap), got ${request.path}",
             request.path?.contains("per_page=100") == true
+        )
+        server.shutdown()
+    }
+
+    /**
+     * On a prerelease build the prerelease filter drops nothing, so the 6x envelope
+     * was pure waste: at per_page=30 the releases payload had grown to ~150 KB to use
+     * ~25 KB of it, parsed on the device during cold start — latency pressure on the
+     * splash update probe that grew with every release published.
+     */
+    @Test
+    fun `prerelease build does not overfetch the releases page`() = kotlinx.coroutines.test.runTest {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("[]"))
+        server.start()
+
+        val checker = UpdateChecker(
+            okHttpClient = OkHttpClient(),
+            installSource = mock { on { isPlayStore() } doReturn false }
+        )
+        checker.apiBaseUrlForTest = server.url("/").toString()
+        checker.currentVersionForTest = "1.0.0-beta.38"
+
+        checker.listReleases(limit = 5).getOrThrow()
+        val request = server.takeRequest()
+        assertTrue(
+            "Expected per_page=10 (5*2) on a prerelease build, got ${request.path}",
+            request.path?.contains("per_page=10") == true
         )
         server.shutdown()
     }

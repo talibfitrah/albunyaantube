@@ -30,6 +30,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
@@ -81,6 +82,27 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         private const val TEXT_FADE_DURATION = 400L      // Fade-in animation duration
         private const val TAGLINE_DELAY = 150L           // Delay between app name and tagline
         private const val POST_ANIMATION_DELAY = 800L    // Hold after animation before navigating
+
+        /**
+         * Total unconditional delay this fragment runs BEFORE it awaits the update
+         * probe. The probe is launched at t=0 and read only after all of it, so any
+         * probe budget up to this value is free — see
+         * [UpdatePromptFlow.CHECK_TIMEOUT_MS], which a unit test pins against this.
+         *
+         * If you add or remove a `delay()` on the path to `updateInfoDeferred.await()`,
+         * update this too, or the update probe's budget silently stops matching the
+         * window it was sized for.
+         */
+        internal const val SPLASH_PRE_AWAIT_MS =
+            LOGO_DISPLAY_DURATION + (TEXT_FADE_DURATION * 3) + TAGLINE_DELAY + POST_ANIMATION_DELAY
+
+        /**
+         * How much longer than the animation the splash waits for the update probe
+         * before routing without it. Small on purpose: by this point the probe has
+         * already had [SPLASH_PRE_AWAIT_MS], so anything still outstanding is a stalled
+         * socket rather than a slow-but-live response.
+         */
+        internal const val UPDATE_AWAIT_GRACE_MS = 500L
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -200,7 +222,20 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             // Await update first so a slow accountStatusDeferred (auth retry against a slow
              // backend) cannot stall the gating dialog — the prompt should front the sign-in
              // screen as soon as the network probe returns (cubic round-4 P2).
-            awaitUpdatePromptIfAvailable(updateInfoDeferred.await())
+            // Bounded await, NOT a bare one. The probe's own budget only bounds
+            // cancellable work: if it is parked in a blocking OkHttp read (a network
+            // that accepts the connection then stalls), cancelling cannot unwind it and
+            // a bare await() would hold the splash for the shared client's 15 s connect
+            // + 20 s read. await() itself IS cancellable, so we stop waiting and route;
+            // the probe finishes in the background and warms the cache for the next
+            // screen. Worst case the user sees UPDATE_AWAIT_GRACE_MS of extra splash,
+            // not half a minute. This bounds the SPLASH, not the call: a stalled fetch
+            // still holds the catalog's mutex, so opening Available updates during that
+            // window waits on it (behind a spinner, on an explicit user action). Truly
+            // aborting it needs an OkHttp callTimeout on the shared client.
+            awaitUpdatePromptIfAvailable(
+                withTimeoutOrNull(UPDATE_AWAIT_GRACE_MS) { updateInfoDeferred.await() }
+            )
             val onboardingCompleted = onboardingDeferred.await()
             val accountStatus = accountStatusDeferred.await()
             routeAfterSplash(onboardingCompleted, accountStatus)

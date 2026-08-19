@@ -33,7 +33,6 @@ class ReleaseCatalogCacheTest {
         cache.list(limit = 5)
 
         verify(checker, times(1)).listReleases(any())
-        verify(summaries, times(1)).load()
     }
 
     @Test
@@ -84,7 +83,9 @@ class ReleaseCatalogCacheTest {
         cache.latest()
 
         verify(checker, times(1)).listReleases(any())
-        verify(summaries, times(1)).load()
+        // Neither call touches the notes host — notes are cached separately and are
+        // never on the path that decides whether an update exists.
+        verify(summaries, org.mockito.kotlin.never()).load()
     }
 
     @Test
@@ -109,12 +110,50 @@ class ReleaseCatalogCacheTest {
 
         // Critical: failure must not have cached. Both attempts hit the network.
         verify(checker, times(2)).listReleases(any())
-        // summaries.load() fires on BOTH attempts because the cache runs the
-        // two network calls in parallel (cubic R1 C4) — listReleases failure
-        // does not cancel the parallel summaries fetch in the same scope. The
-        // wasted summary fetch on the failure path is the documented cost of
-        // halving cold-fill latency on the success path.
-        verify(summaries, times(2)).load()
+        // The notes fetcher is not touched at all by list(): notes are cached
+        // separately, so a releases refresh no longer drags a second host along.
+        verify(summaries, org.mockito.kotlin.never()).load()
+    }
+
+    /**
+     * The whole point of the split: notes are cosmetic, so a notes host that is
+     * blocked, throttled or simply slow must not cost the user the update. Sharing one
+     * all-or-nothing snapshot meant a failed raw.githubusercontent.com fetch suppressed
+     * update detection entirely on a network that could reach api.github.com fine.
+     */
+    @Test
+    fun `a failing notes host does not affect update detection`() = runTest {
+        val veryNew = UpdateInfo("99.0.0", "future", "https://x/99.apk", 1)
+        val checker = mock<UpdateChecker> {
+            onBlocking { listReleases(any()) } doReturn Result.success(listOf(veryNew))
+        }
+        val summaries = mock<ReleaseSummaryFetcher> {
+            onBlocking { load() } doReturn Result.failure(java.io.IOException("blocked"))
+        }
+        val cache = ReleaseCatalogCache(checker, summaries, sideloadInstall()).apply { clock = { 0L } }
+
+        assertEquals("99.0.0", cache.latest()?.versionName)
+        assertEquals(listOf(veryNew), cache.list(limit = 5))
+        assertEquals(ReleaseSummaries(emptyMap()), cache.summaries())
+    }
+
+    /** A notes failure is never cached, so the notes come back as soon as the host does. */
+    @Test
+    fun `notes failure is not cached - next call retries`() = runTest {
+        val checker = mock<UpdateChecker> {
+            onBlocking { listReleases(any()) } doReturn Result.success(listOf(release14))
+        }
+        val good = ReleaseSummaries(mapOf("1.0.0-beta.14" to mapOf("en" to "notes")))
+        val summaries = mock<ReleaseSummaryFetcher> {
+            onBlocking { load() }
+                .doReturn(Result.failure(java.io.IOException("blocked")))
+                .doReturn(Result.success(good))
+        }
+        val cache = ReleaseCatalogCache(checker, summaries, sideloadInstall()).apply { clock = { 0L } }
+
+        assertEquals(ReleaseSummaries(emptyMap()), cache.summaries())
+        // Clock never advances, so a cached failure would have served this call too.
+        assertEquals(good, cache.summaries())
     }
 
     // cubic R3 P3: Play Store install short-circuits BEFORE any network call —
