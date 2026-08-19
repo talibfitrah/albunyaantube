@@ -1,0 +1,65 @@
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_6cd6b1fcf23673::t_e3b2795643c7f4 121-123,125,138-139,142-149,151
+  s_6cd6b1fcf23673::t_1f580d0ef8c6c9 85,92,101-102,632
+  s_6cd6b1fcf23673::t_5ea589566f5ca6 179-180
+  s_6cd6b1fcf23673::t_e36c92e27a1efc 83,140,613-616,619-630
+  s_6cd6b1fcf23673::t_d299cc21da90b9 129-137
+  s_6cd6b1fcf23673::t_4c57afe2098092 84,86-91,93-100,617-618
+  s_6cd6b1fcf23673::t_e54c4ed8c43bd9 126-128
+  s_6cd6b1fcf23673::t_4c0818c187d755 124,141
+  s_6cd6b1fcf23673::t_4b6559369d7fd4 381-382,395-397,457-458,470-472,532-533,545-547
+  s_6cd6b1fcf23673::t_c777e664c5ba68 631,633
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_6cd6b1fcf23673::t_c248eae4aa79bc 786-793
+  s_6cd6b1fcf23673::t_bb1f6ff63855f9 785
+frontend/src/views/ContentLibraryView.vue
+  s_6cd6b1fcf23673::t_248cf4a9382c29 623-625
+  s_6cd6b1fcf23673::t_42a6628cd01cc6 1420-1431
+  s_6cd6b1fcf23673::t_c1ea058e8c375b 933-935
+  s_6cd6b1fcf23673::t_266e7cfcc9e526 7
+  s_6cd6b1fcf23673::t_a54b10fa8a7c81 8-26,570,578,1482-1491,1496
+  s_6cd6b1fcf23673::t_0eeb6ac25ca6fc 1492-1495,1497-1519
+  s_6cd6b1fcf23673::t_745714ce46045a 1435
+  s_6cd6b1fcf23673::t_68fe07229d84a6 977
+backend/src/main/java/com/albunyaan/tube/repository/PlaylistRepository.java
+  s_6cd6b1fcf23673::t_c248eae4aa79bc 742-749
+  s_6cd6b1fcf23673::t_59dfd4548b91b6 741
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryPagingAndTotalsTest.java
+  s_6cd6b1fcf23673::t_209002a230baf7 70
+  s_6cd6b1fcf23673::t_3516acb09d5b85 1-26,29-69,71-103,105-107,149
+  s_6cd6b1fcf23673::t_b9eb6a7b936488 27-28,104,109,111-114,118,121-124,126-128
+  s_6cd6b1fcf23673::t_6bba848b7c892a 108,110,115-117,119-120,125,129-147
+  s_6cd6b1fcf23673::t_0b4867b8c9a1ff 148
+docs/architecture/api-specification.yaml
+  s_6cd6b1fcf23673::t_1e01bfea74e677 2380-2382,3638
+  s_6cd6b1fcf23673::t_84ef3ffdb33c61 2413-2430
+  s_6cd6b1fcf23673::t_9e8259eb5f74ab 2344-2346,3637,3667-3669,3673-3687
+  s_6cd6b1fcf23673::t_da9ffffca7face 2347-2348,3639-3640,3670-3672
+  s_6cd6b1fcf23673::t_2b4879553fc314 2431,3688
+frontend/src/services/contentLibrary.ts
+  s_6cd6b1fcf23673::t_248cf4a9382c29 117-132
+frontend/src/locales/messages.ts
+  s_6cd6b1fcf23673::t_11aa33100f5fcf 380,1956,3313
+  s_6cd6b1fcf23673::t_c98b004c2efb24 381-383,1957-1959,3314-3316
+frontend/tests/ContentLibraryTotals.spec.ts
+  s_6cd6b1fcf23673::t_51d3064912bd24 1-8,10-18,24-31,34-35,37-38,40-43,46-56,59-61,73-74,77-82,84,86-87
+  s_6cd6b1fcf23673::t_b444f2e9ba3627 36
+  s_6cd6b1fcf23673::t_daa4080a0c3249 44-45,57-58,62-72
+  s_6cd6b1fcf23673::t_b24f9b422a75f2 9,19-23,32-33,39,75-76,83,85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "75f49f25c866884edc6614bcee31a110bf087096",
+  "prompts": {},
+  "sessions": {
+    "s_6cd6b1fcf23673": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "482a8434-3ccd-4561-99c3-beea99eed35b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
