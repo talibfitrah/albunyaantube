@@ -223,8 +223,16 @@ public class AuditLogService {
         }
     }
 
+    /**
+     * @param actorUid  exact match on the actor's Firebase uid
+     * @param actorEmail exact match on {@code actorDisplayName} — the identity the
+     *                   activity log actually displays. Filtering on uid alone missed
+     *                   every row written by {@code logSystem}, which stores
+     *                   {@code actorUid="system"} and keeps the acting admin only in
+     *                   {@code actorDisplayName}.
+     */
     public com.albunyaan.tube.dto.PaginatedAuditLog findPaginated(
-            String actorUid, String action, int limit, String cursor)
+            String actorUid, String actorEmail, String action, int limit, String cursor)
             throws ExecutionException, InterruptedException, TimeoutException {
         int effLimit = Math.min(Math.max(limit, 1), 200);
         com.google.cloud.firestore.Query q = firestore.collection("audit_logs")
@@ -232,8 +240,9 @@ public class AuditLogService {
                 .orderBy(com.google.cloud.firestore.FieldPath.documentId(),
                         com.google.cloud.firestore.Query.Direction.DESCENDING);
 
-        if (actorUid != null && !actorUid.isBlank()) q = q.whereEqualTo("actorUid", actorUid);
-        if (action != null && !action.isBlank())     q = q.whereEqualTo("action", action);
+        if (actorUid != null && !actorUid.isBlank())     q = q.whereEqualTo("actorUid", actorUid);
+        if (actorEmail != null && !actorEmail.isBlank()) q = q.whereEqualTo("actorDisplayName", actorEmail);
+        if (action != null && !action.isBlank())         q = q.whereEqualTo("action", action);
 
         if (cursor != null && !cursor.isBlank()) {
             com.albunyaan.tube.util.AuditCursor.Decoded c =
@@ -253,11 +262,12 @@ public class AuditLogService {
                 // Cubic R6 P2 — no raw docId in the warn line; pre-fix that
                 // turned the log into an oracle.
                 // Cubic R7 P2 — uniform warn wording across all stale-cursor
-                // branches (missing-doc, actorUid-mismatch, action-mismatch)
+                // branches (missing-doc, actorUid-mismatch, actorEmail-mismatch,
+                // action-mismatch)
                 // so the warn pattern itself is not an oracle for which
                 // filter the cursor failed against. See branch below.
                 logger.warn("Audit cursor invalid; resetting to first page");
-                return findFirstPageWithCursor(actorUid, action, effLimit);
+                return findFirstPageWithCursor(actorUid, actorEmail, action, effLimit);
             }
             // Cubic R6 P2 — close the cross-filter existence-oracle.
             //
@@ -281,16 +291,22 @@ public class AuditLogService {
             // attacker watching info-level logs cannot distinguish
             // missing-doc vs actorUid-mismatch vs action-mismatch and so
             // cannot probe whether docId X exists under a filter view they
-            // are not entitled to.
+            // are not entitled to. Every filter the page query applies needs a
+            // branch here, actorEmail included.
             if (actorUid != null && !actorUid.isBlank()
                     && !actorUid.equals(snap.getString("actorUid"))) {
                 logger.warn("Audit cursor invalid; resetting to first page");
-                return findFirstPageWithCursor(actorUid, action, effLimit);
+                return findFirstPageWithCursor(actorUid, actorEmail, action, effLimit);
+            }
+            if (actorEmail != null && !actorEmail.isBlank()
+                    && !actorEmail.equals(snap.getString("actorDisplayName"))) {
+                logger.warn("Audit cursor invalid; resetting to first page");
+                return findFirstPageWithCursor(actorUid, actorEmail, action, effLimit);
             }
             if (action != null && !action.isBlank()
                     && !action.equals(snap.getString("action"))) {
                 logger.warn("Audit cursor invalid; resetting to first page");
-                return findFirstPageWithCursor(actorUid, action, effLimit);
+                return findFirstPageWithCursor(actorUid, actorEmail, action, effLimit);
             }
             // F8 sanity check: encoded ts should match the stored timestamp on the
             // referenced doc. Drift here means either the doc was rewritten or the
@@ -347,14 +363,15 @@ public class AuditLogService {
      * but still expose subsequent pages.
      */
     private com.albunyaan.tube.dto.PaginatedAuditLog findFirstPageWithCursor(
-            String actorUid, String action, int effLimit)
+            String actorUid, String actorEmail, String action, int effLimit)
             throws ExecutionException, InterruptedException, TimeoutException {
         com.google.cloud.firestore.Query q = firestore.collection("audit_logs")
                 .orderBy("timestamp", com.google.cloud.firestore.Query.Direction.DESCENDING)
                 .orderBy(com.google.cloud.firestore.FieldPath.documentId(),
                         com.google.cloud.firestore.Query.Direction.DESCENDING);
-        if (actorUid != null && !actorUid.isBlank()) q = q.whereEqualTo("actorUid", actorUid);
-        if (action != null && !action.isBlank())     q = q.whereEqualTo("action", action);
+        if (actorUid != null && !actorUid.isBlank())     q = q.whereEqualTo("actorUid", actorUid);
+        if (actorEmail != null && !actorEmail.isBlank()) q = q.whereEqualTo("actorDisplayName", actorEmail);
+        if (action != null && !action.isBlank())         q = q.whereEqualTo("action", action);
         com.google.cloud.firestore.QuerySnapshot snap = q.limit(effLimit + 1)
                 .get()
                 .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);

@@ -15,26 +15,60 @@ interface Category extends CategoryType {
 
 interface Props {
   isOpen: boolean;
-  selectedCategoryIds?: string[];
+  /**
+   * The categories each item being assigned currently has — one entry per item.
+   * A category every item has starts ticked; one only some of them have starts
+   * indeterminate and is left untouched unless the user clicks it.
+   */
+  currentCategoryIds?: string[][];
+  /**
+   * Allow saving with nothing ticked. True where the modal edits existing
+   * assignments (clearing them all is a legitimate edit); false where it picks
+   * the categories for a new submission, which must not land uncategorised.
+   */
+  allowEmpty?: boolean;
   multiSelect?: boolean;
 }
 
 interface Emits {
   (e: 'close'): void;
-  (e: 'assign', categoryIds: string[]): void;
+  /**
+   * `categoryIds` apply to every item; `unchangedIds` were left indeterminate,
+   * so each item keeps whichever of them it already had.
+   */
+  (e: 'assign', categoryIds: string[], unchangedIds: string[]): void;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  selectedCategoryIds: () => [],
+  currentCategoryIds: () => [],
+  allowEmpty: false,
   multiSelect: false
 });
+
+/** Categories held by every item — the initial ticked set. */
+function idsOnEveryItem(): string[] {
+  const [first, ...rest] = props.currentCategoryIds;
+  if (!first) return [];
+  return first.filter(id => rest.every(ids => ids.includes(id)));
+}
+
+/** Categories held by some but not all items — the initial indeterminate set. */
+function idsOnSomeItems(): string[] {
+  const onEvery = new Set(idsOnEveryItem());
+  const partial = new Set<string>();
+  props.currentCategoryIds.forEach(ids => ids.forEach(id => {
+    if (!onEvery.has(id)) partial.add(id);
+  }));
+  return Array.from(partial);
+}
 
 const emit = defineEmits<Emits>();
 
 // State
 const categories = ref<Category[]>([]);
 const expandedNodes = ref<Set<string>>(new Set());
-const selectedIds = ref<Set<string>>(new Set(props.selectedCategoryIds));
+const selectedIds = ref<Set<string>>(new Set(idsOnEveryItem()));
+const partialIds = ref<Set<string>>(new Set(idsOnSomeItems()));
 const searchQuery = ref('');
 const isLoading = ref(false);
 
@@ -49,10 +83,12 @@ const filteredCategories = computed(() => {
 const hasSelection = computed(() => selectedIds.value.size > 0);
 
 // Methods
-onMounted(() => {
-  loadCategories();
-  // Auto-expand to show selected categories
-  props.selectedCategoryIds.forEach(id => {
+onMounted(async () => {
+  // Await the load: expandToCategory walks categories.value, so expanding
+  // before the tree exists leaves a pre-selected subcategory hidden.
+  await loadCategories();
+  // Auto-expand to show categories the items already carry
+  [...selectedIds.value, ...partialIds.value].forEach(id => {
     expandToCategory(id);
   });
 });
@@ -132,31 +168,37 @@ function toggleExpand(categoryId: string) {
 
 function toggleSelect(categoryId: string) {
   if (props.multiSelect) {
-    if (selectedIds.value.has(categoryId)) {
+    // An indeterminate category resolves to "apply to every item" on first
+    // click; from there it is an ordinary two-state tick.
+    if (partialIds.value.delete(categoryId)) {
+      selectedIds.value.add(categoryId);
+    } else if (selectedIds.value.has(categoryId)) {
       selectedIds.value.delete(categoryId);
     } else {
       selectedIds.value.add(categoryId);
     }
   } else {
+    partialIds.value.clear();
     selectedIds.value.clear();
     selectedIds.value.add(categoryId);
   }
 }
 
 function handleAssign() {
-  emit('assign', Array.from(selectedIds.value));
+  emit('assign', Array.from(selectedIds.value), Array.from(partialIds.value));
   // Don't close immediately - let parent handle closing after assignment succeeds
 }
 
 function handleClose() {
-  selectedIds.value.clear();
-  selectedIds.value = new Set(props.selectedCategoryIds);
+  selectedIds.value = new Set(idsOnEveryItem());
+  partialIds.value = new Set(idsOnSomeItems());
   searchQuery.value = '';
   emit('close');
 }
 
 function clearSelection() {
   selectedIds.value.clear();
+  partialIds.value.clear();
 }
 
 // Focus trap
@@ -218,6 +260,7 @@ watch(() => props.isOpen, (isOpen) => {
                 :category="category"
                 :expanded-nodes="expandedNodes"
                 :selected-ids="selectedIds"
+                :partial-ids="partialIds"
                 :multi-select="multiSelect"
                 @toggle-expand="toggleExpand"
                 @toggle-select="toggleSelect"
@@ -246,7 +289,7 @@ watch(() => props.isOpen, (isOpen) => {
               <button
                 @click="handleAssign"
                 class="btn-primary"
-                :disabled="!hasSelection"
+                :disabled="!hasSelection && !allowEmpty"
               >
                 {{ t('categoryModal.assign') }}
               </button>

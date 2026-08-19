@@ -5,6 +5,7 @@
  */
 
 import apiClient from './api/client';
+import { parseBackendTimestamp } from '@/utils/formatters';
 
 // ---------- Types ----------
 
@@ -63,15 +64,14 @@ export interface ResolveReportRequest {
 
 // ---------- Helpers ----------
 
-/** Convert a Firestore Timestamp to a JS Date. */
-export function timestampToDate(ts: FirestoreTimestamp): Date {
-  return new Date(ts.seconds * 1000 + Math.floor(ts.nanos / 1_000_000));
+/** Convert a Firestore Timestamp to a JS Date, or null if it is not a real date. */
+export function timestampToDate(ts: FirestoreTimestamp): Date | null {
+  return parseBackendTimestamp(ts);
 }
 
 /** Format a Firestore Timestamp for display. */
 export function formatTimestamp(ts: FirestoreTimestamp | undefined): string {
-  if (!ts) return '—';
-  return timestampToDate(ts).toLocaleString();
+  return (ts ? timestampToDate(ts) : null)?.toLocaleString() ?? '—';
 }
 
 /** Human-readable label for each report reason. */

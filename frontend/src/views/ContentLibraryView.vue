@@ -522,6 +522,8 @@
     <CategoryAssignmentModal
       v-if="categoryModalOpen"
       :is-open="categoryModalOpen"
+      :current-category-ids="categoryModalCurrentIds"
+      :allow-empty="true"
       :multi-select="true"
       @close="closeCategoryModal"
       @assign="handleCategoriesAssigned"
@@ -574,6 +576,7 @@ import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import * as contentLibraryService from '@/services/contentLibrary';
 import type { ReorderItem } from '@/services/contentLibrary';
+import type { BulkActionItem } from '@/types/api';
 
 const { t, locale } = useI18n();
 
@@ -687,6 +690,11 @@ const videoModalOpen = ref(false);
 const selectedItemForModal = ref<ContentItem | null>(null);
 const categoryModalOpen = ref(false);
 const itemsForCategoryAssignment = ref<ContentItem[]>([]);
+// Assigning REPLACES an item's categoryIds server-side, so the modal has to
+// open showing what each item already has, or saving silently drops them.
+const categoryModalCurrentIds = computed(() =>
+  itemsForCategoryAssignment.value.map(item => item.categoryIds)
+);
 
 // Keywords Modal State
 const keywordsModalOpen = ref(false);
@@ -990,17 +998,46 @@ async function confirmDelete(item: ContentItem) {
   }
 }
 
-async function handleCategoriesAssigned(categoryIds: string[]) {
+async function handleCategoriesAssigned(categoryIds: string[], unchangedIds: string[] = []) {
   try {
-    const items = itemsForCategoryAssignment.value.map(item => ({
-      type: item.type,
-      id: item.id
-    }));
+    // The endpoint applies one category list to every item it is given, but an
+    // indeterminate category must be kept only on the items that already had
+    // it. So resolve each item's own final list and group the items that end up
+    // sharing one — a single item, or a uniform bulk tick, still sends one call.
+    const byCategories = new Map<string, { items: BulkActionItem[]; categoryIds: string[] }>();
+    for (const item of itemsForCategoryAssignment.value) {
+      const kept = unchangedIds.filter(id => item.categoryIds.includes(id));
+      const finalIds = Array.from(new Set([...categoryIds, ...kept]));
+      const key = [...finalIds].sort().join('|');
+      const group = byCategories.get(key) ?? { items: [], categoryIds: finalIds };
+      group.items.push({ type: item.type, id: item.id });
+      byCategories.set(key, group);
+    }
 
-    const result = await contentLibraryService.bulkAssignCategories(items, categoryIds);
+    // One group at a time, and a failed group must not abandon the ones that
+    // already committed — otherwise the admin sees an error over a list still
+    // showing pre-assignment categories.
+    let successCount = 0;
+    const errors: string[] = [];
+    for (const group of byCategories.values()) {
+      try {
+        const groupResult = await contentLibraryService.bulkAssignCategories(group.items, group.categoryIds);
+        successCount += groupResult.successCount;
+        errors.push(...groupResult.errors);
+      } catch (err: any) {
+        errors.push(err?.message || String(err));
+      }
+    }
+    const result = { successCount, errors };
 
     if (result.successCount > 0) {
-      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.categoriesAssigned')}`);
+      // Items with different existing categories are sent as separate requests,
+      // so some can fail while others commit — say so instead of reporting a
+      // clean success over a partial write.
+      const partialFailure = result.errors.length > 0
+        ? `\n${t('contentLibrary.errorBulkAction')}: ${result.errors[0]}`
+        : '';
+      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.categoriesAssigned')}${partialFailure}`);
 
       if (result.errors.length > 0) {
         console.error('Category assignment errors:', result.errors);

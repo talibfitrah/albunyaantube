@@ -2,6 +2,7 @@ import { authorizedJsonFetch } from '@/services/http';
 import type { CursorPage } from '@/types/pagination';
 import type { AuditEntry } from '@/types/admin';
 import type { AuditLog } from '@/types/api';
+import { parseBackendTimestamp } from '@/utils/formatters';
 
 // FIREBASE-MIGRATE-04: Audit log now implemented
 const AUDIT_BASE_PATH = '/api/admin/audit';
@@ -9,7 +10,12 @@ const AUDIT_BASE_PATH = '/api/admin/audit';
 export interface AuditLogPageParams {
   cursor?: string | null;
   limit?: number;
-  actorId?: string;
+  /**
+   * Exact match on the actor's email — the identity the activity log shows.
+   * Filtering by uid instead missed every bulk delete, which the backend
+   * records under actorUid "system".
+   */
+  actorEmail?: string;
   action?: string;
   /**
    * Cubic R7 P1 — wire AbortSignal so superseded fetches actually cancel
@@ -18,6 +24,17 @@ export interface AuditLogPageParams {
    * completion and cost audit-read quota per superseded supersede.
    */
   signal?: AbortSignal;
+}
+
+/**
+ * ActivityLogView's timeline calls toISOString() on every entry timestamp,
+ * which throws RangeError on anything but a real date and leaves the page stuck
+ * on its empty state. Normalise here: all four fetchers below funnel through
+ * this mapper. An unparseable timestamp yields '' so the caller drops the row,
+ * matching the existing missing-timestamp contract.
+ */
+function toIsoTimestamp(raw: unknown): string {
+  return parseBackendTimestamp(raw)?.toISOString() ?? '';
 }
 
 /**
@@ -34,7 +51,7 @@ function mapAuditLogToEntry(log: AuditLog): AuditEntry | null {
   const action = (raw.action as string) || '';
   const entityType = (raw.entityType as string) || '';
   const entityId = (raw.entityId as string) || '';
-  const timestamp = (raw.timestamp as string) || '';
+  const timestamp = toIsoTimestamp(raw.timestamp);
 
   // Skip entries missing critical fields instead of throwing
   if (!id || !action || !entityType || !timestamp) {
@@ -77,8 +94,8 @@ export async function fetchAuditLogPage(params: AuditLogPageParams = {}): Promis
     queryParams.append('cursor', params.cursor);
   }
 
-  if (params.actorId) {
-    queryParams.append('actorId', params.actorId);
+  if (params.actorEmail) {
+    queryParams.append('actorEmail', params.actorEmail);
   }
 
   if (params.action) {

@@ -122,8 +122,7 @@
               </td>
               <td>
                 <div class="actor-info">
-                  <div class="actor-email">{{ entry.actorUid }}</div>
-                  <div class="actor-roles">{{ entry.actorDisplayName || 'Unknown' }}</div>
+                  <div class="actor-email">{{ entry.actorDisplayName || entry.actorUid }}</div>
                 </div>
               </td>
               <td>
@@ -172,10 +171,7 @@
                 </div>
                 <div class="timeline-body">
                   <div class="timeline-actor">
-                    <strong>{{ entry.actorUid }}</strong>
-                    <span v-if="entry.actorDisplayName" class="actor-roles">
-                      ({{ entry.actorDisplayName }})
-                    </span>
+                    <strong>{{ entry.actorDisplayName || entry.actorUid }}</strong>
                   </div>
                   <div class="timeline-entity">
                     {{ entry.action }} {{ entry.entityType.toLowerCase() }}
@@ -237,7 +233,7 @@ const pagination = useCursorPagination<AuditEntry>(async (cursor, limit) => {
   return fetchAuditLogPage({
     cursor,
     limit,
-    actorId: actorFilter.value.trim() || undefined,
+    actorEmail: actorFilter.value.trim() || undefined,
     action: actionFilter.value || undefined
   });
 });
@@ -633,11 +629,6 @@ onBeforeUnmount(() => {
 .actor-email {
   font-weight: 600;
   color: var(--color-text-primary);
-}
-
-.actor-roles {
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
 }
 
 .action-badge {

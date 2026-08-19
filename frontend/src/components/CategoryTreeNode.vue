@@ -15,6 +15,7 @@
         <input
           type="checkbox"
           :checked="isSelected"
+          :indeterminate.prop="isPartial"
           @click.stop="emit('toggle-select', category.id)"
           class="node-checkbox"
         />
@@ -29,6 +30,7 @@
         :category="child"
         :expanded-nodes="expandedNodes"
         :selected-ids="selectedIds"
+        :partial-ids="partialIds"
         :multi-select="multiSelect"
         @toggle-expand="emit('toggle-expand', $event)"
         @toggle-select="emit('toggle-select', $event)"
@@ -51,6 +53,8 @@ interface Props {
   category: Category;
   expandedNodes: Set<string>;
   selectedIds: Set<string>;
+  /** Categories only some of the items being assigned have — shown indeterminate. */
+  partialIds: Set<string>;
   multiSelect: boolean;
 }
 
@@ -64,6 +68,7 @@ const emit = defineEmits<Emits>();
 
 const isExpanded = computed(() => props.expandedNodes.has(props.category.id));
 const isSelected = computed(() => props.selectedIds.has(props.category.id));
+const isPartial = computed(() => props.partialIds.has(props.category.id));
 const hasChildren = computed(() => props.category.children && props.category.children.length > 0);
 </script>
 
