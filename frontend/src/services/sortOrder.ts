@@ -109,25 +109,19 @@ export async function addContentToCategorySort(
   return response.data;
 }
 
+/**
+ * One option in the "add content to a category" picker.
+ *
+ * Five fields, because that is what the picker draws. `thumbnailUrl` and `youtubeId` are both
+ * load-bearing: `getThumbnailUrl()` reads the former and otherwise builds a URL from the latter,
+ * so dropping either strips thumbnails from part of the list.
+ */
 export interface ApprovedContentItem {
   type: string;
   id: string;
   youtubeId: string | null;
   title: string;
-  description: string;
   thumbnailUrl: string | null;
-  status: string;
-  categoryIds: string[] | null;
-  count: number | null;
-}
-
-interface ContentLibraryResponse {
-  content: ApprovedContentItem[];
-  totalItems: number;
-  currentPage: number;
-  pageSize: number;
-  totalPages: number;
-  truncated: boolean;
 }
 
 export interface ApprovedContentResult {
@@ -135,46 +129,21 @@ export interface ApprovedContentResult {
   truncated: boolean;
 }
 
-export async function getApprovedContent(
-  types?: string,
-  search?: string
-): Promise<ApprovedContentResult> {
-  const allItems: ApprovedContentItem[] = [];
-  let page = 0;
-  let truncated = false;
-  const pageSize = 100; // Backend caps at 100
-  const maxPages = 20; // Safety cap: 2000 items max
-
-  while (page < maxPages) {
-    const params: Record<string, string> = {
-      status: 'approved',
-      size: String(pageSize),
-      page: String(page)
-    };
-    if (types) params.types = types;
-    if (search) params.search = search;
-
-    const response = await apiClient.get<ContentLibraryResponse>('/api/admin/content', { params });
-    const data = response.data;
-    allItems.push(...data.content);
-
-    if (data.truncated) {
-      truncated = true;
-    }
-
-    // Stop if we've fetched all pages
-    if (page >= data.totalPages - 1 || data.content.length < pageSize) {
-      break;
-    }
-    page++;
-  }
-
-  // If we hit the page cap without exhausting pages, mark as truncated
-  if (page >= maxPages) {
-    truncated = true;
-  }
-
-  return { items: allItems, truncated };
+/**
+ * Every approved item the picker can offer, in one request.
+ *
+ * Previously assembled by paging `/api/admin/content` in a loop, which could not terminate on
+ * its own: the server's `totalPages` describes its current fetch window, and that window grows by
+ * one page per content type each round — so the finish line outran the loop and it ran to a
+ * 20-page safety cap. Offset paging also re-read every earlier row on every request. At ~1,600
+ * items that was 16 requests and an order of magnitude more records read than displayed.
+ */
+export async function getApprovedContent(): Promise<ApprovedContentResult> {
+  const response = await apiClient.get<ApprovedContentResult>('/api/admin/content/approved-picker');
+  return {
+    items: response.data.items ?? [],
+    truncated: response.data.truncated ?? false
+  };
 }
 
 export async function removeContentFromCategorySort(

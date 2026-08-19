@@ -5,6 +5,83 @@ during the beta program.
 
 ## [Unreleased]
 
+### Admin dashboard
+
+- **Approving an item threw you back to the top of the queue.** Every approve and
+  reject refetched the queue from the first cursor and discarded every page you had
+  loaded, so acting on the 100th item meant scrolling to it again — and cost a full
+  reload per decision. Actioned items are now removed from the list in place; the
+  scroll position never moves and each decision is one request fewer.
+- **Items can be reviewed in batches.** Checkboxes on every card and a sticky bar to
+  approve or reject the whole selection, at most four at a time so a large batch does
+  not open a socket per item. The batch runs through the same per-item endpoints as a
+  single decision, which is what keeps the importers' Me lists, the audit log, the
+  category sort order and the pending-status check all correct.
+- **A rejection reason is now optional, and can be written once for a whole batch.**
+  A blank reason is recorded as absent rather than turned into "OTHER", which used to
+  put a reason in front of the submitter that no admin had written.
+- **A category is no longer required to approve.** An item approved with no category
+  goes live uncategorised: reachable through the channel, playlist and video listings
+  and through search, but filed under no category until one is assigned.
+- **User imports are now reviewed on their own tab, per person.** Submissions arrive on
+  two paths — a moderator adding content in the dashboard, and someone importing in bulk
+  from their phone — and every row records which. The queue now shows moderator
+  submissions only; imports move to a by-user tab that lists each submitter with a count,
+  and opening one shows just their imports. Submissions from before we recorded a source
+  stay in the queue, which is the view that hides nothing. The split is applied
+  server-side: filtering a fetched page in the browser let the queue hand back a page with
+  nothing on it while more waited behind it, and left the pending badge counting rows the
+  queue no longer showed. That badge now counts what its tab actually lists.
+- **"Submitted by" showed a Firebase user id.** The backend had already resolved the
+  submitter's name and email; the dashboard was dropping both and printing the raw id.
+- **"Approved" hid whether an item is public.** The Content Library showed the same
+  "Approved" for an item in the public catalogue and one granted only to the person
+  who imported it. Personal grants now read "Approved for <name>".
+- **Opening the category content picker made sixteen requests.** It assembled its
+  options by paging the content endpoint in a loop that could not finish: the server's
+  page count describes its current fetch window, which grows by one page per content
+  type each round, so the target outran the loop until it hit its own safety cap.
+  Offset paging also re-read every earlier row on every request, and each record
+  carried a description and category list the picker never drew. It is now one request
+  carrying the five fields the picker renders — and it has a spinner, so a slow load
+  no longer looks like a frozen one.
+
+### Android
+
+- **Content approved in the dashboard stayed "pending" in the app.** The device only
+  learned about an approval from the account sync pull, and the only thing that ran it
+  was the app returning to the foreground. Pull-to-refresh on the Me screen refetched
+  YouTube feeds and nothing else, so the one gesture a user would try could not fetch
+  the decision. The refresh worker — which every refresh path goes through — now pulls
+  account state first. A failed pull is logged and skipped rather than costing the
+  feed refresh.
+- **Approving from the Content Library never reached the app at all.** Only the
+  Pending Approvals path told the importers' devices about a decision; the Content
+  Library wrote the status straight to Firestore, leaving every importer's row stuck
+  on "awaiting" with nothing that could ever correct it. Both bulk paths now fan the
+  decision out. See "known limitation" below for the reject direction.
+- **A long list of pending imports buried the Me feed.** Imported items awaiting
+  review sat between the channel chips and the user's own content, so anyone who had
+  imported a few hundred videos scrolled past all of them to reach their feed. Content
+  and Pending are now separate tabs, each keeping its own scroll position. The Pending
+  tab appears only while something is actually waiting.
+
+- **Rejected content now leaves people's phones.** Rejecting only removed content from
+  users who were still waiting for a decision. Anyone whose copy had already been approved
+  kept it — the admin pulled the content and their app went on offering it. Rejecting now
+  clears every copy, whatever state it had reached, including from people who had subscribed
+  or saved the content themselves rather than importing it. That matches what the sync layer
+  already did on its own write path: rejected content is not supposed to be in anyone's list. Approving stays narrow on purpose: it
+  only graduates people who were waiting, because the personal-approval path derives who
+  it was granted to from exactly the rows it touches.
+
+### Known limitations
+
+- The by-user roll-up scans a bounded number of pending documents per content type and
+  logs when it hits that bound. A queue deeper than the bound under-reports the oldest
+  submitters.
+
+
 ## [1.0.0-beta.39] - 2026-08-19
 
 ### Admin dashboard

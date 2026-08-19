@@ -18,6 +18,15 @@
         app:titleTextColor="?attr/colorOnSurface"
         app:menu="@menu/menu_me_kebab" />
 
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/meTabs"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurface"
+        android:visibility="gone"
+        app:tabGravity="fill"
+        app:tabMode="fixed" />
+
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/meSwipeRefresh"
         android:layout_width="match_parent"

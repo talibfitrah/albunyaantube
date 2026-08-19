@@ -6,10 +6,14 @@ import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.dto.YouTubeContentType;
+import com.albunyaan.tube.service.ImportGraduationService;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
 import com.albunyaan.tube.service.TagEnrichmentService;
+import com.albunyaan.tube.service.VisibilityPolicy;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
@@ -59,6 +63,8 @@ public class ContentLibraryController {
     private final PublicContentCacheService publicContentCacheService;
     private final SortOrderService sortOrderService;
     private final TagEnrichmentService tagEnrichmentService;
+    private final ImportGraduationService importGraduationService;
+    private final UserRepository userRepository;
 
     public ContentLibraryController(
             ChannelRepository channelRepository,
@@ -68,7 +74,9 @@ public class ContentLibraryController {
             FirestoreTimeoutProperties timeoutProperties,
             PublicContentCacheService publicContentCacheService,
             SortOrderService sortOrderService,
-            TagEnrichmentService tagEnrichmentService
+            TagEnrichmentService tagEnrichmentService,
+            ImportGraduationService importGraduationService,
+            UserRepository userRepository
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -78,6 +86,8 @@ public class ContentLibraryController {
         this.publicContentCacheService = publicContentCacheService;
         this.sortOrderService = sortOrderService;
         this.tagEnrichmentService = tagEnrichmentService;
+        this.importGraduationService = importGraduationService;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -98,6 +108,117 @@ public class ContentLibraryController {
                 playlistRepository.countAll(),
                 videoRepository.countAll()
         ));
+    }
+
+    /**
+     * GET /api/admin/content/approved-picker
+     *
+     * Every approved item, carrying only what the "add content to a category" picker draws.
+     *
+     * <p>Answers in one request what the picker previously assembled by paging {@code /content}
+     * in a loop. That loop could not terminate on its own — the server's {@code totalPages}
+     * describes the current fetch window, which grows by one page per content type each round, so
+     * the target outran the loop — and offset paging re-read every earlier row each time.
+     *
+     * <p>Filtered on status at the query, not afterwards: applying the per-type bound to every
+     * document and then discarding the non-approved ones would let a registry whose newest rows
+     * are mostly pending push approved content out of the picker entirely.
+     *
+     * <p>Visibility cannot get the same treatment. A {@code visibility == "PUBLIC"} filter would
+     * not match the legacy documents that predate the field — Firestore equality never matches a
+     * missing field — so it would drop exactly the content that has always been public. Personal
+     * grants are therefore dropped in memory, after the bound. That is the same shape of problem
+     * one paragraph up, accepted here because the alternative loses more: personal grants are a
+     * small minority of approved content, so the bound is reached by catalogue content long
+     * before they distort it.
+     *
+     * <p>Bounded per type like the listing. The bound is reported rather than applied silently:
+     * presenting a partial list as the whole library is how a picker quietly stops offering
+     * content that exists.
+     */
+    @GetMapping("/approved-picker")
+    public ResponseEntity<ApprovedPickerResponse> getApprovedForPicker()
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        List<ApprovedPickerItem> items = new ArrayList<>();
+        boolean truncated = false;
+
+        // limit+1 probe: asking for exactly the bound cannot distinguish a full page from a
+        // truncated one, and warning an admin that a complete list is partial is its own bug.
+        List<Channel> probedChannel = channelRepository.findByStatus("APPROVED", MAX_ITEMS_PER_TYPE + 1);
+        truncated |= probedChannel.size() > MAX_ITEMS_PER_TYPE;
+        List<Channel> channels = withinBound(probedChannel);
+        for (Channel c : channels) {
+            if (!offerableInPicker(c.getStatus(), c.getVisibility())) continue;
+            items.add(new ApprovedPickerItem("channel", c.getId(), c.getName(), c.getThumbnailUrl(), c.getYoutubeId()));
+        }
+
+        List<Playlist> probedPlaylist = playlistRepository.findByStatus("APPROVED", MAX_ITEMS_PER_TYPE + 1);
+        truncated |= probedPlaylist.size() > MAX_ITEMS_PER_TYPE;
+        List<Playlist> playlists = withinBound(probedPlaylist);
+        for (Playlist p : playlists) {
+            if (!offerableInPicker(p.getStatus(), p.getVisibility())) continue;
+            items.add(new ApprovedPickerItem("playlist", p.getId(), p.getTitle(), p.getThumbnailUrl(), p.getYoutubeId()));
+        }
+
+        List<Video> probedVideo = videoRepository.findByStatus("APPROVED", MAX_ITEMS_PER_TYPE + 1);
+        truncated |= probedVideo.size() > MAX_ITEMS_PER_TYPE;
+        List<Video> videos = withinBound(probedVideo);
+        for (Video v : videos) {
+            if (!offerableInPicker(v.getStatus(), v.getVisibility())) continue;
+            items.add(new ApprovedPickerItem("video", v.getId(), v.getTitle(), v.getThumbnailUrl(), v.getYoutubeId()));
+        }
+
+        log.info("Approved picker: {} items, truncated={}", items.size(), truncated);
+        return ResponseEntity.ok(new ApprovedPickerResponse(items, truncated));
+    }
+
+    /** The first {@link #MAX_ITEMS_PER_TYPE} of a limit+1 probe. A view, never a mutation — the
+     * repository may hand back an immutable list. */
+    private static <T> List<T> withinBound(List<T> probed) {
+        return probed.size() > MAX_ITEMS_PER_TYPE ? probed.subList(0, MAX_ITEMS_PER_TYPE) : probed;
+    }
+
+    /**
+     * Whether an item can be offered as something to file into a category.
+     *
+     * <p>A personal grant is not catalogue content — it exists only for the people it was
+     * approved for, and the public feed filters it out. Filing one into a category's sort order
+     * would leave an entry there that never renders for anybody.
+     */
+    private static boolean offerableInPicker(String status, String visibility) {
+        return "APPROVED".equalsIgnoreCase(status) && VisibilityPolicy.isPublic(visibility);
+    }
+
+    /**
+     * One row of the picker. Deliberately five fields: {@code getThumbnailUrl()} on the client
+     * reads {@code thumbnailUrl} first and otherwise builds a URL from {@code youtubeId}, so both
+     * carry the image — trimming to id/type/title would strip every thumbnail.
+     */
+    public static class ApprovedPickerItem {
+        public final String type;
+        public final String id;
+        public final String title;
+        public final String thumbnailUrl;
+        public final String youtubeId;
+
+        public ApprovedPickerItem(String type, String id, String title, String thumbnailUrl, String youtubeId) {
+            this.type = type;
+            this.id = id;
+            this.title = title;
+            this.thumbnailUrl = thumbnailUrl;
+            this.youtubeId = youtubeId;
+        }
+    }
+
+    public static class ApprovedPickerResponse {
+        public final List<ApprovedPickerItem> items;
+        /** True when a content type filled its scan bound, so more approved content may exist. */
+        public final boolean truncated;
+
+        public ApprovedPickerResponse(List<ApprovedPickerItem> items, boolean truncated) {
+            this.items = items;
+            this.truncated = truncated;
+        }
     }
 
     /**
@@ -215,10 +336,11 @@ public class ContentLibraryController {
                 anyTypeTruncated = true;
             }
             for (Channel ch : result.items) {
-                allContent.add(new ContentItem("channel", ch.getId(), ch.getYoutubeId(), ch.getName(),
+                allContent.add(withVisibility(new ContentItem("channel", ch.getId(), ch.getYoutubeId(), ch.getName(),
                         ch.getDescription(), ch.getThumbnailUrl(), ch.getStatus(), ch.getCategoryIds(),
                         ch.getCreatedAt() != null ? ch.getCreatedAt().toDate() : null,
-                        ch.getSubscribers(), ch.getDisplayOrder(), ch.getKeywords()));
+                        ch.getSubscribers(), ch.getDisplayOrder(), ch.getKeywords()),
+                        ch.getVisibility(), ch.getPersonalGrants()));
             }
         }
 
@@ -228,11 +350,12 @@ public class ContentLibraryController {
                 anyTypeTruncated = true;
             }
             for (Playlist pl : result.items) {
-                allContent.add(new ContentItem("playlist", pl.getId(), pl.getYoutubeId(), pl.getTitle(),
+                allContent.add(withVisibility(new ContentItem("playlist", pl.getId(), pl.getYoutubeId(), pl.getTitle(),
                         pl.getDescription(), pl.getThumbnailUrl(), pl.getStatus(), pl.getCategoryIds(),
                         pl.getCreatedAt() != null ? pl.getCreatedAt().toDate() : null,
                         pl.getItemCount() != null ? Long.valueOf(pl.getItemCount()) : null, pl.getDisplayOrder(),
-                        pl.getKeywords()));
+                        pl.getKeywords()),
+                        pl.getVisibility(), pl.getPersonalGrants()));
             }
         }
 
@@ -242,10 +365,11 @@ public class ContentLibraryController {
                 anyTypeTruncated = true;
             }
             for (Video v : result.items) {
-                allContent.add(new ContentItem("video", v.getId(), v.getYoutubeId(), v.getTitle(),
+                allContent.add(withVisibility(new ContentItem("video", v.getId(), v.getYoutubeId(), v.getTitle(),
                         v.getDescription(), v.getThumbnailUrl(), v.getStatus(), v.getCategoryIds(),
                         v.getCreatedAt() != null ? v.getCreatedAt().toDate() : null,
-                        v.getViewCount(), v.getDisplayOrder(), v.getKeywords()));
+                        v.getViewCount(), v.getDisplayOrder(), v.getKeywords()),
+                        v.getVisibility(), v.getPersonalGrants()));
             }
         }
 
@@ -301,6 +425,7 @@ public class ContentLibraryController {
         int start = page * cappedSize;
         int end = Math.min(start + cappedSize, allContent.size());
         List<ContentItem> pagedContent = start < allContent.size() ? allContent.subList(start, end) : List.of();
+        resolveGranteeNames(pagedContent);
 
         // Note: totalItems may be capped due to bounded queries
         int totalItems = allContent.size();
@@ -320,6 +445,63 @@ public class ContentLibraryController {
                 pagedContent.size(), totalItems, page + 1, response.totalPages, isTruncated);
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Stamp the item's visibility, and its grantee uids for later resolution.
+     *
+     * <p>Legacy and organic docs carry no visibility field; {@link VisibilityPolicy} treats those
+     * as public, so they must not surface as restricted grants.
+     */
+    private static ContentItem withVisibility(ContentItem item, String visibility, List<String> grantUids) {
+        boolean isPublic = VisibilityPolicy.isPublic(visibility);
+        item.visibility = isPublic ? "PUBLIC" : "PERSONAL";
+        item.grantedTo = (!isPublic && grantUids != null)
+                // Not List.copyOf: one null entry on a malformed document would fail the whole
+                // listing rather than degrading that single row.
+                ? grantUids.stream().filter(java.util.Objects::nonNull).toList()
+                : List.of();
+        return item;
+    }
+
+    /**
+     * Turn grantee uids into something an admin can read, for the returned page only.
+     *
+     * <p>Scoped to the page — the bounded fetch can hold thousands of rows, and only the ones on
+     * screen need a name. Distinct uids are resolved once per request; {@code findByUid} is cached
+     * behind the repository, so a grant list shared across items costs one lookup.
+     *
+     * <p>An unresolvable uid falls back to itself: a deleted account must still read as a grant
+     * that exists, not as a blank chip.
+     */
+    private void resolveGranteeNames(List<ContentItem> page) {
+        Map<String, String> resolved = new HashMap<>();
+        for (ContentItem item : page) {
+            if (item.grantedTo.isEmpty()) {
+                continue;
+            }
+            List<String> names = new ArrayList<>(item.grantedTo.size());
+            for (String uid : item.grantedTo) {
+                names.add(resolved.computeIfAbsent(uid, this::granteeLabel));
+            }
+            item.grantedTo = names;
+        }
+    }
+
+    private String granteeLabel(String uid) {
+        try {
+            return userRepository.findByUid(uid)
+                    .map(u -> hasText(u.getDisplayName()) ? u.getDisplayName() : u.getEmail())
+                    .filter(ContentLibraryController::hasText)
+                    .orElse(uid);
+        } catch (Exception e) {
+            log.warn("Could not resolve grantee {}: {}", uid, e.getMessage());
+            return uid;
+        }
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private Set<String> parseTypes(String types) {
@@ -644,6 +826,13 @@ public class ContentLibraryController {
         public Long count; // subscriber/video/view count depending on type
         public Integer displayOrder; // custom ordering position
         public List<String> keywords; // keywords/tags for search
+        /**
+         * "PUBLIC" or "PERSONAL". APPROVED alone does not say whether an item is in the public
+         * catalogue or granted only to the people who imported it.
+         */
+        public String visibility;
+        /** Display names (or emails, or uid) of the people a PERSONAL grant covers. Never null. */
+        public List<String> grantedTo = List.of();
 
         public ContentItem(String type, String id, String youtubeId, String title, String description, String thumbnailUrl,
                            String status, List<String> categoryIds, Date createdAt, Long count, Integer displayOrder,
@@ -687,6 +876,54 @@ public class ContentLibraryController {
      * @param operationName Name of the operation for error messages (e.g., "approving", "rejecting")
      * @return BulkActionResponse with success count and errors
      */
+    /**
+     * Fan an adjudication out to the per-user Me-list rows of everyone who imported these items,
+     * flipping AWAITING → APPROVED (or tombstoning on reject).
+     *
+     * <p>Without this, content adjudicated here stays "pending" in the app forever: the sync pull
+     * returns the row's stored approvalStatus, and the server-side re-derive only runs on a client
+     * push that never comes again for a clean row. {@code ApprovalService} does the same fan-out
+     * for the {@code /api/admin/approvals} path.
+     *
+     * <p>Grouped by content type and handed over in one call each, so the cost is a handful of
+     * chunked queries rather than one round-trip per item. Kept on the request thread deliberately:
+     * a stranded AWAITING row is the failure this exists to prevent, and a background task with no
+     * handle would be dropped on the next redeploy with nothing to correct it.
+     *
+     * <p>Called only after a batch has committed, so an item that failed validation or whose batch
+     * rolled back is never graduated.
+     */
+    private void graduateImporters(List<BulkActionItem> committedItems,
+                                   Map<String, String> youtubeIdByKey,
+                                   String newStatus) {
+        Map<YouTubeContentType, Set<String>> idsByType = new HashMap<>();
+        for (BulkActionItem item : committedItems) {
+            String youtubeId = youtubeIdByKey.get(item.type.toLowerCase() + ":" + item.id);
+            if (youtubeId == null || youtubeId.isBlank()) {
+                continue;
+            }
+            try {
+                idsByType.computeIfAbsent(YouTubeContentType.valueOf(item.type.toUpperCase()),
+                        t -> new HashSet<>()).add(youtubeId);
+            } catch (IllegalArgumentException e) {
+                log.warn("Unknown content type in bulk action: {}", item.type);
+            }
+        }
+
+        idsByType.forEach((type, ids) -> {
+            try {
+                if ("APPROVED".equals(newStatus)) {
+                    importGraduationService.onApprovedAll(type, ids);
+                } else if ("REJECTED".equals(newStatus)) {
+                    importGraduationService.onRejectedAll(type, ids);
+                }
+            } catch (Exception e) {
+                // A fan-out failure must not fail the admin's action — the status is already written.
+                log.warn("Graduation fan-out failed for {} ({} items): {}", type, ids.size(), e.getMessage());
+            }
+        });
+    }
+
     private BulkActionResponse executeBulkStatusUpdate(List<BulkActionItem> items, String newStatus, String operationName) {
         int successCount = 0;
         List<String> errors = new ArrayList<>();
@@ -698,6 +935,9 @@ public class ContentLibraryController {
             List<BulkActionItem> batch = items.subList(i, endIndex);
 
             List<BulkActionItem> validatedItems = new ArrayList<>();
+            // youtubeId of each validated item, read from the existence-check snapshot so the
+            // post-commit graduation fan-out costs no extra Firestore reads.
+            Map<String, String> youtubeIdByKey = new HashMap<>();
 
             // First pass: validate existence using batched getAll with timeout
             try {
@@ -723,6 +963,8 @@ public class ContentLibraryController {
                             getCollectionName(item.type); // Will throw if invalid type
                             if (snapshotIndex < snapshots.size() && snapshots.get(snapshotIndex).exists()) {
                                 validatedItems.add(item);
+                                youtubeIdByKey.put(item.type.toLowerCase() + ":" + item.id,
+                                        snapshots.get(snapshotIndex).getString("youtubeId"));
                             } else {
                                 failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                                 errors.add(item.type + " not found: " + item.id);
@@ -758,27 +1000,30 @@ public class ContentLibraryController {
                         String collectionName = getCollectionName(item.type);
                         DocumentReference docRef = firestore.collection(collectionName).document(item.id);
 
+                        Map<String, Object> updates = new HashMap<>();
+                        updates.put("status", newStatus);
+                        updates.put("updatedAt", com.google.cloud.Timestamp.now());
                         if ("channel".equalsIgnoreCase(item.type)) {
                             // Channel has legacy boolean flags that must stay in sync with status
-                            boolean isPending = "PENDING".equals(newStatus);
-                            boolean isApproved = "APPROVED".equals(newStatus);
-                            writeBatch.update(docRef,
-                                    "status", newStatus,
-                                    "pending", isPending,
-                                    "approved", isApproved,
-                                    "updatedAt", com.google.cloud.Timestamp.now());
-                        } else {
-                            // Playlists and videos don't have legacy boolean flags
-                            writeBatch.update(docRef,
-                                    "status", newStatus,
-                                    "updatedAt", com.google.cloud.Timestamp.now());
+                            updates.put("pending", "PENDING".equals(newStatus));
+                            updates.put("approved", "APPROVED".equals(newStatus));
                         }
+                        if ("APPROVED".equals(newStatus)) {
+                            // Approving here means publishing. Leaving a PERSONAL item restricted
+                            // would count it as approved while it stayed out of the public feed,
+                            // and would let the public fan-out grant it to people it was never
+                            // granted to.
+                            updates.put("visibility", "PUBLIC");
+                        }
+                        writeBatch.update(docRef, updates);
                     }
 
                     // Atomic commit with timeout - all items succeed or all fail
                     writeBatch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
                     successCount += validatedItems.size();
                     log.debug("Batch committed successfully: {} items with status={}", validatedItems.size(), newStatus);
+
+                    graduateImporters(validatedItems, youtubeIdByKey, newStatus);
 
                 } catch (TimeoutException e) {
                     log.error("Timeout during batch commit: {}", e.getMessage());

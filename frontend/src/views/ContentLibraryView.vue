@@ -234,8 +234,8 @@
               <h3 class="card-title">{{ item.title }}</h3>
 
               <div class="card-meta">
-                <span class="status-badge" :class="`status-${item.status}`">
-                  {{ t(`contentLibrary.statuses.${item.status}`) }}
+                <span class="status-badge" :class="[`status-${item.status}`, { 'status-personal': item.visibility === 'PERSONAL' }]" :title="statusLabel(item)">
+                  {{ statusLabel(item) }}
                 </span>
                 <span class="card-date">{{ formatDate(item.createdAt) }}</span>
               </div>
@@ -362,8 +362,8 @@
                   </div>
                 </td>
                 <td class="col-status">
-                  <span class="status-badge" :class="`status-${item.status}`">
-                    {{ t(`contentLibrary.statuses.${item.status}`) }}
+                  <span class="status-badge" :class="[`status-${item.status}`, { 'status-personal': item.visibility === 'PERSONAL' }]" :title="statusLabel(item)">
+                    {{ statusLabel(item) }}
                   </span>
                 </td>
                 <td class="col-date">{{ formatDate(item.createdAt) }}</td>
@@ -588,6 +588,10 @@ interface ContentItem {
   youtubeId?: string;
   displayOrder?: number;
   keywords?: string[];
+  /** "PUBLIC" or "PERSONAL" — APPROVED alone does not say which. */
+  visibility?: string;
+  /** Names of the people a PERSONAL approval covers. Empty for a public item. */
+  grantedTo: string[];
 }
 
 interface Category {
@@ -1097,8 +1101,25 @@ function mapContentItem(item: any): ContentItem {
     createdAt: item.createdAt ? new Date(item.createdAt) : null,
     youtubeId: item.youtubeId,
     displayOrder: item.displayOrder ?? undefined,
-    keywords: item.keywords || []
+    keywords: item.keywords || [],
+    visibility: item.visibility,
+    grantedTo: item.grantedTo || []
   };
+}
+
+/**
+ * Label for the status pill. An approved item that is only granted to specific people must say
+ * so — reading it as plain "Approved" implies it is live in the public catalogue.
+ */
+function statusLabel(item: ContentItem): string {
+  if (item.status === 'approved' && item.visibility === 'PERSONAL') {
+    // Names when we have them. Without them the item is still restricted, and saying plain
+    // "Approved" would read as a public catalogue entry — the confusion this label removes.
+    return item.grantedTo.length
+      ? t('contentLibrary.approvedForPersonal', { names: item.grantedTo.join(', ') })
+      : t('contentLibrary.approvedForSomePeople');
+  }
+  return t(`contentLibrary.statuses.${item.status}`);
 }
 
 function buildContentParams(page: number): Record<string, any> {
@@ -2033,6 +2054,17 @@ onUnmounted(() => {
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
+}
+
+/* A grant to named people, not the public catalogue — visually distinct from plain Approved. */
+.status-badge.status-personal {
+  background: rgba(139, 92, 246, 0.12);
+  color: #7c3aed;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .type-channel { background: #e0f2fe; color: #0369a1; }

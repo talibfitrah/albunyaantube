@@ -12,7 +12,13 @@ data class AwaitingImports(
     val channels: List<SubscribedChannel>,
     val playlists: List<SavedPlaylist>,
     val videos: List<FavoriteVideo>,
-)
+) {
+    /**
+     * How many items are waiting, across every kind. Drives the "Pending (N)" tab label, and
+     * whether that tab is offered at all.
+     */
+    val total: Int get() = channels.size + playlists.size + videos.size
+}
 
 sealed class ChipItem {
     abstract val id: String

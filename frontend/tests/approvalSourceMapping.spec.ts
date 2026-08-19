@@ -119,3 +119,50 @@ describe('approvalService — source field mapping', () => {
     expect(result.items[0].source).toBe('USER_IMPORT');
   });
 });
+
+/**
+ * Field complaint: the queue showed a raw Firebase uid under "Submitted by", which tells an
+ * admin nothing about who sent the item. The backend already resolves the submitter's name and
+ * email onto the DTO; the mapper was dropping both.
+ */
+describe('approvalService — submitter label', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function mapOne(dto: Record<string, unknown>) {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({
+      data: { data: [dto], pageInfo: { nextCursor: null, hasNext: false } }
+    });
+    const result = await getPendingApprovals();
+    return result.items[0];
+  }
+
+  const base = {
+    id: 'ch-1',
+    type: 'CHANNEL',
+    title: 'A Channel',
+    submittedAt: '2024-01-01T00:00:00Z',
+    submittedBy: 'jJ8M9PGkAyNAvijwVZu6hDCAe933'
+  };
+
+  it('prefers the submitter display name', async () => {
+    const item = await mapOne({ ...base, submittedByDisplayName: 'Ahmed', submittedByEmail: 'a@example.com' });
+    expect(item.submittedByLabel).toBe('Ahmed');
+  });
+
+  it('falls back to the submitter email when there is no display name', async () => {
+    const item = await mapOne({ ...base, submittedByEmail: 'a@example.com' });
+    expect(item.submittedByLabel).toBe('a@example.com');
+  });
+
+  it('falls back to the uid when the backend resolved neither', async () => {
+    const item = await mapOne(base);
+    expect(item.submittedByLabel).toBe('jJ8M9PGkAyNAvijwVZu6hDCAe933');
+  });
+
+  it('keeps the raw uid available for filtering by submitter', async () => {
+    const item = await mapOne({ ...base, submittedByDisplayName: 'Ahmed' });
+    expect(item.submittedBy).toBe('jJ8M9PGkAyNAvijwVZu6hDCAe933');
+  });
+});
