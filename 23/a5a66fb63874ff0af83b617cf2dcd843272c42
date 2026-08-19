@@ -1,0 +1,23 @@
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryDeleteReachesDevicesTest.java
+  s_49f3d821ce347d::t_c58b86bcdde255 1-114
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_49f3d821ce347d::t_a620a45be0a98a 861-866,883-912,1085,1097,1102-1103,1105,1132-1137,1260,1262,1264
+CHANGELOG.md
+  s_49f3d821ce347d::t_fb25d5e56cc4e1 78-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "23a5a66fb63874ff0af83b617cf2dcd843272c42",
+  "prompts": {},
+  "sessions": {
+    "s_49f3d821ce347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b1b9023a-e038-4508-b970-4f083973635c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
