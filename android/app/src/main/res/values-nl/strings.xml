@@ -782,6 +782,8 @@
     <!-- %1$d = total count of awaiting items -->
     <string name="me_awaiting_count">%1$d in behandeling</string>
     <string name="me_awaiting_pending_label">In afwachting van beoordeling</string>
+    <string name="me_tab_content">Inhoud</string>
+    <string name="me_tab_pending">In afwachting (%1$d)</string>
 
 </resources>
 

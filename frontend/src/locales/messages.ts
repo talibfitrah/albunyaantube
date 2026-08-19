@@ -311,16 +311,42 @@ export const messages = {
       approvePublic: 'Approve for everyone',
       approvePersonal: 'Approve for this user',
       approvePersonalHint: 'Approve only for the user who imported it — it stays out of the public library',
-      categoryRequired: 'Select a category to approve',
+      categoryOptional: 'Category (optional)',
       selectCategory: 'Select a category',
+      selectItem: 'Select {title}',
+      tabs: {
+        queue: 'Queue',
+        byUser: 'By user'
+      },
+      byUser: {
+        empty: 'No user imports are waiting for review.',
+        count: '{count} pending',
+        back: 'All users',
+        error: 'Couldn\'t load the list of submitters.'
+      },
+      bulk: {
+        selected: '{count} selected',
+        selectAllLoaded: 'Select all loaded',
+        clear: 'Clear selection',
+        categoryLabel: 'Category for uncategorised',
+        approve: 'Approve {count}',
+        reject: 'Reject {count}',
+        working: 'Working…',
+        approved: 'Approved {ok}',
+        approvedWithFailures: 'Approved {ok}, {failed} failed',
+        rejected: 'Rejected {ok}',
+        rejectedWithFailures: 'Rejected {ok}, {failed} failed'
+      },
       loadCategoriesError: 'Couldn\'t load categories. Refresh to try again.',
       rejectDialog: {
         title: 'Reject Submission',
         reason: 'Rejection reason',
         reasonPlaceholder: 'Provide feedback to help the submitter understand why this was rejected...',
-        reasonRequired: 'Please provide a reason for the rejection.',
+        reasonOptional: 'Optional — leave blank to reject without feedback.',
         cancel: 'Cancel',
         confirm: 'Reject submission',
+        titleMany: 'Reject {count} submissions',
+        confirmMany: 'Reject submissions',
         rejecting: 'Rejecting...',
         error: 'Failed to reject submission.'
       }
@@ -363,6 +389,7 @@ export const messages = {
       removeContentSuccess: 'Content removed from category',
       removeContentError: 'Failed to remove content',
       addContentTruncated: 'Showing {count} items. Some content may not be listed due to volume.',
+      addContentClipped: 'Showing the first {shown} of {total}. Search to narrow the list.',
       noFilterResults: 'No {type} content in this category',
       cancel: 'Cancel',
       close: 'Close',
@@ -415,6 +442,8 @@ export const messages = {
         pending: 'Pending',
         rejected: 'Rejected'
       },
+      approvedForPersonal: 'Approved for {names}',
+      approvedForSomePeople: 'Approved for specific people',
       columns: {
         title: 'Title',
         type: 'Type',
@@ -1887,16 +1916,42 @@ export const messages = {
       approvePublic: 'موافقة للجميع',
       approvePersonal: 'موافقة لهذا المستخدم',
       approvePersonalHint: 'موافقة لمن استورده فقط — لن يظهر في المكتبة العامة',
-      categoryRequired: 'اختر فئة للموافقة',
+      categoryOptional: 'الفئة (اختياري)',
       selectCategory: 'اختر فئة',
+      selectItem: 'اختيار {title}',
+      tabs: {
+        queue: 'قائمة المراجعة',
+        byUser: 'حسب المستخدم'
+      },
+      byUser: {
+        empty: 'لا توجد عناصر مستوردة بانتظار المراجعة.',
+        count: '{count} بانتظار المراجعة',
+        back: 'كل المستخدمين',
+        error: 'تعذّر تحميل قائمة المُقدِّمين.'
+      },
+      bulk: {
+        selected: 'محدد: {count}',
+        selectAllLoaded: 'تحديد كل المعروض',
+        clear: 'إلغاء التحديد',
+        categoryLabel: 'فئة للعناصر بدون فئة',
+        approve: 'موافقة على {count}',
+        reject: 'رفض {count}',
+        working: 'جارٍ التنفيذ…',
+        approved: 'تمت الموافقة على {ok}',
+        approvedWithFailures: 'تمت الموافقة على {ok}، وفشل {failed}',
+        rejected: 'تم رفض {ok}',
+        rejectedWithFailures: 'تم رفض {ok}، وفشل {failed}'
+      },
       loadCategoriesError: 'تعذّر تحميل الفئات. أعد تحميل الصفحة للمحاولة مجددًا.',
       rejectDialog: {
         title: 'رفض الطلب',
         reason: 'سبب الرفض',
         reasonPlaceholder: 'قدم تعليقات لمساعدة المرسل على فهم سبب الرفض...',
-        reasonRequired: 'يرجى توضيح سبب الرفض.',
+        reasonOptional: 'اختياري — اتركه فارغًا للرفض بدون تعليق.',
         cancel: 'إلغاء',
         confirm: 'تأكيد الرفض',
+        titleMany: 'رفض {count} طلبات',
+        confirmMany: 'تأكيد الرفض',
         rejecting: 'جارٍ الرفض...',
         error: 'فشل رفض الطلب.'
       }
@@ -1939,6 +1994,7 @@ export const messages = {
       removeContentSuccess: 'تمت إزالة المحتوى من الفئة',
       removeContentError: 'فشل في إزالة المحتوى',
       addContentTruncated: 'عرض {count} عنصر. قد لا يتم عرض بعض المحتوى بسبب الحجم.',
+      addContentClipped: 'يتم عرض أول {shown} من {total}. ابحث لتضييق القائمة.',
       noFilterResults: 'لا يوجد محتوى من نوع {type} في هذه الفئة',
       cancel: 'إلغاء',
       close: 'إغلاق',
@@ -1991,6 +2047,8 @@ export const messages = {
         pending: 'قيد الانتظار',
         rejected: 'مرفوض'
       },
+      approvedForPersonal: 'معتمد لـ {names}',
+      approvedForSomePeople: 'معتمد لأشخاص محددين',
       columns: {
         title: 'العنوان',
         type: 'النوع',
@@ -3244,16 +3302,42 @@ export const messages = {
       approvePublic: 'Voor iedereen goedkeuren',
       approvePersonal: 'Voor deze gebruiker goedkeuren',
       approvePersonalHint: 'Alleen goedkeuren voor de gebruiker die het importeerde — niet zichtbaar in de openbare bibliotheek',
-      categoryRequired: 'Selecteer een categorie om goed te keuren',
+      categoryOptional: 'Categorie (optioneel)',
       selectCategory: 'Selecteer een categorie',
+      selectItem: '{title} selecteren',
+      tabs: {
+        queue: 'Wachtrij',
+        byUser: 'Per gebruiker'
+      },
+      byUser: {
+        empty: 'Er wachten geen gebruikersimports op beoordeling.',
+        count: '{count} in afwachting',
+        back: 'Alle gebruikers',
+        error: 'De lijst met indieners kon niet worden geladen.'
+      },
+      bulk: {
+        selected: '{count} geselecteerd',
+        selectAllLoaded: 'Alle geladen selecteren',
+        clear: 'Selectie wissen',
+        categoryLabel: 'Categorie voor items zonder categorie',
+        approve: '{count} goedkeuren',
+        reject: '{count} afwijzen',
+        working: 'Bezig…',
+        approved: '{ok} goedgekeurd',
+        approvedWithFailures: '{ok} goedgekeurd, {failed} mislukt',
+        rejected: '{ok} afgewezen',
+        rejectedWithFailures: '{ok} afgewezen, {failed} mislukt'
+      },
       loadCategoriesError: 'Categorieën konden niet worden geladen. Vernieuw de pagina om het opnieuw te proberen.',
       rejectDialog: {
         title: 'Indiening afwijzen',
         reason: 'Reden voor afwijzing',
         reasonPlaceholder: 'Geef feedback om de indiener te helpen begrijpen waarom dit is afgewezen...',
-        reasonRequired: 'Geef een reden voor de afwijzing.',
+        reasonOptional: 'Optioneel — laat leeg om zonder feedback af te wijzen.',
         cancel: 'Annuleren',
         confirm: 'Indiening afwijzen',
+        titleMany: '{count} indieningen afwijzen',
+        confirmMany: 'Indieningen afwijzen',
         rejecting: 'Afwijzen...',
         error: 'Indiening afwijzen is mislukt.'
       }
@@ -3296,6 +3380,7 @@ export const messages = {
       removeContentSuccess: 'Inhoud verwijderd uit categorie',
       removeContentError: 'Inhoud verwijderen mislukt',
       addContentTruncated: '{count} items weergegeven. Sommige inhoud wordt mogelijk niet weergegeven vanwege volume.',
+      addContentClipped: 'De eerste {shown} van {total} worden getoond. Zoek om de lijst te beperken.',
       noFilterResults: 'Geen {type} inhoud in deze categorie',
       cancel: 'Annuleren',
       close: 'Sluiten',
@@ -3348,6 +3433,8 @@ export const messages = {
         pending: 'In behandeling',
         rejected: 'Afgewezen'
       },
+      approvedForPersonal: 'Goedgekeurd voor {names}',
+      approvedForSomePeople: 'Goedgekeurd voor specifieke personen',
       columns: {
         title: 'Titel',
         type: 'Type',

@@ -67,6 +67,8 @@ public class ApprovalController {
      * - category: category ID (optional)
      * - limit: page size (default 20)
      * - cursor: pagination cursor (optional)
+     * - scope: MODERATOR_QUEUE|USER_IMPORTS (optional; omit for everything)
+     * - submittedBy: one person's imports — the by-user drill-down (optional)
      */
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/pending")
@@ -75,15 +77,35 @@ public class ApprovalController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) String submittedBy,
+            @RequestParam(required = false) String scope,
             @AuthenticationPrincipal FirebaseUserDetails user)
             throws ExecutionException, InterruptedException, TimeoutException {
 
         try {
-            log.debug("GET /pending - type={}, category={}, limit={}, cursor={}, user={}",
-                    type, category, limit, cursor, user.getUid());
+            log.debug("GET /pending - type={}, category={}, limit={}, cursor={}, submittedBy={}, user={}",
+                    type, category, limit, cursor, submittedBy, user.getUid());
+
+            // Drilling into one submitter from the by-user tab. The per-submitter query already
+            // exists (it backs "My Submissions"); here an admin points it at somebody else.
+            if (submittedBy != null && !submittedBy.isBlank()) {
+                // That query has no category dimension. Silently returning unfiltered results to
+                // a caller who asked for a category would be worse than refusing.
+                if (category != null && !category.isBlank()) {
+                    throw new IllegalArgumentException("category cannot be combined with submittedBy");
+                }
+                // The drill-down is a person's imports by definition. Accepting a scope here and
+                // ignoring it would answer a different question than the caller asked.
+                ApprovalService.SourceScope requested = parseScope(scope);
+                if (requested != null && requested != ApprovalService.SourceScope.USER_IMPORTS) {
+                    throw new IllegalArgumentException("submittedBy is only valid with scope=USER_IMPORTS");
+                }
+                return ResponseEntity.ok(approvalService.getMySubmissionsInScope(
+                        submittedBy, type, limit, cursor, ApprovalService.SourceScope.USER_IMPORTS));
+            }
 
             CursorPageDto<PendingApprovalDto> result = approvalService.getPendingApprovals(
-                    type, category, limit, cursor);
+                    type, category, limit, cursor, parseScope(scope));
 
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException e) {
@@ -92,6 +114,37 @@ public class ApprovalController {
         } catch (Exception e) {
             log.error("Failed to get pending approvals - type={}, category={}, cursor={}",
                     type, category, cursor, e);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+    }
+
+    private static ApprovalService.SourceScope parseScope(String scope) {
+        if (scope == null || scope.isBlank()) {
+            return null;
+        }
+        try {
+            return ApprovalService.SourceScope.valueOf(scope.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid scope: must be MODERATOR_QUEUE or USER_IMPORTS");
+        }
+    }
+
+    /**
+     * GET /api/admin/approvals/pending-by-user
+     *
+     * Who has imported content still waiting for review, and how much each of them has.
+     * Backs the by-user approvals tab; moderator/admin submissions stay in the main queue.
+     */
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/pending-by-user")
+    public ResponseEntity<java.util.List<PendingSubmitterDto>> getPendingByUser(
+            @AuthenticationPrincipal FirebaseUserDetails user)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        try {
+            log.debug("GET /pending-by-user - user={}", user.getUid());
+            return ResponseEntity.ok(approvalService.getPendingSubmitters());
+        } catch (Exception e) {
+            log.error("Failed to roll up pending submitters", e);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
     }
@@ -188,8 +241,7 @@ public class ApprovalController {
      *
      * Body:
      * {
-     *   "reason": "NOT_ISLAMIC|LOW_QUALITY|DUPLICATE|OTHER",
-     *   "reviewNotes": "Content not aligned with platform guidelines"
+     *   "reason": "optional free-text feedback for the submitter — omit to reject without one"
      * }
      */
     @PreAuthorize("hasRole('ADMIN')")

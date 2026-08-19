@@ -84,20 +84,27 @@ class ApprovalServiceTest {
     }
 
     @Test
-    void publicApproveVideo_withoutCategory_throwsBadRequest() throws Exception {
-        // Public approval still requires a category — the guard is unchanged.
+    void publicApproveVideo_withoutCategory_publishesUncategorized() throws Exception {
+        // Category is optional: a public approval with none goes live filed under nothing,
+        // rather than being blocked until the admin picks one.
         Video v = new Video("yt-vid");
         v.setId("yt-vid");
         v.setStatus("PENDING");
         when(channelRepository.findById("yt-vid")).thenReturn(Optional.empty());
         when(playlistRepository.findById("yt-vid")).thenReturn(Optional.empty());
         when(videoRepository.findById("yt-vid")).thenReturn(Optional.of(v));
+        when(videoRepository.saveIfStatus(any(Video.class), eq("PENDING"))).thenAnswer(i -> i.getArgument(0));
 
         ApprovalRequestDto req = new ApprovalRequestDto(); // scope null → PUBLIC
 
-        assertThrows(ResponseStatusException.class,
-                () -> service.approve("yt-vid", req, "admin-1", "Admin"));
-        verify(videoRepository, never()).saveIfStatus(any(), anyString());
+        assertEquals("APPROVED", service.approve("yt-vid", req, "admin-1", "Admin").getStatus());
+
+        assertEquals("PUBLIC", v.getVisibility());
+        verify(videoRepository).saveIfStatus(any(Video.class), eq("PENDING"));
+        // No category was chosen, so nothing may be filed into one.
+        verify(sortOrderService, never()).addContentToCategory(anyString(), anyString(), anyString());
+        // Public approval still graduates the importers' awaiting rows.
+        verify(importGraduationService).onApproved(YouTubeContentType.VIDEO, "yt-vid");
     }
 
     @Test

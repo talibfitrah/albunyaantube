@@ -14,6 +14,7 @@ import androidx.navigation.Navigation
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.navOptions
 import androidx.recyclerview.widget.ConcatAdapter
+import com.google.android.material.tabs.TabLayout
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -43,6 +44,24 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
 
+/** Tab positions on `meTabs`; the order they are added in [MeFragment.renderTabs]. */
+internal const val TAB_CONTENT = 0
+internal const val TAB_PENDING = 1
+
+/**
+ * Whether the screen-level empty state should cover the list.
+ *
+ * It speaks for the feed only. Someone whose only content is awaiting review has an empty feed by
+ * definition, so on the Pending tab it must stay out of the way — otherwise "nothing here" hides
+ * the very list they opened the tab to see.
+ */
+internal fun shouldShowFeedEmptyState(feedIsEmpty: Boolean, selectedTab: Int): Boolean =
+    feedIsEmpty && selectedTab != TAB_PENDING
+
+/** Cells a row of [viewType] occupies in the tablet/TV grid. Only feed video tiles are narrow. */
+internal fun spanFor(viewType: Int, spanCount: Int): Int =
+    if (viewType == MeWeekSectionAdapter.WEEK_VIDEO_VIEW_TYPE) 1 else spanCount
+
 @AndroidEntryPoint
 class MeFragment : Fragment(R.layout.fragment_me) {
 
@@ -70,6 +89,9 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     // B14: awaiting-review section; sits between favorites and per-week sections.
     private lateinit var awaitingAdapter: AwaitingImportsAdapter
     private lateinit var concatAdapter: ConcatAdapter
+
+    /** Per-tab scroll position, keyed by tab index — see [showTab]. */
+    private val tabScrollState = mutableMapOf<Int, android.os.Parcelable?>()
 
     private var prefetchController: com.albunyaan.tube.player.PredictivePrefetchController? = null
 
@@ -105,12 +127,17 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         awaitingAdapter = AwaitingImportsAdapter()
 
         // ANDROID-PERSONAL-03 / T6: dynamic ConcatAdapter. Initially holds
-        // chips + favorites + awaiting; per-week sub-adapters are appended as
+        // chips + favorites; per-week sub-adapters are appended as
         // the viewModel.weeks flow emits. Isolation is disabled so the
         // spanSizeLookup can compare raw inner view types — every
         // adapter participating in this ConcatAdapter must use a unique
-        // view type constant (chips=101, favorites=401-403, awaiting=601-602,
-        // weeks=501-503; see each adapter's companion object).
+        // view type constant (chips=101, favorites=401-403, weeks=501-503; see each adapter's
+        // companion object). The awaiting adapter (601-602) is no longer part of this concat —
+        // it backs the Pending tab on its own.
+        //
+        // The awaiting section is deliberately NOT part of this adapter any more: a few hundred
+        // imported items sat between the chips and the user's own feed, so reaching their content
+        // meant scrolling past every pending row. It gets its own tab instead.
         concatAdapter = ConcatAdapter(
             ConcatAdapter.Config.Builder()
                 .setIsolateViewTypes(false)
@@ -118,8 +145,6 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             chipsAdapter.rowAdapter,
             // T10: favorites row sits between chips and per-week content.
             favoritesAdapter.sectionAdapter,
-            // B14: awaiting section sits after favorites, before per-week sections.
-            awaitingAdapter.sectionAdapter,
         )
 
         val isTablet = DeviceConfig.isTablet(requireContext()) || DeviceConfig.isTV(requireContext())
@@ -129,14 +154,15 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             GridLayoutManager(requireContext(), spanCount).apply {
                 spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
                     override fun getSpanSize(position: Int): Int {
-                        // ConcatAdapter is configured with isolation OFF
-                        // so getItemViewType returns the raw inner view
-                        // type. Only video tiles span 1 column; chips,
-                        // favorites, week headers, and shorts rows span
-                        // full width.
-                        val viewType = concatAdapter.getItemViewType(position)
-                        return if (viewType == MeWeekSectionAdapter.WEEK_VIDEO_VIEW_TYPE) 1
-                        else spanCount
+                        // Ask whichever adapter is actually attached. The Pending tab swaps in
+                        // the awaiting adapter, and asking concatAdapter by name — which no
+                        // longer holds those rows — throws for every position past its much
+                        // shorter end, crashing layout on tablet/TV.
+                        val attached = binding?.meRecycler?.adapter ?: return spanCount
+                        if (position >= attached.itemCount) return spanCount
+                        // ConcatAdapter is configured with isolation OFF so getItemViewType
+                        // returns the raw inner view type.
+                        return spanFor(attached.getItemViewType(position), spanCount)
                     }
                 }
             }
@@ -145,6 +171,12 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         }
         b.meRecycler.adapter = concatAdapter
         b.meRecycler.itemAnimator?.changeDuration = 0L
+
+        b.meTabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) = showTab(tab.position)
+            override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+            override fun onTabReselected(tab: TabLayout.Tab) = Unit
+        })
 
         // T9: pull-to-refresh enqueues a force=true one-shot via the
         // RefreshScheduler. The SwipeRefreshLayout spinner is dismissed by
@@ -183,12 +215,15 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             }
         }
 
-        // B14: awaiting-review section collector. Drives awaitingAdapter
-        // so the section appears / disappears reactively without touching
-        // the weekly feed sections.
+        // B14: awaiting-review collector. Drives awaitingAdapter and the Pending tab, which
+        // only exists while something is actually awaiting review — a user who has never
+        // imported anything sees the screen exactly as it was.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.awaiting.collect { awaitingAdapter.submit(it) }
+                viewModel.awaiting.collect { awaiting ->
+                    awaitingAdapter.submit(awaiting)
+                    renderTabs(awaiting.total)
+                }
             }
         }
 
@@ -200,6 +235,8 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         b.meRecycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
                 if (dy <= 0) return
+                // Week paging is the feed's, not the awaiting list's.
+                if (rv.adapter !== concatAdapter) return
                 val layoutManager = rv.layoutManager ?: return
                 val total = layoutManager.itemCount
                 val lastVisible = when (layoutManager) {
@@ -310,6 +347,65 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         }
     }
 
+    /**
+     * Show or hide the Pending tab, and keep its count current.
+     *
+     * The tabs only appear once there is something pending: with an empty queue a two-tab bar
+     * would be a permanent piece of chrome over a screen that has nothing to switch to. When the
+     * last pending item clears while the user is on that tab, fall back to Content rather than
+     * leaving them on an empty list.
+     */
+    private fun renderTabs(pendingCount: Int) {
+        val b = binding ?: return
+        if (pendingCount == 0) {
+            b.meTabs.visibility = View.GONE
+            if (b.meRecycler.adapter !== concatAdapter) showTab(TAB_CONTENT)
+            b.meTabs.removeAllTabs()
+            // A later Pending tab is a different list; a position stashed from the previous one
+            // would scroll it somewhere arbitrary.
+            tabScrollState.remove(TAB_PENDING)
+            return
+        }
+
+        if (b.meTabs.tabCount == 0) {
+            b.meTabs.addTab(b.meTabs.newTab().setText(getString(R.string.me_tab_content)))
+            b.meTabs.addTab(b.meTabs.newTab().setText(getString(R.string.me_tab_pending, pendingCount)))
+        } else {
+            // Only the label changes — re-adding the tabs would reset the user's selection.
+            b.meTabs.getTabAt(TAB_PENDING)?.text = getString(R.string.me_tab_pending, pendingCount)
+        }
+        b.meTabs.visibility = View.VISIBLE
+    }
+
+    /**
+     * Swap the single RecyclerView between the feed and the awaiting list.
+     *
+     * [RecyclerView.setAdapter] resets scroll to the top, so each tab's position is stashed on the
+     * way out and restored on the way back in. Without that, checking Pending and returning would
+     * dump the user at the top of their feed — the exact navigation cost these tabs remove.
+     */
+    private fun showTab(position: Int) {
+        val b = binding ?: return
+        val target = if (position == TAB_PENDING) awaitingAdapter.sectionAdapter else concatAdapter
+        // TabLayout.addTab auto-selects the first tab, which fires this listener. Reassigning the
+        // same adapter still resets scroll to the top, so a background sync that lands the first
+        // pending item would jerk the user's feed back to the start.
+        if (b.meRecycler.adapter === target) return
+        val outgoing = if (b.meRecycler.adapter === awaitingAdapter.sectionAdapter) TAB_PENDING else TAB_CONTENT
+        tabScrollState[outgoing] = b.meRecycler.layoutManager?.onSaveInstanceState()
+        b.meRecycler.adapter = target
+        tabScrollState[position]?.let { b.meRecycler.layoutManager?.onRestoreInstanceState(it) }
+        // Switching tabs changes who owns the screen: the feed's empty state must not sit over
+        // the pending list, and must come back when the user returns to Content.
+        if (viewModel.state.value is MeFeedState.Empty) {
+            val hideList = shouldShowFeedEmptyState(feedIsEmpty = true, selectedTab = position)
+            b.meEmpty.root.visibility = if (hideList) View.VISIBLE else View.GONE
+            b.meRecycler.visibility = if (hideList) View.GONE else View.VISIBLE
+        }
+    }
+
+    private fun currentTab(): Int = binding?.meTabs?.selectedTabPosition?.coerceAtLeast(TAB_CONTENT) ?: TAB_CONTENT
+
     override fun onResume() {
         super.onResume()
         // T9: foreground burst. Only fires a one-shot when the newest
@@ -359,8 +455,9 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                 b.meRecycler.visibility = View.VISIBLE
             }
             is MeFeedState.Empty -> {
-                b.meEmpty.root.visibility = View.VISIBLE
-                b.meRecycler.visibility = View.GONE
+                val hideList = shouldShowFeedEmptyState(feedIsEmpty = true, selectedTab = currentTab())
+                b.meEmpty.root.visibility = if (hideList) View.VISIBLE else View.GONE
+                b.meRecycler.visibility = if (hideList) View.GONE else View.VISIBLE
             }
             is MeFeedState.Content -> {
                 b.meEmpty.root.visibility = View.GONE

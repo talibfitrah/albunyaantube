@@ -8,8 +8,11 @@ package com.albunyaan.tube.dto;
 public class RejectionRequestDto {
 
     /**
-     * Rejection reason (required)
-     * Values: "NOT_ISLAMIC", "LOW_QUALITY", "DUPLICATE", "OTHER"
+     * Optional free-text feedback for the submitter.
+     *
+     * <p>Null or blank means the admin rejected without writing a reason. It is stored as absent
+     * rather than coerced to a placeholder, which would put words in front of the submitter that
+     * nobody wrote.
      */
     private String reason;
 

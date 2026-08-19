@@ -5,9 +5,12 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.currentUid
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
 import com.albunyaan.tube.data.me.MeFeedRepository
 import com.albunyaan.tube.data.me.MeRefreshTelemetry
+import com.albunyaan.tube.data.sync.SyncManager
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -47,6 +50,8 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
     private val repository: MeFeedRepository,
     private val telemetry: MeRefreshTelemetry,
     private val channelVideoCacheDao: ChannelVideoCacheDao,
+    private val syncManager: SyncManager,
+    private val accountRepository: AccountRepository,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -76,6 +81,7 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
         try {
             return try {
                 withTimeout(WORKER_TIMEOUT_MS) {
+                    pullAccountSync()
                     // Cache hygiene first: drop rows for channels the user
                     // has unsubscribed from. Running this BEFORE the refresh
                     // means the refresh path operates on a clean baseline —
@@ -144,6 +150,48 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
         }
     }
 
+    /**
+     * Pull the server's account state (subscriptions, playlists, favourites) before the feed
+     * refresh.
+     *
+     * An admin's approve/reject decision reaches the device only through this pull — it is what
+     * flips an imported row out of AWAITING. Every entry point the user thinks of as "refresh"
+     * (pull-to-refresh, the Me-screen foreground burst, the hourly tick) lands in this worker, so
+     * doing it here is what makes those gestures able to clear a stale "pending". Running it
+     * before the feed refresh means the graduated rows render in the same cycle.
+     *
+     * A signed-out device has nothing to sync. A failure is logged and swallowed: the user asked
+     * for a feed refresh, and losing it to a sync hiccup would be a worse trade than showing one
+     * more cycle of stale approval state.
+     */
+    private suspend fun pullAccountSync() {
+        val uid = accountRepository.currentUid()
+        if (uid.isEmpty()) return
+        try {
+            // Its own budget, inside the worker's. SyncManager serialises on a mutex the
+            // process-level foreground sync also takes, so without this a contended sync could
+            // consume the whole worker deadline and cancel the feed refresh — the one cost this
+            // was explicitly not supposed to impose.
+            withTimeout(SYNC_BUDGET_MS) {
+                syncManager.pullAll(uid)
+                // Paired deliberately: pullAll skips any row still marked dirty and defers it to
+                // the push. Pulling alone would leave an offline change unsynced and its
+                // server-side counterpart skipped on every subsequent pull.
+                syncManager.pushDirty(uid)
+            }
+        } catch (te: kotlinx.coroutines.TimeoutCancellationException) {
+            // The sync's own budget ran out. Not the worker's — the feed refresh still gets its turn.
+            Log.w(TAG, "account sync exceeded its budget", te)
+        } catch (ce: CancellationException) {
+            // The worker itself is being cancelled (Doze, the outer deadline, WorkManager stopping
+            // us). Swallowing it here would run the feed refresh past the point we were told to
+            // stop; structured concurrency requires letting it through.
+            throw ce
+        } catch (t: Throwable) {
+            Log.w(TAG, "account sync failed", t)
+        }
+    }
+
     companion object {
         const val KEY_FORCE = "force"
 
@@ -162,5 +210,8 @@ class RefreshSubscriptionsWorker @AssistedInject constructor(
          * slow networks without ever burning OS-level wakelocks.
          */
         val WORKER_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(8L)
+
+        /** Slice of [WORKER_TIMEOUT_MS] the account sync may take before the feed refresh runs. */
+        val SYNC_BUDGET_MS = TimeUnit.MINUTES.toMillis(2L)
     }
 }

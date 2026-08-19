@@ -114,4 +114,35 @@ class ImportGraduationServiceIT extends BaseIntegrationTest {
         assertThat(ctrl.getBoolean("deleted")).isFalse();
         assertThat(ctrl.getLong("updatedAt")).isEqualTo(1000L);
     }
+
+    // ── Test 3: rejecting reaches rows that had already been approved ─────────
+
+    @Test
+    void onRejected_alsoClearsRowsThatHadAlreadyBeenApproved() throws Exception {
+        // Content can be rejected after it was approved. A row that had already graduated would
+        // otherwise sit in that person's list forever — the admin pulled the content, and their
+        // app would go on offering it.
+        String approvedDoc = seedSubscription("user-a", "UC-LATER", "APPROVED");
+        String awaitingDoc = seedSubscription("user-b", "UC-LATER", "AWAITING");
+        String controlDoc = seedSubscription("user-a", "UC-UNRELATED", "APPROVED");
+
+        graduationService.onRejected(YouTubeContentType.CHANNEL, "UC-LATER");
+
+        assertThat(readSubscription("user-a", approvedDoc).getBoolean("deleted")).isTrue();
+        assertThat(readSubscription("user-b", awaitingDoc).getBoolean("deleted")).isTrue();
+        // Still scoped to the rejected content only.
+        assertThat(readSubscription("user-a", controlDoc).getBoolean("deleted")).isFalse();
+    }
+
+    @Test
+    void onApproved_leavesAlreadyApprovedRowsAlone() throws Exception {
+        // Approving must stay narrow: the personal-grant path derives its grantee list from
+        // exactly the rows it flips, so reaching further would grant content to people it was
+        // never approved for.
+        String approvedDoc = seedSubscription("user-a", "UC-NARROW", "APPROVED");
+
+        graduationService.onApproved(YouTubeContentType.CHANNEL, "UC-NARROW");
+
+        assertThat(readSubscription("user-a", approvedDoc).getLong("updatedAt")).isEqualTo(1000L);
+    }
 }

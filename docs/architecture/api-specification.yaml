@@ -1797,7 +1797,17 @@ paths:
           description: Opaque cursor token from previous response's pageInfo.nextCursor
           schema:
             type: string
+        - name: submittedBy
+          in: query
+          description: |
+            Narrow the queue to one submitter's pending items — the drill-down from the by-user
+            tab. The per-submitter query has no category dimension, so combining this with
+            `category` is rejected with 400 rather than silently returning unfiltered results.
+          schema:
+            type: string
       responses:
+        '400':
+          description: Invalid parameters, including `submittedBy` combined with `category`
         '200':
           description: Pending approvals
           content:
@@ -1812,6 +1822,31 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/PendingApprovalDto'
+
+  /admin/approvals/pending-by-user:
+    get:
+      summary: Pending submissions rolled up by submitter
+      description: |
+        Who has imported content still waiting for review, and how much each of them has.
+
+        Only `USER_IMPORT` submissions are rolled up here; moderator and admin submissions (and
+        legacy rows with no recorded source) stay in the main queue at `/admin/approvals/pending`.
+
+        The scan is bounded per collection, so a queue deeper than the bound under-reports rather
+        than issuing an unbounded read. Ordered by pending count descending.
+      operationId: listPendingSubmitters
+      tags: [Approvals]
+      responses:
+        '200':
+          description: Submitters with pending imports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PendingSubmitterDto'
+        '503':
+          description: Roll-up unavailable
 
   /admin/approvals/{id}/approve:
     post:
@@ -1835,9 +1870,16 @@ paths:
                   type: string
                 categoryOverride:
                   type: string
+                  description: |
+                    Optional. Applied only when the item has no categories of its own. Omit to
+                    approve the item uncategorized — it stays reachable through the type listings
+                    and search, but appears under no category until one is assigned. Must name an
+                    existing category when supplied.
       responses:
         '200':
           description: Item approved
+        '400':
+          description: categoryOverride does not name an existing category
 
   /admin/approvals/{id}/reject:
     post:
@@ -2325,6 +2367,54 @@ paths:
   # ============================================================================
   # CONTENT LIBRARY (Admin/Moderator)
   # ============================================================================
+
+  /admin/content/approved-picker:
+    get:
+      summary: Approved content for the category picker
+      description: |
+        Every approved item, carrying only the fields the "add content to a category" picker
+        renders. One request, no paging.
+
+        Replaces a client-side loop over `/admin/content` that could not terminate on its own:
+        that endpoint's `totalPages` describes its current fetch window, which grows by one page
+        per content type each round, so the target outran the loop until it hit a client-side
+        safety cap — while offset paging re-read every earlier row on each request.
+
+        Five fields, not three: `getThumbnailUrl()` on the client reads `thumbnailUrl` first and
+        otherwise builds a URL from `youtubeId`, so both carry the image.
+
+        Bounded per content type. `truncated` reports the bound rather than applying it silently.
+      operationId: listApprovedForPicker
+      tags: [Content Library]
+      responses:
+        '200':
+          description: Approved content for the picker
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum: [channel, playlist, video]
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        thumbnailUrl:
+                          type: string
+                          nullable: true
+                        youtubeId:
+                          type: string
+                          nullable: true
+                  truncated:
+                    type: boolean
+                    description: A content type filled its scan bound, so more approved content may exist
 
   /admin/content:
     get:
@@ -3726,6 +3816,20 @@ components:
           type: integer
           nullable: true
           description: Integer sort order. Lower values appear first. Null until explicitly set.
+        visibility:
+          type: string
+          enum: [PUBLIC, PERSONAL]
+          description: |
+            Whether an APPROVED item is in the public catalogue or granted only to specific
+            people. Legacy documents with no stored visibility are reported as PUBLIC.
+        grantedTo:
+          type: array
+          description: |
+            Display names (else emails, else uids) of the people a PERSONAL approval covers.
+            Always empty for a PUBLIC item, even if stale grants remain on the document.
+            Resolved for the returned page only.
+          items:
+            type: string
         keywords:
           type: array
           items:
@@ -4124,7 +4228,6 @@ components:
         rejectionReason:
           type: string
           nullable: true
-          enum: [NOT_ISLAMIC, LOW_QUALITY, DUPLICATE, OTHER]
           description: Rejection reason (for rejected items)
 
     PendingApprovalDto:
@@ -4169,7 +4272,6 @@ components:
         rejectionReason:
           type: string
           nullable: true
-          enum: [NOT_ISLAMIC, LOW_QUALITY, DUPLICATE, OTHER]
           description: Rejection reason if status is REJECTED
         reviewNotes:
           type: string
@@ -4217,7 +4319,30 @@ components:
       properties:
         reason:
           type: string
-          description: Reason for rejection (required)
+          description: |
+            Optional feedback for the submitter. Omit to reject without a reason — a blank reason
+            is stored as absent rather than coerced to a placeholder the reviewer never wrote.
+
+    PendingSubmitterDto:
+      type: object
+      description: One person with imported content awaiting review
+      properties:
+        uid:
+          type: string
+          description: Firebase uid — use as the `submittedBy` filter to drill into their queue
+        displayName:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        label:
+          type: string
+          description: Display name, else email, else the raw uid
+        pendingCount:
+          type: integer
+          format: int64
+          description: How many of their submissions are still PENDING
 
     # Public API Response Wrappers
     ChannelDetailResponse:

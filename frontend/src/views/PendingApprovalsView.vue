@@ -46,8 +46,26 @@
       </div>
     </div>
 
+    <!-- Admin: queue vs by-user. Bulk imports from ordinary users are reviewed per person. -->
+    <div v-else class="admin-tabs">
+      <button
+        type="button"
+        :class="['filter-tab', { active: adminTab === 'queue' }]"
+        @click="selectAdminTab('queue')"
+      >
+        {{ t('approvals.tabs.queue') }}
+      </button>
+      <button
+        type="button"
+        :class="['filter-tab', { active: adminTab === 'byUser' }]"
+        @click="selectAdminTab('byUser')"
+      >
+        {{ t('approvals.tabs.byUser') }}
+      </button>
+    </div>
+
     <!-- Admin Filters -->
-    <div v-else class="filters">
+    <div v-if="!isModeratorView && !showingSubmitterList" class="filters">
       <div class="filter-group">
         <label>{{ t('approvals.filters.type') }}</label>
         <div class="filter-tabs">
@@ -63,7 +81,7 @@
         </div>
       </div>
 
-      <div class="filter-group">
+      <div v-if="!selectedSubmitter" class="filter-group">
         <label>{{ t('approvals.filters.category') }}</label>
         <select v-model="categoryFilter" @change="handleFilterChange">
           <option value="">{{ t('approvals.filters.allCategories') }}</option>
@@ -80,7 +98,38 @@
       <p>{{ categoriesError }}</p>
     </div>
 
-    <div v-if="isLoading && !approvals.length" class="loading">
+    <!-- By-user tab: the people, before their items -->
+    <template v-if="showingSubmitterList">
+      <div v-if="isLoadingSubmitters" class="loading">
+        <div class="spinner"></div>
+        <p>{{ t('approvals.loading') }}</p>
+      </div>
+      <div v-else-if="submittersError" class="error-panel" role="alert">
+        <p>{{ submittersError }}</p>
+        <button type="button" @click="loadSubmitters()">{{ t('approvals.retry') }}</button>
+      </div>
+      <div v-else-if="submitters.length === 0" class="empty-state">
+        <p>{{ t('approvals.byUser.empty') }}</p>
+      </div>
+      <ul v-else class="submitter-list">
+        <li v-for="submitter in submitters" :key="submitter.uid">
+          <button type="button" class="submitter-row" @click="openSubmitter(submitter)">
+            <span class="submitter-name">{{ submitter.label }}</span>
+            <span class="submitter-count">{{ t('approvals.byUser.count', { count: submitter.pendingCount }) }}</span>
+          </button>
+        </li>
+      </ul>
+    </template>
+
+    <template v-else>
+    <div v-if="selectedSubmitter" class="submitter-crumb">
+      <button type="button" class="button secondary" @click="backToSubmitters">
+        ← {{ t('approvals.byUser.back') }}
+      </button>
+      <span class="submitter-name">{{ selectedSubmitter.label }}</span>
+    </div>
+
+    <div v-if="(isLoading || isLoadingMore) && !approvals.length" class="loading">
       <div class="spinner"></div>
       <p>{{ t('approvals.loading') }}</p>
     </div>
@@ -96,11 +145,55 @@
       <p>{{ isModeratorView ? t('approvals.emptySubmissions') : t('approvals.empty') }}</p>
     </div>
 
-    <!-- Approvals Grid -->
-    <div v-else class="approvals-grid">
-      <div v-for="item in approvals" :key="item.id" class="approval-card">
+    <!-- Approvals grid, with the bulk actions bar above it -->
+    <template v-else>
+    <div v-if="authStore.isAdmin" class="bulk-bar">
+      <label class="bulk-select-all">
+        <input
+          type="checkbox"
+          :checked="allLoadedSelected"
+          :indeterminate.prop="someLoadedSelected"
+          @change="toggleSelectAll"
+        />
+        <span>{{ t('approvals.bulk.selectAllLoaded') }}</span>
+      </label>
+
+      <template v-if="selectedIds.size > 0">
+        <span class="bulk-count">{{ t('approvals.bulk.selected', { count: selectedIds.size }) }}</span>
+
+        <div v-if="selectionHasUncategorised" class="bulk-category">
+          <label for="bulk-category-select">{{ t('approvals.bulk.categoryLabel') }}</label>
+          <select id="bulk-category-select" v-model="bulkCategory">
+            <option value="">{{ t('approvals.selectCategory') }}</option>
+            <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
+          </select>
+        </div>
+
+        <button type="button" class="button danger" :disabled="isBulkProcessing" @click="openBulkRejectDialog">
+          {{ t('approvals.bulk.reject', { count: selectedIds.size }) }}
+        </button>
+        <button type="button" class="button primary" :disabled="isBulkProcessing" @click="bulkApprove">
+          <span v-if="isBulkProcessing">{{ t('approvals.bulk.working') }}</span>
+          <span v-else>{{ t('approvals.bulk.approve', { count: selectedIds.size }) }}</span>
+        </button>
+        <button type="button" class="button secondary" :disabled="isBulkProcessing" @click="clearSelection">
+          {{ t('approvals.bulk.clear') }}
+        </button>
+      </template>
+    </div>
+
+    <div class="approvals-grid">
+      <div v-for="item in approvals" :key="item.id" :class="['approval-card', { selected: isSelected(item.id) }]">
         <div class="card-header">
           <div class="card-header-left">
+            <input
+              v-if="authStore.isAdmin"
+              type="checkbox"
+              class="card-select"
+              :aria-label="t('approvals.selectItem', { title: item.title })"
+              :checked="isSelected(item.id)"
+              @change="toggleSelect(item.id)"
+            />
             <span class="content-type">{{ t(`approvals.types.${item.type}`) }}</span>
             <span v-if="item.source === 'USER_IMPORT'" class="source-badge source-user-import">
               {{ t('approvals.sourceUserImport') }}
@@ -173,13 +266,13 @@
           </div>
         </div>
 
-        <!-- Category selector: shown only for admin view on items with no categories -->
+        <!-- Category selector: offered (not required) for admin view on items with no categories -->
         <div
           v-if="authStore.isAdmin && (!item.categories || item.categories.length === 0)"
-          class="category-required-row"
+          class="category-optional-row"
         >
           <label :for="`cat-select-${item.id}`" class="meta-label">
-            {{ t('approvals.categoryRequired') }}
+            {{ t('approvals.categoryOptional') }}
           </label>
           <select
             :id="`cat-select-${item.id}`"
@@ -197,7 +290,7 @@
         <div class="card-footer">
           <div class="submitted-by">
             <span class="meta-label">{{ t('approvals.submittedBy') }}:</span>
-            <span>{{ item.submittedBy || t('approvals.unknown') }}</span>
+            <span>{{ item.submittedByLabel || t('approvals.unknown') }}</span>
           </div>
           <div class="actions">
             <button
@@ -212,7 +305,7 @@
               v-if="authStore.isAdmin"
               type="button"
               class="action-btn reject"
-              :disabled="processingId === item.id"
+              :disabled="processingId === item.id || isBulkProcessing"
               @click="openRejectDialog(item)"
             >
               {{ t('approvals.reject') }}
@@ -221,8 +314,7 @@
               v-if="authStore.isAdmin"
               type="button"
               class="action-btn approve"
-              :disabled="processingId === item.id || !canApprove(item)"
-              :title="!canApprove(item) ? t('approvals.categoryRequired') : undefined"
+              :disabled="processingId === item.id || isBulkProcessing"
               @click="handleApprove(item)"
             >
               <span v-if="processingId === item.id">{{ t('approvals.approving') }}</span>
@@ -232,7 +324,7 @@
               v-if="authStore.isAdmin && item.source === 'USER_IMPORT'"
               type="button"
               class="action-btn approve-personal"
-              :disabled="processingId === item.id"
+              :disabled="processingId === item.id || isBulkProcessing"
               :title="t('approvals.approvePersonalHint')"
               @click="handleApprovePersonal(item)"
             >
@@ -242,6 +334,7 @@
         </div>
       </div>
     </div>
+    </template>
 
     <!-- Load More Button -->
     <div v-if="nextCursor && !isLoading" class="load-more">
@@ -250,6 +343,8 @@
         <span v-else>{{ t('approvals.loadMore') }}</span>
       </button>
     </div>
+
+    </template>
 
     <!-- Preview Modals -->
     <ChannelDetailModal
@@ -281,23 +376,30 @@
       <div v-if="showRejectDialog" class="modal-overlay" @click="closeRejectDialog">
         <div class="modal" @click.stop>
           <header class="modal-header">
-            <h2>{{ t('approvals.rejectDialog.title') }}</h2>
+            <h2>
+              {{ rejectTargets.length > 1
+                ? t('approvals.rejectDialog.titleMany', { count: rejectTargets.length })
+                : t('approvals.rejectDialog.title') }}
+            </h2>
             <button type="button" class="close-button" @click="closeRejectDialog">×</button>
           </header>
 
           <form @submit.prevent="handleReject">
             <div class="modal-body">
-              <p class="reject-content-name">{{ rejectItem?.title }}</p>
+              <p v-if="rejectTargets.length === 1" class="reject-content-name">{{ rejectTargets[0]?.title }}</p>
+              <ul v-else class="reject-content-list">
+                <li v-for="target in rejectTargets" :key="target.id">{{ target.title }}</li>
+              </ul>
 
               <div class="form-group">
-                <label for="reject-reason">{{ t('approvals.rejectDialog.reason') }} *</label>
+                <label for="reject-reason">{{ t('approvals.rejectDialog.reason') }}</label>
                 <textarea
                   id="reject-reason"
                   v-model="rejectReason"
                   rows="4"
-                  required
                   :placeholder="t('approvals.rejectDialog.reasonPlaceholder')"
                 ></textarea>
+                <p class="form-hint">{{ t('approvals.rejectDialog.reasonOptional') }}</p>
               </div>
 
               <div v-if="rejectError" class="form-error">{{ rejectError }}</div>
@@ -308,7 +410,9 @@
                 {{ t('approvals.rejectDialog.cancel') }}
               </button>
               <button type="submit" class="button danger" :disabled="isRejecting">
-                {{ isRejecting ? t('approvals.rejectDialog.rejecting') : t('approvals.rejectDialog.confirm') }}
+                <span v-if="isRejecting">{{ t('approvals.rejectDialog.rejecting') }}</span>
+                <span v-else-if="rejectTargets.length > 1">{{ t('approvals.rejectDialog.confirmMany') }}</span>
+                <span v-else>{{ t('approvals.rejectDialog.confirm') }}</span>
               </button>
             </div>
           </form>
@@ -325,7 +429,7 @@ import { useAuthStore } from '@/stores/auth';
 import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 import { useToast } from '@/composables/useToast';
 import { getAllCategories } from '@/services/categoryService';
-import { getPendingApprovals, getMySubmissions, approveItem, rejectItem as rejectItemApi, getPendingCount, type PendingApproval, type SubmissionStatus, type MySubmission } from '@/services/approvalService';
+import { getPendingApprovals, getPendingSubmitters, getMySubmissions, approveItem, rejectItem as rejectItemApi, getPendingCount, type PendingApproval, type PendingSubmitter, type SubmissionStatus, type MySubmission } from '@/services/approvalService';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
@@ -339,6 +443,83 @@ const isModeratorView = computed(() => !authStore.isAdmin);
 const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
 const categoryFilter = ref('');
 const statusFilter = ref<SubmissionStatus>('PENDING');
+
+/**
+ * Admin view splits into two kinds of work: the moderator-curated queue, and bulk imports from
+ * ordinary users, which are reviewed per person.
+ */
+const adminTab = ref<'queue' | 'byUser'>('queue');
+const submitters = ref<PendingSubmitter[]>([]);
+const selectedSubmitter = ref<PendingSubmitter | null>(null);
+const submittersError = ref<string | null>(null);
+/** Set when a decision inside a drill-down invalidates the submitter counts. */
+const submitterCountsStale = ref(false);
+const isLoadingSubmitters = ref(false);
+
+/** True while the by-user tab is showing the list of people rather than one person's items. */
+const showingSubmitterList = computed(
+  () => !isModeratorView.value && adminTab.value === 'byUser' && !selectedSubmitter.value
+);
+
+async function loadSubmitters() {
+  isLoadingSubmitters.value = true;
+  submittersError.value = null;
+  try {
+    submitters.value = await getPendingSubmitters();
+  } catch {
+    submittersError.value = t('approvals.byUser.error');
+  } finally {
+    isLoadingSubmitters.value = false;
+  }
+}
+
+/**
+ * How many phone imports are waiting, across everybody.
+ *
+ * Summed from the by-user roll-up, which scans a bounded number of pending documents. Past that
+ * bound this under-counts, so the queue badge — which subtracts it from an exact total — would
+ * over-report by however many imports went uncounted. Bounded by a queue depth far past what a
+ * person reviews by hand, and the server logs when it hits it.
+ */
+const userImportTotal = computed(() =>
+  submitters.value.reduce((sum, s) => sum + s.pendingCount, 0)
+);
+
+function selectAdminTab(tab: 'queue' | 'byUser') {
+  if (adminTab.value === tab) return;
+  adminTab.value = tab;
+  selectedSubmitter.value = null;
+  clearSelection();
+  approvals.value = [];
+  nextCursor.value = null;
+  if (tab === 'byUser') {
+    if (!submitters.value.length || submitterCountsStale.value) loadSubmitters();
+    submitterCountsStale.value = false;
+  } else {
+    loadApprovals();
+  }
+}
+
+function openSubmitter(submitter: PendingSubmitter) {
+  selectedSubmitter.value = submitter;
+  // The per-submitter query cannot filter by category; clear it rather than leave a filter set
+  // that no longer affects the results.
+  categoryFilter.value = '';
+  clearSelection();
+  loadApprovals();
+}
+
+function backToSubmitters() {
+  const countsChanged = submitterCountsStale.value;
+  selectedSubmitter.value = null;
+  submitterCountsStale.value = false;
+  clearSelection();
+  approvals.value = [];
+  nextCursor.value = null;
+  // The roll-up scans every pending document, so only pay for it when a decision in the
+  // drill-down can actually have moved the counts.
+  if (countsChanged || submitters.value.length === 0) loadSubmitters();
+}
 
 const statusTabs = [
   { value: 'PENDING' as SubmissionStatus, labelKey: 'approvals.statusTabs.pending' },
@@ -428,17 +609,106 @@ function itemHasCategories(item: any): boolean {
 }
 
 /**
- * Returns true when the Approve button may be clicked for this item.
- * Items that already have at least one category approve unconditionally.
- * Items with no categories require the admin to pick a category first.
+ * Selection state for the bulk actions bar. Holds ids rather than items so it survives the
+ * splice in [removeFromQueue] without dangling references.
  */
-function canApprove(item: any): boolean {
-  if (itemHasCategories(item)) return true;
-  return !!selectedCategoryOverrides.value[item.id];
+const selectedIds = ref<Set<string>>(new Set());
+const bulkCategory = ref('');
+const isBulkProcessing = ref(false);
+
+const selectedItems = computed(() => approvals.value.filter(i => selectedIds.value.has(i.id)));
+const allLoadedSelected = computed(
+  () => approvals.value.length > 0 && approvals.value.every(i => selectedIds.value.has(i.id))
+);
+const someLoadedSelected = computed(() => selectedIds.value.size > 0 && !allLoadedSelected.value);
+/** True when any selected item would be approved with no category at all. */
+const selectionHasUncategorised = computed(() => selectedItems.value.some(i => !itemHasCategories(i)));
+
+function isSelected(id: string): boolean {
+  return selectedIds.value.has(id);
+}
+
+function toggleSelect(id: string) {
+  // Reassign so Vue tracks the change — Set mutations are not reactive.
+  const next = new Set(selectedIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selectedIds.value = next;
+}
+
+function toggleSelectAll() {
+  selectedIds.value = allLoadedSelected.value
+    ? new Set()
+    : new Set(approvals.value.map(i => i.id));
+}
+
+function clearSelection() {
+  selectedIds.value = new Set();
+  bulkCategory.value = '';
+}
+
+/**
+ * Drop actioned items from the loaded queue instead of refetching it.
+ *
+ * Refetching reset the cursor to the first page and threw away every page the reviewer had
+ * loaded, so acting on the 100th item sent them back to the top. Splicing leaves the scroll
+ * position untouched and costs one request fewer per action.
+ */
+function removeFromQueue(ids: string[]) {
+  if (ids.length && selectedSubmitter.value) submitterCountsStale.value = true;
+  const gone = new Set(ids);
+  approvals.value = approvals.value.filter(item => !gone.has(item.id));
+  const nextSelection = new Set(selectedIds.value);
+  ids.forEach(id => {
+    delete selectedCategoryOverrides.value[id];
+    nextSelection.delete(id);
+  });
+  selectedIds.value = nextSelection;
+
+  // Approving the whole loaded page empties the list while there are still pages behind it,
+  // which would render "no pending approvals" directly above a Load more button. Pull the next
+  // page instead — with a deep queue this is the normal outcome of a bulk approve, not an edge.
+  if (approvals.value.length === 0 && nextCursor.value && !isLoading.value && !isLoadingMore.value) {
+    loadApprovals(true);
+  }
+}
+
+/**
+ * Run `task` over `items` with at most `limit` in flight.
+ *
+ * The queue actions go through the per-item approve/reject endpoints — those are the only ones
+ * that graduate the importers' rows, write approval metadata and audit, and CAS on PENDING. A
+ * cap keeps a 50-item bulk from opening 50 sockets at once.
+ */
+async function runBounded<T>(items: T[], limit: number, task: (item: T) => Promise<void>) {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      await task(items[cursor++]);
+    }
+  });
+  await Promise.all(workers);
+}
+
+const BULK_CONCURRENCY = 4;
+
+/** How many empty-but-cursored pages to step past before handing control back to the reviewer. */
+const MAX_EMPTY_PAGE_RETRIES = 3;
+
+/**
+ * Category to send for one item: its own if it has one, otherwise whatever the caller chose.
+ * A blank choice is legitimate — the item is approved uncategorized.
+ */
+function categoryOverrideFor(item: any, chosen: string): string | undefined {
+  if (itemHasCategories(item)) return undefined;
+  // A category picked on the card itself is the more specific instruction; the bulk picker is
+  // the fallback for everything the admin did not file by hand.
+  return selectedCategoryOverrides.value[item.id] || chosen || undefined;
 }
 
 const showRejectDialog = ref(false);
-const rejectItem = ref<any | null>(null);
+/** Items the open reject dialog will act on — one for a card reject, N for a bulk reject. */
+const rejectTargets = ref<any[]>([]);
 const rejectReason = ref('');
 const isRejecting = ref(false);
 const rejectError = ref<string | null>(null);
@@ -457,7 +727,14 @@ const contentTypes = [
 const totalPending = ref<number | null>(null);
 const countUnavailable = ref(false);
 const displayPendingCount = computed(() => {
-  if (totalPending.value !== null) return totalPending.value;
+  // The by-user tab counts its own; the queue's badge must not include the imports it no longer
+  // shows, or the number and the list disagree by exactly that many.
+  if (adminTab.value === 'byUser' && !isModeratorView.value) return userImportTotal.value;
+  if (totalPending.value !== null) {
+    return isModeratorView.value
+      ? totalPending.value
+      : Math.max(0, totalPending.value - userImportTotal.value);
+  }
   // Before any count loads, show loaded items count as lower-bound
   return approvals.value.length;
 });
@@ -501,22 +778,29 @@ async function loadApprovals(append = false) {
       }
       nextCursor.value = result.nextCursor;
     } else {
-      const result = await getPendingApprovals({
-        type: contentType.value,
-        category: categoryFilter.value || undefined,
-        cursor: append ? (nextCursor.value || undefined) : undefined
-      });
-      // Map PendingApproval items to MySubmission with default status
-      const mapped: MySubmission[] = result.items.map(item => ({
-        ...item,
-        status: 'PENDING' as const
-      }));
-      if (append) {
-        approvals.value = [...approvals.value, ...mapped];
-      } else {
-        approvals.value = mapped;
+      let cursor = append ? (nextCursor.value || undefined) : undefined;
+      const collected: MySubmission[] = [];
+
+      // A cursor page can come back empty while still handing back a next cursor — a type filter
+      // that skips a whole cursor window, for instance. Landing on "no pending approvals" above
+      // a Load more button is worse than one more request, so step past a few of those.
+      for (let attempt = 0; attempt < MAX_EMPTY_PAGE_RETRIES; attempt++) {
+        const result = await getPendingApprovals({
+          type: contentType.value,
+          category: categoryFilter.value || undefined,
+          submittedBy: selectedSubmitter.value?.uid,
+          // The queue is moderator submissions only; phone imports live in the by-user tab.
+          // Applied server-side, so a page never comes back empty with more waiting behind it.
+          scope: selectedSubmitter.value ? undefined : 'MODERATOR_QUEUE',
+          cursor
+        });
+        collected.push(...result.items.map(item => ({ ...item, status: 'PENDING' as const })));
+        cursor = result.nextCursor || undefined;
+        nextCursor.value = result.nextCursor;
+        if (collected.length || !result.nextCursor) break;
       }
-      nextCursor.value = result.nextCursor;
+
+      approvals.value = append ? [...approvals.value, ...collected] : collected;
     }
   } catch (err) {
     if (!append) {
@@ -531,6 +815,9 @@ async function loadApprovals(append = false) {
 }
 
 function handleFilterChange() {
+  // The selection refers to the list being replaced. Keeping it would leave the bulk bar
+  // claiming "3 selected" over cards that are no longer loaded, with buttons that do nothing.
+  clearSelection();
   loadApprovals();
 }
 
@@ -542,25 +829,58 @@ function loadMore() {
 
 async function handleApprove(item: any) {
   if (processingId.value) return;
-  if (!canApprove(item)) return;
 
-  // Determine category override: only send for items with no existing categories
-  const categoryOverride = !itemHasCategories(item)
-    ? selectedCategoryOverrides.value[item.id]
-    : undefined;
+  const categoryOverride = categoryOverrideFor(item, '');
 
   processingId.value = item.id;
   try {
     await approveItem(item.id, item.type, categoryOverride);
-    // Clear the per-item override after a successful approve
-    delete selectedCategoryOverrides.value[item.id];
-    await loadApprovals();
+    removeFromQueue([item.id]);
     loadPendingCount();
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('approvals.approveError');
   } finally {
     processingId.value = null;
   }
+}
+
+async function bulkApprove() {
+  if (isBulkProcessing.value) return;
+  const batch = selectedItems.value;
+  if (!batch.length) return;
+
+  const chosen = bulkCategory.value;
+  const approved: string[] = [];
+  let failed = 0;
+  let firstError: string | null = null;
+
+  isBulkProcessing.value = true;
+  try {
+    await runBounded(batch, BULK_CONCURRENCY, async item => {
+      try {
+        await approveItem(item.id, item.type, categoryOverrideFor(item, chosen));
+        approved.push(item.id);
+      } catch (err) {
+        // One rejection from the server must not abandon the rest of the batch — but a batch
+        // where everything failed must still say why, not just how many.
+        failed += 1;
+        if (!firstError) firstError = err instanceof Error ? err.message : null;
+      }
+    });
+  } finally {
+    isBulkProcessing.value = false;
+  }
+
+  removeFromQueue(approved);
+  bulkCategory.value = '';
+  loadPendingCount();
+  toast[failed ? 'warning' : 'success'](
+    failed
+      // Never through `error` — that ref gates the whole grid, so a failed batch would replace
+      // every loaded page with an error panel whose retry refetches from page one.
+      ? `${t('approvals.bulk.approvedWithFailures', { ok: approved.length, failed })}${firstError ? ` — ${firstError}` : ''}`
+      : t('approvals.bulk.approved', { ok: approved.length })
+  );
 }
 
 /**
@@ -572,8 +892,7 @@ async function handleApprovePersonal(item: any) {
   processingId.value = item.id;
   try {
     await approveItem(item.id, item.type, undefined, undefined, 'PERSONAL');
-    delete selectedCategoryOverrides.value[item.id];
-    await loadApprovals();
+    removeFromQueue([item.id]);
     loadPendingCount();
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('approvals.approveError');
@@ -583,7 +902,16 @@ async function handleApprovePersonal(item: any) {
 }
 
 function openRejectDialog(item: any) {
-  rejectItem.value = item;
+  rejectTargets.value = [item];
+  rejectReason.value = '';
+  rejectError.value = null;
+  showRejectDialog.value = true;
+}
+
+/** Same dialog, whole selection — one reason typed once, applied to every item. */
+function openBulkRejectDialog() {
+  if (!selectedItems.value.length) return;
+  rejectTargets.value = [...selectedItems.value];
   rejectReason.value = '';
   rejectError.value = null;
   showRejectDialog.value = true;
@@ -591,27 +919,53 @@ function openRejectDialog(item: any) {
 
 function closeRejectDialog() {
   showRejectDialog.value = false;
-  rejectItem.value = null;
+  rejectTargets.value = [];
   rejectReason.value = '';
   rejectError.value = null;
 }
 
 async function handleReject() {
-  if (!rejectReason.value.trim()) {
-    rejectError.value = t('approvals.rejectDialog.reasonRequired');
-    return;
-  }
+  const targets = rejectTargets.value;
+  if (!targets.length) return;
+
+  // The reason is optional. Blank means "no feedback", not "OTHER".
+  const reason = rejectReason.value.trim() || undefined;
+  const rejected: string[] = [];
+  let failed = 0;
 
   isRejecting.value = true;
   rejectError.value = null;
 
+  let firstError: string | null = null;
+
   try {
-    await rejectItemApi(rejectItem.value!.id, rejectItem.value!.type, rejectReason.value);
+    await runBounded(targets, BULK_CONCURRENCY, async item => {
+      try {
+        await rejectItemApi(item.id, item.type, reason);
+        rejected.push(item.id);
+      } catch (err) {
+        failed += 1;
+        // Keep the server's words for the reviewer — "already reviewed in another tab" is
+        // actionable in a way that a generic failure is not.
+        if (!firstError) firstError = err instanceof Error ? err.message : null;
+      }
+    });
+
+    if (!rejected.length) {
+      rejectError.value = firstError || t('approvals.rejectError');
+      return;
+    }
+
     closeRejectDialog();
-    await loadApprovals();
+    removeFromQueue(rejected);
     loadPendingCount();
-  } catch (err) {
-    rejectError.value = err instanceof Error ? err.message : t('approvals.rejectError');
+    if (targets.length > 1) {
+      toast[failed ? 'warning' : 'success'](
+        failed
+          ? t('approvals.bulk.rejectedWithFailures', { ok: rejected.length, failed })
+          : t('approvals.bulk.rejected', { ok: rejected.length })
+      );
+    }
   } finally {
     isRejecting.value = false;
   }
@@ -661,6 +1015,8 @@ onMounted(() => {
   loadCategories();
   loadApprovals();
   loadPendingCount();
+  // Needed by the queue badge too, which subtracts the imports it no longer lists.
+  if (!isModeratorView.value) loadSubmitters();
 });
 </script>
 
@@ -958,10 +1314,134 @@ onMounted(() => {
   line-height: 1.5;
 }
 
+.approval-card.selected {
+  border-color: var(--color-brand);
+  box-shadow: inset 3px 0 0 var(--color-brand);
+}
+
 .card-header-left {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.card-select {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  accent-color: var(--color-brand);
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.submitter-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.submitter-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  text-align: start;
+  font: inherit;
+  color: inherit;
+}
+
+@media (hover: hover) {
+  .submitter-row:hover {
+    border-color: var(--color-brand);
+  }
+}
+
+.submitter-name {
+  font-weight: 600;
+}
+
+.submitter-count {
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #64748b);
+  white-space: nowrap;
+}
+
+.submitter-crumb {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.bulk-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+}
+
+.bulk-select-all {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.bulk-select-all input {
+  accent-color: var(--color-brand);
+}
+
+.bulk-count {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.bulk-category {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+/* Push the actions to the trailing edge — direction-aware, so RTL mirrors correctly. */
+.bulk-bar .button:first-of-type {
+  margin-inline-start: auto;
+}
+
+.reject-content-list {
+  margin: 0 0 1rem;
+  padding-inline-start: 1.25rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  font-size: 0.875rem;
+}
+
+.form-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #64748b);
 }
 
 .content-type {
@@ -987,17 +1467,16 @@ onMounted(() => {
   border: 1px solid rgba(139, 92, 246, 0.3);
 }
 
-.category-required-row {
+.category-optional-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.875rem 1.5rem;
-  background: var(--color-warning-soft, rgba(245, 158, 11, 0.08));
+  background: var(--color-surface-muted, rgba(148, 163, 184, 0.08));
   border-top: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-warning, #f59e0b);
 }
 
-.category-required-row .meta-label {
+.category-optional-row .meta-label {
   white-space: nowrap;
   font-size: 0.875rem;
 }
