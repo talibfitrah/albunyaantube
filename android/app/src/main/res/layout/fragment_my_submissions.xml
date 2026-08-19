@@ -41,7 +41,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
+            android:layout_marginStart="@dimen/spacing_lg"
+            android:layout_marginEnd="@dimen/spacing_lg"
             android:text="@string/my_submissions_empty"
+            android:textAlignment="center"
             android:textAppearance="?attr/textAppearanceBodyLarge"
             android:visibility="gone" />
 
