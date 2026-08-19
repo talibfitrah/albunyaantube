@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.39": {
+    "en": "My Submissions no longer runs text into the screen edges. Admin content library fixes on the server side.",
+    "ar": "شاشة إرسالاتي لم تعد تلصق النص بحواف الشاشة. مع إصلاحات لمكتبة المحتوى في لوحة الإدارة.",
+    "nl": "Mijn voorstellen plakt de tekst niet meer tegen de schermranden. Plus fixes voor de inhoudsbibliotheek."
+  },
   "1.0.0-beta.38": {
     "en": "Videos no longer stop after a minute. Live channels play without interruption, and audio-language switching is instant.",
     "ar": "الفيديوهات لم تعد تتوقف بعد دقيقة. القنوات المباشرة تعمل دون انقطاع، وتبديل لغة الصوت صار فوريًا.",

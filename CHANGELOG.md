@@ -5,8 +5,32 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.39] - 2026-08-19
+
+### Admin dashboard
+
+- **Content Library stopped at 200 items per type.** The browse fetch never asked
+  Firestore for more than 200 documents per type no matter how deep you paged, and
+  the item count was derived from that already-capped list — so the screen reported
+  the ceiling as the size of the library, and everything past the 200th item was
+  unreachable. Filtering to channels and scrolling to the bottom showed "200" and
+  stopped, whatever the real number was. The browse ceiling is now 2000. Search
+  keeps its own separate 200 bound: its queries ignore the requested page, so
+  letting it follow the browse ceiling would have multiplied the cost of every
+  keystroke by the same factor.
+- **The header now shows how much is actually in the registry.** Per-type counts for
+  channels, playlists and videos, counted server-side and therefore exact even when
+  a listing is truncated, labelled "In the registry, all statuses" so a status
+  filter doesn't make the number look wrong. Videos counts individually-added videos
+  only — approving a channel or a playlist doesn't create video entries, so the
+  videos inside them are not counted.
+
 ### Android
 
+- **My Submissions ran its text into the screen edges.** The empty-state message had
+  no side margin at all and wrapped hard against both bounds; the submission rows
+  were uneven, 16dp on the left against 8dp on the right, leaving their text tight
+  to the right edge. Both now have proper gutters.
 - **In-app auto-update no longer silently skips itself.** On cold start the
   splash probes GitHub for a newer release, but the probe was capped at 2000 ms
   while the splash animates for 2750 ms before it even reads the answer — so the
