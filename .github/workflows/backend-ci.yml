@@ -10,6 +10,44 @@ on:
     - cron: '0 2 * * *'  # Nightly at 2 AM UTC for integration tests
 
 jobs:
+  firestore-index-drift:
+    name: Firestore index drift
+    # Not on pull_request: drift is a property of production, not of the branch,
+    # so a PR should not go red because someone forgot to create an index.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyjwt cryptography
+
+      # firestore.indexes.json is a declaration that nothing deploys. Every
+      # collection-group index it declares was missing from production until
+      # 2026-08-19, which silently broke the approval fan-out: its query returned
+      # FAILED_PRECONDITION and the caller swallowed it as best-effort.
+      #
+      # Needs a service-account key with datastore.indexes.list. Skipped, not
+      # failed, when the secret is absent, so forks and PRs from forks still pass.
+      - name: Check declared indexes are live
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT not set — index drift NOT checked."
+            exit 0
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+          GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json" \
+            python3 scripts/check-firestore-indexes.py
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest

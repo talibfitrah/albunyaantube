@@ -201,6 +201,8 @@ class SyncManager @Inject constructor(
             }
             if (resp == null || !resp.isSuccessful) return
             val body = resp.body() ?: return
+            val cursorsBefore = cursors.toMap()
+            val lastIdsBefore = lastIds.toMap()
 
             db.withTransaction {
                 // Cubic R7 P1 — anon-merge timestamp guard.
@@ -329,9 +331,36 @@ class SyncManager @Inject constructor(
             // per pull cycle, deemed acceptable for the simpler client
             // loop. Per-type exhaustion tracking would require restructuring
             // the request DTO (per-type "stop sending this" flag).
-            more = (body.subscriptions.nextCursor != null) ||
-                   (body.playlists.nextCursor     != null) ||
-                   (body.favorites.nextCursor     != null)
+            // A page that hands back the cursor it was queried with cannot make
+            // progress — the next request returns the same rows. Observed in
+            // production when a stored updatedAt carried sub-millisecond precision
+            // the millisecond cursor cannot express, so the server's startAfter()
+            // never passed the row: the loop ran unthrottled (~3 requests/second),
+            // starved the shared OkHttp client, and left the app on the splash
+            // screen. Stop instead of spinning, whatever stalled the cursor.
+            // Two different reasons to stop, and they must not be conflated: every
+            // type returning a null cursor is normal exhaustion, while a type that
+            // mints back the cursor it was queried with is stalled and cannot make
+            // progress — the next request returns the same rows. Observed in
+            // production when a stored updatedAt carried sub-millisecond precision
+            // the millisecond cursor cannot express, so the server's startAfter()
+            // never passed the row: the loop ran unthrottled (~3 requests/second),
+            // starved the shared OkHttp client, and left the app on the splash
+            // screen.
+            val mintedCursor = (body.subscriptions.nextCursor != null) ||
+                               (body.playlists.nextCursor     != null) ||
+                               (body.favorites.nextCursor     != null)
+            val advanced = cursors != cursorsBefore || lastIds != lastIdsBefore
+            if (mintedCursor && !advanced) {
+                // Stopping beats spinning, but a stalled cursor means this account
+                // stops receiving server changes until something moves it, and that
+                // must not be silent too — it is the same class of bug as the
+                // swallowed fan-out failure that hid broken approvals for months.
+                android.util.Log.w("SyncManager",
+                        "Sync cursor did not advance; stopping pull. " +
+                        "Server keeps returning cursors=$cursors ids=$lastIds")
+            }
+            more = mintedCursor && advanced
         } while (more)
     }
 

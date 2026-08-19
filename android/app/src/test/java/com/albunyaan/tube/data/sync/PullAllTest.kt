@@ -111,4 +111,36 @@ class PullAllTest {
         assertEquals(2, db.subscribedChannelDao().count("uid"))
         assertEquals(200L, db.syncStateDao().cursorFor("uid", "subscriptions"))
     }
+
+    /**
+     * A server that keeps returning the same (nextCursor, nextCursorId) cannot make
+     * progress, whatever the reason — e.g. a stored updatedAt carrying sub-millisecond
+     * precision the millisecond cursor cannot express, so startAfter() never passes the
+     * row. Pre-fix the do-while only asked "did any page mint a cursor", so this span
+     * an unthrottled request loop (~3/s observed on a real device) that starved the
+     * shared OkHttp client and left the app stuck on the splash screen.
+     */
+    @Test fun stopsWhenTheServerCursorDoesNotAdvance() = runTest {
+        val stuck = SubscriptionSyncDto("UC-STUCK", false, 1787160466489L, "u", "n", null, 0L)
+        var calls = 0
+        api.pullResponse = {
+            calls++
+            // Escape hatch so a regression fails the assertion instead of hanging forever.
+            if (calls > 20) Response.success(SyncResponseDto(
+                SyncPageDto(emptyList(), null),
+                SyncPageDto(emptyList(), null),
+                SyncPageDto(emptyList(), null)))
+            else Response.success(SyncResponseDto(
+                SyncPageDto(listOf(stuck), 1787160466489L, "UC-STUCK"),
+                SyncPageDto(emptyList(), null),
+                SyncPageDto(emptyList(), null)))
+        }
+
+        sm.pullAll("uid")
+
+        // Two calls, not one: the first page genuinely advances the cursor off its
+        // initial 0, and the second is the first one that repeats it. Anything above
+        // two means the loop kept spinning on a cursor that never moves.
+        assertEquals("must stop at the first non-advancing page", 2, calls)
+    }
 }

@@ -190,3 +190,7 @@ synthetic_dash_data.json
 
 # graphify knowledge graph (generated, 67MB — rebuild with `graphify update .`)
 /graphify-out/
+
+# Python bytecode from scripts/
+__pycache__/
+*.pyc
