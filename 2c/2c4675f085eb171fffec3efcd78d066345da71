@@ -1,0 +1,236 @@
+backend/src/main/java/com/albunyaan/tube/dto/PendingSubmitterDto.java
+  s_49f3d821ce347d::t_afd2efe72bd1c0 1-69
+android/app/src/main/res/layout-sw600dp/fragment_me.xml
+  s_49f3d821ce347d::t_c9b7b2f08d536b 21-29
+frontend/tests/ContentLibraryVisibility.spec.ts
+  s_49f3d821ce347d::t_be19108ca288e1 1-86,98,102-104,111-113
+  s_49f3d821ce347d::t_47ffe3e7ac4550 99-101
+  s_49f3d821ce347d::t_b15782e2cb718e 87-97
+  s_49f3d821ce347d::t_fc5a9a9ebce2b7 105-110
+backend/src/test/java/com/albunyaan/tube/controller/ApprovedPickerTest.java
+  s_49f3d821ce347d::t_626f63a599f479 26,93-95,105,120-121,124,139
+  s_49f3d821ce347d::t_c23c42ec61c767 151-173,176
+  s_49f3d821ce347d::t_94450223ceed7f 1-25,27-92,96-104,106-119,122-123,125-132,148-150,174-175,177-178
+  s_49f3d821ce347d::t_ee6ea4ce29d542 133-138,140-147
+frontend/tests/approvalSourceMapping.spec.ts
+  s_49f3d821ce347d::t_d0c523bc0bcd28 122-168
+frontend/src/services/approvalService.ts
+  s_49f3d821ce347d::t_719bcfd58b1128 220-238,242-244,259,271
+  s_49f3d821ce347d::t_a2fd71426dcd2f 219,246-253,260,272
+  s_49f3d821ce347d::t_6d79e420c63445 25,27-31
+  s_49f3d821ce347d::t_58ad8a0c483662 305-309,314,319
+  s_49f3d821ce347d::t_00144c82fb8735 123-130
+backend/src/main/java/com/albunyaan/tube/repository/ApprovalRepository.java
+  s_49f3d821ce347d::t_1f712f470bcfbb 186-205,212-215,220-229
+  s_49f3d821ce347d::t_9dd3fd02ade200 32-33,206-211,216-219
+android/.gitignore
+  s_49f3d821ce347d::t_97697e9fa24226 12
+backend/src/test/java/com/albunyaan/tube/service/PendingSubmittersTest.java
+  s_49f3d821ce347d::t_d5a6092d6d63df 1-107,109-118,134-167
+  s_49f3d821ce347d::t_f329cf4c09d094 108,119-121,126-132
+  s_49f3d821ce347d::t_c4b83b7c21a269 122-125,133
+android/app/src/main/res/values/strings.xml
+  s_49f3d821ce347d::t_3b5e8b187583bc 898-899
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryBulkGraduationTest.java
+  s_49f3d821ce347d::t_28ba9dbc57a9a2 22,67,179,188,197
+  s_49f3d821ce347d::t_9c31b9b96ca047 69
+  s_49f3d821ce347d::t_c79a723590de10 1-20,23-30,33-34,37-38,40-66,68,70-104,166-178,180,182-187,189,191-196,198,241-242
+  s_49f3d821ce347d::t_1a812c2943a300 32,39,129-165,181,190,199,228-240
+  s_49f3d821ce347d::t_d1c904284b87c8 21,31,35-36,105-128,200-227
+backend/src/main/java/com/albunyaan/tube/service/ApprovalService.java
+  s_49f3d821ce347d::t_19d35394ecd365 31-37,1653-1663,1666-1667,1670-1696
+  s_49f3d821ce347d::t_d1c2a0b70094fd 157-168,170,173,189-190,192-193,195-197,1699
+  s_49f3d821ce347d::t_186cc7bffac0ad 1228,1319,1516
+  s_49f3d821ce347d::t_73c0d388ca5186 1700-1710,1712
+  s_49f3d821ce347d::t_619172fa0c1f32 117-121,169,171-172,174-188,191,194
+  s_49f3d821ce347d::t_8b44b41ac74092 83-116,122-156,198-203,1664-1665,1668-1669,1697
+  s_49f3d821ce347d::t_56e6524583fddd 1698
+backend/src/test/java/com/albunyaan/tube/controller/ApprovalControllerTest.java
+  s_49f3d821ce347d::t_e39daeec15dac7 84,112,131,285,299,392
+  s_49f3d821ce347d::t_97b2be479fab63 52-75,78,80,85-91,93,95,98-99
+  s_49f3d821ce347d::t_c4b83b7c21a269 124,138
+  s_49f3d821ce347d::t_dd9be16f22942a 76-77,79,81-83,92,94,96-97,117,135,290,304,397
+android/app/src/main/java/com/albunyaan/tube/ui/me/MeFragment.kt
+  s_49f3d821ce347d::t_4d49118d1b6c16 157-165
+  s_49f3d821ce347d::t_8bdc8ae402d085 364-366
+  s_49f3d821ce347d::t_c292109b6f80cc 134-136,395
+  s_49f3d821ce347d::t_f9aced948d55a1 61-64
+  s_49f3d821ce347d::t_3b6a89707f5247 17,130,137-140,175-180,218-220,223-226,238-239,350-363,367-379,387-388,404-405
+  s_49f3d821ce347d::t_88f27abe7138d2 389-393,396
+  s_49f3d821ce347d::t_671f0ba2349252 93-95,380-386,394,397
+  s_49f3d821ce347d::t_6a30c0f84ba41d 47-60,398-403,406-408,458-460
+frontend/tests/PendingApprovalsByUser.spec.ts
+  s_49f3d821ce347d::t_dd66f6105cb574 74-75,77,84-88,101-131,169,171
+  s_49f3d821ce347d::t_a17483d6240fe2 1-73,76,78-83,89-90,92,95-99,132-165,167,170,172-185
+  s_49f3d821ce347d::t_9645b6b33df23c 91,93-94,100
+  s_49f3d821ce347d::t_20ae0e6a56e023 166,168
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_49f3d821ce347d::t_8bdc8ae402d085 127-134
+  s_49f3d821ce347d::t_3f965387c34d3b 880,883-886,888-891,893-894,899,904-909,911-913,916,918,921-922,924
+  s_49f3d821ce347d::t_6d37acd1c258c8 966-967,1003-1005,1008-1009,1011-1018
+  s_49f3d821ce347d::t_4dd5955ee3f352 938-940
+  s_49f3d821ce347d::t_b67380edd44c7c 9,67,78-79,90
+  s_49f3d821ce347d::t_bb218d66b3c9ae 113,505,879,881-882,887,895-898,900-903,910,914-915,917,919-920,923,925-926
+  s_49f3d821ce347d::t_7c483bef787622 16,339,342-343,353,357-358,368,371-372,428,450-458,464-504
+  s_49f3d821ce347d::t_e177cd09f3b2b5 11-12
+  s_49f3d821ce347d::t_32c183b34b943b 114-122,135-144,150,152-154,158,160-162,166,168-172,190-223
+  s_49f3d821ce347d::t_5d1ca4e6a1c12d 151,159,167,173-174,182-189
+  s_49f3d821ce347d::t_3398f6dfd3e2db 66,77
+  s_49f3d821ce347d::t_a3e16dc095414b 1026
+  s_49f3d821ce347d::t_c23c42ec61c767 147-149,155-157,163-165,175-178
+  s_49f3d821ce347d::t_cdd8f75b6f0fcc 89
+  s_49f3d821ce347d::t_c1641a9afd12c9 829-835
+  s_49f3d821ce347d::t_c292109b6f80cc 123-126,459-463
+  s_49f3d821ce347d::t_6a1424e5774de2 892
+  s_49f3d821ce347d::t_d6d2c61cd1c9ff 1027
+  s_49f3d821ce347d::t_011d3dfcc34414 145-146,179-181
+  s_49f3d821ce347d::t_ee78cc1cbf63d7 506
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryVisibilityTest.java
+  s_49f3d821ce347d::t_219a055dbcf2d7 91-92,94
+  s_49f3d821ce347d::t_fc62b125968839 1-90,93,95-139
+backend/src/main/java/com/albunyaan/tube/dto/RejectionRequestDto.java
+  s_49f3d821ce347d::t_505c4e5683f31c 11-15
+android/app/src/main/res/layout-sw720dp/fragment_me.xml
+  s_49f3d821ce347d::t_c9b7b2f08d536b 21-29
+frontend/src/views/ContentLibraryView.vue
+  s_49f3d821ce347d::t_b15782e2cb718e 1115-1120
+  s_49f3d821ce347d::t_591f4f2f05f46c 237-238,365-366,591-594,1104-1106,1110-1114,1121-1124,2060-2068
+  s_49f3d821ce347d::t_b8530636c52f0d 2059
+  s_49f3d821ce347d::t_cb19d98d642aec 2069
+backend/src/main/java/com/albunyaan/tube/service/ImportGraduationService.java
+  s_49f3d821ce347d::t_7d5ce87a4e3586 16,45-47,124-128,130-152,175,181-182,191,195-197,200-201
+  s_49f3d821ce347d::t_6d37acd1c258c8 19,48-53,59
+  s_49f3d821ce347d::t_83c271dd2b1870 5,8,54-58,153-174,177,183-190,192-194,198-199
+  s_49f3d821ce347d::t_600c7d8f99834e 60-62,176,178-180
+  s_49f3d821ce347d::t_ce121b458dd0aa 202,228,230-231,233-254,256-258,260-267,269-295,297-301,303-309,311-325,327,329-342,344-350
+  s_49f3d821ce347d::t_fc6509ef51a81e 7,29-31,119,129
+  s_49f3d821ce347d::t_aebaca3180ae94 203
+frontend/tests/PendingApprovalsQueueUx.spec.ts
+  s_49f3d821ce347d::t_162dd1e1336aac 1-112,114-167,169-179,181-196
+  s_49f3d821ce347d::t_f44c888052ff8e 113,168,180
+android/app/src/test/java/com/albunyaan/tube/data/me/work/RefreshSubscriptionsWorkerSyncTest.kt
+  s_49f3d821ce347d::t_4a22153a862f17 1-25,27-97,108-111,113-157
+  s_49f3d821ce347d::t_4fe4069172a986 98-107,112
+  s_6cd6b1fcf23673::t_939e3c70b931fc 26
+CHANGELOG.md
+  s_49f3d821ce347d::t_c167e1bcdcf457 8-25,35-68,79,83-84
+  s_49f3d821ce347d::t_16da73eb4da98b 26-34,69-71,75-77,82
+  s_49f3d821ce347d::t_6f629e2013fab1 78,80-81
+  s_49f3d821ce347d::t_86954adc3a8cb7 72-74
+backend/src/test/java/com/albunyaan/tube/service/PendingQueueSourceSplitTest.java
+  s_49f3d821ce347d::t_164a2c45ef674d 131-136,142,145-152
+  s_49f3d821ce347d::t_0bda9825f26f7d 1-130,137-141,143-144,153-154
+android/app/src/main/res/layout/fragment_me.xml
+  s_49f3d821ce347d::t_c9b7b2f08d536b 21-29
+backend/src/test/java/com/albunyaan/tube/integration/ImportGraduationServiceIT.java
+  s_49f3d821ce347d::t_1b6804a3d54408 117-147
+frontend/src/services/sortOrder.ts
+  s_49f3d821ce347d::t_21367f97376d67 112-118,132-146
+frontend/src/views/ContentSortingView.vue
+  s_49f3d821ce347d::t_04dbdc06e59651 248,440
+  s_49f3d821ce347d::t_f329cf4c09d094 438-439
+  s_49f3d821ce347d::t_b15782e2cb718e 246
+  s_49f3d821ce347d::t_096793586c9363 247,441-442,457-463
+  s_49f3d821ce347d::t_7f4e41153fb283 249-250,1181-1210
+  s_49f3d821ce347d::t_cce4656ed7ae18 464,1211
+android/app/src/main/java/com/albunyaan/tube/data/me/work/RefreshSubscriptionsWorker.kt
+  s_49f3d821ce347d::t_b68697b8bd71df 153-162,166-168,193-194
+  s_49f3d821ce347d::t_ec70887befea99 171-181,213-215
+  s_6cd6b1fcf23673::t_eb0b81b37c2ea3 169
+  s_49f3d821ce347d::t_86954adc3a8cb7 182-189
+  s_49f3d821ce347d::t_01537de0edac45 163-165,191
+  s_49f3d821ce347d::t_e69f159f0f6740 170,190,192
+  s_49f3d821ce347d::t_9e347d0a77efe2 53-54
+  s_49f3d821ce347d::t_0f8cb5b8f29f9c 84
+  s_6cd6b1fcf23673::t_939e3c70b931fc 8-9,13
+backend/src/test/java/com/albunyaan/tube/service/ApprovalServiceTest.java
+  s_49f3d821ce347d::t_d2f287bd15215f 87-89,96,100-107
+frontend/tests/approvedPicker.spec.ts
+  s_49f3d821ce347d::t_c8d99f2cebde85 1-68
+frontend/src/views/PendingApprovalsView.vue
+  s_49f3d821ce347d::t_096793586c9363 132
+  s_49f3d821ce347d::t_8b7b0ccc63c27e 710-711
+  s_49f3d821ce347d::t_a2fd71426dcd2f 792-794
+  s_49f3d821ce347d::t_e3369c6326e7ff 847-854,856-862,866,868-878,882-883
+  s_49f3d821ce347d::t_d9484f6aeb5ee7 293
+  s_49f3d821ce347d::t_cd463422b5a086 703,838
+  s_49f3d821ce347d::t_04dbdc06e59651 879-881
+  s_49f3d821ce347d::t_3861f13db4030d 484-487,495-500,730-737,1018-1019
+  s_49f3d821ce347d::t_b0a183af7fc697 905-914,922,928-934,942-945,947,951-954,956-958,960,962-968
+  s_49f3d821ce347d::t_86954adc3a8cb7 476-483
+  s_49f3d821ce347d::t_1d1a8784fb67fc 337
+  s_49f3d821ce347d::t_65a68f698f23bb 895
+  s_49f3d821ce347d::t_2089ef51eaf189 186,189-196
+  s_49f3d821ce347d::t_507370a3fe2435 49-66,68,101-129,347,1333-1386
+  s_49f3d821ce347d::t_97697e9fa24226 671,855,863-865,867
+  s_49f3d821ce347d::t_2818cf0ffb9456 884,1317-1321,1328-1332,1387-1446,1470,1475,1479
+  s_49f3d821ce347d::t_afac5b855c4f4c 612-655,657,659-666,674-694,698-702
+  s_49f3d821ce347d::t_bea1d67809cf42 130,149-185
+  s_49f3d821ce347d::t_b3f6f7aaef1c41 84,308,317,327,455-456,505-507,513,515,519-521,658,818-820,939-940,946,948-950,955
+  s_49f3d821ce347d::t_ca3001a4e8d3f0 432,447-454,457-475,488-494,501-504,508-512,514,516-518,522
+  s_49f3d821ce347d::t_c3a8b39774b625 148
+  s_49f3d821ce347d::t_9c184d0eaf53a6 269,272,275
+  s_49f3d821ce347d::t_705d40f1a136fe 379-383,389-392,395,402,413-415
+  s_49f3d821ce347d::t_8bdc8ae402d085 667-670,672-673
+  s_49f3d821ce347d::t_d83559adb5bf2b 695-697,704-706,781-791,795-800,802-803,833
+  s_49f3d821ce347d::t_93540a1705b06c 131,348,523,885
+docs/architecture/api-specification.yaml
+  s_49f3d821ce347d::t_06b0b88630c972 1873-1877,1881-1882
+  s_49f3d821ce347d::t_085f5cb36ee652 1800-1803,1806-1807,1826-1849,4322-4345
+  s_49f3d821ce347d::t_c167e1bcdcf457 2371-2418
+  s_49f3d821ce347d::t_28912d1a9151f4 1804-1805,1809-1810
+  s_49f3d821ce347d::t_505c4e5683f31c 3819-3832
+  s_49f3d821ce347d::t_87f6ffa713f44b 1850
+frontend/tests/PendingApprovalsView.spec.ts
+  s_49f3d821ce347d::t_1d97b19a28b380 2,7-9,137,147,155,159,163,167,170,174,176,183-184,205
+  s_49f3d821ce347d::t_b3de47b87feccc 148,151,164,166,188
+android/app/src/main/java/com/albunyaan/tube/data/me/MeFeedModels.kt
+  s_49f3d821ce347d::t_c9b7b2f08d536b 15-21
+backend/src/main/java/com/albunyaan/tube/controller/ApprovalController.java
+  s_49f3d821ce347d::t_d1c2a0b70094fd 70-71,81,103-104,108,121-128
+  s_49f3d821ce347d::t_c292109b6f80cc 244
+  s_49f3d821ce347d::t_619172fa0c1f32 97-102
+  s_49f3d821ce347d::t_600c7d8f99834e 92-96
+  s_49f3d821ce347d::t_fb747f7854af6f 80,86-91,105,129-147,149-150
+  s_49f3d821ce347d::t_557b7ee8b0d8d7 148,151
+android/app/src/test/java/com/albunyaan/tube/ui/me/MeTabsTest.kt
+  s_49f3d821ce347d::t_aa7109cb9c1cf4 1-90,125-153
+  s_49f3d821ce347d::t_f9aced948d55a1 109-124
+  s_49f3d821ce347d::t_6aa42662b41135 91-108
+frontend/src/locales/messages.ts
+  s_49f3d821ce347d::t_f392de878bf1d0 314,316,327-339,345,348-349,1919,1921,1932-1944,1950,1953-1954,3305,3307,3318-3330,3336,3339-3340
+  s_49f3d821ce347d::t_b15782e2cb718e 446,2051,3437
+  s_49f3d821ce347d::t_ccdaa6973cca5d 445,2050,3436
+  s_49f3d821ce347d::t_04dbdc06e59651 392,1997,3383
+  s_49f3d821ce347d::t_b8932c86f768d0 317-326,1922-1931,3308-3317
+backend/src/test/java/com/albunyaan/tube/service/ApprovalCategoryOptionalTest.java
+  s_49f3d821ce347d::t_25ef98df968398 32,34-40,43,75,79,85-86,91,93-97,101,107-108,112,114-116,147,151,158-159,163,165-167,192,196,204-205,209,211-213
+android/app/src/main/res/values-ar/strings.xml
+  s_49f3d821ce347d::t_78b61b5479c0ca 819-820
+android/app/src/main/res/values-nl/strings.xml
+  s_49f3d821ce347d::t_922d612551e5df 785-786
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2c2c4675f085eb171fffec3efcd78d066345da71",
+  "prompts": {},
+  "sessions": {
+    "s_49f3d821ce347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b1b9023a-e038-4508-b970-4f083973635c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    },
+    "s_6cd6b1fcf23673": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "482a8434-3ccd-4561-99c3-beea99eed35b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
