@@ -75,6 +75,13 @@ during the beta program.
   only graduates people who were waiting, because the personal-approval path derives who
   it was granted to from exactly the rows it touches.
 
+- **Deleting content left it on people's phones.** Removing an entry from the library
+  deleted the registry record and told nobody: anyone who had subscribed to it, saved it
+  or imported it kept a working copy, because the sync hands back the row's stored state
+  and the archive check only covers entries that were archived, not ones that are simply
+  gone. Deleting now clears the content from every device holding it — the reach archiving
+  already had.
+
 ### Known limitations
 
 - The by-user roll-up scans a bounded number of pending documents per content type and

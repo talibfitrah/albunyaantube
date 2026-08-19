@@ -858,8 +858,12 @@ public class ContentLibraryController {
      * Functional interface for bulk delete operations.
      */
     @FunctionalInterface
-    private interface EntityDeleter {
-        boolean deleteEntity(BulkActionItem item) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException;
+    private interface EntityResolver {
+        /**
+         * @return the item's youtubeId if it exists, otherwise empty. The id is needed to clear
+         *         the content from the phones of everyone holding it.
+         */
+        Optional<String> resolve(BulkActionItem item) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException;
     }
 
     /**
@@ -876,6 +880,36 @@ public class ContentLibraryController {
      * @param operationName Name of the operation for error messages (e.g., "approving", "rejecting")
      * @return BulkActionResponse with success count and errors
      */
+    /**
+     * Clear deleted content from the lists of everyone holding it.
+     *
+     * <p>Reuses the reject fan-out: from a phone's point of view "this content is gone" is the
+     * same instruction either way. Grouped by type so the cost is a handful of calls, and failures
+     * are swallowed — the registry rows are already deleted and cannot be put back by failing here.
+     */
+    private void clearFromDevices(List<BulkActionItem> deletedItems, Map<String, String> youtubeIdByKey) {
+        Map<YouTubeContentType, Set<String>> idsByType = new HashMap<>();
+        for (BulkActionItem item : deletedItems) {
+            String youtubeId = youtubeIdByKey.get(item.type.toLowerCase() + ":" + item.id);
+            if (youtubeId == null || youtubeId.isBlank()) {
+                continue;
+            }
+            try {
+                idsByType.computeIfAbsent(YouTubeContentType.valueOf(item.type.toUpperCase()),
+                        t -> new HashSet<>()).add(youtubeId);
+            } catch (IllegalArgumentException e) {
+                log.warn("Unknown content type in bulk delete: {}", item.type);
+            }
+        }
+        idsByType.forEach((type, ids) -> {
+            try {
+                importGraduationService.onRejectedAll(type, ids);
+            } catch (Exception e) {
+                log.warn("Could not clear deleted {} ({} items) from devices: {}", type, ids.size(), e.getMessage());
+            }
+        });
+    }
+
     /**
      * Fan an adjudication out to the per-user Me-list rows of everyone who imported these items,
      * flipping AWAITING → APPROVED (or tombstoning on reject).
@@ -1048,7 +1082,7 @@ public class ContentLibraryController {
     /**
      * Helper method to execute bulk delete operations with Firestore batch writes.
      */
-    private BulkActionResponse executeBulkDeleteOperation(List<BulkActionItem> items, EntityDeleter deleter, String operationName) {
+    private BulkActionResponse executeBulkDeleteOperation(List<BulkActionItem> items, EntityResolver resolver, String operationName) {
         int successCount = 0;
         List<String> errors = new ArrayList<>();
         Set<String> failedKeys = new HashSet<>();
@@ -1060,13 +1094,15 @@ public class ContentLibraryController {
 
             WriteBatch writeBatch = firestore.batch();
             List<BulkActionItem> itemsToDelete = new ArrayList<>();
+            Map<String, String> youtubeIdByKey = new HashMap<>();
 
             // First pass: verify all items exist
             for (BulkActionItem item : batch) {
                 try {
-                    boolean exists = deleter.deleteEntity(item);
-                    if (exists) {
+                    Optional<String> youtubeId = resolver.resolve(item);
+                    if (youtubeId.isPresent()) {
                         itemsToDelete.add(item);
+                        youtubeIdByKey.put(item.type.toLowerCase() + ":" + item.id, youtubeId.get());
                     } else {
                         failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                         errors.add(item.type + " not found: " + item.id);
@@ -1092,6 +1128,12 @@ public class ContentLibraryController {
                     writeBatch.commit().get();
                     successCount += itemsToDelete.size();
                     log.debug("Batch delete committed successfully: {} items", itemsToDelete.size());
+
+                    // Deleted content has to leave people's lists, the same way archived content
+                    // does. Without this the registry entry is gone while every phone holding it
+                    // keeps a working copy: the sync pull returns the row's stored state, and the
+                    // archive projection only covers entries that were archived, not absent ones.
+                    clearFromDevices(itemsToDelete, youtubeIdByKey);
 
                 } catch (Exception e) {
                     log.error("Batch delete failed for {} items: {}", itemsToDelete.size(), e.getMessage());
@@ -1215,11 +1257,11 @@ public class ContentLibraryController {
         BulkActionResponse response = executeBulkDeleteOperation(request.items, item -> {
             switch (item.type.toLowerCase()) {
                 case "channel":
-                    return channelRepository.findById(item.id).isPresent();
+                    return channelRepository.findById(item.id).map(Channel::getYoutubeId);
                 case "playlist":
-                    return playlistRepository.findById(item.id).isPresent();
+                    return playlistRepository.findById(item.id).map(Playlist::getYoutubeId);
                 case "video":
-                    return videoRepository.findById(item.id).isPresent();
+                    return videoRepository.findById(item.id).map(Video::getYoutubeId);
                 default:
                     throw new IllegalArgumentException("Invalid type: " + item.type);
             }
