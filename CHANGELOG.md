@@ -5,7 +5,7 @@ during the beta program.
 
 ## [Unreleased]
 
-## [Unreleased-fix]
+## [1.0.0-beta.41] - 2026-08-19
 
 ### Admin dashboard
 
@@ -16,7 +16,7 @@ during the beta program.
   taken it off every device holding it. It now marks the item pending, removes it from the public
   listings while it is under review, and fans nothing out.
 
-## [1.0.0-beta.40] - 2026-08-19
+## [1.0.0-beta.40] - 2026-08-19 (superseded by beta.41)
 
 ### Admin dashboard
 
