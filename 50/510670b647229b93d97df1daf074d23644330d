@@ -1,0 +1,36 @@
+android/app/src/test/java/com/albunyaan/tube/data/sync/PullAllTest.kt
+  s_1fbc050eee1b0a::t_936eedfc444046 114-140,145
+  s_1fbc050eee1b0a::t_c5ea89299bfe94 141-144
+scripts/check-firestore-indexes.py
+  s_1fbc050eee1b0a::t_a6e73b5f404bab 76,78-79
+  s_1fbc050eee1b0a::t_36ed7028521ade 107-111
+  s_1fbc050eee1b0a::t_485eba0c88e03e 1-38,48-75,77,80,97-104,106,113-125,133-142
+  s_1fbc050eee1b0a::t_f5324d5f626c61 81-96,129-132
+  s_1fbc050eee1b0a::t_63dfa2ccda9449 105,112,126-128
+  s_1fbc050eee1b0a::t_383adc6e60e077 39-47
+.github/workflows/backend-ci.yml
+  s_1fbc050eee1b0a::t_4c2b9d681d3677 13-14,18-43,45-50
+  s_1fbc050eee1b0a::t_f5324d5f626c61 44
+  s_1fbc050eee1b0a::t_63dfa2ccda9449 15-17
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_1fbc050eee1b0a::t_47c84d10203b1a 355-358,361-362
+  s_1fbc050eee1b0a::t_63dfa2ccda9449 341-352,354,363
+  s_1fbc050eee1b0a::t_abaa839a8aee17 204-205,334-340,353
+  s_1fbc050eee1b0a::t_36f50e0e9fa502 359-360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "50510670b647229b93d97df1daf074d23644330d",
+  "prompts": {},
+  "sessions": {
+    "s_1fbc050eee1b0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8dcda3e-adac-4bfb-9033-b8dc9519a6f4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
