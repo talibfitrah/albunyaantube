@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.43": {
+    "en": "Fixes updates that downloaded but never installed. Plus the approvals and Me-screen improvements.",
+    "ar": "إصلاح التحديثات التي كانت تُنزَّل ولا تُثبَّت. مع تحسينات المراجعة وشاشة “أنا”.",
+    "nl": "Lost updates op die wel downloadden maar niet installeerden. Plus de goedkeurings- en Me-schermverbeteringen."
+  },
   "1.0.0-beta.41": {
     "en": "Approved content now shows up right away, and your Me screen splits into Content and Pending tabs.",
     "ar": "المحتوى المعتمد يظهر فورًا، وشاشة “أنا” صارت تبويبَين: المحتوى وقيد المراجعة.",
