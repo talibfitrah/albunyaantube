@@ -1,0 +1,28 @@
+android/app/src/test/java/com/albunyaan/tube/ui/me/submissions/MySubmissionsLayoutMarginTest.kt
+  s_6cd6b1fcf23673::t_e9fdbb899e6fdb 1-12,14-25,29-30,40,48,50,52-59,63-68,76-79,81-92
+  s_6cd6b1fcf23673::t_e54c4ed8c43bd9 69-75
+  s_6cd6b1fcf23673::t_b85a14c5caf363 43-47
+  s_6cd6b1fcf23673::t_9fe611c57df49f 33-39
+  s_6cd6b1fcf23673::t_c5fa2191830528 13,26-28
+  s_6cd6b1fcf23673::t_628f732f718a0a 31-32,41-42,49,51,60-62,80
+android/app/src/main/res/layout/item_my_submission.xml
+  s_6cd6b1fcf23673::t_55c6d81fde054f 9
+android/app/src/main/res/layout/fragment_my_submissions.xml
+  s_6cd6b1fcf23673::t_a0d11105b68ad1 44-45,47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "50282e16d64f518c365b801ff6254f9716259c3e",
+  "prompts": {},
+  "sessions": {
+    "s_6cd6b1fcf23673": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "482a8434-3ccd-4561-99c3-beea99eed35b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
