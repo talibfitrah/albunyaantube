@@ -5,6 +5,19 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.43] - 2026-08-19
+
+### Android
+
+- **Updates downloaded but never installed.** On Android 15 and 16 the APK downloaded, the
+  installer session committed, and then nothing happened at all. Android blocks the system
+  from opening our install-status screen through the handle we give the package installer
+  unless we explicitly opt in — so the install confirmation never appeared and the update
+  silently did nothing. Reproduced on an Android 16 emulator and verified fixed end to end.
+  This is a third, separate cause from the two update failures fixed earlier: it is a launch
+  policy that arrived with the newer background-activity rules, not a certificate check or a
+  timing problem.
+
 ## [1.0.0-beta.41] - 2026-08-19
 
 ### Admin dashboard

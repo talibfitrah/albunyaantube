@@ -211,11 +211,31 @@ class ApkInstaller @Inject constructor(
                 } else {
                     PendingIntent.FLAG_UPDATE_CURRENT
                 }
+                // Android 15+ blocks the OS from launching our status Activity through this
+                // PendingIntent unless we, as its creator, explicitly opt in. Without this the
+                // install simply never appears: the APK downloads, commit() succeeds, and the
+                // system logs `Background activity launch blocked … balRequireOptInByPendingIntent
+                // Creator: true … BAL_BLOCK` while the user sees nothing happen at all.
+                //
+                // Observed on Android 16 / One UI 8.5 and reproduced on an API 36 emulator.
+                // Distinct from the earlier EMUI failure (a certificate pre-check that ran before
+                // the OS saw the APK) — this one is a launch policy that arrived with the newer
+                // background-activity rules and needs the opt-in below.
+                val pendingIntentOptions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    android.app.ActivityOptions.makeBasic()
+                        .setPendingIntentCreatorBackgroundActivityStartMode(
+                            android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                        )
+                        .toBundle()
+                } else {
+                    null
+                }
                 val pendingIntent = PendingIntent.getActivity(
                     activity,
                     sessionId,
                     statusIntent,
                     pendingIntentFlags,
+                    pendingIntentOptions,
                 )
                 session!!.commit(pendingIntent.intentSender)
                 // commit() hands ownership of the session to the OS; we MUST close
