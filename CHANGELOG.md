@@ -5,6 +5,17 @@ during the beta program.
 
 ## [Unreleased]
 
+## [Unreleased-fix]
+
+### Admin dashboard
+
+- **"Mark as Pending" was rejecting content.** The Content Library button that says it returns an
+  item to the review queue called the reject endpoint, because no endpoint existed for marking
+  something pending — so the item was recorded as rejected instead. Harmless-looking until
+  rejecting began clearing content from people's phones, at which point that button would have
+  taken it off every device holding it. It now marks the item pending, removes it from the public
+  listings while it is under review, and fans nothing out.
+
 ## [1.0.0-beta.40] - 2026-08-19
 
 ### Admin dashboard

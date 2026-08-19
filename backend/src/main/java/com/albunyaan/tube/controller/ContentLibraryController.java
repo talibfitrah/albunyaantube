@@ -1240,6 +1240,47 @@ public class ContentLibraryController {
     }
 
     /**
+     * Send content back to the review queue.
+     *
+     * <p>The dashboard's "Mark as Pending" had no endpoint of its own and was wired to bulk
+     * reject, so a button that says it returns an item to the queue recorded it as rejected
+     * instead — and once rejecting began clearing content from people's phones, that button
+     * would have taken it off every device holding it.
+     *
+     * <p>Deliberately fans nothing out. Sending something back for review is not a decision about
+     * it, and the availability gate already withholds pending content from playback.
+     */
+    @PostMapping("/bulk/pending")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BulkActionResponse> bulkMarkPending(@NotNull @Valid @RequestBody BulkActionRequest request)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+
+        String username = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication().getName();
+        log.info("Bulk mark-pending started: user={}, itemCount={}", username, request.items.size());
+
+        BulkActionResponse response = executeBulkStatusUpdate(request.items, "PENDING", "marking pending");
+
+        // Out of the public listings while it is under review again.
+        if (response.successCount > 0) {
+            for (BulkActionItem item : request.items) {
+                if (response.failedKeys.contains(item.type.toLowerCase() + ":" + item.id)) continue;
+                try {
+                    sortOrderService.removeContentFromAllCategories(item.id, item.type.toLowerCase());
+                } catch (Exception e) {
+                    log.warn("Failed to remove sort order for {} {}: {}", item.type, item.id, e.getMessage());
+                }
+            }
+        }
+        publicContentCacheService.evictPublicContentCaches();
+
+        log.info("Bulk mark-pending completed: user={}, successCount={}, errorCount={}",
+                username, response.successCount, response.errors.size());
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * Bulk delete content items.
      *
      * Uses Firestore batch writes for atomic commits within each batch (up to 500 items per batch).
