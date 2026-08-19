@@ -24,6 +24,21 @@ export async function bulkReject(items: BulkActionItem[]): Promise<BulkActionRes
 }
 
 /**
+ * Send content back to the review queue.
+ *
+ * Separate from bulkReject on purpose: "Mark as Pending" used to call reject, because no endpoint
+ * existed for this. A button that says it returns an item to the queue was recording it as
+ * rejected — and rejecting now clears the content from every device holding it.
+ */
+export async function bulkMarkPending(items: BulkActionItem[]): Promise<BulkActionResponse> {
+  return await authorizedJsonFetch('/api/admin/content/bulk/pending', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items })
+  });
+}
+
+/**
  * Bulk delete content items
  */
 export async function bulkDelete(items: BulkActionItem[]): Promise<BulkActionResponse> {

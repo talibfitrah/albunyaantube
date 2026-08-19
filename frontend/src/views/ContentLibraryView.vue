@@ -887,10 +887,13 @@ async function bulkChangeStatus(status: string) {
         console.error('Bulk approve errors:', result.errors);
       }
     } else {
-      const result = await contentLibraryService.bulkReject(items);
-      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.itemsRejected')}`);
+      // "Mark as Pending" sends the item back to the review queue. It used to call reject, which
+      // recorded the opposite of what the button says — and now that rejecting clears content
+      // from every device holding it, that would have taken it off people's phones.
+      const result = await contentLibraryService.bulkMarkPending(items);
+      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.itemsMarkedPending')}`);
       if (result.errors.length > 0) {
-        console.error('Bulk reject errors:', result.errors);
+        console.error('Bulk mark-pending errors:', result.errors);
       }
     }
 
