@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.44": {
+    "en": "Videos now open fullscreen when your phone is already sideways, and leaving fullscreen no longer snaps back.",
+    "ar": "تُفتح المقاطع الآن بملء الشاشة عندما يكون هاتفك أفقيًا، ولم يعد الخروج من ملء الشاشة يرتد تلقائيًا.",
+    "nl": "Video's openen nu schermvullend als je telefoon al horizontaal is, en fullscreen verlaten springt niet meer terug."
+  },
   "1.0.0-beta.43": {
     "en": "Fixes updates that downloaded but never installed. Plus the approvals and Me-screen improvements.",
     "ar": "إصلاح التحديثات التي كانت تُنزَّل ولا تُثبَّت. مع تحسينات المراجعة وشاشة “أنا”.",

@@ -5,6 +5,22 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.44] - 2026-08-20
+
+### Android
+
+- **Opening a video while holding the phone sideways left the navigation bar on top of it.**
+  The player only ever decided to go fullscreen when the screen *rotated*, so entering it when
+  the phone was already in landscape left the bottom navigation and status bar covering the
+  video. It now works out the right state when the player opens, not just when you turn the
+  phone. Phones only — tablets keep their navigation rail and full layout.
+- **Leaving fullscreen snapped straight back into it.** Exiting forced the screen to portrait,
+  and that forced turn cleared the very flag meant to remember you had left — so a phone resting
+  in landscape rotated back and re-entered fullscreen immediately. On such a phone the exit
+  button did nothing you could see. Reproduced on a real device and fixed; the dismissal now
+  survives the forced turn and is cleared once, so a later deliberate rotation still gives you
+  fullscreen.
+
 ## [1.0.0-beta.43] - 2026-08-19
 
 ### Android
