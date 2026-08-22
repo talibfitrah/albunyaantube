@@ -1,0 +1,35 @@
+android/app/src/main/java/com/albunyaan/tube/data/local/SubscribedChannel.kt
+  s_041296e26685a0::t_2c045ad75b766e 3,19-22
+android/app/src/main/java/com/albunyaan/tube/data/local/Migrations.kt
+  s_041296e26685a0::t_2c045ad75b766e 372-414
+android/app/src/test/java/com/albunyaan/tube/data/local/ImportMigrationTest.kt
+  s_041296e26685a0::t_12aa097340fb50 1-132
+android/app/src/main/java/com/albunyaan/tube/data/local/AppDatabase.kt
+  s_041296e26685a0::t_2c045ad75b766e 30-33,47
+android/app/src/main/java/com/albunyaan/tube/di/DatabaseModule.kt
+  s_041296e26685a0::t_2c045ad75b766e 27,60
+android/app/src/test/java/com/albunyaan/tube/data/local/AppDatabaseMigrationTest.kt
+  s_041296e26685a0::t_2c045ad75b766e 156
+android/app/src/main/java/com/albunyaan/tube/data/local/FavoriteVideo.kt
+  s_041296e26685a0::t_2c045ad75b766e 3,34-37
+android/app/schemas/com.albunyaan.tube.data.local.AppDatabase/11.json
+  s_041296e26685a0::t_badeda944944db 1-579
+android/app/src/main/java/com/albunyaan/tube/data/local/SavedPlaylist.kt
+  s_041296e26685a0::t_2c045ad75b766e 3,20-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e16a674f7d7c95e8333ff9ec6ee2379e1ae1bc07",
+  "prompts": {},
+  "sessions": {
+    "s_041296e26685a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d01440fc-dec4-4cf5-9283-f068651f82f7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

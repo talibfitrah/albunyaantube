@@ -1,0 +1,27 @@
+docs/superpowers/plans/2026-05-15-r7-p1-c-f13-f20-noop-recover-unblock.md
+  s_dac267759ff6fd::t_3399c35f7bf4bb 1-313
+docs/superpowers/plans/2026-05-15-r7-p1-e-account-status-interceptor-hilt-blocking.md
+  s_dac267759ff6fd::t_12cc3fc0f8b4cc 1-393
+docs/superpowers/plans/2026-05-15-r7-p1-b-archive-projector-echo.md
+  s_dac267759ff6fd::t_a9c50fdb029866 1-291
+docs/superpowers/plans/2026-05-15-r7-p1-a-sync-tail-cursor.md
+  s_dac267759ff6fd::t_b2f586551f24da 1-261
+docs/superpowers/plans/2026-05-15-r7-p1-d-syncmanager-lastdocid-persistence.md
+  s_dac267759ff6fd::t_1dd567688d46e9 1-401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "49a61fd6a7b5a4c2f8a567a370d5aa64acd64bc0",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+backend/src/test/java/com/albunyaan/tube/integration/ImportGraduationServiceIT.java
+  s_041296e26685a0::t_bb2670b873f01e 1-109
+backend/src/main/java/com/albunyaan/tube/service/ImportGraduationService.java
+  s_041296e26685a0::t_c609bd520ab037 1-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c6e12b696d51f3d78862bcfd62634a2a7c48ee5e",
+  "prompts": {},
+  "sessions": {
+    "s_041296e26685a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d01440fc-dec4-4cf5-9283-f068651f82f7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

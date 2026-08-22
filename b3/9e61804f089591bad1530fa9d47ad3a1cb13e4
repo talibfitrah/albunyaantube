@@ -1,0 +1,15 @@
+docs/superpowers/plans/2026-05-10-plan-a-backend-account-foundation.md
+  ai_agent 3350-3355
+docs/superpowers/plans/2026-05-11-plan-c-account-bootstrap.md
+  ai_agent 2830-2835
+docs/superpowers/plans/2026-05-12-plan-e-moderator-workflow.md
+  ai_agent 1136-1141
+docs/superpowers/plans/2026-05-12-plan-f-admin-user-management.md
+  ai_agent 3531-3536
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "b39e61804f089591bad1530fa9d47ad3a1cb13e4",
+  "prompts": {}
+}

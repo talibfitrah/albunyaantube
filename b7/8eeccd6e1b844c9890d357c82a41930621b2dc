@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-05-23-cubic-r3-r5-sweep.md
+  s_b050c26eb2be76::t_cd2a89459dd970 1-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "b78eeccd6e1b844c9890d357c82a41930621b2dc",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

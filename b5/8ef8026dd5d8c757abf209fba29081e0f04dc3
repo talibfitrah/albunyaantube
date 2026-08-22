@@ -1,0 +1,21 @@
+CLAUDE.md
+  s_0f79e29c020bf2::t_4d72cfa53c4e58 80-89
+releases-meta.json
+  s_0f79e29c020bf2::t_87b82ab281cb4f 1-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "b58ef8026dd5d8c757abf209fba29081e0f04dc3",
+  "prompts": {},
+  "sessions": {
+    "s_0f79e29c020bf2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cfd3c5cf-780d-4107-8a54-b5cfe02ce86b",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

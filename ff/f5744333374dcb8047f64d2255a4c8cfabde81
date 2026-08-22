@@ -1,0 +1,21 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/ResolvedStreamsExt.kt
+  s_c3846ab71aef74::t_3b03115c612e41 62-82
+android/app/src/test/java/com/albunyaan/tube/data/extractor/ResolvedStreamsDubMergeTest.kt
+  s_c3846ab71aef74::t_13717d7c771784 1-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "fff5744333374dcb8047f64d2255a4c8cfabde81",
+  "prompts": {},
+  "sessions": {
+    "s_c3846ab71aef74": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "867a81b9-0c51-4c86-a5a2-98a3eb560c80",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+android/app/src/main/java/com/albunyaan/tube/data/source/ContentService.kt
+  s_b050c26eb2be76::t_c2a4ad97e014d1 36-43,46-50,53-56
+frontend/src/services/bulkSubmissionService.ts
+  s_b050c26eb2be76::t_52826cbc45f59e 9-20,24-25,29-30
+docs/architecture/api-specification.yaml
+  s_b050c26eb2be76::t_70d09b2d29d490 4450,4459,4462-4467
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "033a98deb4e1dde52b56174d15b1fe5c8a35c8e0",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

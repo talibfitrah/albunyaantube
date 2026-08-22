@@ -1,0 +1,29 @@
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_b050c26eb2be76::t_02678748b1c9c7 139-144
+  s_b050c26eb2be76::t_66a13ed4aedeb2 192-230
+  s_b050c26eb2be76::t_43dd6feb72e6aa 37,43-44,52
+backend/src/main/java/com/albunyaan/tube/dto/registry/SubmitRow.java
+  s_b050c26eb2be76::t_f359eeee0720dd 18-21
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServiceSubmitTest.java
+  s_b050c26eb2be76::t_c51630a2db6aa8 30
+  s_b050c26eb2be76::t_168dd9d62bc77b 42-51,59-60
+  s_b050c26eb2be76::t_165b275a2725f0 212-262
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServicePreviewTest.java
+  s_b050c26eb2be76::t_00fda21dd935eb 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "e5eea7f524b27698aab6543fa43a4b773e75e13d",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

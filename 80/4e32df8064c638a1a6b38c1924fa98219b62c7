@@ -1,0 +1,21 @@
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_dac267759ff6fd::t_e4910aaea5c9ef 137-145,147-149,151-153
+backend/src/main/java/com/albunyaan/tube/repository/SyncRepository.java
+  s_dac267759ff6fd::t_25146238fce0ad 82-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "804e32df8064c638a1a6b38c1924fa98219b62c7",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

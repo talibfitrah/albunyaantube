@@ -1,0 +1,27 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/AndroidVrStreamResolver.kt
+  s_bbd9e63f7fdc43::t_86d83020e07db6 272-280
+  s_bbd9e63f7fdc43::t_5bef829a85b3e4 298-300
+android/app/src/main/java/com/albunyaan/tube/player/SubtitleStyle.kt
+  s_bbd9e63f7fdc43::t_1407e7aa50818b 88-92
+  s_bbd9e63f7fdc43::t_0d813657197e45 66-70
+android/app/src/test/java/com/albunyaan/tube/data/extractor/AndroidVrSubtitleParsingTest.kt
+  s_bbd9e63f7fdc43::t_5ab33ace255b47 139-152
+android/app/src/main/res/values/dimens.xml
+  s_bbd9e63f7fdc43::t_cc447fe7f88c92 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "1027c39c2966926d86737070bafe5092aa70e328",
+  "prompts": {},
+  "sessions": {
+    "s_bbd9e63f7fdc43": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c2b58f3c-2614-4f7e-93da-eed7f8a0003a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+android/app/src/main/java/com/albunyaan/tube/update/ApkInstaller.kt
+  s_49f3d821ce347d::t_86a500fcc42209 214-232,238
+android/app/build.gradle.kts
+  s_49f3d821ce347d::t_f6dc58bd74abdb 45-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "bb9472aba6a0b6c427d9e5f83148adbf4c0992b9",
+  "prompts": {},
+  "sessions": {
+    "s_49f3d821ce347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b1b9023a-e038-4508-b970-4f083973635c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

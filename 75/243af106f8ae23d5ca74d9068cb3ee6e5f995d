@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/player/AdaptiveBufferPolicy.kt
+  s_c832b66577aa53::t_717718509d5b2b 54-65,70-72,77-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "75243af106f8ae23d5ca74d9068cb3ee6e5f995d",
+  "prompts": {},
+  "sessions": {
+    "s_c832b66577aa53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1f2a368e-209c-4984-acb2-d1c7b954568d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

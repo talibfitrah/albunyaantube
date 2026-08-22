@@ -1,0 +1,45 @@
+backend/src/test/java/com/albunyaan/tube/integration/AuthServiceSoftDeleteIntegrationTest.java
+  dac267759ff6fd5f 101-104
+backend/src/test/java/com/albunyaan/tube/service/AuditLogServiceBuildersTest.java
+  dac267759ff6fd5f 10
+backend/src/main/java/com/albunyaan/tube/service/AuditLogService.java
+  dac267759ff6fd5f 3,15-16,30,32-34,37,180,194-196,200-209,213-215
+backend/src/main/java/com/albunyaan/tube/service/BulkUserService.java
+  dac267759ff6fd5f 48-56,59-62,74-76
+backend/src/test/java/com/albunyaan/tube/controller/WatchPageControllerTest.java
+  dac267759ff6fd5f 177
+android/app/src/main/java/com/albunyaan/tube/auth/FirebaseAuthInterceptor.kt
+  dac267759ff6fd5f 62-70
+backend/src/main/java/com/albunyaan/tube/controller/ContentReportController.java
+  dac267759ff6fd5f 50-56
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  dac267759ff6fd5f 164-170,172-179,192-196
+backend/src/main/java/com/albunyaan/tube/controller/SyncController.java
+  dac267759ff6fd5f 14,48,61,70,82,91,103,112
+backend/src/main/java/com/albunyaan/tube/controller/WatchPageController.java
+  dac267759ff6fd5f 25,27,52,54-55,57-74,96-108,119-120,129-148,159-184
+backend/src/main/java/com/albunyaan/tube/exception/GlobalExceptionHandler.java
+  dac267759ff6fd5f 118-137
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  dac267759ff6fd5f 223,372,386,415,507,575,673
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "1edb78a55b782ac2a13e9ec29038ad737f7a8d12",
+  "prompts": {
+    "dac267759ff6fd5f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar",
+      "messages": [],
+      "total_additions": 209,
+      "total_deletions": 45,
+      "accepted_lines": 205,
+      "overriden_lines": 0
+    }
+  }
+}

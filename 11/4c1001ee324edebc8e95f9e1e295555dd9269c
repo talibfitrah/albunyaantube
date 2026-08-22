@@ -1,0 +1,47 @@
+android/app/src/main/res/layout-sw720dp/fragment_profile.xml
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 2,7-8,12-13,15-33,35-37,39,42-47,49-56,58,61,63-64,67-68,70-88,90-111,113-120,122-123,125-132,134-140,142,144-145,147-166,168
+  s_aec293bbfa68e6::t_c941384f5c98d5 146
+backend/src/main/java/com/albunyaan/tube/model/User.java
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 62-63
+android/app/src/main/java/com/albunyaan/tube/util/MenuIconExt.kt
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 3,37-44
+  s_aec293bbfa68e6::t_1035ae884e354c 45-46
+backend/src/main/java/com/albunyaan/tube/repository/UserRepository.java
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 12,116-118,205-206,231,251-253,257-271,280-282,294,315,330,344,361,369-371,381,424
+  s_aec293bbfa68e6::t_78c203087a6330 254-256
+  s_aec293bbfa68e6::t_226ee89f3b5bc1 272-273
+backend/src/test/java/com/albunyaan/tube/repository/UserRepositoryTest.java
+  s_aec293bbfa68e6::t_e9f4781af54764 61-63,146-148,169,182,187-191,210,216-220
+android/app/src/main/res/menu/menu_me_kebab.xml
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 6,10,15
+android/app/src/main/res/layout/fragment_profile.xml
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 2,7-8,10-11,13-19,21-27,30-31,33,36-41,43-50,52,55,57-58,61-62,64-81,83-103,105-112,114-115,117-124,126-132,134,136-137,139-157,159
+android/app/src/main/java/com/albunyaan/tube/ui/me/MeFragment.kt
+  s_aec293bbfa68e6::t_b98da604d17443 293-295
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 6,12-13,15,24,34,36-39,60,223-229,249-256,264-291
+  s_aec293bbfa68e6::t_6de37b63de4829 292
+android/app/src/main/res/layout-sw600dp/fragment_profile.xml
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 2,7-28,30-32,34,37-42,44-51,53,56,58-59,62-63,65-82,84-97,99-113,115-116,118-125,127-133,135,137-138,140-158,160
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/ProfileFragment.kt
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 37-38
+android/app/src/main/java/com/albunyaan/tube/data/me/WeekBucket.kt
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 96
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 58-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "114c1001ee324edebc8e95f9e1e295555dd9269c",
+  "prompts": {},
+  "sessions": {
+    "s_aec293bbfa68e6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e47aa061-d5e0-4290-b87a-7fc8876b9df2",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

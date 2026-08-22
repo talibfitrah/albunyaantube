@@ -1,0 +1,38 @@
+frontend/src/views/UsersManagementView.vue
+  s_dac267759ff6fd::t_3d5037d3dc5d65 466-470
+  s_dac267759ff6fd::t_51c7614c7c2464 901,908,923-924
+  s_dac267759ff6fd::t_5c0eaf02c758b8 929-935,950-951,956-963,978-979
+  s_dac267759ff6fd::t_d7dd8cf841386c 54-60
+  s_dac267759ff6fd::t_96f2cf10f1e948 522-530
+  s_dac267759ff6fd::t_f8a46c5dd1df72 873-880,895-896
+  s_dac267759ff6fd::t_067077411ba184 64-68,71,74,77
+frontend/src/services/adminAudit.ts
+  s_dac267759ff6fd::t_457ab722659649 168-169,172
+  s_dac267759ff6fd::t_0d4bdbf9963178 93-96
+  s_dac267759ff6fd::t_bd45286c3858ef 135-138,141
+  s_dac267759ff6fd::t_470caec7d6cd7a 14-20
+frontend/src/views/AuditLogView.vue
+  s_dac267759ff6fd::t_2b45adccba3c01 127-131,134-137,150-151
+frontend/src/locales/messages.ts
+  s_dac267759ff6fd::t_4b559bd15dc8ac 934-941
+  s_dac267759ff6fd::t_295bb66007f8f9 2363-2370
+  s_dac267759ff6fd::t_c5a928b8219f42 3623-3630
+frontend/src/services/adminUsers.ts
+  s_dac267759ff6fd::t_1349d0a6fa82bf 148-158,162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "87e869c251065b0d115b41675d7b5833f3db0900",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

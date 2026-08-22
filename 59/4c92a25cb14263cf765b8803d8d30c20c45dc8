@@ -1,0 +1,23 @@
+android/app/src/main/java/com/albunyaan/tube/player/DashSourceBuilder.kt
+  s_bbd9e63f7fdc43::t_32dc8c53e9d5d7 344-350
+android/app/src/main/java/com/albunyaan/tube/data/extractor/AndroidVrStreamResolver.kt
+  s_bbd9e63f7fdc43::t_e76e18f2a8340f 100-108
+android/app/src/test/java/com/albunyaan/tube/data/extractor/AndroidVrSubtitleParsingTest.kt
+  s_bbd9e63f7fdc43::t_5a2a5f2df655f1 130-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "594c92a25cb14263cf765b8803d8d30c20c45dc8",
+  "prompts": {},
+  "sessions": {
+    "s_bbd9e63f7fdc43": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c2b58f3c-2614-4f7e-93da-eed7f8a0003a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

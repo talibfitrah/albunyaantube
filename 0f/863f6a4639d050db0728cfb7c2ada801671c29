@@ -1,0 +1,46 @@
+android/app/src/main/java/com/albunyaan/tube/player/SeekTransientErrorGate.kt
+  s_c832b66577aa53::t_d488a8dfb8b4b2 13-14
+android/app/src/main/java/com/albunyaan/tube/player/MultiQualityMediaSourceFactory.kt
+  s_c832b66577aa53::t_dc454655f7c48a 175
+  s_c832b66577aa53::t_a4122f28d19b7e 361,694
+android/app/src/main/java/com/albunyaan/tube/player/ColdStartQualityChooser.kt
+  s_c832b66577aa53::t_d8140083aa5272 30
+  s_c832b66577aa53::t_49a8a21fd29e5d 39
+android/app/src/test/java/com/albunyaan/tube/player/SeekTransientErrorGateTest.kt
+  s_c832b66577aa53::t_5ebfca4649a276 12
+android/app/src/main/java/com/albunyaan/tube/ui/shorts/ShortsPlayerFragment.kt
+  s_c832b66577aa53::t_82759216599b22 271-272
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_c832b66577aa53::t_b53223177e1473 1807-1808
+  s_c832b66577aa53::t_8a80c5b5db6506 1059
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_c832b66577aa53::t_0535bf64b9ff78 2103
+  s_c832b66577aa53::t_ef9c9e4caef7c1 1423
+  s_c832b66577aa53::t_1af6a9981add65 2052-2062
+  s_c832b66577aa53::t_d395cb6343bb76 255
+  s_c832b66577aa53::t_a3232a55180dc6 2353
+  s_c832b66577aa53::t_88ed209101892d 2330
+  s_c832b66577aa53::t_22487a64707bb3 2371
+  s_c832b66577aa53::t_acb25b4b578169 1401
+  s_c832b66577aa53::t_7466de62fcf39a 1341
+  s_c832b66577aa53::t_101923feec7465 1175
+  s_c832b66577aa53::t_7c57cf17bcd74f 3996
+  s_c832b66577aa53::t_e41e711ab4a21e 1372
+  s_c832b66577aa53::t_88db06d0cecf9e 2310
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "0f863f6a4639d050db0728cfb7c2ada801671c29",
+  "prompts": {},
+  "sessions": {
+    "s_c832b66577aa53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1f2a368e-209c-4984-acb2-d1c7b954568d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

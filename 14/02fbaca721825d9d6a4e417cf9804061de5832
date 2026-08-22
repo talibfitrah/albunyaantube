@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-06-10-phase2-dub-restore-design.md
+  s_c3846ab71aef74::t_48ac5a02c340e0 1-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "1402fbaca721825d9d6a4e417cf9804061de5832",
+  "prompts": {},
+  "sessions": {
+    "s_c3846ab71aef74": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "867a81b9-0c51-4c86-a5a2-98a3eb560c80",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_c832b66577aa53::t_d8a3191b4e5b4d 102
+  s_c832b66577aa53::t_9a9af03ae3067c 2928-2930
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_c832b66577aa53::t_90371c1d943eaf 459-460
+android/app/src/test/java/com/albunyaan/tube/ui/shorts/PlayerBinderTest.kt
+  s_c832b66577aa53::t_45f868aa914174 568-578,588-608,619-627,629-636
+  s_c832b66577aa53::t_3643eecf86e68e 579-587,609-618,628
+  s_c832b66577aa53::t_57c947d9b9855f 175-179,187-226
+android/app/src/main/java/com/albunyaan/tube/ui/shorts/PlayerBinder.kt
+  s_c832b66577aa53::t_dceca595e560a4 658-659
+  s_c832b66577aa53::t_2bde761bc7d221 644-653
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "d7bfcce109fe9c628748e2e22f3608f5a4f44044",
+  "prompts": {},
+  "sessions": {
+    "s_c832b66577aa53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1f2a368e-209c-4984-acb2-d1c7b954568d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

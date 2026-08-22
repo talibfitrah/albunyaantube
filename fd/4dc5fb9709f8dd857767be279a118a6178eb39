@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_188fada08d38e3::t_69408a00e5891c 2147-2152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "fd4dc5fb9709f8dd857767be279a118a6178eb39",
+  "prompts": {},
+  "sessions": {
+    "s_188fada08d38e3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5596c250-6c5c-42ad-9d67-218f134d6663",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

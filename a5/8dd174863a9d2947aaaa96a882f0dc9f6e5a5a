@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  s_5988c719e26a6c::t_06e4144f13aa93 894-895,900
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "a58dd174863a9d2947aaaa96a882f0dc9f6e5a5a",
+  "prompts": {},
+  "sessions": {
+    "s_5988c719e26a6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e435415-c113-4b79-8885-8df47e1baec5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/potoken/WebViewPoTokenProvider.kt
+  s_c832b66577aa53::t_e96852b28d7c60 102-111
+  s_c832b66577aa53::t_eaf19ecd90dda5 4
+  s_c832b66577aa53::t_a0316b024fde9b 81-90
+  s_c832b66577aa53::t_7a5473c8dd9c6e 54-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "9f8787185572ac996da5bcd1c235713e2d059f92",
+  "prompts": {},
+  "sessions": {
+    "s_c832b66577aa53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1f2a368e-209c-4984-acb2-d1c7b954568d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

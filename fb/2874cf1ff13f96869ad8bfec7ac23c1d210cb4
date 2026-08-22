@@ -1,0 +1,26 @@
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestContentFragment.kt
+  s_aec293bbfa68e6::t_6bba7aa7047590 12
+  s_aec293bbfa68e6::t_084ce0475dace8 45-46
+android/app/src/main/res/layout-sw600dp/fragment_suggest_content.xml
+  s_aec293bbfa68e6::t_420d02271981c3 8-19
+android/app/src/main/res/layout-sw720dp/fragment_suggest_content.xml
+  s_aec293bbfa68e6::t_b8b1db6d9422b6 8-19
+android/app/src/main/res/layout/fragment_suggest_content.xml
+  s_aec293bbfa68e6::t_fbbb1decd326dc 8-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "fb2874cf1ff13f96869ad8bfec7ac23c1d210cb4",
+  "prompts": {},
+  "sessions": {
+    "s_aec293bbfa68e6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e47aa061-d5e0-4290-b87a-7fc8876b9df2",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

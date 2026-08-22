@@ -1,0 +1,20 @@
+android/app/src/main/java/com/albunyaan/tube/ui/auth/SignInFragment.kt
+  s_e026945d130ffb::t_621ccdb4a60e30 34
+  s_e026945d130ffb::t_b45a1fdff46224 151-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "19c171cd0ca63e8a41d330caeae981a2779996c4",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

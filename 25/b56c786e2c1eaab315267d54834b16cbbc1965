@@ -1,0 +1,45 @@
+backend/src/main/java/com/albunyaan/tube/service/UserStateConflictException.java
+  s_dac267759ff6fd::t_6808418d49cef3 1-47
+backend/src/test/java/com/albunyaan/tube/service/BulkUserServiceTest.java
+  s_dac267759ff6fd::t_ee685a262e82d4 214-220
+  s_dac267759ff6fd::t_b6c162b0f9a7c3 202
+  s_dac267759ff6fd::t_0c567e3e18d90b 133-137,142-145,150,152,156,161-164,169,171,175-179,184-186,191,193
+  s_dac267759ff6fd::t_7afa7f5edf7ea8 84-88
+  s_dac267759ff6fd::t_0a5bb5f3ebd93a 115
+backend/src/main/java/com/albunyaan/tube/model/AuditLog.java
+  s_dac267759ff6fd::t_151091b18a8e9c 163-186,189
+  s_dac267759ff6fd::t_5d9374b989829a 130-143
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_dac267759ff6fd::t_437c29893cbdde 551-553
+  s_dac267759ff6fd::t_3ba3fba91de1a7 760-762
+  s_dac267759ff6fd::t_c371757fd2c89d 648-649
+  s_dac267759ff6fd::t_d927ad9484c155 461-462
+backend/src/main/java/com/albunyaan/tube/service/BulkUserService.java
+  s_dac267759ff6fd::t_181c06ce8126cf 83-89,91-93
+  s_dac267759ff6fd::t_50369e8a91fb9b 115-130
+backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java
+  s_dac267759ff6fd::t_6e768b34e5bad4 172
+backend/src/main/java/com/albunyaan/tube/service/AuditLogService.java
+  s_dac267759ff6fd::t_bc6b180661d3a9 227-262
+android/app/src/test/java/com/albunyaan/tube/auth/AccountStatusInterceptorTest.kt
+  s_dac267759ff6fd::t_dda5f93e40be29 6,19,29-30,38-40,43
+backend/src/test/java/com/albunyaan/tube/service/AccountProfileServiceTest.java
+  s_dac267759ff6fd::t_3fb7ed179df433 24
+  s_dac267759ff6fd::t_a880c31564e72f 66-67,69,74-76,79-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "25b56c786e2c1eaab315267d54834b16cbbc1965",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

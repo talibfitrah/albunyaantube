@@ -1,0 +1,37 @@
+android/app/src/main/java/com/albunyaan/tube/player/GlobalStreamResolver.kt
+  s_72ba0cf5479133::t_20cfec00bceb2f 258
+  s_72ba0cf5479133::t_aa03cf78e41aa9 373-379
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_72ba0cf5479133::t_fa954e32bb67a2 411-412
+  s_72ba0cf5479133::t_458c64e578d1b8 394
+android/app/src/main/java/com/albunyaan/tube/player/PlayerRepository.kt
+  s_72ba0cf5479133::t_b4f04db91d3d3d 91,98
+  s_72ba0cf5479133::t_b09705bf003f7a 56
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_72ba0cf5479133::t_86d9c268ce36be 671-672
+  s_72ba0cf5479133::t_fe5af6aa5caf9b 1429-1435
+  s_72ba0cf5479133::t_6047cac053f841 1866-1867
+  s_72ba0cf5479133::t_13356b18468335 1547
+  s_72ba0cf5479133::t_fa88e6a4e9ca96 1225-1232,1234-1247
+  s_72ba0cf5479133::t_cd4379fbdeea43 872-873
+  s_72ba0cf5479133::t_00752e3744deae 644-645
+  s_72ba0cf5479133::t_0ecccc39368137 1233
+  s_72ba0cf5479133::t_bbd436e4e91e33 1287-1291
+  s_72ba0cf5479133::t_477e1df01b726c 1738-1739
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "2950397623de346161bcad438f3a58628c58f417",
+  "prompts": {},
+  "sessions": {
+    "s_72ba0cf5479133": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6734869e-7f03-4e44-ad1d-e4af77cfc5ef",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

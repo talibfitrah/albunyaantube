@@ -1,0 +1,38 @@
+backend/src/main/java/com/albunyaan/tube/repository/UserRepository.java
+  s_99ef915f306233::t_9c8eda331ab8a3 83-111
+android/app/src/main/java/com/albunyaan/tube/auth/AccountStatusInterceptor.kt
+  s_99ef915f306233::t_976ef8e07895f5 64-73,76-77
+backend/src/main/java/com/albunyaan/tube/config/CacheConfig.java
+  s_99ef915f306233::t_8e92addf83023d 116-121
+  s_99ef915f306233::t_55d032732277e6 59,63
+  s_99ef915f306233::t_c88acf288d00e2 58,60-62,64-71
+  s_99ef915f306233::t_29a8e167589689 140-154
+backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java
+  s_99ef915f306233::t_9eff59743439f4 3,7
+  s_99ef915f306233::t_f9018f1dd9524a 127-128,135,137
+  s_99ef915f306233::t_c8bcda5353f6bb 129-134
+backend/src/main/java/com/albunyaan/tube/repository/PlaylistRepository.java
+  s_99ef915f306233::t_ca20d93330d051 3,7
+  s_99ef915f306233::t_c16cd9e4ef7811 127-129,131
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_99ef915f306233::t_ae20fb23911bd9 300-308,312-315
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_99ef915f306233::t_5a30bbef6bcf3d 118-120,122
+  s_99ef915f306233::t_a10e65a53f0905 3,7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "24d39e4bb7e1845fb830765296b3cda30257f6f1",
+  "prompts": {},
+  "sessions": {
+    "s_99ef915f306233": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6959ccab-c0c0-45fe-9e9a-2b8a2253a0fa",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

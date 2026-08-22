@@ -1,0 +1,21 @@
+backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
+  s_1a004b5f0406e1::t_57df0828fca9ba 68,77-78,87
+  s_1a004b5f0406e1::t_7aa8643d4da6ac 4-9
+  s_1a004b5f0406e1::t_bc370ef33b1fc3 1082-1109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "e4202f807491210c5f98ad04d169fb6dcc8cb780",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

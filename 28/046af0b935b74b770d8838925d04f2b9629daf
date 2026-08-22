@@ -1,0 +1,20 @@
+android/app/src/main/java/com/albunyaan/tube/di/DataModule.kt
+  s_c6418c835ba9fa::t_1b5d1afea9b676 179-189,191-193
+  s_c6418c835ba9fa::t_4cbcc26edcbab2 58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "28046af0b935b74b770d8838925d04f2b9629daf",
+  "prompts": {},
+  "sessions": {
+    "s_c6418c835ba9fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48fcb4f5-a6e9-4e72-b370-ad75519d36c2",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

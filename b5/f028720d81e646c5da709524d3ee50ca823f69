@@ -1,0 +1,21 @@
+backend/src/main/java/com/albunyaan/tube/service/YouTubeSearchService.java
+  s_fc285cbffbb215::t_4a66319bc000f9 99-107
+docs/superpowers/plans/2026-05-19-plan-g-profile-edit-and-suggest-search.md
+  s_fc285cbffbb215::t_55a16279bff6ec 3175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "b5f028720d81e646c5da709524d3ee50ca823f69",
+  "prompts": {},
+  "sessions": {
+    "s_fc285cbffbb215": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4fdf01ca-ea20-4afb-a3da-01238fb72838",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

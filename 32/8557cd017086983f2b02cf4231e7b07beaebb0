@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-06-10-phase2-dub-restore-plan-1.md
+  s_c3846ab71aef74::t_ea87c44dfc5d32 1-384
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "328557cd017086983f2b02cf4231e7b07beaebb0",
+  "prompts": {},
+  "sessions": {
+    "s_c3846ab71aef74": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "867a81b9-0c51-4c86-a5a2-98a3eb560c80",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

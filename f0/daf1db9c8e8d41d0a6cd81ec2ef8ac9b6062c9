@@ -1,0 +1,23 @@
+android/app/src/test/java/com/albunyaan/tube/data/local/ChannelVideoCacheDaoTest.kt
+  s_b050c26eb2be76::t_dc0959936a80bf 23,33
+  s_b050c26eb2be76::t_726d1af8872ff7 70-82,84-91
+  s_b050c26eb2be76::t_a6c00744a949dd 83
+android/app/src/main/java/com/albunyaan/tube/data/local/ChannelVideoCacheDao.kt
+  s_b050c26eb2be76::t_550f59028a752e 82-95,98-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "f0daf1db9c8e8d41d0a6cd81ec2ef8ac9b6062c9",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

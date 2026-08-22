@@ -1,0 +1,32 @@
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditEmailViewModel.kt
+  s_e026945d130ffb::t_a196356d6b6609 36
+  s_e026945d130ffb::t_c803f425d62042 72
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditPhoneViewModel.kt
+  s_e026945d130ffb::t_985a0cf5428e4e 68
+  s_e026945d130ffb::t_865f0c421638b6 37
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditPasswordBottomSheetFragment.kt
+  s_e026945d130ffb::t_4ea8890c416011 79
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditPhoneBottomSheetFragment.kt
+  s_e026945d130ffb::t_fc8b330b9aa679 102
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditPasswordViewModel.kt
+  s_e026945d130ffb::t_22a5a43bbc56f1 77
+  s_e026945d130ffb::t_518b79ef1ac6d0 36
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditEmailBottomSheetFragment.kt
+  s_e026945d130ffb::t_d4356aaf3d33ab 77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "534171b35bf46f94cec918c946bec18cfa72b7f8",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

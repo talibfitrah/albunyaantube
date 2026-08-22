@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-05-23-getmysubmissions-12x-firestore-amplification.md
+  s_b050c26eb2be76::t_e139e2c1e566e8 1-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "d90dabaf1ac0a17aa9f2c61bd59089eb428085d6",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

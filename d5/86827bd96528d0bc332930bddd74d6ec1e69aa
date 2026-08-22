@@ -1,0 +1,25 @@
+docs/superpowers/plans/2026-05-19-plan-g-profile-edit-and-suggest-search.md
+  s_fc285cbffbb215::t_a96fe35f2a754e 3175-3176
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/ProfileFragment.kt
+  s_fc285cbffbb215::t_d3fa87c7cc9ca2 107-126
+backend/src/main/java/com/albunyaan/tube/security/ProfileUpdateRateLimitInterceptor.java
+  s_fc285cbffbb215::t_ec6ba3cbff9dce 60-65,77-101
+backend/src/main/java/com/albunyaan/tube/service/ProfileUpdateRateLimiter.java
+  s_fc285cbffbb215::t_c1e95a2b64887f 69-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "d586827bd96528d0bc332930bddd74d6ec1e69aa",
+  "prompts": {},
+  "sessions": {
+    "s_fc285cbffbb215": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4fdf01ca-ea20-4afb-a3da-01238fb72838",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

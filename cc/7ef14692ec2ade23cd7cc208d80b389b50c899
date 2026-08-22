@@ -1,0 +1,33 @@
+backend/src/test/java/com/albunyaan/tube/service/ApprovalGraduationWiringTest.java
+  s_041296e26685a0::t_98106d8010bdbd 1-231
+backend/src/main/java/com/albunyaan/tube/service/ApprovalService.java
+  s_041296e26685a0::t_dbfea441aeb7dc 45,55-56,66
+  s_041296e26685a0::t_c3a6ceef2bde92 1310-1316
+  s_041296e26685a0::t_029ddb91441684 1135-1141
+  s_041296e26685a0::t_4250a5532b2e77 1374-1380
+  s_041296e26685a0::t_1277bdb001370e 1257-1263
+  s_041296e26685a0::t_d2f3436ee9960c 1204-1210
+  s_041296e26685a0::t_8c5afcb7215905 1416-1422
+backend/src/test/java/com/albunyaan/tube/service/ApprovalServicePaginationTest.java
+  s_041296e26685a0::t_c600e4fa35a34e 67-69,83-84
+backend/src/test/java/com/albunyaan/tube/service/ApprovalServiceRequestChangesTest.java
+  s_041296e26685a0::t_bc9c08b86b78d0 57-59,73-74
+backend/src/test/java/com/albunyaan/tube/service/ApprovalCategoryRequiredTest.java
+  s_041296e26685a0::t_4925d01104fa18 49,64-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cc7ef14692ec2ade23cd7cc208d80b389b50c899",
+  "prompts": {},
+  "sessions": {
+    "s_041296e26685a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d01440fc-dec4-4cf5-9283-f068651f82f7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

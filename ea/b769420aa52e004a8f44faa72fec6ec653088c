@@ -1,0 +1,21 @@
+backend/src/test/java/com/albunyaan/tube/util/ThumbnailUrlsTest.java
+  s_e4c659b38e3d15::t_ba4867033821e5 72-80
+backend/src/main/java/com/albunyaan/tube/util/ThumbnailUrls.java
+  s_e4c659b38e3d15::t_e2e0b52acd5f96 70-76,83-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "eab769420aa52e004a8f44faa72fec6ec653088c",
+  "prompts": {},
+  "sessions": {
+    "s_e4c659b38e3d15": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4bc80fe5-0c36-432c-bef2-1b54ed0d314c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

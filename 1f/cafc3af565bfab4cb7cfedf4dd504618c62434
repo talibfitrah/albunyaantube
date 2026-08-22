@@ -1,0 +1,20 @@
+android/app/src/main/java/com/albunyaan/tube/ui/shorts/PlayerBinder.kt
+  s_43dfb8dc8c3e6a::t_fc84a25943a982 267-274
+  s_43dfb8dc8c3e6a::t_9af65ea1b01acb 157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "1fcafc3af565bfab4cb7cfedf4dd504618c62434",
+  "prompts": {},
+  "sessions": {
+    "s_43dfb8dc8c3e6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c20d370f-4c72-40f4-99e5-b18195a5843c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

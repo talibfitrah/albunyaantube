@@ -1,0 +1,37 @@
+android/app/src/test/java/com/albunyaan/tube/ui/settings/availableversions/AvailableVersionsViewModelTest.kt
+  s_0f79e29c020bf2::t_afb84c854216d0 72-86
+android/app/src/main/java/com/albunyaan/tube/update/UpdatePromptFlow.kt
+  s_0f79e29c020bf2::t_9e3110ee1f57fe 157-158
+  s_0f79e29c020bf2::t_5f3f11729d78f4 112
+  s_0f79e29c020bf2::t_91befac0955385 125
+  s_0f79e29c020bf2::t_291236f887b157 66,69-78,84
+  s_0f79e29c020bf2::t_bbb82f0fe2ee26 132
+  s_0f79e29c020bf2::t_79e5ecf31e9a8c 145,151
+  s_0f79e29c020bf2::t_e3dbd2fc9c2559 168,172
+android/app/src/main/java/com/albunyaan/tube/update/UpdateChecker.kt
+  s_0f79e29c020bf2::t_04d9fb90c15eb3 174-175
+  s_0f79e29c020bf2::t_abcb4b72ffe41f 77-79
+android/app/src/test/java/com/albunyaan/tube/update/UpdatePromptFlowTest.kt
+  s_0f79e29c020bf2::t_167957c76a45e2 53,56
+  s_0f79e29c020bf2::t_4067f04a5fa401 42
+  s_0f79e29c020bf2::t_b30906070981c0 103-104
+  s_0f79e29c020bf2::t_2e4bbc5f4704a4 64,68,74
+android/app/src/test/java/com/albunyaan/tube/update/UpdateCheckerTest.kt
+  s_0f79e29c020bf2::t_7fa78bdda7411c 186-211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "5e8fea26fc882df0b990b242e932d5cb8a465f46",
+  "prompts": {},
+  "sessions": {
+    "s_0f79e29c020bf2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cfd3c5cf-780d-4107-8a54-b5cfe02ce86b",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

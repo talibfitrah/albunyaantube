@@ -1,0 +1,35 @@
+android/app/src/test/java/com/albunyaan/tube/auth/AccountRepositoryImplTest.kt
+  s_dac267759ff6fd::t_de470e4cc294b6 65-67,69
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_dac267759ff6fd::t_3bf0902b7fabd0 52-60,65-71
+  s_dac267759ff6fd::t_5dc6f5888e4a98 25-38,41,49
+android/app/src/main/java/com/albunyaan/tube/auth/AccountState.kt
+  s_dac267759ff6fd::t_728f13a6e26162 13-32
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepository.kt
+  s_dac267759ff6fd::t_a568b55fd7f18a 28-31,33
+  s_dac267759ff6fd::t_ffc13d042f5426 23-27,32,34
+android/app/src/main/java/com/albunyaan/tube/auth/FirebaseAuthInterceptor.kt
+  s_dac267759ff6fd::t_80e574e6ac74ef 78-90
+android/app/src/main/java/com/albunyaan/tube/AlBunyaanApplication.kt
+  s_dac267759ff6fd::t_d51f8aa8412a99 148-159
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_dac267759ff6fd::t_708d8221dca5f2 108-112
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapFragment.kt
+  s_dac267759ff6fd::t_0b956d4a2376ff 123-138,141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "7169dca55d5a3f8d4a24dd1c592cf4d545269cfa",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

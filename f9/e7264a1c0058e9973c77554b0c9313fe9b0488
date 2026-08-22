@@ -1,0 +1,22 @@
+backend/src/test/java/com/albunyaan/tube/service/DubPotokenServiceTest.java
+  s_c3846ab71aef74::t_6609d7b29c51a6 1-81
+backend/src/main/java/com/albunyaan/tube/service/DubPotokenService.java
+  s_c3846ab71aef74::t_9cd81f22513a21 75
+  s_c3846ab71aef74::t_461db2c11b62c8 83-87,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "f9e7264a1c0058e9973c77554b0c9313fe9b0488",
+  "prompts": {},
+  "sessions": {
+    "s_c3846ab71aef74": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "867a81b9-0c51-4c86-a5a2-98a3eb560c80",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

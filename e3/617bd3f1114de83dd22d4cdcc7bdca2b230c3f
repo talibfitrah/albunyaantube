@@ -1,0 +1,24 @@
+backend/src/main/resources/firestore.rules
+  s_dac267759ff6fd::t_4b7d1910ec1956 50-57,63-65
+backend/src/main/java/com/albunyaan/tube/controller/MigrationController.java
+  s_dac267759ff6fd::t_8648fa02716c3f 56-59,65-79
+backend/src/test/java/com/albunyaan/tube/integration/MigrationControllerIntegrationTest.java
+  s_dac267759ff6fd::t_488ab048e35e27 62-63,93-94,105-106
+  s_dac267759ff6fd::t_a813f0a06eb524 110-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "e3617bd3f1114de83dd22d4cdcc7bdca2b230c3f",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

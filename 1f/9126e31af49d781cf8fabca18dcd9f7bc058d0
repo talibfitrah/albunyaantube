@@ -1,0 +1,42 @@
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_0da91a63da0e23::t_0a3bbc35ad884e 1818-1821
+  s_0da91a63da0e23::t_abaa5b674df605 519-528
+android/app/src/main/java/com/albunyaan/tube/ui/shorts/ShortsPlayerFragment.kt
+  s_0da91a63da0e23::t_ef228f4e5da5ac 618-620
+  s_0da91a63da0e23::t_04ecf3a8e28de6 22
+  s_0da91a63da0e23::t_94fabce9c99547 454-463
+android/app/src/test/java/com/albunyaan/tube/ui/shorts/ShortsPlayerViewModelTest.kt
+  s_0da91a63da0e23::t_813bb2896ad288 136,161,200,230,256,305,342,366,406,452,486,508
+android/app/src/main/java/com/albunyaan/tube/ui/shorts/ShortsPlayerViewModel.kt
+  s_0da91a63da0e23::t_e26d5b12c45be1 33
+android/app/build.gradle.kts
+  s_0da91a63da0e23::t_56534e91e1ed7e 39-40
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_0da91a63da0e23::t_f04b8ad443290f 1236,1251,1339
+  s_0da91a63da0e23::t_400be34547aec1 129
+  s_0da91a63da0e23::t_f143a79de9869e 1992,1994,1996-2000
+  s_0da91a63da0e23::t_613498189cef30 128
+  s_0da91a63da0e23::t_83350778ff1144 1941
+  s_0da91a63da0e23::t_663ea42b466ce9 1991,1993,1995
+  s_0da91a63da0e23::t_db0248bdf17ba4 125-127
+  s_0da91a63da0e23::t_2e636a9ce042ec 556
+  s_0da91a63da0e23::t_3c55e06e6b7c72 1465-1473
+releases-meta.json
+  s_0da91a63da0e23::t_9bbc5454ddab67 2-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1f9126e31af49d781cf8fabca18dcd9f7bc058d0",
+  "prompts": {},
+  "sessions": {
+    "s_0da91a63da0e23": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a3262ffc-bae5-4d63-8342-68c03490c57d",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

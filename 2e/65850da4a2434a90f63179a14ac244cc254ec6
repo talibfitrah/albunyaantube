@@ -1,0 +1,28 @@
+android/app/src/main/res/values-sw600dp/dimens.xml
+  s_ccab34f3b38945::t_9cc5084687d725 112-114
+android/app/src/main/res/values-sw720dp/dimens.xml
+  s_ccab34f3b38945::t_89a2d37be48164 123-125
+android/app/src/main/java/com/albunyaan/tube/ui/me/submissions/SubmitContentBottomSheet.kt
+  s_ccab34f3b38945::t_6bcaf1f1e2eda6 189-198
+  s_ccab34f3b38945::t_8dc05c5dd7fd67 143-147
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestContentFragment.kt
+  s_ccab34f3b38945::t_70f1dfd7c84be9 3-6,8-14,16-19,21,24-119
+android/app/src/main/res/values/dimens.xml
+  s_ccab34f3b38945::t_9db3e3f2be7d0d 211-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "2e65850da4a2434a90f63179a14ac244cc254ec6",
+  "prompts": {},
+  "sessions": {
+    "s_ccab34f3b38945": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49d374f7-cefc-4908-9d8f-b56f4e71edf5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

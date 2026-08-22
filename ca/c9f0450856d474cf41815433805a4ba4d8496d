@@ -1,0 +1,38 @@
+android/app/src/main/java/com/albunyaan/tube/data/local/AppDatabase.kt
+  s_dac267759ff6fd::t_458516c2f802d4 38
+android/app/src/main/java/com/albunyaan/tube/data/local/Migrations.kt
+  s_dac267759ff6fd::t_71aa25d6f4450e 336-349
+android/app/build.gradle.kts
+  s_dac267759ff6fd::t_f59296bf3830cc 201-209
+  s_dac267759ff6fd::t_1a0747362983e3 213-217
+android/app/schemas/com.albunyaan.tube.data.local.AppDatabase/9.json
+  s_dac267759ff6fd::t_bf75473f62b71b 1-486
+android/app/src/main/java/com/albunyaan/tube/di/DatabaseModule.kt
+  s_dac267759ff6fd::t_16517db56e5a40 56
+  s_dac267759ff6fd::t_7d21c318344351 25
+android/app/src/main/java/com/albunyaan/tube/data/local/SyncStateDao.kt
+  s_dac267759ff6fd::t_b71e36874df493 14-19
+android/app/src/main/java/com/albunyaan/tube/data/local/SyncStateEntity.kt
+  s_dac267759ff6fd::t_5acb0394c188e2 14-18
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_dac267759ff6fd::t_95522026bcad86 135-139,141-143
+  s_dac267759ff6fd::t_66be3603fb4efc 214-216,218-223,227-232,236-241
+android/app/src/test/java/com/albunyaan/tube/data/local/AppDatabaseMigration8to9Test.kt
+  s_dac267759ff6fd::t_f68f00c909ad5b 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "cac9f0450856d474cf41815433805a4ba4d8496d",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

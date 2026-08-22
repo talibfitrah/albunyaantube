@@ -1,0 +1,23 @@
+android/app/src/main/java/com/albunyaan/tube/data/import/dto/ImportDtos.kt
+  s_041296e26685a0::t_793804b345c301 1-52
+android/app/src/test/java/com/albunyaan/tube/data/import/ImportApiTest.kt
+  s_041296e26685a0::t_5f719fb3e06859 1-223
+android/app/src/main/java/com/albunyaan/tube/data/import/ImportApi.kt
+  s_041296e26685a0::t_9648b01516c41e 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "289df9ef4c5a80c09ffeaa5910fa16484459a657",
+  "prompts": {},
+  "sessions": {
+    "s_041296e26685a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d01440fc-dec4-4cf5-9283-f068651f82f7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

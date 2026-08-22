@@ -1,0 +1,19 @@
+CHANGELOG.md
+  s_578923fdf04fef::t_0e943b5d75067a 6-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "e2b3b92d026966d2c2bd94eaa0975008b3922682",
+  "prompts": {},
+  "sessions": {
+    "s_578923fdf04fef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a1ffa835-2535-46d0-8927-6c410d5170f8",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

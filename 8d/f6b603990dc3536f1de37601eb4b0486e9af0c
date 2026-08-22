@@ -1,0 +1,25 @@
+.github/workflows/android-ci.yml
+  s_43dfb8dc8c3e6a::t_2d07dd8c345538 58-63,67
+  s_43dfb8dc8c3e6a::t_b58e108400eec0 151-161,171
+android/app/src/main/java/com/albunyaan/tube/player/ExtractionRateLimiter.kt
+  s_43dfb8dc8c3e6a::t_828133c803101c 353-355
+  s_43dfb8dc8c3e6a::t_16ecbc92b5096a 454-460
+android/app/src/main/java/com/albunyaan/tube/ui/shorts/PlayerBinder.kt
+  s_43dfb8dc8c3e6a::t_0c4ebd43a9afa6 212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "8df6b603990dc3536f1de37601eb4b0486e9af0c",
+  "prompts": {},
+  "sessions": {
+    "s_43dfb8dc8c3e6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c20d370f-4c72-40f4-99e5-b18195a5843c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

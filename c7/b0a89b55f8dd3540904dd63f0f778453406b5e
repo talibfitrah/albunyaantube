@@ -1,0 +1,34 @@
+backend/src/test/java/com/albunyaan/tube/service/StreamIndexServiceTest.java
+  s_2b90f660103eb6::t_67c485c1b58dbc 55-65
+backend/src/main/java/com/albunyaan/tube/controller/ImportController.java
+  s_2b90f660103eb6::t_ebe63e750acffd 104-108
+  s_2b90f660103eb6::t_18f2954d5aae55 151-164
+backend/src/test/java/com/albunyaan/tube/controller/ImportControllerTest.java
+  s_2b90f660103eb6::t_85dbd37aa9dd90 186-233
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_2b90f660103eb6::t_9eb36628bac61e 288-289,291
+  s_2b90f660103eb6::t_128bb6ea6981af 328-329,331
+  s_2b90f660103eb6::t_8b758533e300b1 234-235,237
+backend/src/main/java/com/albunyaan/tube/service/StreamIndexService.java
+  s_2b90f660103eb6::t_59e5ea1a3e22e3 51-54
+  s_2b90f660103eb6::t_66517691230607 78-80
+  s_2b90f660103eb6::t_10a91d33c23243 39-43
+backend/src/main/java/com/albunyaan/tube/service/UserImportSubmissionService.java
+  s_2b90f660103eb6::t_563597cd9d5a02 164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "c7b0a89b55f8dd3540904dd63f0f778453406b5e",
+  "prompts": {},
+  "sessions": {
+    "s_2b90f660103eb6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc12f1b8-09b6-48e7-b8e8-1ad439a58004",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

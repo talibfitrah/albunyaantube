@@ -1,0 +1,35 @@
+android/app/src/test/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModelTest.kt
+  s_ccab34f3b38945::t_db60a65272f878 294
+  s_ccab34f3b38945::t_bbc6b742353302 166
+  s_ccab34f3b38945::t_75e59a0c06caf7 1-22,24-61,63-74,76-114,116-122,124-165,167-182,184-199,201-216,218-263,265-278,280-293,295-297
+  s_ccab34f3b38945::t_c0d8aaafa2fecc 115
+  s_ccab34f3b38945::t_d32ca4bf9d746e 264
+  s_ccab34f3b38945::t_b730f36d0f99d0 279
+  s_ccab34f3b38945::t_884029b057c6a1 75
+  s_ccab34f3b38945::t_a96d682143759c 183
+  s_ccab34f3b38945::t_9dc470c7e771ce 200
+  s_ccab34f3b38945::t_532456333da34e 23
+  s_ccab34f3b38945::t_ffc782b5c0323e 62
+  s_ccab34f3b38945::t_da4d3c3945d78b 123
+  s_ccab34f3b38945::t_204d59236e8dfc 217
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestUiState.kt
+  s_ccab34f3b38945::t_d6f2ce5dae3292 1-18
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModel.kt
+  s_ccab34f3b38945::t_cab7a844386940 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "44a20e61961c52b8ba73e2393c70d50e8dc0e20a",
+  "prompts": {},
+  "sessions": {
+    "s_ccab34f3b38945": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49d374f7-cefc-4908-9d8f-b56f4e71edf5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

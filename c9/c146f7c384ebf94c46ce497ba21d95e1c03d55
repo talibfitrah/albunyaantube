@@ -1,0 +1,21 @@
+CHANGELOG.md
+  s_49f3d821ce347d::t_36d36fafb7a874 8-20
+releases-meta.json
+  s_49f3d821ce347d::t_36d36fafb7a874 2-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c9c146f7c384ebf94c46ce497ba21d95e1c03d55",
+  "prompts": {},
+  "sessions": {
+    "s_49f3d821ce347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b1b9023a-e038-4508-b970-4f083973635c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

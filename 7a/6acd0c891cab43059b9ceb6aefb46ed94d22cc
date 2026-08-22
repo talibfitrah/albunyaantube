@@ -1,0 +1,19 @@
+CLAUDE.md
+  s_ea285fe7d43fed::t_c7142031398768 101-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "7a6acd0c891cab43059b9ceb6aefb46ed94d22cc",
+  "prompts": {},
+  "sessions": {
+    "s_ea285fe7d43fed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d1f56bd-1b38-4f1c-8cd3-6d3f174646b7",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+android/app/src/main/java/com/albunyaan/tube/data/playlist/NewPipePlaylistDetailRepository.kt
+  s_38612edddfcfde::t_5dfa017aa39378 410,413,415,422,424-425
+  s_38612edddfcfde::t_81d312c5352b6c 18,69-85,279,289-296,365-409,411-412,414,416-421,423,438-443
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "f2ae62de1551cd98bfa712782c150b011d54abe3",
+  "prompts": {},
+  "sessions": {
+    "s_38612edddfcfde": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "621e21cc-ea7e-4c5f-bc31-1f93f48b1cae",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

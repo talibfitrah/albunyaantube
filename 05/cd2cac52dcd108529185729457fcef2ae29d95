@@ -1,0 +1,27 @@
+backend/src/test/java/com/albunyaan/tube/service/YouTubeSearchServiceTest.java
+  s_ea285fe7d43fed::t_55cd587084f666 20
+  s_ea285fe7d43fed::t_0515b23f1951eb 305-377
+android/app/src/test/java/com/albunyaan/tube/data/approvals/MySubmissionsRepositoryTest.kt
+  s_ea285fe7d43fed::t_7e6e096ce4d94d 53-54
+  s_ea285fe7d43fed::t_f48511ddbc6ca3 103
+  s_ea285fe7d43fed::t_1bd5a1e1ae27f0 20
+android/app/src/test/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModelTest.kt
+  s_ea285fe7d43fed::t_d4aa5df32b3ff3 84-234
+  s_ea285fe7d43fed::t_1b9d3332eedf26 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "05cd2cac52dcd108529185729457fcef2ae29d95",
+  "prompts": {},
+  "sessions": {
+    "s_ea285fe7d43fed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d1f56bd-1b38-4f1c-8cd3-6d3f174646b7",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

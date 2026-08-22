@@ -1,0 +1,23 @@
+android/app/src/main/java/com/albunyaan/tube/player/DashSourceBuilder.kt
+  s_c832b66577aa53::t_5af33f3c9f24d4 202-206
+android/app/src/test/java/com/albunyaan/tube/player/MultiRepresentationMpdGeneratorTest.kt
+  s_c832b66577aa53::t_ebbb6017683572 144-180
+android/app/src/main/java/com/albunyaan/tube/player/MultiRepresentationMpdGenerator.kt
+  s_c832b66577aa53::t_9ac13f7a5c42a0 544-550
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "d52e19f83af7f18a1dd4fa03fc37e4ca8f5a9af4",
+  "prompts": {},
+  "sessions": {
+    "s_c832b66577aa53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1f2a368e-209c-4984-acb2-d1c7b954568d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

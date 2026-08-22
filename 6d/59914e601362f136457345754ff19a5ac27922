@@ -1,0 +1,23 @@
+android/app/src/test/java/com/albunyaan/tube/data/local/AppDatabaseMigrationTest.kt
+  s_dac267759ff6fd::t_ac8630a62c27ed 151-154,156
+android/app/src/test/java/com/albunyaan/tube/data/sync/PullAllTest.kt
+  s_dac267759ff6fd::t_6edebd4590d693 81-86,92-105
+  s_dac267759ff6fd::t_9ab65eee3c67a1 36-39,49
+  s_dac267759ff6fd::t_332cae0f3bfad2 40-43,45-48,51-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "6d59914e601362f136457345754ff19a5ac27922",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

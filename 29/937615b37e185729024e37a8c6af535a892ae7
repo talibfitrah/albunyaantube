@@ -1,0 +1,24 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/AndroidVrStreamResolver.kt
+  s_2376ebf62a8422::t_802ab73d6efffe 60-73
+  s_2376ebf62a8422::t_8a5ef7e4144346 271-284
+  s_2376ebf62a8422::t_5a5ffaa6929f1a 111
+android/app/src/test/java/com/albunyaan/tube/data/extractor/AndroidVrLiveDetectionTest.kt
+  s_2376ebf62a8422::t_94242f2d48b1db 1-62,71
+  s_2376ebf62a8422::t_0d81db0830251b 63-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "29937615b37e185729024e37a8c6af535a892ae7",
+  "prompts": {},
+  "sessions": {
+    "s_2376ebf62a8422": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5c88ac88-0032-450e-b8a3-4be59643399a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

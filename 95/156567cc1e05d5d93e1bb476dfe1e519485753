@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/YoutubeClientRotator.kt
+  s_2b90f660103eb6::t_a9a035a4f072ea 61-62,64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "95156567cc1e05d5d93e1bb476dfe1e519485753",
+  "prompts": {},
+  "sessions": {
+    "s_2b90f660103eb6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc12f1b8-09b6-48e7-b8e8-1ad439a58004",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

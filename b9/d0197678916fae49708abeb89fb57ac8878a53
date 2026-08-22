@@ -1,0 +1,47 @@
+backend/src/main/java/com/albunyaan/tube/dto/registry/BulkPreviewRequest.java
+  s_1a004b5f0406e1::t_7b3f4ca4cf65e1 9
+backend/src/test/java/com/albunyaan/tube/integration/BulkSubmissionIT.java
+  s_1a004b5f0406e1::t_1d5351ff68c981 93
+  s_1a004b5f0406e1::t_9174d895613168 168
+  s_1a004b5f0406e1::t_e8f7fd13e6456e 188
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_1a004b5f0406e1::t_b54fcef1b4e75e 756
+  s_1a004b5f0406e1::t_3a80a60c8f27dc 666
+  s_1a004b5f0406e1::t_8327b5bdc4e1fd 72-73
+frontend/src/components/contentSearch/bulk/useCategoryPicker.ts
+  s_1a004b5f0406e1::t_f7ec3dd37b6d52 1-2,4,6-7,9-15,17-25,27-37,39-41
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_1a004b5f0406e1::t_170bc796fc7ec7 100,109,116,121,127,132
+frontend/tests/bulkSubmissionStore.spec.ts
+  s_1a004b5f0406e1::t_75096946cb8448 30
+  s_1a004b5f0406e1::t_2b13596282d3e1 43
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServicePreviewTest.java
+  s_1a004b5f0406e1::t_c80856502be967 45,72,89,103
+  s_1a004b5f0406e1::t_ff0e07da699352 123
+  s_1a004b5f0406e1::t_eb8c3cbed94ee5 59
+  s_1a004b5f0406e1::t_788d6fd814e96d 141
+backend/src/main/java/com/albunyaan/tube/service/RegistryDuplicateChecker.java
+  s_1a004b5f0406e1::t_bf028da0a4da85 76
+docs/architecture/api-specification.yaml
+  s_1a004b5f0406e1::t_f394f3917e3e9d 4324
+frontend/src/components/contentSearch/bulk/BulkDefaultCategoriesPicker.vue
+  s_1a004b5f0406e1::t_2257e32e12a309 2,4,11-12,21-22
+frontend/src/components/contentSearch/bulk/BulkRowCategoryEditor.vue
+  s_1a004b5f0406e1::t_7e75d19b156bdd 4,14-15,17,25-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "b9d0197678916fae49708abeb89fb57ac8878a53",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

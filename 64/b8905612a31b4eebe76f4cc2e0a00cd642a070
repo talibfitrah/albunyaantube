@@ -1,0 +1,60 @@
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerTest.java
+  s_0ca987a98657ad::t_39081be2b53a87 60-62
+android/app/src/main/java/com/albunyaan/tube/ui/auth/EmailVerificationViewModel.kt
+  s_0ca987a98657ad::t_21ead9c354ed60 30
+  s_0ca987a98657ad::t_051f7a85a1ee4d 115,117-118,124-127,129
+  s_0ca987a98657ad::t_df339871f8fb64 7,16
+  s_0ca987a98657ad::t_974cc999df1b02 116
+  s_0ca987a98657ad::t_d8d6cf7603f23f 122-123
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditPhoneBottomSheetFragment.kt
+  s_0ca987a98657ad::t_a16c31adc8a0dc 62-67
+android/app/src/main/java/com/albunyaan/tube/data/account/AccountService.kt
+  s_0ca987a98657ad::t_bd35699d585ba5 18-20
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/ProfileFragment.kt
+  s_0ca987a98657ad::t_b0eff3ec7e2251 15
+  s_0ca987a98657ad::t_f213c9887868c1 98
+  s_0ca987a98657ad::t_cdec5c002ebeea 97,99
+android/app/src/main/java/com/albunyaan/tube/util/PhoneFormat.kt
+  s_0ca987a98657ad::t_322f3fe6542842 17-23
+  s_0ca987a98657ad::t_60a78b76470277 60-61,64,67-71,74-84
+  s_0ca987a98657ad::t_1cf2e2e79e7e59 15-16
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_0ca987a98657ad::t_cbed5285adf85b 12,14
+  s_0ca987a98657ad::t_27a5d965cad9b9 13
+  s_0ca987a98657ad::t_8adca0c597eee2 53,57-58,62-63
+  s_0ca987a98657ad::t_ed70fabe07739a 30
+  s_0ca987a98657ad::t_3d1f741c8293b2 103-113,115-117,120-125
+  s_0ca987a98657ad::t_091e3fa8532dcb 54,59
+  s_0ca987a98657ad::t_441cce9de6c15a 119
+  s_0ca987a98657ad::t_32cfaf9c9853aa 96-102,114,118,126-131
+  s_0ca987a98657ad::t_9e6445c0f46198 48,50
+android/app/src/test/java/com/albunyaan/tube/ui/auth/EmailVerificationViewModelTest.kt
+  s_0ca987a98657ad::t_e2f746f1b9e709 87,90
+  s_0ca987a98657ad::t_748d2999215b54 5,29,51
+  s_0ca987a98657ad::t_79a23b682257d4 43-45
+  s_0ca987a98657ad::t_26950936bfcd7e 103,110-111
+  s_0ca987a98657ad::t_89da0afb0624c1 104-108
+  s_0ca987a98657ad::t_ff8540e4f9fec8 56,64
+backend/src/main/java/com/albunyaan/tube/service/MailService.java
+  s_0ca987a98657ad::t_1a24e8c2205dbd 111,120
+  s_0ca987a98657ad::t_2313b15a97ef5a 185
+  s_0ca987a98657ad::t_412bc7e3f332e1 7-11,13,20,85-109,115,119,122,127-129,133,135,141,165-171,174-175,178
+backend/src/test/java/com/albunyaan/tube/service/MailServiceTest.java
+  s_0ca987a98657ad::t_4b63fac6904ccd 15,20-24,27,37,40-46,48-52,54-55,57,59,66,71-82,87,94-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "64b8905612a31b4eebe76f4cc2e0a00cd642a070",
+  "prompts": {},
+  "sessions": {
+    "s_0ca987a98657ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3904442a-d366-4444-968a-83e2ad766d04",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

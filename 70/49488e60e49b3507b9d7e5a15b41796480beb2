@@ -1,0 +1,40 @@
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_dac267759ff6fd::t_a73d951dd9ca19 564-575
+  s_dac267759ff6fd::t_07b990be9ee8f7 518-524
+  s_dac267759ff6fd::t_f09178f0780422 231-273
+  s_dac267759ff6fd::t_3659096d2c526c 761-770
+backend/src/test/java/com/albunyaan/tube/controller/UserControllerTest.java
+  s_dac267759ff6fd::t_e39dd37eaf2c36 294
+  s_dac267759ff6fd::t_b2958ac24a685a 287-290,305-308
+backend/src/main/java/com/albunyaan/tube/scheduler/TombstoneGcScheduler.java
+  s_dac267759ff6fd::t_c10a51e9706e16 60-72,76
+backend/src/main/java/com/albunyaan/tube/service/AccountProfileService.java
+  s_dac267759ff6fd::t_e094bf12df3fb3 125-137
+  s_dac267759ff6fd::t_5cda654c7dbb4c 30-32,36-37,41
+backend/src/main/java/com/albunyaan/tube/security/FirebaseAuthFilter.java
+  s_dac267759ff6fd::t_cdd92da11d38fa 137-156,158-159
+  s_dac267759ff6fd::t_22100e97ef2dcf 85-95,97
+backend/src/test/java/com/albunyaan/tube/service/AccountProfileServiceTest.java
+  s_dac267759ff6fd::t_7618aa6e1b4380 32
+  s_dac267759ff6fd::t_2123049c621a2f 42-45
+backend/src/main/java/com/albunyaan/tube/controller/UserController.java
+  s_dac267759ff6fd::t_b78d540f8828b7 173-183,187,195-198
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_dac267759ff6fd::t_b64ce31d8b69fd 68-83,85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "7049488e60e49b3507b9d7e5a15b41796480beb2",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_e026945d130ffb::t_505efdc90315ff 160
+android/app/src/test/java/com/albunyaan/tube/auth/AccountRepositoryApplyProfileUpdateTest.kt
+  s_e026945d130ffb::t_edd1c005dc8d21 158-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "01f0094da1a670489636c720a5fc38c61af246a7",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

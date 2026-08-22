@@ -1,0 +1,19 @@
+backend/src/main/java/com/albunyaan/tube/controller/MigrationController.java
+  s_dac267759ff6fd::t_49c8292c751cc3 61-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "f6b55d8ff21e4aaf4b194437b8dfc8ab3dc826df",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

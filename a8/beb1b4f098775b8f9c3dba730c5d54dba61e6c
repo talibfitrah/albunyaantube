@@ -1,0 +1,25 @@
+backend/src/main/java/com/albunyaan/tube/config/WebConfig.java
+  s_ccab34f3b38945::t_36fa0e063b8311 3,5,15,17-32,37-38,40-44,47-48,57-68,71,79-81
+backend/src/test/java/com/albunyaan/tube/integration/ProfileUpdateRateLimitIT.java
+  s_ccab34f3b38945::t_935e4458af6a49 1-118
+backend/src/main/java/com/albunyaan/tube/service/ProfileUpdateRateLimiter.java
+  s_ccab34f3b38945::t_f36d1714c5b171 1-69
+backend/src/main/java/com/albunyaan/tube/security/ProfileUpdateRateLimitInterceptor.java
+  s_ccab34f3b38945::t_41127137765a2b 1-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "a8beb1b4f098775b8f9c3dba730c5d54dba61e6c",
+  "prompts": {},
+  "sessions": {
+    "s_ccab34f3b38945": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49d374f7-cefc-4908-9d8f-b56f4e71edf5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

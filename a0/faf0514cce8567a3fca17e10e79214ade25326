@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/data/channel/NewPipeChannelDetailRepository.kt
+  s_dfe656123dedd7::t_a151cf4c8d23a1 418-421
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "a0faf0514cce8567a3fca17e10e79214ade25326",
+  "prompts": {},
+  "sessions": {
+    "s_dfe656123dedd7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "90659f6e-87fe-4179-a374-7e920829ea80",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

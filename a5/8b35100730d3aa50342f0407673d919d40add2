@@ -1,0 +1,25 @@
+backend/src/main/java/com/albunyaan/tube/controller/YouTubeSearchController.java
+  s_ccab34f3b38945::t_c43b84d97abac2 30,38,43-44,49-57
+  s_ccab34f3b38945::t_dcd98db6c696e4 3-4,8-10,15-16,20
+backend/src/test/java/com/albunyaan/tube/integration/YouTubeSearchControllerIT.java
+  s_ccab34f3b38945::t_b73af1e6c605eb 1-122
+backend/src/test/java/com/albunyaan/tube/controller/YouTubeSearchControllerTest.java
+  s_ccab34f3b38945::t_70ef7d0d1fcd75 39-41,49-50
+  s_ccab34f3b38945::t_7f69f0c2359308 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "a58b35100730d3aa50342f0407673d919d40add2",
+  "prompts": {},
+  "sessions": {
+    "s_ccab34f3b38945": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49d374f7-cefc-4908-9d8f-b56f4e71edf5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

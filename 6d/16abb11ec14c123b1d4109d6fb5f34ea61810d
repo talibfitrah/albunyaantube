@@ -1,0 +1,33 @@
+backend/src/main/java/com/albunyaan/tube/service/PreviewFetchResult.java
+  s_1a004b5f0406e1::t_52ce9cfd996f95 1-23
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_1a004b5f0406e1::t_a661d77017f444 3-7,14-16,18,20,29,40,49
+  s_1a004b5f0406e1::t_7c4ce6a8330713 689-690
+  s_1a004b5f0406e1::t_ba9f38effb8b48 715-720,722,725
+  s_1a004b5f0406e1::t_bd34df5a40108b 701-702
+  s_1a004b5f0406e1::t_85768c102ae2c5 740,744
+  s_1a004b5f0406e1::t_3db6869bfd0c03 655,658,664,666-675,677-679,681-682,684
+  s_1a004b5f0406e1::t_fdedd69fc84531 737,741,745,748,754
+  s_1a004b5f0406e1::t_8fb746715803c0 280
+  s_1a004b5f0406e1::t_bfcf39a282f63b 641-654,656-657,659-663,665,680,683,685-688,691-700,703-714,721,723-724,726-736,738-739,742-743,746-747,749-753,755-758
+  s_1a004b5f0406e1::t_fad0ca6e84b0e0 676
+backend/src/test/java/com/albunyaan/tube/service/YouTubeGatewayBulkTest.java
+  s_1a004b5f0406e1::t_6b0a2e4abfd1e0 16-18,21,33,44,55
+  s_1a004b5f0406e1::t_4458df1769e8f7 1-15,19-20,22-32,34-43,45-54,56-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "6d16abb11ec14c123b1d4109d6fb5f34ea61810d",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": null
+    }
+  }
+}

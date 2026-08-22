@@ -1,0 +1,23 @@
+android/app/src/test/java/com/albunyaan/tube/ui/shorts/PlayerBinderTest.kt
+  s_43dfb8dc8c3e6a::t_264a6cf8cfa09a 161-171
+  s_43dfb8dc8c3e6a::t_b280ea86ec7163 324-331,340-351
+  s_43dfb8dc8c3e6a::t_e6d132286cc5d3 25
+android/app/src/test/java/com/albunyaan/tube/data/me/work/RefreshSchedulerTest.kt
+  s_43dfb8dc8c3e6a::t_dceaa11470d7c9 97-100,105-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "ae26b8c9431623c13cc02c021861ef4c0f7094e2",
+  "prompts": {},
+  "sessions": {
+    "s_43dfb8dc8c3e6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c20d370f-4c72-40f4-99e5-b18195a5843c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

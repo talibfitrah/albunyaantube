@@ -1,0 +1,23 @@
+android/app/src/main/res/layout/fragment_available_versions.xml
+  s_0f79e29c020bf2::t_68087fd1e27d70 1-39
+android/app/src/main/res/layout/settings_item_available_versions.xml
+  s_0f79e29c020bf2::t_9d58c93f36cc36 1-49
+android/app/src/main/res/layout/item_available_version.xml
+  s_0f79e29c020bf2::t_9cb592b6948050 1-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "35fcb81c3cb3cc9485671d8612ca7955c6082ba0",
+  "prompts": {},
+  "sessions": {
+    "s_0f79e29c020bf2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cfd3c5cf-780d-4107-8a54-b5cfe02ce86b",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

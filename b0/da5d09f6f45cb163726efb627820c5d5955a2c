@@ -1,0 +1,22 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/StreamModels.kt
+  s_c3846ab71aef74::t_f33730baf94619 58-60
+  s_c3846ab71aef74::t_3d1c07dc1cd1bd 70-76
+android/app/src/test/java/com/albunyaan/tube/data/extractor/StreamModelsAudioSourceTest.kt
+  s_c3846ab71aef74::t_4996108804f1d3 1-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "b0da5d09f6f45cb163726efb627820c5d5955a2c",
+  "prompts": {},
+  "sessions": {
+    "s_c3846ab71aef74": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "867a81b9-0c51-4c86-a5a2-98a3eb560c80",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

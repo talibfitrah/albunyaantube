@@ -1,0 +1,23 @@
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServiceSubmitTest.java
+  s_b050c26eb2be76::t_a530c413f5eb11 99-105
+  s_b050c26eb2be76::t_2127d67d1ed8c6 258-324
+  s_b050c26eb2be76::t_96481cd0f43c2d 31,53-67,70
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_b050c26eb2be76::t_18fe2e5fcb7f53 231-264,267-270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "128e083d4eb6452e3d8c76df82f75d32129ddfaa",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

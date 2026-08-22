@@ -1,0 +1,52 @@
+backend/src/main/java/com/albunyaan/tube/service/AuditLogService.java
+  s_fc285cbffbb215::t_d9deb39a5558dd 205,207-210,212-218
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestUiState.kt
+  s_fc285cbffbb215::t_0cbbe6ee135c2a 9-19,24
+backend/src/main/java/com/albunyaan/tube/service/AccountProfileService.java
+  s_fc285cbffbb215::t_012cc769f98bbe 296-302,307
+  s_fc285cbffbb215::t_70041d42747750 128-150
+  s_fc285cbffbb215::t_dd735d264299d2 248-254,257-259,264,267
+  s_fc285cbffbb215::t_244ce58437ff55 240-244
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/ProfileFragment.kt
+  s_fc285cbffbb215::t_de430167814723 127-135,138-139
+  s_fc285cbffbb215::t_59d8a2e0472ea0 15-16
+  s_fc285cbffbb215::t_1d55ea90d933c9 75-83
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModel.kt
+  s_fc285cbffbb215::t_fad074718e91cb 9,17-19,24,36-42,45,50-51,55,59-77,86-91
+  s_fc285cbffbb215::t_51198031669d72 47,49
+android/app/src/test/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModelTest.kt
+  s_fc285cbffbb215::t_d67d753a2bc42d 297-329
+docs/superpowers/plans/2026-05-19-plan-g-profile-edit-and-suggest-search.md
+  s_fc285cbffbb215::t_d0aade41aca44e 3152-3177
+backend/src/main/java/com/albunyaan/tube/service/PublicContentCacheService.java
+  s_fc285cbffbb215::t_df25dee3551871 27-29,34-35,38,41-42
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_fc285cbffbb215::t_3d4d734cd2c9e0 539-548,555-575,578-579
+  s_fc285cbffbb215::t_12e2df65d198d5 577
+backend/src/main/java/com/albunyaan/tube/repository/UserRepository.java
+  s_fc285cbffbb215::t_a48e4244fb7d15 127-158
+backend/src/test/java/com/albunyaan/tube/service/AccountProfileServiceUpdateProfileTest.java
+  s_fc285cbffbb215::t_87dad5f7c935a6 133-160
+  s_fc285cbffbb215::t_c101973d5c636c 78-86,91-111
+  s_fc285cbffbb215::t_0a3b53a38ef8ca 175
+backend/src/main/java/com/albunyaan/tube/exception/GlobalExceptionHandler.java
+  s_fc285cbffbb215::t_d37383bf728c10 229-254
+backend/src/main/java/com/albunyaan/tube/security/ProfileUpdateRateLimitInterceptor.java
+  s_fc285cbffbb215::t_5d4fd4bd31ba0c 39-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "8ec550ca8ddba30fbe6bf1cee005439dbd440d53",
+  "prompts": {},
+  "sessions": {
+    "s_fc285cbffbb215": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4fdf01ca-ea20-4afb-a3da-01238fb72838",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

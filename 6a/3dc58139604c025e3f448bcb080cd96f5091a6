@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-05-25-onboarding-phone-and-edit.md
+  s_e026945d130ffb::t_45387cb831916b 1-4018
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "6a3dc58139604c025e3f448bcb080cd96f5091a6",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

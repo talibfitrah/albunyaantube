@@ -1,0 +1,21 @@
+android/app/src/test/java/com/albunyaan/tube/data/youtube/YouTubeAuthManagerContractTest.kt
+  s_041296e26685a0::t_c299d76fb92c38 1-89
+android/app/src/main/java/com/albunyaan/tube/data/youtube/YouTubeAuthManager.kt
+  s_041296e26685a0::t_1eda343a348f0d 1-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3cdb9a637cf5e22c736d05d685eca915d8b6c22c",
+  "prompts": {},
+  "sessions": {
+    "s_041296e26685a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d01440fc-dec4-4cf5-9283-f068651f82f7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

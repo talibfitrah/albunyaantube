@@ -1,0 +1,30 @@
+android/app/src/main/res/values-nl/strings.xml
+  s_e026945d130ffb::t_e0f3a50f56d036 719
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/ProfileFragment.kt
+  s_e026945d130ffb::t_62f0767c7bd279 102-103
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/ProfileViewModel.kt
+  s_e026945d130ffb::t_c5ad3abe465228 38-40,42-57
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditPhoneBottomSheetFragment.kt
+  s_e026945d130ffb::t_c76cc3fbe20d4f 99-106
+  s_e026945d130ffb::t_5e87d8a1313b16 20
+android/app/src/main/res/values/strings.xml
+  s_e026945d130ffb::t_e07b356f0f0f70 848
+android/app/src/main/res/values-ar/strings.xml
+  s_e026945d130ffb::t_ce763febaa88f8 749
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "d96ea05987142e0fd3c3009112d60c098189a24f",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

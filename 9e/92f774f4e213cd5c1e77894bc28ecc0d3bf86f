@@ -1,0 +1,51 @@
+backend/src/main/java/com/albunyaan/tube/service/ApprovalService.java
+  s_dac267759ff6fd::t_231b1ad5e58810 787-790
+  s_dac267759ff6fd::t_32a67317bf4786 821-822
+  s_dac267759ff6fd::t_54cf30fc3bbc12 853-854
+backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
+  s_dac267759ff6fd::t_eaa9da1fdf95c3 159-169
+  s_dac267759ff6fd::t_ee4181a50415ec 644-649
+  s_dac267759ff6fd::t_51617b06a4ceed 358-363
+backend/src/main/java/com/albunyaan/tube/config/AsyncConfig.java
+  s_dac267759ff6fd::t_e7d3b3f84930f2 143-174
+backend/src/main/java/com/albunyaan/tube/service/sync/SyncService.java
+  s_dac267759ff6fd::t_71d910c8f98884 14
+  s_dac267759ff6fd::t_48d318e91f99da 29-35,39,43,47,53,57-59,63-65
+backend/src/main/java/com/albunyaan/tube/service/sync/ArchiveProjector.java
+  s_dac267759ff6fd::t_d401587c8e3119 9,11,13
+  s_dac267759ff6fd::t_abbb06cae7ba3b 42-48,50,54,58-94,97,100
+backend/src/main/java/com/albunyaan/tube/repository/UserRepository.java
+  s_dac267759ff6fd::t_a6fce9b1f0f9fc 119-145
+backend/src/main/java/com/albunyaan/tube/repository/SyncRepository.java
+  s_dac267759ff6fd::t_64282c11b7eca9 99-104,112-117
+  s_dac267759ff6fd::t_292f2ef18bcf50 127-129,137-142
+backend/src/main/java/com/albunyaan/tube/service/BulkUserService.java
+  s_dac267759ff6fd::t_1e557ebfc62d69 53-57,59
+  s_dac267759ff6fd::t_86915cb22d00d2 109-119,121,123
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_dac267759ff6fd::t_f7634568521e92 133-161
+backend/src/main/java/com/albunyaan/tube/service/MailService.java
+  s_dac267759ff6fd::t_ce8f54a62e5a34 72-78,102-104,108,112-132
+backend/src/main/java/com/albunyaan/tube/service/AuditLogService.java
+  s_dac267759ff6fd::t_bcd2f9570c0ebf 120-144
+backend/src/main/java/com/albunyaan/tube/repository/PlaylistRepository.java
+  s_dac267759ff6fd::t_744c34f178ea93 141-170
+backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java
+  s_dac267759ff6fd::t_f126c723d77935 142-177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "9e92f774f4e213cd5c1e77894bc28ecc0d3bf86f",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

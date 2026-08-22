@@ -1,0 +1,23 @@
+android/app/src/main/java/com/albunyaan/tube/data/me/MeFeedRepository.kt
+  s_2fbdbd4afedc5b::t_270f366d6938c1 384-386
+android/app/src/test/java/com/albunyaan/tube/data/me/MeFeedRepositoryTest.kt
+  s_2fbdbd4afedc5b::t_bbd867fe8ba3f3 1221-1222,1231,1236
+android/app/src/main/java/com/albunyaan/tube/data/me/WeekBucket.kt
+  s_2fbdbd4afedc5b::t_1865443d8d1295 88-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "2c7c75c2a2072bf577cd2ab8baa0ba1b16064675",
+  "prompts": {},
+  "sessions": {
+    "s_2fbdbd4afedc5b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e3394683-ba1a-491a-b47a-8fbb6b15406a",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

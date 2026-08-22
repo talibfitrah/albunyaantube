@@ -1,0 +1,34 @@
+frontend/src/views/PendingApprovalsView.vue
+  s_ec6997f7f4b8e7::t_32caae6c89e371 190
+android/app/src/main/java/com/albunyaan/tube/player/QualityTrackSelector.kt
+  s_ec6997f7f4b8e7::t_dff485a90ea4aa 103
+  s_ec6997f7f4b8e7::t_2585137e17c139 49-53
+  s_ec6997f7f4b8e7::t_aed6778f150094 158
+  s_ec6997f7f4b8e7::t_b0f346a2d14ff7 168-170,172
+backend/src/main/java/com/albunyaan/tube/controller/ImportController.java
+  s_ec6997f7f4b8e7::t_0320c92b19bb60 115-119
+frontend/src/locales/messages.ts
+  s_ec6997f7f4b8e7::t_807a4bb8862ff7 312
+  s_ec6997f7f4b8e7::t_9fef1bfaad1e0e 1881
+  s_ec6997f7f4b8e7::t_163b39adfc129a 3231
+android/app/src/test/java/com/albunyaan/tube/player/QualityTrackSelectorCeilingTest.kt
+  s_ec6997f7f4b8e7::t_8fb4f38a1e36c2 88-101
+android/app/src/main/java/com/albunyaan/tube/data/importflow/YouTubeImportRepository.kt
+  s_ec6997f7f4b8e7::t_96b4cf91c57186 133-136,139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1becd178f95c85ca9fa2e90c05cf560ba1186eb2",
+  "prompts": {},
+  "sessions": {
+    "s_ec6997f7f4b8e7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fb68bbe7-e99d-43b4-b1c5-a005b3b74616",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

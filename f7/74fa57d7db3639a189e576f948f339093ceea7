@@ -1,0 +1,21 @@
+docs/superpowers/plans/2026-05-23-bulk-cross-admin-firestore-tx.md
+  s_b050c26eb2be76::t_afd64689efdaba 1-81
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_b050c26eb2be76::t_0543b54a776f8e 138-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "f774fa57d7db3639a189e576f948f339093ceea7",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

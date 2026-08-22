@@ -1,0 +1,19 @@
+android/app/src/test/java/com/albunyaan/tube/update/UpdatePromptFlowTest.kt
+  s_0f79e29c020bf2::t_cfd84fd2d9ac4e 63-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "b7fb407c31b451d48dbdb42fa19fcf48bf975539",
+  "prompts": {},
+  "sessions": {
+    "s_0f79e29c020bf2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cfd3c5cf-780d-4107-8a54-b5cfe02ce86b",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

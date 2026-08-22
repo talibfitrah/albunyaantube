@@ -1,0 +1,24 @@
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditPhoneBottomSheetFragment.kt
+  s_e026945d130ffb::t_2d564b6a9bfb40 50
+android/app/src/main/java/com/albunyaan/tube/util/PhoneFormat.kt
+  s_e026945d130ffb::t_6020b074daf562 6
+  s_e026945d130ffb::t_d8a35d1e4bf020 49-61
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapFragment.kt
+  s_e026945d130ffb::t_2e34e7a3d5c695 73-78,81-82,87-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "049ff9a4892116a4f5f53060277f3482325a6309",
+  "prompts": {},
+  "sessions": {
+    "s_e026945d130ffb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00fc8c6a-f6c4-4563-bb98-43f14d700511",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+backend/src/main/java/com/albunyaan/tube/dto/SearchHit.java
+  s_ccab34f3b38945::t_56f11743a664b3 1-22
+backend/src/main/java/com/albunyaan/tube/service/NewPipeSearchClient.java
+  s_ccab34f3b38945::t_a06c1b0fffb69c 1-57
+backend/src/main/java/com/albunyaan/tube/dto/YouTubeContentType.java
+  s_ccab34f3b38945::t_acb066c19d2396 1-7
+backend/src/main/java/com/albunyaan/tube/service/YouTubeSearchException.java
+  s_ccab34f3b38945::t_4e15d20f3fa81d 1-10
+backend/src/test/java/com/albunyaan/tube/service/YouTubeSearchServiceTest.java
+  s_ccab34f3b38945::t_7f529982e2dcfa 253-254
+  s_ccab34f3b38945::t_b2c154a49f0301 1-252,255-325
+backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java
+  s_ccab34f3b38945::t_679d29524d40e0 944-971
+backend/src/main/java/com/albunyaan/tube/dto/YouTubeSearchResponse.java
+  s_ccab34f3b38945::t_b4701446c61ae5 1-11
+backend/src/main/java/com/albunyaan/tube/service/YouTubeSearchService.java
+  s_ccab34f3b38945::t_b9579b783faa8d 1-236
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_ccab34f3b38945::t_2d4bd4d32f0034 264-271
+  s_ccab34f3b38945::t_7b064facbadc10 363-400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "257b323dcc13d3423f9a6e525fa4c099296d337d",
+  "prompts": {},
+  "sessions": {
+    "s_ccab34f3b38945": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49d374f7-cefc-4908-9d8f-b56f4e71edf5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

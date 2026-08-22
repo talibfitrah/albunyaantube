@@ -1,0 +1,20 @@
+frontend/src/utils/bulkFileParsers.ts
+  s_b050c26eb2be76::t_8530d2e9e70ed5 40-45,57-60
+  s_b050c26eb2be76::t_80164297d389d8 107-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "5048b2103d68a8c036419976a08a89aed7750571",
+  "prompts": {},
+  "sessions": {
+    "s_b050c26eb2be76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "182d1ba3-cfd2-4d87-934e-0d30cf524947",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

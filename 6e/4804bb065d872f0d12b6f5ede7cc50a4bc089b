@@ -1,0 +1,24 @@
+docs/superpowers/specs/2026-05-19-plan-g-profile-edit-and-suggest-search-design.md
+  s_ccab34f3b38945::t_ff80e3442d9b28 1-205,207-214,218-286,288-385,387-417,419-617
+  s_ccab34f3b38945::t_7a5621822f3500 287
+  s_ccab34f3b38945::t_17e89cb9a4851c 386
+  s_ccab34f3b38945::t_f5224e09e79373 206
+  s_ccab34f3b38945::t_9083bb73f02727 418
+  s_ccab34f3b38945::t_e9b52567d8fa65 215-217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "6e4804bb065d872f0d12b6f5ede7cc50a4bc089b",
+  "prompts": {},
+  "sessions": {
+    "s_ccab34f3b38945": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49d374f7-cefc-4908-9d8f-b56f4e71edf5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

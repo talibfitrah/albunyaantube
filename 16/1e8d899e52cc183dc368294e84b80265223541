@@ -1,0 +1,22 @@
+backend/src/test/java/com/albunyaan/tube/integration/ImportControllerIT.java
+  s_041296e26685a0::t_055003ca83a849 137
+  s_041296e26685a0::t_eed427360011b8 110
+  s_041296e26685a0::t_cfb483895f98eb 22
+  s_041296e26685a0::t_6d73be87465b75 1-21,23-109,111-136,138-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "161e8d899e52cc183dc368294e84b80265223541",
+  "prompts": {},
+  "sessions": {
+    "s_041296e26685a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d01440fc-dec4-4cf5-9283-f068651f82f7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

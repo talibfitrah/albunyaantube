@@ -1,0 +1,20 @@
+backend/src/main/java/com/albunyaan/tube/util/ThumbnailRepairMigration.java
+  s_e4c659b38e3d15::t_7e8f46859ad066 231-235
+  s_e4c659b38e3d15::t_08bd3c2dcc5c3c 252,260-265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "31f5d52ed69b452a5d8ac645a9bb507602c11ab6",
+  "prompts": {},
+  "sessions": {
+    "s_e4c659b38e3d15": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4bc80fe5-0c36-432c-bef2-1b54ed0d314c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

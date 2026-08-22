@@ -1,0 +1,26 @@
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPlaylistPagingTest.kt
+  s_efcb025834b169::t_264a56b4e5d09e 124,128-129,131
+  s_efcb025834b169::t_41224fa03c1c92 89-96,99-100
+  s_efcb025834b169::t_b9bd5676f06141 3-4,6
+  s_efcb025834b169::t_ee693722318fd5 97-98,101
+  s_efcb025834b169::t_a1a6272a821133 120-123,125-127,130
+  s_efcb025834b169::t_f68a3ae5fb7381 5,7
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_efcb025834b169::t_a1e2430aab3a01 366-372
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "f6646cda6c549dc89ceb64fc4e0c23101185ca19",
+  "prompts": {},
+  "sessions": {
+    "s_efcb025834b169": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48b7da32-7178-49d0-b32f-34f17890fbdf",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

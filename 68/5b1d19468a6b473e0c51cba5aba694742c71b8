@@ -1,0 +1,19 @@
+backend/src/main/java/com/albunyaan/tube/util/UserBackfillMigration.java
+  s_dac267759ff6fd::t_4aa16e5530f367 140-152,173-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "685b1d19468a6b473e0c51cba5aba694742c71b8",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

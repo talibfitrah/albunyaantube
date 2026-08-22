@@ -1,0 +1,35 @@
+backend/src/main/java/com/albunyaan/tube/service/AccountProfileService.java
+  s_dac267759ff6fd::t_8e96e0a2d6f71a 48-58
+  s_dac267759ff6fd::t_1bc4a9ef85cc25 79-96,106-112,114-117,119,122-135
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_dac267759ff6fd::t_02b30be326e4e3 486
+  s_dac267759ff6fd::t_c37adbb0d58280 592-610
+  s_dac267759ff6fd::t_8cfa3832414f4e 272
+  s_dac267759ff6fd::t_6c6aa3bfb592bb 128-156
+  s_dac267759ff6fd::t_b2ed11b9bf2bbe 670
+  s_dac267759ff6fd::t_24bd779c0a9602 288-291,500-503,557-560,684-687,763-766
+  s_dac267759ff6fd::t_d95c83ab1068ca 13-14
+android/app/src/main/java/com/albunyaan/tube/data/subscriptions/SubscriptionRepository.kt
+  s_dac267759ff6fd::t_9183bbced80521 5,15,17
+  s_dac267759ff6fd::t_9f128576ddb867 31-44,46-48,50,52-54,56,60,62-64,66,68-73
+android/app/src/main/java/com/albunyaan/tube/data/local/FavoritesRepository.kt
+  s_dac267759ff6fd::t_763fdcc1300fcd 4,7,9
+  s_dac267759ff6fd::t_cbf4763b70acc3 89-92,94-104
+  s_dac267759ff6fd::t_91e8b266046b40 160-164,169-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "500cbc4b61910dc88f5e27c7f9beeb7107c0b1c4",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

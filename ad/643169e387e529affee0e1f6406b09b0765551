@@ -1,0 +1,20 @@
+.github/workflows/android-ci.yml
+  s_43dfb8dc8c3e6a::t_df8b78fbf42802 64-106
+  s_43dfb8dc8c3e6a::t_5d48f8146c3def 147-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "ad643169e387e529affee0e1f6406b09b0765551",
+  "prompts": {},
+  "sessions": {
+    "s_43dfb8dc8c3e6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c20d370f-4c72-40f4-99e5-b18195a5843c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

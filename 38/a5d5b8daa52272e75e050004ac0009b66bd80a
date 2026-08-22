@@ -1,0 +1,31 @@
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_dac267759ff6fd::t_59f26de7210c30 191-197,204,206,210-214
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_dac267759ff6fd::t_59f26de7210c30 62-72,364-369,402-407
+frontend/src/locales/messages.ts
+  s_dac267759ff6fd::t_59f26de7210c30 981-982,2412-2413,3674-3675
+android/app/src/main/java/com/albunyaan/tube/ui/auth/SignInFragment.kt
+  s_dac267759ff6fd::t_59f26de7210c30 224-240
+frontend/src/views/AuditLogView.vue
+  s_dac267759ff6fd::t_59f26de7210c30 114-116,211-218,221-223
+android/app/src/test/java/com/albunyaan/tube/ui/auth/SignInViewModelTest.kt
+  s_dac267759ff6fd::t_59f26de7210c30 116-119,123
+android/app/src/test/java/com/albunyaan/tube/data/sync/SyncBackoffTest.kt
+  s_dac267759ff6fd::t_59f26de7210c30 4,6,10-15,17-20,24-33,37-38,41-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "38a5d5b8daa52272e75e050004ac0009b66bd80a",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

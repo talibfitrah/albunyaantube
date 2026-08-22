@@ -1,0 +1,48 @@
+backend/src/main/java/com/albunyaan/tube/service/YouTubeSearchService.java
+  s_ea285fe7d43fed::t_c16342d0b4936d 126-131,156,170,184
+  s_ea285fe7d43fed::t_35ad89a0a5c0be 209-211,217,230-248,279
+android/app/src/main/res/layout/fragment_suggest_content.xml
+  s_ea285fe7d43fed::t_5f11ec5f0f6bf0 52,56,59-64
+backend/src/main/java/com/albunyaan/tube/service/NewPipeSearchClient.java
+  s_ea285fe7d43fed::t_f5ac7376bce76e 37
+android/app/src/main/java/com/albunyaan/tube/data/approvals/ApprovalApi.kt
+  s_ea285fe7d43fed::t_ec9dd0898c306c 17,20,23
+backend/src/main/java/com/albunyaan/tube/dto/YouTubeContentType.java
+  s_ea285fe7d43fed::t_7954c775172dbb 4
+android/app/src/main/java/com/albunyaan/tube/data/search/dto/SearchHitDto.kt
+  s_ea285fe7d43fed::t_601618c004e092 14-15,24
+android/app/src/main/res/values/strings.xml
+  s_ea285fe7d43fed::t_f5faa548abc1c5 733
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModel.kt
+  s_ea285fe7d43fed::t_54ca95f8313421 3,8,36-37,39-40,44,47,55-91,94,97-99,101-103,105,108,115-118,120-127,134-135,138,143-151
+android/app/src/main/res/layout-sw720dp/fragment_suggest_content.xml
+  s_ea285fe7d43fed::t_fdfac67840d3d2 52,56,59-64
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestContentFragment.kt
+  s_ea285fe7d43fed::t_5a4afd2cdd3274 72,75
+backend/src/main/java/com/albunyaan/tube/controller/YouTubeSearchController.java
+  s_ea285fe7d43fed::t_1c41b57924a811 55
+backend/src/main/java/com/albunyaan/tube/dto/SearchHit.java
+  s_ea285fe7d43fed::t_96d1ef4277e564 21-22
+android/app/src/main/java/com/albunyaan/tube/ui/me/suggest/SuggestUiState.kt
+  s_ea285fe7d43fed::t_9ce174ae2b0d1f 9-16,19-20,22
+android/app/src/main/res/layout-sw600dp/fragment_suggest_content.xml
+  s_ea285fe7d43fed::t_cf3cee720f1af8 52,56,59-64
+android/app/src/test/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModelTest.kt
+  s_ea285fe7d43fed::t_ba131fe25cbb89 40-44,52,83,85,87,100-101,103,108,122,140,142,144-150,157,159-160,162-163,166-171,246,248,315,318,321,339-340
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "55e182cdb4f012e246d186013738679603a8adc7",
+  "prompts": {},
+  "sessions": {
+    "s_ea285fe7d43fed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d1f56bd-1b38-4f1c-8cd3-6d3f174646b7",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

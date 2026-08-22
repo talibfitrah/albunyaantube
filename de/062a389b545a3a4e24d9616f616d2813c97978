@@ -1,0 +1,19 @@
+android/app/build.gradle.kts
+  s_c44175e8f93617::t_15050c271735ef 351-354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "de062a389b545a3a4e24d9616f616d2813c97978",
+  "prompts": {},
+  "sessions": {
+    "s_c44175e8f93617": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae41a076-bd9c-4cdf-98f8-3617e5c10544",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

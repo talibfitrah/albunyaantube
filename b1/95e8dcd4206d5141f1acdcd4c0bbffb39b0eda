@@ -1,0 +1,19 @@
+docs/architecture/api-specification.yaml
+  s_1a004b5f0406e1::t_74d1394e198823 4100-4103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "b195e8dcd4206d5141f1acdcd4c0bbffb39b0eda",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

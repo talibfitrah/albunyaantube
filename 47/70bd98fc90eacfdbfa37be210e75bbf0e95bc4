@@ -1,0 +1,40 @@
+backend/src/test/java/com/albunyaan/tube/util/ThumbnailUrlsTest.java
+  s_e4c659b38e3d15::t_735692db2b922c 72-79
+backend/src/main/java/com/albunyaan/tube/util/ThumbnailUrls.java
+  s_e4c659b38e3d15::t_6b7a6e357929e8 6
+  s_e4c659b38e3d15::t_5b076184bd7614 31-38
+  s_e4c659b38e3d15::t_3be105a53626c0 70-73
+backend/src/main/java/com/albunyaan/tube/service/ChannelOrchestrator.java
+  s_e4c659b38e3d15::t_b1b8e6f6bf1472 1184-1198
+  s_e4c659b38e3d15::t_eadbdff66ca6f5 1364-1365
+backend/src/main/java/com/albunyaan/tube/service/YouTubeOEmbedClient.java
+  s_e4c659b38e3d15::t_dab9437388218d 92-98
+backend/src/test/java/com/albunyaan/tube/service/YouTubeOEmbedClientTest.java
+  s_e4c659b38e3d15::t_b08b98caa4e72b 37-48
+backend/src/main/java/com/albunyaan/tube/util/ThumbnailRepairMigration.java
+  s_e4c659b38e3d15::t_f453254c1a99bb 222,240-241,247-251,253-261,263-265
+  s_e4c659b38e3d15::t_22762e921e247f 182-184
+  s_e4c659b38e3d15::t_374ca0a95bca41 138
+  s_e4c659b38e3d15::t_9762d1e663d0fc 204-206
+  s_e4c659b38e3d15::t_f3a193d8f0eeba 86-87
+backend/src/test/java/com/albunyaan/tube/service/ChannelOrchestratorTest.java
+  s_e4c659b38e3d15::t_25436e53562faa 137-158
+  s_e4c659b38e3d15::t_475348a59a9ab3 4
+  s_e4c659b38e3d15::t_ada359f21a68b6 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "4770bd98fc90eacfdbfa37be210e75bbf0e95bc4",
+  "prompts": {},
+  "sessions": {
+    "s_e4c659b38e3d15": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4bc80fe5-0c36-432c-bef2-1b54ed0d314c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

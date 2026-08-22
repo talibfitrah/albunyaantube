@@ -1,0 +1,58 @@
+android/app/src/main/java/com/albunyaan/tube/update/InstallStatusReceiver.kt
+  s_f6f6a601e51753::t_7e53acb4322c33 110-120
+  s_f6f6a601e51753::t_b1691faaf82c9f 55-64
+android/app/src/main/java/com/albunyaan/tube/update/ApkInstaller.kt
+  ai_agent 4,8,26-29,35-40,112-131,133-135,137-148,150,152-199,201-207
+android/app/src/main/java/com/albunyaan/tube/update/UpdatePromptFlow.kt
+  s_f6f6a601e51753::t_95107ed56a6e32 302,311-330
+  s_f6f6a601e51753::t_09e427e53f4264 67-69,71-83,85
+  s_f6f6a601e51753::t_5f49b339b9af94 452-465
+  s_f6f6a601e51753::t_637825c398dc19 183-187,207
+  s_f6f6a601e51753::t_5bd539a76f8432 70,84,86
+  s_f6f6a601e51753::t_c0631de86c7414 451,466
+  s_f6f6a601e51753::t_f6ea09194af4bb 481-488,492-495
+  s_f6f6a601e51753::t_5a0aae0511f022 173-182,188,197,202,205
+  s_f6f6a601e51753::t_996bcbbac91fd7 225-244
+  s_f6f6a601e51753::t_a8321d14b93c10 53-54
+  s_f6f6a601e51753::t_af6880686b23a2 289
+  s_f6f6a601e51753::t_0a7e576084a01b 190-196,198-201
+  s_f6f6a601e51753::t_87232d4ade0303 139-153
+  s_f6f6a601e51753::t_69894fd3e02818 189,203-204,206
+  s_f6f6a601e51753::t_91e5eae0ef1845 467-472
+android/app/src/main/res/values/strings.xml
+  ai_agent 230-231
+android/app/src/main/java/com/albunyaan/tube/update/LastInstallAttempt.kt
+  ai_agent 1-141
+android/app/src/main/res/layout/dialog_update_available.xml
+  ai_agent 9,66-83
+android/app/src/test/java/com/albunyaan/tube/update/UpdatePromptFlowTest.kt
+  ai_agent 35,48,73
+android/app/src/main/res/values-ar/strings.xml
+  ai_agent 200-201
+android/app/src/main/res/values-nl/strings.xml
+  ai_agent 210-211
+android/app/src/main/java/com/albunyaan/tube/di/DataModule.kt
+  ai_agent 130-148
+android/app/src/test/java/com/albunyaan/tube/update/LastInstallAttemptTest.kt
+  ai_agent 1-179
+android/app/src/main/AndroidManifest.xml
+  ai_agent 145-156
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  ai_agent 220-224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "6b50138c10e75b0e6c454cb252f22968d3d4c359",
+  "prompts": {},
+  "sessions": {
+    "s_f6f6a601e51753": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "40a6c863-7862-4baa-b412-a2821cca49ca",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

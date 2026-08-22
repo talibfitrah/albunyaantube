@@ -1,0 +1,32 @@
+backend/src/main/java/com/albunyaan/tube/service/RegistryDuplicateChecker.java
+  s_1a004b5f0406e1::t_e4556a352f85ea 37
+  s_1a004b5f0406e1::t_29a4ed655f3aea 46,50
+  s_1a004b5f0406e1::t_b9869ec4e1a50f 11
+backend/src/main/java/com/albunyaan/tube/config/BulkExecutorConfig.java
+  s_1a004b5f0406e1::t_4913807f208527 1-21
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_1a004b5f0406e1::t_33e116d1684d6d 62-67,69-77,79-90,94-98
+  s_1a004b5f0406e1::t_e9153e3ee00331 1-9,12-29,31-32,35-38,40-44,50,59-61,68,78,91-93,99-101
+  s_1a004b5f0406e1::t_490572311e4f84 10-11,30,33-34,39,45-49,51-58
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServicePreviewTest.java
+  s_1a004b5f0406e1::t_a722b2f8915e6c 34
+  s_1a004b5f0406e1::t_2c5d36adf7a9fa 135-147
+  s_1a004b5f0406e1::t_b4dbe315cb8e0b 11
+  s_1a004b5f0406e1::t_a4dccc2ec269bf 1-10,12-33,35-133,148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "646b2d34afbb0753933cd6177604394591f160d1",
+  "prompts": {},
+  "sessions": {
+    "s_1a004b5f0406e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56fce9bd-bda3-4e44-a335-428bcb993098",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": null
+    }
+  }
+}

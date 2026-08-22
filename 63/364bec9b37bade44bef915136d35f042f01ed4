@@ -1,0 +1,74 @@
+frontend/src/services/adminAudit.ts
+  s_1fbc050eee1b0a::t_c01708ee5d0253 35-36,38-39
+  s_1fbc050eee1b0a::t_bd07f81ddaf270 54
+  s_1fbc050eee1b0a::t_f81517badad7c3 13-18,97-98
+  s_1fbc050eee1b0a::t_ff13e644f4382a 5,30-34,37
+  s_1fbc050eee1b0a::t_66f1b3ed673385 29
+frontend/tests/ContentLibraryCategoryModal.spec.ts
+  s_1fbc050eee1b0a::t_92c341af1ed5bc 144
+  s_1fbc050eee1b0a::t_0800e4a06b0e7c 6,156-188
+  s_1fbc050eee1b0a::t_01df23acb3e837 128-129,141-142
+  s_1fbc050eee1b0a::t_6d7db7d2a3a577 1-5,7-9,11-21,24-30,32-36,39,82,85-88,92-94,97-98,139,149,189-190
+  s_1fbc050eee1b0a::t_38df3777379c98 112-118
+  s_1fbc050eee1b0a::t_6c86f492ef4c8d 10,22-23,31,37-38,40-73,83-84,89-91,95-96,99-111,119-126,130-138,143,145-148,150-155
+  s_1fbc050eee1b0a::t_99a62766fa8287 74-81,127,140
+frontend/src/components/CategoryAssignmentModal.vue
+  s_1fbc050eee1b0a::t_aa722465a6b65d 70-71
+  s_1fbc050eee1b0a::t_040a9a2e44036c 90-91,171-175,181,188,193-194,201,263
+  s_1fbc050eee1b0a::t_9ac933de752402 86-89
+  s_1fbc050eee1b0a::t_ed884380038fe2 24-29,44,292
+  s_1fbc050eee1b0a::t_aa3cc82ac94195 18-23,35-39,43,48-63
+  s_1fbc050eee1b0a::t_459faf9c7fcf49 64
+frontend/src/services/reportsService.ts
+  s_1fbc050eee1b0a::t_7d60d4b548bc4e 74
+  s_1fbc050eee1b0a::t_ff13e644f4382a 8,67-69
+backend/src/main/java/com/albunyaan/tube/controller/AuditLogController.java
+  s_1fbc050eee1b0a::t_7e2800b6acb8a5 45,49,69,102
+frontend/src/views/ContentLibraryView.vue
+  s_1fbc050eee1b0a::t_e54710abd4d91e 525
+  s_1fbc050eee1b0a::t_ed884380038fe2 526,1017-1031
+  s_1fbc050eee1b0a::t_3026f961bbae0d 1001,1003-1006,1008-1015
+  s_1fbc050eee1b0a::t_496bdd3056dc13 693,697
+  s_1fbc050eee1b0a::t_a6a223202d32c7 1007
+  s_1fbc050eee1b0a::t_235d10514163a0 1034-1040
+  s_1fbc050eee1b0a::t_1123b07b47fea7 579
+  s_1fbc050eee1b0a::t_1c23d96459abc4 694-696
+frontend/tests/ActivityLogView.spec.ts
+  s_1fbc050eee1b0a::t_90d98659c22db1 1,3-49,86-99
+  s_1fbc050eee1b0a::t_ae1e1ad73e59c8 50-53,55,59-68
+  s_1fbc050eee1b0a::t_1e1b24c47707ab 2
+  s_1fbc050eee1b0a::t_795bbb3f5c00b7 54,56-58,69-70
+  s_1fbc050eee1b0a::t_8ddb9ef8a825c6 71-85
+frontend/src/utils/formatters.ts
+  s_1fbc050eee1b0a::t_77c0383eb63ff4 26-44
+  s_1fbc050eee1b0a::t_7e46fb5a5a472d 25
+frontend/src/views/ActivityLogView.vue
+  s_1fbc050eee1b0a::t_5a41e276f1af01 174
+  s_1fbc050eee1b0a::t_f81517badad7c3 236
+  s_1fbc050eee1b0a::t_78edb56008a568 125
+backend/src/main/java/com/albunyaan/tube/service/AuditLogService.java
+  s_1fbc050eee1b0a::t_23ace3abf4fbbe 265-266,294-295
+  s_1fbc050eee1b0a::t_7e2800b6acb8a5 226-233,235,243-245,270,299,309,366,372-374
+  s_1fbc050eee1b0a::t_13ca4c677e02bf 301-304
+  s_1fbc050eee1b0a::t_9ed345d800af99 300
+frontend/src/components/CategoryTreeNode.vue
+  s_1fbc050eee1b0a::t_f2b61553cfde9e 18,33,56-57,71
+backend/src/main/resources/firestore.indexes.json
+  s_1fbc050eee1b0a::t_ec5667c58a8ef7 442-460
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "63364bec9b37bade44bef915136d35f042f01ed4",
+  "prompts": {},
+  "sessions": {
+    "s_1fbc050eee1b0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8dcda3e-adac-4bfb-9033-b8dc9519a6f4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}

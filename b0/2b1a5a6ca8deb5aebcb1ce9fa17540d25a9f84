@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/data/me/work/RefreshSubscriptionsWorker.kt
+  s_dfe656123dedd7::t_967a04f3695da7 99-104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "b02b1a5a6ca8deb5aebcb1ce9fa17540d25a9f84",
+  "prompts": {},
+  "sessions": {
+    "s_dfe656123dedd7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "90659f6e-87fe-4179-a374-7e920829ea80",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
