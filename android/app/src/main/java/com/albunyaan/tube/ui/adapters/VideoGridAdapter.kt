@@ -10,9 +10,9 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemVideoGridBinding
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 import com.google.android.material.chip.Chip
-import java.text.NumberFormat
 import java.util.Locale
 
 class VideoGridAdapter(
@@ -48,10 +48,10 @@ class VideoGridAdapter(
             // Format metadata (views + time ago) using app's per-app locale
             val appLocale = LocaleManager.getCurrentLocale(context)
             val views = video.viewCount?.let { viewCount ->
-                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(viewCount)
+                val formattedCount = CountFormat.compact(viewCount, appLocale)
                 res.getQuantityString(
                     R.plurals.video_views,
-                    safeQuantityForPlural(viewCount),
+                    safeQuantityForPlural(CountFormat.compactPluralCount(viewCount)),
                     formattedCount
                 )
             } ?: ""

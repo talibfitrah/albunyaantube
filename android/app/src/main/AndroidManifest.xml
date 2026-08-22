@@ -18,6 +18,13 @@
          installer. On Android 8+ the user must separately grant "install unknown apps"
          via Settings; the app flow walks them through this on first use. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Android 12+ (API 31): lets the in-app updater install a self-update without the system
+         install-confirmation step, via
+         PackageInstaller.SessionParams.setRequireUserAction(USER_ACTION_NOT_REQUIRED). Only that
+         confirmation is waived — Play Protect still verifies on commit (a block surfaces as
+         STATUS_FAILURE). Normal permission, auto-granted. Older APIs ignore it and keep the
+         confirm flow. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <application
         android:name=".AlBunyaanApplication"

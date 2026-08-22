@@ -1,4 +1,9 @@
 {
+  "1.0.0-beta.45": {
+    "en": "View and subscriber counts now show compact (1.2K, 3.4M), and updates install on their own on newer phones.",
+    "ar": "أعداد المشاهدات والمشتركين تظهر الآن مختصرة (١٫٢ ألف، ٣٫٤ مليون)، والتحديثات تُثبَّت تلقائيًا على الهواتف الأحدث.",
+    "nl": "Weergaven en abonnees worden nu compact getoond (1,2K, 3,4 mln), en updates installeren vanzelf op nieuwere telefoons."
+  },
   "1.0.0-beta.44": {
     "en": "Videos now open fullscreen when your phone is already sideways, and leaving fullscreen no longer snaps back.",
     "ar": "تُفتح المقاطع الآن بملء الشاشة عندما يكون هاتفك أفقيًا، ولم يعد الخروج من ملء الشاشة يرتد تلقائيًا.",

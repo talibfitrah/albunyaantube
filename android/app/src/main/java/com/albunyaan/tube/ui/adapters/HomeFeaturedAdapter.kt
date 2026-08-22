@@ -11,8 +11,8 @@ import com.albunyaan.tube.databinding.ItemHomeChannelBinding
 import com.albunyaan.tube.databinding.ItemHomePlaylistBinding
 import com.albunyaan.tube.databinding.ItemHomeVideoBinding
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadThumbnail
-import java.text.NumberFormat
 import java.util.Locale
 
 /**
@@ -120,11 +120,8 @@ class HomeFeaturedAdapter(
         }
 
         private fun formatSubscriberCount(count: Int): String {
-            val formatted = when {
-                count >= 1_000_000 -> String.format(Locale.US, "%.1fM", count / 1_000_000.0)
-                count >= 1_000 -> String.format(Locale.US, "%.1fK", count / 1_000.0)
-                else -> count.toString()
-            }
+            val locale = LocaleManager.getCurrentLocale(binding.root.context)
+            val formatted = CountFormat.compact(count.toLong(), locale)
             return binding.root.context.getString(R.string.channel_subscribers_format, formatted)
         }
     }
@@ -172,10 +169,9 @@ class HomeFeaturedAdapter(
             binding.videoTitle.text = video.title
 
             val appLocale = LocaleManager.getCurrentLocale(context)
-            val numberFormat = NumberFormat.getNumberInstance(appLocale)
             val formattedViews = video.viewCount?.let {
-                numberFormat.format(it)
-            } ?: numberFormat.format(0)
+                CountFormat.compact(it, appLocale)
+            } ?: CountFormat.compact(0, appLocale)
             val metaParts = mutableListOf<String>()
             metaParts.add(context.getString(R.string.video_views_format, formattedViews))
             metaParts.add(formatUploadedAgo(video.uploadedDaysAgo))

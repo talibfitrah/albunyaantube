@@ -1,7 +1,6 @@
 package com.albunyaan.tube.ui.me
 
 import android.text.format.DateUtils
-import java.text.NumberFormat
 import java.util.Locale
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -20,6 +19,8 @@ import com.albunyaan.tube.databinding.ItemMeShortBinding
 import com.albunyaan.tube.databinding.ItemMeShortsSectionBinding
 import com.albunyaan.tube.databinding.ItemMeVideoBinding
 import com.albunyaan.tube.databinding.ViewMeWeekHeaderBinding
+import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 
 /**
@@ -306,10 +307,10 @@ class MeWeekSectionAdapter(
          */
         private fun buildMeta(item: MeFeedVideo): CharSequence {
             val ctx = binding.root.context
-            val locale: Locale = ctx.resources.configuration.locales[0] ?: Locale.getDefault()
+            val locale: Locale = LocaleManager.getCurrentLocale(ctx)
             val views: String? = item.viewCount
                 ?.takeIf { it >= 0L }
-                ?.let { NumberFormat.getNumberInstance(locale).format(it) }
+                ?.let { CountFormat.compact(it, locale) }
                 ?.let { ctx.getString(R.string.video_views_format, it) }
             val relative = if (item.uploadedAt > 0L) {
                 DateUtils.getRelativeTimeSpanString(

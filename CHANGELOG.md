@@ -5,6 +5,31 @@ during the beta program.
 
 ## [Unreleased]
 
+## [1.0.0-beta.45] - 2026-08-22
+
+### Android
+
+- **View and subscriber counts are now abbreviated everywhere outside the player.** Counts over
+  a thousand show compactly — "1.2K", "12.7M", "3.4B" in English, and each locale's own common
+  form in Arabic ("١٫٢ ألف", "٣٫٤ مليون", "١٫٢ مليار") and Dutch ("3,4 mln") — instead of the
+  full "12,700,000 subscribers". Applied to channel cards, the channel header and About tab,
+  search results, video / playlist / live rows, and the featured row. The player keeps its own
+  formatting. Backed by a locale-aware `CountFormat` helper (platform `CompactDecimalFormat`)
+  with unit tests.
+- **In-app updates that downloaded but never installed now install on their own (Android 12+).**
+  The updater already downloaded the APK correctly; the install was being stopped at the system
+  installer / Google Play Protect step — reproduced on a real Honor (Android 9), where the same
+  APK installs fine via `adb`, confirming the APK, signature, and download were never the
+  problem. On Android 12 and newer the updater now requests a silent self-update
+  (`PackageInstaller.setRequireUserAction` + `UPDATE_PACKAGES_WITHOUT_USER_ACTION`), which the
+  platform grants for an app updating itself — so from the next update onward it installs
+  without the system confirmation prompt (Play Protect still verifies in the background). This
+  first update still shows the prompt because the running (older) code lacks the flag. On
+  Android 11 and older the confirmation is an OS limitation and always appears; the download
+  step now shows "Preparing to install…" so the bar no longer looks frozen at 100% while the
+  installer opens, and a successful update now confirms with a toast instead of silently
+  vanishing.
+
 ## [1.0.0-beta.44] - 2026-08-20
 
 ### Android

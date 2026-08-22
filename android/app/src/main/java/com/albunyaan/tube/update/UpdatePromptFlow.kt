@@ -466,6 +466,15 @@ class UpdatePromptFlow @Inject constructor(
                         progressLabel.text = activity.getString(R.string.update_progress_percent, pct)
                     }
                 }
+                // Download hit 100%; the next step streams the APK into the installer
+                // session (multi-MB, ~seconds on slow OEM flash). Switch to an indeterminate
+                // "Preparing to install…" so it doesn't read as frozen at 100% (observed on
+                // the Honor EMUI device), and hints a system install prompt may follow.
+                activity.runOnUiThread {
+                    progressDialog.setTitle(R.string.update_preparing)
+                    progressBar.isIndeterminate = true
+                    progressLabel.visibility = android.view.View.GONE
+                }
                 // Cert verification + APK parse on the IO dispatcher (cubic R2 P1):
                 // PackageManager.getPackageArchiveInfo() parses the full APK manifest
                 // and can hold the calling thread for hundreds of ms on a large APK —

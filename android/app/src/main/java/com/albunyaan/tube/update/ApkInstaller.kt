@@ -166,6 +166,33 @@ class ApkInstaller @Inject constructor(
         // Set size up front so PackageInstaller can validate streaming bytes
         // against the declared total and fail fast on truncation.
         params.setSize(apkFile.length())
+        // Mark this as a user-initiated install so the platform verifier treats it as such.
+        params.setInstallReason(PackageManager.INSTALL_REASON_USER)
+        // Android 12+ (API 31): request a SILENT update. AOSP grants it for an app updating
+        // ITSELF (session target uid == installer uid — always true here) that holds
+        // UPDATE_PACKAGES_WITHOUT_USER_ACTION; the self-update clause sits outside the
+        // installer-of-record / update-owner check, so it works on the FIRST update even
+        // though this app was originally sideloaded (adb / browser). When granted, the OEM
+        // "Do you want to install?" confirmation is skipped and the update commits on its own.
+        //
+        // Scope + caveats (measured / from AOSP source, do not overstate):
+        //  - API 26-30 (incl. the Honor EMUI 9.1 / COR-L29 test device) are NOT covered — the
+        //    call is a no-op below API 31, so those devices keep the existing confirm flow and
+        //    its Play Protect prompt. That gate is an OS limitation there, not fixable in-app.
+        //  - This waives only the user-CONFIRMATION step, NOT Play Protect. GMS package
+        //    verification still runs on commit; for a same-signer self-update it normally
+        //    passes silently (the F-Droid unattended-update precedent), but if Play Protect
+        //    BLOCKS, there is no "install anyway" dialog — it surfaces as STATUS_FAILURE, which
+        //    InstallStatusActivity records + toasts (a loud failure, never a silent no-op).
+        //  - The update that SHIPS this flag still prompts, because the running (old) installer
+        //    lacks it; silence begins with the update after that.
+        //  - When the platform declines the silent path (API < 31, permission/target-sdk
+        //    ineligibility, a foreign update owner, or the 30s silent-update throttle) it falls
+        //    back to STATUS_PENDING_USER_ACTION, which InstallStatusActivity already handles —
+        //    so this is additive, with no regression to the confirm-dialog flow.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        }
         val sessionId = try {
             packageInstaller.createSession(params)
         } catch (t: Throwable) {

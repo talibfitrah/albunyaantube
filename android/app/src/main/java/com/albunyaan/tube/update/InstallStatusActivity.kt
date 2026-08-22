@@ -11,6 +11,8 @@ import android.os.Process
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.albunyaan.tube.BuildConfig
+import com.albunyaan.tube.R
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -78,7 +80,7 @@ class InstallStatusActivity : AppCompatActivity() {
                         }
                     } finally {
                         finish()
-                        scheduleDexRestoreSelfKill()
+                        onInstallSucceeded(targetVersion)
                     }
                 }
             }
@@ -122,15 +124,32 @@ class InstallStatusActivity : AppCompatActivity() {
     }
 
     /**
+     * Called after a successful install commit. A silent (USER_ACTION_NOT_REQUIRED) update on
+     * Android 12+ shows the user no system "app installed" screen, so success must be surfaced
+     * here or the app appears to vanish/crash. Two cases, told apart by whether THIS process is
+     * already running the installed version:
+     *  - Running the new version (the OS replaced + relaunched us into it, or a confirmed
+     *    install finished and we are current): confirm with a success toast; nothing to restart.
+     *  - Still running the OLD code (in-place update while this process stayed alive): fall
+     *    through to the DEX-restore handling.
+     */
+    private fun onInstallSucceeded(targetVersion: String?) {
+        if (targetVersion == null || targetVersion == BuildConfig.VERSION_NAME) {
+            toast(getString(R.string.update_install_success))
+            return
+        }
+        scheduleDexRestoreSelfKill()
+    }
+
+    /**
      * DEX-restore mitigation. Samsung/Xiaomi keep the pre-update process alive, so a later
-     * cold launch can restore the OLD code ("install did nothing"). After a CONFIRMED-
-     * successful install, end the old process so the next launch loads the new APK — but
-     * ONLY if the user is not back in an active session. The visibility re-check runs after
-     * a short delay (post-finish, so this transparent trampoline isn't itself counted as
-     * foreground): if the user tapped "Open" and is now using the app, importance is
-     * FOREGROUND/VISIBLE and we skip the kill instead of killing a fresh launch or live
-     * playback. Replaces the old blind 2s-after-commit kill in UpdatePromptFlow, which
-     * fired before the user had even confirmed the install on slow / OEM devices.
+     * cold launch can restore the OLD code ("install did nothing"). After a successful install
+     * where this process still holds the old code, end it so the next launch loads the new APK
+     * — but ONLY if the user is not back in an active session. The visibility re-check runs
+     * after a short delay (post-finish, so this transparent trampoline isn't itself counted as
+     * foreground): if the user is now using the app, importance is FOREGROUND/VISIBLE and we
+     * skip the kill instead of killing a fresh launch or live playback, asking them to restart
+     * instead. Replaces the old blind 2s-after-commit kill in UpdatePromptFlow.
      */
     private fun scheduleDexRestoreSelfKill() {
         Handler(Looper.getMainLooper()).postDelayed({
@@ -138,10 +157,17 @@ class InstallStatusActivity : AppCompatActivity() {
             ActivityManager.getMyMemoryState(info)
             if (info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) {
                 Log.d(TAG, "App foreground/visible post-install — skipping DEX-restore self-kill")
+                // Update is installed but this foreground process still holds the old code; we
+                // can't self-kill without disrupting the user, so ask them to restart to apply.
+                toast(getString(R.string.update_installed_restart))
                 return@postDelayed
             }
             Process.killProcess(Process.myPid())
         }, SELF_KILL_DELAY_MS)
+    }
+
+    private fun toast(message: String) {
+        android.widget.Toast.makeText(applicationContext, message, android.widget.Toast.LENGTH_LONG).show()
     }
 
     @Suppress("DEPRECATION")

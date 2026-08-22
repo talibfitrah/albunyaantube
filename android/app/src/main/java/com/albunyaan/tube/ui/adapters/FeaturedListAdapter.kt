@@ -12,6 +12,7 @@ import com.albunyaan.tube.databinding.ItemChannelBinding
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
 import com.albunyaan.tube.databinding.ItemVideoListBinding
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 import com.albunyaan.tube.util.ThumbnailUrlHelper
@@ -74,7 +75,7 @@ class FeaturedListAdapter(
             binding.channelName.text = channel.name
 
             val appLocale = LocaleManager.getCurrentLocale(context)
-            val formattedSubs = NumberFormat.getNumberInstance(appLocale).format(channel.subscribers)
+            val formattedSubs = CountFormat.compact(channel.subscribers.toLong(), appLocale)
             binding.subscriberCount.text = context.getString(
                 R.string.channel_subscribers_format,
                 formattedSubs
@@ -168,10 +169,10 @@ class FeaturedListAdapter(
             // Format metadata using app's per-app locale
             val appLocale = LocaleManager.getCurrentLocale(context)
             val views = video.viewCount?.let { viewCount ->
-                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(viewCount)
+                val formattedCount = CountFormat.compact(viewCount, appLocale)
                 res.getQuantityString(
                     R.plurals.video_views,
-                    safeQuantityForPlural(viewCount),
+                    safeQuantityForPlural(CountFormat.compactPluralCount(viewCount)),
                     formattedCount
                 )
             } ?: ""

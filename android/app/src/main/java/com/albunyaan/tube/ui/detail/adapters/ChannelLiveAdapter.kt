@@ -11,9 +11,9 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelLiveStream
 import com.albunyaan.tube.databinding.ItemChannelLiveBinding
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 import java.text.DateFormat
-import java.text.NumberFormat
 import java.util.Date
 import java.util.Locale
 
@@ -102,7 +102,7 @@ class ChannelLiveAdapter(
         private fun buildMetaLine(stream: ChannelLiveStream): String {
             val appLocale = LocaleManager.getCurrentLocale(context)
             val formattedViewCount = stream.viewCount?.let {
-                NumberFormat.getNumberInstance(appLocale).format(it)
+                CountFormat.compact(it, appLocale)
             }
 
             return when {
@@ -111,7 +111,7 @@ class ChannelLiveAdapter(
                     stream.viewCount?.let { viewCount ->
                         context.resources.getQuantityString(
                             R.plurals.live_watching_count,
-                            safeQuantityForPlural(viewCount),
+                            safeQuantityForPlural(CountFormat.compactPluralCount(viewCount)),
                             formattedViewCount
                         )
                     } ?: ""
@@ -128,7 +128,7 @@ class ChannelLiveAdapter(
                     val viewsText = stream.viewCount?.let { viewCount ->
                         context.resources.getQuantityString(
                             R.plurals.video_views,
-                            safeQuantityForPlural(viewCount),
+                            safeQuantityForPlural(CountFormat.compactPluralCount(viewCount)),
                             formattedViewCount
                         )
                     }
@@ -159,7 +159,7 @@ class ChannelLiveAdapter(
         /**
          * Safely converts a Long count to Int for plural quantity selection.
          * Clamps to Int.MAX_VALUE to prevent overflow for very large counts (e.g., billions of views).
-         * The actual formatted display uses the full Long value via NumberFormat.
+         * The actual display is derived from the full Long value via CountFormat.compact.
          *
          * Note on plural category selection:
          * - Android's plural rules use mod-based calculations (e.g., Arabic uses mod 100)
@@ -169,7 +169,7 @@ class ChannelLiveAdapter(
          * - Arabic: Int.MAX_VALUE mod 100 = 47, which falls into "many" (11-99)
          * - Dutch: "other" (correct for any count > 1)
          * - In practice, videos with billions of views are extremely rare, and the display
-         *   text (formatted with NumberFormat) remains accurate regardless of plural category
+         *   text (formatted with CountFormat) remains accurate regardless of plural category
          *
          * @param count The view/watch count as a Long
          * @return A safe Int value for use with getQuantityString()
