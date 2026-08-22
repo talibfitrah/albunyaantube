@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Content Library browser harness</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      /*
+        Scroll position is a layout property and jsdom has no layout, so the one thing the unit
+        suite cannot check is the thing the bug was about. This boots the real app — real router,
+        real AdminLayout, real view, real
+        apiClient — and changes exactly two things:
+
+          1. auth is seeded instead of signed in through Firebase;
+          2. the test intercepts /api/** so nothing reaches a backend.
+
+        Worth knowing, because a hand-built shell got it wrong: the element that scrolls is the
+        document, not AdminLayout's <main>. `main` carries overflow-y: auto but nothing constrains
+        its height, so it grows with the list and the window moves instead.
+
+        Everything the scroll behaviour depends on is the production code path.
+      */
+      import { createApp } from 'vue';
+      import { createPinia } from 'pinia';
+      import { createI18n } from 'vue-i18n';
+      import App from '/src/App.vue';
+      import router from '/src/router/index.ts';
+      import { messages } from '/src/locales/messages';
+      import { useAuthStore } from '/src/stores/auth';
+      import '/src/assets/main.css';
+      import '/src/styles/bulk-alert.css';
+
+      const app = createApp(App);
+      const pinia = createPinia();
+      app.use(pinia);
+      app.use(createI18n({ legacy: false, locale: 'en', fallbackLocale: 'en', messages }));
+      app.use(router);
+
+      // The router guard asks only for a user and a role, so seeding both is a complete sign-in
+      // as far as every screen behind it is concerned.
+      const auth = useAuthStore(pinia);
+      auth.currentUser = { uid: 'harness', email: 'admin@example.com', displayName: 'Harness Admin' };
+      auth.userRole = 'ADMIN';
+      auth.authInitialized = true;
+
+      await router.push('/content-library');
+      await router.isReady();
+      app.mount('#app');
+    </script>
+  </body>
+</html>

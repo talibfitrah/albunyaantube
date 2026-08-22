@@ -12,7 +12,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -39,6 +39,13 @@ jobs:
 
       - name: Build (includes type check via vue-tsc)
         run: npm run build
+
+      # Scroll position is layout, and jsdom has no layout — this one runs in a real browser.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser tests
+        run: npm run test:e2e:scroll
 
       - name: Upload test reports on failure
         if: failure()
