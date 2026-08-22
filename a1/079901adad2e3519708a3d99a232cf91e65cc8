@@ -1,0 +1,103 @@
+android/app/build.gradle.kts
+  s_31a12c3902afdd::t_67d4896d465646 45-46
+android/app/src/main/java/com/albunyaan/tube/ui/SearchResultsAdapter.kt
+  s_31a12c3902afdd::t_a57f36d617cdb9 16
+  s_31a12c3902afdd::t_a17fada573359d 80
+  s_31a12c3902afdd::t_0d01b31f5a5395 181
+  s_31a12c3902afdd::t_fcf4ee181b9f98 178
+android/app/src/main/java/com/albunyaan/tube/ui/adapters/ChannelAdapter.kt
+  s_31a12c3902afdd::t_44ef9cd5404e01 45
+  s_31a12c3902afdd::t_0f541249878626 12
+android/app/src/main/java/com/albunyaan/tube/ui/detail/adapters/ChannelVideoAdapter.kt
+  s_31a12c3902afdd::t_e00fb21efc55bc 12,53
+  s_31a12c3902afdd::t_0d01b31f5a5395 56
+android/app/src/main/java/com/albunyaan/tube/ui/adapters/HomeFeaturedAdapter.kt
+  s_31a12c3902afdd::t_f305cf76473166 14
+  s_31a12c3902afdd::t_bf4379ff8dd849 173-174
+  s_31a12c3902afdd::t_c5e7f80a73ea6b 123-124
+android/app/src/test/java/com/albunyaan/tube/util/CountFormatTest.kt
+  s_31a12c3902afdd::t_5488cbc5d3c21b 53-62
+  s_31a12c3902afdd::t_6f1b18fd5a1fa6 28,31
+  s_31a12c3902afdd::t_5e3cf829112c7d 63-75
+  s_31a12c3902afdd::t_6fefed1a3a802d 1-3,5,9-10,18-19,35-36,40-41,51-52,81-82
+  s_31a12c3902afdd::t_ccf78fe1d3f641 4,6-8,11-17,20-27,29-30,32-34,37-39,42-50,76-80
+android/app/src/main/java/com/albunyaan/tube/ui/detail/ChannelDetailFragment.kt
+  s_31a12c3902afdd::t_e00fb21efc55bc 44,391
+android/app/src/main/java/com/albunyaan/tube/update/InstallStatusActivity.kt
+  s_31a12c3902afdd::t_02f168d9968e6d 83
+  s_31a12c3902afdd::t_ec4f30c0d9a9ae 127-143,146-152,160-162,169-171
+  s_31a12c3902afdd::t_b68309cdb40286 14-15
+  s_31a12c3902afdd::t_11f61cc8482899 126
+  s_31a12c3902afdd::t_d9a92d95d2d79e 172
+android/app/src/main/java/com/albunyaan/tube/ui/me/MeWeekSectionAdapter.kt
+  s_31a12c3902afdd::t_6c0febb9f03a1d 310,313
+  s_31a12c3902afdd::t_8d0df70efe1312 22-23
+android/app/src/main/java/com/albunyaan/tube/update/ApkInstaller.kt
+  s_31a12c3902afdd::t_099acec8f300c2 169-170,193-195
+  s_31a12c3902afdd::t_308521f0ebb430 171-192
+android/app/src/main/java/com/albunyaan/tube/util/CountFormat.kt
+  s_31a12c3902afdd::t_9ca41c2defa0f5 4-5
+  s_31a12c3902afdd::t_fe7af377f77a62 1-2,6,8-9,12,23-25,59
+  s_31a12c3902afdd::t_6f12c6038fe503 7,26-30,40-46,48-58
+  s_31a12c3902afdd::t_df56d221f223e5 3,10-11,13-22
+  s_31a12c3902afdd::t_6bea4814d49c05 31-39,47
+android/app/src/main/java/com/albunyaan/tube/ui/adapters/FeaturedListAdapter.kt
+  s_31a12c3902afdd::t_f828ce1bbf09e4 78
+  s_31a12c3902afdd::t_2896f3cc0c2629 15
+  s_31a12c3902afdd::t_9ebd8e72b95593 172
+  s_31a12c3902afdd::t_0d01b31f5a5395 175
+android/app/src/main/java/com/albunyaan/tube/ui/detail/adapters/PlaylistVideosAdapter.kt
+  s_31a12c3902afdd::t_62b17fb7213d1b 41
+  s_31a12c3902afdd::t_002f180f5343e5 50
+  s_31a12c3902afdd::t_c778a76fb5b5b3 15
+  s_31a12c3902afdd::t_fa852354c8f2e3 70
+  s_31a12c3902afdd::t_9bbb0b4dcee4e5 67
+android/app/src/main/java/com/albunyaan/tube/ui/detail/tabs/ChannelAboutTabFragment.kt
+  s_31a12c3902afdd::t_d676e01764c964 17,198
+android/app/src/main/java/com/albunyaan/tube/ui/detail/adapters/ChannelLiveAdapter.kt
+  s_31a12c3902afdd::t_af11738d32cb2b 105
+  s_31a12c3902afdd::t_e2ce2e03c2cae3 162
+  s_31a12c3902afdd::t_e00fb21efc55bc 14
+  s_31a12c3902afdd::t_0d01b31f5a5395 114,131
+  s_31a12c3902afdd::t_96972b8109a473 172
+android/app/src/main/java/com/albunyaan/tube/ui/adapters/VideoGridAdapter.kt
+  s_31a12c3902afdd::t_dfd6ff63d6f387 51
+  s_31a12c3902afdd::t_0d01b31f5a5395 54
+  s_31a12c3902afdd::t_4db3933b2c30ab 13
+android/app/src/main/res/values/strings.xml
+  s_31a12c3902afdd::t_ae0b58e1e17e3b 231-232
+  s_31a12c3902afdd::t_896cfc90fd482e 227
+android/app/src/main/java/com/albunyaan/tube/update/UpdatePromptFlow.kt
+  s_31a12c3902afdd::t_a5d7fdc6314e06 469,473,475,477
+  s_31a12c3902afdd::t_728e0659d8dbf4 470-472,474,476
+android/app/src/main/res/values-ar/strings.xml
+  s_31a12c3902afdd::t_ae0b58e1e17e3b 201-202
+  s_31a12c3902afdd::t_896cfc90fd482e 197
+android/app/src/main/AndroidManifest.xml
+  s_31a12c3902afdd::t_5c982dec0f05c0 21-26
+  s_31a12c3902afdd::t_8dffa1699011de 27
+android/app/src/main/res/values-nl/strings.xml
+  s_31a12c3902afdd::t_ae0b58e1e17e3b 211-212
+  s_31a12c3902afdd::t_896cfc90fd482e 207
+releases-meta.json
+  s_31a12c3902afdd::t_c4dd82f028f4d3 2-6
+CHANGELOG.md
+  s_31a12c3902afdd::t_29fa9b45713e92 21-31
+  s_31a12c3902afdd::t_642c13d3cbf5fa 8-20,32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "a1079901adad2e3519708a3d99a232cf91e65cc8",
+  "prompts": {},
+  "sessions": {
+    "s_31a12c3902afdd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0105a878-f250-43f4-b6b9-090cf172e5a7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
