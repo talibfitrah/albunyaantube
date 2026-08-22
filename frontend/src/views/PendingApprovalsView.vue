@@ -1388,7 +1388,7 @@ onMounted(() => {
 
 .bulk-bar {
   position: sticky;
-  top: 0;
+  top: var(--sticky-top, 0px);
   z-index: 5;
   display: flex;
   flex-wrap: wrap;

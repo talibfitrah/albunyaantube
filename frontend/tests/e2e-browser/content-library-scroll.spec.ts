@@ -39,10 +39,11 @@ function makeLibrary(count: number): Row[] {
 }
 
 /**
- * The document scrolls, not AdminLayout's <main>. The layout gives `main` `overflow-y: auto`, but
- * never constrains its height, so it grows with the list and the window is what moves. Measured,
- * not assumed: with 100 rows loaded nothing in the page reports scrollHeight > clientHeight except
- * the document itself.
+ * The document scrolls, not AdminLayout's <main>: nothing constrains main's height, so it grows
+ * with the list and the window is what moves. Measured, not assumed: with 100 rows loaded nothing
+ * in the page reports scrollHeight > clientHeight except the document itself. That is also why
+ * main must not carry `overflow-y: auto` — it would be a scroll container that never scrolls, and
+ * sticky children would have nothing to stick to.
  */
 function scrollTop(page: Page): Promise<number> {
   return page.evaluate(() => window.scrollY);
@@ -170,23 +171,49 @@ test.describe('Content Library scroll position', () => {
     await expect(page.getByText('Video 100', { exact: true })).toBeAttached();
   });
 
-  test('keeps the loaded pages when a row deep in the list is approved', async ({ page }) => {
+  test('holds position when a row deep in the list is approved in bulk', async ({ page }) => {
     await scrollDeep(page, ROW_TITLES);
     const loadedBefore = listingRequests;
 
     const target = page.locator('.content-table tbody tr', { hasText: 'Video 52' });
     await target.getByRole('checkbox').check();
+
+    // Selecting a row raises the bulk bar, and the bar is sticky: reaching Bulk Actions is not
+    // allowed to move the list. positionAt scrolls the control into view first, so an offset that
+    // survives its call is proof the control came to the admin rather than the other way round.
+    const before = await positionAt(page, page.getByRole('button', { name: 'Bulk Actions' }), ROW_TITLES);
+    const rowTop = () => target.evaluate(node => Math.round(node.getBoundingClientRect().top));
+    const rowBefore = await rowTop();
     await page.getByRole('button', { name: 'Bulk Actions' }).click();
     await page.getByRole('button', { name: 'Approve Selected' }).click();
     await expect(target.getByText('Approved', { exact: true })).toBeVisible();
 
-    // Scroll offset is not the assertion here, and cannot be: the Bulk Actions button lives in a
-    // header that is not sticky, so reaching it scrolls to the top of the page whatever the list
-    // does. What the fix owns is that the four pages are still loaded afterwards rather than
-    // rebuilt as one — so scrolling back down finds the same list.
+    // The bar leaves the document with the selection, so the only legitimate movement is its own
+    // height (~65px) if the browser anchors the scroll to compensate — measured 0 in Chromium. The
+    // regression this bounds is the list rebuilding and the offset collapsing to the top, which is
+    // thousands of pixels, so the bound sits well clear of both.
+    expect(Math.abs(await scrollTop(page) - before.offset)).toBeLessThan(150);
+    // And the row itself barely moves: the bar leaving the flow lifts everything below it by its
+    // own height plus the column gap — measured 93px, every run. Losing the position is hundreds.
+    expect(Math.abs(await rowTop() - rowBefore)).toBeLessThan(120);
+
+    // And the four loaded pages are still loaded afterwards rather than rebuilt as one.
     expect(await page.locator('.content-table tbody tr').count()).toBe(100);
     expect(listingRequests).toBe(loadedBefore);
     await expect(page.getByText('Video 100', { exact: true })).toBeAttached();
+  });
+
+  test('parks the bulk bar below the mobile header, not under it', async ({ page }) => {
+    // Below 1024px AdminLayout's header is fixed over the top 56px of the viewport, so a bar that
+    // stuck at 0 would sit behind it. The offset comes from --sticky-top on .layout.
+    await page.setViewportSize({ width: 820, height: 720 });
+    await scrollDeep(page, CARD_TITLES);
+    await page.locator('.content-card', { hasText: 'Video 52' }).getByRole('checkbox').check();
+
+    const bar = page.locator('.bulk-bar');
+    await expect(bar).toBeVisible();
+    expect(await bar.evaluate(node => Math.round(node.getBoundingClientRect().top))).toBe(56);
+    expect(await scrollTop(page)).toBeGreaterThan(500);
   });
 
   test('holds position on the card layout below the desktop breakpoint', async ({ page }) => {

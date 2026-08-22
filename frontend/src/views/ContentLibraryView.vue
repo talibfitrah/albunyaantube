@@ -36,25 +36,6 @@
           <span>{{ t('contentLibrary.filters.title') }}</span>
           <span v-if="activeFilterCount > 0" class="filter-badge">{{ activeFilterCount }}</span>
         </button>
-
-        <button
-          v-if="selectedItems.length > 0"
-          type="button"
-          class="btn-secondary"
-          @click="clearSelection"
-        >
-          <span class="mobile-hidden">{{ t('contentLibrary.clearSelection') }}</span>
-          <span class="desktop-hidden">{{ t('contentLibrary.clear') }}</span>
-          ({{ selectedItems.length }})
-        </button>
-        <button
-          v-if="selectedItems.length > 0"
-          type="button"
-          class="btn-bulk"
-          @click="openBulkActionsMenu"
-        >
-          {{ t('contentLibrary.bulkActions') }}
-        </button>
       </div>
     </div>
 
@@ -141,6 +122,19 @@
 
       <!-- Main Content Area -->
       <main class="content-main">
+        <!-- Sticky: the actions have to be reachable from wherever in the list the admin selected,
+             without a scroll to the top that loses their place. -->
+        <div v-if="selectedItems.length > 0" class="bulk-bar">
+          <button type="button" class="btn-secondary" @click="clearSelection">
+            <span class="mobile-hidden">{{ t('contentLibrary.clearSelection') }}</span>
+            <span class="desktop-hidden">{{ t('contentLibrary.clear') }}</span>
+            ({{ selectedItems.length }})
+          </button>
+          <button type="button" class="btn-bulk" @click="openBulkActionsMenu">
+            {{ t('contentLibrary.bulkActions') }}
+          </button>
+        </div>
+
         <div class="content-toolbar">
           <div class="search-box">
             <input
@@ -1766,7 +1760,7 @@ onUnmounted(() => {
   padding: 1.5rem;
   height: fit-content;
   position: sticky;
-  top: 2rem;
+  top: calc(var(--sticky-top, 0px) + 2rem);
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -1844,6 +1838,20 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 1.5rem;
   min-height: 400px;
+}
+
+.bulk-bar {
+  position: sticky;
+  top: var(--sticky-top, 0px);
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
 }
 
 .content-toolbar {

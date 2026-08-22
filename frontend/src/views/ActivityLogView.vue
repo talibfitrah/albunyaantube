@@ -715,7 +715,7 @@ onBeforeUnmount(() => {
 
 .timeline-date {
   position: sticky;
-  top: 0;
+  top: var(--sticky-top, 0px);
   z-index: 10;
   background: var(--color-bg);
   padding: 0.5rem 0;

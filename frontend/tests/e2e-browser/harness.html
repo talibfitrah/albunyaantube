@@ -17,8 +17,8 @@
           2. the test intercepts /api/** so nothing reaches a backend.
 
         Worth knowing, because a hand-built shell got it wrong: the element that scrolls is the
-        document, not AdminLayout's <main>. `main` carries overflow-y: auto but nothing constrains
-        its height, so it grows with the list and the window moves instead.
+        document, not AdminLayout's <main>. Nothing constrains main's height, so it grows with the
+        list and the window moves instead.
 
         Everything the scroll behaviour depends on is the production code path.
       */

@@ -1726,7 +1726,7 @@ button,
 
 .bulk-toolbar {
   position: sticky;
-  top: 0;
+  top: var(--sticky-top, 0px);
   z-index: 10;
   display: flex;
   align-items: center;
