@@ -301,12 +301,17 @@ whitespace — zero; multi-line literal values — zero; any bidi control charac
 - `dev_settings_steps_away` has no `ar`/`nl` variation at all → emit English only, marked per R7.
 
 ### R7 — Untranslated fallback
-For the 120 keys absent from a locale, choose **one** of:
-- (preferred) omit the `ar`/`nl` `localizations` entry entirely. Foundation falls back to the
-  source language at runtime, which is exactly Android's `values/` fallback behaviour, and Xcode
-  shows the key as `NEW`/untranslated in the String Catalog editor — a visible, actionable
-  backlog rather than a silent English string masquerading as a translation.
-- (do not) copy the English value into `ar`/`nl` with `"state": "translated"`. That erases the gap.
+**Amended 2026-08-23 (Task 13 review, verified with `xcstringstool compile` and a probe against the
+built `.app`):** an omitted `ar`/`nl` entry is *not* compiled into that locale's `Localizable.strings`,
+and neither `String(localized:)` nor `Bundle.localizedString(forKey:)` falls back per key to the
+source language — the raw key renders. So:
+- Key absent in Android for a locale → emit `{"stringUnit": {"state": "needs_review", "value": <en>}}`.
+  Xcode still lists it as needing review (the actionable backlog survives) and the runtime shows
+  English, matching Android's `values/` fallback.
+- Key present in Android but equal to English (loanwords: "Downloads", "Links", "YouTube") → emit it
+  with `"state": "translated"`; it is a real translation, not a gap.
+- The regression net is `LocalizationTests`: every catalog key resolves to something other than the
+  key itself under `ar` and `nl`.
 
 If a state must be written, use `"state": "new"` on the source unit and no target unit.
 Set `"shouldTranslate": false` only for `app_name` (`values/strings.xml:3` = `FitrahTube`), which
