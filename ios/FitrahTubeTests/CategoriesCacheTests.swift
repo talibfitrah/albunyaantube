@@ -49,6 +49,34 @@ struct CategoriesCacheTests {
         func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
     }
 
+    /// Gate wave-4 V3: `catch is CancellationError` could never fire -- swift-openapi-runtime wraps
+    /// what the transport throws, and URLSession reports a cancelled request as
+    /// `URLError(.cancelled)`. Either way it is the view going away mid-fetch, not a failure to
+    /// show: stored, it sticks (`loadIfNeeded` no-ops once `all` is non-empty) as a spurious error
+    /// the next time the screen appears.
+    private struct ThrowingCatalogClient: CatalogClient {
+        let error: any Error
+        func categories() async throws -> [FitrahTube.Category] { throw error }
+        func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+    }
+
+    @Test func cancellationErrorsAreNotStoredWhateverShapeTheyArriveIn() async {
+        for error in [CancellationError() as any Error, URLError(.cancelled)] {
+            let cache = LiveCategoriesCache(client: ThrowingCatalogClient(error: error))
+
+            await cache.loadIfNeeded()
+
+            #expect(cache.error == nil, "\(type(of: error)) must not surface as a user-visible error")
+            #expect(cache.isLoading == false)
+        }
+    }
+
     @Test func loadIfNeededFetchesOncePerProcess() async {
         let counter = CallCounter()
         let cache = LiveCategoriesCache(client: CountingCatalogClient(categoriesResult: sample(), counter: counter))

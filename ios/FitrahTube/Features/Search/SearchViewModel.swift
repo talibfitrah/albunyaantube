@@ -102,6 +102,12 @@ import Foundation
     }
 
     private func performSearch(_ q: String) async {
+        // The single funnel all three entry points share, so the trim lives here (gate wave-4 V5).
+        // `didSet` and `submit()` trim for their own guards (the >=2-char bar, `isNotBlank`) and
+        // pass the trimmed value; `retry()` had nothing to trim for and forwarded `query` verbatim,
+        // so retrying a failed `"  quran  "` ran a *different* search than the one that failed --
+        // exactly the request/history mismatch wave-3 D5 set out to remove.
+        let q = q.trimmingCharacters(in: .whitespacesAndNewlines)
         state = .loading
         do {
             let results = try await catalog.search(query: q, type: nil, limit: Self.pageSize)

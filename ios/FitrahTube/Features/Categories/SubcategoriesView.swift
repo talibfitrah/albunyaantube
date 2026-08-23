@@ -51,6 +51,7 @@ struct SubcategoriesView: View {
 
 }
 
+#if DEBUG
 #Preview {
     NavigationStack { SubcategoriesView(parentId: "c1", parentName: "Lectures") }
         .environment(\.container, .sharedFake)
@@ -62,3 +63,4 @@ struct SubcategoriesView: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

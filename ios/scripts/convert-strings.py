@@ -141,8 +141,19 @@ def rewrite_specifiers(s):  # R3 + R4
     return s
 
 def arg_signature(s):
-    """R4: ordered {argNum: conversion} used for the cross-locale subset check."""
-    return {int(num): conv for num, _flags, conv in SPECIFIER_RE.findall(s)}
+    """R4: {argNum: conversion} used for the cross-locale subset check -- every occurrence, not
+    just the last (gate wave-4 V4). The dict comprehension this replaces silently kept the last
+    conversion for a repeated argNum, so a hostile `"%1$@ %1$lld"` against en `"%1$lld"` collapsed
+    to {1: "lld"} and passed check_arg_subset clean, while the surviving `%1$@` made
+    `String(format:)` read that Int64 argument as an object pointer at runtime. One argument can
+    only have one type, so a repeated argNum with two conversions is refused here, at the one place
+    every caller (plain strings, plural forms, substitutions) builds its signature."""
+    sig = {}
+    for num, _flags, conv in SPECIFIER_RE.findall(s):
+        num = int(num)
+        if sig.setdefault(num, conv) != conv:
+            raise ValueError(f"argument %{num}$ used as both {sig[num]!r} and {conv!r}: {s!r}")
+    return sig
 
 def check_arg_subset(key, en_sig, loc, loc_sig):
     # R4: a translation's argument list must be a subset of the source's (same argNum -> same
@@ -393,6 +404,20 @@ def check_substitution_plural_specifier_mismatch_caught():
     else:
         raise AssertionError("substitution-plural ar specifier mismatch vs en other should raise")
 
+def check_repeated_argnum_conflict_refused():
+    """Gate wave-4 V4 self-check: one argument, two conversions. The signature must refuse it
+    rather than collapse to the last one -- collapsed, `"%1$@ %1$lld"` is a clean subset of en's
+    `"%1$lld"` and R4 passes a translation that reads an Int64 as a pointer. A repeat with the
+    *same* conversion (`"%1$@ %1$@"`) is legal positional usage and must still pass."""
+    try:
+        arg_signature("%1$@ %1$lld")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("arg_signature('%1$@ %1$lld') should have raised (one arg, two types)")
+    assert arg_signature("%1$@ %1$@") == {1: "@"}, arg_signature("%1$@ %1$@")
+    assert arg_signature("%2$lld of %1$@") == {1: "@", 2: "lld"}
+
 def check_locale_fallback_never_omits():
     """R7 self-check (amended rule): a locale absent from Android must still emit -- en's value
     marked `needs_review`, never nothing. Omitting it keeps the key out of that locale's compiled
@@ -450,6 +475,7 @@ def verify(out):
     check_non_positional_specifier_refused()
     check_mixed_specifier_styles_refused()
     check_numbered_precision_refused()
+    check_repeated_argnum_conflict_refused()
     check_locale_fallback_never_omits()
     check_plural_fallback_uses_other()
     check_plural_union_catches_ar_only_group()

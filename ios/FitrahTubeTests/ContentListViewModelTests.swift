@@ -125,6 +125,42 @@ struct ContentListViewModelTests {
         }
     }
 
+    /// Gate wave-4 V2: `.task` restarts on every compact-width tab re-selection, so the view's
+    /// unconditional `load()` refetched page 1 -- discarding the cursor and every page after the
+    /// first -- each time the user came back to the tab. `loadIfNeeded()` fetches on the first
+    /// appearance and no-ops on the ones after it.
+    @Test func loadIfNeededFetchesOnceThenNoOpsOnLaterAppearances() async {
+        let pages: [CursorPage<ContentItem>] = [
+            CursorPage(items: items(count: 20, prefix: "p0"), nextCursor: "1"),
+            CursorPage(items: items(count: 20, prefix: "p1"), nextCursor: nil),
+        ]
+        let client = RecordingCatalogClient(pages: pages)
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+
+        await vm.loadIfNeeded()   // first appearance
+        await vm.loadMore()       // the user paginated
+        #expect(await client.calls.count == 2)
+
+        await vm.loadIfNeeded()   // tab switched away and back
+        await vm.loadIfNeeded()
+
+        #expect(await client.calls.count == 2) // no refetch...
+        guard case .content(let items, _, _, _) = vm.state else { Issue.record("expected .content"); return }
+        #expect(items.count == 40) // ...and both loaded pages survive
+    }
+
+    /// The first appearance is the *only* one that fetches, whatever the outcome -- but a load
+    /// still in flight when the tab is revisited has not resolved into any state yet, so that one
+    /// re-issues (and `performFullLoad` supersedes the first cleanly).
+    @Test func loadIfNeededStillFetchesWhileTheFirstLoadIsUnresolved() async {
+        let client = RecordingCatalogClient(pages: [CursorPage(items: items(count: 3, prefix: "a"), nextCursor: nil)])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+
+        #expect(vm.state == .loading(.initial))
+        await vm.loadIfNeeded()
+        #expect(await client.calls.count == 1)
+    }
+
     @Test func cursorProgressesAndHasMoreReflectsNextCursor() async {
         let pages: [CursorPage<ContentItem>] = [
             CursorPage(items: items(count: 20, prefix: "p0"), nextCursor: "1"),

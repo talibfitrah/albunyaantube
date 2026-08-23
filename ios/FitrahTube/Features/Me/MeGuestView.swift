@@ -91,6 +91,7 @@ struct MeGuestView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     NavigationStack { MeGuestView() }
         .environment(\.container, .sharedFake)
@@ -102,3 +103,4 @@ struct MeGuestView: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

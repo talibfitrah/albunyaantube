@@ -117,6 +117,18 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
 
     func load() async { await performFullLoad(showLoading: true) }
 
+    /// Gate wave-4 V2: SwiftUI restarts a `.task` every time a compact-width `TabView` tab is
+    /// re-selected, so the views' `.task { await load() }` blanked every accumulated page back to
+    /// the skeleton and refetched page 1 on each tab revisit -- cursor, deep pagination and scroll
+    /// position gone, and only on phones (the iPad rail never removes a tab's stack, so the two
+    /// behaved differently). First appearance still fetches exactly once; a later appearance with
+    /// content is a no-op. Every other entry point keeps its own path: pull-to-refresh, filter
+    /// change, the debounced query, and the error states' own Retry.
+    func loadIfNeeded() async {
+        guard case .loading(.initial) = state else { return }
+        await load()
+    }
+
     /// Never shows `.loading` -- the caller's `.refreshable` holds its own spinner while the
     /// existing `.content`/`.error` stays on screen, swapped only once the new page arrives.
     func refresh() async {
@@ -213,7 +225,10 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
 
     /// Trimmed, like `SearchViewModel`/`SearchHistoryStore` (gate wave-2 W8): a field holding
     /// only spaces is not an active search, and must not show the "No results" search empty state.
-    private var isSearchActive: Bool { !trimmedQuery.isEmpty }
+    /// Not `private` (gate wave-4 V6): `ContentListView`'s pull-to-refresh suppression asks the
+    /// same question and used to answer it with its own untrimmed `query.isEmpty`, so a
+    /// whitespace-only field disabled pull-to-refresh on a list that was not filtered at all.
+    var isSearchActive: Bool { !trimmedQuery.isEmpty }
 
     /// RULING 22: the server requires ≥2 chars; below that `q` is omitted entirely (falls back to
     /// the unfiltered list), not sent as a too-short string. Interpretation accepted as-is for

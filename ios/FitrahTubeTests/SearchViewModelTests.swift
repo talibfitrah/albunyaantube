@@ -333,6 +333,25 @@ struct SearchViewModelTests {
         #expect(history.entries == ["ab"])  // not "  ab  "
     }
 
+    /// Gate wave-4 V5: the trim moved into `performSearch`, the funnel all three entry points
+    /// share, because `retry()` had no trim of its own and forwarded `query` verbatim -- so
+    /// retrying a failed `"  ab  "` ran a different search than the one that failed (and, against a
+    /// real backend, most likely returned "No results").
+    @Test func retryTrimsTheQueryLikeEveryOtherEntryPoint() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let client = FailThenSucceedCatalogClient(results: items(count: 3, prefix: "r"))
+        let vm = SearchViewModel(catalog: client, history: history, sleep: noSleep)
+
+        vm.query = "  ab  "
+        await vm.searchTask?.value
+        #expect(vm.state == .error)
+
+        await vm.retry()
+
+        #expect(await client.calls == ["ab", "ab"]) // not ["ab", "  ab  "]
+    }
+
     @Test func whitespaceOnlyQueryNeverFetches() async {
         let (history, defaults, suite) = makeHistoryStore()
         defer { defaults.removePersistentDomain(forName: suite) }

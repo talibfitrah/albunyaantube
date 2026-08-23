@@ -126,6 +126,7 @@ struct CategoryRow: View {
     }
 }
 
+#if DEBUG
 #Preview {
     NavigationStack { CategoriesView() }
         .environment(\.container, .sharedFake)
@@ -137,3 +138,4 @@ struct CategoryRow: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

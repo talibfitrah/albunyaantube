@@ -27,6 +27,28 @@ struct FavoritesStoreTests {
         #expect(store.isFavorite("v1") == false)
     }
 
+    /// Gate wave-4 V9: `toggle`/`clearAll` mutate model objects before saving, so a failed save
+    /// used to leave those mutations pending in the context -- and the next successful save of any
+    /// unrelated operation committed the toggle the user was told had failed. A read-only store
+    /// (`allowsSave: false`) is the reachable way to make `save()` throw; `fetch` includes pending
+    /// changes, so a favorite that reads back as absent is the proof the rollback happened.
+    @Test func failedSaveRollsBackInsteadOfLeavingTheMutationPending() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(UUID().uuidString).store")
+        let schema = Schema([FavoriteVideo.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url))
+        // Same file, reopened read-only -- creating it writable first keeps the failure in `save()`
+        // rather than in the container build.
+        let readOnly = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url, allowsSave: false))
+        _ = container
+        defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
+        let store = SwiftDataFavoritesStore(modelContainer: readOnly)
+
+        #expect(throws: (any Error).self) { try store.toggle(makeItem()) }
+
+        #expect(store.isFavorite("v1") == false)
+        #expect(store.items.isEmpty)
+    }
+
     @Test func toggleInsertsThenSoftDeletes() throws {
         let store = makeStore()
 

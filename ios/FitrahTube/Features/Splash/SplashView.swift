@@ -177,6 +177,7 @@ func withCappedWork(grace: Duration,
     }
 }
 
+#if DEBUG
 #Preview {
     SplashView(onComplete: {})
         .environment(\.container, .sharedFake)
@@ -188,3 +189,4 @@ func withCappedWork(grace: Duration,
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

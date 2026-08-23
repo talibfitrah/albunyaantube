@@ -164,6 +164,7 @@ private struct OnboardingPageContent: View {
     }
 }
 
+#if DEBUG
 #Preview {
     OnboardingView().environment(\.container, .sharedFake)
 }
@@ -174,3 +175,4 @@ private struct OnboardingPageContent: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

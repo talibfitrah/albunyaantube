@@ -173,6 +173,7 @@ struct AboutView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     NavigationStack { AboutView() }
         .environment(\.container, .sharedFake)
@@ -184,3 +185,4 @@ struct AboutView: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

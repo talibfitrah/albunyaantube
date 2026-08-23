@@ -90,6 +90,53 @@ struct PaginationGuardTests {
         #expect(guardState.lastCount == 0)
     }
 
+    // MARK: - Gate wave-4 V1/V6: reset generation (the view's commit check)
+
+    /// The view copies the guard, spends an attempt on it, and writes the copy back only after the
+    /// fetch returns. Anything that resets the guard inside that window -- a filter change that
+    /// swaps `HomeView`'s whole ViewModel, or a query change 300 ms ahead of the ViewModel's own
+    /// generation bump -- must make the copy detectably stale, or it lands on top of the reset.
+    @Test func externalResetInvalidatesAnAttemptCopiedBeforeIt() {
+        var guardState = PaginationGuard()
+        var attempt = guardState
+        #expect(attempt.shouldAutoLoad(widthClass: .regular, hasMore: true, paginationError: false, contentFits: true, itemCount: 20) == true)
+
+        guardState.reset() // query/filter change or pull-to-refresh, while the fetch is in flight
+
+        #expect(attempt.generation != guardState.generation) // the view refuses the commit
+        #expect(guardState.attempts == 0)
+        #expect(guardState.lastCount == 0)
+    }
+
+    /// ...but guards 2 and 6 renew the budget *without* bumping the generation, so the in-flight
+    /// attempt still commits. If they bumped it, an endpoint returning empty-but-`hasMore` pages
+    /// while the content kept fitting would never record an attempt and guard 4's cap could never
+    /// bite.
+    @Test func internalRenewalKeepsTheGenerationSoInFlightAttemptsStillCommit() {
+        var guardState = PaginationGuard()
+        _ = guardState.shouldAutoLoad(widthClass: .regular, hasMore: true, paginationError: false, contentFits: true, itemCount: 20)
+        let attempt = guardState
+
+        // guard 6: content no longer fits -> renew.
+        _ = guardState.shouldAutoLoad(widthClass: .regular, hasMore: true, paginationError: false, contentFits: false, itemCount: 40)
+        #expect(guardState.attempts == 0)
+        #expect(attempt.generation == guardState.generation)
+
+        // guard 2: list exhausted -> renew.
+        _ = guardState.shouldAutoLoad(widthClass: .regular, hasMore: false, paginationError: false, contentFits: true, itemCount: 40)
+        #expect(attempt.generation == guardState.generation)
+    }
+
+    @Test func resetsAccumulateSoOnlyTheNewestCopyCommits() {
+        var guardState = PaginationGuard()
+        guardState.reset()
+        let first = guardState
+        guardState.reset()
+
+        #expect(first.generation != guardState.generation)
+        #expect(guardState.generation == 2)
+    }
+
     @Test func firstAttemptIgnoresProgressInvariant() {
         // attempts == 0 on the very first call -- lastCount defaults to 0, itemCount 0 must still pass.
         var guardState = PaginationGuard()

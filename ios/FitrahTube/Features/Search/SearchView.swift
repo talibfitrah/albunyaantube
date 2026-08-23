@@ -177,6 +177,7 @@ struct SearchView: View {
 
 }
 
+#if DEBUG
 #Preview {
     NavigationStack { SearchView() }
         .environment(\.container, .sharedFake)
@@ -188,3 +189,4 @@ struct SearchView: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

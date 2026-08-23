@@ -13,7 +13,11 @@ useDefault = true
 # same tokens to be allowlisted.
 [allowlist]
 description = "Committed config templates whose secret fields hold __REPLACE_WITH_*__ tokens"
-regexTarget = "line"
+# No `regexTarget` (gate wave-4 V10): the default target is the detected secret itself. With
+# `regexTarget = "line"` the whole *line* was exempted as soon as it contained a placeholder
+# anywhere, so a template edited to hold one real value next to one remaining placeholder -- or
+# any single-line/minified JSON template -- escaped scanning entirely, reopening the fail-closed
+# property this file exists for.
 regexes = [
   '''__REPLACE_WITH_[A-Z0-9_]+__''',
 ]

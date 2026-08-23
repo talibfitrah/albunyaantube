@@ -76,6 +76,14 @@ import Foundation
 
     func load() async { await performFullLoad(showLoading: true) }
 
+    /// First appearance fetches; a tab revisit does not -- see
+    /// `ContentListViewModel.loadIfNeeded()` for why `.task` re-runs at all (gate wave-4 V2).
+    /// Pull-to-refresh and the error state's own Retry keep their own paths.
+    func loadIfNeeded() async {
+        guard case .loading = state else { return }
+        await load()
+    }
+
     /// RULINGS #20: never shows `.loading` -- the caller's `.refreshable` holds its own spinner
     /// while the existing content stays on screen, swapped only once the new page arrives.
     func refresh() async {

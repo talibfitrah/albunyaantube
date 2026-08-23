@@ -59,6 +59,7 @@ nonisolated enum AppConfig {
         return AppContainer(catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false))
     }
 
+    #if DEBUG
     static func fake(
         catalog: any CatalogClient = FakeCatalogClient(),
         // `?? .standard`: `UserDefaults(suiteName:)` returns nil for a suite name equal to the
@@ -73,6 +74,7 @@ nonisolated enum AppConfig {
         // leak state between them. `sharedFake` wipes its suite once, at creation.
         AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true))
     }
+    #endif
 
     /// Gate A-I1. This runs eagerly on the launch path (`live()` is evaluated in `FitrahTubeApp`'s
     /// `@State` initialiser), so its failure mode used to be a `preconditionFailure` -- a permanent
@@ -115,11 +117,13 @@ nonisolated enum AppConfig {
     /// explicit `.environment(\.container, …)` override shares this single instance (and its
     /// wiped suite), instead of each read point independently evaluating `.fake()` -- which would
     /// give every SwiftUI preview its own container with no shared state between them.
+    #if DEBUG
     @MainActor static let sharedFake: AppContainer = {
         let defaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard
         defaults.removePersistentDomain(forName: "fitrahtube.fake")
         return fake(defaults: defaults)
     }()
+    #endif
 }
 
 extension EnvironmentValues {

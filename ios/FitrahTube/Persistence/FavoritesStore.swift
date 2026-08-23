@@ -72,7 +72,7 @@ import SwiftData
                 userId: uid, dirty: true
             ))
         }
-        try context.save()
+        try saveOrRollback()
         refresh()
     }
 
@@ -85,17 +85,41 @@ import SwiftData
             favorite.isRemoved = true
             favorite.dirty = true // not `updatedAt` -- see `toggle` (gate wave-2 W12)
         }
-        try context.save()
+        try saveOrRollback()
         refresh()
+    }
+
+    /// Gate wave-4 V9: both writers mutate model objects *before* saving, so a failed save used to
+    /// leave those mutations pending in the context -- and the next successful save of any
+    /// unrelated operation then committed the toggle the user was told had failed. Rolling back
+    /// discards them at the point of failure; `refresh()` re-reads so `items` can't keep showing a
+    /// mutation that no longer exists. The error still propagates -- the caller decides what the
+    /// user sees.
+    private func saveOrRollback() throws {
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            refresh()
+            throw error
+        }
     }
 
     private func refresh() {
         let uid = currentUserId
         let approved = "APPROVED"
-        let descriptor = FetchDescriptor<FavoriteVideo>(
+        var descriptor = FetchDescriptor<FavoriteVideo>(
             predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus == approved },
             sortBy: [SortDescriptor(\.addedAt, order: .reverse)]
         )
+        // Saved rows only (gate wave-4 V9). `fetch` merges the context's pending changes, and a
+        // rolled-back insert stays *registered* in the context (verified: after `rollback()`,
+        // `hasChanges` is false and `insertedModelsArray` is empty, yet a plain `fetch` still
+        // returns the row while `fetchCount` returns 0) -- so a failed toggle would keep showing
+        // the favorite the user was just told had failed. Every writer here saves before it
+        // refreshes, so on the success path this returns exactly the same rows either way, and it
+        // now matches `isFavorite`, whose `fetchCount` never saw pending changes to begin with.
+        descriptor.includePendingChanges = false
         items = (try? context.fetch(descriptor)) ?? []
     }
 }

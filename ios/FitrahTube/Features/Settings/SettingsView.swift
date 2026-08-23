@@ -293,9 +293,18 @@ struct SettingsView: View {
 
     // MARK: - Row values
 
+    /// Gate wave-4 V11: resolved from `\.locale` -- the locale this screen is actually rendering
+    /// in -- not from `settings.resolvedLocale`, which re-derives the same answer from
+    /// `Locale.preferredLanguages` against a hardcoded {en,ar,nl} set. Two derivations of one fact
+    /// can disagree (they already do under any `\.locale` override, e.g. the RTL preview below,
+    /// which renders Arabic while this row reported the simulator's system language), and a row
+    /// naming a different language than the screen around it is worse than no row.
+    ///
+    /// Always the "System (X)" form: RULING 33 removed the in-app picker, so nothing writes
+    /// `appLocale` and the explicit-selection branch that used to guard this was dead. Phase 4
+    /// restores both together if a picker ever returns.
     private var languageValue: String {
-        let native = nativeName(for: settings.resolvedLocale.language.languageCode?.identifier ?? "en")
-        guard settings.appLocale == "system" else { return native }
+        let native = nativeName(for: locale.language.languageCode?.identifier ?? "en")
         return Format.localizedFormat("settings_language_system_resolved", locale: locale, native)
     }
 
@@ -338,6 +347,7 @@ struct SettingsView: View {
 
 }
 
+#if DEBUG
 #Preview {
     NavigationStack { SettingsView() }
         .environment(\.container, .sharedFake)
@@ -349,3 +359,4 @@ struct SettingsView: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

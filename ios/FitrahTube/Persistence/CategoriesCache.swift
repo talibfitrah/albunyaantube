@@ -61,12 +61,19 @@ import Observation
         error = nil
         do {
             all = try await client.categories()
-        } catch is CancellationError {
-            // A cancelled `.task` (the view went away mid-fetch) is not a failure to show the
-            // user (gate wave-2 W8) -- stored, it surfaced as a spurious error state the next
-            // time the screen appeared.
         } catch {
-            self.error = error
+            // A cancelled `.task` (the view went away mid-fetch) is not a failure to show the
+            // user (gate wave-2 W8) -- stored, it surfaced as a spurious error state the next time
+            // the screen appeared, and `loadIfNeeded` no-ops once `all` is non-empty, so it stuck.
+            //
+            // `catch is CancellationError` could never fire (gate wave-4 V3): swift-openapi-runtime
+            // wraps everything the transport throws in a `ClientError` before it reaches here, and
+            // URLSession reports a cancelled request as `URLError(.cancelled)`, not
+            // `CancellationError`. Asking the task covers the wrapped case whatever the payload is;
+            // the two type checks cover a cancellation that did not come through this task.
+            let isCancellation = Task.isCancelled || error is CancellationError
+                || (error as? URLError)?.code == .cancelled
+            if !isCancellation { self.error = error }
         }
         isLoading = false
     }

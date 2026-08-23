@@ -26,7 +26,7 @@ struct FeaturedView: View {
             stateContent
         }
         .refreshable {
-            paginationGuard = PaginationGuard()
+            paginationGuard.reset()
             await viewModel?.refresh()
         }
         .onContentFits { fits in
@@ -48,7 +48,7 @@ struct FeaturedView: View {
                 viewModel = FeaturedViewModel(categoryId: categoryId, categoryName: categoryName, catalog: container.catalog)
             }
             await container.categories.loadIfNeeded() // best-effort, for the localized title
-            await viewModel?.load()
+            await viewModel?.loadIfNeeded()
         }
     }
 
@@ -194,7 +194,13 @@ struct FeaturedView: View {
             return
         }
         isLoadingMore = true
-        Task { if await runLoadMore() { paginationGuard = attempt } }
+        // Committed only while the guard it was copied from is still the live one -- same check
+        // the other two list screens make (gate wave-4 V1/V6).
+        Task {
+            if await runLoadMore(), attempt.generation == paginationGuard.generation {
+                paginationGuard = attempt
+            }
+        }
     }
 
     private var currentItemCount: Int {
@@ -213,6 +219,7 @@ struct FeaturedView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     NavigationStack {
         FeaturedView(categoryId: nil, categoryName: nil)
@@ -228,3 +235,4 @@ struct FeaturedView: View {
     .environment(\.locale, Locale(identifier: "ar"))
     .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

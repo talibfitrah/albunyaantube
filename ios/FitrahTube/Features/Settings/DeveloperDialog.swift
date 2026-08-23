@@ -54,7 +54,9 @@ struct DeveloperDialog: View {
     }
 }
 
+#if DEBUG
 #Preview {
     DeveloperDialog()
         .environment(\.container, .sharedFake)
 }
+#endif

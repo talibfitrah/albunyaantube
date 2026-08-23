@@ -39,8 +39,13 @@ struct ContentListView: View {
                     }
                 }
                 .refreshable {
-                    guard queryBinding.wrappedValue.isEmpty else { return } // suppressed while searching -- content-lists.md §4.4
-                    paginationGuard = PaginationGuard()
+                    // Trimmed, like every other "is a search active" decision (gate wave-4 V6):
+                    // `viewModel.isSearchActive` is the one predicate, so a field holding only
+                    // spaces -- which shows the ordinary unfiltered list -- keeps pull-to-refresh
+                    // instead of silently disabling it. Suppressed while searching per
+                    // content-lists.md §4.4.
+                    guard viewModel?.isSearchActive != true else { return }
+                    paginationGuard.reset()
                     await viewModel?.refresh()
                 }
                 .onContentFits { fits in
@@ -94,7 +99,7 @@ struct ContentListView: View {
         // a pagination failure leaves `paginationError` set, which `PaginationGuard`'s guard 3
         // refuses on.
         .onChange(of: viewModel?.state) { _, _ in triggerAutoFill() }
-        .onChange(of: queryBinding.wrappedValue) { _, _ in paginationGuard = PaginationGuard() }
+        .onChange(of: queryBinding.wrappedValue) { _, _ in paginationGuard.reset() }
         // Fix round 1, finding #4: a category applied on the Categories/Subcategories screen
         // (Task 11) writes straight into `container.filters` and pops back here without ever
         // re-running this view's `.task` -- `ContentListViewModel` already re-reads `filter.state`
@@ -103,7 +108,7 @@ struct ContentListView: View {
         // `.onChange` never fires for the value it's first attached with, so this doesn't cause
         // the double fetch a naive "reload on appear + reload on change" combo would.
         .onChange(of: container.filters.state) { _, _ in
-            paginationGuard = PaginationGuard()
+            paginationGuard.reset()
             Task { await viewModel?.load() }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
@@ -111,7 +116,7 @@ struct ContentListView: View {
             if viewModel == nil {
                 viewModel = ContentListViewModel(type: type, catalog: container.catalog, filter: container.filters)
             }
-            await viewModel?.load()
+            await viewModel?.loadIfNeeded()
             #if DEBUG
             // Debug-only launch hook (fix round 1, finding #1 screenshot): simctl has no
             // pull-to-refresh gesture, so `-fitrah-fail-after-first-load` drives the same
@@ -337,7 +342,16 @@ struct ContentListView: View {
             return
         }
         isLoadingMore = true
-        Task { if await runLoadMore() { paginationGuard = attempt } }
+        // Committed only while the guard it was copied from is still the live one (gate wave-4
+        // V6): the query-change reset above fires immediately, but the ViewModel's own
+        // `loadGeneration` only bumps 300 ms later when the debounce fires -- so an autofill in
+        // flight across that window passed `loadMore()`'s generation check and wrote its
+        // pre-reset attempt back over the reset, latching guard 5 off for the new query's results.
+        Task {
+            if await runLoadMore(), attempt.generation == paginationGuard.generation {
+                paginationGuard = attempt
+            }
+        }
     }
 
     @discardableResult
@@ -391,6 +405,7 @@ struct ContentListView: View {
 
 }
 
+#if DEBUG
 #Preview {
     MainShellView()
         .environment(\.container, .sharedFake)
@@ -402,3 +417,4 @@ struct ContentListView: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

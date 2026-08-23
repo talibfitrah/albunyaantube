@@ -2,6 +2,14 @@ import Foundation
 
 /// Canned catalog for tests and previews — the iOS counterpart of Android's FakeContentService.
 /// `home`/`content` cursors are stringified indices into `homePages`/`contentPages`.
+///
+/// Debug-only, and compiled out of Release entirely (gate wave-4 V8) -- same treatment, and the
+/// same reason, as `ComponentsGallery`: nothing in Release can select it (`FitrahTubeApp` hardcodes
+/// `AppContainer.live()` there and an un-injected `\.container` traps), so shipping the whole
+/// canned catalog -- sample categories, home pages, content pages, search results -- plus
+/// `AppContainer.fake`/`sharedFake` is dead weight in the binary. `#Preview` bodies reference
+/// `.sharedFake` and are compiled in Release too, so they carry the same guard.
+#if DEBUG
 nonisolated struct FakeCatalogClient: CatalogClient {
     static let sampleCategories = [
         Category(id: "c1", name: "Quran", slug: "quran", parentId: nil),
@@ -65,3 +73,4 @@ nonisolated struct FakeCatalogClient: CatalogClient {
         return pages[index]
     }
 }
+#endif

@@ -99,6 +99,7 @@ struct FavoritesView: View {
 
 }
 
+#if DEBUG
 #Preview {
     NavigationStack { FavoritesView() }
         .environment(\.container, .sharedFake)
@@ -110,3 +111,4 @@ struct FavoritesView: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

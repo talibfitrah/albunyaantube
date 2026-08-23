@@ -33,7 +33,7 @@ struct HomeView: View {
                     }
                 }
                 .refreshable {
-                    paginationGuard = PaginationGuard()
+                    paginationGuard.reset()
                     await viewModel?.refresh()
                 }
                 .onContentFits { fits in
@@ -78,7 +78,7 @@ struct HomeView: View {
         // filter change never causes two reloads. `.onChange` doesn't fire for the value it's
         // first attached with, so first appearance still fetches exactly once.
         .onChange(of: container.filters.state) { _, _ in
-            paginationGuard = PaginationGuard()
+            paginationGuard.reset()
             viewModel = HomeViewModel(catalog: container.catalog, filter: container.filters, widthClass: { widthClass })
             Task { await viewModel?.load() }
         }
@@ -94,7 +94,7 @@ struct HomeView: View {
                 // request would need a live provider (e.g. a small reference box) to fully fix.
                 viewModel = HomeViewModel(catalog: container.catalog, filter: container.filters, widthClass: { widthClass })
             }
-            await viewModel?.load()
+            await viewModel?.loadIfNeeded()
         }
     }
 
@@ -231,10 +231,20 @@ struct HomeView: View {
             paginationGuard = attempt
             return
         }
-        Task { if await viewModel.loadMore() { paginationGuard = attempt } }
+        // Committed only while the guard it was copied from is still the live one (gate wave-4
+        // V1): the filter change above *replaces* `viewModel`, and the orphaned old one's
+        // `loadGeneration` never moves, so it still answers `true` on its late return -- writing a
+        // spent attempt (and an old `lastCount`) over the guard that same filter change just reset,
+        // which guard 5 then refuses every autofill against.
+        Task {
+            if await viewModel.loadMore(), attempt.generation == paginationGuard.generation {
+                paginationGuard = attempt
+            }
+        }
     }
 }
 
+#if DEBUG
 #Preview {
     MainShellView()
         .environment(\.container, .sharedFake)
@@ -246,3 +256,4 @@ struct HomeView: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

@@ -13,6 +13,11 @@
 set -uo pipefail
 set -m
 
+# XcodeGen lives in ~/.local/bin on this machine, same as `screenshots.sh` (gate wave-4 V10) --
+# without this the gate script fails to find `xcodegen` in any shell whose profile didn't add it,
+# while its sibling script succeeds.
+PATH="$HOME/.local/bin:$PATH"
+
 IPHONE_SIM="${IPHONE_SIM:-iPhone 17}"
 IPAD_SIM="${IPAD_SIM:-iPad Pro 13-inch (M5)}"
 

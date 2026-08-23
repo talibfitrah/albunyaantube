@@ -40,6 +40,16 @@ struct MainShellView: View {
             .task { router.shellDidAppear() }
     }
 
+    /// Gate wave-4 V12, accepted: crossing 600 pt mid-session (iPad Split View / Stage Manager
+    /// resize -- not rotation, which `WidthClass.init(size:)` deliberately keeps stable) swaps
+    /// these two structurally different subtrees, so every tab's content gets a new SwiftUI
+    /// identity and its view-local `@State` goes: ViewModels, loaded pages, `PaginationGuard`,
+    /// search field text and scroll position. What survives is what lives outside the subtree --
+    /// `router.paths` (so the pushed screens are still there), `router.selectedTab`, and this
+    /// view's own `mountedTabs` -- so the user lands back where they were, on a list that reloads
+    /// its first page. Not cheaply fixable: SwiftUI identity is positional, and the two branches
+    /// cannot share one stack set without also sharing one container -- the native `TabView` is
+    /// the compact branch's whole point, and the rail branch cannot use it (see the type doc).
     @ViewBuilder
     private var layoutBody: some View {
         switch shellLayout {
@@ -160,7 +170,9 @@ struct MainShellView: View {
 
 }
 
+#if DEBUG
 #Preview {
     MainShellView()
         .environment(\.container, .sharedFake)
 }
+#endif
