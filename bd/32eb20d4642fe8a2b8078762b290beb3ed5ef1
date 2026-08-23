@@ -1,0 +1,21 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/ModelsTests.swift
+  s_18197a18aae8f1::t_7b2a39c7eebbe4 1-74
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/Models.swift
+  s_18197a18aae8f1::t_b572a50ed805ab 1-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bd32eb20d4642fe8a2b8078762b290beb3ed5ef1",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
