@@ -9,26 +9,29 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: Spacing.md(.compact)) {
-            Image(systemName: systemImage)
-                .font(.system(size: 96))
-                .foregroundStyle(Color.brand)
-                .accessibilityHidden(true)
-            Text(title).font(TypeScale.headline).foregroundStyle(Color.textPrimary)
-            Text(message)
-                .font(TypeScale.body)
-                .foregroundStyle(Color.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 300)
+            VStack(spacing: Spacing.md(.compact)) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 96))
+                    .foregroundStyle(Color.brand)
+                    .accessibilityHidden(true)
+                Text(title).font(TypeScale.headline).foregroundStyle(Color.textPrimary)
+                Text(message)
+                    .font(TypeScale.body)
+                    .foregroundStyle(Color.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 300)
+            }
+            .accessibilityElement(children: .combine)
             if let action {
                 Button(action.title, action: action.run)
                     .buttonStyle(.borderedProminent)
                     .tint(.brand)
+                    .foregroundStyle(Color.onBrand)
                     .frame(minHeight: Size.button)
             }
         }
         .padding(Spacing.lg(.compact))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -51,6 +54,7 @@ struct ErrorStateView: View {
             Button(String(localized: "Retry"), action: retry)
                 .buttonStyle(.borderedProminent)
                 .tint(.brand)
+                .foregroundStyle(Color.onBrand)
                 .frame(minHeight: Size.button)
         }
         .padding(Spacing.lg(.compact))

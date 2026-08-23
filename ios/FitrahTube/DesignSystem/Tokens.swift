@@ -14,6 +14,7 @@ private extension Color {
 
 private extension UIColor {
     convenience init(argb: UInt32) {
+        // Heuristic: 0x00RRGGBB (fully transparent, non-zero RGB) is indistinguishable from opaque 0xRRGGBB; no token uses that.
         let hasAlpha = argb > 0xFFFFFF
         let a = hasAlpha ? CGFloat((argb >> 24) & 0xFF) / 255 : 1
         self.init(
@@ -28,6 +29,7 @@ private extension UIColor {
 extension Color {
     static let brand = Color(light: 0x275E4B, dark: 0x35C491)            // primary_green — text-safe in both modes
     static let accent = Color(light: 0x35C491, dark: 0x35C491)           // primary_variant — fills only
+    static let onBrand = Color(light: 0xFFFFFF, dark: 0x0A1F18)          // label on a brand/accent fill (Android filter_chip selected text)
     static let surfaceVariant = Color(light: 0xE3E9E7, dark: 0x1A2E27)
     static let background = Color(light: 0xF5F5F5, dark: 0x121212)       // background_gray
     static let homeSurface = Color(light: 0xF5F6F8, dark: 0x0F1512)
