@@ -1,0 +1,62 @@
+ios/FitrahTube/DesignSystem/StateViews.swift
+  s_18197a18aae8f1::t_fb907d1b0d8bc2 19
+  s_18197a18aae8f1::t_f052f1f1c40260 100-101,104
+  s_18197a18aae8f1::t_3c2a2a721eac7c 23,43-44,51-72
+ios/Packages/FitrahAPI/Sources/FitrahAPI/FitrahAPIClient.swift
+  s_18197a18aae8f1::t_031560f5180a78 6-20,26
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/DeviceIdTests.swift
+  s_18197a18aae8f1::t_cc45283b9998f5 5
+scripts/generate-openapi-dtos.sh
+  s_18197a18aae8f1::t_79190e850d828f 30-34
+ios/FitrahTubeTests/TokensTests.swift
+  s_18197a18aae8f1::t_cc45283b9998f5 5
+ios/scripts/test.sh
+  s_18197a18aae8f1::t_d8d96dab8b0229 3-4,18,25-26,41
+  s_18197a18aae8f1::t_2a37c533358249 10-13
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/TestLimits.swift
+  s_18197a18aae8f1::t_6b51672fba09fc 1-7
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_18197a18aae8f1::t_cc45283b9998f5 4
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/GeneratedTypesTests.swift
+  s_18197a18aae8f1::t_cc45283b9998f5 5
+ios/project.yml
+  s_18197a18aae8f1::t_50f2da4304831d 81
+ios/FitrahTubeTests/SmokeTests.swift
+  s_18197a18aae8f1::t_cc45283b9998f5 5
+ios/FitrahTube/App/RootView.swift
+  s_18197a18aae8f1::t_27b071ad6e9cea 7,22-25
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/DeviceIdMiddlewareTests.swift
+  s_18197a18aae8f1::t_cc45283b9998f5 6
+ios/FitrahTube/App/AppContainer.swift
+  s_18197a18aae8f1::t_33bd17c4fa3e37 21,30,36-37
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/RecordingTransport.swift
+  s_18197a18aae8f1::t_34b614d28d6c13 6-7
+ios/FitrahTubeTests/WidthClassTests.swift
+  s_18197a18aae8f1::t_cc45283b9998f5 4
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/FitrahAPIClientTests.swift
+  s_18197a18aae8f1::t_1d29095cd69b93 1-4,6-14
+  s_18197a18aae8f1::t_cc45283b9998f5 5
+ios/FitrahTube/DesignSystem/Tokens.swift
+  s_18197a18aae8f1::t_d1071405252c47 63
+ios/FitrahTubeTests/TestLimits.swift
+  s_18197a18aae8f1::t_05866f60a22716 1-7
+ios/FitrahTubeTests/LiveCatalogClientTests.swift
+  s_18197a18aae8f1::t_cc45283b9998f5 6
+  s_18197a18aae8f1::t_0c50ee1f08355f 10-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2cb2866b92745a08f80f5937ebed3630c311f9c6",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
