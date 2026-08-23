@@ -6,6 +6,31 @@ nonisolated enum Tab: Int, CaseIterable, Sendable {
     case home, channels, me, playlists, videos
 }
 
+extension Tab {
+    /// Shared by `MainShellView`'s `TabView` items and `NavigationRailView`'s rail items so the
+    /// bottom bar and the leading rail (task-7b) can never disagree on a tab's title/icon.
+    var title: String {
+        switch self {
+        case .home: String(localized: "nav_home")
+        case .channels: String(localized: "nav_channels")
+        case .me: String(localized: "nav_me")
+        case .playlists: String(localized: "nav_playlists")
+        case .videos: String(localized: "nav_videos")
+        }
+    }
+
+    /// SF Symbols per `strings-assets.md:732-770`.
+    var symbolName: String {
+        switch self {
+        case .home: "house.fill"
+        case .channels: "tv"
+        case .me: "person.crop.circle"
+        case .playlists: "list.bullet.rectangle"
+        case .videos: "film.stack"
+        }
+    }
+}
+
 /// One destination pushed onto a tab's `NavigationStack` (spec §6). Phase 1 only implements the
 /// tab roots and this routing layer -- every destination renders `PhaseTwoPlaceholderView` until
 /// its real screen lands in a later task.

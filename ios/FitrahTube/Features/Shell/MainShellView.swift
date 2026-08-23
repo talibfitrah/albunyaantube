@@ -1,63 +1,103 @@
 import SwiftUI
 
-/// Android's `MainShellFragment` (`shell-home.md:A1-A6`, spec §6). `TabView(.sidebarAdaptable)`
-/// gives bottom tabs on compact width and a sidebar/rail on regular+ automatically, matching
-/// Android's `BottomNavigationView` / `NavigationRailView` split without separate layouts per
-/// width class.
+/// Android's `MainShellFragment` (`shell-home.md:A1-A6`, spec §6). Compact width keeps a plain
+/// `TabView` bottom bar; regular/large replace it with a leading `NavigationRailView` mirroring
+/// Android's `NavigationRailView` (task-7b) -- `.tabViewStyle(.sidebarAdaptable)` is NOT used, it
+/// renders iPadOS 18+'s floating top capsule bar instead, rejected by the user 2026-08-23 as
+/// unlike the Android tablet UI. `TabView` itself is NOT used for the rail layout either: on this
+/// SDK its own chrome (the same floating capsule) survives even `.toolbar(.hidden, for: .tabBar)`
+/// -- confirmed live on iPad (screenshot showed both the rail AND the capsule at once). Instead
+/// the rail layout renders a `ZStack` of all five tabs' `NavigationStack`s permanently (each one's
+/// SwiftUI identity never changes, so its state/scroll position survives a tab switch same as
+/// `TabView`'s own tab-keeping does), showing only the selected one via `opacity`/
+/// `allowsHitTesting`/`accessibilityHidden` -- so a rail tap can never reach hidden chrome that
+/// isn't there.
 struct MainShellView: View {
     @Environment(\.container) private var container
     @Environment(\.router) private var router
+    @Environment(\.widthClass) private var widthClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var shellLayout: ShellLayout { ShellLayout(widthClass) }
+
     var body: some View {
+        layoutBody
+            .tint(.brand) // shell-home.md:A2 — selected tab/rail item is tint-only, brand green, no pill indicator.
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: container.network.isOnline)
+            // Task 11: the category-filter-applied banner is set by CategoriesView/SubcategoriesView
+            // right before they pop themselves away, so it has to live above the NavigationStacks --
+            // on the shell itself, like Android's Toast (a system overlay that survives the
+            // `navigateUp()` in the same gesture) -- not on a screen that's about to disappear.
+            .transientBanner(bannerBinding)
+            .task { router.shellDidAppear() }
+    }
+
+    @ViewBuilder
+    private var layoutBody: some View {
+        switch shellLayout {
+        case .bottomBar:
+            tabView
+                .toolbar(router.isFullscreen ? .hidden : .visible, for: .tabBar)
+                .overlay(alignment: .top) { offlineBannerOverlay }
+        case .rail:
+            HStack(spacing: 0) {
+                if !router.isFullscreen {
+                    NavigationRailView(selectedTab: router.selectedTab, onSelect: router.select)
+                }
+                railStacks
+                    .overlay(alignment: .top) { offlineBannerOverlay }
+            }
+        }
+    }
+
+    /// Compact width only -- `SwiftUI.Tab` disambiguates the tab-item view builder from this
+    /// file's own `Tab` enum.
+    private var tabView: some View {
         TabView(selection: selectionBinding) {
             ForEach(Tab.allCases, id: \.self) { tab in
-                // `SwiftUI.Tab` disambiguates the tab-item view builder from this file's own `Tab` enum.
-                SwiftUI.Tab(title(for: tab), systemImage: symbol(for: tab), value: tab) {
-                    NavigationStack(path: pathBinding(for: tab)) {
-                        rootView(for: tab)
-                            .navigationDestination(for: Route.self) { destination(for: $0) }
-                    }
+                SwiftUI.Tab(tab.title, systemImage: tab.symbolName, value: tab) {
+                    navigationStack(for: tab)
                 }
             }
         }
-        .tabViewStyle(.sidebarAdaptable)
-        .tint(.brand) // shell-home.md:A2 — selected tab/rail item is tint-only, brand green, no pill indicator.
-        .toolbar(router.isFullscreen ? .hidden : .visible, for: .tabBar)
-        .overlay(alignment: .top) {
-            if !container.network.isOnline {
-                OfflineBanner()
-                    .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    /// Regular/large width only (see the type doc comment for why `TabView` isn't reused here).
+    /// All five stacks stay mounted; only the selected one is visible/interactive/accessible.
+    private var railStacks: some View {
+        ZStack {
+            ForEach(Tab.allCases, id: \.self) { tab in
+                navigationStack(for: tab)
+                    .opacity(tab == router.selectedTab ? 1 : 0)
+                    .allowsHitTesting(tab == router.selectedTab)
+                    .accessibilityHidden(tab != router.selectedTab)
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: container.network.isOnline)
-        // Task 11: the category-filter-applied banner is set by CategoriesView/SubcategoriesView
-        // right before they pop themselves away, so it has to live above the NavigationStacks --
-        // on the shell itself, like Android's Toast (a system overlay that survives the
-        // `navigateUp()` in the same gesture) -- not on a screen that's about to disappear.
-        .transientBanner(bannerBinding)
-        .task { router.shellDidAppear() }
+    }
+
+    private func navigationStack(for tab: Tab) -> some View {
+        NavigationStack(path: pathBinding(for: tab)) {
+            rootView(for: tab)
+                .navigationDestination(for: Route.self) { destination(for: $0) }
+        }
+    }
+
+    @ViewBuilder
+    private var offlineBannerOverlay: some View {
+        if !container.network.isOnline {
+            OfflineBanner()
+                .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     /// A plain `onChange(of: selectedTab)` never fires on reselect -- SwiftUI only calls it when
     /// the value actually differs, and tapping the current tab reassigns the same case. A custom
     /// `Binding`'s setter, in contrast, is invoked by `TabView` on every tap regardless of whether
     /// the value changed, so it's the only reliable place to detect "user tapped the active tab".
+    /// `router.select(_:)` is the same reselect-or-switch logic `NavigationRailView`'s buttons call
+    /// directly (not via a `Binding` -- a plain tap has no "value" to set).
     private var selectionBinding: Binding<Tab> {
-        Binding(
-            get: { router.selectedTab },
-            set: { newTab in
-                if newTab == router.selectedTab {
-                    // The .scrollToTop case is consumed by the reselected tab's own root view via
-                    // router.scrollToTopSignal (e.g. HomeView's ScrollViewReader) -- reselect(_:)
-                    // already performs the .popToRoot side effect itself, so the return value only
-                    // needs discarding here.
-                    _ = router.reselect(newTab)
-                } else {
-                    router.selectedTab = newTab
-                }
-            }
-        )
+        Binding(get: { router.selectedTab }, set: { router.select($0) })
     }
 
     private func pathBinding(for tab: Tab) -> Binding<[Route]> {
@@ -99,26 +139,6 @@ struct MainShellView: View {
         }
     }
 
-    private func title(for tab: Tab) -> String {
-        switch tab {
-        case .home: String(localized: "nav_home")
-        case .channels: String(localized: "nav_channels")
-        case .me: String(localized: "nav_me")
-        case .playlists: String(localized: "nav_playlists")
-        case .videos: String(localized: "nav_videos")
-        }
-    }
-
-    // SF Symbols per `strings-assets.md:732-770`.
-    private func symbol(for tab: Tab) -> String {
-        switch tab {
-        case .home: "house.fill"
-        case .channels: "tv"
-        case .me: "person.crop.circle"
-        case .playlists: "list.bullet.rectangle"
-        case .videos: "film.stack"
-        }
-    }
 }
 
 #Preview {

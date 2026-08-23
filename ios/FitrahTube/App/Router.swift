@@ -40,6 +40,18 @@ nonisolated enum ReselectAction: Equatable {
         paths[selectedTab, default: []].append(route)
     }
 
+    /// Shared tap handler for the bottom `TabView` and the leading `NavigationRailView` (task-7b)
+    /// -- switching tabs assigns directly; tapping the already-selected tab reselects (pop to
+    /// root, or scroll to top if already there) instead of a no-op. One function so the two bars
+    /// can never disagree on reselect semantics.
+    func select(_ tab: Tab) {
+        if tab == selectedTab {
+            _ = reselect(tab)
+        } else {
+            selectedTab = tab
+        }
+    }
+
     func popToRoot(_ tab: Tab) {
         paths[tab] = []
     }

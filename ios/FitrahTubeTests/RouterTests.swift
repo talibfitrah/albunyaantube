@@ -79,6 +79,32 @@ struct RouterTests {
         #expect(router.paths[.home] == [])
     }
 
+    // task-7b: `select(_:)` is the shared tap handler both the bottom `TabView` and the leading
+    // `NavigationRailView` call -- one function, so the two bars can never disagree on reselect
+    // semantics.
+    @Test func selectDifferentTabSwitchesSelection() {
+        let router = Router()
+        router.select(.channels)
+        #expect(router.selectedTab == .channels)
+    }
+
+    @Test func selectSameTabAtRootSignalsScrollToTop() {
+        let router = Router()
+        router.select(.home)
+        #expect(router.selectedTab == .home)
+        #expect(router.scrollToTopSignal?.tab == .home)
+    }
+
+    @Test func selectSameTabOnPushedScreenPopsToRoot() {
+        let router = Router()
+        router.push(.search)
+        #expect(router.paths[.home] == [.search])
+
+        router.select(.home)
+        #expect(router.paths[.home] == [])
+        #expect(router.scrollToTopSignal == nil)
+    }
+
     /// Task 8 follow-up: `SplashView` now reacts to `router.pendingRoute` via `.onChange`, not by
     /// polling between animation steps. `.onChange(of:)` is powered by exactly this Observation
     /// primitive (`withObservationTracking`) -- this proves a `pendingRoute` mutation is observable

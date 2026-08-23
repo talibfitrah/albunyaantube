@@ -147,6 +147,35 @@ enum TypeScale {
     static let seeAll = Font.system(.subheadline, weight: .medium)       // .subheadline 15 medium — Android 14 medium
 }
 
+// MARK: - Shell layout (Android layout/ BottomNavigationView ↔ layout-sw600dp/layout-sw720dp
+// NavigationRailView -- task-7b)
+
+/// The pure rail-vs-bottom-bar decision `MainShellView` branches on. Compact width keeps
+/// Android's `BottomNavigationView` (bottom tab bar); regular/large switch to Android's
+/// `NavigationRailView` (leading rail) -- branched on `WidthClass`, never on device idiom, per
+/// spec §6.
+nonisolated enum ShellLayout: Equatable {
+    case bottomBar, rail
+
+    init(_ widthClass: WidthClass) {
+        self = widthClass == .compact ? .bottomBar : .rail
+    }
+}
+
+/// `NavigationRailView` sizing (`layout-sw600dp/dimens.xml`: navigation_rail_width 80dp,
+/// navigation_rail_icon_size 28dp, label unset -> Material default ~12sp;
+/// `layout-sw720dp/dimens.xml`: 96dp / 32dp / 14sp explicit). `.compact`'s values are never read
+/// (the rail doesn't render below 600pt) but `WidthClass.pick` needs a third case, so they repeat
+/// the regular value harmlessly.
+nonisolated enum NavigationRailMetrics {
+    static func width(_ w: WidthClass) -> CGFloat { w.pick(80, 80, 96) }
+    static func iconSize(_ w: WidthClass) -> CGFloat { w.pick(28, 28, 32) }
+    /// No system Dynamic Type style sits at exactly 14pt, so 14sp maps to the nearest built-in
+    /// style above `.caption` (12pt, used for the 12sp/unset case) -- `.footnote` (13pt) -- same
+    /// "nearest style, not exact px" approach as `TypeScale.headline`/`.body` above.
+    static func label(_ w: WidthClass) -> Font { Font.system(w.pick(.caption, .caption, .footnote)) }
+}
+
 // MARK: - Touch targets
 
 enum Size {
