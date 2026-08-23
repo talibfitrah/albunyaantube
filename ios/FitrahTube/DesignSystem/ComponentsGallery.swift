@@ -1,3 +1,8 @@
+#if DEBUG
+// Debug-only, and compiled out of Release entirely (gate B1-I8 / cso-F3): the gallery was
+// reachable in a production build through About's 7-tap developer gesture -> DeveloperDialog ->
+// "Components Gallery", shipping every design-system sample as dead weight in the binary and
+// putting an untranslated developer surface one discoverable gesture away from a real user.
 import SwiftUI
 
 /// Debug-only screenshot rig for every design-system component (Task 6 acceptance artefact).
@@ -146,3 +151,4 @@ struct ComponentsGallery: View {
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
+#endif

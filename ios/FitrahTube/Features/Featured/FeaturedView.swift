@@ -17,23 +17,24 @@ struct FeaturedView: View {
     @State private var containerWidth: CGFloat = 0
     @State private var isLoadingMore = false
     @State private var paginationGuard = PaginationGuard()
-
-    private static let topAnchor = "featured-top"
+    @State private var contentFits = false
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: 0).id(Self.topAnchor)
-                    stateContent
-                }
-            }
-            .refreshable {
-                paginationGuard = PaginationGuard()
-                await viewModel?.refresh()
-            }
-            .onContentFits { fits in triggerAutoFill(contentFits: fits) }
+        // No `ScrollViewReader`/top anchor: Featured is never a tab root, so nothing ever emits a
+        // scroll-to-top signal for it and the proxy was unused (gate B1-minor-11).
+        ScrollView {
+            stateContent
         }
+        .refreshable {
+            paginationGuard = PaginationGuard()
+            await viewModel?.refresh()
+        }
+        .onContentFits { fits in
+            contentFits = fits
+            triggerAutoFill()
+        }
+        // Re-arms autofill after every completed load (gate B1-C1).
+        .onChange(of: viewModel?.state) { _, _ in triggerAutoFill() }
         .background(Color.homeSurface.ignoresSafeArea())
         .navigationTitle(navTitle)
         // Android's toolbar title is a plain inline Headline6, never a collapsing large title
@@ -106,8 +107,16 @@ struct FeaturedView: View {
 
     private func sectionsContent(_ sections: [HomeSection], hasMore: Bool) -> some View {
         LazyVStack(spacing: 0) {
-            ForEach(sections) { section in
+            ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                 sectionRow(section)
+                    // codex-P2: sections mode had no row-appearance trigger at all. Its only path
+                    // was `onContentFits`, which by definition declines once the content is tall
+                    // enough to scroll (and is off entirely at compact width), so every section
+                    // past the first page of 10 was unreachable.
+                    .onAppear {
+                        guard index >= max(0, sections.count - 5) else { return }
+                        triggerScrollLoadMore(hasMore: hasMore)
+                    }
             }
             if isLoadingMore {
                 ProgressView()
@@ -154,7 +163,7 @@ struct FeaturedView: View {
     private func sectionItemView(_ item: ContentItem) -> some View {
         switch item.type {
         case .video:
-            MediaCard(item: item, width: cardWidth(for: .video)) { router.push(.player(playerArgs(for: item))) }
+            MediaCard(item: item, width: cardWidth(for: .video)) { router.push(.player(PlayerArgs(item: item))) }
         case .playlist:
             MediaCard(item: item, width: cardWidth(for: .playlist)) {
                 router.push(.playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount))
@@ -180,7 +189,8 @@ struct FeaturedView: View {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 flatRow(item)
                     .onAppear {
-                        guard index == max(0, items.count - 5) else { return }
+                        // `>=`, not `==` -- see the same fix in `ContentListView` (gate B1-I2).
+                        guard index >= max(0, items.count - 5) else { return }
                         triggerScrollLoadMore(hasMore: hasMore)
                     }
             }
@@ -199,20 +209,12 @@ struct FeaturedView: View {
     private func flatRow(_ item: ContentItem) -> some View {
         switch item.type {
         case .video:
-            VideoRow(item: item) { router.push(.player(playerArgs(for: item))) }
+            VideoRow(item: item) { router.push(.player(PlayerArgs(item: item))) }
         case .channel:
             ChannelRow(item: item) { router.push(.channel(id: item.id, name: item.title, avatarURL: item.thumbnailURL)) }
         case .playlist:
             PlaylistRow(item: item) { router.push(.playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount)) }
         }
-    }
-
-    /// RULINGS #17: `channelName` prefers the video's real `channelTitle`, falling back to
-    /// `category` only when nil (matches `HomeViewModel`/`ContentListView`).
-    private func playerArgs(for item: ContentItem) -> PlayerArgs {
-        PlayerArgs(videoId: item.id, title: item.title, channelName: item.channelTitle ?? item.category,
-                   thumbnailURL: item.thumbnailURL, description: item.description,
-                   durationSeconds: item.durationSeconds, viewCount: item.viewCount)
     }
 
     // MARK: - Pagination triggers (content-lists.md §7.4: scroll threshold + guarded content-fits
@@ -223,7 +225,7 @@ struct FeaturedView: View {
         Task { await runLoadMore() }
     }
 
-    private func triggerAutoFill(contentFits: Bool) {
+    private func triggerAutoFill() {
         guard !isLoadingMore, let viewModel, case .content(_, let hasMore) = viewModel.state else { return }
         guard paginationGuard.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: viewModel.lastLoadFailed,
                                               contentFits: contentFits, itemCount: currentItemCount) else { return }

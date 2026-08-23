@@ -14,6 +14,14 @@ nonisolated enum ReselectAction: Equatable {
 /// (RULING 4: a pending deep link is held until the shell has actually appeared, then applied
 /// exactly once).
 @MainActor @Observable final class Router {
+    /// The DEBUG environment default below (gate A-I2). `@Entry` generates a *computed* default
+    /// (`static var defaultValue: Router { Router() }`), so every un-injected read of `\.router`
+    /// used to mint a **different** instance: a preview's `selectionBinding` getter read one
+    /// Router, `select(_:)` mutated another, `pathBinding` a third, and tab switching / deep links
+    /// / the banner all looked dead with nothing to explain it. One stored instance, mirroring
+    /// `AppContainer.sharedFake`.
+    static let shared = Router()
+
     var selectedTab: Tab = .home
     var paths: [Tab: [Route]] = Dictionary(uniqueKeysWithValues: Tab.allCases.map { ($0, []) })
     var pendingRoute: Route?
@@ -27,10 +35,10 @@ nonisolated enum ReselectAction: Equatable {
     /// Bumped by `reselect(_:)` when it returns `.scrollToTop` -- carries which tab so only that
     /// tab's own root view reacts (`.onChange(of:)` needs a value that actually changes, which a
     /// bare `Tab` wouldn't on a second consecutive reselect of a tab already at rest).
-    // ponytail: consumed by the two scrollable tab roots -- `HomeView` and `ContentListView`
-    // (channels/playlists/videos). The `me` tab's root (`MeGuestView`) is a static guest card with
-    // nothing to scroll, so it deliberately ignores the signal; wire it up if that tab ever
-    // becomes a list.
+    // Consumed by every scrollable tab root: `HomeView`, `ContentListView`
+    // (channels/playlists/videos) and `MeGuestView` (gate B1-minor-1 -- the guest card sits in a
+    // `ScrollView` above up to five favourite rows, so it is not the static card this comment used
+    // to claim it was).
     var scrollToTopSignal: ScrollToTopSignal?
 
     private var shellIsReady = false
@@ -94,5 +102,12 @@ nonisolated enum ReselectAction: Equatable {
 extension EnvironmentValues {
     /// Owned by `FitrahTubeApp` (not `MainShellView`) so a deep link that arrives before the
     /// shell exists -- e.g. tapped while Onboarding is still showing -- has somewhere to land.
-    @Entry var router: Router = Router()
+    ///
+    /// Same shape as `\.container`: previews and tests get one shared instance, Release traps
+    /// rather than silently handing every reader its own Router (gate A-I2).
+    #if DEBUG
+    @Entry var router: Router = .shared   // previews / tests
+    #else
+    @Entry var router: Router = { preconditionFailure("Router not injected — wrap the root in .environment(\\.router, …)") }()
+    #endif
 }

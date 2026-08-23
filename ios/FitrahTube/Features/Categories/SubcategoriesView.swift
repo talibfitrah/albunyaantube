@@ -19,7 +19,11 @@ struct SubcategoriesView: View {
             .navigationBarTitleDisplayMode(.inline) // same rationale as CategoriesView
             .task {
                 if viewModel == nil {
-                    viewModel = CategoriesViewModel(cache: container.categories, filter: container.filters)
+                    // Gate B1-minor-7: the view's own `\.locale`, not `Locale.current` -- the
+                    // persisted "Parent > Sub" label is built from it, and the RTL previews
+                    // already render an English label without this.
+                    viewModel = CategoriesViewModel(cache: container.categories, filter: container.filters,
+                                                    locale: { locale })
                 }
                 await container.categories.loadIfNeeded()
             }
@@ -37,7 +41,7 @@ struct SubcategoriesView: View {
             let name = container.categories.displayName(for: category.id, locale: locale) ?? category.name
             router.push(.subcategories(parentId: category.id, parentName: name))
         case .applied(let label):
-            router.pendingBanner = BannerMessage(text: localizedFormat("category_filter_applied", label))
+            router.pendingBanner = BannerMessage(text: Format.localizedFormat("category_filter_applied", locale: locale, label))
             // Pops past *this* Subcategories screen and the Categories screen beneath it in one
             // call, landing on whichever screen originally opened Categories --
             // `popBackStack(categoriesFragment, inclusive = true)` (search-categories.md:519-521).
@@ -45,10 +49,6 @@ struct SubcategoriesView: View {
         }
     }
 
-    private func localizedFormat(_ key: String, _ args: CVarArg...) -> String {
-        let format = Format.localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
-        return String(format: format, locale: locale, arguments: args)
-    }
 }
 
 #Preview {

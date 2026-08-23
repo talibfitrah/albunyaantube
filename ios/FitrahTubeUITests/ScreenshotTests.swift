@@ -131,7 +131,7 @@ final class ScreenshotTests: XCTestCase {
         // not an assertion.
         XCUIDevice.shared.orientation = .landscapeLeft
         _ = anchor.waitForExistence(timeout: 10)
-        settle()
+        settle(app, landscape: true)
         try write(named: "\(screen.key)-\(locale.key)-\(locale.theme)\(suffix)-landscape", into: directory)
         XCUIDevice.shared.orientation = .portrait
     }
@@ -216,10 +216,29 @@ final class ScreenshotTests: XCTestCase {
         try XCTUnwrap(upright.pngData()).write(to: directory.appendingPathComponent("\(name).png"))
     }
 
-    /// Rotation is animated and the anchor exists again well before the animation finishes -- at
-    /// 1.5 s some shots still had the pre-rotation snapshot cross-faded over the new layout
-    /// (a ghost rail on the opposite edge). 3 s clears it on every device here.
-    private func settle() { Thread.sleep(forTimeInterval: 3) }
+    /// Rotation is animated and the anchor exists again well before the animation finishes: shots
+    /// taken too early carry the pre-rotation snapshot cross-faded over the new layout (a ghost
+    /// rail on the opposite edge). This used to be `Thread.sleep(forTimeInterval: 3)`, a constant
+    /// tuned against this machine (gate B2-2) -- nothing asserts a frame is settled, so on a
+    /// slower or loaded CI runner it would silently produce ghosted screenshots without ever going
+    /// red, defeating the whole point of the rig.
+    ///
+    /// Poll for the two things that actually define "settled": the window has taken the target
+    /// orientation, and two consecutive full-screen reads are byte-identical. Adapts to machine
+    /// speed instead of assuming it; the 6 s ceiling only bounds a pathological case.
+    private func settle(_ app: XCUIApplication, landscape: Bool) {
+        let deadline = Date().addingTimeInterval(6)
+        var previous: Data?
+        while Date() < deadline {
+            let frame = app.windows.firstMatch.frame
+            if frame.width > 0, (frame.width > frame.height) == landscape {
+                let current = XCUIScreen.main.screenshot().pngRepresentation
+                if current == previous { return }
+                previous = current
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+    }
 
     private func element(for anchor: Anchor, in app: XCUIApplication) -> XCUIElement {
         switch anchor {

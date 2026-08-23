@@ -19,7 +19,11 @@ struct CategoriesView: View {
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 if viewModel == nil {
-                    viewModel = CategoriesViewModel(cache: container.categories, filter: container.filters)
+                    // Gate B1-minor-7: the view's own `\.locale`, not `Locale.current` -- the
+                    // persisted "Parent > Sub" label is built from it, and the RTL previews
+                    // already render an English label without this.
+                    viewModel = CategoriesViewModel(cache: container.categories, filter: container.filters,
+                                                    locale: { locale })
                 }
                 await container.categories.loadIfNeeded()
             }
@@ -38,15 +42,11 @@ struct CategoriesView: View {
             // the current tab's root -- `popToRoot` truncates past both Categories and (if reached
             // through it) Subcategories in one call, matching Android's
             // `popBackStack(categoriesFragment, inclusive = true)`.
-            router.pendingBanner = BannerMessage(text: localizedFormat("category_filter_applied", label))
+            router.pendingBanner = BannerMessage(text: Format.localizedFormat("category_filter_applied", locale: locale, label))
             router.popToRoot(router.selectedTab)
         }
     }
 
-    private func localizedFormat(_ key: String, _ args: CVarArg...) -> String {
-        let format = Format.localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
-        return String(format: format, locale: locale, arguments: args)
-    }
 }
 
 // MARK: - Shared list body (Categories top-level + Subcategories children -- identical layout,

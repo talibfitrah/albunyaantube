@@ -11,6 +11,13 @@ struct HomeView: View {
 
     @State private var viewModel: HomeViewModel?
     @State private var containerWidth: CGFloat = 0
+    @State private var contentFits = false
+    /// Home had no `PaginationGuard` at all, which was survivable only because its two geometry
+    /// triggers were edge-triggered Bools that (accidentally) never re-fired. Now that
+    /// `onContentFits` reports every layout delta, the autofill path needs the same six guards the
+    /// other two list screens use -- in particular guard 5's progress invariant, which is what
+    /// stops a failing endpoint from being retried on every footer-spinner-driven relayout.
+    @State private var paginationGuard = PaginationGuard()
 
     private static let topAnchor = "home-top"
 
@@ -25,13 +32,20 @@ struct HomeView: View {
                         stateContent
                     }
                 }
-                .refreshable { await viewModel?.refresh() }
-                .onContentFits { fits in triggerLoadMoreIfNeeded(fits) }
+                .refreshable {
+                    paginationGuard = PaginationGuard()
+                    await viewModel?.refresh()
+                }
+                .onContentFits { fits in
+                    contentFits = fits
+                    triggerAutoFill()
+                }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     let distanceFromEnd = geometry.contentSize.height - (geometry.containerSize.height + geometry.contentOffset.y)
                     return distanceFromEnd < 200 // shell-home.md:B13 -- device-independent version of Android's 300px threshold
                 } action: { _, isNearEnd in
-                    triggerLoadMoreIfNeeded(isNearEnd)
+                    guard isNearEnd else { return }
+                    triggerScrollLoadMore()
                 }
                 .onChange(of: router.scrollToTopSignal) { _, signal in
                     guard signal?.tab == .home else { return }
@@ -52,9 +66,13 @@ struct HomeView: View {
         // filter change never causes two reloads. `.onChange` doesn't fire for the value it's
         // first attached with, so first appearance still fetches exactly once.
         .onChange(of: container.filters.state) { _, _ in
+            paginationGuard = PaginationGuard()
             viewModel = HomeViewModel(catalog: container.catalog, filter: container.filters, widthClass: { widthClass })
             Task { await viewModel?.load() }
         }
+        // Re-arm autofill after every completed load, the way Android re-runs its guards from the
+        // `submitList` completion callback (gate B1-C1).
+        .onChange(of: viewModel?.state) { _, _ in triggerAutoFill() }
         .task {
             if viewModel == nil {
                 // ponytail: `widthClass` is captured once here (the environment value at first
@@ -113,7 +131,7 @@ struct HomeView: View {
     private var categoryPill: some View {
         CategoryPill(
             label: container.filters.state.categoryName ?? String(localized: "filter_category"),
-            isActive: container.filters.state.categoryId != nil,
+            isActive: hasActiveFilter,
             onTap: { router.push(.categories) },
             // Fix round 1, finding #4: routes through the shared store, so this and an
             // externally-applied category (Categories/Subcategories) both funnel through the
@@ -163,7 +181,11 @@ struct HomeView: View {
         }
     }
 
-    private var hasActiveFilter: Bool { container.filters.state.categoryId != nil }
+    /// Same single predicate  uses (gate B1-minor-2): a legacy empty-string
+    /// category id is not an active filter, even though it is non-nil.
+    /// Same single predicate `ContentListView` uses (gate B1-minor-2): a legacy empty-string
+    /// category id is not an active filter, even though it is non-nil.
+    private var hasActiveFilter: Bool { !(container.filters.state.categoryId ?? "").isEmpty }
 
     // MARK: - Sections / carousel (shell-home.md:B5-B7)
 
@@ -178,7 +200,7 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: GridRules.cardGap(widthClass)) {
                     ForEach(section.items) { item in
-                        itemView(item, viewModel: viewModel)
+                        itemView(item)
                     }
                 }
                 .padding(.horizontal, Spacing.homeHorizontalMargin(widthClass)) // home_horizontal_margin (shell-home.md:227)
@@ -194,11 +216,11 @@ struct HomeView: View {
     }
 
     @ViewBuilder
-    private func itemView(_ item: ContentItem, viewModel: HomeViewModel) -> some View {
+    private func itemView(_ item: ContentItem) -> some View {
         switch item.type {
         case .video:
             MediaCard(item: item, width: cardWidth(for: .video)) {
-                router.push(.player(viewModel.playerArgs(for: item)))
+                router.push(.player(PlayerArgs(item: item)))
             }
         case .playlist:
             MediaCard(item: item, width: cardWidth(for: .playlist)) {
@@ -221,10 +243,24 @@ struct HomeView: View {
 
     // MARK: - Pagination triggers (shell-home.md:B11 auto-load, B13 scroll threshold)
 
-    private func triggerLoadMoreIfNeeded(_ shouldLoad: Bool) {
-        guard shouldLoad, let viewModel,
-              case .content(_, let hasMore, let isLoadingMore) = viewModel.state,
+    private func triggerScrollLoadMore() {
+        guard let viewModel, case .content(_, let hasMore, let isLoadingMore) = viewModel.state,
               hasMore, !isLoadingMore else { return }
+        Task { await viewModel.loadMore() }
+    }
+
+    /// Gate B1-C1 scenario 4: on a large iPad, Home's first page fits the viewport, so
+    /// `distanceFromEnd` is negative from first layout and its near-end Bool is `true` before the
+    /// user does anything -- it never *transitions*, so the scroll trigger above never fired, and
+    /// neither did the old edge-triggered `onContentFits`. Home simply never paginated there.
+    private func triggerAutoFill() {
+        guard let viewModel, case .content(let sections, let hasMore, let isLoadingMore) = viewModel.state,
+              !isLoadingMore else { return }
+        // Home's pagination failures are silent by contract (RULINGS #13), so there is no
+        // `paginationError` for guard 3 to read; guard 5's `itemCount > lastCount` is what refuses
+        // a retry after a failure left the section count unchanged.
+        guard paginationGuard.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: false,
+                                              contentFits: contentFits, itemCount: sections.count) else { return }
         Task { await viewModel.loadMore() }
     }
 }

@@ -14,16 +14,20 @@ nonisolated enum Format {
         let h = seconds / 3600
         let m = (seconds % 3600) / 60
         let s = seconds % 60
+        // %lld, not %d: `String(format:)` reads a Swift `Int` (64-bit) through a 32-bit %d
+        // conversion. Correct for any real duration, garbage above 2^31 (gate A-M16).
         return h > 0
-            ? String(format: "%d:%02d:%02d", locale: posix, h, m, s)
-            : String(format: "%d:%02d", locale: posix, m, s)
+            ? String(format: "%lld:%02lld:%02lld", locale: posix, Int64(h), Int64(m), Int64(s))
+            : String(format: "%lld:%02lld", locale: posix, Int64(m), Int64(s))
     }
 
     /// `< 1000` renders plainly; `>= 1000` uses compact K/M/B notation with at most one fraction
     /// digit, dropped when it's `.0` (matches ICU `CompactDecimalFormat` SHORT --
     /// util/CountFormat.kt:40-46). Digits follow `locale` (Eastern Arabic-Indic for `ar`, etc).
     static func compactCount(_ n: Int64, locale: Locale) -> String {
-        guard n >= 1000 else {
+        // `abs(n)`, not `n`: -5000 rendered as "-5,000" rather than "-5K" (gate A-M16). Backend
+        // counts are non-negative, so this is exactness, not a live bug.
+        guard n.magnitude >= 1000 else {
             return n.formatted(.number.locale(locale))
         }
         return n.formatted(
@@ -91,5 +95,17 @@ nonisolated enum Format {
     static func localizedBundle(for locale: Locale) -> Bundle {
         let lang = locale.language.languageCode?.identifier ?? "en"
         return languageBundles[lang] ?? .main
+    }
+
+    /// Looks `key` up in `locale`'s own `.lproj` bundle (not `Bundle.main`, which only answers for
+    /// the *device's* preferred language) and formats it there, so `%1$@` substitutions and
+    /// `.xcstrings` plural/substitution variants resolve for the requested language regardless of
+    /// the simulator's system language.
+    ///
+    /// One copy (gate s1-1): this was duplicated byte-for-byte as a `private func` in seven files.
+    /// A drift between copies would have silently broken substitution on one screen only.
+    static func localizedFormat(_ key: String, locale: Locale, _ args: CVarArg...) -> String {
+        let format = localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
+        return String(format: format, locale: locale, arguments: args)
     }
 }

@@ -10,17 +10,6 @@ struct HomeViewModelTests {
 
     // MARK: - Test doubles (local to this file, same pattern as CategoriesCacheTests)
 
-    @MainActor @Observable fileprivate final class FakeFilterStore: FilterStore {
-        private(set) var state: FilterState
-        init(state: FilterState = FilterState()) { self.state = state }
-        func setCategory(id: String?, name: String?) {
-            let id = id?.isEmpty == true ? nil : id
-            state.categoryId = id
-            state.categoryName = id == nil ? nil : name
-        }
-        func clearCategory() { setCategory(id: nil, name: nil) }
-    }
-
     /// Counts `home()` calls and records the last `category` param, to prove "no double fetch"
     /// and to observe what each load re-requests with.
     private actor RecordingCatalogClient: CatalogClient {
@@ -61,32 +50,6 @@ struct HomeViewModelTests {
             CursorPage(items: [], nextCursor: nil)
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
-    }
-
-    /// A rendezvous point: `block()` suspends until `release()` is called; `waitUntilBlocked()`
-    /// suspends until some caller has actually entered `block()` -- whichever of the two arrives
-    /// first at the actor just hands off to the other, so there's no timing race either way.
-    private actor Gate {
-        private var blockedContinuation: CheckedContinuation<Void, Never>?
-        private var releaseContinuation: CheckedContinuation<Void, Never>?
-
-        func block() async {
-            await withCheckedContinuation { continuation in
-                releaseContinuation = continuation
-                blockedContinuation?.resume()
-                blockedContinuation = nil
-            }
-        }
-
-        func waitUntilBlocked() async {
-            if releaseContinuation != nil { return }
-            await withCheckedContinuation { blockedContinuation = $0 }
-        }
-
-        func release() {
-            releaseContinuation?.resume()
-            releaseContinuation = nil
-        }
     }
 
     /// The first `home()` call returns immediately (for `load()`'s setup); every call after that
@@ -197,32 +160,6 @@ struct HomeViewModelTests {
         await refreshTask.value
 
         guard case .content = vm.state else { Issue.record("expected .content after refresh completes"); return }
-    }
-
-    @Test func playerArgsPrefersChannelTitleFallingBackToCategory() {
-        let vm = HomeViewModel(catalog: FakeCatalogClient(), filter: FakeFilterStore(), widthClass: { .compact })
-
-        let withChannelTitle = ContentItem(
-            id: "v1", type: .video, title: "Title", category: "Fiqh", description: "Desc",
-            thumbnailURL: URL(string: "https://example.com/a.jpg"), durationSeconds: 90,
-            uploadedDaysAgo: 2, viewCount: 500, channelTitle: "Al-Huda Institute",
-            subscribers: nil, videoCount: nil, itemCount: nil
-        )
-        let argsWithChannel = vm.playerArgs(for: withChannelTitle)
-        #expect(argsWithChannel.videoId == "v1")
-        #expect(argsWithChannel.title == "Title")
-        #expect(argsWithChannel.channelName == "Al-Huda Institute")
-        #expect(argsWithChannel.thumbnailURL == withChannelTitle.thumbnailURL)
-        #expect(argsWithChannel.description == "Desc")
-        #expect(argsWithChannel.durationSeconds == 90)
-        #expect(argsWithChannel.viewCount == 500)
-
-        let withoutChannelTitle = ContentItem(
-            id: "v2", type: .video, title: "Title 2", category: "Fallback Category", description: nil,
-            thumbnailURL: nil, durationSeconds: nil, uploadedDaysAgo: nil, viewCount: nil,
-            channelTitle: nil, subscribers: nil, videoCount: nil, itemCount: nil
-        )
-        #expect(vm.playerArgs(for: withoutChannelTitle).channelName == "Fallback Category")
     }
 
     @Test func seeAllLabelContainsSectionName() {

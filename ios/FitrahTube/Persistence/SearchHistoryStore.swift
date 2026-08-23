@@ -27,6 +27,11 @@ import Observation
     }
 
     func add(_ query: String) {
+        // Trim and reject blanks (gate A-M14): `add("")` stored an invisible empty row, and the
+        // exact-match dedupe below treated `"quran"` and `"quran "` as two distinct entries -- both
+        // occupying one of the 10 slots.
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
         entries.removeAll { $0 == query }
         entries.insert(query, at: 0)
         if entries.count > Self.maxEntries {

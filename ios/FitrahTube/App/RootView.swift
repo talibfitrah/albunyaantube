@@ -32,8 +32,24 @@ struct RootView: View {
     private var mainBody: some View {
         destinationView
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Measures the full-size container, not the content — see WidthClass.
-            .onGeometryChange(for: WidthClass.self) { WidthClass(size: $0.size) } action: { widthClass = $0 }
+            // Measures the *window*, not the safe-area-inset content (gate A-C2). Measuring the
+            // content box made `WidthClass`'s "smallest width, never flips on rotation" invariant
+            // false on the largest iPad: 13" is 1032×1376 pt, but landscape insets take 1032 down
+            // to 980 — 20 pt under the 1000 pt `.large` threshold — so rotating the device flipped
+            // the whole token table (4 columns → 3, Spacing.md 24 → 20, avatars 72 → 64,
+            // NavigationRailMetrics.width 96 → 80). Lowering the threshold instead would only move
+            // the same bug one device generation away.
+            //
+            // The insets are added back rather than reclaimed with `.ignoresSafeArea()`: measured
+            // on an iPad Pro 13" in landscape, a `Color.clear.ignoresSafeArea()` background still
+            // reported `size` 1376×980 with `safeAreaInsets` top 32 / bottom 20 — the ignore does
+            // not expand what `onGeometryChange` sees, but the proxy does carry the insets, and
+            // 980 + 32 + 20 is exactly the 1032 pt window.
+            .onGeometryChange(for: WidthClass.self) { proxy in
+                let insets = proxy.safeAreaInsets
+                return WidthClass(size: CGSize(width: proxy.size.width + insets.leading + insets.trailing,
+                                               height: proxy.size.height + insets.top + insets.bottom))
+            } action: { widthClass = $0 }
             .environment(\.widthClass, widthClass)
             // task-13: Theme row (SettingsView) persists "system"/"light"/"dark"; applied here at
             // the root so it covers Onboarding and the main shell alike -- nil for "system" lets

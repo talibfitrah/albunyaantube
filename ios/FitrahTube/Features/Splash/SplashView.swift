@@ -118,34 +118,62 @@ struct SplashView: View {
     }
 
     private func run() async {
-        let workTask = Task { await container.categories.loadIfNeeded() }
-        // RULING (deep link skips animation entirely): a pending deep link means `.onOpenURL`
-        // already fired before the shell existed and `Router.open` held it in `pendingRoute`
-        // (`Router.swift`) -- the same signal `shellDidAppear()` later consumes. Re-checked after
-        // every phase step below in case one arrives mid-animation.
-        guard router.pendingRoute == nil else { onComplete(); return }
+        await withCappedWork(
+            grace: SplashTimeline.cap - SplashTimeline.preAwait,
+            work: { await container.categories.loadIfNeeded() },
+            duringWork: animate
+        )
+        // Single `onComplete()` call site for every path. Skipped when the view is already gone
+        // (fix round: A-M8) -- `.onChange(of: router.pendingRoute)` above ends the splash the
+        // instant a link lands, which cancels this `.task`; calling back into a torn-down view
+        // was harmless only because `onComplete` happens to be idempotent.
+        if !Task.isCancelled { onComplete() }
+    }
+
+    /// The animation timeline plus the POST_ANIMATION_DELAY hold. Returns `false` when the splash
+    /// must end right now without waiting for the warm-up -- a deep link arrived (RULING: a
+    /// pending deep link means `.onOpenURL` fired before the shell existed and `Router.open` held
+    /// it in `pendingRoute`, so the animation is skipped entirely), or the view was torn down.
+    private func animate() async -> Bool {
+        guard router.pendingRoute == nil else { return false }
 
         var elapsed = Duration.zero
         for step in SplashTimeline.transitions.dropFirst() {
             try? await Task.sleep(for: step.at - elapsed)
+            guard !Task.isCancelled, router.pendingRoute == nil else { return false }
             elapsed = step.at
-            guard router.pendingRoute == nil else { onComplete(); return }
             phase = step.phase
         }
         try? await Task.sleep(for: SplashTimeline.preAwait - elapsed) // POST_ANIMATION_DELAY hold
-        guard router.pendingRoute == nil else { onComplete(); return }
+        return !Task.isCancelled && router.pendingRoute == nil
+    }
+}
 
-        // RULING 5: same rule `SplashTimeline.completionDelay` documents/tests, implemented here
-        // as a race (Android's `withTimeoutOrNull(500) { updateInfoDeferred.await() }`) rather
-        // than computed from a known finish time, since the work's finish time isn't knowable
-        // without waiting for it.
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await workTask.value }
-            group.addTask { try? await Task.sleep(for: SplashTimeline.cap - SplashTimeline.preAwait) }
-            await group.next()
-            group.cancelAll()
-        }
-        onComplete()
+/// RULING 5's cap (`SplashTimeline.cap`), as the structured-concurrency shape the rule actually
+/// needs: `work` starts immediately as a real **child** task so it warms up alongside `duringWork`
+/// (the splash animation), and once that returns it gets at most `grace` more before `cancelAll()`
+/// abandons it.
+///
+/// The child-task shape is load-bearing (gate A-C1 / codex-P1). The previous version started the
+/// warm-up as an unstructured `Task` and awaited `workTask.value` from inside the group: that await
+/// is not cancellable (`Task<Void, Never>.value` has no throwing path), so `cancelAll()` could never
+/// reach it, and `withTaskGroup` waits for *every* child before returning -- so a stalled categories
+/// fetch held the splash on screen until URLSession's own 20 s request timeout (or the 120 s
+/// resource timeout), silently ignoring the 3.25 s cap. Proven by `SplashTimelineTests`.
+///
+/// `work` deliberately starts *before* `duringWork` rather than only at the grace point: the
+/// reviewer's minimal patch moved the whole fetch inside the race, which enforces the cap but cuts
+/// the warm-up budget from 3.25 s to 0.5 s and makes it useless in practice.
+@MainActor
+func withCappedWork(grace: Duration,
+                    work: @escaping @MainActor () async -> Void,
+                    duringWork: () async -> Bool) async {
+    await withTaskGroup(of: Void.self) { group in
+        group.addTask { await work() }
+        defer { group.cancelAll() }
+        guard await duringWork() else { return }
+        group.addTask { try? await Task.sleep(for: grace) }
+        await group.next() // whichever finishes first: the warm-up, or the grace clock
     }
 }
 

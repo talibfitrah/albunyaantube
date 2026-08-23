@@ -28,16 +28,6 @@ struct CategoriesViewModelTests {
         }
     }
 
-    @MainActor @Observable fileprivate final class FakeFilterStore: FilterStore {
-        private(set) var state: FilterState
-        init(state: FilterState = FilterState()) { self.state = state }
-        func setCategory(id: String?, name: String?) {
-            let id = id?.isEmpty == true ? nil : id
-            state.categoryId = id
-            state.categoryName = id == nil ? nil : name
-        }
-        func clearCategory() { setCategory(id: nil, name: nil) }
-    }
 
     // MARK: - Fixtures
 

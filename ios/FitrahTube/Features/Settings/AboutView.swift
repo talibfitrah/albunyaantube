@@ -59,6 +59,7 @@ private struct AboutLink: Identifiable {
 /// external-browser intent.
 struct AboutView: View {
     @Environment(\.widthClass) private var widthClass
+    @Environment(\.locale) private var locale
 
     @State private var tapGate = TapGate()
     @State private var stepsAwayMessage: BannerMessage?
@@ -159,8 +160,13 @@ struct AboutView: View {
         case .silent:
             break
         case .stepsAway(let remaining):
-            let format = String(localized: "dev_settings_steps_away")
-            stepsAwayMessage = BannerMessage(text: String(format: format, Int64(remaining)))
+            // `dev_settings_steps_away` carries one/other plural variations in all three locales,
+            // and `String(localized:)` cannot select a category without the count embedded in the
+            // `LocalizationValue` -- at best the singular was never chosen, at worst the raw
+            // `%#@…@` token rendered. Passing a locale also gets the app locale's digits rather
+            // than the system's (gate B1-minor-16).
+            stepsAwayMessage = BannerMessage(
+                text: Format.localizedFormat("dev_settings_steps_away", locale: locale, Int64(remaining)))
         case .unlocked:
             showDeveloperDialog = true
         }

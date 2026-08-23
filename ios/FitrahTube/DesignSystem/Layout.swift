@@ -38,7 +38,10 @@ nonisolated enum GridRules {
     /// shell-home.md). Returns 0 when `visible <= 0` (Android parity: `HomeFragment.kt:97-100`).
     static func carouselCardWidth(container: CGFloat, margin: CGFloat, gap: CGFloat, visible: Int) -> CGFloat {
         guard visible > 0 else { return 0 }
-        return ((container - 2 * margin - CGFloat(visible - 1) * gap) / CGFloat(visible)) * 0.98
+        // `max(0, …)`: a zero-size container (first layout pass, or mid-transition) made this
+        // negative -- (0 − 32 − 24)/3 × 0.98 = −18.3 -- and SwiftUI treats a negative frame
+        // dimension as undefined (gate A-M5).
+        return max(0, ((container - 2 * margin - CGFloat(visible - 1) * gap) / CGFloat(visible)) * 0.98)
     }
 
     /// `home_card_spacing` (shell-home.md "Card widths" table): the gap between adjacent carousel
@@ -49,15 +52,24 @@ nonisolated enum GridRules {
 }
 
 extension View {
-    /// `true` once the scrollable content fits its container without scrolling -- large screens
-    /// (tablet/TV) can show a full page of items with nothing to scroll, so a scroll-position
-    /// listener alone never fires `loadMore()` there (CLAUDE.md pagination rule). Callers pair
-    /// this with `.onAppear` on the last row and an in-flight guard.
+    /// Reports whether the scrollable content currently fits its container without scrolling --
+    /// large screens (tablet/TV) can show a full page of items with nothing to scroll, so a
+    /// scroll-position listener alone never fires `loadMore()` there (CLAUDE.md pagination rule).
+    /// Callers pair this with `.onAppear` on the last row, an in-flight guard, and a
+    /// `PaginationGuard`.
+    ///
+    /// The derived value is the **fit margin**, not the Bool the caller wants (gate B1-C1):
+    /// `onScrollGeometryChange` only runs its action when the derived value *changes*, and the
+    /// Bool stays `true` for exactly the situation autofill exists to fix -- page 1 fits, autofill
+    /// appends page 2, the content still fits, no transition, no second round. The list stopped
+    /// half-filled with nothing to scroll and no way to load the rest. The margin changes on every
+    /// append, so this now fires after every layout the way Android's post-`submitList` autofill
+    /// check does.
     func onContentFits(_ fits: @escaping (Bool) -> Void) -> some View {
-        onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentSize.height <= geometry.containerSize.height
-        } action: { _, fitsNow in
-            fits(fitsNow)
+        onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentSize.height - geometry.containerSize.height
+        } action: { _, margin in
+            fits(margin <= 0)
         }
     }
 }

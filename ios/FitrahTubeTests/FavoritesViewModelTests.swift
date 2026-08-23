@@ -67,7 +67,7 @@ struct FavoritesViewModelTests {
         #expect(args.channelName == "Channel")
         #expect(args.thumbnailURL == URL(string: "https://example.com/thumb.jpg"))
         #expect(args.durationSeconds == 125)
-        // The other 7 PlayerArgs fields must stay nil/default -- favorites-settings-about.md:1.4
+        // The other 4 PlayerArgs fields must stay nil/default -- favorites-settings-about.md:1.4
         // ("metadata fast path, no backend fetch, no channel link in the player header").
         #expect(args.playlistId == nil)
         #expect(args.description == nil)

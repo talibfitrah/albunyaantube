@@ -12,14 +12,6 @@ struct FeaturedViewModelTests {
         HomeSection(id: id, name: "Section \(id)", localizedNames: nil, icon: nil, items: items)
     }
 
-    private func items(count: Int, prefix: String) -> [ContentItem] {
-        (0..<count).map { i in
-            ContentItem(id: "\(prefix)-\(i)", type: .video, title: "Item \(prefix)-\(i)", category: nil,
-                        description: nil, thumbnailURL: nil, durationSeconds: 60, uploadedDaysAgo: 1,
-                        viewCount: nil, channelTitle: nil, subscribers: nil, videoCount: nil, itemCount: nil)
-        }
-    }
-
     // MARK: - Test doubles (same shape as HomeViewModelTests/ContentListViewModelTests)
 
     /// Records every `home()`/`content()` call's params -- proves the probe shape, the flat-mode
@@ -55,7 +47,11 @@ struct FeaturedViewModelTests {
     private actor FlakyFlatCatalogClient: CatalogClient {
         struct Boom: Error {}
         private let firstPage: CursorPage<ContentItem>
-        private var contentCallCount = 0
+        /// `private(set)`, not `private` (gate B2-1): the latch test asserted only that the item
+        /// count was unchanged, which holds byte-for-byte whether the guard ran or not -- a throw
+        /// leaves `flatItems`/`flatNextCursor` untouched either way. Observing the request count
+        /// is the only thing that distinguishes "blocked" from "attempted and failed again".
+        private(set) var contentCallCount = 0
 
         init(firstPage: CursorPage<ContentItem>) { self.firstPage = firstPage }
 
@@ -78,27 +74,6 @@ struct FeaturedViewModelTests {
         func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> { throw Boom() }
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> { throw Boom() }
         func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
-    }
-
-    /// Rendezvous actor (same shape as HomeViewModelTests.Gate).
-    private actor Gate {
-        private var blockedContinuation: CheckedContinuation<Void, Never>?
-        private var releaseContinuation: CheckedContinuation<Void, Never>?
-        func block() async {
-            await withCheckedContinuation { continuation in
-                releaseContinuation = continuation
-                blockedContinuation?.resume()
-                blockedContinuation = nil
-            }
-        }
-        func waitUntilBlocked() async {
-            if releaseContinuation != nil { return }
-            await withCheckedContinuation { blockedContinuation = $0 }
-        }
-        func release() {
-            releaseContinuation?.resume()
-            releaseContinuation = nil
-        }
     }
 
     /// The first `home()` call resolves immediately (flat-mode fallback via empty sections);
@@ -193,13 +168,19 @@ struct FeaturedViewModelTests {
         #expect(flatItems.count == 2)
     }
 
-    @Test func flatModeFailureAfterProbeFailureSurfacesError() async {
+    /// Gate B1-I5: the message is the same localized copy every other screen shows, never
+    /// `error.localizedDescription` -- a `DecodingError` or an OpenAPI runtime error used to reach
+    /// the user as a developer-facing dump, untranslated, as body copy. `AlwaysFailingCatalogClient`
+    /// throws a `LocalizedError` whose description is "network unreachable" precisely so this test
+    /// fails if that raw text ever reaches `State.error` again.
+    @Test func flatModeFailureAfterProbeFailureSurfacesLocalizedError() async {
         let vm = FeaturedViewModel(categoryId: "parent1", categoryName: nil, catalog: AlwaysFailingCatalogClient())
 
         await vm.load()
 
         guard case .error(let message) = vm.state else { Issue.record("expected .error, got \(vm.state)"); return }
-        #expect(message == "network unreachable")
+        #expect(message == String(localized: "list_error_description"))
+        #expect(message != "network unreachable")
     }
 
     // MARK: - FEATURED_CATEGORY_ID fallback
@@ -295,10 +276,15 @@ struct FeaturedViewModelTests {
         #expect(items2.count == 2) // unchanged
         #expect(hasMore2 == true) // cursor kept
         #expect(vm.lastLoadFailed == true)
+        #expect(await client.contentCallCount == 2) // first page + the one failed attempt
 
         await vm.loadMore() // latched -- must not even attempt another fetch
         guard case .content(.flat(let items3), _) = vm.state else { Issue.record("expected flat mode"); return }
-        #expect(items3.count == 2) // still unchanged, no third content() call took effect
+        #expect(items3.count == 2) // still unchanged
+        // The assertion that actually fails when `loadMore`'s `!lastLoadFailed` guard is removed:
+        // no *third* request went out. Without it this test is green either way, and a retry storm
+        // against a failing endpoint on a large-screen content-fits autofill would ship unnoticed.
+        #expect(await client.contentCallCount == 2)
     }
 
     @Test func refreshClearsTheLatch() async {

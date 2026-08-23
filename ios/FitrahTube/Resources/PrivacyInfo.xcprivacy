@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Required since 2024-05-01; without it App Store privacy validation can reject the archive
+  (codex-P1, docs/architecture/ios-app-plan.md:344).
+
+  Nothing is tracked and nothing is collected: phase 1 is guest-only, there is no analytics SDK,
+  no IDFA/IDFV read, and no PII leaves the device (the only network calls are the public catalog
+  API plus thumbnail fetches, keyed by a locally generated `X-Device-Id` UUID used as a
+  rate-limit bucket, not an identifier tied to a person).
+
+  Required-reason APIs actually used:
+  - UserDefaults (CA92.1) — settings, filters, search history, onboarding flag; read and written
+    only by this app, never shared with a data broker.
+  - System boot time (35F9.1) — `ProcessInfo.systemUptime` in `TapGate` (About's 7-taps-in-3s
+    developer gesture), used to measure elapsed time inside the app.
+-->
+<plist version="1.0">
+<dict>
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>35F9.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

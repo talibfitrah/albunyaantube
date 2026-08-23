@@ -49,6 +49,16 @@ nonisolated enum CategorySelection: Equatable {
             return ownName
         }
         let parentName = Format.categoryDisplayName(parent, locale: currentLocale)
-        return String(format: String(localized: "filter_label_parent_child"), parentName, ownName)
+        // Looked up in the passed locale's own `.lproj` rather than through a bare
+        // `String(localized:)`, which answers only for the *device's* language (gate B1-minor-7).
+        //
+        // Deliberately NOT `Format.localizedFormat`, the shared helper every other call site uses:
+        // that passes `locale:` to `String(format:)`, which switches on localized substitution and
+        // wraps each argument in its own bidi isolates. This key already carries explicit
+        // FSI/PDI isolates of its own (RULINGS 25), so the two stack up and the label renders with
+        // doubled U+2068/U+2069 around every name.
+        let format = Format.localizedBundle(for: currentLocale)
+            .localizedString(forKey: "filter_label_parent_child", value: nil, table: nil)
+        return String(format: format, parentName, ownName)
     }
 }

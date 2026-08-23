@@ -16,6 +16,21 @@ import SwiftData
 /// then re-reading the same row in the same context returns the *pre-save* value; renaming the
 /// property to `isRemoved` with no other change makes the identical sequence persist correctly).
 /// Kept as `isRemoved` for that reason; the tombstone semantics are unchanged.
+/// Gate A-I1. Introduced while there is exactly one version and it costs nothing: an unversioned
+/// `@Model` gives `ModelContainer(for:)` no way to migrate, so the first change lightweight
+/// migration can't infer (a non-optional property with no default, a rename, a type change) throws
+/// for every user who already has a store on disk -- and never on a clean simulator, so it ships.
+/// Add a `V2` `VersionedSchema` plus a `MigrationStage` to `stages` when that change lands.
+enum FavoritesSchemaV1: VersionedSchema {
+    static let versionIdentifier = Schema.Version(1, 0, 0)
+    static var models: [any PersistentModel.Type] { [FavoriteVideo.self] }
+}
+
+enum FavoritesMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self] }
+    static var stages: [MigrationStage] { [] }
+}
+
 @Model final class FavoriteVideo {
     @Attribute(.unique) var videoId: String
     var title: String

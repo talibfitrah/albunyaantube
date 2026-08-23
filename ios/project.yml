@@ -49,13 +49,16 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.albunyaan.tube
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: FitrahTube/Info.plist
       properties:
         CFBundleDisplayName: FitrahTube
         CFBundleName: FitrahTube
+        # gate A-I3: without these two, XcodeGen's own defaults win (CFBundleShortVersionString
+        # "1.0") and About/App Store Connect report a literal that no version bump ever changes.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, ar, nl]
         UILaunchScreen: {}

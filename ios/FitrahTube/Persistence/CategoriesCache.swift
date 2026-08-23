@@ -68,8 +68,15 @@ import Observation
             let lhsOrder = lhs.displayOrder ?? .max
             let rhsOrder = rhs.displayOrder ?? .max
             if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
-            // ponytail: sort tiebreak uses Locale.current; pass a locale into topLevel()/children(of:) if the app locale must win
-            return Format.categoryDisplayName(lhs, locale: .current) < Format.categoryDisplayName(rhs, locale: .current)
+            // `localizedStandardCompare`, not `<` (gate A-M4): Swift's `<` on `String` is Unicode
+            // code-point order, so Arabic names, Dutch `ij` and any accented Latin name sorted
+            // wrongly -- including the common case where every `displayOrder` is nil, which ties
+            // them all on `.max` and code-point-sorts the *entire* list. RULINGS #27 asks for
+            // localized-name ordering.
+            // ponytail: tiebreak collates with Locale.current; pass a locale into
+            // topLevel()/children(of:) if the app locale must win over the system one.
+            return Format.categoryDisplayName(lhs, locale: .current)
+                .localizedStandardCompare(Format.categoryDisplayName(rhs, locale: .current)) == .orderedAscending
         }
     }
 }

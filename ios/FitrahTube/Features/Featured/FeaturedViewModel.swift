@@ -22,7 +22,8 @@ import Foundation
     /// own `navTitle` can resolve the same way before `.task` creates the ViewModel, without a
     /// second copy of the ternary itself (task-12 fold-in).
     static func resolvedCategoryId(_ raw: String?) -> String {
-        (raw?.isEmpty == false) ? raw! : featuredCategoryId
+        if let raw, !raw.isEmpty { return raw }
+        return featuredCategoryId
     }
 
     private(set) var state: State = .loading
@@ -79,7 +80,10 @@ import Foundation
     }
 
     func loadMore() async {
-        guard !isLoadingMore, !lastLoadFailed else { return }
+        // `!isRefreshing` for parity with `ContentListViewModel.loadMore` (gate B1-I4): without
+        // it, a pull-to-refresh's own layout churn could start a load-more against the arrays the
+        // refresh was in the middle of replacing.
+        guard !isLoadingMore, !isRefreshing, !lastLoadFailed else { return }
         guard case .content(_, let hasMore) = state, hasMore else { return }
         isLoadingMore = true // set before the first `await` -- the in-flight guard
         let task = Task { await self.fetchMore() }
@@ -90,17 +94,19 @@ import Foundation
     private func performFullLoad(showLoading: Bool) async {
         loadTask?.cancel()
         loadMoreTask?.cancel()
+        isLoadingMore = false // a cancelled load-more never reaches its own cleanup (gate B1-I3)
         lastLoadFailed = false
         let task = Task { await self.fetchFirstPage(showLoading: showLoading) }
         loadTask = task
         await task.value
     }
 
+    /// The backing arrays are cleared on the *success* paths, never before the `await` (gate
+    /// B1-I4). Clearing up front emptied `flatItems` while `state` still published the old content
+    /// (refresh uses `showLoading: false`), so a load-more racing the refresh appended one page to
+    /// an empty array and collapsed the visible list from N pages to one.
     private func fetchFirstPage(showLoading: Bool) async {
         if showLoading { state = .loading }
-        sections = []; sectionsNextCursor = nil
-        flatItems = []; flatNextCursor = nil
-
         do {
             let probe = try await catalog.home(cursor: nil, categoryLimit: Self.sectionPageSize,
                                                 contentLimit: Self.contentPerSection, category: categoryId)
@@ -109,7 +115,7 @@ import Foundation
                 isSectionsMode = true
                 sections = probe.items
                 sectionsNextCursor = probe.nextCursor
-                isLoadingMore = false
+                flatItems = []; flatNextCursor = nil
                 state = sections.isEmpty ? .empty : .content(.sections(sections), hasMore: sectionsNextCursor != nil)
                 return
             }
@@ -127,15 +133,20 @@ import Foundation
             guard !Task.isCancelled else { return }
             flatItems = page.items
             flatNextCursor = page.nextCursor
-            isLoadingMore = false
+            sections = []; sectionsNextCursor = nil
             state = flatItems.isEmpty ? .empty : .content(.flat(flatItems), hasMore: flatNextCursor != nil)
         } catch {
             guard !Task.isCancelled else { return }
-            state = .error(errorMessage(error))
+            // Localized copy, not `error.localizedDescription` (gate B1-I5): a `DecodingError` or
+            // an OpenAPI runtime error rendered a developer-facing dump -- untranslated, possibly
+            // carrying the request path -- as body copy in the middle of an Arabic or Dutch UI.
+            // Every other screen shows this same key.
+            state = .error(String(localized: "list_error_description"))
         }
     }
 
     private func fetchMore() async {
+        defer { isLoadingMore = false } // covers the cancellation exits below too (gate B1-I3)
         if isSectionsMode {
             await fetchMoreSections()
         } else {
@@ -148,15 +159,14 @@ import Foundation
             let page = try await catalog.home(cursor: sectionsNextCursor, categoryLimit: Self.sectionPageSize,
                                                contentLimit: Self.contentPerSection, category: categoryId)
             guard !Task.isCancelled else { return }
-            sections.append(contentsOf: page.items)
+            let existingIDs = Set(sections.map(\.id)) // dedupe by id (gate B1-minor-6)
+            sections.append(contentsOf: page.items.filter { !existingIDs.contains($0.id) })
             sectionsNextCursor = page.nextCursor
-            isLoadingMore = false
             state = .content(.sections(sections), hasMore: sectionsNextCursor != nil)
         } catch {
             guard !Task.isCancelled else { return }
             // Load-more failure keeps the cursor and re-emits the unchanged list, completely
             // silently (no error state, no banner) -- content-lists.md §7.4.
-            isLoadingMore = false
             lastLoadFailed = true
             state = .content(.sections(sections), hasMore: sectionsNextCursor != nil)
         }
@@ -166,13 +176,12 @@ import Foundation
         do {
             let page = try await fetchFlatPage(cursor: flatNextCursor)
             guard !Task.isCancelled else { return }
-            flatItems.append(contentsOf: page.items)
+            let existingIDs = Set(flatItems.map(\.id)) // dedupe by id (gate B1-minor-6)
+            flatItems.append(contentsOf: page.items.filter { !existingIDs.contains($0.id) })
             flatNextCursor = page.nextCursor
-            isLoadingMore = false
             state = .content(.flat(flatItems), hasMore: flatNextCursor != nil)
         } catch {
             guard !Task.isCancelled else { return }
-            isLoadingMore = false
             lastLoadFailed = true
             state = .content(.flat(flatItems), hasMore: flatNextCursor != nil)
         }
@@ -184,9 +193,5 @@ import Foundation
     private func fetchFlatPage(cursor: String?) async throws -> CursorPage<ContentItem> {
         try await catalog.content(type: nil, cursor: cursor, limit: Self.flatPageSize,
                                    filter: FilterState(categoryId: categoryId, categoryName: categoryName), query: nil)
-    }
-
-    private func errorMessage(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? "\(error)"
     }
 }

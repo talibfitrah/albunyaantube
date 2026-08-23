@@ -61,3 +61,16 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     var viewCount: Int64? = nil
     var channelId: String? = nil
 }
+
+extension PlayerArgs {
+    /// The catalog-item mapping every screen that can open the player needs. One copy (gate s1-2):
+    /// it was pasted identically into `HomeViewModel`, `ContentListView`, `FeaturedView` and
+    /// `SearchView`, which made RULINGS #17 -- `channelName` prefers the video's real
+    /// `channelTitle`, falling back to `category` only when nil (Android always used `category`, a
+    /// mapping bug) -- something that had to stay independently correct in four places.
+    init(item: ContentItem) {
+        self.init(videoId: item.id, title: item.title, channelName: item.channelTitle ?? item.category,
+                  thumbnailURL: item.thumbnailURL, description: item.description,
+                  durationSeconds: item.durationSeconds, viewCount: item.viewCount)
+    }
+}

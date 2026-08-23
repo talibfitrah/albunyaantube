@@ -78,4 +78,60 @@ struct DeepLinkParserTests {
         let route = DeepLinkParser.route(for: URL(string: "https://app.fitrahtube.com/shorts/sh1")!)
         #expect(route == nil)
     }
+
+    // MARK: - Hostile ids (gate A-I4 / cso-F1)
+
+    /// Every one of these was accepted verbatim into a `Route` before the id guard: `..` survives
+    /// percent-encoding (`.` is unreserved) and URL normalisation collapses it into a traversal;
+    /// an embedded NUL truncates any C string it reaches; an unbounded id lands on the
+    /// NavigationStack whole.
+    @Test(arguments: [
+        "albunyaantube://video/..",
+        "albunyaantube://video/%2e%2e",
+        "albunyaantube://video/a%00b",
+        "albunyaantube://video/a.b",
+        "albunyaantube://video/a b",
+        "albunyaantube://channel/../../secret",
+        "albunyaantube://playlist/",
+    ])
+    func hostileCustomSchemeIDsAreRejected(_ raw: String) {
+        #expect(DeepLinkParser.route(for: URL(string: raw)!) == nil, "accepted \(raw)")
+    }
+
+    /// Not hostile, recorded so the boundary is explicit: a query string is not a path component,
+    /// so it is ignored and the id is still just "a" -- the same way the Universal Link branch
+    /// already ignores `?query` and `#fragment`.
+    @Test func queryStringIsIgnoredRatherThanTreatedAsPartOfTheID() {
+        #expect(DeepLinkParser.route(for: URL(string: "albunyaantube://video/a?b")!)
+                == .player(PlayerArgs(videoId: "a")))
+    }
+
+    @Test func idLongerThan64CharactersIsRejected() {
+        let long = String(repeating: "a", count: 65)
+        #expect(DeepLinkParser.route(for: URL(string: "albunyaantube://video/\(long)")!) == nil)
+        // ...and exactly 64 is still fine -- the bound is a bound, not an off-by-one.
+        let atLimit = String(repeating: "a", count: 64)
+        #expect(DeepLinkParser.route(for: URL(string: "albunyaantube://video/\(atLimit)")!)
+                == .player(PlayerArgs(videoId: atLimit)))
+    }
+
+    @Test func universalLinkHostileIDIsRejected() {
+        #expect(DeepLinkParser.route(for: URL(string: "https://app.fitrahtube.com/watch/..")!) == nil)
+    }
+
+    // MARK: - Case-insensitive scheme/host, exact segment count (gate A-M2 / A-M3)
+
+    @Test func uppercaseSchemeAndHostStillRoute() {
+        #expect(DeepLinkParser.route(for: URL(string: "ALBUNYAANTUBE://VIDEO/abc123")!)
+                == .player(PlayerArgs(videoId: "abc123")))
+        #expect(DeepLinkParser.route(for: URL(string: "HTTPS://APP.FITRAHTUBE.COM/watch/abc123")!)
+                == .player(PlayerArgs(videoId: "abc123")))
+    }
+
+    @Test func customSchemeExtraSegmentsAreRejectedNotTruncated() {
+        // Used to yield `.player(videoId: "abc")` -- trailing junk silently dropped.
+        #expect(DeepLinkParser.route(for: URL(string: "albunyaantube://video/abc/extra")!) == nil)
+        // `a%2Fb` decodes to two components; used to yield the *wrong* video "a".
+        #expect(DeepLinkParser.route(for: URL(string: "albunyaantube://video/a%2Fb")!) == nil)
+    }
 }

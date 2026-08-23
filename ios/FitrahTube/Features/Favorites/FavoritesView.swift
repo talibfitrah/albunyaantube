@@ -29,7 +29,7 @@ struct FavoritesView: View {
                                 Button(role: .destructive) { remove(item) } label: {
                                     Label(String(localized: "favorites_remove"), systemImage: "trash")
                                 }
-                                .accessibilityLabel(localizedFormat("favorites_remove_description", item.title))
+                                .accessibilityLabel(Format.localizedFormat("favorites_remove_description", locale: locale, item.title))
                             }
                     }
                 }
@@ -97,13 +97,6 @@ struct FavoritesView: View {
         bannerMessage = BannerMessage(text: String(localized: "error_state_generic_headline"))
     }
 
-    /// Same technique as `SearchView`'s own private copy -- resolves the `.lproj` bundle for the
-    /// current `\.locale` so a `%1$@` xcstrings entry substitutes correctly regardless of the
-    /// simulator's system language.
-    private func localizedFormat(_ key: String, _ args: CVarArg...) -> String {
-        let format = Format.localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
-        return String(format: format, locale: locale, arguments: args)
-    }
 }
 
 #Preview {

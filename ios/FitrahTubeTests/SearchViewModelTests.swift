@@ -8,13 +8,6 @@ import Testing
 /// zero-state" fix (Android leaves stale state on screen below 2 chars -- a deliberate deviation).
 @Suite(.perTest)
 struct SearchViewModelTests {
-    private func items(count: Int, prefix: String) -> [ContentItem] {
-        (0..<count).map { i in
-            ContentItem(id: "\(prefix)-\(i)", type: .video, title: "Item \(prefix)-\(i)", category: nil,
-                        description: nil, thumbnailURL: nil, durationSeconds: 60, uploadedDaysAgo: 1,
-                        viewCount: nil, channelTitle: nil, subscribers: nil, videoCount: nil, itemCount: nil)
-        }
-    }
 
     private func makeHistoryStore() -> (UserDefaultsSearchHistoryStore, UserDefaults, String) {
         let suiteName = "SearchViewModelTests.\(UUID().uuidString)"
@@ -76,7 +69,6 @@ struct SearchViewModelTests {
         }
     }
 
-    private func noSleep(_ duration: Duration) async throws {} // debounce clock stub
 
     // MARK: - Initial state
 

@@ -11,7 +11,9 @@ import SwiftUI
 /// untranslated -- this is a debug-only screen.
 struct DeveloperDialog: View {
     @Environment(\.dismiss) private var dismiss
+    #if DEBUG
     @State private var showGallery = false
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -21,9 +23,16 @@ struct DeveloperDialog: View {
                     LabeledContent("API base URL", value: AppConfig.apiBaseURL.absoluteString)
                     LabeledContent("Device ID", value: DeviceId.persisted().value)
                 }
+                // The dialog itself still ships (version/build, the public API host, and a locally
+                // generated device id are all harmless -- see gate B1-I8), but the Components
+                // Gallery does not: it is a debug screenshot rig, and this was the one in-app path
+                // that reached it without a launch flag. Revisit the whole dialog's gating when
+                // the phase-2 playback kill switches land in it (cso-F3, deferred).
+                #if DEBUG
                 Section {
                     Button("Components Gallery") { showGallery = true }
                 }
+                #endif
             }
             .navigationTitle(String(localized: "dev_settings_title"))
             .navigationBarTitleDisplayMode(.inline)
@@ -33,7 +42,9 @@ struct DeveloperDialog: View {
                 }
             }
         }
+        #if DEBUG
         .sheet(isPresented: $showGallery) { ComponentsGallery() }
+        #endif
     }
 
     private var versionText: String {

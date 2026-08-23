@@ -3,14 +3,6 @@ import UIKit
 
 // MARK: - Localization helpers (Home meta line, plural/substitution xcstrings keys)
 
-/// Same pattern as `LocalizationTests.string(_:locale:_:)`: look the key up in the `.lproj`
-/// bundle for `locale` (not `Bundle.main`, which only answers for the device's own preferred
-/// language) and let `String(format:)` resolve `.xcstrings` plural/substitution variants.
-private func localizedFormat(_ key: String, locale: Locale, _ args: CVarArg...) -> String {
-    let format = Format.localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
-    return String(format: format, locale: locale, arguments: args)
-}
-
 /// Video meta line: `views • timeAgo[ • category]`, `" • "`-joined, each segment omitted when its
 /// underlying value is nil (RULINGS.md contradiction #3: null view count omits the segment,
 /// correcting Android's "0 views"). `includeCategory` is false for the tabs' `VideoRow`/
@@ -19,8 +11,8 @@ private func localizedFormat(_ key: String, locale: Locale, _ args: CVarArg...) 
 private func videoMeta(_ item: ContentItem, locale: Locale, includeCategory: Bool) -> String {
     var parts: [String] = []
     if let views = item.viewCount {
-        parts.append(localizedFormat("video_views", locale: locale,
-                                      Format.compactCount(views, locale: locale), Int64(Format.pluralQuantity(views))))
+        parts.append(Format.localizedFormat("video_views", locale: locale,
+                                            Format.compactCount(views, locale: locale), Int64(Format.pluralQuantity(views))))
     }
     if let days = item.uploadedDaysAgo {
         parts.append(Format.timeAgo(days: days, locale: locale))
@@ -34,10 +26,10 @@ private func videoMeta(_ item: ContentItem, locale: Locale, includeCategory: Boo
 private func videoAccessibilityLabel(_ item: ContentItem, locale: Locale) -> String {
     let duration = item.durationSeconds.map(Format.duration) ?? ""
     let views = item.viewCount.map {
-        localizedFormat("video_views", locale: locale, Format.compactCount($0, locale: locale), Int64(Format.pluralQuantity($0)))
+        Format.localizedFormat("video_views", locale: locale, Format.compactCount($0, locale: locale), Int64(Format.pluralQuantity($0)))
     } ?? ""
     let uploaded = item.uploadedDaysAgo.map { Format.timeAgo(days: $0, locale: locale) } ?? ""
-    return localizedFormat("a11y_video_item", locale: locale, item.title, duration, views, uploaded)
+    return Format.localizedFormat("a11y_video_item", locale: locale, item.title, duration, views, uploaded)
 }
 
 // MARK: - RemoteImage
@@ -59,7 +51,17 @@ struct RemoteImage: View {
         self.contentMode = contentMode
     }
 
-    private static let cache = NSCache<NSURL, UIImage>()
+    /// Bounded (gate cso-F4 / A-M6): with neither limit set, decoded bitmaps accumulated until the
+    /// system raised memory pressure -- on an iPad grid of 16:9 thumbnails that is tens of MB
+    /// before any eviction. `totalCostLimit` only means anything if every `setObject` supplies a
+    /// cost, which `load()` below does.
+    private static let cache: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        cache.countLimit = 200
+        cache.totalCostLimit = 50 << 20 // 50 MB of decoded pixels
+        return cache
+    }()
+
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.default
         configuration.urlCache = URLCache(memoryCapacity: 50 * 1024 * 1024, diskCapacity: 200 * 1024 * 1024)
@@ -79,7 +81,12 @@ struct RemoteImage: View {
     }
 
     private func load() async {
-        guard let url else { image = nil; return }
+        // https only (gate cso-F4). `URLSession` honours `file://` for data tasks, so a compromised
+        // or mis-configured backend could otherwise make the app read a local file and decode it as
+        // an image. Enforced here rather than at the `LiveCatalogClient` mapping boundary because
+        // every image fetch in the app funnels through this one call -- including the favorites
+        // store's own persisted thumbnail strings, which never pass through that mapper.
+        guard let url, url.scheme?.lowercased() == "https" else { image = nil; return }
         if let cached = Self.cache.object(forKey: url as NSURL) {
             image = cached
             return
@@ -88,7 +95,8 @@ struct RemoteImage: View {
         // ponytail: decode happens on the calling (main) actor -- fine at card/thumbnail sizes
         // (max ~320 pt here); move to a background decode if profiling shows main-thread jank.
         guard let (data, _) = try? await Self.session.data(from: url), let decoded = UIImage(data: data) else { return }
-        Self.cache.setObject(decoded, forKey: url as NSURL)
+        let cost = decoded.cgImage.map { $0.bytesPerRow * $0.height } ?? data.count
+        Self.cache.setObject(decoded, forKey: url as NSURL, cost: cost)
         image = decoded
     }
 }
@@ -119,7 +127,7 @@ private struct PlaylistCountChip: View {
     let locale: Locale
 
     var body: some View {
-        Text(localizedFormat("video_count", locale: locale, Int64(count)))
+        Text(Format.localizedFormat("video_count", locale: locale, Int64(count)))
             .font(TypeScale.badge)
             .foregroundStyle(Color.onBrand)
             .padding(.horizontal, 6).padding(.vertical, 3)
@@ -243,7 +251,7 @@ struct MediaCard: View {
         case .video:
             videoAccessibilityLabel(item, locale: locale)
         case .playlist:
-            item.itemCount.map { localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) } ?? item.title
+            item.itemCount.map { Format.localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) } ?? item.title
         case .channel:
             item.title
         }
@@ -380,7 +388,7 @@ struct ChannelRow: View {
                     Text(item.title).font(TypeScale.subtitle).fontWeight(.bold)
                         .foregroundStyle(Color.textPrimary).lineLimit(2)
                     if let subscribers = item.subscribers {
-                        Text(localizedFormat("channel_subscribers_format", locale: locale, Format.compactCount(subscribers, locale: locale)))
+                        Text(Format.localizedFormat("channel_subscribers_format", locale: locale, Format.compactCount(subscribers, locale: locale)))
                             .font(TypeScale.body(widthClass)).foregroundStyle(Color.brand).lineLimit(1)
                     }
                     if let category = item.category, !category.isEmpty {
@@ -398,9 +406,9 @@ struct ChannelRow: View {
 
     private var accessibilityLabel: String {
         let subscriberText = item.subscribers.map {
-            localizedFormat("channel_subscribers_format", locale: locale, Format.compactCount($0, locale: locale))
+            Format.localizedFormat("channel_subscribers_format", locale: locale, Format.compactCount($0, locale: locale))
         } ?? String(localized: "channel_subscribers_unknown")
-        return localizedFormat("a11y_channel_item", locale: locale, item.title, subscriberText)
+        return Format.localizedFormat("a11y_channel_item", locale: locale, item.title, subscriberText)
     }
 }
 
@@ -433,7 +441,7 @@ struct HomeChannelItem: View {
                     .multilineTextAlignment(.center).lineLimit(2)
                     .padding(.top, Spacing.sm)
                 if let subscribers = item.subscribers {
-                    Text(localizedFormat("channel_subscribers_format", locale: locale, Format.compactCount(subscribers, locale: locale)))
+                    Text(Format.localizedFormat("channel_subscribers_format", locale: locale, Format.compactCount(subscribers, locale: locale)))
                         .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.top, Spacing.xs)
@@ -448,9 +456,9 @@ struct HomeChannelItem: View {
 
     private var accessibilityLabel: String {
         let subscriberText = item.subscribers.map {
-            localizedFormat("channel_subscribers_format", locale: locale, Format.compactCount($0, locale: locale))
+            Format.localizedFormat("channel_subscribers_format", locale: locale, Format.compactCount($0, locale: locale))
         } ?? String(localized: "channel_subscribers_unknown")
-        return localizedFormat("a11y_channel_item", locale: locale, item.title, subscriberText)
+        return Format.localizedFormat("a11y_channel_item", locale: locale, item.title, subscriberText)
     }
 }
 
@@ -482,7 +490,7 @@ struct PlaylistRow: View {
                     Text(item.title).font(TypeScale.subtitle).fontWeight(.bold)
                         .foregroundStyle(Color.textPrimary).lineLimit(2)
                     if let count = item.itemCount {
-                        Text(localizedFormat("playlist_item_count", locale: locale, Int64(count)))
+                        Text(Format.localizedFormat("playlist_item_count", locale: locale, Int64(count)))
                             .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(1)
                     }
                 }
@@ -497,7 +505,7 @@ struct PlaylistRow: View {
     }
 
     private var accessibilityLabel: String {
-        item.itemCount.map { localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) } ?? item.title
+        item.itemCount.map { Format.localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) } ?? item.title
     }
 }
 
@@ -588,7 +596,12 @@ struct CategoryPill: View {
                 .foregroundStyle(Color.brand)
             }
             .buttonStyle(.plain)
+            // Label = role, value = the data (gate B1-I7). The label alone ("Select content
+            // category") replaced the button's own text, which *is* the active category name when
+            // a filter is applied -- so on Home too, the filtering category was invisible to
+            // VoiceOver.
             .accessibilityLabel(String(localized: "home_select_category"))
+            .accessibilityValue(label)
             if isActive {
                 Button(action: onClear) {
                     Image(systemName: "xmark").font(.system(size: 20))
@@ -621,9 +634,17 @@ struct BannerMessage: Equatable {
     var actionTitle: String?
     var action: (() -> Void)?
 
-    static func == (lhs: BannerMessage, rhs: BannerMessage) -> Bool {
-        lhs.text == rhs.text && lhs.actionTitle == rhs.actionTitle
-    }
+    /// Identity, not content (gate A-M7 / B1-minor-5). Equality and the dismissal timer both used
+    /// to key on `text`/`actionTitle` alone, so: applying the same filter twice inside 2.5 s
+    /// reused the in-flight timer and the second banner inherited the first's remaining time; and
+    /// in `ContentListView` the pagination banner and the terminal-error banner share both strings
+    /// (`list_error_title` + `retry`), so replacing one with the other mid-display kept the old
+    /// timer, skipped the VoiceOver re-announcement, and silently swapped which action Retry ran.
+    private let id = UUID()
+
+    static func == (lhs: BannerMessage, rhs: BannerMessage) -> Bool { lhs.id == rhs.id }
+
+    var identity: UUID { id }
 }
 
 /// Bottom banner, 2.5 s auto-dismiss, optional action, VoiceOver announcement.
@@ -638,8 +659,15 @@ struct TransientBanner: ViewModifier {
             if let message {
                 bannerView(message)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .task(id: message.text) {
+                    .task(id: message.identity) {
                         AccessibilityNotification.Announcement(message.text).post()
+                        // An actionable banner stays up under VoiceOver / Switch Control (gate
+                        // B1-minor-4): 2.5 s is far less than the time it takes to navigate to the
+                        // Retry button, so the one control the banner exists for was unreachable
+                        // for exactly the users who need it most. It is dismissed by the action
+                        // itself, or replaced by the next banner.
+                        guard message.action == nil
+                                || !(UIAccessibility.isVoiceOverRunning || UIAccessibility.isSwitchControlRunning) else { return }
                         try? await Task.sleep(for: .seconds(2.5))
                         if !Task.isCancelled { self.message = nil }
                     }

@@ -30,6 +30,10 @@ status=0
 for device in "${DEVICES[@]}"; do
     # "iPad Pro 13-inch (M5)" -> "ipad-pro-13-inch-m5"
     slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
+    # cso-F5: an argument with no alphanumerics (e.g. "!!!") slugs to the empty string, and the
+    # `rm -rf "$OUT_ROOT/$slug"` below would then wipe *every* device's captures. `${OUT_ROOT:?}`
+    # guards the variable being empty; it does not guard the slug.
+    [ -n "$slug" ] || { echo "bad device name: $device" >&2; exit 1; }
     case "$device" in
         iPhone*) tests=(-only-testing:FitrahTubeUITests/ScreenshotTests/testAccessibilityTextSizes
                         -only-testing:FitrahTubeUITests/ScreenshotTests/testOfflineBanner

@@ -67,23 +67,17 @@ import Foundation
         return String(format: String(localized: "home_see_all_category"), displayName)
     }
 
-    /// RULINGS #17: `channelName` prefers the video's real `channelTitle`, falling back to
-    /// `category` only when it's nil (Android always used `category`, a mapping bug).
-    func playerArgs(for item: ContentItem) -> PlayerArgs {
-        PlayerArgs(
-            videoId: item.id,
-            title: item.title,
-            channelName: item.channelTitle ?? item.category,
-            thumbnailURL: item.thumbnailURL,
-            description: item.description,
-            durationSeconds: item.durationSeconds,
-            viewCount: item.viewCount
-        )
-    }
-
     private func performFullLoad(showLoading: Bool) async {
         loadTask?.cancel()
         loadMoreTask?.cancel()
+        // A cancelled load-more returns through its own `guard !Task.isCancelled` before it can
+        // clear either the flag or the published spinner (gate B1-I3). Left alone, `loadMore()`
+        // returned immediately forever after, and Home's footer `ProgressView` -- which this
+        // ViewModel publishes, unlike the other two -- stayed on screen indefinitely.
+        isLoadingMore = false
+        if case .content(let sections, let hasMore, true) = state {
+            state = .content(sections: sections, hasMore: hasMore, isLoadingMore: false)
+        }
         let task = Task { await self.fetchFirstPage(showLoading: showLoading) }
         loadTask = task
         await task.value
@@ -98,7 +92,6 @@ import Foundation
             sections = page.items
             nextCursor = page.nextCursor
             hasMore = page.hasMore // CursorPage.hasMore == (nextCursor != nil)
-            isLoadingMore = false
             state = sections.isEmpty ? .empty : .content(sections: sections, hasMore: hasMore, isLoadingMore: false)
         } catch {
             guard !Task.isCancelled else { return }
@@ -107,6 +100,7 @@ import Foundation
     }
 
     private func fetchMore() async {
+        defer { isLoadingMore = false } // covers the cancellation exits below too (gate B1-I3)
         do {
             let page = try await catalog.home(cursor: nextCursor, categoryLimit: Self.categoryLimit,
                                                contentLimit: contentLimit(), category: category)
@@ -115,13 +109,11 @@ import Foundation
             sections.append(contentsOf: page.items.filter { !existingIDs.contains($0.id) }) // dedupe by section id
             nextCursor = page.nextCursor
             hasMore = page.hasMore
-            isLoadingMore = false
             state = .content(sections: sections, hasMore: hasMore, isLoadingMore: false)
         } catch {
             // RULINGS #13: pagination failures on Home are silent -- no error state, the footer
             // spinner just disappears and the user can scroll again to retry.
             guard !Task.isCancelled else { return }
-            isLoadingMore = false
             state = .content(sections: sections, hasMore: hasMore, isLoadingMore: false)
         }
     }

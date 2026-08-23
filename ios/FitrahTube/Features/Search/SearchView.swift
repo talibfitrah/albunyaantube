@@ -96,7 +96,7 @@ struct SearchView: View {
                 EmptyStateView(
                     systemImage: "magnifyingglass",
                     title: String(localized: "search_no_results"),
-                    message: localizedFormat("search_try_different", viewModel.query)
+                    message: Format.localizedFormat("search_try_different", locale: locale, viewModel.query)
                 )
             case .error:
                 // RULINGS #23: Android has no retry button on search error; this one does.
@@ -135,12 +135,19 @@ struct SearchView: View {
                                 Text(entry).foregroundStyle(Color.textPrimary)
                                 Spacer(minLength: 0)
                             }
+                            .contentShape(Rectangle())
                         }
-                        .accessibilityLabel(localizedFormat("a11y_search_history", entry))
+                        // `.plain` + an explicit hit area (gate B1-minor-15): in a `List`, an
+                        // unstyled button claims the whole row's tap area, so this one could
+                        // swallow taps meant for the trailing delete button beside it.
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Format.localizedFormat("a11y_search_history", locale: locale, entry))
                         // search-categories.md §1.6: an always-visible trailing delete button
                         // (Android's persistent 48×48 button), in addition to the swipe action below.
                         Button { viewModel.removeHistory(entry) } label: {
-                            Image(systemName: "xmark").foregroundStyle(Color.textSecondary)
+                            Image(systemName: "xmark")
+                                .foregroundStyle(Color.textSecondary)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(String(localized: "cd_delete_search_history"))
@@ -176,7 +183,7 @@ struct SearchView: View {
     private func resultRow(_ item: ContentItem) -> some View {
         switch item.type {
         case .video:
-            VideoRow(item: item) { router.push(.player(playerArgs(for: item))) }
+            VideoRow(item: item) { router.push(.player(PlayerArgs(item: item))) }
         case .channel:
             ChannelRow(item: item) { router.push(.channel(id: item.id, name: item.title, avatarURL: item.thumbnailURL)) }
         case .playlist:
@@ -184,23 +191,6 @@ struct SearchView: View {
         }
     }
 
-    /// RULINGS #17's `channelName ← category` fix, applied consistently here too -- Android's
-    /// search screen alone still passes `item.category` as `channelName` (a documented quirk,
-    /// `search-categories.md:24-25`); porting that quirk would make Search the only screen in the
-    /// app still exhibiting a bug every other screen already fixed.
-    private func playerArgs(for item: ContentItem) -> PlayerArgs {
-        PlayerArgs(videoId: item.id, title: item.title, channelName: item.channelTitle ?? item.category,
-                   thumbnailURL: item.thumbnailURL, description: item.description,
-                   durationSeconds: item.durationSeconds, viewCount: item.viewCount)
-    }
-
-    /// Same technique as `ContentListView`'s own private copy -- resolves the `.lproj` bundle for
-    /// the current `\.locale` so a `%1$@` xcstrings entry substitutes correctly regardless of the
-    /// simulator's system language.
-    private func localizedFormat(_ key: String, _ args: CVarArg...) -> String {
-        let format = Format.localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
-        return String(format: format, locale: locale, arguments: args)
-    }
 }
 
 #Preview {

@@ -103,7 +103,11 @@ fi
 
 run_all &
 pid=$!
-( sleep 300; touch "$RESULTS/killed"; kill -TERM -- -"$pid" 2>/dev/null ) &
+# A-M13: re-check the job group is still alive before claiming a timeout. If `sleep 300` expires in
+# the window between `wait "$pid"` returning and the `kill` on the watchdog below, the marker was
+# still written and a passing run exited 124 -- a sub-millisecond race, but a non-deterministic CI
+# failure is expensive to chase.
+( sleep 300; kill -0 -"$pid" 2>/dev/null || exit 0; touch "$RESULTS/killed"; kill -TERM -- -"$pid" 2>/dev/null ) &
 wd=$!
 
 trap 'kill -- -"$pid" -"$wd" 2>/dev/null; exit 130' INT TERM

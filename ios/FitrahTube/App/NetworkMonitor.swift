@@ -11,7 +11,6 @@ import Observation
     private(set) var isOnline = true
 
     private let monitor = NWPathMonitor()
-    private let queue = DispatchQueue(label: "com.albunyaan.tube.network-monitor")
 
     init(start: Bool = true) {
         #if DEBUG
@@ -23,14 +22,21 @@ import Observation
         }
         #endif
         if start {
+            // Delivered on the main queue and applied synchronously (gate A-M1). Each callback
+            // used to spawn its own unstructured `Task { @MainActor in … }`, and unstructured
+            // tasks have no FIFO guarantee onto an actor -- two path updates inside one hop (a
+            // Wi-Fi drop immediately followed by a cellular attach) could be applied in reverse,
+            // and the `isOnline != online` de-dupe cannot detect that. The offline banner then sat
+            // there while the device was online until the next path change. Ordering is now
+            // structural: `NWPathMonitor` serialises its callbacks onto the queue it is given.
             monitor.pathUpdateHandler = { [weak self] path in
                 let online = Self.isOnline(for: path.status)
-                Task { @MainActor in
+                MainActor.assumeIsolated {
                     guard let self, self.isOnline != online else { return }
                     self.isOnline = online
                 }
             }
-            monitor.start(queue: queue)
+            monitor.start(queue: .main)
         }
     }
 

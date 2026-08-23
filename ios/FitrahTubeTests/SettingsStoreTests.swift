@@ -112,4 +112,22 @@ struct SettingsStoreTests {
     @Test func systemLocaleCodeResolvesDutch() {
         #expect(UserDefaultsSettingsStore.systemLocaleCode(preferredLanguages: ["nl-BE"]) == "nl")
     }
+
+    /// Gate A-I6: `object(forKey:) != nil` does not imply `string(forKey:) != nil`, so a
+    /// wrong-typed value under any of the three string keys used to trap on the launch path
+    /// (`AppContainer.settings` is lazily built during the first frame). Init must be total.
+    @Test func wrongTypedValuesFallBackToBuildDefaultsInsteadOfTrapping() {
+        let suiteName = "SettingsStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(["not", "a", "string"], forKey: "app_locale")
+        defaults.set(["nested": true], forKey: "theme")
+        defaults.set(Data([0x01]), forKey: "download_quality")
+
+        let store = UserDefaultsSettingsStore(defaults: defaults)
+
+        #expect(store.appLocale == "system")
+        #expect(store.theme == "system")
+        #expect(store.downloadQuality == "medium")
+    }
 }

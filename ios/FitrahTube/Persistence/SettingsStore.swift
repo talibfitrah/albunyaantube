@@ -39,20 +39,6 @@ import SwiftUI
         static let importOfferShown = "import_offer_shown"
     }
 
-    /// Single source of truth for build defaults, read per-key at init instead of via
-    /// `UserDefaults.register(defaults:)` -- registration installs into the process-global
-    /// `NSRegistrationDomain`, which every suite/instance in the process reads, so one store's
-    /// defaults would leak into every other suite (e.g. two `fake()` containers with different
-    /// intended defaults). Keys with no entry here (audioOnly, wifiOnlyDownloads,
-    /// onboardingCompleted, importOfferShown) already default to `false` via `.bool(forKey:)`.
-    private static let buildDefaults: [String: Any] = [
-        Keys.appLocale: "system",
-        Keys.theme: "system",
-        Keys.backgroundPlay: true,
-        Keys.safeMode: true,
-        Keys.downloadQuality: "medium",
-    ]
-
     private let defaults: UserDefaults
 
     var appLocale: String { didSet { defaults.set(appLocale, forKey: Keys.appLocale) } }
@@ -65,19 +51,27 @@ import SwiftUI
     var onboardingCompleted: Bool { didSet { defaults.set(onboardingCompleted, forKey: Keys.onboardingCompleted) } }
     var importOfferShown: Bool { didSet { defaults.set(importOfferShown, forKey: Keys.importOfferShown) } }
 
+    /// Build defaults are read per-key here rather than through `UserDefaults.register(defaults:)`
+    /// -- registration installs into the process-global `NSRegistrationDomain`, which every
+    /// suite/instance in the process reads, so one store's defaults would leak into every other
+    /// suite (e.g. two `fake()` containers with different intended defaults). Keys with no default
+    /// (audioOnly, wifiOnlyDownloads, onboardingCompleted, importOfferShown) fall to `false`.
+    ///
+    /// The three string keys read through `string(forKey:) ?? default` rather than probing
+    /// `object(forKey:) == nil` and force-unwrapping (gate A-I6): `object(forKey:) != nil` does
+    /// **not** imply `string(forKey:) != nil` -- the latter returns nil for an array, dictionary or
+    /// data value. Any wrong-typed value under one of these keys (a stale value from an earlier
+    /// build, an MDM-pushed managed configuration, a hand-edited plist) trapped during
+    /// `AppContainer.settings`'s lazy init, i.e. at launch, with no recovery. Identical behaviour
+    /// for a missing key; total for a wrong-typed one.
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        appLocale = defaults.object(forKey: Keys.appLocale) == nil
-            ? Self.buildDefaults[Keys.appLocale] as! String : defaults.string(forKey: Keys.appLocale)!
-        theme = defaults.object(forKey: Keys.theme) == nil
-            ? Self.buildDefaults[Keys.theme] as! String : defaults.string(forKey: Keys.theme)!
+        appLocale = defaults.string(forKey: Keys.appLocale) ?? "system"
+        theme = defaults.string(forKey: Keys.theme) ?? "system"
         audioOnly = defaults.bool(forKey: Keys.audioOnly)
-        backgroundPlay = defaults.object(forKey: Keys.backgroundPlay) == nil
-            ? Self.buildDefaults[Keys.backgroundPlay] as! Bool : defaults.bool(forKey: Keys.backgroundPlay)
-        safeMode = defaults.object(forKey: Keys.safeMode) == nil
-            ? Self.buildDefaults[Keys.safeMode] as! Bool : defaults.bool(forKey: Keys.safeMode)
-        downloadQuality = defaults.object(forKey: Keys.downloadQuality) == nil
-            ? Self.buildDefaults[Keys.downloadQuality] as! String : defaults.string(forKey: Keys.downloadQuality)!
+        backgroundPlay = defaults.object(forKey: Keys.backgroundPlay) == nil ? true : defaults.bool(forKey: Keys.backgroundPlay)
+        safeMode = defaults.object(forKey: Keys.safeMode) == nil ? true : defaults.bool(forKey: Keys.safeMode)
+        downloadQuality = defaults.string(forKey: Keys.downloadQuality) ?? "medium"
         wifiOnlyDownloads = defaults.bool(forKey: Keys.wifiOnlyDownloads)
         onboardingCompleted = defaults.bool(forKey: Keys.onboardingCompleted)
         importOfferShown = defaults.bool(forKey: Keys.importOfferShown)

@@ -261,7 +261,12 @@ struct SettingsView: View {
             rowIcon(row)
             rowLabel(row)
             Spacer()
-            Toggle("", isOn: isOn).labelsHidden()
+            // The row's title, not "" (gate B1-I6). `.labelsHidden()` hides a label *visually*
+            // while preserving it for accessibility -- the empty string was the defect, and since
+            // the title `Text` and the switch are separate accessibility elements, a VoiceOver
+            // user swiping onto the control heard "Switch button, On" with no idea which of the
+            // five settings it was.
+            Toggle(String(localized: String.LocalizationValue(row.titleKey)), isOn: isOn).labelsHidden()
         }
     }
 
@@ -291,7 +296,7 @@ struct SettingsView: View {
     private var languageValue: String {
         let native = nativeName(for: settings.resolvedLocale.language.languageCode?.identifier ?? "en")
         guard settings.appLocale == "system" else { return native }
-        return localizedFormat("settings_language_system_resolved", native)
+        return Format.localizedFormat("settings_language_system_resolved", locale: locale, native)
     }
 
     private var themeValue: String {
@@ -300,7 +305,7 @@ struct SettingsView: View {
         case "dark": return String(localized: "settings_theme_dark")
         case "system":
             let resolved = colorScheme == .dark ? String(localized: "settings_theme_dark") : String(localized: "settings_theme_light")
-            return localizedFormat("settings_theme_system_resolved", resolved)
+            return Format.localizedFormat("settings_theme_system_resolved", locale: locale, resolved)
         default: return String(localized: "settings_theme_system")
         }
     }
@@ -331,15 +336,6 @@ struct SettingsView: View {
         openURL(url)
     }
 
-    /// Same per-file pattern as `FavoritesView`/`SearchView`/etc.: resolves the `.lproj` bundle for
-    /// `\.locale` so `%1$@` substitutes correctly regardless of the simulator's system language.
-    /// Safe here because both keys this is called with (`settings_theme_system_resolved`,
-    /// `settings_language_system_resolved`) are fully translated in en/ar/nl -- unlike About's
-    /// English-only keys, which must NOT use this (see `AboutView.swift`'s own note).
-    private func localizedFormat(_ key: String, _ args: CVarArg...) -> String {
-        let format = Format.localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
-        return String(format: format, locale: locale, arguments: args)
-    }
 }
 
 #Preview {

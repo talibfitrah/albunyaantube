@@ -61,7 +61,10 @@ nonisolated enum AppConfig {
 
     static func fake(
         catalog: any CatalogClient = FakeCatalogClient(),
-        defaults: UserDefaults = UserDefaults(suiteName: "fitrahtube.fake")!
+        // `?? .standard`: `UserDefaults(suiteName:)` returns nil for a suite name equal to the
+        // bundle identifier or a reserved domain -- a trap in a default-argument position, far
+        // from any call site (gate A-M15). "fitrahtube.fake" is safe today; this keeps it latent.
+        defaults: UserDefaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard
     ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
         // defaults domain. Does NOT wipe the suite -- callers that write through the returned
@@ -71,12 +74,37 @@ nonisolated enum AppConfig {
         AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true))
     }
 
-    private static func makeModelContainer(inMemory: Bool) -> ModelContainer {
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: inMemory)
+    /// Gate A-I1. This runs eagerly on the launch path (`live()` is evaluated in `FitrahTubeApp`'s
+    /// `@State` initialiser), so its failure mode used to be a `preconditionFailure` -- a permanent
+    /// crash loop on a corrupt or unmigratable store, unrecoverable without delete-and-reinstall.
+    /// Recover by recreating instead: the store files are deleted and the container rebuilt once.
+    /// Losing local favorites is the accepted cost (phase 4's sync restores them from the server);
+    /// losing the whole app is not.
+    ///
+    /// `storeURL` exists so `AppContainerTests` can point the recovery path at a deliberately
+    /// corrupt file; production always takes the default location.
+    static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil) -> ModelContainer {
+        let schema = Schema(versionedSchema: FavoritesSchemaV1.self)
+        let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
+            ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
+        func build() throws -> ModelContainer {
+            try ModelContainer(for: schema, migrationPlan: FavoritesMigrationPlan.self, configurations: configuration)
+        }
         do {
-            return try ModelContainer(for: FavoriteVideo.self, configurations: configuration)
+            return try build()
         } catch {
-            preconditionFailure("Failed to create ModelContainer: \(error)")
+            if !inMemory {
+                for url in [configuration.url,
+                            configuration.url.appendingPathExtension("shm"),
+                            configuration.url.appendingPathExtension("wal")] {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                if let recovered = try? build() { return recovered }
+            }
+            // Last resort: an in-memory store keeps the app usable for this launch rather than
+            // trapping. If even that fails there is nothing left to fall back to.
+            return try! ModelContainer(for: schema,
+                                       configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
         }
     }
 
@@ -85,7 +113,7 @@ nonisolated enum AppConfig {
     /// wiped suite), instead of each read point independently evaluating `.fake()` -- which would
     /// give every SwiftUI preview its own container with no shared state between them.
     @MainActor static let sharedFake: AppContainer = {
-        let defaults = UserDefaults(suiteName: "fitrahtube.fake")!
+        let defaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard
         defaults.removePersistentDomain(forName: "fitrahtube.fake")
         return fake(defaults: defaults)
     }()

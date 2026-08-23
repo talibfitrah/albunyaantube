@@ -20,6 +20,10 @@ struct ContentListView: View {
     @State private var isLoadingMore = false
     @State private var paginationGuard = PaginationGuard()
     @State private var bannerMessage: BannerMessage?
+    /// Geometry *state*, not an event (gate B1-C1). `onContentFits` keeps this current; both it
+    /// and every completed load then re-run the six `PaginationGuard` checks, which is what
+    /// Android's post-`submitList` autofill callback does.
+    @State private var contentFits = false
 
     private static let topAnchor = "content-list-top"
 
@@ -39,7 +43,10 @@ struct ContentListView: View {
                     paginationGuard = PaginationGuard()
                     await viewModel?.refresh()
                 }
-                .onContentFits { fits in triggerAutoFill(contentFits: fits) }
+                .onContentFits { fits in
+                    contentFits = fits
+                    triggerAutoFill()
+                }
                 .onChange(of: router.scrollToTopSignal) { _, signal in
                     guard signal?.tab == tab else { return }
                     withAnimation { proxy.scrollTo(Self.topAnchor, anchor: .top) }
@@ -59,24 +66,34 @@ struct ContentListView: View {
             }
         }
         .transientBanner($bannerMessage)
-        .onChange(of: paginationErrorFlag) { _, isError in
-            guard isError else { return }
-            bannerMessage = BannerMessage(text: String(localized: "list_error_title"), actionTitle: String(localized: "retry")) {
-                Task { await viewModel?.retryPagination() }
+        // One event channel for both banners (gate B1-I1). `errorToken` is bumped on every
+        // failure, so a second consecutive failure re-fires this where the previous Bool-level
+        // `.onChange` pair silently stopped after the first. Which banner to show is read off the
+        // state the token was bumped for:
+        //  - pagination failure -> Retry resumes from the surviving cursor;
+        //  - terminal failure *with* prior content (fix round 1, finding #1;
+        //    `content-lists.md:256,278-280`) -> the list stays on screen (see `stateContent`'s
+        //    `.error` branch) and Retry re-runs a full `load()`, since a terminal failure leaves
+        //    no cursor to resume from. With no prior content the full-page `ErrorStateView`
+        //    carries its own retry and no banner is needed.
+        .onChange(of: viewModel?.errorToken) { _, _ in
+            guard let viewModel else { return }
+            let retry: () -> Void
+            if case .content(_, _, true, _) = viewModel.state {
+                retry = { Task { await viewModel.retryPagination() } }
+            } else if case .error = viewModel.state, !viewModel.lastItems.isEmpty {
+                retry = { Task { await viewModel.load() } }
+            } else {
+                return
             }
+            bannerMessage = BannerMessage(text: String(localized: "list_error_title"),
+                                          actionTitle: String(localized: "retry"), action: retry)
         }
-        // Fix round 1, finding #1 (`content-lists.md:256,278-280`): a terminal load/refresh
-        // failure with prior content stays on the list (see `stateContent`'s `.error` branch
-        // below) instead of the full-page `ErrorStateView` -- the banner is what actually tells
-        // the user something went wrong. Same false->true-transition pattern as the pagination
-        // banner above, Retry re-runs a full `load()` (not `retryPagination()` -- there's no
-        // cursor left to resume from a terminal failure).
-        .onChange(of: terminalErrorWithContentFlag) { _, isError in
-            guard isError else { return }
-            bannerMessage = BannerMessage(text: String(localized: "list_error_title"), actionTitle: String(localized: "retry")) {
-                Task { await viewModel?.load() }
-            }
-        }
+        // Every completed load re-arms autofill, so a filter change or a search whose first page
+        // also fits gets its second round (gate B1-C1 scenarios 2-3). Safe against a retry storm:
+        // a pagination failure leaves `paginationError` set, which `PaginationGuard`'s guard 3
+        // refuses on.
+        .onChange(of: viewModel?.state) { _, _ in triggerAutoFill() }
         .onChange(of: queryBinding.wrappedValue) { _, _ in paginationGuard = PaginationGuard() }
         // Fix round 1, finding #4: a category applied on the Categories/Subcategories screen
         // (Task 11) writes straight into `container.filters` and pops back here without ever
@@ -137,17 +154,24 @@ struct ContentListView: View {
 
     @ViewBuilder
     private var filterChipRow: some View {
-        if let categoryId = container.filters.state.categoryId, !categoryId.isEmpty {
+        if hasActiveFilter, let categoryId = container.filters.state.categoryId {
+            let categoryName = container.filters.state.categoryName ?? categoryId
             HStack(spacing: Spacing.xs) {
-                CategoryChip(text: localizedFormat("filtering_by_category", container.filters.state.categoryName ?? categoryId))
+                CategoryChip(text: Format.localizedFormat("filtering_by_category", locale: locale, categoryName))
                 Button(action: clearFilter) {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Color.brand)
                 }
+                .accessibilityLabel(String(localized: "clear_filters"))
             }
             .padding(.horizontal, Spacing.md(widthClass))
             .padding(.top, Spacing.sm)
             .accessibilityElement(children: .combine)
+            // Label = role, value = the data (gate B1-I7). `category_filter_active` alone
+            // ("Active category filter. Double tap to clear.") overwrote the visible
+            // "Category: %1$@" text, so a VoiceOver user could not tell *which* category was
+            // filtering the list -- the one thing this chip exists to say.
             .accessibilityLabel(String(localized: "category_filter_active"))
+            .accessibilityValue(categoryName)
         }
     }
 
@@ -159,7 +183,11 @@ struct ContentListView: View {
         container.filters.clearCategory()
     }
 
-    private var hasActiveFilter: Bool { container.filters.state.categoryId != nil }
+    /// One predicate for "a category filter is active" (gate B1-minor-2). The chip row used to
+    /// require a non-empty id while the empty state's Clear button only checked `!= nil`, so a
+    /// legacy empty-string value (`UserDefaultsFilterStore` normalizes empties on write but not on
+    /// read) offered "Clear filter" with no chip above it.
+    private var hasActiveFilter: Bool { !(container.filters.state.categoryId ?? "").isEmpty }
 
     // MARK: - State body (content-lists.md §4.5 visibility matrix)
 
@@ -196,13 +224,23 @@ struct ContentListView: View {
         }
     }
 
+    /// RULINGS #16: the skeleton mirrors the layout it stands in for. Channels/playlists used a
+    /// fixed single-column `SkeletonListView` at every width class while the real content is 3-4
+    /// columns on a tablet (gate B1-minor-17) -- which also made the skeleton *taller* than the
+    /// content it swapped to, and that height drop was the accidental `false -> true` transition
+    /// the old edge-triggered autofill depended on (gate B1-C1).
     @ViewBuilder
     private var skeletonView: some View {
         switch type {
         case .videos:
             SkeletonGrid(columns: videoColumns, rows: 3)
         case .channels, .playlists:
-            SkeletonListView()
+            let columns = GridRules.columns(GridRules.listColumns(widthClass), dynamicTypeSize: dynamicTypeSize)
+            if columns > 1 {
+                SkeletonGrid(columns: columns, rows: 3)
+            } else {
+                SkeletonListView()
+            }
         }
     }
 
@@ -242,7 +280,14 @@ struct ContentListView: View {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     rowView(item)
                         .onAppear {
-                            guard index == max(0, items.count - 5) else { return } // last visible >= count-5
+                            // `>=`, not `==` (gate B1-I2, `content-lists.md:210-213`). With `==`,
+                            // a load-more that fired at index count-5 and then failed was
+                            // unrecoverable: `items.count` is unchanged, so the threshold index is
+                            // still count-5 and that cell has already appeared -- scrolling on
+                            // through the remaining four rows did nothing, and after the banner
+                            // auto-dismissed the only way out was a pull-to-refresh that discarded
+                            // every loaded page. `hasMore`/`!isLoadingMore` below still stop a storm.
+                            guard index >= max(0, items.count - 5) else { return }
                             triggerScrollLoadMore(hasMore: hasMore)
                         }
                 }
@@ -267,16 +312,8 @@ struct ContentListView: View {
         case .playlists:
             PlaylistRow(item: item) { router.push(.playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount)) }
         case .videos:
-            VideoGridCell(item: item) { router.push(.player(playerArgs(for: item))) }
+            VideoGridCell(item: item) { router.push(.player(PlayerArgs(item: item))) }
         }
-    }
-
-    /// RULINGS #17: `channelName` prefers the video's real `channelTitle`, falling back to
-    /// `category` only when nil (matches `HomeViewModel.playerArgs`).
-    private func playerArgs(for item: ContentItem) -> PlayerArgs {
-        PlayerArgs(videoId: item.id, title: item.title, channelName: item.channelTitle ?? item.category,
-                   thumbnailURL: item.thumbnailURL, description: item.description,
-                   durationSeconds: item.durationSeconds, viewCount: item.viewCount)
     }
 
     // MARK: - Pagination triggers (content-lists.md §4.3: scroll threshold + guarded content-fits autofill)
@@ -286,7 +323,7 @@ struct ContentListView: View {
         Task { await runLoadMore() }
     }
 
-    private func triggerAutoFill(contentFits: Bool) {
+    private func triggerAutoFill() {
         guard !isLoadingMore, let viewModel, case .content(let items, let hasMore, let paginationError, _) = viewModel.state else { return }
         guard paginationGuard.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: paginationError,
                                               contentFits: contentFits, itemCount: items.count) else { return }
@@ -297,16 +334,6 @@ struct ContentListView: View {
         isLoadingMore = true
         await viewModel?.loadMore()
         isLoadingMore = false
-    }
-
-    private var paginationErrorFlag: Bool {
-        guard let viewModel, case .content(_, _, let paginationError, _) = viewModel.state else { return false }
-        return paginationError
-    }
-
-    private var terminalErrorWithContentFlag: Bool {
-        guard let viewModel, case .error = viewModel.state else { return false }
-        return !viewModel.lastItems.isEmpty
     }
 
     // MARK: - Per-type copy (content-lists.md §4.6, §A2 tab titles)
@@ -351,13 +378,6 @@ struct ContentListView: View {
         }
     }
 
-    /// Same technique as `Components.swift`'s private `localizedFormat` (that one isn't visible
-    /// here) -- resolves the `.lproj` bundle for the current `\.locale` so a `%1$@` xcstrings entry
-    /// substitutes correctly regardless of the simulator's system language.
-    private func localizedFormat(_ key: String, _ args: CVarArg...) -> String {
-        let format = Format.localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
-        return String(format: format, locale: locale, arguments: args)
-    }
 }
 
 #Preview {

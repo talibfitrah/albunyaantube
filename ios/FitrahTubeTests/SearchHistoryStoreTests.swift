@@ -83,4 +83,19 @@ struct SearchHistoryStoreTests {
         let reloaded = UserDefaultsSearchHistoryStore(defaults: defaults)
         #expect(reloaded.entries == ["tafsir", "quran"])
     }
+
+    /// Gate A-M14: a blank entry used to occupy one of the 10 slots as an invisible row, and the
+    /// exact-match dedupe treated `"quran"` and `"quran "` as two distinct entries.
+    @Test func blankQueriesAreRejectedAndWhitespaceIsTrimmed() {
+        let (store, defaults, suiteName) = makeStore()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        store.add("")
+        store.add("   ")
+        #expect(store.entries.isEmpty)
+
+        store.add("quran")
+        store.add("  quran ")
+        #expect(store.entries == ["quran"]) // collapsed, not two slots
+    }
 }

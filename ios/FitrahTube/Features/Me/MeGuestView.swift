@@ -11,13 +11,26 @@ struct MeGuestView: View {
 
     @State private var viewModel: FavoritesViewModel?
 
+    private static let topAnchor = "me-top"
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.lg(widthClass)) {
-                signInCard
-                favoritesSection
+        // Gate B1-minor-1: `Router`'s comment claimed this tab root "is a static guest card with
+        // nothing to scroll" and had it deliberately ignore the reselect signal -- but it is a
+        // `ScrollView` holding a sign-in card plus up to 5 favourite rows. `shell-home.md:66`:
+        // "Re-select at root -> animated scroll to top", same pair the other two roots use.
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg(widthClass)) {
+                    Color.clear.frame(height: 0).id(Self.topAnchor)
+                    signInCard
+                    favoritesSection
+                }
+                .padding(Spacing.md(widthClass))
             }
-            .padding(Spacing.md(widthClass))
+            .onChange(of: router.scrollToTopSignal) { _, signal in
+                guard signal?.tab == .me else { return }
+                withAnimation { proxy.scrollTo(Self.topAnchor, anchor: .top) }
+            }
         }
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(String(localized: "nav_me"))

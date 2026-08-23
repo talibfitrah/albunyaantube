@@ -52,4 +52,22 @@ struct WidthClassTests {
         // Landscape large iPad: smaller dimension 1032 still clears the 1000 large threshold.
         #expect(WidthClass(size: CGSize(width: 1376, height: 1032)) == .large)
     }
+
+    /// Gate A-C2. The type was always right; `RootView` fed it the wrong size. It measured the
+    /// safe-area-*inset* content, so on iPad Pro 13" (1032×1376 pt) landscape reported a 987 pt
+    /// smallest dimension -- 13 pt under the `.large` threshold -- and the bucket flipped on
+    /// rotation. `RootView` now measures the window (`Color.clear.ignoresSafeArea()` background),
+    /// so both orientations hand this initializer the same 1032 pt.
+    @Test func iPadPro13BucketsIdenticallyInBothOrientations() {
+        let window = (portrait: CGSize(width: 1032, height: 1376), landscape: CGSize(width: 1376, height: 1032))
+        #expect(WidthClass(size: window.portrait) == .large)
+        #expect(WidthClass(size: window.landscape) == .large)
+        #expect(GridRules.listColumns(WidthClass(size: window.portrait))
+                == GridRules.listColumns(WidthClass(size: window.landscape)))
+        #expect(Spacing.md(WidthClass(size: window.portrait)) == Spacing.md(WidthClass(size: window.landscape)))
+
+        // The size the old measurement handed in: 1032 − 24 pt status bar − 21 pt home indicator.
+        // Proof the 13 pt is what decided the bucket, i.e. that measuring the window is the fix.
+        #expect(WidthClass(size: CGSize(width: 1376, height: 1032 - 24 - 21)) == .regular)
+    }
 }

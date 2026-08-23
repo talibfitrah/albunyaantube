@@ -13,13 +13,20 @@ struct NavigationRailView: View {
     let onSelect: (Tab) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
+        // Scrollable (gate B1-minor-12): five icon+label stacks between two `Spacer`s clipped at
+        // `.accessibility4`/`.accessibility5` on an iPad in landscape, where the available height
+        // is smallest -- spec §14 requires Dynamic Type everywhere. `.defaultScrollAnchor(.center)`
+        // keeps the items centred (`app:menuGravity="center"`) whenever they do fit, and
+        // `.basedOnSize` suppresses the rubber-banding that would otherwise imply scrollable
+        // content on a rail that has none.
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Spacing.sm) {
                 ForEach(Tab.allCases, id: \.self, content: railItem)
             }
-            Spacer(minLength: 0)
+            .padding(.vertical, Spacing.sm)
         }
+        .defaultScrollAnchor(.center)
+        .scrollBounceBehavior(.basedOnSize)
         .frame(width: NavigationRailMetrics.width(widthClass))
         .frame(maxHeight: .infinity)
         .background(Color.background)

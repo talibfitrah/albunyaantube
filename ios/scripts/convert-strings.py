@@ -82,10 +82,27 @@ def unescape(s):  # R5
     s = s.replace("\\n", "\n").replace("\\t", "\t")
     return s
 
-SPECIFIER_RE = re.compile(r"%(\d+)\$\d*(@|lld|f)")  # \d* skips flags/width, e.g. %2$02lld
+# cso-F2 / A-M11: the signature regex must see the *whole* conversion set, not just the three
+# conversions this converter itself emits. It used to be r"%(\d+)\$\d*(@|lld|f)", so any other
+# conversion (%x, %p, %c, %u...) was invisible to arg_signature() and slid past R4's cross-locale
+# subset check entirely. Flags/width/precision are captured as their own group so R8 can refuse a
+# *numbered* precision specifier (%1$.1f), which the bare-path check below never sees.
+SPECIFIER_RE = re.compile(r"%(\d+)\$([-+#0]*[\d.]*)(@|lld|ld|d|f|s|x|X|o|u|c|p)")
+
+# A non-positional (bare) conversion of any kind. Deliberately does not treat a space as a flag, so
+# ordinary prose ("50% off", "100%") is not mistaken for a specifier; %% and %#@substitution@ are
+# excluded by the lookahead.
+BARE_SPECIFIER_RE = re.compile(r"%(?!\d+\$|%|#@)[-+#0]*[\d.]*[@a-zA-Z]")
+POSITIONAL_RE = re.compile(r"%\d+\$")
 
 def rewrite_specifiers(s):  # R3 + R4
     s = s.replace("%%", "\u0000PCT\u0000")
+    # R4 (cso-F2): mixing the two styles in one string is unrepresentable here -- the bare rewrite
+    # below numbers its own finds from 1, so `"Version %1$@ %s"` became `"Version %1$@ %1$@"`,
+    # whose signature is a *subset* of en's and therefore passed the cross-locale check while
+    # actually consuming one argument twice. Refuse rather than guess which numbering was meant.
+    if POSITIONAL_RE.search(s) and BARE_SPECIFIER_RE.search(s):
+        raise ValueError(f"mixed positional and non-positional specifiers: {s!r}")
     n = [0]
     def bare(m):
         n[0] += 1
@@ -100,13 +117,25 @@ def rewrite_specifiers(s):  # R3 + R4
     s = re.sub(r"%(\d+)\$s", r"%\1$@", s)
     s = re.sub(r"%(\d+)\$(\d*)d", r"%\1$\2lld", s)  # keeps flags/width, e.g. %2$02d -> %2$02lld
     s = s.replace("\u0000PCT\u0000", "%%")
-    if re.search(r"%(?!\d+\$|%)[sdf]", s):
-        raise ValueError(f"unrewritten specifier survived: {s!r}")
+    # cso-F2: the old survivor guard only looked for a leftover bare s/d/f, so a translation could
+    # append ` %@ %@ %@` to a one-argument key and pass this gate clean. At runtime
+    # `String(format:locale:arguments:)` then over-consumes the CVarArg list and dereferences
+    # whatever follows it as an `id` -- an arbitrary-pointer read surfaced into on-screen text, or
+    # a crash. With no iOS CI, this local gate is the only thing between a translation PR and the
+    # shipped binary.
+    survivor = BARE_SPECIFIER_RE.search(s)
+    if survivor:
+        raise ValueError(f"non-positional specifier survived: {survivor.group(0)!r} in {s!r}")
+    # A-M11: R8 above only fires on the bare path. A pre-numbered `%1$.1f` is untouched by both
+    # numbered rewrites and used to be invisible to the old SPECIFIER_RE (its `\d*` cannot match a
+    # `.`), so arg_signature() returned {} and the cross-locale check silently passed for that key.
+    if any("." in flags for _num, flags, _conv in SPECIFIER_RE.findall(s)):
+        raise ValueError(f"unsupported precision specifier: {s!r}")
     return s
 
 def arg_signature(s):
     """R4: ordered {argNum: conversion} used for the cross-locale subset check."""
-    return {int(n): conv for n, conv in SPECIFIER_RE.findall(s)}
+    return {int(num): conv for num, _flags, conv in SPECIFIER_RE.findall(s)}
 
 def check_arg_subset(key, en_sig, loc, loc_sig):
     # R4: a translation's argument list must be a subset of the source's (same argNum -> same
@@ -196,6 +225,10 @@ def main(check=False):
     # EXTRA_KEYS: authored here, so every locale is deliberate -- a plain string is identical
     # across all three on purpose; a dict carries real per-locale text. Nothing to fall back to.
     for key, value in EXTRA_KEYS.items():
+        # A-M9: assigning unconditionally meant that if Android ever shipped a key of the same
+        # name, its real translations would be silently replaced by these hand-authored ones.
+        if key in out["strings"]:
+            raise ValueError(f"{key}: EXTRA_KEYS collides with an Android key")
         locs = value if isinstance(value, dict) else {loc: value for loc in ("en", "ar", "nl")}
         out["strings"][key] = {
             "localizations": {loc: {"stringUnit": {"state": "translated", "value": v}} for loc, v in locs.items()}
@@ -235,11 +268,17 @@ def main(check=False):
     # bare %s arg as 1) and select their category from a synthetic arg 2 (the clamped selector int,
     # never rendered).
     for key in SUBSTITUTION_PLURALS:
+        # A-M10: `en_plurals[key]` used to be a bare subscript, so renaming or removing
+        # `video_views`/`live_watching_count` on Android killed the script with a traceback instead
+        # of taking the `refused` path the rest of this file is careful to use.
+        en_forms = en_plurals.get(key)
+        if en_forms is None:
+            refused.append(key); continue
         locs = {}
-        en_other_sig = arg_signature(en_plurals[key]["other"])
+        en_other_sig = arg_signature(en_forms["other"])
         for loc in ("en", "ar", "nl"):
             # R7 (amended), same all-or-nothing per-locale fallback as the plain plural loop above.
-            forms, state = locale_fallback(en_plurals[key], data[loc][1].get(key) or None)
+            forms, state = locale_fallback(en_forms, data[loc][1].get(key) or None)
             # R4: each category is checked against en's `other` (not its own-category en form --
             # these two keys emit a single shared substitution arg, so `other` is the one true
             # reference signature for every category in every locale, including en's own zero/two/
@@ -348,9 +387,47 @@ def check_locale_fallback_never_omits():
     assert locale_fallback(en_forms, None) == (en_forms, "needs_review")
     assert locale_fallback(en_forms, en_forms) == (en_forms, "translated")
 
+def check_non_positional_specifier_refused():
+    """cso-F2 self-check: a bare `%@`/`%x`/`%p` -- conversions this converter never emits and the
+    old survivor guard (which only looked for s/d/f) never saw -- must be refused, not passed
+    through invisibly to `String(format:)`. Ordinary prose containing a `%` must still convert."""
+    for hostile in ("Hi %@ %@", "%x %p", "Version %1$@ (%2$@) %@ %@ %@"):
+        try:
+            rewrite_specifiers(hostile)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"rewrite_specifiers({hostile!r}) should have raised")
+    assert rewrite_specifiers("50% off, 100% halal") == "50% off, 100% halal"
+
+def check_mixed_specifier_styles_refused():
+    """cso-F2 self-check: `"%1$@ %s"` used to rewrite to `"%1$@ %1$@"`, whose arg signature is a
+    subset of en's -- so R4 accepted a translation that consumes one argument twice."""
+    try:
+        rewrite_specifiers("Version %1$@ %s")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("mixed positional + bare specifiers should have raised")
+
+def check_numbered_precision_refused():
+    """A-M11 self-check: R8 refuses `%.1f` on the bare path; `%1$.1f` slipped past both numbered
+    rewrites and was invisible to the old SPECIFIER_RE, so its key's args went unchecked."""
+    try:
+        rewrite_specifiers("%1$.1f")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("rewrite_specifiers('%1$.1f') should have raised (R8/A-M11)")
+    # ...and a numbered *width* (no precision) still converts, e.g. %2$02lld.
+    assert rewrite_specifiers("%2$02d") == "%2$02lld", rewrite_specifiers("%2$02d")
+
 def verify(out):
     """R9's one runnable check: spot-assert the hazards the doc calls out by name."""
     check_bare_specifier_rewrite()
+    check_non_positional_specifier_refused()
+    check_mixed_specifier_styles_refused()
+    check_numbered_precision_refused()
     check_locale_fallback_never_omits()
     check_plural_fallback_uses_other()
     check_plural_union_catches_ar_only_group()

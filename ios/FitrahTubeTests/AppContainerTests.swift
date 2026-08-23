@@ -1,8 +1,28 @@
+import Foundation
+import SwiftData
 import Testing
 @testable import FitrahTube
 
 @Suite(.perTest)
 struct AppContainerTests {
+    /// Gate A-I1: a store SwiftData cannot open used to `preconditionFailure` on the launch path,
+    /// i.e. a permanent crash loop with no recovery short of delete-and-reinstall. It must now
+    /// delete the store and rebuild instead -- favorites are lost, the app is not.
+    @Test func corruptStoreIsRecreatedInsteadOfTrapping() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
+        try Data("this is not a SQLite database".utf8).write(to: url)
+        defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
+
+        let container = AppContainer.makeModelContainer(inMemory: false, storeURL: url)
+
+        // Usable, not merely non-nil: the recreated store must accept a write.
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: "v1", title: "T", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
+        try context.save()
+        #expect(try context.fetchCount(FetchDescriptor<FavoriteVideo>()) == 1)
+    }
+
     @Test func fakeContainerServesCannedCategories() async throws {
         let container = AppContainer.fake()
         let categories = try await container.catalog.categories()

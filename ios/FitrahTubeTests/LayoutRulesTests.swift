@@ -79,4 +79,19 @@ struct LayoutRulesTests {
         #expect(GridRules.carouselCardWidth(container: 390, margin: 16, gap: 12, visible: 0) == 0)
         #expect(GridRules.carouselCardWidth(container: 390, margin: 16, gap: 12, visible: -1) == 0)
     }
+
+    /// Gate A-M5: a zero-size container (first layout pass, or mid-transition) made this negative
+    /// -- (0 − 32 − 24)/3 × 0.98 = −18.3 -- and SwiftUI treats a negative frame dimension as
+    /// undefined.
+    @Test func carouselCardWidthNeverGoesNegative() {
+        #expect(GridRules.carouselCardWidth(container: 0, margin: 16, gap: 12, visible: 3) == 0)
+    }
+
+    /// Gate B2-6: `cardGap` was the only pure function in `GridRules` with no test, in an
+    /// otherwise exhaustive file. `home_card_spacing`, 12/16/20 pt by bucket.
+    @Test func cardGapPicksByWidthClass() {
+        #expect(GridRules.cardGap(.compact) == 12)
+        #expect(GridRules.cardGap(.regular) == 16)
+        #expect(GridRules.cardGap(.large) == 20)
+    }
 }
