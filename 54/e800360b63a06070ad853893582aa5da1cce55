@@ -1,0 +1,38 @@
+ios/Config/Local.xcconfig.example
+  s_18197a18aae8f1::t_6d48610d868e10 1-3
+ios/FitrahTube/DesignSystem/Tokens.swift
+  s_18197a18aae8f1::t_c8966ce89a10bc 128-132
+.gitignore
+  s_18197a18aae8f1::t_6a4da075629cb3 210
+ios/Config/Debug.xcconfig
+  s_18197a18aae8f1::t_8830973d3fe55d 4
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_18197a18aae8f1::t_162e9ddf0ab9d5 19-20,23-27
+ios/scripts/test.sh
+  s_18197a18aae8f1::t_b1a1af649c220d 13-18
+  s_18197a18aae8f1::t_1fe7b380bf5b3d 44-45
+ios/Config/Release.xcconfig
+  s_18197a18aae8f1::t_3399298d96679e 3
+ios/FitrahTube/DesignSystem/StateViews.swift
+  s_18197a18aae8f1::t_24e6c6eb03c459 15,31,33,41,44-49,60,67,74,78-80,83
+  s_18197a18aae8f1::t_d97bf68f9ac396 95-107,111-113,117,128-129
+ios/FitrahTubeTests/StateButtonTests.swift
+  s_18197a18aae8f1::t_e29d337067adc9 43-46,65-68,73
+  s_18197a18aae8f1::t_f0cb19be0e2afe 8-10,13-15,18-42,48,53,59-61,63-64,69-72,76-88,92-94,103-106,113-116,138,140,143-145,148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "54e800360b63a06070ad853893582aa5da1cce55",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
