@@ -1,0 +1,39 @@
+.gitignore
+  s_18197a18aae8f1::t_4d114c44deba7a 197-207
+ios/Config/Debug.xcconfig
+  s_18197a18aae8f1::t_f8d5d2d7901ede 1-3
+ios/Config/Release.xcconfig
+  s_18197a18aae8f1::t_f8d5d2d7901ede 1-2
+ios/Packages/FitrahAPI/Sources/FitrahAPI/FitrahAPI.swift
+  s_18197a18aae8f1::t_09d05f999d45b5 1-2
+ios/FitrahTubeTests/SmokeTests.swift
+  s_18197a18aae8f1::t_812c47a558e30e 1
+  s_18197a18aae8f1::t_09d05f999d45b5 2-9
+ios/FitrahTube/App/FitrahTubeApp.swift
+  s_18197a18aae8f1::t_09d05f999d45b5 1-10
+ios/Packages/FitrahAPI/Package.swift
+  s_18197a18aae8f1::t_09d05f999d45b5 1-12
+ios/project.yml
+  s_18197a18aae8f1::t_41027f2808c30a 26
+  s_18197a18aae8f1::t_c7143014312865 1-25,27-102
+ios/FitrahTube/App/RootView.swift
+  s_18197a18aae8f1::t_09d05f999d45b5 1-10
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/PlaceholderTests.swift
+  s_18197a18aae8f1::t_09d05f999d45b5 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5a5f111b18025063ffb064dd907653178dec8480",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
