@@ -51,20 +51,25 @@ import Testing
     }
 
     @Test func successSevenDaysAfterLastTripResetsEscalation() async {
+        // Proves recordSuccess() itself resets tripCount -- reads the persisted
+        // record directly rather than inferring it from a later trip, since a
+        // later trip >24h after the prior one self-resets independently of
+        // recordSuccess() (tripWindow 24h < cleanResetWindow 7d would otherwise
+        // make this test pass even with recordSuccess() as a no-op).
         let clock = ManualClock()
         let store = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: InMemoryKeyValueStore())
 
-        await store.recordBotCheck() // 1st -> 1h, trip count 1
-        clock.advanceWall(by: .seconds(60))
-        await store.recordBotCheck() // 2nd -> 4h, trip count 2
-
+        await store.recordBotCheck() // trip count 1
         clock.advanceWall(by: .seconds(7 * 24 * 3600))
         await store.recordSuccess() // 7 clean days -> reset trip count to 0
 
-        await store.recordBotCheck() // should be back to 1st -> 1h
-        let remaining = await store.cooldownRemaining(now: clock.wallNow)
-        #expect(remaining != nil)
-        #expect(remaining! <= .seconds(3600))
-        #expect(remaining! >= .seconds(3600 - 5))
+        #expect(await store.loadCooldown().tripCount == 0)
+    }
+
+    @Test func cooldownRemainingIsNilWhenNeverTripped() async {
+        let clock = ManualClock()
+        let store = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: InMemoryKeyValueStore())
+
+        #expect(await store.cooldownRemaining(now: clock.wallNow) == nil)
     }
 }

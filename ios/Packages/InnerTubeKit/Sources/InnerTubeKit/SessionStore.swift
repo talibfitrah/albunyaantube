@@ -17,7 +17,7 @@ public actor SessionStore {
     private static let tripWindow: TimeInterval = 24 * 3600
     private static let cleanResetWindow: TimeInterval = 7 * 24 * 3600
 
-    private struct CooldownRecord: Codable, Sendable {
+    struct CooldownRecord: Codable, Sendable {
         var until: Date?
         var tripCount: Int = 0
         var lastTrip: Date?
@@ -112,7 +112,7 @@ public actor SessionStore {
         Self.visitorDataKeyPrefix + familyKey(family)
     }
 
-    private func loadCooldown() -> CooldownRecord {
+    func loadCooldown() -> CooldownRecord {
         guard let data = keyValueStore.get(Self.cooldownKey),
             let record = try? JSONDecoder().decode(CooldownRecord.self, from: data)
         else {
