@@ -18,7 +18,7 @@ has no equivalent, or where the spec already decided. Each line: ruling — why 
 11. Shorts loading state renders the 9:16 skeleton grid (fixes defect 1) — cost: one skeleton variant.
 
 ## Extraction (Q12–Q21)
-12. Pure-Swift **InnerTubeKit** package: innertube player requests with the client table Android proved (IOS primary, ANDROID muxed-360p fallback, itag-18 last resort), producing `ResolvedStreams` per extraction.md §4 — the dub path proves from-scratch innertube is viable; no Java dependency exists for iOS — cost: the biggest Phase 2 risk; de-risked by ruling 18's day-1 spike.
+12. Pure-Swift **InnerTubeKit** package per spec §9: innertube `player` requests with **VISIONOS** as the primary client (spec §9 `SessionStore`; confirmed by the 2026-08 live probes — VISIONOS streams without pot, IOS 403s ~60 s), ANDROID for itag 18, WEB for `browse`; producing `ResolvedStreams` per extraction.md §4 — cost: the biggest Phase 2 risk; de-risked by ruling 18's day-1 spike.
 13. Dub-audio (server-pot MWEB pipeline, `/api/v1/dub-potoken`, WKWebView nsig) **deferred to Phase 3**; Phase 2 ships the audio-track picker only for languages already present in resolved streams, hidden when there is one — cost: dub users wait one phase; the UI surface is ready.
 14. Classify `playabilityStatus` during extraction: age-restricted / geo-blocked / private / removed are terminal states with distinct copy, no retries (fixes defect 8) — cost: none.
 15. Availability gate: identical HEAD endpoints, 404-fail-open / 410-hard-block, fail-open on transport errors — backend curation policy, parity — cost: none.
@@ -38,7 +38,7 @@ has no equivalent, or where the spec already decided. Each line: ruling — why 
 27. Subscribe (30-cap) and save-playlist ship in Phase 2 working against local stores for guests, exactly as Android; Phase 4 syncs them — cost: local stores now, sync mapping later.
 28. All download affordances hidden until Phase 3 (dead buttons are worse than absent ones) — cost: none.
 29. AirPlay via stock AVKit transport accepted in Phase 2 (suppressing it fights the platform; D3's Phase 3 item is the *complete* AirPlay story) — cost: none.
-30. ShareMetadataPublisher omitted until Phase 4 (cannot succeed without auth) — cost: small port later.
+30. ShareMetadataPublisher omitted until Phase 4 (cannot succeed without auth; shipping dormant code violates YAGNI). This amends the spec §15 phase-2 row ("share + metadata publish") — publish moves to Phase 4; share itself stays Phase 2 — cost: small port later.
 31. Me tab stays the Phase 1 guest card (favorites + sign-in) through P2/P3 — cost: none.
 
 ## Player (Q32–Q45)
@@ -72,7 +72,7 @@ has no equivalent, or where the spec already decided. Each line: ruling — why 
 57. Tab bar stays visible on the shorts screen on iPhone (parity); status bar hidden — cost: cosmetic.
 
 ## Remote config / Safe Mode / updates (Q58–Q64)
-58. Safe Mode: the Phase 1 toggle stays; **no new wiring in Phase 2** — the entire catalog is admin-curated and no un-curated surface exists to gate (Android's switch gates nothing for the same reason, defect 34). Documented as reserved; it gains teeth the moment any non-curated surface lands — cost: none.
+58. Safe Mode gains its first real effect in Phase 2, as the spec already decides (spec §10 Up Next: "auto-advance on end **unless Safe Mode**"): Safe Mode ON disables player auto-advance. Nothing else is gated (the catalog is admin-curated; Android's switch gates nothing — defect 34) — cost: none.
 59. `releases-meta.json` branch question is Android-only (D3 excludes the update system from iOS) — cost: none.
 60. No update rows in iOS Settings at all (App Store owns updates; Phase 1 already shipped without them) — cost: none.
 61. Splash invariant re-derived: RemoteConfig fetch rides the existing `withCappedWork` cap (2750 ms + 500 ms grace, 3250 ms max) — same shape as Android's probe budget, iOS constants — cost: none.
