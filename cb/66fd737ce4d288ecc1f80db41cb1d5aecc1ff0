@@ -1,0 +1,21 @@
+ios/FitrahTubeTests/FormattingTests.swift
+  s_18197a18aae8f1::t_22248c575740b9 22-26
+  s_18197a18aae8f1::t_529d80c00b0067 50-64
+  s_18197a18aae8f1::t_40bd385a38a330 77-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cb66fd737ce4d288ecc1f80db41cb1d5aecc1ff0",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
