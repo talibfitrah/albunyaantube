@@ -697,3 +697,11 @@ phones out entirely (Phase 1 §4.3). Unify on one model for iOS, or keep both ma
 
 **Q11 — Shorts skeleton.** Fix the blank loading state on iOS (render the 9:16 skeleton grid
 that `skeleton_channel_short.xml` intends), or mirror the blank?
+
+---
+
+## Addendum (2026-08-24, from InnerTubeKit Task 11 live capture)
+
+**The renderer shapes in this brief are stale.** A live WEB `browse` capture on 2026-08-24 showed YouTube now returns items as **`lockupViewModel`**, not `richItemRenderer`/`playlistVideoRenderer`/`videoRenderer`. Two variants observed: playlist-style listings carry a per-item channel byline; channel-tab grid listings omit it (channel implicit — the client backfills `channelId`). The **Shorts** and **Playlists** channel tabs use two further, unrelated `lockupViewModel` shapes that `InnerTubeKit.BrowseClient` does **not** yet model — `channelTab(.shorts/.playlists)` returns an empty page (ponytail-marked) rather than mis-parsing.
+
+**Plan C (channel/playlist detail) MUST:** model the Shorts and Playlists `lockupViewModel` variants before those tabs can render, and treat the old renderer names in the body above as historical. Live fixtures for the modelled shapes live at `ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-*.json`.
