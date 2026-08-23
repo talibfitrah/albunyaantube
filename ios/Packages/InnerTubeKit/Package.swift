@@ -9,7 +9,7 @@ let package = Package(
         .library(name: "InnerTubeKit", type: .dynamic, targets: ["InnerTubeKit"]),
     ],
     targets: [
-        .target(name: "InnerTubeKit"),
+        .target(name: "InnerTubeKit", resources: [.copy("Resources")]),
         .testTarget(
             name: "InnerTubeKitTests",
             dependencies: ["InnerTubeKit"],

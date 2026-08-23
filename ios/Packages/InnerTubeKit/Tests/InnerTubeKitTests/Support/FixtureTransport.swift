@@ -51,3 +51,24 @@ final class ManualClock: MonotonicClock, @unchecked Sendable {
         elapsed += amount
     }
 }
+
+/// Test-only in-memory KeyValueStore (the app uses a UserDefaults-backed one).
+final class InMemoryKeyValueStore: KeyValueStore, @unchecked Sendable {
+    // Sendable: all mutable state is guarded by `lock`.
+    private let lock = NSLock()
+    private var storage: [String: Data] = [:]
+
+    init() {}
+
+    func get(_ key: String) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage[key]
+    }
+
+    func set(_ key: String, _ value: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage[key] = value
+    }
+}
