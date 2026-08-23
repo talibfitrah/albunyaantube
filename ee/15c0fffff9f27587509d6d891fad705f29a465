@@ -1,0 +1,54 @@
+docs/superpowers/plans/2026-08-23-ios-phase2-research/share-report-links.md
+  s_18197a18aae8f1::t_50aab695b868d8 1-485
+docs/superpowers/plans/2026-08-23-ios-phase2-research/playlist-detail-shorts.md
+  s_18197a18aae8f1::t_77e745de99dbc9 1-619,634-690
+  s_18197a18aae8f1::t_3bb3b068ba3611 620-633
+docs/superpowers/plans/2026-08-23-ios-phase2-research/phase2-inventory.md
+  s_18197a18aae8f1::t_88d4ef1b827d9c 200
+  s_18197a18aae8f1::t_66ea0a17b01e16 1-97,99-199,201-358
+  s_18197a18aae8f1::t_0339c4049010b0 98
+docs/superpowers/plans/2026-08-23-ios-phase2-research/extraction.md
+  s_18197a18aae8f1::t_07d3fc4303417a 1-901
+docs/superpowers/plans/2026-08-23-ios-phase2-research/player.md
+  s_18197a18aae8f1::t_ffbcf5189580a8 1-405,411-509,513-712
+  s_18197a18aae8f1::t_03fffa771b3dd2 713-812
+  s_18197a18aae8f1::t_0e3374361f3972 406-410
+  s_18197a18aae8f1::t_41f5bd5736a399 510-512
+docs/superpowers/plans/2026-08-23-ios-phase2-research/remote-config-safemode.md
+  s_18197a18aae8f1::t_91531b2c4eb109 387-389
+  s_18197a18aae8f1::t_0ebf127acd9940 1-11,43-51,56,61,64-179,183-241,245-275,279-379,382-386,390-460,481-485,494-499,506-529
+  s_18197a18aae8f1::t_499d90f2483caa 12-42
+  s_18197a18aae8f1::t_69aa50c1e96cd1 180-182
+  s_18197a18aae8f1::t_feae015f550df3 276-278
+  s_18197a18aae8f1::t_3fba5b674e16e5 486-493
+  s_18197a18aae8f1::t_541ea23a4f4d31 380-381
+  s_18197a18aae8f1::t_83c04d19fcf4d8 52-55,57-60,62-63
+  s_18197a18aae8f1::t_ef760dffa4d60d 461-480
+  s_18197a18aae8f1::t_dd237c87998801 500-505
+  s_18197a18aae8f1::t_9baa6c5f61b0bc 242-244
+docs/superpowers/plans/2026-08-23-ios-phase2-research/AUDIT.md
+  s_18197a18aae8f1::t_3929b38c8a9461 1-213
+docs/superpowers/plans/2026-08-23-ios-phase2-research/channel-detail.md
+  s_18197a18aae8f1::t_4c49469f7eff88 1-88,90-699
+  s_18197a18aae8f1::t_a425191da62add 89
+docs/superpowers/plans/2026-08-23-ios-phase2-research/RULINGS.md
+  s_18197a18aae8f1::t_cbc9379375b5a4 1-93
+docs/superpowers/plans/2026-08-23-ios-phase2-research/INDEX.md
+  s_18197a18aae8f1::t_d4beb9a5a78992 1-491
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ee15c0fffff9f27587509d6d891fad705f29a465",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
