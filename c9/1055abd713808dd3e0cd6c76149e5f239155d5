@@ -1,0 +1,47 @@
+ios/FitrahTube/App/DeepLinkParser.swift
+  s_18197a18aae8f1::t_80aa9c345acec3 22
+ios/FitrahTube/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json
+  s_18197a18aae8f1::t_636568a6791aed 1-14
+ios/FitrahTube/Resources/Assets.xcassets/logo.imageset/Contents.json
+  s_18197a18aae8f1::t_240ebb8e97c553 1-13
+ios/FitrahTube/Persistence/SettingsStore.swift
+  s_18197a18aae8f1::t_8b06e40a7b8728 86-89
+  s_18197a18aae8f1::t_99c3f541c3de6c 84-85,90-93
+ios/FitrahTubeTests/SplashTimelineTests.swift
+  s_18197a18aae8f1::t_8733033a38d870 1-60
+ios/FitrahTubeTests/DeepLinkParserTests.swift
+  s_18197a18aae8f1::t_958de2885c95df 74-80
+ios/project.yml
+  s_18197a18aae8f1::t_498f972a17aa3e 53
+ios/FitrahTube/Features/Splash/SplashView.swift
+  s_18197a18aae8f1::t_6fefd2ae753e98 1-152
+ios/FitrahTube/App/RootView.swift
+  s_18197a18aae8f1::t_f9a19a88483a5e 42-47
+  s_18197a18aae8f1::t_20db9cce9ddb7f 3-5,9
+ios/FitrahTube/Features/Shell/MainShellView.swift
+  s_18197a18aae8f1::t_8504bec55ae8f2 46
+ios/FitrahTubeTests/OnboardingTests.swift
+  s_18197a18aae8f1::t_17a41b52236e49 1-49
+ios/FitrahTube/Resources/Assets.xcassets/Contents.json
+  s_18197a18aae8f1::t_f5bd24889fb1cd 1-6
+ios/FitrahTube/Features/Onboarding/OnboardingView.swift
+  s_18197a18aae8f1::t_10a4a5fac9d396 1-36,38-39,54-141,143-174
+  s_18197a18aae8f1::t_20f124f8829b51 37,40-53
+  s_18197a18aae8f1::t_513ec42188c537 142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c91055abd713808dd3e0cd6c76149e5f239155d5",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
