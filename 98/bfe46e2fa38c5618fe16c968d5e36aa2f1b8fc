@@ -1,0 +1,21 @@
+ios/FitrahTube/DesignSystem/StateViews.swift
+  s_18197a18aae8f1::t_115fbe27f8eb0b 68-74
+ios/FitrahTubeTests/StateButtonTests.swift
+  s_18197a18aae8f1::t_7fea6c742e8b18 1-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "98bfe46e2fa38c5618fe16c968d5e36aa2f1b8fc",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
