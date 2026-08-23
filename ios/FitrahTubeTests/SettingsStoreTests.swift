@@ -93,4 +93,23 @@ struct SettingsStoreTests {
         store.theme = "dark"
         #expect(store.colorScheme == .dark)
     }
+
+    // Priority-order walk: first `preferredLanguages` entry whose language code is in {en,ar,nl}
+    // wins, region ignored; else "en". Injected directly so this doesn't depend on the running
+    // simulator's actual system languages.
+    @Test func systemLocaleCodePicksFirstSupportedLanguageIgnoringRegion() {
+        #expect(UserDefaultsSettingsStore.systemLocaleCode(preferredLanguages: ["ar-MA", "en-US"]) == "ar")
+    }
+
+    @Test func systemLocaleCodeSkipsUnsupportedEarlierEntries() {
+        #expect(UserDefaultsSettingsStore.systemLocaleCode(preferredLanguages: ["en-GB", "ar"]) == "en")
+    }
+
+    @Test func systemLocaleCodeFallsBackToEnglishWhenNoneSupported() {
+        #expect(UserDefaultsSettingsStore.systemLocaleCode(preferredLanguages: ["fr-FR", "de-DE"]) == "en")
+    }
+
+    @Test func systemLocaleCodeResolvesDutch() {
+        #expect(UserDefaultsSettingsStore.systemLocaleCode(preferredLanguages: ["nl-BE"]) == "nl")
+    }
 }

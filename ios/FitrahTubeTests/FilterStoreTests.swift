@@ -41,6 +41,17 @@ struct FilterStoreTests {
         #expect(defaults.object(forKey: "filter_category_name") == nil)
     }
 
+    @Test func setCategoryWithNilIdAlsoClearsAnyGivenName() {
+        let (store, defaults, suiteName) = makeStore()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        store.setCategory(id: nil, name: "X")
+
+        #expect(store.state.categoryId == nil)
+        #expect(store.state.categoryName == nil)
+        #expect(defaults.object(forKey: "filter_category_name") == nil)
+    }
+
     @Test func clearCategoryRemovesBothKeys() {
         let (store, defaults, suiteName) = makeStore()
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -66,7 +77,7 @@ struct FilterStoreTests {
     }
 
     @Test func lengthDateSortRoundTripByRawValueAndSurviveClearCategory() {
-        let (store, defaults, suiteName) = makeStore()
+        let (_, defaults, suiteName) = makeStore()
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         defaults.set(LengthFilter.long.rawValue, forKey: "filter_length")

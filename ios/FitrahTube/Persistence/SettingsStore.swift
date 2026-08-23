@@ -83,10 +83,12 @@ import SwiftUI
         }
     }
 
-    private static let supportedLanguages: Set<String> = ["en", "ar", "nl"]
+    private nonisolated static let supportedLanguages: Set<String> = ["en", "ar", "nl"]
 
-    private static func systemLocaleCode() -> String {
-        for preference in Locale.preferredLanguages {
+    /// `preferredLanguages` is injectable so the priority-order walk (first match wins, region
+    /// ignored) is testable without depending on the running simulator's actual system languages.
+    nonisolated static func systemLocaleCode(preferredLanguages: [String] = Locale.preferredLanguages) -> String {
+        for preference in preferredLanguages {
             if let code = Locale(identifier: preference).language.languageCode?.identifier,
                supportedLanguages.contains(code) {
                 return code

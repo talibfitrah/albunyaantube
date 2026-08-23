@@ -37,6 +37,7 @@ import Observation
     }
 
     func setCategory(id: String?, name: String?) {
+        let name = id == nil ? nil : name
         state.categoryId = id
         state.categoryName = name
         write(id, forKey: Keys.categoryId)
