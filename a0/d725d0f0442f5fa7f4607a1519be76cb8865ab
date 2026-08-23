@@ -1,0 +1,27 @@
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/Clock.swift
+  s_18197a18aae8f1::t_52ab2ee9f31c9f 1-29
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/HTTPTransportTests.swift
+  s_18197a18aae8f1::t_7b2dc8923fe8aa 1-21
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/HTTPTransport.swift
+  s_18197a18aae8f1::t_5aecec480fb21d 1-31
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Support/FixtureTransport.swift
+  s_18197a18aae8f1::t_968bcccb81e963 1-53
+ios/Packages/InnerTubeKit/Package.swift
+  s_18197a18aae8f1::t_7aeefb17afe157 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a0d725d0f0442f5fa7f4607a1519be76cb8865ab",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
