@@ -68,6 +68,7 @@ import Observation
             let lhsOrder = lhs.displayOrder ?? .max
             let rhsOrder = rhs.displayOrder ?? .max
             if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+            // ponytail: sort tiebreak uses Locale.current; pass a locale into topLevel()/children(of:) if the app locale must win
             return Format.categoryDisplayName(lhs, locale: .current) < Format.categoryDisplayName(rhs, locale: .current)
         }
     }

@@ -7,6 +7,15 @@ struct RootView: View {
     @State private var widthClass: WidthClass = .compact
 
     var body: some View {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-fitrah-gallery") {
+            return AnyView(ComponentsGallery().environment(\.widthClass, widthClass))
+        }
+        #endif
+        return AnyView(mainBody)
+    }
+
+    private var mainBody: some View {
         VStack(spacing: 16) {
             Text("FitrahTube").font(.largeTitle.bold())
             Text(status).font(.body)

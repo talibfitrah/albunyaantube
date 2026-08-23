@@ -60,6 +60,21 @@ struct CategoriesCacheTests {
         #expect(cache.all.count == 4)
     }
 
+    @Test func concurrentLoadIfNeededFetchesOnlyOnce() async {
+        // Two callers racing loadIfNeeded() before the first fetch resolves (e.g. two views
+        // appearing at once) must not double-fetch: `isLoading` is set before the first `await`
+        // inside fetch(), so the second Task's guard check already sees it true.
+        let counter = CallCounter()
+        let cache = LiveCategoriesCache(client: CountingCatalogClient(categoriesResult: sample(), counter: counter))
+
+        async let first: Void = Task { await cache.loadIfNeeded() }.value
+        async let second: Void = Task { await cache.loadIfNeeded() }.value
+        _ = await (first, second)
+
+        #expect(await counter.count == 1)
+        #expect(cache.all.count == 4)
+    }
+
     @Test func reloadAlwaysFetches() async {
         let counter = CallCounter()
         let cache = LiveCategoriesCache(client: CountingCatalogClient(categoriesResult: sample(), counter: counter))
