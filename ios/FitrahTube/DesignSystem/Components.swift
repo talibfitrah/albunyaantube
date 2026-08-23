@@ -802,7 +802,11 @@ struct TransientBanner: ViewModifier {
                 // "Retry" a user who has decided not to retry cannot decline. A real control, plus
                 // the rotor action below so it is reachable without hunting for the glyph.
                 Button { self.message = nil } label: {
-                    Image(systemName: "xmark").foregroundStyle(.white)
+                    Image(systemName: "xmark")
+                        .foregroundStyle(.white)
+                        // A bare glyph is ~13 pt of tappable area; HIG's floor is 44 (wave-3 D6).
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel(String(localized: "banner_dismiss"))
             }

@@ -264,8 +264,11 @@ def main(check=False):
         locs = {}
         for loc in ("en", "ar", "nl"):
             # R7 (amended): a locale with no forms of its own falls back to en's whole forms dict,
-            # marked needs_review -- omitting it would render the raw key at runtime.
-            f, state = locale_fallback(forms, data[loc][1].get(key) or None)
+            # marked needs_review -- omitting it would render the raw key at runtime. en is the
+            # *source*, never a fallback of itself: running it through `locale_fallback` marked 22
+            # English source units `needs_review` under W10's equal-to-en rule (gate wave-3 D3).
+            # The plain-string loop above has always hardcoded `translated` for en.
+            f, state = (forms, "translated") if loc == "en" else locale_fallback(forms, data[loc][1].get(key) or None)
             for cat, val in f.items():
                 # H5: when en has no `cat` form (e.g. ar `few` with no en `few`), compare against
                 # en's `other` -- never against the translation's own value, which would trivially
@@ -291,8 +294,9 @@ def main(check=False):
         locs = {}
         en_other_sig = arg_signature(en_forms["other"])
         for loc in ("en", "ar", "nl"):
-            # R7 (amended), same all-or-nothing per-locale fallback as the plain plural loop above.
-            forms, state = locale_fallback(en_forms, data[loc][1].get(key) or None)
+            # R7 (amended), same all-or-nothing per-locale fallback as the plain plural loop above,
+            # and the same en-is-the-source exemption (gate wave-3 D3).
+            forms, state = (en_forms, "translated") if loc == "en" else locale_fallback(en_forms, data[loc][1].get(key) or None)
             # R4: each category is checked against en's `other` (not its own-category en form --
             # these two keys emit a single shared substitution arg, so `other` is the one true
             # reference signature for every category in every locale, including en's own zero/two/
@@ -393,8 +397,10 @@ def check_locale_fallback_never_omits():
     """R7 self-check (amended rule): a locale absent from Android must still emit -- en's value
     marked `needs_review`, never nothing. Omitting it keeps the key out of that locale's compiled
     `Localizable.strings` and Foundation does not fall back per key, so the raw key renders. A
-    locale value equal to en's is a loanword translation, not a gap. Plural forms take the same
-    all-or-nothing path (the whole per-locale forms dict falls back at once)."""
+    locale value equal to en's is flagged too (W10): nothing mechanical can tell a loanword from
+    untranslated prose, so the state stays honest and a human clears it. Plural forms take the same
+    all-or-nothing path (the whole per-locale forms dict falls back at once); en itself never takes
+    this path at all -- it is the source language (wave-3 D3)."""
     assert locale_fallback("Downloads", None) == ("Downloads", "needs_review")
     # W10: equal-to-en is indistinguishable from untranslated, so it is flagged, not blessed.
     assert locale_fallback("Downloads", "Downloads") == ("Downloads", "needs_review")

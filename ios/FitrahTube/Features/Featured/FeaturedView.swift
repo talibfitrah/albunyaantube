@@ -186,9 +186,13 @@ struct FeaturedView: View {
     private func triggerAutoFill() {
         guard !isLoadingMore, let viewModel, case .content(_, let hasMore) = viewModel.state else { return }
         // Attempt committed only if the fetch actually started -- see `ContentListView` (W2).
+        // Rejections that reset the guard are committed too -- see `ContentListView` (wave-3 D2).
         var attempt = paginationGuard
         guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: viewModel.lastLoadFailed,
-                                      contentFits: contentFits, itemCount: currentItemCount) else { return }
+                                      contentFits: contentFits, itemCount: currentItemCount) else {
+            paginationGuard = attempt
+            return
+        }
         isLoadingMore = true
         Task { if await runLoadMore() { paginationGuard = attempt } }
     }

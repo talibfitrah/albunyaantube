@@ -406,4 +406,23 @@ struct ContentListViewModelTests {
 
         #expect(await client.calls[1].query == "ab")
     }
+
+    /// Gate wave-3 D1: `loadMore()` used to return `true` unconditionally once its task completed,
+    /// including when a concurrent full load had cancelled it. The view takes that as "the fetch
+    /// ran" and commits its spent `PaginationGuard` attempt -- over the guard the pull-to-refresh
+    /// had just reset -- after which guard 5's progress invariant refuses every later autofill.
+    @Test func aLoadMoreCancelledByAFullLoadReportsThatItDidNotRun() async {
+        let gate = Gate()
+        let page = CursorPage(items: items(count: 20, prefix: "a"), nextCursor: "1")
+        let client = MultiGateCatalogClient(page: page, gates: [2: gate])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+
+        await vm.load()                             // call 1
+        let loadMore = Task { await vm.loadMore() } // call 2 -- suspends on the gate
+        await gate.waitUntilBlocked()
+        await vm.refresh()                          // call 3 -- cancels it, bumps the generation
+        await gate.release()
+
+        #expect(await loadMore.value == false)
+    }
 }

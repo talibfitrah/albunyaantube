@@ -21,14 +21,19 @@ import Foundation
         didSet {
             guard query != oldValue else { return }
             searchTask?.cancel()
-            guard query.count >= 2 else {
+            // Trimmed, matching `ContentListViewModel.queryParam` (gate wave-3 D5): `"  "` used to
+            // clear the ≥2-char bar and go out as a two-space search, and `" ab "` searched for the
+            // padded string -- while `SearchHistoryStore.add` trimmed, so history and the request
+            // disagreed about what was searched.
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.count >= 2 else {
                 state = .zero(history: history.entries) // RULINGS #23: immediate, no stale state
                 return
             }
             let task = Task { [sleep] in
                 do { try await sleep(.milliseconds(500)) } catch { return }
                 guard !Task.isCancelled else { return }
-                await self.performSearch(self.query)
+                await self.performSearch(trimmed)
             }
             searchTask = task
         }
@@ -58,9 +63,10 @@ import Foundation
     /// query does nothing.
     func submit() async {
         searchTask?.cancel()
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        history.add(query)
-        let task = Task { await self.performSearch(self.query) }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        history.add(trimmed) // the store trims anyway; searching and remembering the same string (D5)
+        let task = Task { await self.performSearch(trimmed) }
         searchTask = task
         await task.value
     }

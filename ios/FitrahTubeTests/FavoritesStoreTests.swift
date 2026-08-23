@@ -53,7 +53,8 @@ struct FavoritesStoreTests {
     /// does. A locally stamped (possibly future) timestamp would make the server's own updates to
     /// that row fail the `updated_at < :ts` guard forever.
     @Test func localMutationsNeverAdvanceUpdatedAt() throws {
-        let store = makeStore()
+        let container = makeContainer()
+        let store = makeStore(container: container)
         let epoch = Date(timeIntervalSince1970: 0)
 
         try store.toggle(makeItem())
@@ -65,6 +66,15 @@ struct FavoritesStoreTests {
 
         try store.clearAll()
         #expect(store.items.isEmpty)
+
+        // `items` is filtered on `isRemoved == false`, so an empty list is equally consistent with
+        // a hard delete -- which would lose the tombstone phase 4 needs to push (gate wave-3 D6).
+        // Read the row back through a deleted-agnostic fetch instead.
+        let rows = try ModelContext(container).fetch(FetchDescriptor<FavoriteVideo>())
+        #expect(rows.count == 1)
+        #expect(rows.first?.isRemoved == true)
+        #expect(rows.first?.dirty == true)
+        #expect(rows.first?.updatedAt == epoch) // still the server sentinel, even on clearAll
     }
 
     @Test func retogglingSoftDeletedRowRevivesItWithFreshSnapshot() throws {

@@ -224,9 +224,13 @@ struct HomeView: View {
         // The attempt is committed only if the ViewModel actually starts the fetch (gate wave-2
         // W2): a load-more refused during a pull-to-refresh used to spend an attempt and advance
         // `lastCount`, latching autofill off for good once the refresh landed with the same count.
+        // Rejections that reset the guard are committed too -- see `ContentListView` (wave-3 D2).
         var attempt = paginationGuard
         guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: false,
-                                      contentFits: contentFits, itemCount: sections.count) else { return }
+                                      contentFits: contentFits, itemCount: sections.count) else {
+            paginationGuard = attempt
+            return
+        }
         Task { if await viewModel.loadMore() { paginationGuard = attempt } }
     }
 }

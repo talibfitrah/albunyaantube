@@ -3569,13 +3569,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "You are %1$lld step away from being a developer"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "You are %1$lld steps away from being a developer"
                 }
               }
@@ -6577,13 +6577,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "Import %1$lld item"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "Import %1$lld items"
                 }
               }
@@ -7348,7 +7348,7 @@
         },
         "en": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%#@arg@"
           },
           "substitutions": {
@@ -7359,13 +7359,13 @@
                 "plural": {
                   "one": {
                     "stringUnit": {
-                      "state": "needs_review",
+                      "state": "translated",
                       "value": "%1$@ watching"
                     }
                   },
                   "other": {
                     "stringUnit": {
-                      "state": "needs_review",
+                      "state": "translated",
                       "value": "%1$@ watching"
                     }
                   }
@@ -11589,13 +11589,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld item"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld items"
                 }
               }
@@ -16093,13 +16093,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld month ago"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld months ago"
                 }
               }
@@ -16175,13 +16175,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld week ago"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld weeks ago"
                 }
               }
@@ -16257,13 +16257,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld year ago"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld years ago"
                 }
               }
@@ -16933,13 +16933,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld video"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld videos"
                 }
               }
@@ -17015,13 +17015,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld day ago"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "needs_review",
+                  "state": "translated",
                   "value": "%1$lld days ago"
                 }
               }
@@ -17126,7 +17126,7 @@
         },
         "en": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%#@arg@"
           },
           "substitutions": {
@@ -17137,13 +17137,13 @@
                 "plural": {
                   "one": {
                     "stringUnit": {
-                      "state": "needs_review",
+                      "state": "translated",
                       "value": "%1$@ view"
                     }
                   },
                   "other": {
                     "stringUnit": {
-                      "state": "needs_review",
+                      "state": "translated",
                       "value": "%1$@ views"
                     }
                   }

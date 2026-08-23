@@ -325,9 +325,17 @@ struct ContentListView: View {
         // advanced -- so once the refresh landed with the same item count, guard 5's progress
         // invariant refused every later autofill and a fits-on-screen iPad page never paginated
         // again until the user pulled a second time.
+        // ...but a *rejection* can still mutate: guards 2 (`!hasMore`) and 6 (`!contentFits`)
+        // reset the guard to renew the 5-attempt budget, and dropping the copy on that path threw
+        // that renewal away -- so after a rotation or a Split View resize stopped the content from
+        // fitting, autofill never got its attempts back (gate wave-3 D2). Written back on both
+        // paths now; only the attempt *increment* waits for the fetch to actually start.
         var attempt = paginationGuard
         guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: paginationError,
-                                      contentFits: contentFits, itemCount: items.count) else { return }
+                                      contentFits: contentFits, itemCount: items.count) else {
+            paginationGuard = attempt
+            return
+        }
         isLoadingMore = true
         Task { if await runLoadMore() { paginationGuard = attempt } }
     }

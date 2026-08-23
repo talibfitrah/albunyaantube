@@ -315,4 +315,34 @@ struct SearchViewModelTests {
         #expect(calls.count == 1)
         #expect(calls[0].query == url)
     }
+
+    // MARK: - Gate wave-3 D5 (trim, matching ContentListViewModel)
+
+    @Test func whitespacePaddedQueryIsTrimmedBeforeSearchingAndBeforeHistory() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let client = RecordingCatalogClient(results: items(count: 1, prefix: "r"))
+        let vm = SearchViewModel(catalog: client, history: history, sleep: noSleep)
+
+        vm.query = "  ab  "
+        await vm.searchTask?.value          // the debounced path
+        #expect(await client.calls.map(\.query) == ["ab"])
+
+        await vm.submit()                   // the immediate path
+        #expect(await client.calls.map(\.query) == ["ab", "ab"])
+        #expect(history.entries == ["ab"])  // not "  ab  "
+    }
+
+    @Test func whitespaceOnlyQueryNeverFetches() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let client = RecordingCatalogClient()
+        let vm = SearchViewModel(catalog: client, history: history, sleep: noSleep)
+
+        vm.query = "  "                     // two chars, zero of them a query
+        await vm.searchTask?.value          // no task was ever spawned
+
+        #expect(await client.calls.isEmpty)
+        guard case .zero = vm.state else { Issue.record("expected .zero, got \(vm.state)"); return }
+    }
 }

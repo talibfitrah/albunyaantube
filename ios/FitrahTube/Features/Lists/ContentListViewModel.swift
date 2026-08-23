@@ -136,7 +136,10 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         let task = Task { await self.fetchMore(generation: generation) }
         loadMoreTask = task
         await task.value
-        return true
+        // Not `true` (gate wave-3 D1): a full load that cancelled this fetch while it was
+        // suspended also bumped the generation, and the caller uses this answer to decide whether
+        // to commit a spent `PaginationGuard` attempt over the guard that same refresh just reset.
+        return generation == loadGeneration
     }
 
     /// Manual retry from the pagination-error `TransientBanner`. Identical to `loadMore()`: the
