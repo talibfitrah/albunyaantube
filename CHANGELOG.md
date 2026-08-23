@@ -5,6 +5,8 @@ during the beta program.
 
 ## [Unreleased]
 
+- iOS: project scaffold (XcodeGen, iPhone + iPad), generated FitrahAPI client, DI container, design tokens (Phase 0 of the iOS app).
+
 ## [1.0.0-beta.45] - 2026-08-22
 
 ### Android
