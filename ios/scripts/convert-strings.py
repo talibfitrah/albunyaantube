@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+"""Android strings*.xml (en, ar, nl) -> ios/FitrahTube/Resources/Localizable.xcstrings.
+Rules R1-R9 from docs/superpowers/plans/2026-08-23-ios-phase1-research/strings-assets.md.
+Usage: python3 ios/scripts/convert-strings.py [--check]"""
+import glob, html, json, os, re, sys, xml.etree.ElementTree as ET
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+RES = os.path.join(ROOT, "android/app/src/main/res")
+OUT = os.path.join(ROOT, "ios/FitrahTube/Resources/Localizable.xcstrings")
+LOCALES = {"en": "values", "ar": "values-ar", "nl": "values-nl"}
+PLURAL_CATEGORIES = ("zero", "one", "two", "few", "many", "other")
+
+# R8 / §7: keys that cannot convert mechanically -- refused (reported), not silently dropped.
+# The only three real hazards: %.1f abbreviated-count strings, superseded by CountFormat.kt and
+# already dead on Android (strings-assets.md §4, §7.3).
+REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands"}
+
+# The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
+# and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
+# Emitted via the xcstrings `substitutions` form below, not the plain plural loop.
+SUBSTITUTION_PLURALS = {"video_views", "live_watching_count"}
+
+# §6 dead keys. filter_length_/filter_date_/filter_sort_/locale_settings_ are safe blanket
+# prefixes (verified via grep: no live key matches them). list_/error_ are NOT safe blanket
+# prefixes -- each cluster is "dead except N keys" per §6, and those survivors
+# (list_error_title/description, error_title/unknown/state_generic_headline) are referenced from
+# ChannelsFragmentNew.kt, PlaylistsFragmentNew.kt, VideosFragmentNew.kt, SearchFragment.kt,
+# DownloadsFragment.kt, PlayerFragment.kt, home_section_error.xml and error_state.xml -- verified
+# by grepping android/app/src/main/java + res/layout* for R.string./@string/ references. A blanket
+# prefix would silently drop live, phase-1-needed strings.
+DEAD_PREFIXES = ("filter_length_", "filter_date_", "filter_sort_", "list_", "locale_settings_", "error_")
+DEAD_PREFIX_EXCEPTIONS = {
+    "list_error_title", "list_error_description",
+    "error_title", "error_unknown", "error_state_generic_headline",
+}
+
+# about_version_format's %2$ argument is CFBundleVersion on iOS -- a String, not Android's
+# versionCode Int (strings-assets.md §7.7). Override the generic %d->%lld rewrite for this one key.
+SPECIFIER_OVERRIDES = {
+    "about_version_format": lambda v: v.replace("%2$lld", "%2$@"),
+}
+
+def is_dead(key):
+    if key in DEAD_PREFIX_EXCEPTIONS:
+        return False
+    return key.startswith(DEAD_PREFIXES)
+
+def unescape(s):  # R5
+    s = html.unescape(s)
+    s = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), s)  # R5.7
+    s = re.sub(r"\\(['\"@?\u2019])", r"\1", s)  # R5.2/3/4/5 (\' \" \@ \? and the redundant \’)
+    s = s.replace("\\n", "\n").replace("\\t", "\t")
+    return s
+
+SPECIFIER_RE = re.compile(r"%(\d+)\$\d*(@|lld|f)")  # \d* skips flags/width, e.g. %2$02lld
+
+def rewrite_specifiers(s):  # R3 + R4
+    s = s.replace("%%", "\u0000PCT\u0000")
+    n = [0]
+    def bare(m):
+        n[0] += 1
+        conv = {"s": "@", "d": "lld", "f": "f"}[m.group(2)]
+        return f"%{n[0]}${conv}"
+    s = re.sub(r"%((?!\d)\.?\d*)([sdf])", bare, s)
+    s = re.sub(r"%(\d+)\$s", r"%\1$@", s)
+    s = re.sub(r"%(\d+)\$(\d*)d", r"%\1$\2lld", s)  # keeps flags/width, e.g. %2$02d -> %2$02lld
+    s = s.replace("\u0000PCT\u0000", "%%")
+    if re.search(r"%(?!\d+\$|%)[sdf]", s):
+        raise ValueError(f"unrewritten specifier survived: {s!r}")
+    return s
+
+def arg_signature(s):
+    """R4: ordered {argNum: conversion} used for the cross-locale subset check."""
+    return {int(n): conv for n, conv in SPECIFIER_RE.findall(s)}
+
+def check_arg_subset(key, en_sig, loc, loc_sig):
+    # R4: a translation's argument list must be a subset of the source's (same argNum -> same
+    # conversion); anything else (extra arg, or a differing conversion for a shared argNum) is a
+    # divergence the generator must refuse to guess at.
+    for num, conv in loc_sig.items():
+        if en_sig.get(num) != conv:
+            raise ValueError(f"{key}: {loc} specifier %{num}${conv} has no matching en specifier ({en_sig})")
+
+def apply_overrides(key, value):
+    fn = SPECIFIER_OVERRIDES.get(key)
+    return fn(value) if fn else value
+
+def load(locale_dir):
+    strings, plurals = {}, {}
+    # R2: fixed merge order, hard-fail on duplicate key.
+    for fname in ("strings.xml", "strings_list_states.xml", "strings_locale.xml", "strings_onboarding.xml"):
+        for path in sorted(glob.glob(os.path.join(RES, locale_dir, fname))):
+            root = ET.parse(path).getroot()
+            for el in root:
+                name = el.get("name")
+                if el.get("translatable") == "false" or name is None:
+                    continue
+                if el.tag == "string":
+                    if name in strings or name in plurals:
+                        raise ValueError(f"duplicate key {name} in {path}")
+                    text = "".join(el.itertext())
+                    strings[name] = rewrite_specifiers(unescape(text))
+                elif el.tag == "plurals":
+                    if name in strings or name in plurals:
+                        raise ValueError(f"duplicate key {name} in {path}")
+                    plurals[name] = {item.get("quantity"): rewrite_specifiers(unescape("".join(item.itertext())))
+                                     for item in el.findall("item")}
+    return strings, plurals
+
+def main(check=False):
+    data = {loc: load(d) for loc, d in LOCALES.items()}
+    en_strings, en_plurals = data["en"]
+    out = {"sourceLanguage": "en", "version": "1.0", "strings": {}}
+    skipped, refused = [], []
+
+    for key, en in en_strings.items():
+        if key in REFUSE:
+            refused.append(key); continue
+        if is_dead(key):
+            skipped.append(key); continue
+        en_val = apply_overrides(key, en)
+        locs = {"en": {"stringUnit": {"state": "translated", "value": en_val}}}
+        en_sig = arg_signature(en_val)
+        for loc in ("ar", "nl"):
+            v = data[loc][0].get(key)
+            if v is None or v == en:  # R7: never copy English as a translation
+                continue
+            v = apply_overrides(key, v)
+            check_arg_subset(key, en_sig, loc, arg_signature(v))
+            locs[loc] = {"stringUnit": {"state": "translated", "value": v}}
+        entry = {"localizations": locs}
+        if key == "app_name":  # R7: brand name -- don't flag as needing translation
+            entry["shouldTranslate"] = False
+        out["strings"][key] = entry
+
+    for key, forms in en_plurals.items():
+        if key in REFUSE:
+            refused.append(key); continue
+        if key in SUBSTITUTION_PLURALS:
+            continue  # emitted via the substitutions block below
+        if is_dead(key):
+            skipped.append(key); continue
+        locs = {}
+        for loc in ("en", "ar", "nl"):
+            f = data[loc][1].get(key)
+            if not f:
+                continue
+            for cat, val in f.items():
+                check_arg_subset(f"{key}[{cat}]", arg_signature(forms.get(cat, val)), loc, arg_signature(val))
+            plural = {cat: {"stringUnit": {"state": "translated", "value": f[cat]}} for cat in PLURAL_CATEGORIES if cat in f}
+            locs[loc] = {"variations": {"plural": plural}}
+        out["strings"][key] = {"localizations": locs}
+
+    # §3b / RULINGS 37: substitutions form for the two decoupled-quantity plurals. Each locale's
+    # top-level value is just the substitution token; the substitution's plural variations carry
+    # the full text (which already contains only %1$@ after rewrite_specifiers numbered the single
+    # bare %s arg as 1) and select their category from a synthetic arg 2 (the clamped selector int,
+    # never rendered).
+    for key in SUBSTITUTION_PLURALS:
+        locs = {}
+        for loc in ("en", "ar", "nl"):
+            forms = data[loc][1].get(key)
+            if not forms:
+                continue
+            plural = {cat: {"stringUnit": {"state": "translated", "value": forms[cat]}} for cat in PLURAL_CATEGORIES if cat in forms}
+            locs[loc] = {
+                "stringUnit": {"state": "translated", "value": "%#@arg@"},
+                "substitutions": {
+                    "arg": {"argNum": 2, "formatSpecifier": "lld", "variations": {"plural": plural}},
+                },
+            }
+        out["strings"][key] = {"localizations": locs}
+
+    if refused:
+        print(f"refused (R8/§7, cannot convert mechanically): {sorted(refused)}", file=sys.stderr)
+
+    verify(out)
+
+    if check:
+        print(f"{len(out['strings'])} keys, {len(skipped)} skipped, {len(refused)} refused")
+        return 0
+    with open(OUT, "w", encoding="utf-8") as fh:
+        json.dump(out, fh, ensure_ascii=False, indent=2, sort_keys=True)
+    print(f"wrote {OUT}: {len(out['strings'])} keys; skipped {len(skipped)} dead; refused {len(refused)}")
+    return 0
+
+def verify(out):
+    """R9's one runnable check: spot-assert the hazards the doc calls out by name."""
+    def value_of(entry, loc):
+        l = entry["localizations"].get(loc)
+        if l is None:
+            return None
+        if "stringUnit" in l:
+            return l["stringUnit"]["value"]
+        return None
+
+    # (b) the 6 %% keys survive as %%
+    for key in ("dev_settings_generous_crop_desc", "download_item_content_description",
+                "download_notification_progress", "player_download_in_progress",
+                "playlist_video_downloading", "update_progress_percent"):
+        entry = out["strings"].get(key)
+        if entry is None:
+            continue  # dead/out-of-scope keys may be absent; only assert when present
+        v = value_of(entry, "en")
+        assert v is not None and "%%" in v, f"{key}: expected %% to survive, got {v!r}"
+
+    # (c)/(d) shorts_channel_handle: LRM (U+200E) survives, not stripped -- ar-only (R5.7)
+    handle = out["strings"].get("shorts_channel_handle")
+    if handle is not None:
+        v = value_of(handle, "ar")
+        assert v is not None and "\u200e" in v, f"shorts_channel_handle[ar]: LRM missing, got {v!r}"
+
+    # video_count / video_views round-trip against the exact strings this task's tests assert on
+    vc = out["strings"]["video_count"]["localizations"]["en"]["variations"]["plural"]
+    assert vc["one"]["stringUnit"]["value"] == "%1$lld video", vc["one"]
+    assert vc["other"]["stringUnit"]["value"] == "%1$lld videos", vc["other"]
+
+    app_name = out["strings"]["app_name"]
+    assert app_name.get("shouldTranslate") is False
+    assert app_name["localizations"]["ar"]["stringUnit"]["value"] == "\u0641\u0637\u0631\u0629 \u062a\u064a\u0648\u0628"
+    assert "nl" not in app_name["localizations"], "nl app_name is identical to en; must not be emitted as a translation"
+
+    avf = out["strings"]["about_version_format"]["localizations"]["en"]["stringUnit"]["value"]
+    assert avf == "Version %1$@ (%2$@)", avf
+    assert "ar" not in out["strings"]["about_version_format"]["localizations"]
+    assert "nl" not in out["strings"]["about_version_format"]["localizations"]
+
+    for key in REFUSE:
+        assert key not in out["strings"], f"{key} should have been refused, not emitted"
+
+    for key in SUBSTITUTION_PLURALS:
+        entry = out["strings"][key]
+        en = entry["localizations"]["en"]
+        assert en["stringUnit"]["value"] == "%#@arg@"
+        sub = en["substitutions"]["arg"]
+        assert sub["argNum"] == 2 and sub["formatSpecifier"] == "lld"
+        for cat, v in sub["variations"]["plural"].items():
+            val = v["stringUnit"]["value"]
+            assert "%2$" not in val, f"{key}[{cat}]: substitution variation must not reference arg 2: {val!r}"
+
+if __name__ == "__main__":
+    sys.exit(main("--check" in sys.argv))
