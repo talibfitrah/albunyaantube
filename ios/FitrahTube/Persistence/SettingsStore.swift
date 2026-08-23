@@ -81,6 +81,16 @@ import SwiftUI
         wifiOnlyDownloads = defaults.bool(forKey: Keys.wifiOnlyDownloads)
         onboardingCompleted = defaults.bool(forKey: Keys.onboardingCompleted)
         importOfferShown = defaults.bool(forKey: Keys.importOfferShown)
+        #if DEBUG
+        // Acceptance artefact hook (task 8): reach Onboarding on a simulator that already
+        // completed it, without wiping the rest of its state. Same launch-arg pattern as
+        // `NetworkMonitor`'s `-fitrah-offline`; unlike that one, this assignment runs through
+        // the `didSet` below (it's not the *first* assignment to the property, so the observer
+        // does fire) and genuinely persists `false` -- a real reset, not just a one-run fake.
+        if ProcessInfo.processInfo.arguments.contains("-fitrah-reset-onboarding") {
+            onboardingCompleted = false
+        }
+        #endif
     }
 
     var resolvedLocale: Locale {

@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// Root of the app. Task 8 adds a real animated `SplashView` in front of this; for now
-/// `SplashRouter.destination(onboardingCompleted:)` decides immediately between the onboarding
-/// placeholder and the main shell.
+/// Root of the app. `SplashView` gates entry (its own animation/work timeline, `splash-onboarding.md`
+/// §1); once it completes, `SplashRouter.destination(onboardingCompleted:)` decides between
+/// `OnboardingView` and the main shell.
 struct RootView: View {
     @Environment(\.container) private var container
     @State private var widthClass: WidthClass = .compact
+    @State private var showSplash = true
 
     var body: some View {
         #if DEBUG
@@ -38,22 +39,12 @@ struct RootView: View {
 
     @ViewBuilder
     private var destinationView: some View {
-        switch SplashRouter.destination(onboardingCompleted: container.settings.onboardingCompleted) {
-        case .onboarding: OnboardingPlaceholderView()
-        case .main: MainShellView()
-        }
-    }
-}
-
-/// Task 8 replaces this with the real 3-page onboarding flow (`splash-onboarding.md` §3).
-private struct OnboardingPlaceholderView: View {
-    @Environment(\.container) private var container
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Text("Onboarding")
-            Button("Get started") {
-                container.settings.onboardingCompleted = true
+        if showSplash {
+            SplashView { showSplash = false }
+        } else {
+            switch SplashRouter.destination(onboardingCompleted: container.settings.onboardingCompleted) {
+            case .onboarding: OnboardingView()
+            case .main: MainShellView()
             }
         }
     }

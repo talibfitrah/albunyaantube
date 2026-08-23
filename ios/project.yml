@@ -50,6 +50,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.albunyaan.tube
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: FitrahTube/Info.plist
       properties:

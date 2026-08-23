@@ -19,7 +19,7 @@ nonisolated enum DeepLinkParser {
             guard url.host == universalLinkHost else { return nil }
             var segments = pathComponents(of: url)
             if segments.first == "api" { segments.removeFirst() }
-            guard segments.count == 2 else { return nil }
+            guard segments.count == 2, segments[0] != "shorts" else { return nil }
             let kind = segments[0] == "watch" ? "video" : segments[0]
             return route(kind: kind, id: segments[1])
         default:

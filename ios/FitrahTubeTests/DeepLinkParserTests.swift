@@ -71,4 +71,11 @@ struct DeepLinkParserTests {
         let route = DeepLinkParser.route(for: URL(string: "https://example.com/watch/abc123")!)
         #expect(route == nil)
     }
+
+    // `splash-onboarding.md` / DeepLinkParser's own doc comment: shorts has no Universal Link
+    // shape -- Android only reaches it via in-app navigation, never a verified https host.
+    @Test func universalLinkShortsIsNil() {
+        let route = DeepLinkParser.route(for: URL(string: "https://app.fitrahtube.com/shorts/sh1")!)
+        #expect(route == nil)
+    }
 }

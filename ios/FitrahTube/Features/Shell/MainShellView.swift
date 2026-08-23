@@ -43,6 +43,7 @@ struct MainShellView: View {
             get: { router.selectedTab },
             set: { newTab in
                 if newTab == router.selectedTab {
+                    // ponytail: ReselectAction.scrollToTop is unconsumed until the tab roots have scrollable content (Tasks 9–13).
                     _ = router.reselect(newTab)
                 } else {
                     router.selectedTab = newTab
