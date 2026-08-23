@@ -58,15 +58,36 @@ nonisolated struct Category: Identifiable, Hashable, Sendable {
     }
 }
 
+/// Raw values match the generated `Operations.GetPublicContent.Input.Query.LengthPayload` cases.
+nonisolated enum LengthFilter: String, Sendable, CaseIterable {
+    case short = "SHORT"
+    case medium = "MEDIUM"
+    case long = "LONG"
+}
+
+/// Raw values match the generated `Operations.GetPublicContent.Input.Query.DatePayload` cases.
+nonisolated enum DateFilter: String, Sendable, CaseIterable {
+    case last24Hours = "LAST_24_HOURS"
+    case last7Days = "LAST_7_DAYS"
+    case last30Days = "LAST_30_DAYS"
+}
+
+/// Raw values match the generated `Operations.GetPublicContent.Input.Query.SortPayload` cases.
+nonisolated enum SortFilter: String, Sendable, CaseIterable {
+    case `default` = "DEFAULT"
+    case mostPopular = "MOST_POPULAR"
+    case newest = "NEWEST"
+}
+
 nonisolated struct FilterState: Hashable, Sendable {
     var categoryId: String?
     var categoryName: String?
-    var length: String?
-    var date: String?
-    var sort: String?
+    var length: LengthFilter?
+    var date: DateFilter?
+    var sort: SortFilter?
 
-    init(categoryId: String? = nil, categoryName: String? = nil, length: String? = nil,
-         date: String? = nil, sort: String? = nil) {
+    init(categoryId: String? = nil, categoryName: String? = nil, length: LengthFilter? = nil,
+         date: DateFilter? = nil, sort: SortFilter? = nil) {
         self.categoryId = categoryId
         self.categoryName = categoryName
         self.length = length

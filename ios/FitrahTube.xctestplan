@@ -9,6 +9,12 @@
     }
   ],
   "defaultOptions" : {
+    "commandLineArguments" : [
+      {
+        "argument" : "-fitrah-fake-container",
+        "enabled" : true
+      }
+    ],
     "testTimeoutsEnabled" : true,
     "defaultTestExecutionTimeAllowance" : 30
   },

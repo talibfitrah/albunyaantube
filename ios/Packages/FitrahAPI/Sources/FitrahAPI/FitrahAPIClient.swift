@@ -3,12 +3,13 @@ import OpenAPIRuntime
 import OpenAPIURLSession
 
 public enum FitrahAPIClient {
-    /// Default session config per spec §8: bounded request/resource timeouts, no caching, no
-    /// waiting for connectivity (fail fast; caller decides retry policy).
+    /// Default session config per spec §8: 20 s idle (`timeoutIntervalForRequest`, = Android's
+    /// 20 s read timeout) and 120 s for the whole transfer (`timeoutIntervalForResource`); no
+    /// caching, no waiting for connectivity (fail fast; caller decides retry policy).
     public static var defaultSessionConfiguration: URLSessionConfiguration {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 20
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 120
         config.urlCache = nil
         config.waitsForConnectivity = false
         return config

@@ -6,8 +6,8 @@ import Testing
 struct FitrahAPIClientTests {
     @Test func defaultSessionConfigurationHasBoundedTimeoutsAndNoCache() {
         let config = FitrahAPIClient.defaultSessionConfiguration
-        #expect(config.timeoutIntervalForRequest == 15)
-        #expect(config.timeoutIntervalForResource == 20)
+        #expect(config.timeoutIntervalForRequest == 20)
+        #expect(config.timeoutIntervalForResource == 120)
         #expect(config.urlCache == nil)
         #expect(config.waitsForConnectivity == false)
     }

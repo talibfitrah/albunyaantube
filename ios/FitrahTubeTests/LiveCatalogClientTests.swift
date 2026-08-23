@@ -74,6 +74,31 @@ struct LiveCatalogClientTests {
         #expect(transport.lastRequest?.path == "/v1/content?type=VIDEOS&limit=20&category=c1")
     }
 
+    @Test func filterEnumsRoundTripIntoQuery() async throws {
+        let json = Data(#"{"data":[],"pageInfo":{"hasNext":false,"nextCursor":null}}"#.utf8)
+        for length in LengthFilter.allCases {
+            let (sut, transport) = makeClient(responseBody: json)
+            var filter = FilterState()
+            filter.length = length
+            _ = try await sut.content(type: .all, cursor: nil, limit: 20, filter: filter, query: nil)
+            #expect(transport.lastRequest?.path?.contains("length=\(length.rawValue)") == true)
+        }
+        for date in DateFilter.allCases {
+            let (sut, transport) = makeClient(responseBody: json)
+            var filter = FilterState()
+            filter.date = date
+            _ = try await sut.content(type: .all, cursor: nil, limit: 20, filter: filter, query: nil)
+            #expect(transport.lastRequest?.path?.contains("date=\(date.rawValue)") == true)
+        }
+        for sort in SortFilter.allCases {
+            let (sut, transport) = makeClient(responseBody: json)
+            var filter = FilterState()
+            filter.sort = sort
+            _ = try await sut.content(type: .all, cursor: nil, limit: 20, filter: filter, query: nil)
+            #expect(transport.lastRequest?.path?.contains("sort=\(sort.rawValue)") == true)
+        }
+    }
+
     @Test func searchSendsQueryAndReturnsItemsInServerOrder() async throws {
         let json = Data(#"""
         [

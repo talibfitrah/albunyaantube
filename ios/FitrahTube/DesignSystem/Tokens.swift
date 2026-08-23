@@ -136,6 +136,9 @@ enum TypeScale {
 
 enum Size {
     static func button(_ w: WidthClass) -> CGFloat { w == .large ? 64 : 56 }
+    static func buttonMinWidth(_ w: WidthClass) -> CGFloat {
+        switch w { case .compact: 120; case .regular: 140; case .large: 160 }
+    }
     static func iconXL(_ w: WidthClass) -> CGFloat { w == .large ? 128 : 96 }
     static func stateBodyMaxWidth(_ w: WidthClass) -> CGFloat {
         switch w { case .compact: 300; case .regular: 400; case .large: 480 }

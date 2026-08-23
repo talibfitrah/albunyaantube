@@ -343,7 +343,7 @@ public enum Components {
         /// - Remark: Generated from `#/components/schemas/HomeCategoryDto`.
         public struct HomeCategoryDto: Codable, Hashable, Sendable {
             /// - Remark: Generated from `#/components/schemas/HomeCategoryDto/id`.
-            public var id: Swift.String?
+            public var id: Swift.String
             /// - Remark: Generated from `#/components/schemas/HomeCategoryDto/name`.
             public var name: Swift.String?
             /// - Remark: Generated from `#/components/schemas/HomeCategoryDto/slug`.
@@ -388,7 +388,7 @@ public enum Components {
             ///   - items:
             ///   - totalContentCount:
             public init(
-                id: Swift.String? = nil,
+                id: Swift.String,
                 name: Swift.String? = nil,
                 slug: Swift.String? = nil,
                 localizedNames: Components.Schemas.HomeCategoryDto.LocalizedNamesPayload? = nil,

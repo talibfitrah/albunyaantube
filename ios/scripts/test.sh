@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Runs the full iOS Phase 0 test suite under a 300s wall-clock watchdog (AGENTS.md mandate):
-#   xcodegen generate -> xcodebuild test (iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test (FitrahAPI package).
+#   xcodegen generate -> xcodebuild test (iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test
+#   (FitrahAPI package) -> xcodebuild build (Release, simulator SDK -- compiles the non-DEBUG paths).
 # Per-test limit: 60s (Swift Testing minute granularity; CLAUDE.md asks 30s — not expressible), wall-clock: 300s.
+# $RESULTS (xcresult bundle + watchdog marker) is removed on exit unless KEEP_RESULTS=1 is set.
 set -uo pipefail
 set -m
 
@@ -71,22 +73,37 @@ run_all() {
         report_failures "$RESULTS/FitrahTube.xcresult"
         return "$xcodebuild_status"
     fi
-    rm -rf "$RESULTS"
 
     echo "== FitrahAPI package =="
     (cd Packages/FitrahAPI && swift test) 2>&1 | grep -E "$SUMMARY"
     local package_status=${PIPESTATUS[0]}
-    return "$package_status"
+    if [ "$package_status" -ne 0 ]; then
+        return "$package_status"
+    fi
+
+    # Debug is what the test steps above compile; Release flips DEBUG off (AppContainer.swift's
+    # #else branch, AppContainerTests.swift's non-DEBUG test declaration) so it must build too.
+    # Simulator SDK -> no code signing required.
+    echo "== Release build (simulator SDK) =="
+    xcodebuild build \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -configuration Release \
+        -destination 'platform=iOS Simulator,name=iPhone 17' \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "$SUMMARY"
+    local release_status=${PIPESTATUS[0]}
+    return "$release_status"
 }
 
 RESULTS=$(mktemp -d)
-
-WD_MARK=$(mktemp)
-rm -f "$WD_MARK"
+if [ "${KEEP_RESULTS:-0}" != "1" ]; then
+    trap 'rm -rf "$RESULTS"' EXIT
+fi
 
 run_all &
 pid=$!
-( sleep 300; touch "$WD_MARK"; kill -TERM -- -"$pid" 2>/dev/null ) &
+( sleep 300; touch "$RESULTS/killed"; kill -TERM -- -"$pid" 2>/dev/null ) &
 wd=$!
 
 trap 'kill -- -"$pid" -"$wd" 2>/dev/null; exit 130' INT TERM
@@ -95,11 +112,9 @@ wait "$pid"
 rc=$?
 kill -- -"$wd" 2>/dev/null || true
 
-if [ -e "$WD_MARK" ]; then
-    rm -f "$WD_MARK"
+if [ -e "$RESULTS/killed" ]; then
     echo "test.sh: 300s wall-clock watchdog killed the run" >&2
     exit 124
 fi
-rm -f "$WD_MARK"
 
 exit "$rc"

@@ -21,7 +21,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
         let output = try await client.getHomeFeed(input).ok.body.json
         let sections = (output.value2.data ?? []).map { dto in
             HomeSection(
-                id: dto.id ?? "",
+                id: dto.id,
                 name: dto.name ?? "",
                 localizedNames: dto.localizedNames?.additionalProperties,
                 icon: dto.icon,
@@ -32,21 +32,16 @@ nonisolated struct LiveCatalogClient: CatalogClient {
     }
 
     func content(type: ListType, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
-        let typeParam: Operations.GetPublicContent.Input.Query._TypePayload?
-        switch type {
-        case .videos: typeParam = .videos
-        case .channels: typeParam = .channels
-        case .playlists: typeParam = .playlists
-        case .all: typeParam = nil // ANY/ALL maps to an omitted param, not an explicit value.
-        }
+        // `.all` has no matching `_TypePayload` case, so the lookup falls through to nil (an
+        // omitted param) exactly as the explicit switch used to.
         let input = Operations.GetPublicContent.Input(query: .init(
-            _type: typeParam,
+            _type: .init(rawValue: type.rawValue),
             cursor: cursor,
             limit: limit,
             category: filter.categoryId,
-            length: filter.length.flatMap(Operations.GetPublicContent.Input.Query.LengthPayload.init(rawValue:)),
-            date: filter.date.flatMap(Operations.GetPublicContent.Input.Query.DatePayload.init(rawValue:)),
-            sort: filter.sort.flatMap(Operations.GetPublicContent.Input.Query.SortPayload.init(rawValue:)),
+            length: filter.length.flatMap { Operations.GetPublicContent.Input.Query.LengthPayload(rawValue: $0.rawValue) },
+            date: filter.date.flatMap { Operations.GetPublicContent.Input.Query.DatePayload(rawValue: $0.rawValue) },
+            sort: filter.sort.flatMap { Operations.GetPublicContent.Input.Query.SortPayload(rawValue: $0.rawValue) },
             q: query
         ))
         let output = try await client.getPublicContent(input).ok.body.json
@@ -55,30 +50,19 @@ nonisolated struct LiveCatalogClient: CatalogClient {
     }
 
     func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] {
-        let typeParam: Operations.SearchPublicContent.Input.Query._TypePayload?
-        switch type {
-        case .videos: typeParam = .videos
-        case .channels: typeParam = .channels
-        case .playlists: typeParam = .playlists
-        case .all, .none: typeParam = nil
-        }
+        // `.all` (and `nil`) have no matching `_TypePayload` case, so the lookup falls through
+        // to nil (an omitted param) exactly as the explicit switch used to.
+        let typeParam = type.flatMap { Operations.SearchPublicContent.Input.Query._TypePayload(rawValue: $0.rawValue) }
         let input = Operations.SearchPublicContent.Input(query: .init(q: query, _type: typeParam, limit: limit))
         let dtos = try await client.searchPublicContent(input).ok.body.json
         return dtos.compactMap(Self.mapContentItem)
     }
 
-    /// `ContentItemDto.type` decodes through a closed 3-case enum (`_TypePayload`), so an
-    /// unrecognized wire value fails JSON decoding before it ever reaches this mapper — the
-    /// whole response throws, not a single item. This still returns an optional and every call
-    /// site `compactMap`s it, so if the generator/spec ever widens `type` into an open enum,
-    /// unknown items are dropped silently (no log) instead of crashing.
+    /// `dto._type`'s raw value is expected to match a `ContentType` case; if the generator ever
+    /// widens the wire enum without a corresponding `ContentType` case, the item is dropped here
+    /// (every call site `compactMap`s the result) instead of crashing.
     private static func mapContentItem(_ dto: Components.Schemas.ContentItemDto) -> ContentItem? {
-        let type: ContentType
-        switch dto._type {
-        case .video: type = .video
-        case .channel: type = .channel
-        case .playlist: type = .playlist
-        }
+        guard let type = ContentType(rawValue: dto._type.rawValue) else { return nil }
         return ContentItem(
             id: dto.id,
             type: type,

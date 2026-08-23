@@ -1,9 +1,12 @@
 import SwiftUI
 
-/// Android empty_state.xml: 96 pt brand icon, 20 bold headline, body ≤ 300 pt, optional 56 pt button.
+/// Android empty_state.xml / error_state.xml share one layout: icon, optional bold headline,
+/// body ≤ 300 pt, optional button. Icon tint and heading are the only two things that vary
+/// between an empty state (brand icon, no heading) and an error state (red icon, heading).
 struct EmptyStateView: View {
     let systemImage: String
-    let title: String
+    var iconColor: Color = .brand
+    var title: String? = nil
     let message: String
     var action: (title: String, run: () -> Void)? = nil
     @Environment(\.widthClass) private var widthClass
@@ -13,9 +16,14 @@ struct EmptyStateView: View {
             VStack(spacing: Spacing.md(widthClass)) {
                 Image(systemName: systemImage)
                     .font(.system(size: Size.iconXL(widthClass)))
-                    .foregroundStyle(Color.brand)
+                    .foregroundStyle(iconColor)
                     .accessibilityHidden(true)
-                Text(title).font(TypeScale.headline(widthClass)).foregroundStyle(Color.textPrimary)
+                if let title {
+                    Text(title)
+                        .font(TypeScale.headline(widthClass))
+                        .foregroundStyle(Color.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 StateMessage(text: message)
             }
             .accessibilityElement(children: .combine)
@@ -33,25 +41,15 @@ struct ErrorStateView: View {
     var title: String? = nil
     let message: String
     let retry: () -> Void
-    @Environment(\.widthClass) private var widthClass
 
     var body: some View {
-        VStack(spacing: Spacing.md(widthClass)) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: Size.iconXL(widthClass)))
-                .foregroundStyle(Color.accentRed)
-                .accessibilityHidden(true)
-            if let title {
-                Text(title)
-                    .font(TypeScale.headline(widthClass))
-                    .foregroundStyle(Color.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
-            }
-            StateMessage(text: message)
-            StateButton(title: String(localized: "retry"), action: retry)
-        }
-        .padding(Spacing.lg(widthClass))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EmptyStateView(
+            systemImage: "exclamationmark.triangle.fill",
+            iconColor: .accentRed,
+            title: title,
+            message: message,
+            action: (String(localized: "retry"), retry)
+        )
     }
 }
 
@@ -77,7 +75,7 @@ private struct StateButton: View {
         Button(action: action) {
             Text(title)
                 .foregroundStyle(Color.onBrand)
-                .frame(minHeight: Size.button(widthClass))
+                .frame(minWidth: Size.buttonMinWidth(widthClass), minHeight: Size.button(widthClass))
         }
         .buttonStyle(.borderedProminent)
         .controlSize(widthClass == .large ? .extraLarge : .large)

@@ -3,7 +3,7 @@ import SwiftUI
 
 @main
 struct FitrahTubeApp: App {
-    @State private var container = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    @State private var container = ProcessInfo.processInfo.arguments.contains("-fitrah-fake-container")
         ? AppContainer.fake()
         : AppContainer.live()
 
