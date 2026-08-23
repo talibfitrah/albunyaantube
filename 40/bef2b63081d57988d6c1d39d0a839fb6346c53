@@ -1,0 +1,48 @@
+ios/FitrahTubeTests/LayoutRulesTests.swift
+  s_18197a18aae8f1::t_cccc9777174d81 1,34-35,41-43,45
+  s_18197a18aae8f1::t_9789942e48996a 66,74
+  s_18197a18aae8f1::t_9cbd9a9cc75e9a 36-40,44,46
+ios/FitrahTubeUITests/ScreenshotTests.swift
+  s_18197a18aae8f1::t_d9a6806c4d4f67 128-131,133
+  s_18197a18aae8f1::t_cade8b2c2ccb3d 19-33,36,43-52,61,64,123,171,224-234
+  s_18197a18aae8f1::t_b6e61953ab1c76 139-150,219-222
+  s_18197a18aae8f1::t_ef7eac86ef4344 1,205-207,209-216
+  s_18197a18aae8f1::t_0c1b36587592a2 4-14,16-18,34-35,37-42,59-60,62-63,65-122,124-127,132,134-138,151-170,172-182,184-192,194-200,202-204,208,217-218,223
+  s_18197a18aae8f1::t_d4255d820fff2e 2-3,15,183,193,201,235-236
+ios/FitrahTubeTests/WidthClassTests.swift
+  s_18197a18aae8f1::t_cccc9777174d81 2,31-46
+ios/FitrahTube/Features/Settings/SettingsView.swift
+  s_18197a18aae8f1::t_eec1b0d9e1b5b9 160-163,243
+ios/FitrahTube/Features/Lists/ContentListView.swift
+  s_18197a18aae8f1::t_eec1b0d9e1b5b9 16,226-231,234-235
+ios/project.yml
+  s_18197a18aae8f1::t_d7177985ac3327 92-103,107-108
+  s_18197a18aae8f1::t_cd1835a8c45355 121,125
+  s_18197a18aae8f1::t_1314460f2ecfea 104-106
+ios/FitrahTubeUITests.xctestplan
+  s_18197a18aae8f1::t_c35f7cb5918f65 18
+  s_18197a18aae8f1::t_d4255d820fff2e 1-17,19-24
+ios/FitrahTube/DesignSystem/Components.swift
+  s_18197a18aae8f1::t_8df2b885743670 175-179,198,312-315,339,566-569,603,611
+ios/scripts/screenshots.sh
+  s_18197a18aae8f1::t_1850debd895a6e 1-34,36,39-55
+  s_18197a18aae8f1::t_b6e61953ab1c76 35,37-38
+ios/FitrahTube/DesignSystem/Layout.swift
+  s_18197a18aae8f1::t_eec1b0d9e1b5b9 18-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "40bef2b63081d57988d6c1d39d0a839fb6346c53",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
