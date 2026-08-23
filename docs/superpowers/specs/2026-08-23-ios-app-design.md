@@ -144,7 +144,7 @@ Splash runs `fetchMe` (1 attempt) and remote-config fetch in parallel with the a
 | durationChip | #CC000000 | #CC000000 |
 | videoCountChip | #CC275E4B | #CC35C491 |
 | errorBg / errorText / errorIcon | #FFF3E0 / #E65100 / #FF6F00 | #3D2A1A / #FFCC80 / #FFB74D |
-| skeleton / skeletonShimmer | #E0E0E0 / #F5F5F5 | #2A2A2A / #383838 |
+| skeleton / skeletonShimmer | #E0E0E0 / #FFFFFF (Android #F5F5F5 equals the page background, so the shimmer phase vanished — changed 2026-08-23) | #2A2A2A / #383838 |
 | navInactive / navSelected | #757575 / brand | #B0B0B0 / brand |
 | divider | #1A000000 | #1AFFFFFF |
 | liveBadge / upcomingBadge | #F44336 / #2196F3 | same |
