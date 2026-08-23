@@ -1,0 +1,24 @@
+ios/Config/Local.xcconfig.example
+  s_18197a18aae8f1::t_87f6cc2fb6f366 5-6
+ios/FitrahTube/Persistence/SettingsStore.swift
+  s_18197a18aae8f1::t_57c6a86317ca3b 42-55,70-73,75-80
+ios/FitrahTube/App/AppContainer.swift
+  s_18197a18aae8f1::t_abdb2e9aa41ae5 62-65,67-71
+  s_18197a18aae8f1::t_a11ac92f3be0e5 87-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "55414e47e0c92a5c61661fe77e5f9d15f995d336",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
