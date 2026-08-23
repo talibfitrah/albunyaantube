@@ -30,6 +30,10 @@ import Observation
     }
 
     nonisolated static func isOnline(for status: NWPath.Status) -> Bool {
-        status == .satisfied
+        switch status {
+        case .satisfied, .requiresConnection: return true
+        case .unsatisfied: return false
+        @unknown default: return false
+        }
     }
 }

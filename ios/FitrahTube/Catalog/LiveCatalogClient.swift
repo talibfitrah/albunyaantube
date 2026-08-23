@@ -31,11 +31,9 @@ nonisolated struct LiveCatalogClient: CatalogClient {
         return CursorPage(items: sections, nextCursor: output.value1.pageInfo?.nextCursor)
     }
 
-    func content(type: ListType, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
-        // `.all` has no matching `_TypePayload` case, so the lookup falls through to nil (an
-        // omitted param) exactly as the explicit switch used to.
+    func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
         let input = Operations.GetPublicContent.Input(query: .init(
-            _type: .init(rawValue: type.rawValue),
+            _type: type.flatMap { Operations.GetPublicContent.Input.Query._TypePayload(rawValue: $0.rawValue) },
             cursor: cursor,
             limit: limit,
             category: filter.categoryId,
@@ -50,8 +48,6 @@ nonisolated struct LiveCatalogClient: CatalogClient {
     }
 
     func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] {
-        // `.all` (and `nil`) have no matching `_TypePayload` case, so the lookup falls through
-        // to nil (an omitted param) exactly as the explicit switch used to.
         let typeParam = type.flatMap { Operations.SearchPublicContent.Input.Query._TypePayload(rawValue: $0.rawValue) }
         let input = Operations.SearchPublicContent.Input(query: .init(q: query, _type: typeParam, limit: limit))
         let dtos = try await client.searchPublicContent(input).ok.body.json

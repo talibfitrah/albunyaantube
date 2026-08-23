@@ -55,9 +55,14 @@ nonisolated enum AppConfig {
     }
 
     static func fake(catalog: any CatalogClient = FakeCatalogClient()) -> AppContainer {
-        // A private ephemeral suite so previews/tests never read or write the app's real
-        // `UserDefaults.standard` domain. Falls back to `.standard` only if suite creation fails.
-        let defaults = UserDefaults(suiteName: "fitrahtube.fake.\(UUID().uuidString)") ?? .standard
+        // A private suite (not `.standard`) so previews/tests never read or write the app's real
+        // defaults domain. Fixed name rather than a fresh UUID per call, so repeated preview/test
+        // runs reuse one plist instead of leaving an orphan behind every time; wiped here before
+        // the (lazy) stores can read/write it, so no state leaks between runs. Falls back to
+        // `.standard` only if suite creation fails.
+        let suiteName = "fitrahtube.fake"
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defaults.removePersistentDomain(forName: suiteName)
         return AppContainer(catalog: catalog, userDefaults: defaults)
     }
 }

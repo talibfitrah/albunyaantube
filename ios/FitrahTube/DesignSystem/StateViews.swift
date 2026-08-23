@@ -91,26 +91,36 @@ struct SkeletonListView: View {
     @State private var start = Date()
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let phase = Int(context.date.timeIntervalSince(start)) % 2 == 0
-            VStack(spacing: Spacing.md(widthClass)) {
-                ForEach(0..<rows, id: \.self) { _ in
-                    HStack(spacing: Spacing.sm) {
-                        RoundedRectangle(cornerRadius: Radius.thumbnail)
-                            .fill(fill(phase))
-                            .frame(width: 120, height: 90)
-                        VStack(alignment: .leading, spacing: Spacing.sm) {
-                            RoundedRectangle(cornerRadius: Radius.chip).fill(fill(phase)).frame(height: 16)
-                            RoundedRectangle(cornerRadius: Radius.chip).fill(fill(phase)).frame(width: 140, height: 12)
-                        }
-                        Spacer(minLength: 0)
+        // Reduce Motion: skip TimelineView entirely rather than let it keep firing an unused
+        // per-second tick -- rows(phase:) is static there anyway since fill(_:) ignores phase.
+        if reduceMotion {
+            rows(phase: false)
+        } else {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let phase = Int(context.date.timeIntervalSince(start)) % 2 == 0
+                rows(phase: phase)
+                    .animation(.easeInOut(duration: 1), value: phase)
+            }
+        }
+    }
+
+    private func rows(phase: Bool) -> some View {
+        VStack(spacing: Spacing.md(widthClass)) {
+            ForEach(0..<rows, id: \.self) { _ in
+                HStack(spacing: Spacing.sm) {
+                    RoundedRectangle(cornerRadius: Radius.thumbnail)
+                        .fill(fill(phase))
+                        .frame(width: 120, height: 90)
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        RoundedRectangle(cornerRadius: Radius.chip).fill(fill(phase)).frame(height: 16)
+                        RoundedRectangle(cornerRadius: Radius.chip).fill(fill(phase)).frame(width: 140, height: 12)
                     }
+                    Spacer(minLength: 0)
                 }
             }
-            .padding(Spacing.md(widthClass))
-            .accessibilityLabel(String(localized: "loading"))
-            .animation(reduceMotion ? nil : .easeInOut(duration: 1), value: phase)
         }
+        .padding(Spacing.md(widthClass))
+        .accessibilityLabel(String(localized: "loading"))
     }
 
     private func fill(_ phase: Bool) -> Color { (phase && !reduceMotion) ? .skeletonShimmer : .skeleton }

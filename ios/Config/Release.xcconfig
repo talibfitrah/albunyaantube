@@ -1,3 +1,4 @@
-API_BASE_URL = https:/$()/app.fitrahtube.com/
 FITRAH_TEAM_ID =
+// Local.xcconfig may set FITRAH_TEAM_ID only; API_BASE_URL is fixed for Release.
 #include? "Local.xcconfig"
+API_BASE_URL = https:/$()/app.fitrahtube.com/

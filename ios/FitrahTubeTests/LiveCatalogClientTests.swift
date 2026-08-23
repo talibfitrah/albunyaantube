@@ -81,21 +81,21 @@ struct LiveCatalogClientTests {
             let (sut, transport) = makeClient(responseBody: json)
             var filter = FilterState()
             filter.length = length
-            _ = try await sut.content(type: .all, cursor: nil, limit: 20, filter: filter, query: nil)
+            _ = try await sut.content(type: nil, cursor: nil, limit: 20, filter: filter, query: nil)
             #expect(transport.lastRequest?.path?.contains("length=\(length.rawValue)") == true)
         }
         for date in DateFilter.allCases {
             let (sut, transport) = makeClient(responseBody: json)
             var filter = FilterState()
             filter.date = date
-            _ = try await sut.content(type: .all, cursor: nil, limit: 20, filter: filter, query: nil)
+            _ = try await sut.content(type: nil, cursor: nil, limit: 20, filter: filter, query: nil)
             #expect(transport.lastRequest?.path?.contains("date=\(date.rawValue)") == true)
         }
         for sort in SortFilter.allCases {
             let (sut, transport) = makeClient(responseBody: json)
             var filter = FilterState()
             filter.sort = sort
-            _ = try await sut.content(type: .all, cursor: nil, limit: 20, filter: filter, query: nil)
+            _ = try await sut.content(type: nil, cursor: nil, limit: 20, filter: filter, query: nil)
             #expect(transport.lastRequest?.path?.contains("sort=\(sort.rawValue)") == true)
         }
     }

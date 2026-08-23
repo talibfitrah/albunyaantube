@@ -11,9 +11,9 @@ struct NetworkMonitorTests {
         #expect(monitor.isOnline == true)
     }
 
-    @Test func satisfiedPathStatusMapsToOnline() {
+    @Test func pathStatusMapsToOnlineOffline() {
         #expect(NetworkMonitor.isOnline(for: .satisfied) == true)
+        #expect(NetworkMonitor.isOnline(for: .requiresConnection) == true)
         #expect(NetworkMonitor.isOnline(for: .unsatisfied) == false)
-        #expect(NetworkMonitor.isOnline(for: .requiresConnection) == false)
     }
 }

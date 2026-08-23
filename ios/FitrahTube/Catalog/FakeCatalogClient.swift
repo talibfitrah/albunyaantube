@@ -53,7 +53,7 @@ nonisolated struct FakeCatalogClient: CatalogClient {
         page(cursor, from: homePages)
     }
 
-    func content(type: ListType, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+    func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
         page(cursor, from: contentPages)
     }
 

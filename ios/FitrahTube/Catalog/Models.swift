@@ -100,5 +100,4 @@ nonisolated enum ListType: String, Sendable {
     case videos = "VIDEOS"
     case channels = "CHANNELS"
     case playlists = "PLAYLISTS"
-    case all = "ALL"
 }
