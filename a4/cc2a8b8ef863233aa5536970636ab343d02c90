@@ -1,0 +1,29 @@
+ios/Packages/InnerTubeKit/probes/probe-2026-08-23.md
+  s_18197a18aae8f1::t_09118ecd055e51 1-145
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-botcheck.json
+  s_18197a18aae8f1::t_6680cf52f637d1 1-16
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-live.json
+  s_18197a18aae8f1::t_6680cf52f637d1 1-522
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-ok-hls.json
+  s_18197a18aae8f1::t_6680cf52f637d1 1-2179
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-unplayable-kids.json
+  s_18197a18aae8f1::t_6680cf52f637d1 1-77
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-age-gated.json
+  s_18197a18aae8f1::t_6680cf52f637d1 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a4cc2a8b8ef863233aa5536970636ab343d02c90",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
