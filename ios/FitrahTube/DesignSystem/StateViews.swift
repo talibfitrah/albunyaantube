@@ -16,19 +16,11 @@ struct EmptyStateView: View {
                     .foregroundStyle(Color.brand)
                     .accessibilityHidden(true)
                 Text(title).font(TypeScale.headline).foregroundStyle(Color.textPrimary)
-                Text(message)
-                    .font(TypeScale.body)
-                    .foregroundStyle(Color.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 300)
+                StateMessage(text: message)
             }
             .accessibilityElement(children: .combine)
             if let action {
-                Button(action.title, action: action.run)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.brand)
-                    .foregroundStyle(Color.onBrand)
-                    .frame(minHeight: Size.button)
+                StateButton(title: action.title, action: action.run)
             }
         }
         .padding(Spacing.lg(widthClass))
@@ -48,19 +40,36 @@ struct ErrorStateView: View {
                 .font(.system(size: 64))
                 .foregroundStyle(Color.accentRed)
                 .accessibilityHidden(true)
-            Text(message)
-                .font(TypeScale.body)
-                .foregroundStyle(Color.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 300)
-            Button(String(localized: "Retry"), action: retry)
-                .buttonStyle(.borderedProminent)
-                .tint(.brand)
-                .foregroundStyle(Color.onBrand)
-                .frame(minHeight: Size.button)
+            StateMessage(text: message)
+            StateButton(title: String(localized: "Retry"), action: retry)
         }
         .padding(Spacing.lg(widthClass))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct StateMessage: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(TypeScale.body)
+            .foregroundStyle(Color.textSecondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 300)
+    }
+}
+
+private struct StateButton: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(title, action: action)
+            .buttonStyle(.borderedProminent)
+            .tint(.brand)
+            .foregroundStyle(Color.onBrand)
+            .frame(minHeight: Size.button)
     }
 }
 
@@ -88,19 +97,11 @@ struct SkeletonListView: View {
         }
         .padding(Spacing.md(widthClass))
         .accessibilityLabel(String(localized: "Loading"))
-        .onAppear { updateAnimation() }
-        .onChange(of: reduceMotion) { updateAnimation() }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 1).repeatForever(autoreverses: true), value: shimmer)
+        .onAppear { shimmer = true }
     }
 
-    private func updateAnimation() {
-        if reduceMotion {
-            withAnimation(nil) { shimmer = false }
-        } else {
-            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { shimmer = true }
-        }
-    }
-
-    private var fill: Color { shimmer ? .skeletonShimmer : .skeleton }
+    private var fill: Color { (shimmer && !reduceMotion) ? .skeletonShimmer : .skeleton }
 }
 
 #Preview("Empty") {

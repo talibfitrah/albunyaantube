@@ -18,7 +18,7 @@ nonisolated enum AppConfig {
 @MainActor final class AppContainer {
     let catalog: any CatalogClient
 
-    init(catalog: any CatalogClient) {
+    nonisolated init(catalog: any CatalogClient) {
         self.catalog = catalog
     }
 
@@ -27,12 +27,12 @@ nonisolated enum AppConfig {
         return AppContainer(catalog: LiveCatalogClient(client: api))
     }
 
-    static func fake(catalog: any CatalogClient = FakeCatalogClient()) -> AppContainer {
+    nonisolated static func fake(catalog: any CatalogClient = FakeCatalogClient()) -> AppContainer {
         AppContainer(catalog: catalog)
     }
 }
 
 extension EnvironmentValues {
-    // SwiftUI resolves environment defaults on the main actor; see spec §5 isolation rule.
-    @Entry var container: AppContainer = MainActor.assumeIsolated { .fake() }
+    // nonisolated fake() keeps the environment default trap-free; see spec §5.
+    @Entry var container: AppContainer = .fake()
 }

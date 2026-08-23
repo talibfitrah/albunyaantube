@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import FitrahAPI
 
+@Suite(.perTest)
 struct DeviceIdTests {
     private func freshDefaults() -> (defaults: UserDefaults, name: String) {
         let name = "DeviceIdTests-\(UUID().uuidString)"

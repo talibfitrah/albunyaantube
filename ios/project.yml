@@ -78,6 +78,7 @@ targets:
     platform: iOS
     sources:
       - path: FitrahTubeTests
+      - path: Packages/FitrahAPI/Tests/FitrahAPITests/RecordingTransport.swift
     dependencies:
       - target: FitrahTube
       - package: FitrahAPI

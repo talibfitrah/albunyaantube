@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import FitrahAPI
 
+@Suite(.perTest)
 struct GeneratedTypesTests {
     @Test func decodesCategoryDto() throws {
         let json = Data(#"{"id":"cat1","name":"Quran","slug":"quran","parentId":null}"#.utf8)

@@ -1,6 +1,7 @@
 import Testing
 @testable import FitrahTube
 
+@Suite(.perTest)
 struct AppContainerTests {
     @Test func fakeContainerServesCannedCategories() async throws {
         let container = AppContainer.fake()

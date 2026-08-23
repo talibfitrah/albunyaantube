@@ -3,6 +3,7 @@ import HTTPTypes
 import Testing
 @testable import FitrahAPI
 
+@Suite(.perTest)
 struct DeviceIdMiddlewareTests {
     @Test func addsDeviceIdHeaderAndApiBasePath() async throws {
         let transport = RecordingTransport()

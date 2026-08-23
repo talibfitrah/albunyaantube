@@ -27,7 +27,11 @@ echo ""
 
 # 3. Generate Swift client for iOS
 echo "📦 Generating Swift client for iOS..."
-"$ROOT_DIR/ios/scripts/generate-swift-dtos.sh"
+if command -v swift >/dev/null 2>&1; then
+    "$ROOT_DIR/ios/scripts/generate-swift-dtos.sh"
+else
+    echo "⚠️  swift not found — skipping iOS client generation"
+fi
 echo ""
 
 echo "🎉 All DTOs generated successfully!"

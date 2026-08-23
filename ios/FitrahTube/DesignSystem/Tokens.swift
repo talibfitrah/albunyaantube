@@ -60,7 +60,7 @@ extension Color {
 
 // MARK: - Width class (Android layout/ ↔ layout-sw600dp/ ↔ layout-sw720dp/)
 
-enum WidthClass: Equatable {
+nonisolated enum WidthClass: Equatable {
     case compact, regular, large
 
     init(width: CGFloat) {

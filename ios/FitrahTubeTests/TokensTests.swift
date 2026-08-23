@@ -2,6 +2,7 @@ import Testing
 import UIKit
 @testable import FitrahTube
 
+@Suite(.perTest)
 struct TokensTests {
     @Test func argbWithAlphaByteYieldsFractionalAlpha() {
         var alpha: CGFloat = 0

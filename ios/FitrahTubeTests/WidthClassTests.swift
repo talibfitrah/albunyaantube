@@ -1,6 +1,7 @@
 import Testing
 @testable import FitrahTube
 
+@Suite(.perTest)
 struct WidthClassTests {
     @Test func phoneWidthsAreCompact() {
         #expect(WidthClass(width: 390) == .compact)

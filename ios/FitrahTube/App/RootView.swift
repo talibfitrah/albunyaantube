@@ -4,7 +4,7 @@ import SwiftUI
 struct RootView: View {
     @Environment(\.container) private var container
     @State private var status = "Loading categories…"
-    @State private var width: CGFloat = 0
+    @State private var widthClass: WidthClass = .compact
 
     var body: some View {
         VStack(spacing: 16) {
@@ -19,8 +19,10 @@ struct RootView: View {
                 status = "Backend unreachable: \(error.localizedDescription)"
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .environment(\.widthClass, WidthClass(width: width))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Measures the full-size container, not the content — see WidthClass.
+        .onGeometryChange(for: WidthClass.self) { WidthClass(width: $0.size.width) } action: { widthClass = $0 }
+        .environment(\.widthClass, widthClass)
     }
 }
 
