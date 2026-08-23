@@ -313,7 +313,7 @@ struct VideoGridCell: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.homeThumbnail))
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text(item.title).font(TypeScale.itemTitle).fontWeight(.bold)
-                        .foregroundStyle(Color.textPrimary).lineLimit(2)
+                        .foregroundStyle(Color.textPrimary).lineLimit(2, reservesSpace: true) // content-lists.md:429-430 -- minLines 2 and maxLines 2, always occupies two lines
                     Text(videoMeta(item, locale: locale, includeCategory: false))
                         .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(2)
                 }
@@ -548,7 +548,7 @@ struct CategoryPill: View {
             Button(action: onTap) {
                 HStack(spacing: 0) {
                     Image(systemName: "square.grid.2x2").font(.system(size: 20))
-                    Text(label).font(.system(.subheadline, weight: .medium)).padding(.leading, Spacing.sm)
+                    Text(label).font(TypeScale.seeAll).padding(.leading, Spacing.sm)
                     if !isActive {
                         Image(systemName: "chevron.down").font(.system(size: 20)).padding(.leading, Spacing.xs)
                     }
@@ -556,6 +556,7 @@ struct CategoryPill: View {
                 .foregroundStyle(Color.brand)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "home_select_category"))
             if isActive {
                 Button(action: onClear) {
                     Image(systemName: "xmark").font(.system(size: 20))
@@ -578,7 +579,6 @@ struct CategoryPill: View {
         .frame(height: 40) // home_category_pill_height
         .background(Color.categoryPill)
         .clipShape(RoundedRectangle(cornerRadius: Radius.pill))
-        .accessibilityLabel(String(localized: "home_select_category"))
     }
 }
 
@@ -597,6 +597,7 @@ struct BannerMessage: Equatable {
 /// Bottom banner, 2.5 s auto-dismiss, optional action, VoiceOver announcement.
 struct TransientBanner: ViewModifier {
     @Binding var message: BannerMessage?
+    @Environment(\.widthClass) private var widthClass
 
     init(message: Binding<BannerMessage?>) { self._message = message }
 
@@ -625,11 +626,11 @@ struct TransientBanner: ViewModifier {
                     .foregroundStyle(Color.accent)
             }
         }
-        .font(TypeScale.body(.compact))
-        .padding(Spacing.md(.compact))
+        .font(TypeScale.body(widthClass))
+        .padding(Spacing.md(widthClass))
         .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: Radius.dialog))
-        .padding(.horizontal, Spacing.md(.compact))
-        .padding(.bottom, Spacing.md(.compact))
+        .padding(.horizontal, Spacing.md(widthClass))
+        .padding(.bottom, Spacing.md(widthClass))
     }
 }
 
