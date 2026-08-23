@@ -150,7 +150,7 @@ Splash runs `fetchMe` (1 attempt) and remote-config fetch in parallel with the a
 | settingsIconBg | #F0F0F0 | #2A3530 |
 | submissionPending/Approved/Rejected/Changes | #FFA000 / #43A047 / #E53935 / #1E88E5 | same |
 
-Brand green is used for text and tints (AA-safe in both modes); white-on-accent only on filled buttons.
+Brand green is used for text and tints (AA-safe in both modes). Labels on a brand/accent fill use `onBrand` = light #FFFFFF / dark #0A1F18 (Android's `filter_chip` selected text on #35C491) — white on the dark-mode mint is 2.2:1 and fails AA, so iOS deliberately departs from Android there.
 
 **Type** (`dimens.xml:140-197`, `styles.xml:22-72`): SF Pro, Dynamic Type relative to Android sizes — headline 20 bold (24 on large iPad), sectionTitle 18, subtitle 16, body 14, caption 12, badge 10 bold, duration 11 bold, homeSectionTitle 20 bold, itemTitle 15 medium, itemMeta 13, seeAll 14 medium, splashTitle 32/40/48, onboardingTitle 28/32/36. No `minimumScaleFactor`.
 
