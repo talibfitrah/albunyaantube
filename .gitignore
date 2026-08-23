@@ -203,5 +203,7 @@ __pycache__/
 /ios/**/*.xcuserstate
 /ios/DerivedData/
 /ios/.build/
-/ios/Packages/*/.build/
+/ios/Packages/*/.build*/
 /ios/Packages/*/.swiftpm/
+**/GoogleService-Info.plist
+/ios/Packages/*/Sources/*/openapi.yaml

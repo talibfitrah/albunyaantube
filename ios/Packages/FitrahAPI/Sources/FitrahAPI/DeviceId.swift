@@ -3,7 +3,7 @@ import Foundation
 /// Random per-install identifier sent as `X-Device-Id` on every backend call.
 /// Mirrors Android's `device_prefs/device_id` (NetworkModule.kt).
 public struct DeviceId: Sendable, Equatable {
-    public static let defaultsKey = "device_id"
+    public static let defaultsKey = "com.albunyaan.tube.deviceId"
     public let value: String
 
     public init(value: String) { self.value = value }

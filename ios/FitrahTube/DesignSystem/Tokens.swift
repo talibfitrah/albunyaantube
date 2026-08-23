@@ -12,7 +12,7 @@ private extension Color {
     }
 }
 
-private extension UIColor {
+extension UIColor {
     convenience init(argb: UInt32) {
         // Heuristic: 0x00RRGGBB (fully transparent, non-zero RGB) is indistinguishable from opaque 0xRRGGBB; no token uses that.
         let hasAlpha = argb > 0xFFFFFF
@@ -72,6 +72,11 @@ enum WidthClass: Equatable {
     }
 }
 
+extension EnvironmentValues {
+    /// Set by the root view from its width (Android layout / sw600dp / sw720dp buckets).
+    @Entry var widthClass: WidthClass = .compact
+}
+
 // MARK: - Spacing (dimens.xml + sw600dp/sw720dp overrides), points
 
 enum Spacing {
@@ -106,20 +111,19 @@ enum Radius {
 // MARK: - Type scale (dimens.xml / styles.xml sizes; Dynamic Type via relative text styles)
 
 enum TypeScale {
-    static let headline = Font.system(.title3, weight: .bold)          // 20 bold
-    static let sectionTitle = Font.system(.headline, weight: .semibold) // 18
-    static let subtitle = Font.system(.callout)                          // 16
-    static let body = Font.system(.subheadline)                          // 14
-    static let caption = Font.system(.caption)                           // 12
-    static let badge = Font.system(.caption2, weight: .bold)             // 10 bold
-    static let itemTitle = Font.system(.subheadline, weight: .medium)    // 15 medium
-    static let itemMeta = Font.system(.footnote)                         // 13
-    static let seeAll = Font.system(.subheadline, weight: .medium)       // 14 medium
+    static let headline = Font.system(.title3, weight: .bold)          // .title3 20 — Android headline 20 bold
+    static let sectionTitle = Font.system(.headline, weight: .semibold) // .headline 17 — Android 18
+    static let subtitle = Font.system(.callout)                          // .callout 16 — Android 16
+    static let body = Font.system(.subheadline)                          // .subheadline 15 — Android 14
+    static let caption = Font.system(.caption)                           // .caption 12 — Android 12
+    static let badge = Font.system(.caption2, weight: .bold)             // .caption2 11 bold — Android 10 bold
+    static let itemTitle = Font.system(.subheadline, weight: .medium)    // .subheadline 15 medium — Android 15 medium
+    static let itemMeta = Font.system(.footnote)                         // .footnote 13 — Android 13
+    static let seeAll = Font.system(.subheadline, weight: .medium)       // .subheadline 15 medium — Android 14 medium
 }
 
 // MARK: - Touch targets
 
 enum Size {
-    static let touchTarget: CGFloat = 48
     static let button: CGFloat = 56
 }

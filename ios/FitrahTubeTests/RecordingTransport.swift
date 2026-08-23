@@ -2,6 +2,7 @@ import Foundation
 import HTTPTypes
 import OpenAPIRuntime
 
+// Test-only double; each test awaits send(_:) before reading the recorded request, so no synchronization is needed.
 nonisolated final class RecordingTransport: ClientTransport, @unchecked Sendable {
     private(set) var lastRequest: HTTPRequest?
     var responseBody: Data

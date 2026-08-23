@@ -2,9 +2,8 @@ import Foundation
 import HTTPTypes
 import OpenAPIRuntime
 
-/// Test transport: records the outgoing request and answers with a fixed response.
-/// `nonisolated`: `ClientTransport.send` is a nonisolated requirement.
-nonisolated final class RecordingTransport: ClientTransport, @unchecked Sendable {
+// Test-only double; each test awaits send(_:) before reading the recorded request, so no synchronization is needed.
+final class RecordingTransport: ClientTransport, @unchecked Sendable {
     private(set) var lastRequest: HTTPRequest?
     private(set) var lastBaseURL: URL?
     var status: HTTPResponse.Status = .ok

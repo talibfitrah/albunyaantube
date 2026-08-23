@@ -72,10 +72,6 @@ targets:
           - CFBundleURLName: com.albunyaan.tube
             CFBundleURLSchemes: [albunyaantube]
         API_BASE_URL: $(API_BASE_URL)
-        NSAppTransportSecurity:
-          NSExceptionDomains:
-            localhost:
-              NSExceptionAllowsInsecureHTTPLoads: true
 
   FitrahTubeTests:
     type: bundle.unit-test
@@ -102,3 +98,6 @@ schemes:
       config: Debug
       targets:
         - FitrahTubeTests
+      testPlans:
+        - path: FitrahTube.xctestplan
+          defaultPlan: true

@@ -15,9 +15,7 @@ nonisolated enum AppConfig {
 
 /// Composition root. Built once in `FitrahTubeApp`; every ViewModel receives what it needs from here
 /// through its initializer (Hilt's constructor injection, without a framework).
-/// `nonisolated`: the app target defaults to MainActor isolation, but the `@Entry` default below is
-/// evaluated outside the main actor, and the container only holds Sendable protocol existentials.
-nonisolated final class AppContainer: Sendable {
+@MainActor final class AppContainer {
     let catalog: any CatalogClient
 
     init(catalog: any CatalogClient) {
@@ -35,5 +33,6 @@ nonisolated final class AppContainer: Sendable {
 }
 
 extension EnvironmentValues {
-    @Entry var container: AppContainer = .fake()
+    // SwiftUI resolves environment defaults on the main actor; see spec §5 isolation rule.
+    @Entry var container: AppContainer = MainActor.assumeIsolated { .fake() }
 }

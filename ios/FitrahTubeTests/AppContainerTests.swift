@@ -14,4 +14,8 @@ struct AppContainerTests {
         ]))
         #expect(try await container.catalog.categories().count == 1)
     }
+
+    @Test func apiBaseURLPointsAtLocalhost() {
+        #expect(AppConfig.apiBaseURL.host() == "localhost")
+    }
 }

@@ -6,10 +6,11 @@ struct EmptyStateView: View {
     let title: String
     let message: String
     var action: (title: String, run: () -> Void)? = nil
+    @Environment(\.widthClass) private var widthClass
 
     var body: some View {
-        VStack(spacing: Spacing.md(.compact)) {
-            VStack(spacing: Spacing.md(.compact)) {
+        VStack(spacing: Spacing.md(widthClass)) {
+            VStack(spacing: Spacing.md(widthClass)) {
                 Image(systemName: systemImage)
                     .font(.system(size: 96))
                     .foregroundStyle(Color.brand)
@@ -30,7 +31,7 @@ struct EmptyStateView: View {
                     .frame(minHeight: Size.button)
             }
         }
-        .padding(Spacing.lg(.compact))
+        .padding(Spacing.lg(widthClass))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -39,9 +40,10 @@ struct EmptyStateView: View {
 struct ErrorStateView: View {
     let message: String
     let retry: () -> Void
+    @Environment(\.widthClass) private var widthClass
 
     var body: some View {
-        VStack(spacing: Spacing.md(.compact)) {
+        VStack(spacing: Spacing.md(widthClass)) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 64))
                 .foregroundStyle(Color.accentRed)
@@ -57,7 +59,7 @@ struct ErrorStateView: View {
                 .foregroundStyle(Color.onBrand)
                 .frame(minHeight: Size.button)
         }
-        .padding(Spacing.lg(.compact))
+        .padding(Spacing.lg(widthClass))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -66,10 +68,11 @@ struct ErrorStateView: View {
 struct SkeletonListView: View {
     var rows: Int = 6
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.widthClass) private var widthClass
     @State private var shimmer = false
 
     var body: some View {
-        VStack(spacing: Spacing.md(.compact)) {
+        VStack(spacing: Spacing.md(widthClass)) {
             ForEach(0..<rows, id: \.self) { _ in
                 HStack(spacing: Spacing.sm) {
                     RoundedRectangle(cornerRadius: Radius.thumbnail)
@@ -83,10 +86,16 @@ struct SkeletonListView: View {
                 }
             }
         }
-        .padding(Spacing.md(.compact))
+        .padding(Spacing.md(widthClass))
         .accessibilityLabel(String(localized: "Loading"))
-        .onAppear {
-            guard !reduceMotion else { return }
+        .onAppear { updateAnimation() }
+        .onChange(of: reduceMotion) { updateAnimation() }
+    }
+
+    private func updateAnimation() {
+        if reduceMotion {
+            withAnimation(nil) { shimmer = false }
+        } else {
             withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { shimmer = true }
         }
     }
