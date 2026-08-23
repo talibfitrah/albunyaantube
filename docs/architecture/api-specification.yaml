@@ -3933,9 +3933,8 @@ components:
         createdBy:
           nullable: true
           description: Reserved for future use. Currently always null (per-exclusion creator tracking is not implemented).
-          oneOf:
+          allOf:
             - $ref: '#/components/schemas/AdminUserSummary'
-            - type: 'null'
 
     AdminUserSummary:
       type: object

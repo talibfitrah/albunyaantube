@@ -25,6 +25,11 @@ cd "$ROOT_DIR/backend"
 echo "✅ Kotlin DTOs generated to: android/app/src/main/java/com/albunyaan/tube/data/model/api/models/"
 echo ""
 
+# 3. Generate Swift client for iOS
+echo "📦 Generating Swift client for iOS..."
+"$ROOT_DIR/ios/scripts/generate-swift-dtos.sh"
+echo ""
+
 echo "🎉 All DTOs generated successfully!"
 echo ""
 echo "⚠️  IMPORTANT: Do not manually edit generated files."
