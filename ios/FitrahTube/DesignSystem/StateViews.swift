@@ -12,7 +12,7 @@ struct EmptyStateView: View {
         VStack(spacing: Spacing.md(widthClass)) {
             VStack(spacing: Spacing.md(widthClass)) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 96))
+                    .font(.system(size: Size.iconXL(widthClass)))
                     .foregroundStyle(Color.brand)
                     .accessibilityHidden(true)
                 Text(title).font(TypeScale.headline).foregroundStyle(Color.textPrimary)
@@ -28,8 +28,9 @@ struct EmptyStateView: View {
     }
 }
 
-/// Android error_state.xml: red icon, message, 56 pt retry button.
+/// Android error_state.xml: red icon, optional heading, message, retry button.
 struct ErrorStateView: View {
+    var title: String? = nil
     let message: String
     let retry: () -> Void
     @Environment(\.widthClass) private var widthClass
@@ -37,9 +38,15 @@ struct ErrorStateView: View {
     var body: some View {
         VStack(spacing: Spacing.md(widthClass)) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 64))
+                .font(.system(size: Size.iconXL(widthClass)))
                 .foregroundStyle(Color.accentRed)
                 .accessibilityHidden(true)
+            if let title {
+                Text(title)
+                    .font(TypeScale.headline)
+                    .foregroundStyle(Color.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+            }
             StateMessage(text: message)
             StateButton(title: String(localized: "Retry"), action: retry)
         }
@@ -50,28 +57,31 @@ struct ErrorStateView: View {
 
 private struct StateMessage: View {
     let text: String
+    @Environment(\.widthClass) private var widthClass
 
     var body: some View {
         Text(text)
             .font(TypeScale.body)
             .foregroundStyle(Color.textSecondary)
             .multilineTextAlignment(.center)
-            .frame(maxWidth: 300)
+            .frame(maxWidth: Size.stateBodyMaxWidth(widthClass))
     }
 }
 
 private struct StateButton: View {
     let title: String
     let action: () -> Void
+    @Environment(\.widthClass) private var widthClass
 
     var body: some View {
         Button(action: action) {
-            Text(title).frame(minHeight: Size.button)
+            Text(title)
+                .foregroundStyle(Color.onBrand)
+                .frame(minHeight: Size.button(widthClass))
         }
         .buttonStyle(.borderedProminent)
-        .controlSize(.large)
+        .controlSize(widthClass == .large ? .extraLarge : .large)
         .tint(.brand)
-        .foregroundStyle(Color.onBrand)
     }
 }
 
@@ -80,30 +90,31 @@ struct SkeletonListView: View {
     var rows: Int = 6
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.widthClass) private var widthClass
-    @State private var shimmer = false
 
     var body: some View {
-        VStack(spacing: Spacing.md(widthClass)) {
-            ForEach(0..<rows, id: \.self) { _ in
-                HStack(spacing: Spacing.sm) {
-                    RoundedRectangle(cornerRadius: Radius.thumbnail)
-                        .fill(fill)
-                        .frame(width: 120, height: 90)
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        RoundedRectangle(cornerRadius: Radius.chip).fill(fill).frame(height: 16)
-                        RoundedRectangle(cornerRadius: Radius.chip).fill(fill).frame(width: 140, height: 12)
+        TimelineView(.animation(minimumInterval: 1, paused: reduceMotion)) { context in
+            let phase = Int(context.date.timeIntervalSinceReferenceDate) % 2 == 0
+            VStack(spacing: Spacing.md(widthClass)) {
+                ForEach(0..<rows, id: \.self) { _ in
+                    HStack(spacing: Spacing.sm) {
+                        RoundedRectangle(cornerRadius: Radius.thumbnail)
+                            .fill(fill(phase))
+                            .frame(width: 120, height: 90)
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                            RoundedRectangle(cornerRadius: Radius.chip).fill(fill(phase)).frame(height: 16)
+                            RoundedRectangle(cornerRadius: Radius.chip).fill(fill(phase)).frame(width: 140, height: 12)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
                 }
             }
+            .padding(Spacing.md(widthClass))
+            .accessibilityLabel(String(localized: "Loading"))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 1), value: phase)
         }
-        .padding(Spacing.md(widthClass))
-        .accessibilityLabel(String(localized: "Loading"))
-        .animation(reduceMotion ? nil : .easeInOut(duration: 1).repeatForever(autoreverses: true), value: shimmer)
-        .onAppear { shimmer = true }
     }
 
-    private var fill: Color { (shimmer && !reduceMotion) ? .skeletonShimmer : .skeleton }
+    private func fill(_ phase: Bool) -> Color { (phase && !reduceMotion) ? .skeletonShimmer : .skeleton }
 }
 
 #Preview("Empty") {
@@ -112,6 +123,10 @@ struct SkeletonListView: View {
 
 #Preview("Error") {
     ErrorStateView(message: "Couldn't load content.") {}
+}
+
+#Preview("Error with title") {
+    ErrorStateView(title: "Couldn't load content", message: "Check your connection and try again.") {}
 }
 
 #Preview("Skeleton") {

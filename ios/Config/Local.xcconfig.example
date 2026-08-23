@@ -1,0 +1,3 @@
+// Copy this file to Local.xcconfig (gitignored) and fill in your own Apple Developer Team ID
+// to sign+run on a physical device. Not needed for simulator builds.
+FITRAH_TEAM_ID = ABCDE12345

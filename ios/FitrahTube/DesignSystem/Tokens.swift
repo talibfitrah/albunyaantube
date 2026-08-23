@@ -125,5 +125,9 @@ enum TypeScale {
 // MARK: - Touch targets
 
 enum Size {
-    static let button: CGFloat = 56
+    static func button(_ w: WidthClass) -> CGFloat { w == .large ? 64 : 56 }
+    static func iconXL(_ w: WidthClass) -> CGFloat { w == .large ? 128 : 96 }
+    static func stateBodyMaxWidth(_ w: WidthClass) -> CGFloat {
+        switch w { case .compact: 300; case .regular: 400; case .large: 480 }
+    }
 }

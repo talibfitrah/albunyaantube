@@ -10,7 +10,12 @@ cd "$(dirname "$0")/.."
 # "Test run with ..." is swift test's (SwiftPM) Swift Testing summary line. xcodebuild test with
 # multiple -destination flags never prints that line -- it reports "Testing (passed|failed) on
 # '<device>'" per destination instead; both are matched so both destinations' results are visible.
-SUMMARY='Test run with|Testing (passed|failed) on|TEST (SUCCEEDED|FAILED)|error:'
+# The ✘/"Expectation failed"/"recorded an issue" lines are Swift Testing's per-failure detail —
+# `swift test` (single process) prints them, but xcodebuild test with two -destination flags runs
+# them concurrently and falls back to its older per-test reporter instead ("Test case '<name>'
+# failed on '<device>'"), so that pattern is matched too or a dual-destination failure would only
+# ever show "Testing failed on '<device>'" with no indication of which test or why.
+SUMMARY='Test run with|Testing (passed|failed) on|TEST (SUCCEEDED|FAILED)|error:|✘|Expectation failed|recorded an issue|Test case .* failed'
 
 run_all() {
     xcodegen generate || return $?
@@ -35,6 +40,8 @@ run_all &
 pid=$!
 ( sleep 300; kill -TERM -- -"$pid" 2>/dev/null ) &
 wd=$!
+
+trap 'kill -- -"$pid" -"$wd" 2>/dev/null; exit 130' INT TERM
 
 wait "$pid"
 rc=$?

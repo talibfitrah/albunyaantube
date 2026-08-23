@@ -16,7 +16,13 @@ struct AppContainerTests {
         #expect(try await container.catalog.categories().count == 1)
     }
 
-    @Test func apiBaseURLPointsAtLocalhost() {
+#if DEBUG
+    @Test func debugApiBaseURLIsLocalhost() {
         #expect(AppConfig.apiBaseURL.host() == "localhost")
     }
+#else
+    @Test func apiBaseURLUsesHTTPSOutsideDebug() {
+        #expect(AppConfig.apiBaseURL.scheme == "https")
+    }
+#endif
 }
