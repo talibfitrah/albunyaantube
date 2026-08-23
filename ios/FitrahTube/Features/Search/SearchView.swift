@@ -80,7 +80,7 @@ struct SearchView: View {
                 EmptyStateView(
                     systemImage: "magnifyingglass",
                     title: String(localized: "search_no_results"),
-                    message: Format.localizedFormat("search_try_different", locale: locale, viewModel.query)
+                    message: Format.localizedFormat("search_try_different", locale: locale, viewModel.lastSearchedQuery)
                 )
             case .error:
                 // RULINGS #23: Android has no retry button on search error; this one does.

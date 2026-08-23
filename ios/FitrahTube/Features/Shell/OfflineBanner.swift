@@ -19,6 +19,11 @@ struct OfflineBanner: View {
         .padding(.vertical, Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.errorBackground)
+        // Gate cubic-r3 X2: no interactive content of its own, but `MainShellView` pins this at
+        // the same top edge as each tab's `NavigationStack` navigation bar (`.overlay(alignment:
+        // .top)`), so without this its full-width background silently swallowed taps meant for
+        // the nav bar's title/trailing button and the pushed screens' Back button.
+        .allowsHitTesting(false)
     }
 }
 

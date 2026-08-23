@@ -94,18 +94,34 @@ struct RemoteImage: View {
         image = nil
         // ponytail: decode happens on the calling (main) actor -- fine at card/thumbnail sizes
         // (max ~320 pt here); move to a background decode if profiling shows main-thread jank.
-        // The response body is remote, backend-supplied content (gate wave-4 V7): `data(from:)`
-        // buffers it whole with no cap, and the shared 200 MB-disk `URLCache` would store it, so a
-        // compromised or mis-configured thumbnail host could OOM the app with one multi-GB body.
-        // `expectedContentLength` is advisory (and often -1), so the count check on the received
-        // bytes is the one that holds; the MIME check refuses non-images before the decode.
-        guard let (data, response) = try? await Self.session.data(from: url),
-              (response as? HTTPURLResponse)?.mimeType?.hasPrefix("image/") == true,
-              data.count <= 10 << 20,
+        guard let data = try? await Self.boundedImageData(from: url),
               let decoded = UIImage(data: data) else { return }
         let cost = decoded.cgImage.map { $0.bytesPerRow * $0.height } ?? data.count
         Self.cache.setObject(decoded, forKey: url as NSURL, cost: cost)
         image = decoded
+    }
+
+    private static let maxImageBytes = 10 << 20 // 10 MB
+
+    /// The response body is remote, backend-supplied content (gate wave-4 V7 / cubic-r3 X1): a
+    /// compromised or mis-configured thumbnail host could otherwise OOM the app with one multi-GB
+    /// body. `data(from:)` only returns once the whole body is buffered, so a size check on its
+    /// result runs after the allocation it was meant to prevent. `bytes(for:)` hands back the
+    /// response -- and its `Content-Length`, when the server sends one -- before any body bytes
+    /// are read, so a declared-oversize length aborts here with nothing downloaded. A chunked or
+    /// absent length (`expectedContentLength == -1`) falls through to the loop, which enforces the
+    /// same cap against the bytes actually received -- also catching a length header that
+    /// understated the real body. The MIME check refuses non-images before either.
+    private static func boundedImageData(from url: URL) async throws -> Data? {
+        let (bytes, response) = try await session.bytes(for: URLRequest(url: url))
+        guard (response as? HTTPURLResponse)?.mimeType?.hasPrefix("image/") == true else { return nil }
+        guard response.expectedContentLength == -1 || response.expectedContentLength <= Int64(maxImageBytes) else { return nil }
+        var data = Data()
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > maxImageBytes { return nil }
+        }
+        return data
     }
 }
 

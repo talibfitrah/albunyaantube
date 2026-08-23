@@ -16,6 +16,11 @@ import Foundation
 
     private(set) var state: State
 
+    /// The trimmed value the most recent search actually ran with -- distinct from `query` (the
+    /// live field text), so "no results" messaging shows what was actually searched instead of
+    /// re-trimming a `query` that may carry padding or have changed since (gate cubic-r3 X4).
+    private(set) var lastSearchedQuery: String = ""
+
     /// 500 ms debounce, min 2 chars (`didSet` below); `submit()`/`selectHistory(_:)` bypass both.
     var query: String = "" {
         didSet {
@@ -108,6 +113,7 @@ import Foundation
         // so retrying a failed `"  quran  "` ran a *different* search than the one that failed --
         // exactly the request/history mismatch wave-3 D5 set out to remove.
         let q = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        lastSearchedQuery = q
         state = .loading
         do {
             let results = try await catalog.search(query: q, type: nil, limit: Self.pageSize)

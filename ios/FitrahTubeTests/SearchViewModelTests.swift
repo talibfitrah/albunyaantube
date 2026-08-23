@@ -352,6 +352,20 @@ struct SearchViewModelTests {
         #expect(await client.calls == ["ab", "ab"]) // not ["ab", "  ab  "]
     }
 
+    /// Gate cubic-r3 X4: the "no results" message must show the trimmed value the search ran
+    /// with, not the raw (padded) field text.
+    @Test func lastSearchedQueryIsTrimmedNotRawFieldText() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let vm = SearchViewModel(catalog: RecordingCatalogClient(results: []), history: history, sleep: noSleep)
+
+        vm.query = "  quran  "
+        await vm.searchTask?.value
+
+        #expect(vm.state == .noResults)
+        #expect(vm.lastSearchedQuery == "quran")
+    }
+
     @Test func whitespaceOnlyQueryNeverFetches() async {
         let (history, defaults, suite) = makeHistoryStore()
         defer { defaults.removePersistentDomain(forName: suite) }

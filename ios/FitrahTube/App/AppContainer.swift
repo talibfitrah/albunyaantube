@@ -95,6 +95,13 @@ nonisolated enum AppConfig {
         do {
             return try build()
         } catch {
+            // Gate cubic-r3 X3: a bare catch used to jump straight to deleting the store on
+            // *any* failure, destroying every local favorite even for a transient, fully
+            // recoverable one -- disk full, the store still locked by a suspended extension,
+            // a momentary I/O error. Retrying once first (no deletion) lets those clear on their
+            // own; only a second failure is treated as the corrupt/unmigratable case the deletion
+            // below exists for.
+            if let recovered = try? build() { return recovered }
             if !inMemory {
                 // `-shm`/`-wal`, appended to the path -- not `appendingPathExtension`, which
                 // produces `default.store.shm` (gate wave-2 W1). SQLite names its sidecars by
