@@ -70,6 +70,14 @@ struct SplashView: View {
             }
         }
         .task { await run() }
+        // Task 8 follow-up: `run()` below only re-checks `router.pendingRoute` between animation
+        // steps (up to ~550ms apart), so a link arriving mid-sleep sat unnoticed until the next
+        // checkpoint. `.onChange` reacts the instant Router's `@Observable` mutation happens,
+        // regardless of where `run()` currently is in its sleep chain.
+        .onChange(of: router.pendingRoute) { _, newValue in
+            guard newValue != nil else { return }
+            onComplete()
+        }
     }
 
     // ponytail: approximates Android's `verticalBias 0.35` via a top/bottom Spacer split around

@@ -17,6 +17,11 @@ nonisolated enum ReselectAction: Equatable {
     var selectedTab: Tab = .home
     var paths: [Tab: [Route]] = Dictionary(uniqueKeysWithValues: Tab.allCases.map { ($0, []) })
     var pendingRoute: Route?
+    /// Android's Toast for the category-filter-applied message: a system-level overlay that must
+    /// survive the "pop to origin" navigation that happens in the same gesture (`CategoriesView`/
+    /// `SubcategoriesView` set this, then immediately `popToRoot`) -- so it lives on the shell,
+    /// shown by `MainShellView.transientBanner`, not on the screen that's about to disappear.
+    var pendingBanner: BannerMessage?
     /// Set by the player screen on entering/exiting fullscreen (phase 2); hides the tab bar while true.
     var isFullscreen = false
     /// Bumped by `reselect(_:)` when it returns `.scrollToTop` -- carries which tab so only that

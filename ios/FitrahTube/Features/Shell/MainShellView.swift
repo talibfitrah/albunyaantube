@@ -16,7 +16,7 @@ struct MainShellView: View {
                 SwiftUI.Tab(title(for: tab), systemImage: symbol(for: tab), value: tab) {
                     NavigationStack(path: pathBinding(for: tab)) {
                         rootView(for: tab)
-                            .navigationDestination(for: Route.self) { PhaseTwoPlaceholderView(route: $0) }
+                            .navigationDestination(for: Route.self) { destination(for: $0) }
                     }
                 }
             }
@@ -31,6 +31,11 @@ struct MainShellView: View {
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: container.network.isOnline)
+        // Task 11: the category-filter-applied banner is set by CategoriesView/SubcategoriesView
+        // right before they pop themselves away, so it has to live above the NavigationStacks --
+        // on the shell itself, like Android's Toast (a system overlay that survives the
+        // `navigateUp()` in the same gesture) -- not on a screen that's about to disappear.
+        .transientBanner(bannerBinding)
         .task { router.shellDidAppear() }
     }
 
@@ -59,7 +64,29 @@ struct MainShellView: View {
         Binding(get: { router.paths[tab] ?? [] }, set: { router.paths[tab] = $0 })
     }
 
-    // Tab roots are placeholders for now -- tasks 11-13 replace the remaining ones.
+    private var bannerBinding: Binding<BannerMessage?> {
+        Binding(get: { router.pendingBanner }, set: { router.pendingBanner = $0 })
+    }
+
+    // task-11: Featured/Search/Categories/Subcategories replace the placeholder. Every other
+    // route (player, shorts, channel, playlist, favorites, settings, about) is still tasks 12-13.
+    @ViewBuilder
+    private func destination(for route: Route) -> some View {
+        switch route {
+        case .featured(let categoryId, let categoryName):
+            FeaturedView(categoryId: categoryId, categoryName: categoryName)
+        case .search:
+            SearchView()
+        case .categories:
+            CategoriesView()
+        case .subcategories(let parentId, let parentName):
+            SubcategoriesView(parentId: parentId, parentName: parentName)
+        default:
+            PhaseTwoPlaceholderView(route: route)
+        }
+    }
+
+    // Tab roots are placeholders for now -- tasks 12-13 replace the remaining ones.
     @ViewBuilder
     private func rootView(for tab: Tab) -> some View {
         switch tab {

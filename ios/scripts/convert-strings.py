@@ -40,6 +40,14 @@ SPECIFIER_OVERRIDES = {
     "about_version_format": lambda v: v.replace("%2$lld", "%2$@"),
 }
 
+# iOS-only keys with no Android source (task-11 brief / RULINGS 37... err 25): "Parent › Sub"
+# subcategory filter label. Each name is wrapped in Unicode isolates (U+2068 FSI / U+2069 PDI) so
+# a name's own bidi direction can't corrupt the "›"-joined surrounding text (RULINGS 25 "with bidi
+# isolates"). Identical across en/ar/nl -- the separator and isolates are locale-agnostic.
+EXTRA_KEYS = {
+    "filter_label_parent_child": "⁨%1$@⁩ › ⁨%2$@⁩",
+}
+
 def is_dead(key):
     if key in DEAD_PREFIX_EXCEPTIONS:
         return False
@@ -150,6 +158,13 @@ def main(check=False):
         if key == "app_name":  # R7: brand name -- don't flag as needing translation
             entry["shouldTranslate"] = False
         out["strings"][key] = entry
+
+    # EXTRA_KEYS: no Android source, so R7's "never copy English as a translation" doesn't apply --
+    # these are deliberately identical across every locale.
+    for key, value in EXTRA_KEYS.items():
+        out["strings"][key] = {
+            "localizations": {loc: {"stringUnit": {"state": "translated", "value": value}} for loc in ("en", "ar", "nl")}
+        }
 
     # R4: iterate the union of en/ar/nl plural keys, not just en_plurals -- a plural group that
     # exists only in ar/nl has no en source to key an xcstrings entry off of, so it must be
@@ -334,6 +349,12 @@ def verify(out):
 
     for key in REFUSE:
         assert key not in out["strings"], f"{key} should have been refused, not emitted"
+
+    # EXTRA_KEYS: all three locales present and identical, with the FSI/PDI isolates intact.
+    plc = out["strings"]["filter_label_parent_child"]["localizations"]
+    assert set(plc) == {"en", "ar", "nl"}, plc
+    plc_values = {loc: value_of(out["strings"]["filter_label_parent_child"], loc) for loc in ("en", "ar", "nl")}
+    assert plc_values["en"] == plc_values["ar"] == plc_values["nl"] == "⁨%1$@⁩ › ⁨%2$@⁩", plc_values
 
     for key in SUBSTITUTION_PLURALS:
         entry = out["strings"][key]

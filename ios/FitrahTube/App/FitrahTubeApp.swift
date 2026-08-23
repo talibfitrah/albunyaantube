@@ -27,6 +27,8 @@ struct FitrahTubeApp: App {
                 .task {
                     openDebugDeepLinkIfRequested()
                     selectDebugTabIfRequested()
+                    pushDebugRouteIfRequested()
+                    showDebugBannerIfRequested()
                 }
         }
     }
@@ -61,6 +63,49 @@ struct FitrahTubeApp: App {
         case "videos": router.selectedTab = .videos
         default: break
         }
+        #endif
+    }
+
+    /// Debug-only launch hook (task-11 acceptance screenshots): `.search`/`.categories` have no
+    /// deep-link URL (`DeepLinkParser` only covers video/channel/playlist/shorts) and no
+    /// `simctl` tap-gesture equivalent exists, so this pushes the route directly onto the
+    /// currently-selected tab's stack -- same technique as `-fitrah-tab`.
+    /// `-fitrah-route search|categories|subcategories <parentId> <parentName>|featured [categoryId] [categoryName]`
+    /// (`-` for a nil `featured` arg).
+    private func pushDebugRouteIfRequested() {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        guard let flagIndex = args.firstIndex(of: "-fitrah-route"), args.indices.contains(flagIndex + 1) else { return }
+        func arg(_ offset: Int) -> String? {
+            let index = flagIndex + offset
+            guard args.indices.contains(index) else { return nil }
+            return args[index] == "-" ? nil : args[index]
+        }
+        switch args[flagIndex + 1] {
+        case "search":
+            router.push(.search)
+        case "categories":
+            router.push(.categories)
+        case "subcategories":
+            router.push(.categories)
+            router.push(.subcategories(parentId: arg(2) ?? "", parentName: arg(3) ?? ""))
+        case "featured":
+            router.push(.featured(categoryId: arg(2), categoryName: arg(3)))
+        default:
+            break
+        }
+        #endif
+    }
+
+    /// Debug-only launch hook (task-11 acceptance screenshots): shows the category-filter-applied
+    /// `TransientBanner` directly, without needing a real tap through Categories/Subcategories --
+    /// same overlay (`Router.pendingBanner`, shown by `MainShellView`) a real pick would set.
+    /// `-fitrah-banner "<text>"`.
+    private func showDebugBannerIfRequested() {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        guard let flagIndex = args.firstIndex(of: "-fitrah-banner"), args.indices.contains(flagIndex + 1) else { return }
+        router.pendingBanner = BannerMessage(text: args[flagIndex + 1])
         #endif
     }
 }

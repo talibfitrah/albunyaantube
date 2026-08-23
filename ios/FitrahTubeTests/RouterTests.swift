@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 @testable import FitrahTube
 
@@ -76,5 +77,27 @@ struct RouterTests {
 
         #expect(router.pendingRoute == nil)
         #expect(router.paths[.home] == [])
+    }
+
+    /// Task 8 follow-up: `SplashView` now reacts to `router.pendingRoute` via `.onChange`, not by
+    /// polling between animation steps. `.onChange(of:)` is powered by exactly this Observation
+    /// primitive (`withObservationTracking`) -- this proves a `pendingRoute` mutation is observable
+    /// the moment it happens, not just at the next poll checkpoint, which is what makes "a link
+    /// arrives mid-animation -> completes immediately" true instead of "-> completes within ~550ms".
+    @Test func pendingRouteMutationIsObservableTheMomentItHappens() {
+        let router = Router()
+        // `onChange` below is `@Sendable`; this test runs single-threaded and mutates it
+        // synchronously (Observation invokes `onChange` inline with the mutating access, not on a
+        // background queue), so `nonisolated(unsafe)` is the accurate annotation, not a lock.
+        nonisolated(unsafe) var observedChange = false
+        withObservationTracking {
+            _ = router.pendingRoute
+        } onChange: {
+            observedChange = true
+        }
+
+        router.open(URL(string: "albunyaantube://video/abc123")!)
+
+        #expect(observedChange)
     }
 }

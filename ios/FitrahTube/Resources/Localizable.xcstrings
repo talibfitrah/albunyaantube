@@ -4942,6 +4942,28 @@
         }
       }
     },
+    "filter_label_parent_child": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⁨%1$@⁩ › ⁨%2$@⁩"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⁨%1$@⁩ › ⁨%2$@⁩"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⁨%1$@⁩ › ⁨%2$@⁩"
+          }
+        }
+      }
+    },
     "filter_length": {
       "localizations": {
         "ar": {
