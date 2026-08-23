@@ -1,0 +1,16 @@
+{
+  "responseContext": {},
+  "alerts": [
+    {
+      "alertWithButtonRenderer": {
+        "type": "ERROR",
+        "text": { "simpleText": "Sign in to confirm you're not a bot" }
+      }
+    }
+  ],
+  "contents": {
+    "twoColumnBrowseResultsRenderer": {
+      "tabs": []
+    }
+  }
+}

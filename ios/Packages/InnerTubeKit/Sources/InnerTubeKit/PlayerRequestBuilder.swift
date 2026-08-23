@@ -31,59 +31,21 @@ public struct PlayerRequestBuilder: Sendable {
         videoId: String, family: ClientFamily, context: ClientContext, visitorData: String?, locale: InnerTubeLocale
     ) -> HTTPRequest {
         let body = Body(
-            context: Body.Context(
-                client: Body.Context.Client(
-                    clientName: context.clientName,
-                    clientVersion: context.clientVersion,
-                    deviceMake: context.deviceMake,
-                    deviceModel: context.deviceModel,
-                    osName: context.osName,
-                    osVersion: context.osVersion,
-                    androidSdkVersion: context.androidSdkVersion,
-                    hl: locale.hl,
-                    gl: locale.gl,
-                    visitorData: visitorData
-                )
-            ),
+            context: Body.Context(client: InnerTubeContext.client(context: context, visitorData: visitorData, locale: locale)),
             videoId: videoId,
             contentCheckOk: true,
             racyCheckOk: true
         )
         // Encoding a fixed Codable shape with .sortedKeys and no randomness never fails.
         let data = (try? Self.encoder.encode(body)) ?? Data()
-
-        var headers: [String: String] = [
-            "Content-Type": "application/json",
-            "X-YouTube-Client-Name": String(context.clientNameId),
-            "X-YouTube-Client-Version": context.clientVersion,
-        ]
-        // Web's context carries no User-Agent (Task-1 probe); URLSession's default is fine
-        // for the browse/player POST — only the visionos/android segment fetch needs it.
-        if let userAgent = context.userAgent {
-            headers["User-Agent"] = userAgent
-        }
-        if let visitorData {
-            headers["X-Goog-Visitor-Id"] = visitorData
-        }
+        let headers = InnerTubeContext.headers(context: context, visitorData: visitorData)
 
         return HTTPRequest(method: "POST", url: Self.requestURL, headers: headers, body: data)
     }
 
     private struct Body: Encodable {
         struct Context: Encodable {
-            struct Client: Encodable {
-                var clientName: String
-                var clientVersion: String
-                var deviceMake: String?
-                var deviceModel: String?
-                var osName: String?
-                var osVersion: String?
-                var androidSdkVersion: Int?
-                var hl: String
-                var gl: String
-                var visitorData: String?
-            }
-            var client: Client
+            var client: InnerTubeContext.Client
         }
         var context: Context
         var videoId: String
