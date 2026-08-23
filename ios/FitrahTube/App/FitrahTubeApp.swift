@@ -24,7 +24,10 @@ struct FitrahTubeApp: App {
                 .environment(\.container, container)
                 .environment(\.router, router)
                 .onOpenURL { router.open($0) }
-                .task { openDebugDeepLinkIfRequested() }
+                .task {
+                    openDebugDeepLinkIfRequested()
+                    selectDebugTabIfRequested()
+                }
         }
     }
 
@@ -39,6 +42,24 @@ struct FitrahTubeApp: App {
            args.indices.contains(flagIndex + 1),
            let url = URL(string: args[flagIndex + 1]) {
             router.open(url)
+        }
+        #endif
+    }
+
+    /// Debug-only launch hook (`-fitrah-tab <home|channels|me|playlists|videos>`): lands directly
+    /// on a tab for `xcrun simctl launch` screenshot scripts -- there's no tap-gesture equivalent
+    /// in `simctl`, and `-fitrah-deeplink` only reaches item-detail routes, not tab selection.
+    private func selectDebugTabIfRequested() {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        guard let flagIndex = args.firstIndex(of: "-fitrah-tab"), args.indices.contains(flagIndex + 1) else { return }
+        switch args[flagIndex + 1] {
+        case "home": router.selectedTab = .home
+        case "channels": router.selectedTab = .channels
+        case "me": router.selectedTab = .me
+        case "playlists": router.selectedTab = .playlists
+        case "videos": router.selectedTab = .videos
+        default: break
         }
         #endif
     }

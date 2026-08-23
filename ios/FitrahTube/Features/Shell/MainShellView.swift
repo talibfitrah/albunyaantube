@@ -59,15 +59,15 @@ struct MainShellView: View {
         Binding(get: { router.paths[tab] ?? [] }, set: { router.paths[tab] = $0 })
     }
 
-    // Tab roots are placeholders for now -- tasks 9-13 replace each with its real screen.
+    // Tab roots are placeholders for now -- tasks 11-13 replace the remaining ones.
     @ViewBuilder
     private func rootView(for tab: Tab) -> some View {
         switch tab {
         case .home: HomeView()
-        case .channels: Text("Channels")
+        case .channels: ContentListView(type: .channels)
         case .me: Text("Me")
-        case .playlists: Text("Playlists")
-        case .videos: Text("Videos")
+        case .playlists: ContentListView(type: .playlists)
+        case .videos: ContentListView(type: .videos)
         }
     }
 
