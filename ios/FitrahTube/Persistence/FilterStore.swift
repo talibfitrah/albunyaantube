@@ -37,6 +37,9 @@ import Observation
     }
 
     func setCategory(id: String?, name: String?) {
+        // Android's FilterManager.kt:49 clears on `isNullOrEmpty()`, not just null -- an empty
+        // string id (e.g. a chip cleared via an empty text field) must clear the same as nil.
+        let id = id?.isEmpty == true ? nil : id
         let name = id == nil ? nil : name
         state.categoryId = id
         state.categoryName = name

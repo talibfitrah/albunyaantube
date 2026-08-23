@@ -2,7 +2,7 @@
 """Android strings*.xml (en, ar, nl) -> ios/FitrahTube/Resources/Localizable.xcstrings.
 Rules R1-R9 from docs/superpowers/plans/2026-08-23-ios-phase1-research/strings-assets.md.
 Usage: python3 ios/scripts/convert-strings.py [--check]"""
-import glob, html, json, os, re, sys, xml.etree.ElementTree as ET
+import glob, html, json, os, re, sys, tempfile, xml.etree.ElementTree as ET
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 RES = os.path.join(ROOT, "android/app/src/main/res")
@@ -86,6 +86,12 @@ def check_arg_subset(key, en_sig, loc, loc_sig):
         if en_sig.get(num) != conv:
             raise ValueError(f"{key}: {loc} specifier %{num}${conv} has no matching en specifier ({en_sig})")
 
+def plural_union_keys(en_plurals, ar_plurals, nl_plurals):
+    # R4: the union, not just en_plurals.keys() -- a plural group that only exists in ar/nl must
+    # still be visited so main() can refuse it (report it), instead of the old `for key, forms in
+    # en_plurals.items()` loop silently never seeing it at all.
+    return set(en_plurals) | set(ar_plurals) | set(nl_plurals)
+
 def apply_overrides(key, value):
     fn = SPECIFIER_OVERRIDES.get(key)
     return fn(value) if fn else value
@@ -145,11 +151,17 @@ def main(check=False):
             entry["shouldTranslate"] = False
         out["strings"][key] = entry
 
-    for key, forms in en_plurals.items():
+    # R4: iterate the union of en/ar/nl plural keys, not just en_plurals -- a plural group that
+    # exists only in ar/nl has no en source to key an xcstrings entry off of, so it must be
+    # refused (reported below), not silently absent because the old loop never visited it.
+    for key in sorted(plural_union_keys(en_plurals, data["ar"][1], data["nl"][1])):
         if key in REFUSE:
             refused.append(key); continue
         if key in SUBSTITUTION_PLURALS:
             continue  # emitted via the substitutions block below
+        forms = en_plurals.get(key)
+        if forms is None:
+            refused.append(key); continue  # ar/nl-only plural group -- no en source
         if is_dead(key):
             skipped.append(key); continue
         locs = {}
@@ -174,10 +186,17 @@ def main(check=False):
     # never rendered).
     for key in SUBSTITUTION_PLURALS:
         locs = {}
+        en_other_sig = arg_signature(en_plurals[key]["other"])
         for loc in ("en", "ar", "nl"):
             forms = data[loc][1].get(key)
             if not forms:
                 continue
+            # R4: each category is checked against en's `other` (not its own-category en form --
+            # these two keys emit a single shared substitution arg, so `other` is the one true
+            # reference signature for every category in every locale, including en's own zero/two/
+            # few/many forms).
+            for cat, val in forms.items():
+                check_arg_subset(f"{key}[{cat}]", en_other_sig, loc, arg_signature(val))
             plural = {cat: {"stringUnit": {"state": "translated", "value": forms[cat]}} for cat in PLURAL_CATEGORIES if cat in forms}
             locs[loc] = {
                 "stringUnit": {"state": "translated", "value": "%#@arg@"},
@@ -188,17 +207,38 @@ def main(check=False):
         out["strings"][key] = {"localizations": locs}
 
     if refused:
-        print(f"refused (R8/§7, cannot convert mechanically): {sorted(refused)}", file=sys.stderr)
+        # Two distinct refuse reasons share this list: R8/§7 (can't convert mechanically, e.g. a
+        # %.1f precision specifier) and R4 (an ar/nl-only plural group with no en source).
+        print(f"refused (cannot convert mechanically, or no en source): {sorted(refused)}", file=sys.stderr)
 
     verify(out)
 
     if check:
+        # R5: regenerate into a temp file and diff against the committed catalog byte-for-byte --
+        # never trust "no exception raised" alone, since a stale committed file with today's rules
+        # applied would still raise nothing but no longer match what a real run would produce.
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as tmp:
+            dump_catalog(out, tmp)
+            tmp_path = tmp.name
+        try:
+            with open(tmp_path, "rb") as fresh, open(OUT, "rb") as committed:
+                up_to_date = fresh.read() == committed.read()
+        finally:
+            os.remove(tmp_path)
+        if not up_to_date:
+            print("catalog out of date — run ios/scripts/convert-strings.py", file=sys.stderr)
+            return 1
         print(f"{len(out['strings'])} keys, {len(skipped)} skipped, {len(refused)} refused")
         return 0
     with open(OUT, "w", encoding="utf-8") as fh:
-        json.dump(out, fh, ensure_ascii=False, indent=2, sort_keys=True)
+        dump_catalog(out, fh)
     print(f"wrote {OUT}: {len(out['strings'])} keys; skipped {len(skipped)} dead; refused {len(refused)}")
     return 0
+
+def dump_catalog(out, fh):
+    # Single call site for both the --check temp-file write and the real write, so they can never
+    # drift apart (different json.dump kwargs would make the byte-for-byte check above meaningless).
+    json.dump(out, fh, ensure_ascii=False, indent=2, sort_keys=True)
 
 def check_bare_specifier_rewrite():
     """H6 self-check: width/precision digits in a bare specifier. %02d keeps its zero-padded
@@ -225,10 +265,34 @@ def check_plural_fallback_uses_other():
     else:
         raise AssertionError("ar `few` %s vs en `other` %d should have been caught, not skipped")
 
+def check_plural_union_catches_ar_only_group():
+    """R4 self-check: a plural key present only in ar (never in en) must show up in the union so
+    main()'s `forms = en_plurals.get(key)` / `if forms is None: refused.append(key)` branch
+    actually sees it. Iterating en_plurals.items() alone (the old code) would never visit it."""
+    keys = plural_union_keys({"video_count": {"other": "x"}}, {"ar_only_group": {"other": "y"}}, {})
+    assert "ar_only_group" in keys, keys
+    assert keys == {"video_count", "ar_only_group"}, keys
+
+def check_substitution_plural_specifier_mismatch_caught():
+    """R4 self-check: a substitution-plural category's specifier is checked against en's `other`
+    form -- a divergent conversion for the shared arg must raise, not pass through unchecked the
+    way the substitutions loop used to (it built `locs` straight from `forms[cat]` with no
+    check_arg_subset call at all)."""
+    en_other_sig = arg_signature(rewrite_specifiers("%s"))  # {1: "@"}
+    bad_ar_val = rewrite_specifiers("%d")  # {1: "lld"} -- wrong conversion for the shared arg
+    try:
+        check_arg_subset("synthetic_sub[other]", en_other_sig, "ar", arg_signature(bad_ar_val))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("substitution-plural ar specifier mismatch vs en other should raise")
+
 def verify(out):
     """R9's one runnable check: spot-assert the hazards the doc calls out by name."""
     check_bare_specifier_rewrite()
     check_plural_fallback_uses_other()
+    check_plural_union_catches_ar_only_group()
+    check_substitution_plural_specifier_mismatch_caught()
     def value_of(entry, loc):
         l = entry["localizations"].get(loc)
         if l is None:

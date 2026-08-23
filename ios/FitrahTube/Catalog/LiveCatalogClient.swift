@@ -37,9 +37,9 @@ nonisolated struct LiveCatalogClient: CatalogClient {
             cursor: cursor,
             limit: limit,
             category: filter.categoryId,
-            length: filter.length.flatMap { Operations.GetPublicContent.Input.Query.LengthPayload(rawValue: $0.rawValue) },
-            date: filter.date.flatMap { Operations.GetPublicContent.Input.Query.DatePayload(rawValue: $0.rawValue) },
-            sort: filter.sort.flatMap { Operations.GetPublicContent.Input.Query.SortPayload(rawValue: $0.rawValue) },
+            length: filter.length,
+            date: filter.date,
+            sort: filter.sort,
             q: query
         ))
         let output = try await client.getPublicContent(input).ok.body.json

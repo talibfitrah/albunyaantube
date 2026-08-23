@@ -66,20 +66,17 @@ struct FormattingTests {
         #expect(Format.compactCount(1000, locale: Locale(identifier: "en_US")) == "1K")
     }
 
-    // MARK: - pluralQuantity (RULINGS #3b: clamp >= 1,000,000 -> 1,000,000 so the plural category is `other`)
+    // MARK: - pluralQuantity (CountFormat.kt:58: `if (count >= 1_000L) 1_000_000L else count`)
 
-    @Test func pluralQuantityPassesThroughSmallCounts() {
+    @Test func pluralQuantityPassesThroughBelowOneThousand() {
         #expect(Format.pluralQuantity(5) == 5)
         #expect(Format.pluralQuantity(999) == 999)
     }
 
-    @Test func pluralQuantityPassesThroughUpToOneMillion() {
-        #expect(Format.pluralQuantity(5000) == 5000)
+    @Test func pluralQuantityClampsAtAndAboveOneThousand() {
+        #expect(Format.pluralQuantity(1000) == 1_000_000)
+        #expect(Format.pluralQuantity(5000) == 1_000_000)
         #expect(Format.pluralQuantity(1_000_000) == 1_000_000)
-    }
-
-    @Test func pluralQuantityClampsAboveOneMillion() {
-        #expect(Format.pluralQuantity(2_000_000) == 1_000_000)
     }
 
     // MARK: - timeAgo (content-lists.md:466-475: one ladder everywhere, integer division, no rounding)

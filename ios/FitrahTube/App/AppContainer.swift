@@ -65,13 +65,19 @@ nonisolated enum AppConfig {
         defaults.removePersistentDomain(forName: suiteName)
         return AppContainer(catalog: catalog, userDefaults: defaults)
     }
+
+    /// One fake container per process: every preview/test that reads `\.container` without an
+    /// explicit `.environment(\.container, …)` override shares this single instance (and its
+    /// wiped suite), instead of each read point independently evaluating `.fake()` -- which would
+    /// give every SwiftUI preview its own container with no shared state between them.
+    @MainActor static let sharedFake = AppContainer.fake()
 }
 
 extension EnvironmentValues {
     // Release must not ship the fake default silently -- an un-injected .container in Release
     // traps instead of serving fake data.
     #if DEBUG
-    @Entry var container: AppContainer = .fake()   // previews / tests
+    @Entry var container: AppContainer = AppContainer.sharedFake   // previews / tests
     #else
     @Entry var container: AppContainer = { preconditionFailure("AppContainer not injected — wrap the root in .environment(\\.container, …)") }()
     #endif

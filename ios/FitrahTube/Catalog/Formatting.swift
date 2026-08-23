@@ -31,12 +31,13 @@ nonisolated enum Format {
         )
     }
 
-    /// Clamps the plural-selector quantity so any compacted magnitude >= 1,000,000 resolves to the
-    /// CLDR `other` category everywhere, matching Android's `compactPluralCount`
-    /// (util/CountFormat.kt:58) -- Arabic counted-noun agreement follows the unit word once the
-    /// number is abbreviated, not the raw count's one/two/few form.
+    /// Clamps the plural-selector quantity so any compacted magnitude (`compactCount` abbreviates
+    /// starting at 1,000) resolves to the CLDR `other` category everywhere, matching Android's
+    /// `compactPluralCount` verbatim (util/CountFormat.kt:58: `if (count >= 1_000L) 1_000_000L
+    /// else count`) -- Arabic counted-noun agreement follows the unit word once the number is
+    /// abbreviated, not the raw count's one/two/few form.
     static func pluralQuantity(_ n: Int64) -> Int {
-        n >= 1_000_000 ? 1_000_000 : Int(n)
+        n >= 1_000 ? 1_000_000 : Int(n)
     }
 
     /// Today / N days / N weeks / N months / N years, one ladder everywhere (RULINGS.md #4).

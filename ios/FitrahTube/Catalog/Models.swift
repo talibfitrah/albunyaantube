@@ -1,3 +1,4 @@
+import FitrahAPI
 import Foundation
 
 nonisolated enum ContentType: String, Sendable {
@@ -58,26 +59,14 @@ nonisolated struct Category: Identifiable, Hashable, Sendable {
     }
 }
 
-/// Raw values match the generated `Operations.GetPublicContent.Input.Query.LengthPayload` cases.
-nonisolated enum LengthFilter: String, Sendable, CaseIterable {
-    case short = "SHORT"
-    case medium = "MEDIUM"
-    case long = "LONG"
-}
-
-/// Raw values match the generated `Operations.GetPublicContent.Input.Query.DatePayload` cases.
-nonisolated enum DateFilter: String, Sendable, CaseIterable {
-    case last24Hours = "LAST_24_HOURS"
-    case last7Days = "LAST_7_DAYS"
-    case last30Days = "LAST_30_DAYS"
-}
-
-/// Raw values match the generated `Operations.GetPublicContent.Input.Query.SortPayload` cases.
-nonisolated enum SortFilter: String, Sendable, CaseIterable {
-    case `default` = "DEFAULT"
-    case mostPopular = "MOST_POPULAR"
-    case newest = "NEWEST"
-}
+// These are the generated wire enums themselves (not a hand-rolled domain enum kept in sync by a
+// `.init(rawValue:)` bridge): LiveCatalogClient used to bridge FilterState's own
+// LengthFilter/DateFilter/SortFilter into these exact same cases before sending the request, which
+// is dead work when the domain type just *is* the wire type. Persisted raw values (FilterStore) are
+// unaffected -- they're the same strings ("SHORT", "LAST_7_DAYS", "DEFAULT", ...).
+typealias LengthFilter = Operations.GetPublicContent.Input.Query.LengthPayload
+typealias DateFilter = Operations.GetPublicContent.Input.Query.DatePayload
+typealias SortFilter = Operations.GetPublicContent.Input.Query.SortPayload
 
 nonisolated struct FilterState: Hashable, Sendable {
     var categoryId: String?

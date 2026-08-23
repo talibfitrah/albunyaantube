@@ -52,6 +52,18 @@ struct FilterStoreTests {
         #expect(defaults.object(forKey: "filter_category_name") == nil)
     }
 
+    @Test func setCategoryWithEmptyStringIdIsTreatedAsClear() {
+        let (store, defaults, suiteName) = makeStore()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        store.setCategory(id: "", name: "X")
+
+        #expect(store.state.categoryId == nil)
+        #expect(store.state.categoryName == nil)
+        #expect(defaults.object(forKey: "filter_category") == nil)
+        #expect(defaults.object(forKey: "filter_category_name") == nil)
+    }
+
     @Test func clearCategoryRemovesBothKeys() {
         let (store, defaults, suiteName) = makeStore()
         defer { defaults.removePersistentDomain(forName: suiteName) }

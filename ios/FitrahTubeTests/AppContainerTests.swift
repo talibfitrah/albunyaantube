@@ -16,11 +16,13 @@ struct AppContainerTests {
         #expect(try await container.catalog.categories().count == 1)
     }
 
-#if DEBUG
-    @Test func debugApiBaseURLIsLocalhost() {
-        #expect(AppConfig.apiBaseURL.host() == "localhost")
+    @Test func apiBaseURLHasValidSchemeAndHost() {
+        // Debug overrides (e.g. a LAN IP via Local.xcconfig) are allowed -- just require a real
+        // http/https URL with a host, not the literal "localhost" every configuration happens to
+        // use today.
+        #expect(AppConfig.apiBaseURL.scheme == "http" || AppConfig.apiBaseURL.scheme == "https")
+        #expect(AppConfig.apiBaseURL.host() != nil)
     }
-#endif
 
     @Test func validateAcceptsHTTPAndHTTPSWithHost() {
         #expect(AppConfig.validate("http://localhost:8080/") != nil)

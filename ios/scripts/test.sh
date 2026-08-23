@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # Runs the full iOS Phase 0 test suite under a 300s wall-clock watchdog (AGENTS.md mandate):
-#   xcodegen generate -> xcodebuild test (iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test
+#   convert-strings.py --check (catalog must already be up to date) -> xcodegen generate ->
+#   xcodebuild test (iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test
 #   (FitrahAPI package) -> xcodebuild build (Release, simulator SDK -- compiles the non-DEBUG paths).
 # Per-test limit: 60s -- XCTest rounds `defaultTestExecutionTimeAllowance` up to 60s and Swift
 # Testing's own floor is also one minute, so 60s is the real effective limit regardless of the
 # number configured (FitrahTube.xctestplan sets 60 to match); CLAUDE.md's 30s note is a
 # cross-platform default this iOS suite can't hit and is amended separately. Wall-clock: 300s.
 # $RESULTS (xcresult bundle + watchdog marker) is removed on exit unless KEEP_RESULTS=1 is set.
+# Override simulators with IPHONE_SIM / IPAD_SIM env vars, e.g. IPHONE_SIM="iPhone 16" ./test.sh.
+# Invoke from the repo root (`ios/scripts/test.sh`) -- the first stage's path is repo-root-relative.
 set -uo pipefail
 set -m
 
-cd "$(dirname "$0")/.."
+IPHONE_SIM="${IPHONE_SIM:-iPhone 17}"
+IPAD_SIM="${IPAD_SIM:-iPad Pro 13-inch (M5)}"
 
 # Alternatives that actually fire on this Xcode: swift test's summary, xcodebuild's per-destination and per-test lines, and generic TEST SUCCEEDED/FAILED / error: lines.
 SUMMARY='Test run with|Testing (passed|failed) on|Test case .* failed|TEST (SUCCEEDED|FAILED)|error:'
@@ -48,14 +52,19 @@ walk(data.get("testNodes", []))
 }
 
 run_all() {
+    # Repo-root-relative: this must run before the `cd` below (invoke test.sh from the repo root).
+    echo "== convert-strings.py --check =="
+    python3 ios/scripts/convert-strings.py --check || return $?
+
+    cd "$(dirname "$0")/.."
     xcodegen generate || return $?
 
-    echo "== iPhone 17 + iPad Pro 13-inch (M5) =="
+    echo "== $IPHONE_SIM + $IPAD_SIM =="
     xcodebuild test \
         -project FitrahTube.xcodeproj \
         -scheme FitrahTube \
-        -destination 'platform=iOS Simulator,name=iPhone 17' \
-        -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' \
+        -destination "platform=iOS Simulator,name=$IPHONE_SIM" \
+        -destination "platform=iOS Simulator,name=$IPAD_SIM" \
         -resultBundlePath "$RESULTS/FitrahTube.xcresult" \
         -derivedDataPath DerivedData \
         2>&1 | grep -E "$SUMMARY"
@@ -80,7 +89,7 @@ run_all() {
         -project FitrahTube.xcodeproj \
         -scheme FitrahTube \
         -configuration Release \
-        -destination 'platform=iOS Simulator,name=iPhone 17' \
+        -destination "platform=iOS Simulator,name=$IPHONE_SIM" \
         -derivedDataPath DerivedData \
         2>&1 | grep -E "$SUMMARY"
     local release_status=${PIPESTATUS[0]}
