@@ -1,0 +1,49 @@
+ios/FitrahTube/Catalog/Formatting.swift
+  s_18197a18aae8f1::t_e4df99182d9ca4 34-38,40
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_18197a18aae8f1::t_7f28e5d0a7d7ab 19-24
+ios/FitrahTube/Persistence/FilterStore.swift
+  s_18197a18aae8f1::t_9f6968697da9be 40-42
+ios/scripts/test.sh
+  s_18197a18aae8f1::t_001164c3dcdb24 12
+  s_18197a18aae8f1::t_08b3b5718e927e 56-58,62,66-67
+  s_18197a18aae8f1::t_e6edc5e911eb52 92
+  s_18197a18aae8f1::t_2fd5f577e4c9ff 3-4,11,16-17
+  s_18197a18aae8f1::t_6cbabacd0bcb01 55,59
+ios/FitrahTubeTests/FilterStoreTests.swift
+  s_18197a18aae8f1::t_4731370b0a20b6 55-66
+ios/FitrahTube/Catalog/Models.swift
+  s_18197a18aae8f1::t_3c95538e1f1cf5 1
+  s_18197a18aae8f1::t_c2093c8acfa430 62-69
+ios/scripts/convert-strings.py
+  s_18197a18aae8f1::t_198e1289f7b4a1 210-212,217-230,234,238-241
+  s_18197a18aae8f1::t_9c19027eb3d409 89-94
+  s_18197a18aae8f1::t_4cb88dd1fc5207 189,194-199
+  s_18197a18aae8f1::t_5f3e46ccd306e9 268-289,294-295
+  s_18197a18aae8f1::t_08ea5d11af254b 154-157,162-164
+  s_18197a18aae8f1::t_3bf8b6b06e974b 5
+ios/FitrahTubeTests/FormattingTests.swift
+  s_18197a18aae8f1::t_ada01951a6a741 69,71,76-78
+ios/Config/Local.xcconfig.example
+  s_18197a18aae8f1::t_acdb41ec931e2e 5-6
+ios/FitrahTube/Catalog/LiveCatalogClient.swift
+  s_18197a18aae8f1::t_2f1b76f2bc9447 40-42
+ios/FitrahTube/App/AppContainer.swift
+  s_18197a18aae8f1::t_f3991f7860d015 68-73,80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2cf2d03788c5a131bc694dc20333816a6380d05f",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
