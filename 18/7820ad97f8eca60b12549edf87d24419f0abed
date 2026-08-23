@@ -1,0 +1,23 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/AtomFeedFetcherTests.swift
+  s_18197a18aae8f1::t_1dedff317220c4 1-80
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/atom-channel.xml
+  s_18197a18aae8f1::t_c96c0b08dd726f 1-779
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/AtomFeedFetcher.swift
+  s_18197a18aae8f1::t_fb820fb8918dd4 1-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "187820ad97f8eca60b12549edf87d24419f0abed",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
