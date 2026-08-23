@@ -194,3 +194,14 @@ synthetic_dash_data.json
 # Python bytecode from scripts/
 __pycache__/
 *.pyc
+
+# iOS (XcodeGen-generated project, build products, user state)
+/ios/FitrahTube.xcodeproj/
+/ios/FitrahTube/Info.plist
+/ios/Vendor/
+/ios/**/xcuserdata/
+/ios/**/*.xcuserstate
+/ios/DerivedData/
+/ios/.build/
+/ios/Packages/*/.build/
+/ios/Packages/*/.swiftpm/

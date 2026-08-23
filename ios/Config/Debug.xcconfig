@@ -1,0 +1,3 @@
+// Debug: backend on this Mac. The simulator reaches the host via localhost.
+API_BASE_URL = http:/$()/localhost:8080/
+FITRAH_TEAM_ID =

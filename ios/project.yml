@@ -1,0 +1,102 @@
+name: FitrahTube
+options:
+  bundleIdPrefix: com.albunyaan
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.3"
+  developmentLanguage: en
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_APPROACHABLE_CONCURRENCY: YES
+    TARGETED_DEVICE_FAMILY: "1,2"
+    SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGNING_ALLOWED: NO
+    DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+
+packages:
+  FitrahAPI:
+    path: Packages/FitrahAPI
+
+targets:
+  FitrahTube:
+    type: application
+    platform: iOS
+    sources:
+      - path: FitrahTube
+        excludes:
+          - "Info.plist"
+    dependencies:
+      - package: FitrahAPI
+        product: FitrahAPI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.albunyaan.tube
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+    info:
+      path: FitrahTube/Info.plist
+      properties:
+        CFBundleDisplayName: FitrahTube
+        CFBundleName: FitrahTube
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, ar, nl]
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleURLTypes:
+          - CFBundleURLName: com.albunyaan.tube
+            CFBundleURLSchemes: [albunyaantube]
+        API_BASE_URL: $(API_BASE_URL)
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            localhost:
+              NSExceptionAllowsInsecureHTTPLoads: true
+
+  FitrahTubeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: FitrahTubeTests
+    dependencies:
+      - target: FitrahTube
+    settings:
+      base:
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+
+schemes:
+  FitrahTube:
+    build:
+      targets:
+        FitrahTube: all
+        FitrahTubeTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - FitrahTubeTests
