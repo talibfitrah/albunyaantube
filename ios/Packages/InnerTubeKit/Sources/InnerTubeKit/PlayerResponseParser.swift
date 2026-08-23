@@ -77,7 +77,7 @@ public struct PlayerResponseParser: Sendable {
             itag18URL: url(forItag: 18, in: formats),
             itag140URL: url(forItag: 140, in: formats),
             expiresInSeconds: wire.streamingData?.expiresInSeconds.flatMap(Int.init),
-            isLive: wire.videoDetails?.isLiveContent ?? false,
+            isLive: wire.videoDetails?.isLive ?? wire.videoDetails?.isLiveContent ?? false,
             captionTracks: captionTracks(from: wire.captions)
         )
     }
@@ -132,6 +132,7 @@ public struct PlayerResponseParser: Sendable {
             var playerCaptionsTracklistRenderer: CaptionsTracklistRenderer?
         }
         struct VideoDetails: Decodable {
+            var isLive: Bool?
             var isLiveContent: Bool?
         }
 
