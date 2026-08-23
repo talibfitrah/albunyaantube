@@ -1,0 +1,23 @@
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/SessionStore.swift
+  s_18197a18aae8f1::t_6c6db49c9606a5 1-128
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/SessionStoreTests.swift
+  s_18197a18aae8f1::t_991074ffe94872 1-70
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Support/FixtureTransport.swift
+  s_18197a18aae8f1::t_cdc271cf7ca1d7 34-36,40,55-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "679b28a89a5a9a00a10d4b94341653855236e5c7",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
