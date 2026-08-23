@@ -54,6 +54,14 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     private let sleep: @Sendable (Duration) async throws -> Void
 
     private var items: [ContentItem] = []
+    /// Fix round 1, finding #1 (`content-lists.md:256,278-280`): a terminal load/refresh failure
+    /// must keep the list visible, not blank it. `items` is only ever reassigned on a *successful*
+    /// fetch (see `fetchFirstPage`/`fetchMore` below), so at the moment `.error` is set it already
+    /// holds the last good page -- exposing it directly here is smaller than shadowing the same
+    /// fact in a second, View-owned `@State`.
+    /// ponytail: retention lives in the VM (already the source of truth for `items`), not
+    /// `ContentListView`, to avoid two variables that must stay in sync for one fact.
+    var lastItems: [ContentItem] { items }
     private var nextCursor: String?
     private var hasMore = true
     private var isLoadingMore = false
@@ -88,6 +96,11 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     func loadMore() async {
         guard hasMore, !isLoadingMore, !isRefreshing else { return }
         isLoadingMore = true // set before the first `await` -- the in-flight guard
+        // Fix round 1, finding #3: clear a stale `paginationError` *before* the retry request
+        // lands. Without this, a 2nd/3rd failure never flips the flag false->true again (it was
+        // already true), so `ContentListView`'s `.onChange(of: paginationErrorFlag)` never
+        // refires and the banner silently stops reappearing after the first failure.
+        clearPaginationErrorFlag()
         let task = Task { await self.fetchMore() }
         loadMoreTask = task
         await task.value
@@ -140,9 +153,15 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         }
     }
 
+    private func clearPaginationErrorFlag() {
+        guard case .content(let items, let hasMore, true, let isSearchActive) = state else { return }
+        state = .content(items: items, hasMore: hasMore, paginationError: false, isSearchActive: isSearchActive)
+    }
+
     private var isSearchActive: Bool { !query.isEmpty }
 
     /// RULING 22: the server requires ≥2 chars; below that `q` is omitted entirely (falls back to
-    /// the unfiltered list), not sent as a too-short string.
+    /// the unfiltered list), not sent as a too-short string. Interpretation accepted as-is for
+    /// these browse tabs: <2 chars means "show the unfiltered list", not "no results" / no fetch.
     private var queryParam: String? { query.count >= 2 ? query : nil }
 }

@@ -29,7 +29,10 @@ struct ContentListViewModelTests {
     /// Records every `content()` call's params -- proves per-type request shapes, cursor
     /// progression, and the `q` omission threshold.
     private actor RecordingCatalogClient: CatalogClient {
-        struct Call: Sendable { let type: ListType?; let cursor: String?; let limit: Int; let query: String? }
+        /// `filter` added fix round 1, finding #2 -- the original `Call` recorded every request
+        /// param except this one, so nothing ever proved `ContentListViewModel` actually forwards
+        /// `filter.state` to `catalog.content(...)` unchanged.
+        struct Call: Sendable { let type: ListType?; let cursor: String?; let limit: Int; let filter: FilterState; let query: String? }
         private let pages: [CursorPage<ContentItem>]
         private(set) var calls: [Call] = []
 
@@ -40,7 +43,7 @@ struct ContentListViewModelTests {
             CursorPage(items: [], nextCursor: nil)
         }
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
-            calls.append(Call(type: type, cursor: cursor, limit: limit, query: query))
+            calls.append(Call(type: type, cursor: cursor, limit: limit, filter: filter, query: query))
             let index = cursor.flatMap(Int.init) ?? 0
             guard pages.indices.contains(index) else { return CursorPage(items: [], nextCursor: nil) }
             return pages[index]
@@ -116,6 +119,35 @@ struct ContentListViewModelTests {
             callCount += 1
             if callCount > 1 { await gate.block() }
             return page
+        }
+        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+    }
+
+    /// Fix round 1, finding #3: the first `content()` call resolves immediately; every later call
+    /// blocks on `gate`, then throws once released -- lets a test observe the VM's state *while a
+    /// retry is in flight*, which is the only way to prove `paginationError` was actually reset to
+    /// `false` before the retry lands (rather than just staying `true` the whole time, which would
+    /// look identical from the outside once the retry fails again).
+    private actor GatedFlakyClient: CatalogClient {
+        struct Boom: Error {}
+        private let firstPage: CursorPage<ContentItem>
+        private let gate: Gate
+        private var callCount = 0
+
+        init(firstPage: CursorPage<ContentItem>, gate: Gate) {
+            self.firstPage = firstPage
+            self.gate = gate
+        }
+
+        func categories() async throws -> [FitrahTube.Category] { [] }
+        func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+            callCount += 1
+            if callCount == 1 { return firstPage }
+            await gate.block()
+            throw Boom()
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
     }
@@ -264,5 +296,74 @@ struct ContentListViewModelTests {
         await vm.searchTask?.value
 
         #expect(await recorder.seen == .milliseconds(300))
+    }
+
+    // MARK: - Fix round 1
+
+    /// Finding #1 (`content-lists.md:256,278-280`): a terminal (initial/refresh) failure with
+    /// existing content must keep that content retrievable, not blank it. `lastItems` is the VM
+    /// half of that contract -- `ContentListView` reads it to keep the list on screen while
+    /// `.error` shows a banner instead of the full-page `ErrorStateView`.
+    @Test func refreshFailureAfterContentYieldsErrorStateButRetainsLastItems() async {
+        let firstPage = CursorPage(items: items(count: 20, prefix: "a"), nextCursor: nil)
+        let client = FlakyAfterFirstCallClient(firstPage: firstPage) // every call after the first throws
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+
+        await vm.load()
+        #expect(vm.lastItems.count == 20)
+
+        await vm.refresh() // throws -- terminal failure, not a pagination failure
+
+        #expect(vm.state == .error)
+        #expect(vm.lastItems.count == 20) // still the last successfully fetched page, not emptied
+    }
+
+    /// Finding #2: nothing previously asserted that `filter.state` actually reaches
+    /// `catalog.content(type:cursor:limit:filter:query:)` unchanged -- a persisted category plus
+    /// every typed length/date/sort filter must all survive the round trip.
+    @Test func persistedFilterReachesContentRequestUnchanged() async {
+        let filterState = FilterState(categoryId: "c9", categoryName: "Tafsir", length: .short, date: .last7Days, sort: .mostPopular)
+        let client = RecordingCatalogClient(pages: [CursorPage(items: items(count: 3, prefix: "a"), nextCursor: nil)])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(state: filterState), sleep: noSleep)
+
+        await vm.load()
+
+        let calls = await client.calls
+        #expect(calls.count == 1)
+        #expect(calls[0].filter == filterState)
+    }
+
+    /// Finding #3: without resetting `paginationError` at the start of a retry, a 2nd/3rd
+    /// consecutive pagination failure leaves the flag sitting at `true` the whole time -- so
+    /// `ContentListView`'s `.onChange(of: paginationErrorFlag)` (only fires on a false->true
+    /// transition) never refires and the banner silently stops reappearing. Observing state
+    /// *while the retry is in flight* is the only way to prove the reset actually happened, rather
+    /// than the flag just staying `true` throughout.
+    @Test func repeatedPaginationFailureResetsFlagBeforeRefailing() async {
+        let gate = Gate()
+        let firstPage = CursorPage(items: items(count: 20, prefix: "a"), nextCursor: "1")
+        let client = GatedFlakyClient(firstPage: firstPage, gate: gate)
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+
+        await vm.load()
+
+        let firstAttempt = Task { await vm.loadMore() } // call 2: blocks, then throws
+        await gate.waitUntilBlocked()
+        await gate.release()
+        await firstAttempt.value
+
+        guard case .content(_, _, let error1, _) = vm.state else { Issue.record("expected .content"); return }
+        #expect(error1 == true)
+
+        let secondAttempt = Task { await vm.loadMore() } // call 3 (a retry): blocks before failing again
+        await gate.waitUntilBlocked()
+        guard case .content(_, _, let errorWhileRetrying, _) = vm.state else { Issue.record("expected .content"); return }
+        #expect(errorWhileRetrying == false) // reset happened synchronously before the request went out
+
+        await gate.release()
+        await secondAttempt.value
+
+        guard case .content(_, _, let error2, _) = vm.state else { Issue.record("expected .content"); return }
+        #expect(error2 == true) // re-failed and re-flagged -- would be stuck at `true` without the reset
     }
 }

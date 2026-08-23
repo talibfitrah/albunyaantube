@@ -64,13 +64,45 @@ struct ContentListView: View {
                 Task { await viewModel?.retryPagination() }
             }
         }
+        // Fix round 1, finding #1 (`content-lists.md:256,278-280`): a terminal load/refresh
+        // failure with prior content stays on the list (see `stateContent`'s `.error` branch
+        // below) instead of the full-page `ErrorStateView` -- the banner is what actually tells
+        // the user something went wrong. Same false->true-transition pattern as the pagination
+        // banner above, Retry re-runs a full `load()` (not `retryPagination()` -- there's no
+        // cursor left to resume from a terminal failure).
+        .onChange(of: terminalErrorWithContentFlag) { _, isError in
+            guard isError else { return }
+            bannerMessage = BannerMessage(text: String(localized: "list_error_title"), actionTitle: String(localized: "retry")) {
+                Task { await viewModel?.load() }
+            }
+        }
         .onChange(of: queryBinding.wrappedValue) { _, _ in paginationGuard = PaginationGuard() }
+        // Fix round 1, finding #4: a category applied on the Categories/Subcategories screen
+        // (Task 11) writes straight into `container.filters` and pops back here without ever
+        // re-running this view's `.task` -- `ContentListViewModel` already re-reads `filter.state`
+        // live on every fetch (unlike `HomeViewModel`, which snapshots it once at init), so a
+        // plain `load()` is enough to pick up the change; no new ViewModel instance needed.
+        // `.onChange` never fires for the value it's first attached with, so this doesn't cause
+        // the double fetch a naive "reload on appear + reload on change" combo would.
+        .onChange(of: container.filters.state) { _, _ in
+            paginationGuard = PaginationGuard()
+            Task { await viewModel?.load() }
+        }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
         .task {
             if viewModel == nil {
                 viewModel = ContentListViewModel(type: type, catalog: container.catalog, filter: container.filters)
             }
             await viewModel?.load()
+            #if DEBUG
+            // Debug-only launch hook (fix round 1, finding #1 screenshot): simctl has no
+            // pull-to-refresh gesture, so `-fitrah-fail-after-first-load` drives the same
+            // `refresh()` a real swipe would call, against a stub server that fails starting on
+            // its 2nd request -- reproducing "terminal error with existing content" for capture.
+            if ProcessInfo.processInfo.arguments.contains("-fitrah-fail-after-first-load") {
+                await viewModel?.refresh()
+            }
+            #endif
         }
     }
 
@@ -118,10 +150,12 @@ struct ContentListView: View {
         }
     }
 
+    /// Fix round 1, finding #4: only mutates the shared store now -- the guard-reset + reload
+    /// used to happen here too, but that's now the `.onChange(of: container.filters.state)`
+    /// modifier's job (it fires for *any* origin, including this one), so doing both here as well
+    /// would fire two reloads for one tap.
     private func clearFilter() {
         container.filters.clearCategory()
-        paginationGuard = PaginationGuard()
-        Task { await viewModel?.load() }
     }
 
     private var hasActiveFilter: Bool { container.filters.state.categoryId != nil }
@@ -135,10 +169,18 @@ struct ContentListView: View {
             case .loading:
                 skeletonView
             case .error:
-                ErrorStateView(message: String(localized: "list_error_description")) {
-                    Task { await viewModel.load() }
+                // Fix round 1, finding #1: only the *first* load ever failing (nothing to show)
+                // gets the full-page error; a load/refresh failure after content already existed
+                // keeps that content on screen (via `lastItems`) plus the banner set by the
+                // `.onChange(of: terminalErrorWithContentFlag)` modifier above.
+                if !viewModel.lastItems.isEmpty {
+                    contentGrid(items: viewModel.lastItems, hasMore: false)
+                } else {
+                    ErrorStateView(message: String(localized: "list_error_description")) {
+                        Task { await viewModel.load() }
+                    }
+                    .containerRelativeFrame(.vertical)
                 }
-                .containerRelativeFrame(.vertical)
             case .content(let items, let hasMore, _, let isSearchActive):
                 if items.isEmpty {
                     if isSearchActive {
@@ -253,6 +295,11 @@ struct ContentListView: View {
     private var paginationErrorFlag: Bool {
         guard let viewModel, case .content(_, _, let paginationError, _) = viewModel.state else { return false }
         return paginationError
+    }
+
+    private var terminalErrorWithContentFlag: Bool {
+        guard let viewModel, case .error = viewModel.state else { return false }
+        return !viewModel.lastItems.isEmpty
     }
 
     // MARK: - Per-type copy (content-lists.md §4.6, §A2 tab titles)

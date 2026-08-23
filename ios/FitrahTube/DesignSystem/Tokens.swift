@@ -45,7 +45,11 @@ extension Color {
     static let errorText = Color(light: 0xE65100, dark: 0xFFCC80)
     static let errorIcon = Color(light: 0xFF6F00, dark: 0xFFB74D)
     static let skeleton = Color(light: 0xE0E0E0, dark: 0x2A2A2A)
-    static let skeletonShimmer = Color(light: 0xF5F5F5, dark: 0x383838)
+    // Fix round 1, finding #5: light `skeletonShimmer` used to equal `background` (both
+    // 0xF5F5F5), so the shimmer phase in `SkeletonListView`/`SkeletonGrid` (StateViews.swift)
+    // rendered rows invisible against the page every other second. Dark mode was never affected
+    // (0x383838 vs. 0x121212 background -- already distinct); only the light value changes here.
+    static let skeletonShimmer = Color(light: 0xFFFFFF, dark: 0x383838)
     static let navInactive = Color(light: 0x757575, dark: 0xB0B0B0)
     static let divider = Color(light: 0x1A000000, dark: 0x1AFFFFFF)
     static let liveBadge = Color(light: 0xF44336, dark: 0xF44336)

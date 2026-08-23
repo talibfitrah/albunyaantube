@@ -41,6 +41,20 @@ struct HomeView: View {
         }
         .background(Color.homeSurface.ignoresSafeArea())
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
+        // Fix round 1, finding #4: a category applied on Categories/Subcategories (Task 11) pops
+        // straight back to Home without re-running `.task` (this view was never removed from its
+        // `NavigationStack`, just the pushed screens above it were). Unlike `ContentListViewModel`,
+        // `HomeViewModel` snapshots `filter.state.categoryId` once into `category` at `init` and
+        // never re-reads it (RULING 10's "one initial fetch" guard) -- so a plain `load()` on the
+        // existing instance would still fetch with the *old* category. Building a fresh
+        // `HomeViewModel` re-captures the current filter the same way first appearance does; this
+        // is also now the only place `categoryPill`'s Clear routes through (see below), so one
+        // filter change never causes two reloads. `.onChange` doesn't fire for the value it's
+        // first attached with, so first appearance still fetches exactly once.
+        .onChange(of: container.filters.state) { _, _ in
+            viewModel = HomeViewModel(catalog: container.catalog, filter: container.filters, widthClass: { widthClass })
+            Task { await viewModel?.load() }
+        }
         .task {
             if viewModel == nil {
                 // ponytail: `widthClass` is captured once here (the environment value at first
@@ -101,7 +115,12 @@ struct HomeView: View {
             label: container.filters.state.categoryName ?? String(localized: "filter_category"),
             isActive: container.filters.state.categoryId != nil,
             onTap: { router.push(.categories) },
-            onClear: { viewModel?.clearFilter() }
+            // Fix round 1, finding #4: routes through the shared store instead of
+            // `HomeViewModel.clearFilter()` directly, so this and an externally-applied category
+            // (Categories/Subcategories) both funnel through the single
+            // `.onChange(of: container.filters.state)` reload above -- one filter change, one
+            // reload, regardless of where it originated.
+            onClear: { container.filters.clearCategory() }
         )
         .padding(.horizontal, Spacing.homeHorizontalMargin(widthClass)) // home_horizontal_margin (shell-home.md:227)
         .padding(.bottom, Spacing.md(widthClass))
@@ -124,7 +143,7 @@ struct HomeView: View {
                 EmptyStateView(
                     systemImage: "film.stack",
                     message: String(localized: "home_empty_content"),
-                    action: hasActiveFilter ? (String(localized: "clear_filter"), { viewModel.clearFilter() }) : nil
+                    action: hasActiveFilter ? (String(localized: "clear_filter"), { container.filters.clearCategory() }) : nil
                 )
                 .containerRelativeFrame(.vertical)
             case .content(let sections, _, let isLoadingMore):
