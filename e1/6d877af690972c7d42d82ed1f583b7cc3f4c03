@@ -1,0 +1,53 @@
+ios/FitrahTube/DesignSystem/Tokens.swift
+  s_18197a18aae8f1::t_502db8f84f5165 15
+  s_18197a18aae8f1::t_f5bb84df9a7ea1 114-122
+  s_18197a18aae8f1::t_4d0439ac2050b5 75-79
+ios/Packages/FitrahAPI/Sources/FitrahAPI/DeviceId.swift
+  s_18197a18aae8f1::t_75914f51320fcc 6
+ios/FitrahTube/App/AppContainer.swift
+  s_18197a18aae8f1::t_7c3ca1ccc179d5 18,36-37
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/RecordingTransport.swift
+  s_18197a18aae8f1::t_c22d22c7e74821 5-6
+ios/FitrahTubeTests/RecordingTransport.swift
+  s_18197a18aae8f1::t_49d63aff64de2f 5
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/DeviceIdTests.swift
+  s_18197a18aae8f1::t_92204d202434b8 6,10,14-15,20,24-26
+ios/FitrahTubeTests/TokensTests.swift
+  s_18197a18aae8f1::t_cc88ecec192b00 1-17
+ios/FitrahTube.xctestplan
+  s_18197a18aae8f1::t_a077634c08355e 1-25
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_18197a18aae8f1::t_cf8fa4cfaef568 17-20
+.gitignore
+  s_18197a18aae8f1::t_0c485a89035127 206
+  s_18197a18aae8f1::t_d6cef8e8d79c3f 208-209
+ios/Packages/FitrahAPI/Package.swift
+  s_18197a18aae8f1::t_b2491923ef7e48 7-10
+ios/project.yml
+  s_18197a18aae8f1::t_5f2bb7d3dbce69 101-103
+ios/FitrahTube/App/FitrahTubeApp.swift
+  s_18197a18aae8f1::t_515545d2dc9c8b 6-8
+  s_18197a18aae8f1::t_409cdaa7aa366a 1
+ios/scripts/test.sh
+  s_18197a18aae8f1::t_cdc962b902a974 1-53
+ios/FitrahTube/App/RootView.swift
+  s_18197a18aae8f1::t_0418d45e6776c5 7,22-23
+ios/FitrahTube/DesignSystem/StateViews.swift
+  s_18197a18aae8f1::t_7b9b2c042105c4 9,12-13,34,43,46,62,71,75,89,91-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e16d877af690972c7d42d82ed1f583b7cc3f4c03",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
