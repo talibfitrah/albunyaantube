@@ -19,8 +19,17 @@ nonisolated enum ReselectAction: Equatable {
     var pendingRoute: Route?
     /// Set by the player screen on entering/exiting fullscreen (phase 2); hides the tab bar while true.
     var isFullscreen = false
+    /// Bumped by `reselect(_:)` when it returns `.scrollToTop` -- carries which tab so only that
+    /// tab's own root view reacts (`.onChange(of:)` needs a value that actually changes, which a
+    /// bare `Tab` wouldn't on a second consecutive reselect of a tab already at rest).
+    var scrollToTopSignal: ScrollToTopSignal?
 
     private var shellIsReady = false
+
+    nonisolated struct ScrollToTopSignal: Equatable {
+        let tab: Tab
+        let token: Int
+    }
 
     func push(_ route: Route) {
         paths[selectedTab, default: []].append(route)
@@ -35,6 +44,7 @@ nonisolated enum ReselectAction: Equatable {
             popToRoot(tab)
             return .popToRoot
         }
+        scrollToTopSignal = ScrollToTopSignal(tab: tab, token: (scrollToTopSignal?.token ?? 0) + 1)
         return .scrollToTop
     }
 

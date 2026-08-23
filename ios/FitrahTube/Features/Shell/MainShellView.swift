@@ -43,7 +43,10 @@ struct MainShellView: View {
             get: { router.selectedTab },
             set: { newTab in
                 if newTab == router.selectedTab {
-                    // ponytail: ReselectAction.scrollToTop is unconsumed until the tab roots have scrollable content (Tasks 9–13).
+                    // The .scrollToTop case is consumed by the reselected tab's own root view via
+                    // router.scrollToTopSignal (e.g. HomeView's ScrollViewReader) -- reselect(_:)
+                    // already performs the .popToRoot side effect itself, so the return value only
+                    // needs discarding here.
                     _ = router.reselect(newTab)
                 } else {
                     router.selectedTab = newTab
@@ -60,7 +63,7 @@ struct MainShellView: View {
     @ViewBuilder
     private func rootView(for tab: Tab) -> some View {
         switch tab {
-        case .home: Text("Home")
+        case .home: HomeView()
         case .channels: Text("Channels")
         case .me: Text("Me")
         case .playlists: Text("Playlists")

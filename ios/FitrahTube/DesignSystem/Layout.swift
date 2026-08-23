@@ -32,6 +32,12 @@ nonisolated enum GridRules {
         guard visible > 0 else { return 0 }
         return ((container - 2 * margin - CGFloat(visible - 1) * gap) / CGFloat(visible)) * 0.98
     }
+
+    /// `home_card_spacing` (shell-home.md "Card widths" table): the gap between adjacent carousel
+    /// cards -- 12/16/20 pt by bucket. No existing consumer to stay aligned with (unlike the
+    /// carousel's horizontal margin, which callers pass as `Spacing.md` to stay flush with
+    /// `SectionHeader`'s own padding), so this is a precise port of Android's dimen.
+    static func cardGap(_ w: WidthClass) -> CGFloat { w.pick(12, 16, 20) }
 }
 
 extension View {
