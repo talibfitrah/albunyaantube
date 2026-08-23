@@ -285,6 +285,13 @@ public struct Client: APIProtocol {
                     name: "contentLimit",
                     value: input.query.contentLimit
                 )
+                try converter.setQueryItemAsURI(
+                    in: &request,
+                    style: .form,
+                    explode: true,
+                    name: "category",
+                    value: input.query.category
+                )
                 converter.setAcceptHeader(
                     in: &request.headerFields,
                     contentTypes: input.headers.accept

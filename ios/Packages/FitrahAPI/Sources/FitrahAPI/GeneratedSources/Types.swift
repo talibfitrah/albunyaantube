@@ -437,6 +437,38 @@ public enum Components {
             ///
             /// - Remark: Generated from `#/components/schemas/CategoryDto/parentId`.
             public var parentId: Swift.String?
+            /// Sort order within parent category. Null until explicitly set.
+            ///
+            /// - Remark: Generated from `#/components/schemas/CategoryDto/displayOrder`.
+            public var displayOrder: Swift.Int?
+            /// Localized category names (en, ar, nl)
+            ///
+            /// - Remark: Generated from `#/components/schemas/CategoryDto/localizedNames`.
+            public struct LocalizedNamesPayload: Codable, Hashable, Sendable {
+                /// A container of undocumented properties.
+                public var additionalProperties: [String: Swift.String]
+                /// Creates a new `LocalizedNamesPayload`.
+                ///
+                /// - Parameters:
+                ///   - additionalProperties: A container of undocumented properties.
+                public init(additionalProperties: [String: Swift.String] = .init()) {
+                    self.additionalProperties = additionalProperties
+                }
+                public init(from decoder: any Swift.Decoder) throws {
+                    additionalProperties = try decoder.decodeAdditionalProperties(knownKeys: [])
+                }
+                public func encode(to encoder: any Swift.Encoder) throws {
+                    try encoder.encodeAdditionalProperties(additionalProperties)
+                }
+            }
+            /// Localized category names (en, ar, nl)
+            ///
+            /// - Remark: Generated from `#/components/schemas/CategoryDto/localizedNames`.
+            public var localizedNames: Components.Schemas.CategoryDto.LocalizedNamesPayload?
+            /// Emoji or icon identifier
+            ///
+            /// - Remark: Generated from `#/components/schemas/CategoryDto/icon`.
+            public var icon: Swift.String?
             /// Creates a new `CategoryDto`.
             ///
             /// - Parameters:
@@ -444,22 +476,34 @@ public enum Components {
             ///   - name: Category display name
             ///   - slug: URL-friendly identifier (auto-generated from name if not provided)
             ///   - parentId: Parent category ID (null for top-level categories)
+            ///   - displayOrder: Sort order within parent category. Null until explicitly set.
+            ///   - localizedNames: Localized category names (en, ar, nl)
+            ///   - icon: Emoji or icon identifier
             public init(
                 id: Swift.String,
                 name: Swift.String,
                 slug: Swift.String,
-                parentId: Swift.String? = nil
+                parentId: Swift.String? = nil,
+                displayOrder: Swift.Int? = nil,
+                localizedNames: Components.Schemas.CategoryDto.LocalizedNamesPayload? = nil,
+                icon: Swift.String? = nil
             ) {
                 self.id = id
                 self.name = name
                 self.slug = slug
                 self.parentId = parentId
+                self.displayOrder = displayOrder
+                self.localizedNames = localizedNames
+                self.icon = icon
             }
             public enum CodingKeys: String, CodingKey {
                 case id
                 case name
                 case slug
                 case parentId
+                case displayOrder
+                case localizedNames
+                case icon
             }
         }
         /// - Remark: Generated from `#/components/schemas/Channel`.
@@ -1671,20 +1715,27 @@ public enum Operations {
                 ///
                 /// - Remark: Generated from `#/paths/v1/home/GET/query/contentLimit`.
                 public var contentLimit: Swift.Int?
+                /// Category id to scope the feed to (blank/omitted normalises to no filter)
+                ///
+                /// - Remark: Generated from `#/paths/v1/home/GET/query/category`.
+                public var category: Swift.String?
                 /// Creates a new `Query`.
                 ///
                 /// - Parameters:
                 ///   - cursor: Base64-encoded cursor from previous page
                 ///   - categoryLimit: Max categories per page
                 ///   - contentLimit: Max items per category
+                ///   - category: Category id to scope the feed to (blank/omitted normalises to no filter)
                 public init(
                     cursor: Swift.String? = nil,
                     categoryLimit: Swift.Int? = nil,
-                    contentLimit: Swift.Int? = nil
+                    contentLimit: Swift.Int? = nil,
+                    category: Swift.String? = nil
                 ) {
                     self.cursor = cursor
                     self.categoryLimit = categoryLimit
                     self.contentLimit = contentLimit
+                    self.category = category
                 }
             }
             public var query: Operations.GetHomeFeed.Input.Query

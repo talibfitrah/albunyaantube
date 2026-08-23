@@ -196,6 +196,11 @@ paths:
             minimum: 1
             maximum: 20
             default: 10
+        - name: category
+          in: query
+          description: Category id to scope the feed to (blank/omitted normalises to no filter)
+          schema:
+            type: string
       responses:
         '200':
           description: Paginated home feed
@@ -3080,6 +3085,20 @@ components:
           type: string
           nullable: true
           description: Parent category ID (null for top-level categories)
+        displayOrder:
+          type: integer
+          nullable: true
+          description: Sort order within parent category. Null until explicitly set.
+        localizedNames:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+          description: Localized category names (en, ar, nl)
+        icon:
+          type: string
+          nullable: true
+          description: Emoji or icon identifier
 
     Channel:
       type: object
