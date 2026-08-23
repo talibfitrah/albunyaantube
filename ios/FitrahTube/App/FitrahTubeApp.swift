@@ -94,6 +94,10 @@ struct FitrahTubeApp: App {
             router.push(.featured(categoryId: arg(2), categoryName: arg(3)))
         case "favorites":
             router.push(.favorites)
+        case "settings":
+            router.push(.settings)
+        case "about":
+            router.push(.about)
         default:
             break
         }

@@ -35,6 +35,10 @@ struct RootView: View {
             // Measures the full-size container, not the content — see WidthClass.
             .onGeometryChange(for: WidthClass.self) { WidthClass(size: $0.size) } action: { widthClass = $0 }
             .environment(\.widthClass, widthClass)
+            // task-13: Theme row (SettingsView) persists "system"/"light"/"dark"; applied here at
+            // the root so it covers Onboarding and the main shell alike -- nil for "system" lets
+            // the view inherit the environment's scheme, same as Android's FOLLOW_SYSTEM.
+            .preferredColorScheme(container.settings.colorScheme)
     }
 
     @ViewBuilder

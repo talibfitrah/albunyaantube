@@ -18,6 +18,14 @@ struct MainShellView: View {
     @Environment(\.widthClass) private var widthClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    // task-7b fold-in (task-13): the rail branch used to build all five tabs' `NavigationStack`s
+    // unconditionally (see `railStacks`'s doc comment below) -- on iPad that fired every tab's
+    // first load at launch. Seeded with the selected tab on first appearance, grown on every
+    // subsequent selection; a tab already in the set keeps its state exactly as before (this only
+    // gates the *first* mount). The bottom-bar branch needs no such gate: the modern `Tab(...)`
+    // view-builder API `tabView` uses already defers a tab's content until first selected.
+    @State private var mountedTabs: Set<Tab> = []
+
     private var shellLayout: ShellLayout { ShellLayout(widthClass) }
 
     var body: some View {
@@ -63,16 +71,23 @@ struct MainShellView: View {
     }
 
     /// Regular/large width only (see the type doc comment for why `TabView` isn't reused here).
-    /// All five stacks stay mounted; only the selected one is visible/interactive/accessible.
+    /// Only tabs in `mountedTabs` (visited at least once) are built; once mounted a tab's
+    /// `NavigationStack` stays alive (same identity every render) so its state/scroll position
+    /// survives being hidden, same as before -- this only changes when a tab is first built, not
+    /// whether it keeps state after that.
     private var railStacks: some View {
         ZStack {
             ForEach(Tab.allCases, id: \.self) { tab in
-                navigationStack(for: tab)
-                    .opacity(tab == router.selectedTab ? 1 : 0)
-                    .allowsHitTesting(tab == router.selectedTab)
-                    .accessibilityHidden(tab != router.selectedTab)
+                if mountedTabs.contains(tab) {
+                    navigationStack(for: tab)
+                        .opacity(tab == router.selectedTab ? 1 : 0)
+                        .allowsHitTesting(tab == router.selectedTab)
+                        .accessibilityHidden(tab != router.selectedTab)
+                }
             }
         }
+        .onAppear { mountedTabs.insert(router.selectedTab) }
+        .onChange(of: router.selectedTab) { _, newValue in mountedTabs.insert(newValue) }
     }
 
     private func navigationStack(for tab: Tab) -> some View {
@@ -108,7 +123,7 @@ struct MainShellView: View {
         Binding(get: { router.pendingBanner }, set: { router.pendingBanner = $0 })
     }
 
-    // task-12: Favorites replaces the placeholder. `.settings`/`.about` are still task 13.
+    // task-13: `.settings`/`.about` replace their placeholders.
     @ViewBuilder
     private func destination(for route: Route) -> some View {
         switch route {
@@ -122,6 +137,10 @@ struct MainShellView: View {
             SubcategoriesView(parentId: parentId, parentName: parentName)
         case .favorites:
             FavoritesView()
+        case .settings:
+            SettingsView()
+        case .about:
+            AboutView()
         default:
             PhaseTwoPlaceholderView(route: route)
         }
