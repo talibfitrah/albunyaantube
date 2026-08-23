@@ -19,6 +19,11 @@ struct FormattingTests {
         #expect(Format.duration(3723) == "1:02:03")
     }
 
+    @Test func durationBoundaries() {
+        #expect(Format.duration(59) == "0:59")
+        #expect(Format.duration(3600) == "1:00:00")
+    }
+
     // MARK: - compactCount (strings-assets.md:172-176: CompactDecimalFormat SHORT, 1 fraction digit, drop .0)
 
     @Test func compactCountBelowThousandIsPlain() {
@@ -42,6 +47,21 @@ struct FormattingTests {
         #expect(Format.compactCount(500, locale: Locale(identifier: "ar_EG")) == "\u{0665}\u{0660}\u{0660}")
     }
 
+    @Test func compactCountArabicMoroccoUsesWesternDigits() {
+        // Unlike ar_EG, CLDR's ar_MA numbering system is Western digits (`NumberFormat(locale)`
+        // behaviour Android relies on too -- ChannelAdapter.kt:60-69, CountFormat.kt:31-47 --
+        // per-locale, not "Arabic == Eastern digits"). Exact output captured via a standalone
+        // `swift` run of the same `.formatted()` call before asserting it here.
+        let result = Format.compactCount(1200, locale: Locale(identifier: "ar_MA"))
+        #expect(result == "1,2\u{00A0}ألف")
+        #expect(result.contains("1"))
+        #expect(!result.contains("\u{0661}"))
+    }
+
+    @Test func compactCountAtThousandBoundary() {
+        #expect(Format.compactCount(1000, locale: Locale(identifier: "en_US")) == "1K")
+    }
+
     // MARK: - pluralQuantity (RULINGS #3b: clamp >= 1000 -> 1000 so the plural category is `other`)
 
     @Test func pluralQuantityPassesThroughSmallCounts() {
@@ -52,6 +72,10 @@ struct FormattingTests {
     @Test func pluralQuantityClampsAtThreshold() {
         #expect(Format.pluralQuantity(1000) == 1000)
         #expect(Format.pluralQuantity(1_500_000) == 1000)
+    }
+
+    @Test func pluralQuantityBoundaryAtOneThousand() {
+        #expect(Format.pluralQuantity(1000) == 1000)
     }
 
     // MARK: - timeAgo (content-lists.md:466-475: one ladder everywhere, integer division, no rounding)
