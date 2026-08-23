@@ -1,0 +1,36 @@
+ios/Packages/FitrahAPI/Sources/FitrahAPI/GeneratedSources/Types.swift
+  s_18197a18aae8f1::t_c7c2514ae37ca3 440-471,479-481,486-489,495-497,504-506,1718-1721,1728,1732-1733,1738
+ios/FitrahTubeTests/LiveCatalogClientTests.swift
+  s_18197a18aae8f1::t_33ec70bb8078c7 8,10,13-23,26,31-88
+ios/Packages/FitrahAPI/Sources/FitrahAPI/GeneratedSources/Client.swift
+  s_18197a18aae8f1::t_c7c2514ae37ca3 288-294
+docs/architecture/api-specification.yaml
+  s_18197a18aae8f1::t_eeb2a9f870319a 3088-3101
+  s_18197a18aae8f1::t_c6300ea53611b3 199-203
+ios/FitrahTubeTests/ModelsTests.swift
+  s_18197a18aae8f1::t_223a2d29c5c40a 1-15
+ios/FitrahTube/Catalog/Models.swift
+  s_18197a18aae8f1::t_d52a795e454166 1-83
+ios/FitrahTube/Catalog/LiveCatalogClient.swift
+  s_18197a18aae8f1::t_fd6ceb1d3c915b 10-96
+ios/FitrahTube/Catalog/FakeCatalogClient.swift
+  s_18197a18aae8f1::t_e2a7b9d47c019c 4,12-18,20-22,25-66
+ios/FitrahTube/Catalog/CatalogClient.swift
+  s_18197a18aae8f1::t_2601b4dc348426 3,6-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "823e1c3aafb62b0f7f583faa9d4d8f4b27d5db50",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
