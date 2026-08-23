@@ -70,6 +70,9 @@ nonisolated enum WidthClass: Equatable {
         default: self = .large
         }
     }
+
+    /// Android sw600dp/sw720dp bucket on the smallest width; does not flip on rotation.
+    init(size: CGSize) { self.init(width: min(size.width, size.height)) }
 }
 
 extension EnvironmentValues {
@@ -111,10 +114,17 @@ enum Radius {
 // MARK: - Type scale (dimens.xml / styles.xml sizes; Dynamic Type via relative text styles)
 
 enum TypeScale {
-    static let headline = Font.system(.title3, weight: .bold)          // .title3 20 — Android headline 20 bold
+    /// .title3 20 — Android headline 20 bold; scales to .title2 (~22–24) on .large so a tablet
+    /// headline doesn't sit at phone size in a much bigger layout.
+    static func headline(_ w: WidthClass) -> Font {
+        Font.system(w == .large ? .title2 : .title3, weight: .bold)
+    }
     static let sectionTitle = Font.system(.headline, weight: .semibold) // .headline 17 — Android 18
     static let subtitle = Font.system(.callout)                          // .callout 16 — Android 16
-    static let body = Font.system(.subheadline)                          // .subheadline 15 — Android 14
+    /// .subheadline 15 — Android body 14; scales to .callout (~16) on .large.
+    static func body(_ w: WidthClass) -> Font {
+        Font.system(w == .large ? .callout : .subheadline)
+    }
     static let caption = Font.system(.caption)                           // .caption 12 — Android 12
     static let badge = Font.system(.caption2, weight: .bold)             // .caption2 11 bold — Android 10 bold
     static let itemTitle = Font.system(.subheadline, weight: .medium)    // .subheadline 15 medium — Android 15 medium

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import FitrahTube
 
@@ -24,5 +25,12 @@ struct WidthClassTests {
         #expect(Spacing.md(.regular) == 20)
         #expect(Spacing.md(.large) == 24)
         #expect(Spacing.xxxl(.large) == 128)
+    }
+
+    @Test func bucketsOnSmallestWidthNotRotation() {
+        // Landscape iPhone: width 956 > 600 but height 440 is the smaller dimension -- still compact.
+        #expect(WidthClass(size: CGSize(width: 956, height: 440)) == .compact)
+        // Landscape large iPad: smaller dimension 1032 still clears the 1000 large threshold.
+        #expect(WidthClass(size: CGSize(width: 1376, height: 1032)) == .large)
     }
 }

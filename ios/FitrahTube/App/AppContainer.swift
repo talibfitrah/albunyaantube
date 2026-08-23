@@ -34,5 +34,11 @@ nonisolated enum AppConfig {
 
 extension EnvironmentValues {
     // nonisolated fake() keeps the environment default trap-free; see spec §5.
-    @Entry var container: AppContainer = .fake()
+    // Release must not ship the fake default silently -- an un-injected .container in Release
+    // traps instead of serving fake data.
+    #if DEBUG
+    @Entry var container: AppContainer = .fake()   // previews / tests
+    #else
+    @Entry var container: AppContainer = { preconditionFailure("AppContainer not injected — wrap the root in .environment(\\.container, …)") }()
+    #endif
 }

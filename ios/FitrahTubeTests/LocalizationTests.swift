@@ -42,4 +42,26 @@ struct LocalizationTests {
         #expect(string("video_count", locale: "en", 1) == "1 video")
         #expect(string("video_count", locale: "en", 3) == "3 videos")
     }
+
+    @Test func retryKeyIsTheAndroidKeyNotTheEnglishSentence() throws {
+        // StateViews.swift must look up "retry" (the Android key), not "Retry" (the English
+        // sentence) -- verified against the catalog's own Arabic value, not a hard-coded string.
+        // Bundle.main has no raw .xcstrings resource -- Xcode compiles the catalog into per-locale
+        // .strings/.stringsdict at build time -- so the source JSON is read directly from disk.
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("FitrahTube/Resources/Localizable.xcstrings")
+        let data = try Data(contentsOf: url)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let strings = json?["strings"] as? [String: Any]
+        let retry = strings?["retry"] as? [String: Any]
+        let localizations = retry?["localizations"] as? [String: Any]
+        let arLocalization = localizations?["ar"] as? [String: Any]
+        let stringUnit = arLocalization?["stringUnit"] as? [String: Any]
+        let arabicRetry = try #require(stringUnit?["value"] as? String)
+
+        #expect(string("retry", locale: "ar") == arabicRetry)
+        #expect(string("retry", locale: "ar") != "Retry")
+    }
 }

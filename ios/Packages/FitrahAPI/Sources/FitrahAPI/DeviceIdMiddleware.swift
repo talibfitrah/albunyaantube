@@ -2,7 +2,8 @@ import Foundation
 import HTTPTypes
 import OpenAPIRuntime
 
-/// Adds `X-Device-Id` to every request. The backend rejects requests without it.
+/// Adds `X-Device-Id` to every request. Required by `POST /api/v1/reports` and the watch pages;
+/// optional elsewhere (`SecurityConfig.java`, `IndexController.java`).
 public struct DeviceIdMiddleware: ClientMiddleware {
     static let headerName = HTTPField.Name("X-Device-Id")!
     private let deviceId: DeviceId

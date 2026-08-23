@@ -79,6 +79,7 @@ targets:
     sources:
       - path: FitrahTubeTests
       - path: Packages/FitrahAPI/Tests/FitrahAPITests/RecordingTransport.swift
+      - path: Packages/FitrahAPI/Tests/FitrahAPITests/TestLimits.swift
     dependencies:
       - target: FitrahTube
       - package: FitrahAPI

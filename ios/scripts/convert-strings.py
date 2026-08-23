@@ -59,9 +59,14 @@ def rewrite_specifiers(s):  # R3 + R4
     n = [0]
     def bare(m):
         n[0] += 1
+        width = m.group(1)
+        if "." in width:  # R8: precision (e.g. %.1f) can't convert mechanically -- refuse, don't guess
+            raise ValueError(f"unsupported precision specifier: {m.group(0)!r}")
         conv = {"s": "@", "d": "lld", "f": "f"}[m.group(2)]
-        return f"%{n[0]}${conv}"
-    s = re.sub(r"%((?!\d)\.?\d*)([sdf])", bare, s)
+        return f"%{n[0]}${width}{conv}"
+    # (?!\d+\$) excludes already-numbered refs (e.g. %2$s), not bare zero-padded widths (e.g. %02d)
+    # -- those two only differ by the trailing "$", so the lookahead must check for it specifically.
+    s = re.sub(r"%(?!\d+\$)(\.?\d*)([sdf])", bare, s)
     s = re.sub(r"%(\d+)\$s", r"%\1$@", s)
     s = re.sub(r"%(\d+)\$(\d*)d", r"%\1$\2lld", s)  # keeps flags/width, e.g. %2$02d -> %2$02lld
     s = s.replace("\u0000PCT\u0000", "%%")
@@ -85,6 +90,13 @@ def apply_overrides(key, value):
     fn = SPECIFIER_OVERRIDES.get(key)
     return fn(value) if fn else value
 
+def maybe_rewrite(name, text):
+    # REFUSE keys (e.g. the %.1f abbreviated-count strings) are filtered out downstream in main()
+    # and their value is never used -- don't run them through rewrite_specifiers, which now raises
+    # (R8) on the precision specifier they contain, or load() would crash before main() gets a
+    # chance to refuse them.
+    return text if name in REFUSE else rewrite_specifiers(text)
+
 def load(locale_dir):
     strings, plurals = {}, {}
     # R2: fixed merge order, hard-fail on duplicate key.
@@ -99,11 +111,11 @@ def load(locale_dir):
                     if name in strings or name in plurals:
                         raise ValueError(f"duplicate key {name} in {path}")
                     text = "".join(el.itertext())
-                    strings[name] = rewrite_specifiers(unescape(text))
+                    strings[name] = maybe_rewrite(name, unescape(text))
                 elif el.tag == "plurals":
                     if name in strings or name in plurals:
                         raise ValueError(f"duplicate key {name} in {path}")
-                    plurals[name] = {item.get("quantity"): rewrite_specifiers(unescape("".join(item.itertext())))
+                    plurals[name] = {item.get("quantity"): maybe_rewrite(name, unescape("".join(item.itertext())))
                                      for item in el.findall("item")}
     return strings, plurals
 
@@ -146,7 +158,11 @@ def main(check=False):
             if not f:
                 continue
             for cat, val in f.items():
-                check_arg_subset(f"{key}[{cat}]", arg_signature(forms.get(cat, val)), loc, arg_signature(val))
+                # H5: when en has no `cat` form (e.g. ar `few` with no en `few`), compare against
+                # en's `other` -- never against the translation's own value, which would trivially
+                # match itself and never catch a divergence.
+                en_reference = forms.get(cat, forms["other"])
+                check_arg_subset(f"{key}[{cat}]", arg_signature(en_reference), loc, arg_signature(val))
             plural = {cat: {"stringUnit": {"state": "translated", "value": f[cat]}} for cat in PLURAL_CATEGORIES if cat in f}
             locs[loc] = {"variations": {"plural": plural}}
         out["strings"][key] = {"localizations": locs}
@@ -184,8 +200,35 @@ def main(check=False):
     print(f"wrote {OUT}: {len(out['strings'])} keys; skipped {len(skipped)} dead; refused {len(refused)}")
     return 0
 
+def check_bare_specifier_rewrite():
+    """H6 self-check: width/precision digits in a bare specifier. %02d keeps its zero-padded
+    width; %.1f (a precision specifier) must raise (R8) rather than silently convert."""
+    assert rewrite_specifiers("%02d") == "%1$02lld", rewrite_specifiers("%02d")
+    try:
+        rewrite_specifiers("%.1f")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("rewrite_specifiers('%.1f') should have raised (R8), not converted")
+
+def check_plural_fallback_uses_other():
+    """H5 self-check: when en has no `few` form, the cross-locale arg check must compare against
+    en's `other` form -- never against the translation's own value (which would always match
+    itself and silently swallow a real divergence). Synthetic ar `few` %s vs en `other` %1$lld."""
+    en_forms = {"other": rewrite_specifiers("%d")}  # "%1$lld"
+    ar_val = rewrite_specifiers("%s")  # "%1$@"
+    en_reference = en_forms.get("few", en_forms["other"])
+    try:
+        check_arg_subset("synthetic[few]", arg_signature(en_reference), "ar", arg_signature(ar_val))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("ar `few` %s vs en `other` %d should have been caught, not skipped")
+
 def verify(out):
     """R9's one runnable check: spot-assert the hazards the doc calls out by name."""
+    check_bare_specifier_rewrite()
+    check_plural_fallback_uses_other()
     def value_of(entry, loc):
         l = entry["localizations"].get(loc)
         if l is None:

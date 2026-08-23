@@ -15,4 +15,12 @@ struct TokensTests {
         UIColor(argb: 0xFFFFFF).getRed(nil, green: nil, blue: nil, alpha: &alpha)
         #expect(alpha == 1)
     }
+
+    @Test func headlineScalesUpOnLargeWidth() {
+        #expect(TypeScale.headline(.large) != TypeScale.headline(.compact))
+    }
+
+    @Test func bodyScalesUpOnLargeWidth() {
+        #expect(TypeScale.body(.large) != TypeScale.body(.compact))
+    }
 }

@@ -15,7 +15,7 @@ struct EmptyStateView: View {
                     .font(.system(size: Size.iconXL(widthClass)))
                     .foregroundStyle(Color.brand)
                     .accessibilityHidden(true)
-                Text(title).font(TypeScale.headline).foregroundStyle(Color.textPrimary)
+                Text(title).font(TypeScale.headline(widthClass)).foregroundStyle(Color.textPrimary)
                 StateMessage(text: message)
             }
             .accessibilityElement(children: .combine)
@@ -43,12 +43,12 @@ struct ErrorStateView: View {
                 .accessibilityHidden(true)
             if let title {
                 Text(title)
-                    .font(TypeScale.headline)
+                    .font(TypeScale.headline(widthClass))
                     .foregroundStyle(Color.textPrimary)
                     .accessibilityAddTraits(.isHeader)
             }
             StateMessage(text: message)
-            StateButton(title: String(localized: "Retry"), action: retry)
+            StateButton(title: String(localized: "retry"), action: retry)
         }
         .padding(Spacing.lg(widthClass))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -61,7 +61,7 @@ private struct StateMessage: View {
 
     var body: some View {
         Text(text)
-            .font(TypeScale.body)
+            .font(TypeScale.body(widthClass))
             .foregroundStyle(Color.textSecondary)
             .multilineTextAlignment(.center)
             .frame(maxWidth: Size.stateBodyMaxWidth(widthClass))
@@ -109,7 +109,7 @@ struct SkeletonListView: View {
                 }
             }
             .padding(Spacing.md(widthClass))
-            .accessibilityLabel(String(localized: "Loading"))
+            .accessibilityLabel(String(localized: "loading"))
             .animation(reduceMotion ? nil : .easeInOut(duration: 1), value: phase)
         }
     }

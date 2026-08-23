@@ -21,7 +21,7 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Measures the full-size container, not the content — see WidthClass.
-        .onGeometryChange(for: WidthClass.self) { WidthClass(width: $0.size.width) } action: { widthClass = $0 }
+        .onGeometryChange(for: WidthClass.self) { WidthClass(size: $0.size) } action: { widthClass = $0 }
         .environment(\.widthClass, widthClass)
     }
 }
