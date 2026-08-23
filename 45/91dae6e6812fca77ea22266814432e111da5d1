@@ -1,0 +1,9 @@
+docs/superpowers/specs/2026-08-23-ios-app-design.md
+  ai_agent 99-100,132,157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4591dae6e6812fca77ea22266814432e111da5d1",
+  "prompts": {}
+}
