@@ -1,0 +1,67 @@
+import Foundation
+import Observation
+import SwiftUI
+
+/// What a tap on the already-selected tab should do (`shell-home.md:A3`): pop that tab's stack to
+/// root if it's pushed somewhere, or signal the root screen to scroll to top if already there.
+nonisolated enum ReselectAction: Equatable {
+    case popToRoot
+    case scrollToTop
+}
+
+/// One `Router` per app, owning a per-tab `NavigationStack` path each (`shell-home.md:A3` -- a
+/// deliberate improvement over Android's single shared back stack) plus the deep-link hold
+/// (RULING 4: a pending deep link is held until the shell has actually appeared, then applied
+/// exactly once).
+@MainActor @Observable final class Router {
+    var selectedTab: Tab = .home
+    var paths: [Tab: [Route]] = Dictionary(uniqueKeysWithValues: Tab.allCases.map { ($0, []) })
+    var pendingRoute: Route?
+    /// Set by the player screen on entering/exiting fullscreen (phase 2); hides the tab bar while true.
+    var isFullscreen = false
+
+    private var shellIsReady = false
+
+    func push(_ route: Route) {
+        paths[selectedTab, default: []].append(route)
+    }
+
+    func popToRoot(_ tab: Tab) {
+        paths[tab] = []
+    }
+
+    func reselect(_ tab: Tab) -> ReselectAction {
+        if paths[tab]?.isEmpty == false {
+            popToRoot(tab)
+            return .popToRoot
+        }
+        return .scrollToTop
+    }
+
+    /// Parses `url` via `DeepLinkParser`; an unrecognized URL is silently ignored -- there's
+    /// nowhere to route it. Before the shell has appeared there are no tab paths to push onto yet,
+    /// so the route is held in `pendingRoute` (RULING 4) instead of applied immediately.
+    func open(_ url: URL) {
+        guard let route = DeepLinkParser.route(for: url) else { return }
+        if shellIsReady {
+            push(route)
+        } else {
+            pendingRoute = route
+        }
+    }
+
+    /// Called once the shell view has appeared. Applies any deep link that arrived before then,
+    /// exactly once: `pendingRoute` is cleared as it's consumed, so a second call is a no-op.
+    func shellDidAppear() {
+        shellIsReady = true
+        guard let route = pendingRoute else { return }
+        pendingRoute = nil
+        push(route)
+    }
+}
+
+extension EnvironmentValues {
+    /// Owned by `FitrahTubeApp` (not `MainShellView`) so a deep link that arrives before the
+    /// shell exists -- e.g. tapped while Onboarding is still showing -- has somewhere to land.
+    @Entry var router: Router = Router()
+}

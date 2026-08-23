@@ -1,3 +1,4 @@
+import Foundation
 import Network
 import Observation
 
@@ -13,6 +14,14 @@ import Observation
     private let queue = DispatchQueue(label: "com.albunyaan.tube.network-monitor")
 
     init(start: Bool = true) {
+        #if DEBUG
+        // Acceptance artefact hook (task 7): forces the offline banner on for a screenshot
+        // without needing to actually disable the simulator's network.
+        if ProcessInfo.processInfo.arguments.contains("-fitrah-offline") {
+            isOnline = false
+            return
+        }
+        #endif
         if start {
             monitor.pathUpdateHandler = { [weak self] path in
                 let online = Self.isOnline(for: path.status)
