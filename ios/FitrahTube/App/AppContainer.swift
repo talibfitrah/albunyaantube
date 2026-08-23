@@ -1,5 +1,6 @@
 import FitrahAPI
 import Foundation
+import SwiftData
 import SwiftUI
 
 nonisolated enum AppConfig {
@@ -38,20 +39,24 @@ nonisolated enum AppConfig {
 @MainActor final class AppContainer {
     let catalog: any CatalogClient
     private let userDefaults: UserDefaults
+    private let modelContainer: ModelContainer
 
     private(set) lazy var settings: any SettingsStore = UserDefaultsSettingsStore(defaults: userDefaults)
     private(set) lazy var filters: any FilterStore = UserDefaultsFilterStore(defaults: userDefaults)
     private(set) lazy var searchHistory: any SearchHistoryStore = UserDefaultsSearchHistoryStore(defaults: userDefaults)
+    private(set) lazy var favorites: any FavoritesStore = SwiftDataFavoritesStore(modelContainer: modelContainer)
+    private(set) lazy var categories: any CategoriesCache = LiveCategoriesCache(client: catalog)
     private(set) lazy var network = NetworkMonitor()
 
-    init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard) {
+    init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer) {
         self.catalog = catalog
         self.userDefaults = userDefaults
+        self.modelContainer = modelContainer
     }
 
     static func live(baseURL: URL = AppConfig.apiBaseURL) -> AppContainer {
         let api = FitrahAPIClient.make(baseURL: baseURL, deviceId: .persisted())
-        return AppContainer(catalog: LiveCatalogClient(client: api))
+        return AppContainer(catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false))
     }
 
     static func fake(catalog: any CatalogClient = FakeCatalogClient()) -> AppContainer {
@@ -63,7 +68,16 @@ nonisolated enum AppConfig {
         let suiteName = "fitrahtube.fake"
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard
         defaults.removePersistentDomain(forName: suiteName)
-        return AppContainer(catalog: catalog, userDefaults: defaults)
+        return AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true))
+    }
+
+    private static func makeModelContainer(inMemory: Bool) -> ModelContainer {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: inMemory)
+        do {
+            return try ModelContainer(for: FavoriteVideo.self, configurations: configuration)
+        } catch {
+            preconditionFailure("Failed to create ModelContainer: \(error)")
+        }
     }
 
     /// One fake container per process: every preview/test that reads `\.container` without an
