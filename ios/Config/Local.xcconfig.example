@@ -2,5 +2,5 @@
 // to sign+run on a physical device. Not needed for simulator builds.
 FITRAH_TEAM_ID = ABCDE12345
 
-// Debug on the simulator uses localhost. Device builds talk to the production host; there is no
-// plain-http LAN path (ATS).
+// Debug builds may override API_BASE_URL via Local.xcconfig (simulator, http://localhost or
+// https only — ATS blocks plain-http LAN hosts on devices).

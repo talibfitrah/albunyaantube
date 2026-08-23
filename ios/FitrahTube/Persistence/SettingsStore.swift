@@ -39,6 +39,20 @@ import SwiftUI
         static let importOfferShown = "import_offer_shown"
     }
 
+    /// Single source of truth for build defaults, read per-key at init instead of via
+    /// `UserDefaults.register(defaults:)` -- registration installs into the process-global
+    /// `NSRegistrationDomain`, which every suite/instance in the process reads, so one store's
+    /// defaults would leak into every other suite (e.g. two `fake()` containers with different
+    /// intended defaults). Keys with no entry here (audioOnly, wifiOnlyDownloads,
+    /// onboardingCompleted, importOfferShown) already default to `false` via `.bool(forKey:)`.
+    private static let buildDefaults: [String: Any] = [
+        Keys.appLocale: "system",
+        Keys.theme: "system",
+        Keys.backgroundPlay: true,
+        Keys.safeMode: true,
+        Keys.downloadQuality: "medium",
+    ]
+
     private let defaults: UserDefaults
 
     var appLocale: String { didSet { defaults.set(appLocale, forKey: Keys.appLocale) } }
@@ -53,19 +67,17 @@ import SwiftUI
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        defaults.register(defaults: [
-            Keys.appLocale: "system",
-            Keys.theme: "system",
-            Keys.backgroundPlay: true,
-            Keys.safeMode: true,
-            Keys.downloadQuality: "medium",
-        ])
-        appLocale = defaults.string(forKey: Keys.appLocale) ?? "system"
-        theme = defaults.string(forKey: Keys.theme) ?? "system"
+        appLocale = defaults.object(forKey: Keys.appLocale) == nil
+            ? Self.buildDefaults[Keys.appLocale] as! String : defaults.string(forKey: Keys.appLocale)!
+        theme = defaults.object(forKey: Keys.theme) == nil
+            ? Self.buildDefaults[Keys.theme] as! String : defaults.string(forKey: Keys.theme)!
         audioOnly = defaults.bool(forKey: Keys.audioOnly)
-        backgroundPlay = defaults.bool(forKey: Keys.backgroundPlay)
-        safeMode = defaults.bool(forKey: Keys.safeMode)
-        downloadQuality = defaults.string(forKey: Keys.downloadQuality) ?? "medium"
+        backgroundPlay = defaults.object(forKey: Keys.backgroundPlay) == nil
+            ? Self.buildDefaults[Keys.backgroundPlay] as! Bool : defaults.bool(forKey: Keys.backgroundPlay)
+        safeMode = defaults.object(forKey: Keys.safeMode) == nil
+            ? Self.buildDefaults[Keys.safeMode] as! Bool : defaults.bool(forKey: Keys.safeMode)
+        downloadQuality = defaults.object(forKey: Keys.downloadQuality) == nil
+            ? Self.buildDefaults[Keys.downloadQuality] as! String : defaults.string(forKey: Keys.downloadQuality)!
         wifiOnlyDownloads = defaults.bool(forKey: Keys.wifiOnlyDownloads)
         onboardingCompleted = defaults.bool(forKey: Keys.onboardingCompleted)
         importOfferShown = defaults.bool(forKey: Keys.importOfferShown)

@@ -59,16 +59,16 @@ nonisolated enum AppConfig {
         return AppContainer(catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false))
     }
 
-    static func fake(catalog: any CatalogClient = FakeCatalogClient()) -> AppContainer {
+    static func fake(
+        catalog: any CatalogClient = FakeCatalogClient(),
+        defaults: UserDefaults = UserDefaults(suiteName: "fitrahtube.fake")!
+    ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
-        // defaults domain. Fixed name rather than a fresh UUID per call, so repeated preview/test
-        // runs reuse one plist instead of leaving an orphan behind every time; wiped here before
-        // the (lazy) stores can read/write it, so no state leaks between runs. Falls back to
-        // `.standard` only if suite creation fails.
-        let suiteName = "fitrahtube.fake"
-        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
-        defaults.removePersistentDomain(forName: suiteName)
-        return AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true))
+        // defaults domain. Does NOT wipe the suite -- callers that write through the returned
+        // container's stores (settings/filters/favorites/search history) must pass their own
+        // suite with their own teardown, or repeated calls sharing the default suite name would
+        // leak state between them. `sharedFake` wipes its suite once, at creation.
+        AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true))
     }
 
     private static func makeModelContainer(inMemory: Bool) -> ModelContainer {
@@ -84,7 +84,11 @@ nonisolated enum AppConfig {
     /// explicit `.environment(\.container, …)` override shares this single instance (and its
     /// wiped suite), instead of each read point independently evaluating `.fake()` -- which would
     /// give every SwiftUI preview its own container with no shared state between them.
-    @MainActor static let sharedFake = AppContainer.fake()
+    @MainActor static let sharedFake: AppContainer = {
+        let defaults = UserDefaults(suiteName: "fitrahtube.fake")!
+        defaults.removePersistentDomain(forName: "fitrahtube.fake")
+        return fake(defaults: defaults)
+    }()
 }
 
 extension EnvironmentValues {
