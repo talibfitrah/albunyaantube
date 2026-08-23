@@ -1,7 +1,7 @@
 import Foundation
 
 /// Android's `HomeViewModel` (`shell-home.md` §B9-B11). One `Task`-typed property per "load kind" --
-/// `loadTask` for a full reload (`load`/`refresh`/`clearFilter`, Android's `loadJob`) and
+/// `loadTask` for a full reload (`load`/`refresh`, Android's `loadJob`) and
 /// `loadMoreTask` for pagination (Android's `loadMoreJob`) -- so a fresh full reload always
 /// supersedes an in-flight load-more (B10 step 1), while load-more's own in-flight guard
 /// (`isLoadingMore`, set before its first `await`) is enough on its own: Android never cancels
@@ -26,9 +26,7 @@ import Foundation
     private var isLoadingMore = false
     private var category: String?
 
-    /// Visible (not `private`) only so `HomeViewModelTests` can `await` a `clearFilter()` call --
-    /// it's the one interface method that's sync but still needs to finish an async fetch.
-    private(set) var loadTask: Task<Void, Never>? // `private(set)`, not `private`: exposed for tests
+    private var loadTask: Task<Void, Never>?
     private var loadMoreTask: Task<Void, Never>?
 
     private static let categoryLimit = 5
@@ -58,15 +56,6 @@ import Foundation
         let task = Task { await self.fetchMore() }
         loadMoreTask = task
         await task.value
-    }
-
-    func clearFilter() {
-        filter.clearCategory()
-        category = nil
-        loadTask?.cancel()
-        loadMoreTask?.cancel()
-        let task = Task { await self.fetchFirstPage(showLoading: true) }
-        loadTask = task
     }
 
     /// shell-home.md:207: VoiceOver label for a section's See-all control -- "See all content in

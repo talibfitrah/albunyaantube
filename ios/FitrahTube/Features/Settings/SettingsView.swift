@@ -2,20 +2,21 @@ import SwiftUI
 import UIKit
 
 /// Pure row/section layout for `SettingsView`, tested by `SettingsRowsTests` without a live view
-/// (this project has no ViewInspector/snapshot dependency). Order follows the task-13 brief
-/// verbatim (`favorites-settings-about.md:139-158` minus phase-3/none rows; RULINGS 32-35), which
-/// reorders two of Android's six sections: Safe Mode (Android's own single-row "Content" section)
-/// folds into Playback, and Library -- one row once Downloads library is dropped -- moves from
-/// right after General to just before About & Support.
+/// (this project has no ViewInspector/snapshot dependency). Sections are Android's literal order
+/// (`favorites-settings-about.md:139-153`): General -> Library -> Playback -> Downloads ->
+/// Content -> About & Support, minus the phase-3/none rows (RULINGS 32-35). RULINGS.md line 3
+/// makes parity the default; the task-13 brief's "in Android order minus ..." is an order
+/// instruction, not licence to regroup Safe Mode into Playback or move Library.
 nonisolated enum SettingsSection: CaseIterable, Hashable {
-    case general, playback, downloads, library, aboutSupport
+    case general, library, playback, downloads, content, aboutSupport
 
     var titleKey: String {
         switch self {
         case .general: "settings_general"
+        case .library: "settings_library_header"
         case .playback: "settings_playback"
         case .downloads: "settings_downloads"
-        case .library: "settings_library_header"
+        case .content: "settings_content"
         case .aboutSupport: "settings_about_support"
         }
     }
@@ -74,14 +75,73 @@ nonisolated enum SettingsLayout {
     static let rows: [Row] = [
         Row(section: .general, row: .language),
         Row(section: .general, row: .theme),
+        Row(section: .library, row: .favorites),
         Row(section: .playback, row: .audioOnly),
         Row(section: .playback, row: .backgroundPlay),
-        Row(section: .playback, row: .safeMode),
         Row(section: .downloads, row: .downloadQuality),
         Row(section: .downloads, row: .wifiOnly),
-        Row(section: .library, row: .favorites),
+        Row(section: .content, row: .safeMode),
         Row(section: .aboutSupport, row: .aboutSupport),
     ]
+}
+
+/// One option in a settings selection sheet. `Hashable` so `List(_:id:)` can identify it without
+/// an extra `Identifiable` conformance.
+nonisolated struct SettingsPickerOption: Hashable {
+    let value: String
+    let labelKey: String
+}
+
+/// `favorites-settings-about.md:195`: Material single-choice list -- a **checkmark on the current
+/// selection**, tap-to-commit-and-dismiss, no OK button, Cancel only.
+///
+/// A sheet+`List` rather than a menu/navigationLink `Picker` because those render the *selected
+/// option's own label* back in the row, and the contract (§2.3) requires the row to show the
+/// **resolved** value ("System default (Light)") while the options show the plain ones
+/// ("System default"). Keeping the custom row is what preserves that distinction.
+private struct SettingsPickerSheet: View {
+    let titleKey: String
+    let options: [SettingsPickerOption]
+    @Binding var selection: String
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(options, id: \.self) { option in
+                Button {
+                    selection = option.value
+                    dismiss()
+                } label: {
+                    HStack {
+                        Text(String(localized: String.LocalizationValue(option.labelKey)))
+                            .foregroundStyle(Color.textPrimary)
+                        Spacer()
+                        if option.value == selection {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.brand)
+                                .accessibilityHidden(true) // the row carries `.isSelected` instead
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(option.value == selection ? [.isSelected] : [])
+            }
+            .navigationTitle(String(localized: String.LocalizationValue(titleKey)))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "cancel")) { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        // Without this the sheet keeps the default translucent material and the Settings rows
+        // underneath show through the option list -- `background_gray`, same ground the Settings
+        // screen itself sits on.
+        .presentationBackground(Color.background)
+    }
 }
 
 /// Android's `SettingsFragment` (`favorites-settings-about.md:139-253`). Account/Sign-out is
@@ -112,20 +172,28 @@ struct SettingsView: View {
         }
         .navigationTitle(String(localized: "settings_title"))
         .navigationBarTitleDisplayMode(.inline)
-        // favorites-settings-about.md:195 -- Material single-choice list, tap-to-commit, no OK
-        // button, Cancel only; `.confirmationDialog` is the native equivalent.
-        .confirmationDialog(String(localized: "settings_theme_select_title"), isPresented: $showThemePicker, titleVisibility: .visible) {
-            Button(String(localized: "settings_theme_system")) { settings.theme = "system" }
-            Button(String(localized: "settings_theme_light")) { settings.theme = "light" }
-            Button(String(localized: "settings_theme_dark")) { settings.theme = "dark" }
-            Button(String(localized: "cancel"), role: .cancel) {}
+        .sheet(isPresented: $showThemePicker) {
+            SettingsPickerSheet(
+                titleKey: "settings_theme_select_title",
+                options: [
+                    SettingsPickerOption(value: "system", labelKey: "settings_theme_system"),
+                    SettingsPickerOption(value: "light", labelKey: "settings_theme_light"),
+                    SettingsPickerOption(value: "dark", labelKey: "settings_theme_dark"),
+                ],
+                selection: Binding(get: { settings.theme }, set: { settings.theme = $0 })
+            )
         }
-        .confirmationDialog(String(localized: "settings_download_quality_title"), isPresented: $showQualityPicker, titleVisibility: .visible) {
-            // Dialog options use the `_desc` long-form labels; the row value uses the short form (contract §2.5).
-            Button(String(localized: "settings_quality_low_desc")) { settings.downloadQuality = "low" }
-            Button(String(localized: "settings_quality_medium_desc")) { settings.downloadQuality = "medium" }
-            Button(String(localized: "settings_quality_high_desc")) { settings.downloadQuality = "high" }
-            Button(String(localized: "cancel"), role: .cancel) {}
+        .sheet(isPresented: $showQualityPicker) {
+            // Sheet options use the `_desc` long-form labels; the row value uses the short form (contract §2.5).
+            SettingsPickerSheet(
+                titleKey: "settings_download_quality_title",
+                options: [
+                    SettingsPickerOption(value: "low", labelKey: "settings_quality_low_desc"),
+                    SettingsPickerOption(value: "medium", labelKey: "settings_quality_medium_desc"),
+                    SettingsPickerOption(value: "high", labelKey: "settings_quality_high_desc"),
+                ],
+                selection: Binding(get: { settings.downloadQuality }, set: { settings.downloadQuality = $0 })
+            )
         }
         .task {
             #if DEBUG

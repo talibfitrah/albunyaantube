@@ -40,36 +40,11 @@ nonisolated struct TapGate {
     }
 }
 
-/// `Bundle.main.localizedString(forKey:)` resolves to exactly one `.lproj` (the negotiated device
-/// language) and, if that `.lproj` exists but lacks the key, returns the bare key -- Foundation
-/// only falls back to the development region when an entire `.lproj` is *absent*, not per missing
-/// key inside one that's present. Verified live: a real `-AppleLanguages (ar)` run rendered the
-/// literal string `"about_version_format"` on screen instead of falling back, disproving
-/// `LocalizationTests.untranslatedKeyFallsBackToEnglish`'s comment (that test's Bundle.main call
-/// happens to pass only because the test host itself runs in English, not because of any real
-/// per-key fallback -- flagged for that comment to be corrected separately). Both
-/// `about_version_format` and `dev_settings_steps_away` are English-only by design (R7,
-/// `strings-assets.md` §8a #6/#7), so both need this explicit retry against `en.lproj`.
-nonisolated enum EnglishOnlyStrings {
-    /// `bundle` defaults to the real resolved bundle (`Bundle.main`) for production call sites;
-    /// `SettingsRowsTests` passes a specific `.lproj` directly (the same technique
-    /// `LocalizationTests` already uses) to exercise the fallback deterministically, since the
-    /// test process's own `Bundle.main` isn't controllably non-English.
-    static func lookup(_ key: String, in bundle: Bundle = .main) -> String {
-        let resolved = bundle.localizedString(forKey: key, value: nil, table: nil)
-        guard resolved == key, // this bundle's own convention for "key not found"
-              let enBundle = Bundle.main.path(forResource: "en", ofType: "lproj").flatMap(Bundle.init(path:)) else {
-            return resolved
-        }
-        return enBundle.localizedString(forKey: key, value: nil, table: nil)
-    }
-}
-
 /// `about_version_format` = "Version %1$@ (%2$@)" (task-13 brief) -- pulled out so
 /// `SettingsRowsTests` can assert the exact substitution.
 nonisolated enum AboutVersionText {
     static func format(version: String, build: String) -> String {
-        String(format: EnglishOnlyStrings.lookup("about_version_format"), arguments: [version, build])
+        String(format: String(localized: "about_version_format"), arguments: [version, build])
     }
 }
 
@@ -184,7 +159,7 @@ struct AboutView: View {
         case .silent:
             break
         case .stepsAway(let remaining):
-            let format = EnglishOnlyStrings.lookup("dev_settings_steps_away")
+            let format = String(localized: "dev_settings_steps_away")
             stepsAwayMessage = BannerMessage(text: String(format: format, Int64(remaining)))
         case .unlocked:
             showDeveloperDialog = true

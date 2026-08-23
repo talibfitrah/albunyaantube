@@ -168,6 +168,12 @@
             "state": "translated",
             "value": "GitHub"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub"
+          }
         }
       }
     },
@@ -202,6 +208,12 @@
           }
         },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Links"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Links"
@@ -299,9 +311,21 @@
     },
     "about_version_format": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Version %1$@ (%2$@)"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Version %1$@ (%2$@)"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Version %1$@ (%2$@)"
           }
         }
@@ -320,14 +344,32 @@
             "state": "translated",
             "value": "Website"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Website"
+          }
         }
       }
     },
     "account_blocked_body": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Your account has been blocked by an administrator. Contact support for details."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Your account has been blocked by an administrator. Contact support for details."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Your account has been blocked by an administrator. Contact support for details."
           }
         }
@@ -335,9 +377,21 @@
     },
     "account_blocked_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Account blocked"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Account blocked"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Account blocked"
           }
         }
@@ -345,9 +399,21 @@
     },
     "account_deleted_body": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Your account has been deleted. To use FitrahTube again, create a new account."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Your account has been deleted. To use FitrahTube again, create a new account."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Your account has been deleted. To use FitrahTube again, create a new account."
           }
         }
@@ -355,9 +421,21 @@
     },
     "account_deleted_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Account deleted"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Account deleted"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Account deleted"
           }
         }
@@ -409,7 +487,19 @@
     },
     "age_ineligible_ok_button": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "OK"
@@ -419,7 +509,19 @@
     },
     "age_ineligible_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sorry — come back soon"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sorry — come back soon"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Sorry — come back soon"
@@ -440,15 +542,33 @@
             "state": "translated",
             "value": "FitrahTube"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FitrahTube"
+          }
         }
       },
       "shouldTranslate": false
     },
     "auth_create_account_link": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Don't have an account? Create one"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Don't have an account? Create one"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Don't have an account? Create one"
           }
         }
@@ -456,9 +576,21 @@
     },
     "auth_divider_or": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "or"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "or"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "or"
           }
         }
@@ -466,9 +598,21 @@
     },
     "auth_email_hint": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Email"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Email"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Email"
           }
         }
@@ -476,9 +620,21 @@
     },
     "auth_error_email_in_use": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "An account already exists with that email"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "An account already exists with that email"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "An account already exists with that email"
           }
         }
@@ -486,9 +642,21 @@
     },
     "auth_error_generic": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Something went wrong"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Something went wrong"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Something went wrong"
           }
         }
@@ -496,9 +664,21 @@
     },
     "auth_error_google": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Google sign-in failed"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Google sign-in failed"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Google sign-in failed"
           }
         }
@@ -506,9 +686,21 @@
     },
     "auth_error_invalid_credential": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sign-in credential is invalid or expired"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Sign-in credential is invalid or expired"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Sign-in credential is invalid or expired"
           }
         }
@@ -516,9 +708,21 @@
     },
     "auth_error_invalid_email": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "That email looks wrong"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "That email looks wrong"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "That email looks wrong"
           }
         }
@@ -526,9 +730,21 @@
     },
     "auth_error_microsoft": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Microsoft sign-in failed"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Microsoft sign-in failed"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Microsoft sign-in failed"
           }
         }
@@ -536,9 +752,21 @@
     },
     "auth_error_network": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No internet connection"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "No internet connection"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "No internet connection"
           }
         }
@@ -546,9 +774,21 @@
     },
     "auth_error_password_reset_failed": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Couldn't send the reset email"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Couldn't send the reset email"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Couldn't send the reset email"
           }
         }
@@ -556,9 +796,21 @@
     },
     "auth_error_too_many_requests": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Too many attempts — please wait and try again"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Too many attempts — please wait and try again"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Too many attempts — please wait and try again"
           }
         }
@@ -566,9 +818,21 @@
     },
     "auth_error_user_disabled": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This account has been blocked. Contact support."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "This account has been blocked. Contact support."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "This account has been blocked. Contact support."
           }
         }
@@ -576,9 +840,21 @@
     },
     "auth_error_user_not_found": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No account found with that email"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "No account found with that email"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "No account found with that email"
           }
         }
@@ -586,9 +862,21 @@
     },
     "auth_error_weak_password": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Password must be at least 6 characters"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Password must be at least 6 characters"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Password must be at least 6 characters"
           }
         }
@@ -596,9 +884,21 @@
     },
     "auth_error_wrong_password": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Email or password is incorrect"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Email or password is incorrect"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Email or password is incorrect"
           }
         }
@@ -606,9 +906,21 @@
     },
     "auth_forgot_password": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Forgot password?"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Forgot password?"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Forgot password?"
           }
         }
@@ -616,9 +928,21 @@
     },
     "auth_google_button": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Continue with Google"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Continue with Google"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Continue with Google"
           }
         }
@@ -626,9 +950,21 @@
     },
     "auth_have_account_link": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Already have an account? Sign in"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Already have an account? Sign in"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Already have an account? Sign in"
           }
         }
@@ -636,9 +972,21 @@
     },
     "auth_microsoft_button": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Continue with Microsoft"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Continue with Microsoft"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Continue with Microsoft"
           }
         }
@@ -646,9 +994,21 @@
     },
     "auth_microsoft_unavailable_tv": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Microsoft sign-in is not available on TV. Use Google or email instead."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Microsoft sign-in is not available on TV. Use Google or email instead."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Microsoft sign-in is not available on TV. Use Google or email instead."
           }
         }
@@ -656,9 +1016,21 @@
     },
     "auth_password_hint": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Password"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Password"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Password"
           }
         }
@@ -666,9 +1038,21 @@
     },
     "auth_password_reset_sent": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Password reset email sent"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Password reset email sent"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Password reset email sent"
           }
         }
@@ -676,9 +1060,21 @@
     },
     "auth_sign_in_button": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sign in"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Sign in"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Sign in"
           }
         }
@@ -686,9 +1082,21 @@
     },
     "auth_sign_in_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sign in"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Sign in"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Sign in"
           }
         }
@@ -696,9 +1104,21 @@
     },
     "auth_sign_up_button": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Create account"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Create account"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Create account"
           }
         }
@@ -706,9 +1126,21 @@
     },
     "auth_sign_up_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Create account"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Create account"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Create account"
           }
         }
@@ -848,7 +1280,19 @@
     },
     "bootstrap_display_name_hint": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display name"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display name"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Display name"
@@ -858,7 +1302,19 @@
     },
     "bootstrap_display_name_label": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What should we call you?"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What should we call you?"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "What should we call you?"
@@ -868,7 +1324,19 @@
     },
     "bootstrap_dob_hint": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to select"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to select"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Tap to select"
@@ -878,7 +1346,19 @@
     },
     "bootstrap_dob_label": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date of birth"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date of birth"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Date of birth"
@@ -888,7 +1368,19 @@
     },
     "bootstrap_error_invalid_dob": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please choose your date of birth"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please choose your date of birth"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Please choose your date of birth"
@@ -898,7 +1390,19 @@
     },
     "bootstrap_error_invalid_name": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please tell us your name (1–40 characters)"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please tell us your name (1–40 characters)"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Please tell us your name (1–40 characters)"
@@ -1172,7 +1676,19 @@
     },
     "bootstrap_submit_button": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Continue"
@@ -1182,7 +1698,19 @@
     },
     "bootstrap_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tell us about you"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tell us about you"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Tell us about you"
@@ -1280,9 +1808,21 @@
     },
     "category_filter_cleared": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Category filter cleared"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Category filter cleared"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Category filter cleared"
           }
         }
@@ -1290,9 +1830,21 @@
     },
     "category_filter_error": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Failed to apply category filter"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Failed to apply category filter"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Failed to apply category filter"
           }
         }
@@ -1300,7 +1852,19 @@
     },
     "category_with_overflow": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ +%2$@"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ +%2$@"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ +%2$@"
@@ -1596,9 +2160,21 @@
     },
     "cd_live_stream_thumbnail": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Live stream thumbnail"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Live stream thumbnail"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Live stream thumbnail"
           }
         }
@@ -1815,6 +2391,12 @@
             "state": "translated",
             "value": "Links"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Links"
+          }
         }
       }
     },
@@ -2018,7 +2600,19 @@
     },
     "channel_subscribers_unknown": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "–"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "–"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "–"
@@ -2083,6 +2677,12 @@
             "state": "translated",
             "value": "Live"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live"
+          }
         }
       }
     },
@@ -2117,6 +2717,12 @@
           }
         },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shorts"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Shorts"
@@ -2236,9 +2842,21 @@
     },
     "channels_empty_subtitle": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Approved channels will appear here"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Approved channels will appear here"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Approved channels will appear here"
           }
         }
@@ -2246,9 +2864,21 @@
     },
     "channels_empty_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No channels yet"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "No channels yet"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "No channels yet"
           }
         }
@@ -2256,9 +2886,21 @@
     },
     "clear_filter": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Clear filter"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Clear filter"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Clear filter"
           }
         }
@@ -2398,9 +3040,21 @@
     },
     "dev_settings_build_default_off": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Build default: OFF"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Build default: OFF"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Build default: OFF"
           }
         }
@@ -2408,9 +3062,21 @@
     },
     "dev_settings_build_default_on": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Build default: ON"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Build default: ON"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Build default: ON"
           }
         }
@@ -2418,9 +3084,21 @@
     },
     "dev_settings_cache_clear_failed": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Failed to clear cache: %1$@"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Failed to clear cache: %1$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Failed to clear cache: %1$@"
           }
         }
@@ -2428,9 +3106,21 @@
     },
     "dev_settings_cache_cleared": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Cleared %1$lld cached entries"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Cleared %1$lld cached entries"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Cleared %1$lld cached entries"
           }
         }
@@ -2438,9 +3128,21 @@
     },
     "dev_settings_clear_cache": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Clear Stream Cache"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Clear Stream Cache"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Clear Stream Cache"
           }
         }
@@ -2448,9 +3150,21 @@
     },
     "dev_settings_close": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Close"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Close"
           }
         }
@@ -2458,9 +3172,21 @@
     },
     "dev_settings_cooldown_reset": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Cooldown state cleared"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Cooldown state cleared"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Cooldown state cleared"
           }
         }
@@ -2468,9 +3194,21 @@
     },
     "dev_settings_cooldown_tripped": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Cooldown tripped — until %1$lld"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Cooldown tripped — until %1$lld"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Cooldown tripped — until %1$lld"
           }
         }
@@ -2478,9 +3216,21 @@
     },
     "dev_settings_done": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Done"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Done"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Done"
           }
         }
@@ -2488,9 +3238,21 @@
     },
     "dev_settings_generous_crop_desc": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Use 20%% crop budget for fullscreen (fills screen on S25 Ultra). Default: auto-detected per device."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Use 20%% crop budget for fullscreen (fills screen on S25 Ultra). Default: auto-detected per device."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Use 20%% crop budget for fullscreen (fills screen on S25 Ultra). Default: auto-detected per device."
           }
         }
@@ -2498,9 +3260,21 @@
     },
     "dev_settings_generous_crop_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Generous Crop Budget"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Generous Crop Budget"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Generous Crop Budget"
           }
         }
@@ -2508,9 +3282,21 @@
     },
     "dev_settings_header": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Build defaults from BuildConfig. Toggle to override at runtime.\nChanges take effect immediately."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Build defaults from BuildConfig. Toggle to override at runtime.\nChanges take effect immediately."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Build defaults from BuildConfig. Toggle to override at runtime.\nChanges take effect immediately."
           }
         }
@@ -2518,9 +3304,21 @@
     },
     "dev_settings_ios_fetch_desc": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Use iOS client for HLS manifest extraction (requires iOS UA)"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Use iOS client for HLS manifest extraction (requires iOS UA)"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Use iOS client for HLS manifest extraction (requires iOS UA)"
           }
         }
@@ -2528,9 +3326,21 @@
     },
     "dev_settings_ios_fetch_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "iOS Client Fetch"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "iOS Client Fetch"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "iOS Client Fetch"
           }
         }
@@ -2538,9 +3348,21 @@
     },
     "dev_settings_mpd_prefetch_desc": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pre-generate DASH MPD on video tap for faster first-frame"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Pre-generate DASH MPD on video tap for faster first-frame"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Pre-generate DASH MPD on video tap for faster first-frame"
           }
         }
@@ -2548,9 +3370,21 @@
     },
     "dev_settings_mpd_prefetch_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "MPD Prefetch"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "MPD Prefetch"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "MPD Prefetch"
           }
         }
@@ -2558,9 +3392,21 @@
     },
     "dev_settings_overridden_off": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Overridden to OFF"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Overridden to OFF"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Overridden to OFF"
           }
         }
@@ -2568,9 +3414,21 @@
     },
     "dev_settings_overridden_on": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Overridden to ON"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Overridden to ON"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Overridden to ON"
           }
         }
@@ -2578,9 +3436,21 @@
     },
     "dev_settings_reset_all": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Reset All to Build Defaults"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Reset All to Build Defaults"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Reset All to Build Defaults"
           }
         }
@@ -2588,9 +3458,21 @@
     },
     "dev_settings_reset_cooldown": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Reset Cooldown"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Reset Cooldown"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Reset Cooldown"
           }
         }
@@ -2598,9 +3480,21 @@
     },
     "dev_settings_show_telemetry": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Show Telemetry Log"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Show Telemetry Log"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Show Telemetry Log"
           }
         }
@@ -2608,9 +3502,21 @@
     },
     "dev_settings_status_format": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%1$@ • %2$@"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "%1$@ • %2$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "%1$@ • %2$@"
           }
         }
@@ -2618,6 +3524,24 @@
     },
     "dev_settings_steps_away": {
       "localizations": {
+        "ar": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "needs_review",
+                  "value": "You are %1$lld step away from being a developer"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "needs_review",
+                  "value": "You are %1$lld steps away from being a developer"
+                }
+              }
+            }
+          }
+        },
         "en": {
           "variations": {
             "plural": {
@@ -2635,14 +3559,44 @@
               }
             }
           }
+        },
+        "nl": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "needs_review",
+                  "value": "You are %1$lld step away from being a developer"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "needs_review",
+                  "value": "You are %1$lld steps away from being a developer"
+                }
+              }
+            }
+          }
         }
       }
     },
     "dev_settings_telemetry_empty": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "(no events yet)"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "(no events yet)"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "(no events yet)"
           }
         }
@@ -2650,9 +3604,21 @@
     },
     "dev_settings_telemetry_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Me-feed Telemetry Log"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Me-feed Telemetry Log"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Me-feed Telemetry Log"
           }
         }
@@ -2660,9 +3626,21 @@
     },
     "dev_settings_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Developer Settings"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Developer Settings"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Developer Settings"
           }
         }
@@ -2670,9 +3648,21 @@
     },
     "dev_settings_trip_cooldown": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Trip Cooldown (1h)"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Trip Cooldown (1h)"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Trip Cooldown (1h)"
           }
         }
@@ -2680,9 +3670,21 @@
     },
     "dev_settings_using_default": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Using build default"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Using build default"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Using build default"
           }
         }
@@ -2888,7 +3890,19 @@
     },
     "download_details_format": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ • %2$@"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ • %2$@"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ • %2$@"
@@ -3151,6 +4165,12 @@
             "state": "translated",
             "value": "Downloads"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads"
+          }
         }
       }
     },
@@ -3222,7 +4242,19 @@
     },
     "download_quality_2k": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K (%1$lldp)"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K (%1$lldp)"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "2K (%1$lldp)"
@@ -3232,7 +4264,19 @@
     },
     "download_quality_4k": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K (%1$lldp)"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K (%1$lldp)"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "4K (%1$lldp)"
@@ -3286,7 +4330,19 @@
     },
     "download_quality_video": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lldp"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lldp"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "%1$lldp"
@@ -3483,6 +4539,12 @@
             "state": "translated",
             "value": "Downloads"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads"
+          }
         }
       }
     },
@@ -3671,6 +4733,12 @@
           }
         },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Downloads"
@@ -4890,7 +5958,19 @@
     },
     "filter_chip_value": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ • %2$@"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ • %2$@"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ • %2$@"
@@ -6159,12 +7239,30 @@
             "state": "translated",
             "value": "LIVE"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LIVE"
+          }
         }
       }
     },
     "live_past_meta": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ • %2$@"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ • %2$@"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ • %2$@"
@@ -6660,9 +7758,21 @@
     },
     "me_kebab_profile": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Profile"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Profile"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Profile"
           }
         }
@@ -6670,9 +7780,21 @@
     },
     "me_kebab_sign_out": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sign out"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Sign out"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Sign out"
           }
         }
@@ -6753,6 +7875,12 @@
           }
         },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shorts"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Shorts"
@@ -6945,6 +8073,12 @@
           }
         },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menu"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Menu"
@@ -7449,6 +8583,12 @@
             "state": "translated",
             "value": "Downloads"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads"
+          }
         }
       }
     },
@@ -7564,9 +8704,21 @@
     },
     "navigation_error": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Navigation failed. Please try again."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Navigation failed. Please try again."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Navigation failed. Please try again."
           }
         }
@@ -7618,9 +8770,21 @@
     },
     "ok": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "OK"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "OK"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "OK"
           }
         }
@@ -7899,6 +9063,12 @@
           }
         },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Audio"
@@ -8469,6 +9639,12 @@
             "state": "translated",
             "value": "Download"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download"
+          }
         }
       }
     },
@@ -8705,6 +9881,12 @@
             "state": "translated",
             "value": "Video"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video"
+          }
         }
       }
     },
@@ -8820,7 +10002,19 @@
     },
     "player_duration_minutes_seconds": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld:%2$02lld"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld:%2$02lld"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld:%2$02lld"
@@ -9160,9 +10354,21 @@
     },
     "player_geo_restricted": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This video is not available in your region."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "This video is not available in your region."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "This video is not available in your region."
           }
         }
@@ -9478,9 +10684,21 @@
     },
     "player_rate_limited": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Too many requests. Please wait a moment."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Too many requests. Please wait a moment."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Too many requests. Please wait a moment."
           }
         }
@@ -9576,9 +10794,21 @@
     },
     "player_refreshing_stream": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Refreshing stream URLs…"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Refreshing stream URLs…"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Refreshing stream URLs…"
           }
         }
@@ -9850,9 +11080,21 @@
     },
     "player_stream_expired": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Stream expired. Refreshing…"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Stream expired. Refreshing…"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Stream expired. Refreshing…"
           }
         }
@@ -9948,7 +11190,19 @@
     },
     "player_up_next_meta": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ • %2$@"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ • %2$@"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ • %2$@"
@@ -10009,6 +11263,12 @@
           }
         },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volume"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Volume"
@@ -10172,7 +11432,19 @@
     },
     "playlist_detail_title_placeholder": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "%1$@"
@@ -10572,9 +11844,21 @@
     },
     "playlists_empty_subtitle": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Approved playlists will appear here"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Approved playlists will appear here"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Approved playlists will appear here"
           }
         }
@@ -10582,9 +11866,21 @@
     },
     "playlists_empty_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No playlists yet"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "No playlists yet"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "No playlists yet"
           }
         }
@@ -10614,9 +11910,21 @@
     },
     "profile_date_of_birth": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Date of birth"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Date of birth"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Date of birth"
           }
         }
@@ -10624,9 +11932,21 @@
     },
     "profile_display_name": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Display name"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Display name"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Display name"
           }
         }
@@ -10634,9 +11954,21 @@
     },
     "profile_dob_pick": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pick a date"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Pick a date"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Pick a date"
           }
         }
@@ -10688,9 +12020,21 @@
     },
     "profile_email_locked": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Linked to your sign-in"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Linked to your sign-in"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Linked to your sign-in"
           }
         }
@@ -10698,9 +12042,21 @@
     },
     "profile_error_age_dialog_message": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Your date of birth no longer meets our age requirement. You'll be signed out."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Your date of birth no longer meets our age requirement. You'll be signed out."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Your date of birth no longer meets our age requirement. You'll be signed out."
           }
         }
@@ -10708,9 +12064,21 @@
     },
     "profile_error_age_dialog_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Account no longer eligible"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Account no longer eligible"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Account no longer eligible"
           }
         }
@@ -10718,9 +12086,21 @@
     },
     "profile_error_network": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Couldn't save. Check your connection."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Couldn't save. Check your connection."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Couldn't save. Check your connection."
           }
         }
@@ -10728,9 +12108,21 @@
     },
     "profile_error_rate_limited": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Too many updates. Try again in %1$lld min."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Too many updates. Try again in %1$lld min."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Too many updates. Try again in %1$lld min."
           }
         }
@@ -10782,7 +12174,19 @@
     },
     "profile_password_dots": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "••••••••••"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "••••••••••"
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "••••••••••"
@@ -10792,9 +12196,21 @@
     },
     "profile_personal_info": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Personal info"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Personal info"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Personal info"
           }
         }
@@ -10846,9 +12262,21 @@
     },
     "profile_save": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Save"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Save"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Save"
           }
         }
@@ -10856,9 +12284,21 @@
     },
     "profile_save_success": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Profile updated"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Profile updated"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Profile updated"
           }
         }
@@ -10866,9 +12306,21 @@
     },
     "profile_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Profile"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Profile"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Profile"
           }
         }
@@ -10898,9 +12350,21 @@
     },
     "report_error": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Failed to submit report. Please try again."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Failed to submit report. Please try again."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Failed to submit report. Please try again."
           }
         }
@@ -10908,9 +12372,21 @@
     },
     "report_other_hint": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Please describe…"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Please describe…"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Please describe…"
           }
         }
@@ -10918,9 +12394,21 @@
     },
     "report_rate_limited": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "You've sent too many reports recently. Please try again later."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "You've sent too many reports recently. Please try again later."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "You've sent too many reports recently. Please try again later."
           }
         }
@@ -10928,9 +12416,21 @@
     },
     "report_reason_awrah": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Awrah Exposure"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Awrah Exposure"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Awrah Exposure"
           }
         }
@@ -10938,9 +12438,21 @@
     },
     "report_reason_bad_language": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bad Language"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Bad Language"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Bad Language"
           }
         }
@@ -10948,9 +12460,21 @@
     },
     "report_reason_bidah": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bid'ah / Innovation"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Bid'ah / Innovation"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Bid'ah / Innovation"
           }
         }
@@ -10958,9 +12482,21 @@
     },
     "report_reason_flirting": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Flirting / Innuendo"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Flirting / Innuendo"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Flirting / Innuendo"
           }
         }
@@ -10968,9 +12504,21 @@
     },
     "report_reason_misinformation": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Misinformation"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Misinformation"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Misinformation"
           }
         }
@@ -10978,9 +12526,21 @@
     },
     "report_reason_music": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Music / Instruments"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Music / Instruments"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Music / Instruments"
           }
         }
@@ -10988,9 +12548,21 @@
     },
     "report_reason_nudity": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Nudity / Immodesty"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Nudity / Immodesty"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Nudity / Immodesty"
           }
         }
@@ -10998,9 +12570,21 @@
     },
     "report_reason_other": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Other"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Other"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Other"
           }
         }
@@ -11008,9 +12592,21 @@
     },
     "report_reason_romance": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Romance / Love Content"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Romance / Love Content"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Romance / Love Content"
           }
         }
@@ -11018,9 +12614,21 @@
     },
     "report_reason_shirk": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Shirk / Polytheism"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Shirk / Polytheism"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Shirk / Polytheism"
           }
         }
@@ -11028,9 +12636,21 @@
     },
     "report_reason_violence": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Violence / Gore"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Violence / Gore"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Violence / Gore"
           }
         }
@@ -11038,9 +12658,21 @@
     },
     "report_select_reason": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Please select at least one reason"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Please select at least one reason"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Please select at least one reason"
           }
         }
@@ -11048,9 +12680,21 @@
     },
     "report_submit": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Submit Report"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Submit Report"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Submit Report"
           }
         }
@@ -11058,9 +12702,21 @@
     },
     "report_subtitle": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Select all reasons that apply"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Select all reasons that apply"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Select all reasons that apply"
           }
         }
@@ -11068,9 +12724,21 @@
     },
     "report_success": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Thank you — your report has been submitted"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Thank you — your report has been submitted"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Thank you — your report has been submitted"
           }
         }
@@ -11078,9 +12746,21 @@
     },
     "report_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Report Content"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Report Content"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Report Content"
           }
         }
@@ -11132,9 +12812,21 @@
     },
     "search_clear": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Clear search"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Clear search"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Clear search"
           }
         }
@@ -11494,9 +13186,21 @@
     },
     "settings_account_header": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Account"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Account"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Account"
           }
         }
@@ -11504,9 +13208,21 @@
     },
     "settings_account_sign_out": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sign out"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Sign out"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Sign out"
           }
         }
@@ -11514,9 +13230,21 @@
     },
     "settings_account_sign_out_cancel": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Cancel"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Cancel"
           }
         }
@@ -11524,9 +13252,21 @@
     },
     "settings_account_sign_out_confirm_action": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sign out"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Sign out"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Sign out"
           }
         }
@@ -11534,9 +13274,21 @@
     },
     "settings_account_sign_out_confirm_body": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "You'll need to sign in again to access admin features and personalised content."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "You'll need to sign in again to access admin features and personalised content."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "You'll need to sign in again to access admin features and personalised content."
           }
         }
@@ -11544,9 +13296,21 @@
     },
     "settings_account_sign_out_confirm_title": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sign out?"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Sign out?"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Sign out?"
           }
         }
@@ -11554,9 +13318,21 @@
     },
     "settings_account_signed_in_as": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed in as %1$@"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Signed in as %1$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Signed in as %1$@"
           }
         }
@@ -11564,9 +13340,21 @@
     },
     "settings_account_signed_in_default": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed in"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Signed in"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Signed in"
           }
         }
@@ -11959,6 +13747,12 @@
             "state": "translated",
             "value": "Downloads"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads"
+          }
         }
       }
     },
@@ -12052,9 +13846,21 @@
     },
     "settings_icon_background_play": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Background play setting icon"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Background play setting icon"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Background play setting icon"
           }
         }
@@ -12084,9 +13890,21 @@
     },
     "settings_icon_wifi": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "WiFi only setting icon"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "WiFi only setting icon"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "WiFi only setting icon"
           }
         }
@@ -13271,6 +15089,12 @@
             "state": "translated",
             "value": "@%1$@"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "@%1$@"
+          }
         }
       }
     },
@@ -13452,7 +15276,19 @@
     },
     "splash_couldnt_connect": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't connect — please sign in again."
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't connect — please sign in again."
+          }
+        },
+        "nl": {
           "stringUnit": {
             "state": "translated",
             "value": "Couldn't connect — please sign in again."
@@ -14489,6 +16325,12 @@
             "state": "translated",
             "value": "Video"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video"
+          }
         }
       }
     },
@@ -14934,9 +16776,21 @@
     },
     "update_progress_percent": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%1$lld%%"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "%1$lld%%"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "%1$lld%%"
           }
         }
@@ -14966,9 +16820,21 @@
     },
     "update_version_ready": {
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Version %1$@ is ready to download."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
+            "value": "Version %1$@ is ready to download."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Version %1$@ is ready to download."
           }
         }

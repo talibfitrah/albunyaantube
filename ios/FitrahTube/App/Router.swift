@@ -27,6 +27,10 @@ nonisolated enum ReselectAction: Equatable {
     /// Bumped by `reselect(_:)` when it returns `.scrollToTop` -- carries which tab so only that
     /// tab's own root view reacts (`.onChange(of:)` needs a value that actually changes, which a
     /// bare `Tab` wouldn't on a second consecutive reselect of a tab already at rest).
+    // ponytail: consumed by the two scrollable tab roots -- `HomeView` and `ContentListView`
+    // (channels/playlists/videos). The `me` tab's root (`MeGuestView`) is a static guest card with
+    // nothing to scroll, so it deliberately ignores the signal; wire it up if that tab ever
+    // becomes a list.
     var scrollToTopSignal: ScrollToTopSignal?
 
     private var shellIsReady = false

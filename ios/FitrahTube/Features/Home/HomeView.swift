@@ -115,11 +115,10 @@ struct HomeView: View {
             label: container.filters.state.categoryName ?? String(localized: "filter_category"),
             isActive: container.filters.state.categoryId != nil,
             onTap: { router.push(.categories) },
-            // Fix round 1, finding #4: routes through the shared store instead of
-            // `HomeViewModel.clearFilter()` directly, so this and an externally-applied category
-            // (Categories/Subcategories) both funnel through the single
-            // `.onChange(of: container.filters.state)` reload above -- one filter change, one
-            // reload, regardless of where it originated.
+            // Fix round 1, finding #4: routes through the shared store, so this and an
+            // externally-applied category (Categories/Subcategories) both funnel through the
+            // single `.onChange(of: container.filters.state)` reload above -- one filter change,
+            // one reload, regardless of where it originated.
             onClear: { container.filters.clearCategory() }
         )
         .padding(.horizontal, Spacing.homeHorizontalMargin(widthClass)) // home_horizontal_margin (shell-home.md:227)

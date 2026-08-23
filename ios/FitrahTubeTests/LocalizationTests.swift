@@ -22,21 +22,46 @@ struct LocalizationTests {
         #expect(string("app_name", locale: "ar") == "فطرة تيوب")
     }
 
-    @Test func untranslatedKeyFallsBackToEnglish() {
-        // `about_version_format` is English-only on Android (strings-assets.md §2). R7 requires
-        // the catalog to OMIT the nl localization rather than copy English in as a fake
-        // "translated" entry (strings-assets.md:303-313). A single manually-opened nl.lproj
-        // bundle has no visibility into sibling locales (verified against the compiled
-        // nl.lproj/Localizable.strings, which has no `about_version_format` entry at all) --
-        // Foundation's real per-key fallback happens through Bundle.main's own localization
-        // negotiation, so that's what production code -- and this test -- must use.
-        let nlBundle = Bundle.main.path(forResource: "nl", ofType: "lproj").flatMap(Bundle.init(path:))
-        let nlLookup = nlBundle?.localizedString(forKey: "about_version_format", value: nil, table: nil)
-        #expect(nlLookup == "about_version_format", "nl catalog must not carry a copied-English entry")
+    /// Foundation has **no per-key fallback**: `Bundle.localizedString(forKey:)` resolves inside
+    /// exactly one `.lproj`, and a key missing from a `.lproj` that otherwise exists comes back as
+    /// the bare key -- which is what rendered on screen during the Task 13 `-AppleLanguages (ar)`
+    /// run. R7 as amended (strings-assets.md:303-313) therefore makes the converter emit every key
+    /// into every locale (English under `needs_review` where Android has no translation), and this
+    /// is the regression net for that: every key in the compiled catalog resolves to something
+    /// other than itself under both `ar` and `nl`.
+    @Test func everyCatalogKeyResolvesInArabicAndDutch() throws {
+        let keys = try Self.compiledKeys(locale: "en")
+        #expect(keys.count > 700, "expected the whole catalog, got \(keys.count) keys")
 
-        let format = Bundle.main.localizedString(forKey: "about_version_format", value: nil, table: nil)
-        let result = String(format: format, arguments: ["1.0.0", "7"])
-        #expect(result.contains("1.0.0"))
+        for locale in ["ar", "nl"] {
+            let bundle = try Self.lproj(locale)
+            let unresolved = keys.filter { bundle.localizedString(forKey: $0, value: nil, table: nil) == $0 }.sorted()
+            #expect(unresolved.isEmpty, "\(locale) renders the raw key for: \(unresolved.prefix(10))")
+        }
+    }
+
+    /// The specific key the Task 13 review caught: English-only on Android, so both locales must
+    /// now carry the English value rather than nothing.
+    @Test func englishOnlyKeyCarriesEnglishInEveryLocale() throws {
+        for locale in ["ar", "nl"] {
+            let format = try Self.lproj(locale).localizedString(forKey: "about_version_format", value: nil, table: nil)
+            #expect(format == "Version %1$@ (%2$@)")
+            #expect(String(format: format, arguments: ["1.0.0", "7"]) == "Version 1.0.0 (7)")
+        }
+    }
+
+    private static func lproj(_ locale: String) throws -> Bundle {
+        try #require(Bundle.main.path(forResource: locale, ofType: "lproj").flatMap(Bundle.init(path:)))
+    }
+
+    /// Every key the String Catalog compiled for `locale`, read straight off the built `.app` --
+    /// the source `.xcstrings` JSON isn't in the test bundle, and the compiled table is the
+    /// stricter thing to assert against anyway. Pure-plural keys live in the sibling
+    /// `.stringsdict` and are out of scope here (the bug was in the plain-string table).
+    private static func compiledKeys(locale: String) throws -> [String] {
+        let url = try #require(lproj(locale).url(forResource: "Localizable", withExtension: "strings"))
+        let table = try #require(NSDictionary(contentsOf: url) as? [String: String])
+        return Array(table.keys)
     }
 
     @Test func pluralSelectsCategory() {

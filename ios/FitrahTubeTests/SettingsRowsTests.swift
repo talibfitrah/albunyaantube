@@ -9,40 +9,44 @@ import Testing
 /// `SettingsStoreTests.colorSchemeMapsThemeSelection`, so it isn't re-tested here.
 @Suite(.perTest)
 struct SettingsRowsTests {
-    // MARK: - Row/section order (task-13 brief order, favorites-settings-about.md:139-158 minus
-    // phase-3/none rows; RULINGS 32-35). Deliberately not Android's literal section order -- the
-    // brief states, twice, that Safe Mode folds into Playback (Android's own single-row "Content"
-    // section) and Library moves from right after General to just before About & Support.
+    // MARK: - Row/section order: Android's literal order (favorites-settings-about.md:139-153)
+    // minus the phase-3/none rows (RULINGS 32-35). RULINGS.md line 3 makes parity the default, so
+    // Safe Mode keeps its own "Content" section and Library stays right after General.
 
-    @Test func rowOrderMatchesTask13BriefExactly() {
+    @Test func rowOrderMatchesAndroidExactly() {
         let expected: [SettingsRow] = [
             .language, .theme,
-            .audioOnly, .backgroundPlay, .safeMode,
-            .downloadQuality, .wifiOnly,
             .favorites,
+            .audioOnly, .backgroundPlay,
+            .downloadQuality, .wifiOnly,
+            .safeMode,
             .aboutSupport,
         ]
         #expect(SettingsLayout.rows.map(\.row) == expected)
     }
 
-    @Test func sectionsFollowTask13BriefOrder() {
+    @Test func sectionsFollowAndroidOrder() {
         let expected: [SettingsSection] = [
             .general, .general,
-            .playback, .playback, .playback,
-            .downloads, .downloads,
             .library,
+            .playback, .playback,
+            .downloads, .downloads,
+            .content,
             .aboutSupport,
         ]
         #expect(SettingsLayout.rows.map(\.section) == expected)
+        // `SettingsView` renders `SettingsSection.allCases` in declaration order, so that order
+        // must match the row table's own section sequence or the screen would disagree with it.
+        #expect(SettingsSection.allCases == [.general, .library, .playback, .downloads, .content, .aboutSupport])
     }
 
     // Account/Sign-out (favorites-settings-about.md:143, "hidden unless signed in") never
     // appears: phase 1 has no signed-in state to show it for (spec D11, guest-only until phase 4
     // auth), so there is no `.signOut` case and no Account section case to ever render -- proved
     // by construction (the type simply has none), not by a runtime visibility flag.
-    @Test func nineRowsInFiveSectionsNoAccountSection() {
+    @Test func nineRowsInSixSectionsNoAccountSection() {
         #expect(SettingsLayout.rows.count == 9)
-        #expect(SettingsSection.allCases.count == 5)
+        #expect(SettingsSection.allCases.count == 6)
     }
 
     // MARK: - TapGate (favorites-settings-about.md:279-288)
@@ -95,20 +99,5 @@ struct SettingsRowsTests {
 
     @Test func aboutVersionFormatsBothArgumentsAsStrings() {
         #expect(AboutVersionText.format(version: "1.0.0", build: "7") == "Version 1.0.0 (7)")
-    }
-
-    // Found via a live `-AppleLanguages (ar)` screenshot run (task-13): `about_version_format`
-    // rendered as the literal key on screen instead of falling back to English.
-    // `Bundle.main.localizedString(forKey:)` resolves to exactly one `.lproj`; when that `.lproj`
-    // exists but lacks the key it returns the bare key, with no further cross-locale fallback --
-    // disproving `LocalizationTests.untranslatedKeyFallsBackToEnglish`'s "Foundation's real
-    // per-key fallback happens through Bundle.main's own localization negotiation" comment (that
-    // test's own Bundle.main call only ever passes because the test host runs in English).
-    // `ar.lproj` is opened directly here (same technique `LocalizationTests` uses) to force the
-    // "resolved bundle lacks this key" case deterministically.
-    @Test func englishOnlyStringsFallsBackWhenTheResolvedBundleLacksTheKey() throws {
-        let arBundle = try #require(Bundle.main.path(forResource: "ar", ofType: "lproj").flatMap(Bundle.init(path:)))
-        #expect(EnglishOnlyStrings.lookup("about_version_format", in: arBundle) == "Version %1$@ (%2$@)")
-        #expect(EnglishOnlyStrings.lookup("dev_settings_steps_away", in: arBundle) == "%#@value@")
     }
 }

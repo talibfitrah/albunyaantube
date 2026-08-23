@@ -22,7 +22,7 @@ struct HomeViewModelTests {
     }
 
     /// Counts `home()` calls and records the last `category` param, to prove "no double fetch"
-    /// and to observe what `clearFilter()` re-requests with.
+    /// and to observe what each load re-requests with.
     private actor RecordingCatalogClient: CatalogClient {
         private let page: CursorPage<HomeSection>
         private(set) var homeCallCount = 0
@@ -229,23 +229,5 @@ struct HomeViewModelTests {
         let vm = HomeViewModel(catalog: FakeCatalogClient(), filter: FakeFilterStore(), widthClass: { .compact })
         let label = vm.seeAllLabel(for: section("a"))
         #expect(label.contains("Section a"))
-    }
-
-    @Test func clearFilterClearsTheStoreAndReloadsWithoutACategory() async {
-        let filter = FakeFilterStore(state: FilterState(categoryId: "c1", categoryName: "Cat"))
-        let client = RecordingCatalogClient(page: CursorPage(items: [section("a")], nextCursor: nil))
-        let vm = HomeViewModel(catalog: client, filter: filter, widthClass: { .compact })
-
-        await vm.load()
-        #expect(await client.lastCategory == "c1")
-
-        vm.clearFilter()
-        await vm.loadTask?.value
-
-        #expect(filter.state.categoryId == nil)
-        #expect(filter.state.categoryName == nil)
-        #expect(await client.homeCallCount == 2)
-        #expect(await client.lastCategory == nil)
-        guard case .content = vm.state else { Issue.record("expected .content after clearFilter reload"); return }
     }
 }

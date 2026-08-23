@@ -64,8 +64,10 @@ struct SplashView: View {
                     .tint(.brand)
                     .opacity(phase >= .spinner ? 1 : 0)
                     // No interpolator set on Android -> platform default (AccelerateDecelerate),
-                    // easeInOut here, distinct from the name/tagline easeOut below.
-                    .animation(.easeInOut(duration: 0.4), value: phase)
+                    // easeInOut here, distinct from the name/tagline easeOut below. Keyed on the
+                    // boolean this element actually animates on, not the whole `phase` -- keying
+                    // on `phase` re-ran the animation on every unrelated step.
+                    .animation(.easeInOut(duration: 0.4), value: phase >= .spinner)
                     .padding(.bottom, Spacing.xxl)
             }
         }
@@ -96,7 +98,7 @@ struct SplashView: View {
                 .padding(.top, Spacing.lg(widthClass))
                 .opacity(phase >= .name ? 1 : 0)
                 .offset(y: offsetY(shown: phase >= .name))
-                .animation(.easeOut(duration: 0.4), value: phase) // DecelerateInterpolator ~ easeOut
+                .animation(.easeOut(duration: 0.4), value: phase >= .name) // DecelerateInterpolator ~ easeOut
             Text(String(localized: "splash_tagline"))
                 .font(TypeScale.subtitle)
                 .foregroundStyle(Color.textSecondary)
@@ -105,7 +107,7 @@ struct SplashView: View {
                 .padding(.horizontal, Spacing.xl(widthClass))
                 .opacity(phase >= .tagline ? 1 : 0)
                 .offset(y: offsetY(shown: phase >= .tagline))
-                .animation(.easeOut(duration: 0.4), value: phase)
+                .animation(.easeOut(duration: 0.4), value: phase >= .tagline)
         }
     }
 

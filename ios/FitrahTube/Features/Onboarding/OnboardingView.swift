@@ -3,7 +3,7 @@ import SwiftUI
 /// Android's `onboarding/OnboardingPage.kt:13-28` -- a static 3-item list, no VM, no remote
 /// content. Icons are SF Symbols per RULINGS.md contradiction 6 / `strings-assets.md:732-770`
 /// (compass -> `safari`, not the table's own `play.circle` suggestion).
-nonisolated struct OnboardingPage: Equatable {
+nonisolated struct OnboardingPage {
     let icon: String
     let titleKey: String
     let descriptionKey: String
@@ -27,6 +27,10 @@ nonisolated enum OnboardingCTA {
     }
 }
 
+/// RULING 3 (non-dismissible until Skip/Get started) is structural here: `RootView` swaps this in
+/// as its whole root view, never as a sheet, so there is no dismiss gesture to disable --
+/// `.interactiveDismissDisabled()` was a no-op and is gone.
+///
 /// Android's `OnboardingFragment` (`splash-onboarding.md` §2). Skip and Get Started are
 /// behaviourally identical (`:59`) and both persist the flag before anything dismisses
 /// (`navigateToMain()` ordering bug fix, `:324-330`) -- here that's just `container.settings`'s
@@ -67,8 +71,6 @@ struct OnboardingView: View {
             skipButton.padding(.bottom, Spacing.lg(widthClass))
         }
         .background(Color.background.ignoresSafeArea())
-        // RULING 3: non-dismissible until Skip/Get started.
-        .interactiveDismissDisabled()
     }
 
     // MARK: Dots (RULINGS.md contradiction 7: inactive dot is a token, not Android's hardcoded #CCCCCC)

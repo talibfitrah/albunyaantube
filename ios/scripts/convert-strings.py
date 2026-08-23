@@ -126,6 +126,20 @@ def apply_overrides(key, value):
     fn = SPECIFIER_OVERRIDES.get(key)
     return fn(value) if fn else value
 
+def locale_fallback(en_value, loc_value):
+    """R7 as amended 2026-08-23 (strings-assets.md:303-313), verified with `xcstringstool compile`:
+    an omitted `ar`/`nl` entry is NOT compiled into that locale's `Localizable.strings`, and
+    Foundation does not fall back per key to the source language -- the raw key renders on screen.
+    So a locale that has no value of its own gets en's, marked `needs_review` (the Xcode backlog
+    stays visible); a locale value that merely equals en's is a real loanword translation
+    ("Downloads", "Links", "YouTube") and is marked `translated`. Never omit.
+
+    Takes and returns either a plain string or a whole per-locale plural-forms dict -- the
+    fallback is all-or-nothing per locale in both cases."""
+    if loc_value is None:
+        return en_value, "needs_review"
+    return loc_value, "translated"
+
 def maybe_rewrite(name, text):
     # REFUSE keys (e.g. the %.1f abbreviated-count strings) are filtered out downstream in main()
     # and their value is never used -- don't run them through rewrite_specifiers, which now raises
@@ -170,19 +184,17 @@ def main(check=False):
         locs = {"en": {"stringUnit": {"state": "translated", "value": en_val}}}
         en_sig = arg_signature(en_val)
         for loc in ("ar", "nl"):
-            v = data[loc][0].get(key)
-            if v is None or v == en:  # R7: never copy English as a translation
-                continue
-            v = apply_overrides(key, v)
+            raw = data[loc][0].get(key)
+            v, state = locale_fallback(en_val, apply_overrides(key, raw) if raw is not None else None)
             check_arg_subset(key, en_sig, loc, arg_signature(v))
-            locs[loc] = {"stringUnit": {"state": "translated", "value": v}}
+            locs[loc] = {"stringUnit": {"state": state, "value": v}}
         entry = {"localizations": locs}
         if key == "app_name":  # R7: brand name -- don't flag as needing translation
             entry["shouldTranslate"] = False
         out["strings"][key] = entry
 
-    # EXTRA_KEYS: no Android source, so R7's "never copy English as a translation" doesn't apply.
-    # A plain string is deliberately identical across every locale; a dict carries real per-locale text.
+    # EXTRA_KEYS: authored here, so every locale is deliberate -- a plain string is identical
+    # across all three on purpose; a dict carries real per-locale text. Nothing to fall back to.
     for key, value in EXTRA_KEYS.items():
         locs = value if isinstance(value, dict) else {loc: value for loc in ("en", "ar", "nl")}
         out["strings"][key] = {
@@ -204,16 +216,16 @@ def main(check=False):
             skipped.append(key); continue
         locs = {}
         for loc in ("en", "ar", "nl"):
-            f = data[loc][1].get(key)
-            if not f:
-                continue
+            # R7 (amended): a locale with no forms of its own falls back to en's whole forms dict,
+            # marked needs_review -- omitting it would render the raw key at runtime.
+            f, state = locale_fallback(forms, data[loc][1].get(key) or None)
             for cat, val in f.items():
                 # H5: when en has no `cat` form (e.g. ar `few` with no en `few`), compare against
                 # en's `other` -- never against the translation's own value, which would trivially
                 # match itself and never catch a divergence.
                 en_reference = forms.get(cat, forms["other"])
                 check_arg_subset(f"{key}[{cat}]", arg_signature(en_reference), loc, arg_signature(val))
-            plural = {cat: {"stringUnit": {"state": "translated", "value": f[cat]}} for cat in PLURAL_CATEGORIES if cat in f}
+            plural = {cat: {"stringUnit": {"state": state, "value": f[cat]}} for cat in PLURAL_CATEGORIES if cat in f}
             locs[loc] = {"variations": {"plural": plural}}
         out["strings"][key] = {"localizations": locs}
 
@@ -226,18 +238,17 @@ def main(check=False):
         locs = {}
         en_other_sig = arg_signature(en_plurals[key]["other"])
         for loc in ("en", "ar", "nl"):
-            forms = data[loc][1].get(key)
-            if not forms:
-                continue
+            # R7 (amended), same all-or-nothing per-locale fallback as the plain plural loop above.
+            forms, state = locale_fallback(en_plurals[key], data[loc][1].get(key) or None)
             # R4: each category is checked against en's `other` (not its own-category en form --
             # these two keys emit a single shared substitution arg, so `other` is the one true
             # reference signature for every category in every locale, including en's own zero/two/
             # few/many forms).
             for cat, val in forms.items():
                 check_arg_subset(f"{key}[{cat}]", en_other_sig, loc, arg_signature(val))
-            plural = {cat: {"stringUnit": {"state": "translated", "value": forms[cat]}} for cat in PLURAL_CATEGORIES if cat in forms}
+            plural = {cat: {"stringUnit": {"state": state, "value": forms[cat]}} for cat in PLURAL_CATEGORIES if cat in forms}
             locs[loc] = {
-                "stringUnit": {"state": "translated", "value": "%#@arg@"},
+                "stringUnit": {"state": state, "value": "%#@arg@"},
                 "substitutions": {
                     "arg": {"argNum": 2, "formatSpecifier": "lld", "variations": {"plural": plural}},
                 },
@@ -325,9 +336,22 @@ def check_substitution_plural_specifier_mismatch_caught():
     else:
         raise AssertionError("substitution-plural ar specifier mismatch vs en other should raise")
 
+def check_locale_fallback_never_omits():
+    """R7 self-check (amended rule): a locale absent from Android must still emit -- en's value
+    marked `needs_review`, never nothing. Omitting it keeps the key out of that locale's compiled
+    `Localizable.strings` and Foundation does not fall back per key, so the raw key renders. A
+    locale value equal to en's is a loanword translation, not a gap. Plural forms take the same
+    all-or-nothing path (the whole per-locale forms dict falls back at once)."""
+    assert locale_fallback("Downloads", None) == ("Downloads", "needs_review")
+    assert locale_fallback("Downloads", "Downloads") == ("Downloads", "translated")
+    en_forms = {"one": "%1$lld video", "other": "%1$lld videos"}
+    assert locale_fallback(en_forms, None) == (en_forms, "needs_review")
+    assert locale_fallback(en_forms, en_forms) == (en_forms, "translated")
+
 def verify(out):
     """R9's one runnable check: spot-assert the hazards the doc calls out by name."""
     check_bare_specifier_rewrite()
+    check_locale_fallback_never_omits()
     check_plural_fallback_uses_other()
     check_plural_union_catches_ar_only_group()
     check_substitution_plural_specifier_mismatch_caught()
@@ -363,12 +387,26 @@ def verify(out):
     app_name = out["strings"]["app_name"]
     assert app_name.get("shouldTranslate") is False
     assert app_name["localizations"]["ar"]["stringUnit"]["value"] == "\u0641\u0637\u0631\u0629 \u062a\u064a\u0648\u0628"
-    assert "nl" not in app_name["localizations"], "nl app_name is identical to en; must not be emitted as a translation"
+    # R7 (amended): nl app_name is identical to en but present in Android -> a real (loanword)
+    # translation, emitted as `translated`. Omitting it would render the raw key under nl.
+    assert app_name["localizations"]["nl"]["stringUnit"] == {"state": "translated", "value": "FitrahTube"}
 
-    avf = out["strings"]["about_version_format"]["localizations"]["en"]["stringUnit"]["value"]
-    assert avf == "Version %1$@ (%2$@)", avf
-    assert "ar" not in out["strings"]["about_version_format"]["localizations"]
-    assert "nl" not in out["strings"]["about_version_format"]["localizations"]
+    # R7 (amended): about_version_format is absent from ar/nl on Android -> both locales carry the
+    # English value under `needs_review`, so the runtime shows English instead of the raw key.
+    avf = out["strings"]["about_version_format"]["localizations"]
+    assert avf["en"]["stringUnit"]["value"] == "Version %1$@ (%2$@)", avf
+    for loc in ("ar", "nl"):
+        assert avf[loc]["stringUnit"] == {"state": "needs_review", "value": "Version %1$@ (%2$@)"}, avf[loc]
+
+    # R7 (amended), the two keys the Task 13 review proved broken on screen.
+    for key in ("dev_settings_title", "settings_downloads"):
+        for loc in ("ar", "nl"):
+            unit = out["strings"][key]["localizations"][loc]["stringUnit"]
+            assert unit["value"], f"{key}[{loc}] must carry a value, not be omitted"
+
+    # Every emitted key carries all three locales -- the invariant the amended R7 exists to hold.
+    for key, entry in out["strings"].items():
+        assert set(entry["localizations"]) == {"en", "ar", "nl"}, f"{key}: {sorted(entry['localizations'])}"
 
     for key in REFUSE:
         assert key not in out["strings"], f"{key} should have been refused, not emitted"

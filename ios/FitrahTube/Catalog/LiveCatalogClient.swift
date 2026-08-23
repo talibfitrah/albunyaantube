@@ -7,7 +7,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
     init(client: Client) { self.client = client }
 
     func categories() async throws -> [Category] {
-        let dtos = try await client.listPublicCategories(.init()).ok.body.json
+        let dtos = try await client.listPublicCategories(Operations.ListPublicCategories.Input()).ok.body.json
         return dtos.map { dto in
             Category(id: dto.id, name: dto.name, slug: dto.slug, parentId: dto.parentId,
                       displayOrder: dto.displayOrder, localizedNames: dto.localizedNames?.additionalProperties, icon: dto.icon)
