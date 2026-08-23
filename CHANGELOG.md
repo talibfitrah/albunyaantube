@@ -5,6 +5,7 @@ during the beta program.
 
 ## [Unreleased]
 
+- iOS: catalog UI — splash, onboarding, shell (bottom tabs on iPhone, Android-style navigation rail on iPad), Home, Channels/Playlists/Videos, Search, Categories, Featured, Favorites, Settings, About; en/ar/nl with RTL and Dynamic Type support (Phase 1 of the iOS app).
 - iOS: project scaffold (XcodeGen, iPhone + iPad), generated FitrahAPI client, DI container, design tokens (Phase 0 of the iOS app).
 
 ## [1.0.0-beta.45] - 2026-08-22
