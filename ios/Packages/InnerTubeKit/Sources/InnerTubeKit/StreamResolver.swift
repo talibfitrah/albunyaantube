@@ -1,0 +1,271 @@
+import Foundation
+
+/// Backend availability check run as the first step of a new resolve
+/// (`extraction.md` §5.2). Real impl (Plan B) issues a HEAD against FitrahAPI
+/// and maps 2xx/404 → available, 410 → unavailable; the resolver treats a throw
+/// (HTTP/transport error) as fail-open. A test stub returns `true`.
+public protocol AvailabilityGate: Sendable {
+    func verify(videoId: String, sourceChannelId: String?) async throws -> Bool
+}
+
+/// Turns a videoId into a playable `Resolved` by walking `RemoteConfig.resolverOrder`
+/// (`ios-app-plan.md` §6.2, spec §9). Cache-first, one in-flight task per videoId
+/// (same-id callers join it), ≥500 ms spacing between `player` POSTs.
+public actor StreamResolver {
+    private static let rungBudget: Duration = .seconds(8)
+
+    private let transport: HTTPTransport
+    private let remoteConfigStore: RemoteConfigStore
+    private let sessionStore: SessionStore
+    private let cache: ManifestCache
+    private let gate: AvailabilityGate
+    private let requestBuilder: PlayerRequestBuilder
+    private let responseParser: PlayerResponseParser
+    private let monotonicClock: MonotonicClock
+    private let wallClock: WallClock
+    private let locale: InnerTubeLocale
+    private let minPostSpacing: Duration
+
+    /// Single-flight registry. `id` distinguishes a live entry from one a
+    /// superseding `forceRefresh` replaced, so the loser's `defer` can't evict
+    /// the winner (the generation-token discipline).
+    private struct InFlight { let id: Int; let task: Task<Resolved, Error> }
+    private var inFlight: [String: InFlight] = [:]
+    private var nextJobId = 0
+
+    /// Monotonic instant of the last `player` POST, for ≥500 ms spacing.
+    private var lastPostInstant: Duration?
+
+    public init(
+        transport: HTTPTransport,
+        remoteConfigStore: RemoteConfigStore,
+        sessionStore: SessionStore,
+        cache: ManifestCache,
+        gate: AvailabilityGate,
+        monotonicClock: MonotonicClock,
+        wallClock: WallClock,
+        locale: InnerTubeLocale,
+        requestBuilder: PlayerRequestBuilder = PlayerRequestBuilder(),
+        responseParser: PlayerResponseParser = PlayerResponseParser(),
+        minPostSpacing: Duration = .milliseconds(500)
+    ) {
+        self.transport = transport
+        self.remoteConfigStore = remoteConfigStore
+        self.sessionStore = sessionStore
+        self.cache = cache
+        self.gate = gate
+        self.requestBuilder = requestBuilder
+        self.responseParser = responseParser
+        self.monotonicClock = monotonicClock
+        self.wallClock = wallClock
+        self.locale = locale
+        self.minPostSpacing = minPostSpacing
+    }
+
+    public func resolve(
+        _ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool
+    ) async throws -> Resolved {
+        guard Self.isValidVideoId(videoId) else { throw ExtractionError.invalidVideoId }
+
+        if !forceRefresh, let cached = await cache.get(videoId, now: wallClock.wallNow) {
+            return cached
+        }
+
+        if forceRefresh {
+            inFlight[videoId]?.task.cancel()
+            inFlight[videoId] = nil
+        } else if let existing = inFlight[videoId] {
+            return try await existing.task.value
+        }
+
+        nextJobId += 1
+        let jobId = nextJobId
+        let job = Task<Resolved, Error> { [self] in
+            try await performResolve(videoId, sourceChannelId: sourceChannelId)
+        }
+        inFlight[videoId] = InFlight(id: jobId, task: job)
+        defer {
+            if inFlight[videoId]?.id == jobId { inFlight[videoId] = nil }
+        }
+        return try await job.value
+    }
+
+    // MARK: - the ladder
+
+    private enum RungResult {
+        case resolved(Resolved)
+        case advance
+        case jumpToOpenInYouTube
+    }
+
+    private func performResolve(_ videoId: String, sourceChannelId: String?) async throws -> Resolved {
+        // Availability gate first; a throw (HTTP/transport error) is fail-open.
+        let available = (try? await gate.verify(videoId: videoId, sourceChannelId: sourceChannelId)) ?? true
+        guard available else { throw ExtractionError.unavailable(videoId: videoId) }
+
+        let config = await remoteConfigStore.current()
+        var lastError: Error = ExtractionError.allRungsFailed
+
+        for strategy in config.resolverOrder {
+            let outcome: RungResult
+            do {
+                outcome = try await runRung(strategy, videoId: videoId, config: config)
+            } catch let error as ExtractionError where error.terminal {
+                throw error
+            } catch {
+                lastError = error
+                continue
+            }
+            switch outcome {
+            case .resolved(let resolved):
+                return await succeed(resolved, videoId: videoId)
+            case .advance:
+                continue
+            case .jumpToOpenInYouTube:
+                return await succeed(makeOpenInYouTube(videoId), videoId: videoId)
+            }
+        }
+        throw lastError
+    }
+
+    private func succeed(_ resolved: Resolved, videoId: String) async -> Resolved {
+        await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
+        await sessionStore.recordSuccess()
+        return resolved
+    }
+
+    private func runRung(_ strategy: String, videoId: String, config: RemoteConfig) async throws -> RungResult {
+        switch strategy {
+        case "visionosHLS":
+            return try await runPlayerRung(family: .visionos, videoId: videoId, config: config, expectHLS: true, canRotate: true)
+        case "androidItag18":
+            return try await runPlayerRung(family: .android, videoId: videoId, config: config, expectHLS: false, canRotate: true)
+        case "embed":
+            return .resolved(makeEmbed(videoId))
+        case "openInYouTube":
+            return .resolved(makeOpenInYouTube(videoId))
+        default:
+            return .advance
+        }
+    }
+
+    private func runPlayerRung(
+        family: ClientFamily, videoId: String, config: RemoteConfig, expectHLS: Bool, canRotate: Bool
+    ) async throws -> RungResult {
+        guard let context = config.clients[Self.contextKey(family)] else { return .advance }
+        let visitorData = await sessionStore.visitorData(for: family)
+        let request = requestBuilder.build(
+            videoId: videoId, family: family, context: context, visitorData: visitorData, locale: locale)
+        let body = try await sendPlayerPost(request)
+
+        switch try responseParser.parse(body) {
+        case .ok(let streaming):
+            let now = wallClock.wallNow
+            let userAgent = context.userAgent ?? ""
+            if expectHLS, let hls = streaming.hlsManifestURL {
+                return .resolved(Resolved(
+                    stream: .hls(url: hls, isLive: streaming.isLive, audioOnlyURL: streaming.itag140URL, captionTracks: streaming.captionTracks),
+                    client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now)))
+            }
+            if !expectHLS, let itag18 = streaming.itag18URL {
+                return .resolved(Resolved(
+                    stream: .progressive(url: itag18, label: "360p"),
+                    client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now)))
+            }
+            return .advance
+        case .unplayableKids:
+            return .advance
+        case .ageGate:
+            return .jumpToOpenInYouTube
+        case .botCheck:
+            if canRotate, await sessionStore.rotate(family) {
+                return try await runPlayerRung(
+                    family: family, videoId: videoId, config: config, expectHLS: expectHLS, canRotate: false)
+            }
+            await sessionStore.recordBotCheck()
+            throw ExtractionError.botCheck
+        case .liveOffline(let startsAt):
+            throw ExtractionError.liveOffline(startsAt: startsAt)
+        case .unavailable(let reason):
+            throw Self.terminalError(reason: reason, videoId: videoId)
+        }
+    }
+
+    // MARK: - network
+
+    /// Enforces ≥`minPostSpacing` between `player` POSTs and an 8 s per-rung
+    /// budget, then delegates to the injected transport.
+    private func sendPlayerPost(_ request: HTTPRequest) async throws -> Data {
+        if let last = lastPostInstant {
+            let remaining = minPostSpacing - (monotonicClock.now - last)
+            if remaining > .zero { try await Task.sleep(for: remaining) }
+        }
+        lastPostInstant = monotonicClock.now
+
+        let transport = self.transport
+        let response = try await Self.withTimeout(Self.rungBudget) {
+            try await transport.send(request)
+        }
+        return response.body
+    }
+
+    private static func withTimeout<T: Sendable>(
+        _ budget: Duration, _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: budget)
+                throw ExtractionError.transport("rung budget exceeded")
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
+        }
+    }
+
+    // MARK: - result builders
+
+    private func makeEmbed(_ videoId: String) -> Resolved {
+        Resolved(stream: .embed(videoId: videoId), client: .web, userAgent: "", resolvedAt: wallClock.wallNow, expiresAt: nil)
+    }
+
+    private func makeOpenInYouTube(_ videoId: String) -> Resolved {
+        // videoId is validated to 11 URL-safe chars, so this URL always parses.
+        let url = URL(string: "https://www.youtube.com/watch?v=\(videoId)")!
+        return Resolved(stream: .openInYouTube(url: url), client: .web, userAgent: "", resolvedAt: wallClock.wallNow, expiresAt: nil)
+    }
+
+    private func expiry(_ streaming: StreamingData, from now: Date) -> Date? {
+        streaming.expiresInSeconds.map { now.addingTimeInterval(TimeInterval($0)) }
+    }
+
+    // MARK: - helpers
+
+    private static func isValidVideoId(_ id: String) -> Bool {
+        // ^[a-zA-Z0-9_-]{11} (NewPipeExtractorClient.kt:1045); YouTube IDs are exactly 11.
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+        return id.count == 11 && id.allSatisfy(allowed.contains)
+    }
+
+    private static func contextKey(_ family: ClientFamily) -> String {
+        switch family {
+        case .visionos: return "visionos"
+        case .android: return "android"
+        case .web: return "web"
+        }
+    }
+
+    /// Maps a non-branching `UNPLAYABLE`/error reason to its terminal error
+    /// (ruling 14: age-restricted / geo-blocked / private / removed are distinct,
+    /// non-retryable states); anything else is a generic `.unavailable`.
+    private static func terminalError(reason: String, videoId: String) -> ExtractionError {
+        let reason = reason.lowercased()
+        if reason.contains("private") { return .private }
+        if reason.contains("removed") || reason.contains("deleted") || reason.contains("terminated") || reason.contains("no longer available") {
+            return .removed
+        }
+        if reason.contains("country") || reason.contains("region") || reason.contains("not available in") { return .geoBlocked }
+        if reason.contains("age") { return .ageRestricted }
+        return .unavailable(videoId: videoId)
+    }
+}
