@@ -1,3 +1,4 @@
+import SwiftUI
 import Testing
 @testable import FitrahTube
 
@@ -30,6 +31,21 @@ struct LayoutRulesTests {
         #expect(GridRules.videoColumns(width: 900) == 5)
     }
 
+    /// Spec §14: "single column at `.accessibility1+`" -- every grid, every width class.
+    @Test func accessibilityTextSizesCollapseEveryGridToOneColumn() {
+        let largeTabletList: Int = GridRules.listColumns(.large)
+        let wideVideoGrid: Int = GridRules.videoColumns(width: 1376)
+        #expect(GridRules.columns(largeTabletList, dynamicTypeSize: DynamicTypeSize.accessibility1) == 1)
+        #expect(GridRules.columns(wideVideoGrid, dynamicTypeSize: DynamicTypeSize.accessibility3) == 1)
+        #expect(GridRules.columns(3, dynamicTypeSize: DynamicTypeSize.accessibility5) == 1)
+    }
+
+    @Test func nonAccessibilityTextSizesKeepTheWidthClassColumnCount() {
+        #expect(GridRules.columns(4, dynamicTypeSize: DynamicTypeSize.large) == 4)
+        // xxxLarge is the largest *non*-accessibility size -- still the full column count.
+        #expect(GridRules.columns(4, dynamicTypeSize: DynamicTypeSize.xxxLarge) == 4)
+    }
+
     @Test func carouselVisibleByTypeAndWidthClass() {
         #expect(GridRules.carouselVisible(.video, .compact) == 2)
         #expect(GridRules.carouselVisible(.video, .regular) == 3)
@@ -47,7 +63,7 @@ struct LayoutRulesTests {
     @Test func carouselCardWidthAppliesThe098Factor() {
         // Phone bucket, 2 visible video cards: margin 16, gap 12 (shell-home.md card-widths table).
         let width = GridRules.carouselCardWidth(container: 390, margin: 16, gap: 12, visible: 2)
-        let expected = ((390 - 2 * 16 - 1 * 12) / 2) * 0.98
+        let expected: CGFloat = ((390 - 2 * 16 - 1 * 12) / 2) * 0.98
         #expect(abs(width - expected) < 0.001)
         #expect(abs(width - 169.54) < 0.001)
     }
@@ -55,7 +71,7 @@ struct LayoutRulesTests {
     @Test func carouselCardWidthLargeBucketFiveVisible() {
         // sw720 bucket: margin 32, gap 20, 5 visible.
         let width = GridRules.carouselCardWidth(container: 1200, margin: 32, gap: 20, visible: 5)
-        let expected = ((1200 - 2 * 32 - 4 * 20) / 5) * 0.98
+        let expected: CGFloat = ((1200 - 2 * 32 - 4 * 20) / 5) * 0.98
         #expect(abs(width - expected) < 0.001)
     }
 

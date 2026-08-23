@@ -13,6 +13,7 @@ struct ContentListView: View {
     @Environment(\.router) private var router
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var viewModel: ContentListViewModel?
     @State private var containerWidth: CGFloat = 0
@@ -222,10 +223,16 @@ struct ContentListView: View {
 
     // MARK: - Content grid (content-lists.md §4.2 columns, §4.3 auto-load, §4.10 taps)
 
-    private var videoColumns: Int { GridRules.videoColumns(width: containerWidth > 0 ? containerWidth : 375) }
+    /// Both column rules funnel through `GridRules.columns(_:dynamicTypeSize:)`, which forces a
+    /// single column at accessibility text sizes (spec §14).
+    private var videoColumns: Int {
+        GridRules.columns(GridRules.videoColumns(width: containerWidth > 0 ? containerWidth : 375),
+                          dynamicTypeSize: dynamicTypeSize)
+    }
 
     private var gridColumns: [GridItem] {
-        let count = type == .videos ? videoColumns : GridRules.listColumns(widthClass)
+        let count = type == .videos ? videoColumns : GridRules.columns(GridRules.listColumns(widthClass),
+                                                                      dynamicTypeSize: dynamicTypeSize)
         return Array(repeating: GridItem(.flexible(), spacing: Spacing.sm), count: max(1, count))
     }
 

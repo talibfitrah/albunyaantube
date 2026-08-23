@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import FitrahTube
 
@@ -25,6 +26,24 @@ struct WidthClassTests {
         #expect(Spacing.md(.regular) == 20)
         #expect(Spacing.md(.large) == 24)
         #expect(Spacing.xxxl(.large) == 128)
+    }
+
+    /// task-14 R-D. Split View / Stage Manager cannot be driven from this sandbox, so the proof is
+    /// structural: `RootView` derives the width class from *its own container's* geometry
+    /// (`.onGeometryChange(for: WidthClass.self) { WidthClass(size: $0.size) }`, `RootView.swift`),
+    /// and nothing in the app reads `UIScreen` at all. A 1/3-width Split View window on a 13" iPad
+    /// is therefore measured as ~344 pt and takes the exact same `.compact` path a 390 pt iPhone
+    /// does -- bottom tab bar, single-column lists.
+    @Test func ipadSplitViewThirdWidthRendersThePhoneLayout() {
+        let thirdOfIPadPro13 = CGSize(width: 1032 / 3, height: 1376)
+        #expect(WidthClass(size: thirdOfIPadPro13) == .compact)
+        #expect(ShellLayout(WidthClass(size: thirdOfIPadPro13)) == .bottomBar)
+        #expect(GridRules.listColumns(WidthClass(size: thirdOfIPadPro13)) == 1)
+
+        // Half-width (~516 pt) is still below the 600 pt sw600dp threshold; two-thirds (~688 pt)
+        // clears it and gets the rail, same as a full-screen iPad mini.
+        #expect(WidthClass(size: CGSize(width: 1032 / 2, height: 1376)) == .compact)
+        #expect(WidthClass(size: CGSize(width: 1032 * 2 / 3, height: 1376)) == .regular)
     }
 
     @Test func bucketsOnSmallestWidthNotRotation() {

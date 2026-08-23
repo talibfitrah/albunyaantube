@@ -15,6 +15,14 @@ nonisolated enum GridRules {
         max(2, min(8, Int(width / 180)))
     }
 
+    /// Spec §14: "Dynamic Type everywhere, **single column at `.accessibility1+`**". A grid cell
+    /// at an accessibility text size needs the whole width for its own title, so every grid
+    /// collapses to one column there regardless of width class -- task-14
+    /// (`screenshots/task-14/iphone-17/videos-en-light-a11y3-portrait.png` still showed two).
+    static func columns(_ base: Int, dynamicTypeSize: DynamicTypeSize) -> Int {
+        dynamicTypeSize.isAccessibilitySize ? 1 : base
+    }
+
     /// Home carousel visible-card counts by content type and width class
     /// (`home_cards_visible_videos/channels/playlists`, shell-home.md "Card widths" table).
     static func carouselVisible(_ type: ContentType, _ w: WidthClass) -> Int {

@@ -157,6 +157,10 @@ struct SettingsView: View {
 
     @State private var showThemePicker = false
     @State private var showQualityPicker = false
+    /// task-14 (`screenshots/task-14/iphone-17/settings-en-light-a11y3-portrait.png`): the row
+    /// symbol scales with Dynamic Type but its 28 pt circular plate did not, so at
+    /// `.accessibility3` the glyph overflowed the plate on every row.
+    @ScaledMetric(relativeTo: .body) private var rowIconSize: CGFloat = 28
 
     private var settings: any SettingsStore { container.settings }
 
@@ -236,7 +240,7 @@ struct SettingsView: View {
     private func rowIcon(_ row: SettingsRow) -> some View {
         Image(systemName: row.symbolName)
             .foregroundStyle(Color.brand)
-            .frame(width: 28, height: 28)
+            .frame(width: rowIconSize, height: rowIconSize)
             .background(Color.settingsIconBackground, in: Circle())
     }
 

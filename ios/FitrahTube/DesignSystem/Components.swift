@@ -172,6 +172,11 @@ struct MediaCard: View {
     let width: CGFloat
     let onTap: () -> Void
     @Environment(\.locale) private var locale
+    /// task-14 (`screenshots/task-14/iphone-17/home-en-light-a11y3-portrait.png`): the flat 100 pt
+    /// `home_card_content_height` clipped the title to one line and cut the meta line off entirely
+    /// at `.accessibility3`. `@ScaledMetric` keeps the Android dimen at the default text size and
+    /// grows it with Dynamic Type, so the block still aligns across a row of cards.
+    @ScaledMetric(relativeTo: .subheadline) private var contentHeight: CGFloat = 100
 
     init(item: ContentItem, width: CGFloat, onTap: @escaping () -> Void) {
         self.item = item
@@ -190,7 +195,7 @@ struct MediaCard: View {
                 .clipped()
                 content
                     .padding(Spacing.sm)
-                    .frame(width: width, height: 100, alignment: .topLeading) // home_card_content_height, every bucket
+                    .frame(width: width, height: contentHeight, alignment: .topLeading) // home_card_content_height, every bucket
             }
             .background(Color.homeCard)
             .clipShape(RoundedRectangle(cornerRadius: Radius.card))
@@ -304,6 +309,10 @@ struct VideoGridCell: View {
     let onTap: () -> Void
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
+    /// Same task-14 fix as `MediaCard`
+    /// (`screenshots/task-14/iphone-17/videos-en-light-a11y3-portrait.png`: the meta line was
+    /// clipped to a single truncated "0 views • …").
+    @ScaledMetric(relativeTo: .subheadline) private var contentHeight: CGFloat = 100
 
     init(item: ContentItem, onTap: @escaping () -> Void) {
         self.item = item
@@ -327,7 +336,7 @@ struct VideoGridCell: View {
                         .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(2)
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                .frame(height: 100, alignment: .topLeading) // home_card_content_height, fixed so grid rows align
+                .frame(height: contentHeight, alignment: .topLeading) // home_card_content_height, fixed so grid rows align
                 .padding(.top, Spacing.sm)
                 if let category = item.category, !category.isEmpty {
                     CategoryChip(text: category).padding(.top, Spacing.xs)
@@ -554,6 +563,10 @@ struct CategoryPill: View {
     let isActive: Bool
     let onTap: () -> Void
     let onClear: () -> Void
+    /// task-14 (`screenshots/task-14/iphone-17/home-en-light-a11y3-portrait.png`): at
+    /// `.accessibility3` the label's descenders were sliced off by the flat 40 pt
+    /// `home_category_pill_height` (the `.clipShape` below clips content, not just the fill).
+    @ScaledMetric(relativeTo: .subheadline) private var height: CGFloat = 40
 
     init(label: String, isActive: Bool, onTap: @escaping () -> Void, onClear: @escaping () -> Void) {
         self.label = label
@@ -587,7 +600,7 @@ struct CategoryPill: View {
                         // negotiation. Capped at the pill's own 40 pt height -- revisit with a
                         // custom hit-test area (`.contentShape` at a larger, non-participating
                         // rect) if the 8 pt shortfall from the 48 pt HIG target matters.
-                        .frame(width: 40, height: 40)
+                        .frame(width: height, height: height)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -595,7 +608,7 @@ struct CategoryPill: View {
             }
         }
         .padding(.horizontal, 16) // home_category_pill_padding_horizontal -- flat across buckets
-        .frame(height: 40) // home_category_pill_height
+        .frame(height: height) // home_category_pill_height
         .background(Color.categoryPill)
         .clipShape(RoundedRectangle(cornerRadius: Radius.pill))
     }

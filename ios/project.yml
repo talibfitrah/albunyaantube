@@ -89,6 +89,23 @@ targets:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
 
+  # task-14 capture/assertion rig. Deliberately NOT in FitrahTube.xctestplan (and so never run by
+  # ios/scripts/test.sh's 300s gate) -- it drives ~90 app launches. Run it via
+  # ios/scripts/screenshots.sh, which selects FitrahTubeUITests.xctestplan.
+  FitrahTubeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: FitrahTubeUITests
+    dependencies:
+      - target: FitrahTube
+    settings:
+      base:
+        # No SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor here (unlike the app/unit-test targets):
+        # XCTestCase's designated initializers are nonisolated, so a MainActor-by-default subclass
+        # fails to compile ("different actor isolation from nonisolated overridden declaration").
+        TEST_TARGET_NAME: FitrahTube
+
 schemes:
   FitrahTube:
     build:
@@ -101,6 +118,8 @@ schemes:
       config: Debug
       targets:
         - FitrahTubeTests
+        - FitrahTubeUITests
       testPlans:
         - path: FitrahTube.xctestplan
           defaultPlan: true
+        - path: FitrahTubeUITests.xctestplan
