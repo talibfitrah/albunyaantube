@@ -89,7 +89,7 @@ struct HomeView: View {
             }
             .accessibilityLabel(String(localized: "menu"))
         }
-        .padding(.horizontal, Spacing.md(widthClass))
+        .padding(.horizontal, Spacing.homeHorizontalMargin(widthClass)) // home_horizontal_margin (shell-home.md:227)
         .padding(.top, Spacing.md(widthClass))
         .padding(.bottom, Spacing.sm)
     }
@@ -103,7 +103,7 @@ struct HomeView: View {
             onTap: { router.push(.categories) },
             onClear: { viewModel?.clearFilter() }
         )
-        .padding(.horizontal, Spacing.md(widthClass))
+        .padding(.horizontal, Spacing.homeHorizontalMargin(widthClass)) // home_horizontal_margin (shell-home.md:227)
         .padding(.bottom, Spacing.md(widthClass))
     }
 
@@ -154,7 +154,8 @@ struct HomeView: View {
             SectionHeader(
                 emoji: section.icon,
                 title: sectionTitle(section),
-                onSeeAll: { router.push(.featured(categoryId: section.id, categoryName: section.name)) }
+                onSeeAll: { router.push(.featured(categoryId: section.id, categoryName: section.name)) },
+                seeAllAccessibilityLabel: viewModel.seeAllLabel(for: section)
             )
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: GridRules.cardGap(widthClass)) {
@@ -162,7 +163,7 @@ struct HomeView: View {
                         itemView(item, viewModel: viewModel)
                     }
                 }
-                .padding(.horizontal, Spacing.md(widthClass))
+                .padding(.horizontal, Spacing.homeHorizontalMargin(widthClass)) // home_horizontal_margin (shell-home.md:227)
                 .padding(.bottom, Spacing.sm)
             }
         }
@@ -196,7 +197,7 @@ struct HomeView: View {
         guard containerWidth > 0 else { return 0 }
         let visible = GridRules.carouselVisible(type, widthClass)
         return max(0, GridRules.carouselCardWidth(
-            container: containerWidth, margin: Spacing.md(widthClass), gap: GridRules.cardGap(widthClass), visible: visible
+            container: containerWidth, margin: Spacing.homeHorizontalMargin(widthClass), gap: GridRules.cardGap(widthClass), visible: visible
         ))
     }
 

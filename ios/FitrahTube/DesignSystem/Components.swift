@@ -491,12 +491,17 @@ struct SectionHeader: View {
     let emoji: String?
     let title: String
     let onSeeAll: (() -> Void)?
+    /// VoiceOver override for the See-all button (shell-home.md:207: "See all content in
+    /// {displayName}", `home_see_all_category`). `nil` leaves the button's default
+    /// auto-combined label (its own "See all" text + chevron) untouched.
+    let seeAllAccessibilityLabel: String?
     @Environment(\.widthClass) private var widthClass
 
-    init(emoji: String?, title: String, onSeeAll: (() -> Void)?) {
+    init(emoji: String?, title: String, onSeeAll: (() -> Void)?, seeAllAccessibilityLabel: String? = nil) {
         self.emoji = emoji
         self.title = title
         self.onSeeAll = onSeeAll
+        self.seeAllAccessibilityLabel = seeAllAccessibilityLabel
     }
 
     var body: some View {
@@ -511,7 +516,7 @@ struct SectionHeader: View {
                 .padding(.trailing, Spacing.sm)
             Spacer(minLength: 0)
             if let onSeeAll {
-                Button(action: onSeeAll) {
+                let button = Button(action: onSeeAll) {
                     HStack(spacing: Spacing.xs) {
                         Text(String(localized: "see_all")).font(TypeScale.seeAll)
                         Image(systemName: "chevron.forward") // direction-sensitive SF Symbol -- auto-mirrors in RTL
@@ -519,10 +524,15 @@ struct SectionHeader: View {
                     .foregroundStyle(Color.brand)
                     .padding(Spacing.sm)
                 }
+                if let seeAllAccessibilityLabel {
+                    button.accessibilityLabel(seeAllAccessibilityLabel)
+                } else {
+                    button
+                }
             }
         }
         .frame(minHeight: widthClass == .large ? 56 : 48) // touch_target_min, 56 on sw720
-        .padding(.horizontal, Spacing.md(widthClass))
+        .padding(.horizontal, Spacing.homeHorizontalMargin(widthClass)) // home_horizontal_margin (shell-home.md:227)
     }
 }
 

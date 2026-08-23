@@ -28,7 +28,7 @@ import Foundation
 
     /// Visible (not `private`) only so `HomeViewModelTests` can `await` a `clearFilter()` call --
     /// it's the one interface method that's sync but still needs to finish an async fetch.
-    private(set) var loadTask: Task<Void, Never>?
+    private(set) var loadTask: Task<Void, Never>? // `private(set)`, not `private`: exposed for tests
     private var loadMoreTask: Task<Void, Never>?
 
     private static let categoryLimit = 5
@@ -67,6 +67,15 @@ import Foundation
         loadMoreTask?.cancel()
         let task = Task { await self.fetchFirstPage(showLoading: true) }
         loadTask = task
+    }
+
+    /// shell-home.md:207: VoiceOver label for a section's See-all control -- "See all content in
+    /// {displayName}" (`home_see_all_category`), built from the same untruncated display name as
+    /// the section title itself (`localizedNames[lang] ?? name`).
+    func seeAllLabel(for section: HomeSection) -> String {
+        let lang = Locale.current.language.languageCode?.identifier ?? "en"
+        let displayName = section.localizedNames?[lang] ?? section.name
+        return String(format: String(localized: "home_see_all_category"), displayName)
     }
 
     /// RULINGS #17: `channelName` prefers the video's real `channelTitle`, falling back to

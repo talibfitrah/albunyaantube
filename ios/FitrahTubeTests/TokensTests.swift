@@ -29,4 +29,10 @@ struct TokensTests {
         #expect(WidthClass.regular.pick(1, 2, 3) == 2)
         #expect(WidthClass.large.pick(1, 2, 3) == 3)
     }
+
+    @Test func homeHorizontalMarginPicksByWidth() {
+        #expect(Spacing.homeHorizontalMargin(.compact) == 16)
+        #expect(Spacing.homeHorizontalMargin(.regular) == 24)
+        #expect(Spacing.homeHorizontalMargin(.large) == 32)
+    }
 }

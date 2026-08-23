@@ -225,6 +225,12 @@ struct HomeViewModelTests {
         #expect(vm.playerArgs(for: withoutChannelTitle).channelName == "Fallback Category")
     }
 
+    @Test func seeAllLabelContainsSectionName() {
+        let vm = HomeViewModel(catalog: FakeCatalogClient(), filter: FakeFilterStore(), widthClass: { .compact })
+        let label = vm.seeAllLabel(for: section("a"))
+        #expect(label.contains("Section a"))
+    }
+
     @Test func clearFilterClearsTheStoreAndReloadsWithoutACategory() async {
         let filter = FakeFilterStore(state: FilterState(categoryId: "c1", categoryName: "Cat"))
         let client = RecordingCatalogClient(page: CursorPage(items: [section("a")], nextCursor: nil))

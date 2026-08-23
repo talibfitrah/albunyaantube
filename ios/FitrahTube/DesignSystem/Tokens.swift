@@ -103,6 +103,10 @@ enum Spacing {
     static func lg(_ w: WidthClass) -> CGFloat { w.pick(24, 32, 40) }
     static func xl(_ w: WidthClass) -> CGFloat { w.pick(32, 48, 64) }
     static func xxxl(_ w: WidthClass) -> CGFloat { w.pick(96, 112, 128) }
+
+    /// `home_horizontal_margin` (shell-home.md:227) -- distinct from `md`'s 16/20/24: Home's
+    /// left/right screen edge uses its own dimen, 16/24/32.
+    static func homeHorizontalMargin(_ w: WidthClass) -> CGFloat { w.pick(16, 24, 32) }
 }
 
 // MARK: - Radii (dimens.xml)
