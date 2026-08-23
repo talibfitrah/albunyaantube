@@ -1,0 +1,39 @@
+import FitrahAPI
+import Foundation
+import SwiftUI
+
+nonisolated enum AppConfig {
+    /// From Info.plist key `API_BASE_URL`, set per configuration in ios/Config/*.xcconfig.
+    static var apiBaseURL: URL {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String,
+              let url = URL(string: raw) else {
+            preconditionFailure("API_BASE_URL missing from Info.plist — check ios/Config/*.xcconfig")
+        }
+        return url
+    }
+}
+
+/// Composition root. Built once in `FitrahTubeApp`; every ViewModel receives what it needs from here
+/// through its initializer (Hilt's constructor injection, without a framework).
+/// `nonisolated`: the app target defaults to MainActor isolation, but the `@Entry` default below is
+/// evaluated outside the main actor, and the container only holds Sendable protocol existentials.
+nonisolated final class AppContainer: Sendable {
+    let catalog: any CatalogClient
+
+    init(catalog: any CatalogClient) {
+        self.catalog = catalog
+    }
+
+    static func live(baseURL: URL = AppConfig.apiBaseURL) -> AppContainer {
+        let api = FitrahAPIClient.make(baseURL: baseURL, deviceId: .persisted())
+        return AppContainer(catalog: LiveCatalogClient(client: api))
+    }
+
+    static func fake(catalog: any CatalogClient = FakeCatalogClient()) -> AppContainer {
+        AppContainer(catalog: catalog)
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var container: AppContainer = .fake()
+}

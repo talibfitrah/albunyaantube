@@ -84,6 +84,8 @@ targets:
       - path: FitrahTubeTests
     dependencies:
       - target: FitrahTube
+      - package: FitrahAPI
+        product: FitrahAPI
     settings:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
