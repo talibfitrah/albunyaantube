@@ -1,0 +1,25 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/InnerTubeTests.swift
+  s_18197a18aae8f1::t_a83a8eb5a9834b 1-39
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/URLSessionTransport.swift
+  s_18197a18aae8f1::t_5601ee1a772ed6 1-39
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/LiveResolveTests.swift
+  s_18197a18aae8f1::t_04614d9f97ff2f 1-46
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/InnerTube.swift
+  s_18197a18aae8f1::t_583209ff07ea18 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c8c330f56009ed9ee94172151a786727539fee9e",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
