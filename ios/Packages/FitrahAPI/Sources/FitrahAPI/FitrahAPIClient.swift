@@ -15,8 +15,13 @@ public enum FitrahAPIClient {
         return config
     }
 
+    /// One shared session for the app's lifetime rather than a fresh `URLSession` (its own
+    /// connection pool) on every `defaultTransport()` call; `defaultSessionConfiguration` stays
+    /// exposed above for direct testing.
+    private static let session = URLSession(configuration: defaultSessionConfiguration)
+
     public static func defaultTransport() -> URLSessionTransport {
-        URLSessionTransport(configuration: .init(session: URLSession(configuration: defaultSessionConfiguration)))
+        URLSessionTransport(configuration: .init(session: session))
     }
 
     /// - Parameter baseURL: host root such as `https://app.fitrahtube.com/`; the spec's servers

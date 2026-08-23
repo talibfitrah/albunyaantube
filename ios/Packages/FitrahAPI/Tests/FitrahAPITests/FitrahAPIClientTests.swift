@@ -11,4 +11,10 @@ struct FitrahAPIClientTests {
         #expect(config.urlCache == nil)
         #expect(config.waitsForConnectivity == false)
     }
+
+    @Test func defaultTransportReusesOneSharedSession() {
+        let a = FitrahAPIClient.defaultTransport()
+        let b = FitrahAPIClient.defaultTransport()
+        #expect(a.configuration.session === b.configuration.session)
+    }
 }

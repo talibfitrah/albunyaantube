@@ -4,11 +4,13 @@ import Foundation
 /// strings-assets.md:147-182). `nonisolated` because the app target defaults to `MainActor`
 /// isolation but every function here is a pure, thread-safe transform.
 nonisolated enum Format {
+    private static let posix = Locale(identifier: "en_US_POSIX")
 
     /// `h:mm:ss` when there are hours, else `m:ss` -- always Western digits
     /// (VideoGridAdapter.kt:89-98: `Locale.US`, never zero-padded hours/minutes leading digit).
+    /// Negative input (shouldn't happen, but a bad duration from the API is not a crash) clamps to 0.
     static func duration(_ seconds: Int) -> String {
-        let posix = Locale(identifier: "en_US_POSIX")
+        let seconds = max(0, seconds)
         let h = seconds / 3600
         let m = (seconds % 3600) / 60
         let s = seconds % 60
@@ -29,12 +31,12 @@ nonisolated enum Format {
         )
     }
 
-    /// Clamps the plural-selector quantity so any compacted magnitude >= 1000 resolves to the
+    /// Clamps the plural-selector quantity so any compacted magnitude >= 1,000,000 resolves to the
     /// CLDR `other` category everywhere, matching Android's `compactPluralCount`
     /// (util/CountFormat.kt:58) -- Arabic counted-noun agreement follows the unit word once the
     /// number is abbreviated, not the raw count's one/two/few form.
     static func pluralQuantity(_ n: Int64) -> Int {
-        n >= 1000 ? 1000 : Int(n)
+        n >= 1_000_000 ? 1_000_000 : Int(n)
     }
 
     /// Today / N days / N weeks / N months / N years, one ladder everywhere (RULINGS.md #4).
@@ -70,12 +72,23 @@ nonisolated enum Format {
         return category.localizedNames?[lang] ?? category.name
     }
 
+    /// Built once from the app's three shipped languages -- a `static let` of a `Bundle`-valued
+    /// dictionary needs no `nonisolated(unsafe)` because it's computed a single time and only
+    /// ever read afterward.
+    private static let languageBundles: [String: Bundle] = Dictionary(
+        uniqueKeysWithValues: ["en", "ar", "nl"].compactMap { lang in
+            Bundle.main.path(forResource: lang, ofType: "lproj")
+                .flatMap(Bundle.init(path:))
+                .map { (lang, $0) }
+        }
+    )
+
     /// The compiled catalog only answers `Bundle.main.localizedString` for the *device's*
     /// preferred language; a caller-supplied `locale` must resolve its own `.lproj` sub-bundle
-    /// (same technique as LocalizationTests.swift) so Arabic/Dutch counts render correctly
-    /// regardless of the simulator's system language.
-    private static func localizedBundle(for locale: Locale) -> Bundle {
+    /// so Arabic/Dutch counts render correctly regardless of the simulator's system language.
+    /// `internal` (not `private`) so LocalizationTests.swift shares this instead of its own copy.
+    static func localizedBundle(for locale: Locale) -> Bundle {
         let lang = locale.language.languageCode?.identifier ?? "en"
-        return Bundle.main.path(forResource: lang, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .main
+        return languageBundles[lang] ?? .main
     }
 }

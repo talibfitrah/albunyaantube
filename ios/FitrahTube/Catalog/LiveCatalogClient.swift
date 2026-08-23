@@ -25,7 +25,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
                 name: dto.name ?? "",
                 localizedNames: dto.localizedNames?.additionalProperties,
                 icon: dto.icon,
-                items: (dto.items ?? []).compactMap(Self.mapContentItem)
+                items: (dto.items ?? []).map(Self.mapContentItem)
             )
         }
         return CursorPage(items: sections, nextCursor: output.value1.pageInfo?.nextCursor)
@@ -45,7 +45,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
             q: query
         ))
         let output = try await client.getPublicContent(input).ok.body.json
-        let items = (output.value2.data ?? []).compactMap(Self.mapContentItem)
+        let items = (output.value2.data ?? []).map(Self.mapContentItem)
         return CursorPage(items: items, nextCursor: output.value1.pageInfo?.nextCursor)
     }
 
@@ -55,14 +55,19 @@ nonisolated struct LiveCatalogClient: CatalogClient {
         let typeParam = type.flatMap { Operations.SearchPublicContent.Input.Query._TypePayload(rawValue: $0.rawValue) }
         let input = Operations.SearchPublicContent.Input(query: .init(q: query, _type: typeParam, limit: limit))
         let dtos = try await client.searchPublicContent(input).ok.body.json
-        return dtos.compactMap(Self.mapContentItem)
+        return dtos.map(Self.mapContentItem)
     }
 
-    /// `dto._type`'s raw value is expected to match a `ContentType` case; if the generator ever
-    /// widens the wire enum without a corresponding `ContentType` case, the item is dropped here
-    /// (every call site `compactMap`s the result) instead of crashing.
-    private static func mapContentItem(_ dto: Components.Schemas.ContentItemDto) -> ContentItem? {
-        guard let type = ContentType(rawValue: dto._type.rawValue) else { return nil }
+    /// `dto._type`'s three cases (video/channel/playlist) map 1:1 onto `ContentType`. The switch
+    /// is exhaustive (no `default`), so a future generator addition to the wire enum is a compile
+    /// error here instead of a silently dropped item.
+    private static func mapContentItem(_ dto: Components.Schemas.ContentItemDto) -> ContentItem {
+        let type: ContentType
+        switch dto._type {
+        case .video: type = .video
+        case .channel: type = .channel
+        case .playlist: type = .playlist
+        }
         return ContentItem(
             id: dto.id,
             type: type,

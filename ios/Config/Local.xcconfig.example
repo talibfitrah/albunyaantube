@@ -1,3 +1,10 @@
 // Copy this file to Local.xcconfig (gitignored) and fill in your own Apple Developer Team ID
 // to sign+run on a physical device. Not needed for simulator builds.
 FITRAH_TEAM_ID = ABCDE12345
+
+// To point a physical device at your Mac's backend instead of localhost (which on-device
+// resolves to the device itself, not your Mac), uncomment and set your Mac's LAN IP. xcconfig
+// treats an unescaped `//` as the start of a comment, so a plain `http://192.168.1.5:8080/`
+// here would silently truncate to `http:` with no host -- escape it with `$()` between the
+// slashes, matching Debug.xcconfig:
+// API_BASE_URL = http:/$()/192.168.1.5:8080/

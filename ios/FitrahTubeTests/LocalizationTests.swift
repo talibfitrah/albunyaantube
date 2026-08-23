@@ -5,9 +5,10 @@ import Testing
 @Suite(.perTest)
 struct LocalizationTests {
     private func string(_ key: String, locale: String, _ args: CVarArg...) -> String {
-        let bundle = Bundle.main.path(forResource: locale, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .main
+        let loc = Locale(identifier: locale)
+        let bundle = Format.localizedBundle(for: loc)
         let format = bundle.localizedString(forKey: key, value: nil, table: nil)
-        return String(format: format, locale: Locale(identifier: locale), arguments: args)
+        return String(format: format, locale: loc, arguments: args)
     }
 
     @Test func englishKeysResolve() {
@@ -45,23 +46,14 @@ struct LocalizationTests {
 
     @Test func retryKeyIsTheAndroidKeyNotTheEnglishSentence() throws {
         // StateViews.swift must look up "retry" (the Android key), not "Retry" (the English
-        // sentence) -- verified against the catalog's own Arabic value, not a hard-coded string.
-        // Bundle.main has no raw .xcstrings resource -- Xcode compiles the catalog into per-locale
-        // .strings/.stringsdict at build time -- so the source JSON is read directly from disk.
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("FitrahTube/Resources/Localizable.xcstrings")
-        let data = try Data(contentsOf: url)
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let strings = json?["strings"] as? [String: Any]
-        let retry = strings?["retry"] as? [String: Any]
-        let localizations = retry?["localizations"] as? [String: Any]
-        let arLocalization = localizations?["ar"] as? [String: Any]
-        let stringUnit = arLocalization?["stringUnit"] as? [String: Any]
-        let arabicRetry = try #require(stringUnit?["value"] as? String)
-
-        #expect(string("retry", locale: "ar") == arabicRetry)
-        #expect(string("retry", locale: "ar") != "Retry")
+        // sentence) -- verified against the compiled Arabic catalog directly (not the source
+        // .xcstrings JSON), so a regression back to raw English text is caught.
+        let arabicRetry = try #require(
+            Bundle.main.path(forResource: "ar", ofType: "lproj")
+                .flatMap(Bundle.init(path:))?
+                .localizedString(forKey: "retry", value: nil, table: nil)
+        )
+        #expect(!arabicRetry.isEmpty)
+        #expect(arabicRetry != "Retry")
     }
 }

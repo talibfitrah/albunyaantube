@@ -1,5 +1,6 @@
 import FitrahAPI
 import Foundation
+import HTTPTypes
 import Testing
 @testable import FitrahTube
 
@@ -96,6 +97,14 @@ struct LiveCatalogClientTests {
             filter.sort = sort
             _ = try await sut.content(type: .all, cursor: nil, limit: 20, filter: filter, query: nil)
             #expect(transport.lastRequest?.path?.contains("sort=\(sort.rawValue)") == true)
+        }
+    }
+
+    @Test func non2xxResponseThrows() async throws {
+        let (sut, transport) = makeClient(responseBody: Data("[]".utf8))
+        transport.status = .internalServerError
+        await #expect(throws: (any Error).self) {
+            try await sut.categories()
         }
     }
 

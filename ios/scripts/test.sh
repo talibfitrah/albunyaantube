@@ -2,22 +2,18 @@
 # Runs the full iOS Phase 0 test suite under a 300s wall-clock watchdog (AGENTS.md mandate):
 #   xcodegen generate -> xcodebuild test (iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test
 #   (FitrahAPI package) -> xcodebuild build (Release, simulator SDK -- compiles the non-DEBUG paths).
-# Per-test limit: 60s (Swift Testing minute granularity; CLAUDE.md asks 30s — not expressible), wall-clock: 300s.
+# Per-test limit: 60s -- XCTest rounds `defaultTestExecutionTimeAllowance` up to 60s and Swift
+# Testing's own floor is also one minute, so 60s is the real effective limit regardless of the
+# number configured (FitrahTube.xctestplan sets 60 to match); CLAUDE.md's 30s note is a
+# cross-platform default this iOS suite can't hit and is amended separately. Wall-clock: 300s.
 # $RESULTS (xcresult bundle + watchdog marker) is removed on exit unless KEEP_RESULTS=1 is set.
 set -uo pipefail
 set -m
 
 cd "$(dirname "$0")/.."
 
-# "Test run with ..." is swift test's (SwiftPM) Swift Testing summary line. xcodebuild test with
-# multiple -destination flags never prints that line -- it reports "Testing (passed|failed) on
-# '<device>'" per destination instead; both are matched so both destinations' results are visible.
-# The ✘/"Expectation failed"/"recorded an issue" lines are Swift Testing's per-failure detail —
-# `swift test` (single process) prints them, but xcodebuild test with two -destination flags runs
-# them concurrently and falls back to its older per-test reporter instead ("Test case '<name>'
-# failed on '<device>'"), so that pattern is matched too or a dual-destination failure would only
-# ever show "Testing failed on '<device>'" with no indication of which test or why.
-SUMMARY='Test run with|Testing (passed|failed) on|TEST (SUCCEEDED|FAILED)|error:|✘|Expectation failed|recorded an issue|Test case .* failed'
+# Alternatives that actually fire on this Xcode: swift test's summary, xcodebuild's per-destination and per-test lines, and generic TEST SUCCEEDED/FAILED / error: lines.
+SUMMARY='Test run with|Testing (passed|failed) on|Test case .* failed|TEST (SUCCEEDED|FAILED)|error:'
 
 # G2: the grep'd summary above only says a device failed, not which test or why. On a non-zero
 # xcodebuild exit, walk the .xcresult bundle and print every failed node's name plus any
@@ -52,12 +48,6 @@ walk(data.get("testNodes", []))
 }
 
 run_all() {
-    # An external `kill "$pid"` (or this script's own trap/timeout path) only reaches this
-    # subshell's own process; without forwarding TERM to the whole process group, xcodebuild/swift
-    # would keep running as orphans. `kill 0` re-signals the whole group (set -m gives this
-    # backgrounded subshell its own group, matching -"$pid" below).
-    trap 'kill 0' TERM
-
     xcodegen generate || return $?
 
     echo "== iPhone 17 + iPad Pro 13-inch (M5) =="
@@ -67,6 +57,7 @@ run_all() {
         -destination 'platform=iOS Simulator,name=iPhone 17' \
         -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' \
         -resultBundlePath "$RESULTS/FitrahTube.xcresult" \
+        -derivedDataPath DerivedData \
         2>&1 | grep -E "$SUMMARY"
     local xcodebuild_status=${PIPESTATUS[0]}
     if [ "$xcodebuild_status" -ne 0 ]; then
@@ -82,8 +73,8 @@ run_all() {
     fi
 
     # Debug is what the test steps above compile; Release flips DEBUG off (AppContainer.swift's
-    # #else branch, AppContainerTests.swift's non-DEBUG test declaration) so it must build too.
-    # Simulator SDK -> no code signing required.
+    # #else branch, FitrahTubeApp.swift's #else branch) so it must build too. Simulator SDK ->
+    # no code signing required.
     echo "== Release build (simulator SDK) =="
     xcodebuild build \
         -project FitrahTube.xcodeproj \
@@ -114,6 +105,8 @@ kill -- -"$wd" 2>/dev/null || true
 
 if [ -e "$RESULTS/killed" ]; then
     echo "test.sh: 300s wall-clock watchdog killed the run" >&2
+    trap - EXIT
+    echo "results kept at $RESULTS"
     exit 124
 fi
 

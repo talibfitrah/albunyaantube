@@ -88,10 +88,11 @@ struct SkeletonListView: View {
     var rows: Int = 6
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.widthClass) private var widthClass
+    @State private var start = Date()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1, paused: reduceMotion)) { context in
-            let phase = Int(context.date.timeIntervalSinceReferenceDate) % 2 == 0
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let phase = Int(context.date.timeIntervalSince(start)) % 2 == 0
             VStack(spacing: Spacing.md(widthClass)) {
                 ForEach(0..<rows, id: \.self) { _ in
                     HStack(spacing: Spacing.sm) {

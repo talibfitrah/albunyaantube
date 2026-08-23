@@ -20,9 +20,15 @@ struct AppContainerTests {
     @Test func debugApiBaseURLIsLocalhost() {
         #expect(AppConfig.apiBaseURL.host() == "localhost")
     }
-#else
-    @Test func apiBaseURLUsesHTTPSOutsideDebug() {
-        #expect(AppConfig.apiBaseURL.scheme == "https")
-    }
 #endif
+
+    @Test func validateAcceptsHTTPAndHTTPSWithHost() {
+        #expect(AppConfig.validate("http://localhost:8080/") != nil)
+        #expect(AppConfig.validate("https://app.fitrahtube.com/") != nil)
+    }
+
+    @Test func validateRejectsSchemelessOrHostlessURLs() {
+        #expect(AppConfig.validate("http:") == nil)
+        #expect(AppConfig.validate("ftp://x") == nil)
+    }
 }

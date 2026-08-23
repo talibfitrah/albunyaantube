@@ -24,6 +24,10 @@ struct FormattingTests {
         #expect(Format.duration(3600) == "1:00:00")
     }
 
+    @Test func durationClampsNegativeToZero() {
+        #expect(Format.duration(-7) == "0:00")
+    }
+
     // MARK: - compactCount (strings-assets.md:172-176: CompactDecimalFormat SHORT, 1 fraction digit, drop .0)
 
     @Test func compactCountBelowThousandIsPlain() {
@@ -62,20 +66,20 @@ struct FormattingTests {
         #expect(Format.compactCount(1000, locale: Locale(identifier: "en_US")) == "1K")
     }
 
-    // MARK: - pluralQuantity (RULINGS #3b: clamp >= 1000 -> 1000 so the plural category is `other`)
+    // MARK: - pluralQuantity (RULINGS #3b: clamp >= 1,000,000 -> 1,000,000 so the plural category is `other`)
 
     @Test func pluralQuantityPassesThroughSmallCounts() {
         #expect(Format.pluralQuantity(5) == 5)
         #expect(Format.pluralQuantity(999) == 999)
     }
 
-    @Test func pluralQuantityClampsAtThreshold() {
-        #expect(Format.pluralQuantity(1000) == 1000)
-        #expect(Format.pluralQuantity(1_500_000) == 1000)
+    @Test func pluralQuantityPassesThroughUpToOneMillion() {
+        #expect(Format.pluralQuantity(5000) == 5000)
+        #expect(Format.pluralQuantity(1_000_000) == 1_000_000)
     }
 
-    @Test func pluralQuantityBoundaryAtOneThousand() {
-        #expect(Format.pluralQuantity(1000) == 1000)
+    @Test func pluralQuantityClampsAboveOneMillion() {
+        #expect(Format.pluralQuantity(2_000_000) == 1_000_000)
     }
 
     // MARK: - timeAgo (content-lists.md:466-475: one ladder everywhere, integer division, no rounding)

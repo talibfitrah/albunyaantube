@@ -23,4 +23,10 @@ struct TokensTests {
     @Test func bodyScalesUpOnLargeWidth() {
         #expect(TypeScale.body(.large) != TypeScale.body(.compact))
     }
+
+    @Test func widthClassPickReturnsMatchingValue() {
+        #expect(WidthClass.compact.pick(1, 2, 3) == 1)
+        #expect(WidthClass.regular.pick(1, 2, 3) == 2)
+        #expect(WidthClass.large.pick(1, 2, 3) == 3)
+    }
 }

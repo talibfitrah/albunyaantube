@@ -63,6 +63,10 @@ extension Color {
 nonisolated enum WidthClass: Equatable {
     case compact, regular, large
 
+    /// `.compact` < 600 pt mirrors Android's sw600dp threshold directly. `.large` begins at
+    /// 1000 pt by design (spec §7: "regular ≥1000 pt approximating sw720"), not at Android's
+    /// 720 dp -- pt and dp aren't the same physical unit, so 1000 pt is a deliberately chosen
+    /// threshold approximating the sw720dp tablet/TV bucket, not a unit-for-unit port of it.
     init(width: CGFloat) {
         switch width {
         case ..<600: self = .compact
@@ -73,6 +77,12 @@ nonisolated enum WidthClass: Equatable {
 
     /// Android sw600dp/sw720dp bucket on the smallest width; does not flip on rotation.
     init(size: CGSize) { self.init(width: min(size.width, size.height)) }
+
+    /// Selects the value for this width class -- the shared three-way branch every token table
+    /// below picks from.
+    func pick<T>(_ compact: T, _ regular: T, _ large: T) -> T {
+        switch self { case .compact: compact; case .regular: regular; case .large: large }
+    }
 }
 
 extension EnvironmentValues {
@@ -80,7 +90,8 @@ extension EnvironmentValues {
     @Entry var widthClass: WidthClass = .compact
 }
 
-// MARK: - Spacing (dimens.xml + sw600dp/sw720dp overrides), points
+// MARK: - Spacing (dimens.xml + sw600dp/sw720dp overrides, `.large` at the 1000 pt threshold
+// above -- see WidthClass), points
 
 enum Spacing {
     static let xxs: CGFloat = 2
@@ -88,14 +99,10 @@ enum Spacing {
     static let sm: CGFloat = 8
     static let xxl: CGFloat = 48
 
-    static func md(_ w: WidthClass) -> CGFloat { pick(w, 16, 20, 24) }
-    static func lg(_ w: WidthClass) -> CGFloat { pick(w, 24, 32, 40) }
-    static func xl(_ w: WidthClass) -> CGFloat { pick(w, 32, 48, 64) }
-    static func xxxl(_ w: WidthClass) -> CGFloat { pick(w, 96, 112, 128) }
-
-    private static func pick(_ w: WidthClass, _ c: CGFloat, _ r: CGFloat, _ l: CGFloat) -> CGFloat {
-        switch w { case .compact: c; case .regular: r; case .large: l }
-    }
+    static func md(_ w: WidthClass) -> CGFloat { w.pick(16, 20, 24) }
+    static func lg(_ w: WidthClass) -> CGFloat { w.pick(24, 32, 40) }
+    static func xl(_ w: WidthClass) -> CGFloat { w.pick(32, 48, 64) }
+    static func xxxl(_ w: WidthClass) -> CGFloat { w.pick(96, 112, 128) }
 }
 
 // MARK: - Radii (dimens.xml)
@@ -117,13 +124,13 @@ enum TypeScale {
     /// .title3 20 — Android headline 20 bold; scales to .title2 (~22–24) on .large so a tablet
     /// headline doesn't sit at phone size in a much bigger layout.
     static func headline(_ w: WidthClass) -> Font {
-        Font.system(w == .large ? .title2 : .title3, weight: .bold)
+        Font.system(w.pick(.title3, .title3, .title2), weight: .bold)
     }
     static let sectionTitle = Font.system(.headline, weight: .semibold) // .headline 17 — Android 18
     static let subtitle = Font.system(.callout)                          // .callout 16 — Android 16
     /// .subheadline 15 — Android body 14; scales to .callout (~16) on .large.
     static func body(_ w: WidthClass) -> Font {
-        Font.system(w == .large ? .callout : .subheadline)
+        Font.system(w.pick(.subheadline, .subheadline, .callout))
     }
     static let caption = Font.system(.caption)                           // .caption 12 — Android 12
     static let badge = Font.system(.caption2, weight: .bold)             // .caption2 11 bold — Android 10 bold
@@ -135,12 +142,8 @@ enum TypeScale {
 // MARK: - Touch targets
 
 enum Size {
-    static func button(_ w: WidthClass) -> CGFloat { w == .large ? 64 : 56 }
-    static func buttonMinWidth(_ w: WidthClass) -> CGFloat {
-        switch w { case .compact: 120; case .regular: 140; case .large: 160 }
-    }
-    static func iconXL(_ w: WidthClass) -> CGFloat { w == .large ? 128 : 96 }
-    static func stateBodyMaxWidth(_ w: WidthClass) -> CGFloat {
-        switch w { case .compact: 300; case .regular: 400; case .large: 480 }
-    }
+    static func button(_ w: WidthClass) -> CGFloat { w.pick(56, 56, 64) }
+    static func buttonMinWidth(_ w: WidthClass) -> CGFloat { w.pick(120, 140, 160) }
+    static func iconXL(_ w: WidthClass) -> CGFloat { w.pick(96, 96, 128) }
+    static func stateBodyMaxWidth(_ w: WidthClass) -> CGFloat { w.pick(300, 400, 480) }
 }

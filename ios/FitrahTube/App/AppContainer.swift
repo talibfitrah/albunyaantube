@@ -6,8 +6,21 @@ nonisolated enum AppConfig {
     /// From Info.plist key `API_BASE_URL`, set per configuration in ios/Config/*.xcconfig.
     static var apiBaseURL: URL {
         guard let raw = Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String,
-              let url = URL(string: raw) else {
-            preconditionFailure("API_BASE_URL missing from Info.plist — check ios/Config/*.xcconfig")
+              let url = validate(raw) else {
+            preconditionFailure("API_BASE_URL missing/invalid from Info.plist — check ios/Config/*.xcconfig")
+        }
+        return url
+    }
+
+    /// `URL(string:)` alone accepts a value like `"http:"` -- a scheme with no host, which is
+    /// exactly what an xcconfig `//`-comment typo (an unescaped `http://host/` truncated at the
+    /// comment marker) parses to. Requiring http/https plus a host catches that at startup
+    /// instead of silently pointing every request at a hostless URL.
+    static func validate(_ raw: String) -> URL? {
+        guard let url = URL(string: raw),
+              url.scheme == "http" || url.scheme == "https",
+              url.host() != nil else {
+            return nil
         }
         return url
     }

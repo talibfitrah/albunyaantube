@@ -11,8 +11,8 @@ import CoreImage
 @Suite(.perTest)
 struct StateButtonTests {
     @Test("Retry label is dark onBrand in dark mode (label frame located via hierarchy walk; falls back to a fixed box if no UILabel/UIButton is found)")
-    func retryLabelIsDarkOnBrandInDarkMode() {
-        guard let sample = Self.renderAndSampleLabel(dark: true) else { return }
+    func retryLabelIsDarkOnBrandInDarkMode() throws {
+        let sample = try #require(Self.renderAndSampleLabel(dark: true))
         // Must be lighter than both candidate label colors (onBrand dark r≈0.04, brand fill
         // r≈0.21) so background pixels around the button never masquerade as the darkest pixel.
         #expect(
@@ -22,8 +22,8 @@ struct StateButtonTests {
     }
 
     @Test("Retry label is light onBrand in light mode (label frame located via hierarchy walk; falls back to a fixed box if no UILabel/UIButton is found)")
-    func retryLabelIsLightOnBrandInLightMode() {
-        guard let sample = Self.renderAndSampleLabel(dark: false) else { return }
+    func retryLabelIsLightOnBrandInLightMode() throws {
+        let sample = try #require(Self.renderAndSampleLabel(dark: false))
         // Must be darker than both candidate label colors (onBrand light r=1.0, brand fill
         // r≈0.15) so background pixels around the button never masquerade as the lightest pixel.
         #expect(
