@@ -96,6 +96,8 @@ extension EnvironmentValues { @Entry var container: AppContainer = .fake() }
 
 ViewModels are `@Observable @MainActor` classes with `init(catalog: CatalogClient, …)`. A screen creates its ViewModel from the container it reads via `@Environment(\.container)` (`@State private var model: HomeViewModel?` + `.task { model = HomeViewModel(catalog: container.catalog, …) }`). No singletons, no service locator. The container owns one `URLSession` for the backend, one ephemeral session per InnerTube client family, and one `ModelContainer`.
 
+**Isolation rule (decided 2026-08-23, phase 0 review).** The app target compiles with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. `AppContainer` is `@MainActor` (it may hold non-`Sendable` SDK objects such as Firebase `Auth` or `GCKCastContext`); the `@Entry` environment default is written `MainActor.assumeIsolated { .fake() }` because SwiftUI resolves environment defaults on the main actor. UI-facing store protocols (`FavoritesStore`, `SettingsStore`, …) are `@MainActor protocol`s with synchronous requirements, implemented by `@Observable` classes; engine protocols that run off the main actor (`StreamResolving`, `BrowseClient`, `CatalogClient`, `DownloadManaging`) are `nonisolated … Sendable` with `async` requirements.
+
 ---
 
 ## 6. Navigation
@@ -127,7 +129,7 @@ Splash runs `fetchMe` (1 attempt) and remote-config fetch in parallel with the a
 
 ## 7. Design system
 
-**Colors** (`values/colors.xml:3-90`, `values-night/colors.xml:4-67`) as a `Color` asset catalog with light/dark pairs, semantic names kept:
+**Colors** (`values/colors.xml:3-90`, `values-night/colors.xml:4-67`) defined in code as dynamic `UIColor`-backed `Color`s with light/dark pairs (`Tokens.swift`; diffable and unit-testable, no asset catalog), semantic names kept:
 
 | Token | Light | Dark |
 |---|---|---|
@@ -152,7 +154,7 @@ Splash runs `fetchMe` (1 attempt) and remote-config fetch in parallel with the a
 
 Brand green is used for text and tints (AA-safe in both modes). Labels on a brand/accent fill use `onBrand` = light #FFFFFF / dark #0A1F18 (Android's `filter_chip` selected text on #35C491) — white on the dark-mode mint is 2.2:1 and fails AA, so iOS deliberately departs from Android there.
 
-**Type** (`dimens.xml:140-197`, `styles.xml:22-72`): SF Pro, Dynamic Type relative to Android sizes — headline 20 bold (24 on large iPad), sectionTitle 18, subtitle 16, body 14, caption 12, badge 10 bold, duration 11 bold, homeSectionTitle 20 bold, itemTitle 15 medium, itemMeta 13, seeAll 14 medium, splashTitle 32/40/48, onboardingTitle 28/32/36. No `minimumScaleFactor`.
+**Type** (`dimens.xml:140-197`, `styles.xml:22-72`): SF Pro, Dynamic Type relative to Android sizes — headline 20 bold (24 on large iPad), sectionTitle 18, subtitle 16, body 14, caption 12, badge 10 bold, duration 11 bold, homeSectionTitle 20 bold, itemTitle 15 medium, itemMeta 13, seeAll 14 medium, splashTitle 32/40/48, onboardingTitle 28/32/36. No `minimumScaleFactor`. Implementation maps each to the nearest system text style so Dynamic Type scales (`.title3` ≈ 20, `.headline` 17 ≈ 18, `.callout` 16, `.subheadline` 15 ≈ 14, `.caption` 12, `.caption2` 11 ≈ 10, `.footnote` 13); the large-iPad headline variant and splash/onboarding titles are added when their screens are built.
 
 **Spacing** (`dimens.xml:4-13` + sw600/sw720 overrides): xxs 2, xs 4, sm 8, md 16/20/24, lg 24/32/40, xl 32/48/64, xxl 48, xxxl 96/112/128 — the three values select by effective width class (compact / regular <1000 pt / regular ≥1000 pt, approximating sw600/sw720).
 
