@@ -1,13 +1,14 @@
 import SwiftUI
 
 /// Android's `FavoritesFragment` (`favorites-settings-about.md:1.3-1.4`). Rows reuse `VideoRow`
-/// (the tabs' row component) rather than porting Android's bespoke `item_favorite_video.xml` --
-/// note this trades Android's persistent channel-name subtitle for `VideoRow`'s views/upload-age
-/// meta line, which is blank here (favorites carry no view count / upload age). Remove is a
-/// trailing swipe action instead of Android's always-visible 48×48 button (native iOS idiom).
+/// (the tabs' row component) rather than porting Android's bespoke `item_favorite_video.xml`,
+/// passing the channel name as `VideoRow`'s `subtitle` to match Android's persistent one-line
+/// channel-name caption (`:90`). Remove is a trailing swipe action instead of Android's
+/// always-visible 48×48 button (native iOS idiom).
 struct FavoritesView: View {
     @Environment(\.container) private var container
     @Environment(\.router) private var router
+    @Environment(\.locale) private var locale
 
     @State private var viewModel: FavoritesViewModel?
     @State private var showClearAllConfirm = false
@@ -18,12 +19,17 @@ struct FavoritesView: View {
             if let viewModel, !viewModel.items.isEmpty {
                 List {
                     ForEach(viewModel.items, id: \.videoId) { item in
-                        VideoRow(item: viewModel.contentItem(for: item)) { router.push(.player(viewModel.playerArgs(for: item))) }
+                        VideoRow(item: viewModel.contentItem(for: item), subtitle: item.channelName) {
+                            router.push(.player(viewModel.playerArgs(for: item)))
+                        }
                             .listRowInsets(EdgeInsets())
                             .swipeActions {
+                                // favorites-settings-about.md:94 -- per-item label carries the title,
+                                // not just the static row label.
                                 Button(role: .destructive) { remove(item) } label: {
                                     Label(String(localized: "favorites_remove"), systemImage: "trash")
                                 }
+                                .accessibilityLabel(localizedFormat("favorites_remove_description", item.title))
                             }
                     }
                 }
@@ -89,6 +95,14 @@ struct FavoritesView: View {
     // a failure mode a local SwiftData store hits only on genuine disk/persistence errors.
     private func showFailureBanner() {
         bannerMessage = BannerMessage(text: String(localized: "error_state_generic_headline"))
+    }
+
+    /// Same technique as `SearchView`'s own private copy -- resolves the `.lproj` bundle for the
+    /// current `\.locale` so a `%1$@` xcstrings entry substitutes correctly regardless of the
+    /// simulator's system language.
+    private func localizedFormat(_ key: String, _ args: CVarArg...) -> String {
+        let format = Format.localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
+        return String(format: format, locale: locale, arguments: args)
     }
 }
 

@@ -250,12 +250,17 @@ struct MediaCard: View {
 /// Full-width video row: 140 pt 16:9 thumbnail, 16 pt bold title (content-lists.md §5.3).
 struct VideoRow: View {
     let item: ContentItem
+    /// Persistent subtitle overriding the computed views/upload-age `videoMeta` line -- Favorites
+    /// rows pass the channel name here (`favorites-settings-about.md:90,94`: no view count/upload
+    /// age snapshot exists for a favorite, but Android still shows a one-line channel-name caption).
+    let subtitle: String?
     let onTap: () -> Void
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
 
-    init(item: ContentItem, onTap: @escaping () -> Void) {
+    init(item: ContentItem, subtitle: String? = nil, onTap: @escaping () -> Void) {
         self.item = item
+        self.subtitle = subtitle
         self.onTap = onTap
     }
 
@@ -272,8 +277,12 @@ struct VideoRow: View {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text(item.title).font(TypeScale.subtitle).fontWeight(.bold)
                         .foregroundStyle(Color.textPrimary).lineLimit(2)
-                    Text(videoMeta(item, locale: locale, includeCategory: false))
-                        .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(2)
+                    if let subtitle {
+                        Text(subtitle).font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(1)
+                    } else {
+                        Text(videoMeta(item, locale: locale, includeCategory: false))
+                            .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(2)
+                    }
                 }
                 .padding(.leading, Spacing.md(widthClass))
                 Spacer(minLength: 0)

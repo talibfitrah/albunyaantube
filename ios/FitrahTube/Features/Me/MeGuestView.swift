@@ -68,7 +68,9 @@ struct MeGuestView: View {
                                     message: String(localized: "favorites_empty_subtitle"))
                 } else {
                     ForEach(viewModel.recentFavorites, id: \.videoId) { item in
-                        VideoRow(item: viewModel.contentItem(for: item)) { router.push(.player(viewModel.playerArgs(for: item))) }
+                        VideoRow(item: viewModel.contentItem(for: item), subtitle: item.channelName) {
+                            router.push(.player(viewModel.playerArgs(for: item)))
+                        }
                     }
                 }
             }
