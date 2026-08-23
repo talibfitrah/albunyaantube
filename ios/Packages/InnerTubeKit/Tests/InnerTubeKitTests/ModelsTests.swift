@@ -14,6 +14,15 @@ import Testing
         )
         #expect(past.isExpired(now: now))
 
+        let atBoundary = Resolved(
+            stream: .embed(videoId: "abc123def45"),
+            client: .visionos,
+            userAgent: "ua",
+            resolvedAt: Date(timeIntervalSince1970: 0),
+            expiresAt: Date(timeIntervalSince1970: 1000)
+        )
+        #expect(atBoundary.isExpired(now: now))  // exactly-equal counts as expired (<=)
+
         let noExpiry = Resolved(
             stream: .embed(videoId: "abc123def45"),
             client: .visionos,
