@@ -1,0 +1,23 @@
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/PlayerResponseParser.swift
+  s_18197a18aae8f1::t_67df77366bd624 1-143
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-embed-only.json
+  s_18197a18aae8f1::t_64d465c91de2a5 1-6
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/PlayerResponseParserTests.swift
+  s_18197a18aae8f1::t_e88b4c31e2f096 1-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ad6b4ca99819764b6302ec53631dbdc24ae908f6",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
