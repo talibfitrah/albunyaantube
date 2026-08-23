@@ -31,11 +31,13 @@ struct FixtureTransport: HTTPTransport {
     }
 }
 
-/// Test-only clock: starts at `.zero`, advances only when told to.
-final class ManualClock: MonotonicClock, @unchecked Sendable {
+/// Test-only clock: starts at `.zero` (monotonic) / a fixed epoch (wall),
+/// advances only when told to.
+final class ManualClock: MonotonicClock, WallClock, @unchecked Sendable {
     // Sendable: all mutable state is guarded by `lock`.
     private let lock = NSLock()
     private var elapsed: Duration = .zero
+    private var wall = Date(timeIntervalSinceReferenceDate: 0)
 
     init() {}
 
@@ -49,6 +51,26 @@ final class ManualClock: MonotonicClock, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         elapsed += amount
+    }
+
+    var wallNow: Date {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return wall
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            wall = newValue
+        }
+    }
+
+    func advanceWall(by amount: Duration) {
+        let seconds = Double(amount.components.seconds) + Double(amount.components.attoseconds) / 1e18
+        lock.lock()
+        defer { lock.unlock() }
+        wall = wall.addingTimeInterval(seconds)
     }
 }
 
