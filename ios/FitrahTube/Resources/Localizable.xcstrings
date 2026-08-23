@@ -171,7 +171,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "GitHub"
           }
         }
@@ -215,7 +215,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Links"
           }
         }
@@ -347,7 +347,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Website"
           }
         }
@@ -489,7 +489,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "OK"
           }
         },
@@ -501,7 +501,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "OK"
           }
         }
@@ -511,7 +511,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sorry — come back soon"
           }
         },
@@ -523,7 +523,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sorry — come back soon"
           }
         }
@@ -545,7 +545,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "FitrahTube"
           }
         }
@@ -1278,11 +1278,33 @@
         }
       }
     },
-    "bootstrap_display_name_hint": {
+    "banner_dismiss": {
       "localizations": {
         "ar": {
           "stringUnit": {
             "state": "translated",
+            "value": "إغلاق"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dismiss"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sluiten"
+          }
+        }
+      }
+    },
+    "bootstrap_display_name_hint": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "needs_review",
             "value": "Display name"
           }
         },
@@ -1294,7 +1316,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Display name"
           }
         }
@@ -1304,7 +1326,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "What should we call you?"
           }
         },
@@ -1316,7 +1338,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "What should we call you?"
           }
         }
@@ -1326,7 +1348,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tap to select"
           }
         },
@@ -1338,7 +1360,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tap to select"
           }
         }
@@ -1348,7 +1370,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Date of birth"
           }
         },
@@ -1360,7 +1382,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Date of birth"
           }
         }
@@ -1370,7 +1392,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Please choose your date of birth"
           }
         },
@@ -1382,7 +1404,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Please choose your date of birth"
           }
         }
@@ -1392,7 +1414,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Please tell us your name (1–40 characters)"
           }
         },
@@ -1404,7 +1426,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Please tell us your name (1–40 characters)"
           }
         }
@@ -1678,7 +1700,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Continue"
           }
         },
@@ -1690,7 +1712,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Continue"
           }
         }
@@ -1700,7 +1722,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tell us about you"
           }
         },
@@ -1712,7 +1734,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tell us about you"
           }
         }
@@ -1854,7 +1876,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@ +%2$@"
           }
         },
@@ -1866,7 +1888,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@ +%2$@"
           }
         }
@@ -2394,7 +2416,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Links"
           }
         }
@@ -2602,7 +2624,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "–"
           }
         },
@@ -2614,7 +2636,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "–"
           }
         }
@@ -2680,7 +2702,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Live"
           }
         }
@@ -2724,7 +2746,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Shorts"
           }
         }
@@ -3547,13 +3569,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "You are %1$lld step away from being a developer"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "You are %1$lld steps away from being a developer"
                 }
               }
@@ -3892,7 +3914,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@ • %2$@"
           }
         },
@@ -3904,7 +3926,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@ • %2$@"
           }
         }
@@ -4168,7 +4190,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Downloads"
           }
         }
@@ -4244,7 +4266,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "2K (%1$lldp)"
           }
         },
@@ -4256,7 +4278,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "2K (%1$lldp)"
           }
         }
@@ -4266,7 +4288,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "4K (%1$lldp)"
           }
         },
@@ -4278,7 +4300,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "4K (%1$lldp)"
           }
         }
@@ -4332,7 +4354,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$lldp"
           }
         },
@@ -4344,7 +4366,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$lldp"
           }
         }
@@ -4542,7 +4564,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Downloads"
           }
         }
@@ -4740,7 +4762,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Downloads"
           }
         }
@@ -5960,7 +5982,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@ • %2$@"
           }
         },
@@ -5972,7 +5994,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@ • %2$@"
           }
         }
@@ -6555,13 +6577,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "Import %1$lld item"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "Import %1$lld items"
                 }
               }
@@ -7242,7 +7264,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "LIVE"
           }
         }
@@ -7252,7 +7274,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@ • %2$@"
           }
         },
@@ -7264,7 +7286,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@ • %2$@"
           }
         }
@@ -7326,7 +7348,7 @@
         },
         "en": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%#@arg@"
           },
           "substitutions": {
@@ -7337,13 +7359,13 @@
                 "plural": {
                   "one": {
                     "stringUnit": {
-                      "state": "translated",
+                      "state": "needs_review",
                       "value": "%1$@ watching"
                     }
                   },
                   "other": {
                     "stringUnit": {
-                      "state": "translated",
+                      "state": "needs_review",
                       "value": "%1$@ watching"
                     }
                   }
@@ -7882,7 +7904,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Shorts"
           }
         }
@@ -8080,7 +8102,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Menu"
           }
         }
@@ -8586,7 +8608,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Downloads"
           }
         }
@@ -9070,7 +9092,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Audio"
           }
         }
@@ -9642,7 +9664,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Download"
           }
         }
@@ -9884,7 +9906,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Video"
           }
         }
@@ -10004,7 +10026,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$lld:%2$02lld"
           }
         },
@@ -10016,7 +10038,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$lld:%2$02lld"
           }
         }
@@ -11192,7 +11214,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@ • %2$@"
           }
         },
@@ -11204,7 +11226,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@ • %2$@"
           }
         }
@@ -11270,7 +11292,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Volume"
           }
         }
@@ -11434,7 +11456,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@"
           }
         },
@@ -11446,7 +11468,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$@"
           }
         }
@@ -11567,13 +11589,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld item"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld items"
                 }
               }
@@ -11585,13 +11607,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld item"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld items"
                 }
               }
@@ -12176,7 +12198,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "••••••••••"
           }
         },
@@ -12188,7 +12210,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "••••••••••"
           }
         }
@@ -13750,7 +13772,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Downloads"
           }
         }
@@ -15092,7 +15114,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "@%1$@"
           }
         }
@@ -15278,7 +15300,7 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Couldn't connect — please sign in again."
           }
         },
@@ -15290,7 +15312,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Couldn't connect — please sign in again."
           }
         }
@@ -16071,13 +16093,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld month ago"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld months ago"
                 }
               }
@@ -16153,13 +16175,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld week ago"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld weeks ago"
                 }
               }
@@ -16235,13 +16257,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld year ago"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld years ago"
                 }
               }
@@ -16328,7 +16350,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Video"
           }
         }
@@ -16911,13 +16933,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld video"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld videos"
                 }
               }
@@ -16993,13 +17015,13 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld day ago"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "translated",
+                  "state": "needs_review",
                   "value": "%1$lld days ago"
                 }
               }
@@ -17104,7 +17126,7 @@
         },
         "en": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%#@arg@"
           },
           "substitutions": {
@@ -17115,13 +17137,13 @@
                 "plural": {
                   "one": {
                     "stringUnit": {
-                      "state": "translated",
+                      "state": "needs_review",
                       "value": "%1$@ view"
                     }
                   },
                   "other": {
                     "stringUnit": {
-                      "state": "translated",
+                      "state": "needs_review",
                       "value": "%1$@ views"
                     }
                   }

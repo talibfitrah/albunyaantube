@@ -6,8 +6,12 @@ struct FitrahTubeApp: App {
     // Release must always build the live container -- a Release binary should never be able to
     // serve fake data even if `-fitrah-fake-container` somehow ended up in its arguments.
     #if DEBUG
+    // `sharedFake`, not `fake()` (gate wave-2 W8): `fake()` reuses the shared "fitrahtube.fake"
+    // defaults suite *without* wiping it -- the hazard `AppContainer.fake()`'s own doc warns
+    // callers about -- so onboarding/settings/filter/search-history state leaked from one UI-test
+    // or screenshot run into the next. `sharedFake` wipes the suite once, at creation.
     @State private var container = ProcessInfo.processInfo.arguments.contains("-fitrah-fake-container")
-        ? AppContainer.fake()
+        ? AppContainer.sharedFake
         : AppContainer.live()
     #else
     @State private var container = AppContainer.live()
@@ -129,6 +133,10 @@ struct FitrahTubeApp: App {
                 description: nil, thumbnailURL: nil, durationSeconds: 300 + index * 60, uploadedDaysAgo: nil,
                 viewCount: nil, channelTitle: "Sample Channel", subscribers: nil, videoCount: nil, itemCount: nil
             )
+            // Seed, not toggle (gate wave-2 W8): against a persistent store a second launch with
+            // the flag soft-deleted the three rows instead of ensuring them, so every other
+            // screenshot run showed an empty Favorites screen.
+            guard !container.favorites.isFavorite(item.id) else { continue }
             try? container.favorites.toggle(item)
         }
         #endif

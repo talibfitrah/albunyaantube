@@ -53,6 +53,13 @@ SPECIFIER_OVERRIDES = {
 # source since Android always forces sign-in and has no guest state for this screen.
 EXTRA_KEYS = {
     "filter_label_parent_child": "⁨%1$@⁩ › ⁨%2$@⁩",
+    # banner_dismiss (gate wave-2 W5): the dismiss affordance on `TransientBanner`. iOS-only --
+    # Android's Snackbar always auto-dismisses, so there is no source string for it.
+    "banner_dismiss": {
+        "en": "Dismiss",
+        "ar": "إغلاق",
+        "nl": "Sluiten",
+    },
     "me_guest_title": {
         "en": "Sign in to sync your favorites",
         "ar": "سجّل الدخول لمزامنة مفضلاتك",
@@ -160,12 +167,19 @@ def locale_fallback(en_value, loc_value):
     an omitted `ar`/`nl` entry is NOT compiled into that locale's `Localizable.strings`, and
     Foundation does not fall back per key to the source language -- the raw key renders on screen.
     So a locale that has no value of its own gets en's, marked `needs_review` (the Xcode backlog
-    stays visible); a locale value that merely equals en's is a real loanword translation
-    ("Downloads", "Links", "YouTube") and is marked `translated`. Never omit.
+    stays visible). Never omit.
+
+    Gate wave-2 W10: a value *equal* to en's is marked `needs_review` too. The old split called it
+    a loanword translation ("Downloads", "YouTube"), which holds for a one-word brand term but not
+    for the ~26 ar entries carrying whole English sentences -- and nothing here can tell the two
+    apart, so the state said "translated" about prose no one has ever translated. Runtime output is
+    identical either way (the value is the same string); only the backlog changes, and a truthful
+    backlog is the point of the state field. A genuinely-fine loanword is cleared by a human in
+    Xcode, which is exactly what `needs_review` asks for.
 
     Takes and returns either a plain string or a whole per-locale plural-forms dict -- the
     fallback is all-or-nothing per locale in both cases."""
-    if loc_value is None:
+    if loc_value is None or loc_value == en_value:
         return en_value, "needs_review"
     return loc_value, "translated"
 
@@ -382,10 +396,12 @@ def check_locale_fallback_never_omits():
     locale value equal to en's is a loanword translation, not a gap. Plural forms take the same
     all-or-nothing path (the whole per-locale forms dict falls back at once)."""
     assert locale_fallback("Downloads", None) == ("Downloads", "needs_review")
-    assert locale_fallback("Downloads", "Downloads") == ("Downloads", "translated")
+    # W10: equal-to-en is indistinguishable from untranslated, so it is flagged, not blessed.
+    assert locale_fallback("Downloads", "Downloads") == ("Downloads", "needs_review")
+    assert locale_fallback("Downloads", "Downloaden") == ("Downloaden", "translated")
     en_forms = {"one": "%1$lld video", "other": "%1$lld videos"}
     assert locale_fallback(en_forms, None) == (en_forms, "needs_review")
-    assert locale_fallback(en_forms, en_forms) == (en_forms, "translated")
+    assert locale_fallback(en_forms, en_forms) == (en_forms, "needs_review")
 
 def check_non_positional_specifier_refused():
     """cso-F2 self-check: a bare `%@`/`%x`/`%p` -- conversions this converter never emits and the
@@ -464,9 +480,10 @@ def verify(out):
     app_name = out["strings"]["app_name"]
     assert app_name.get("shouldTranslate") is False
     assert app_name["localizations"]["ar"]["stringUnit"]["value"] == "\u0641\u0637\u0631\u0629 \u062a\u064a\u0648\u0628"
-    # R7 (amended): nl app_name is identical to en but present in Android -> a real (loanword)
-    # translation, emitted as `translated`. Omitting it would render the raw key under nl.
-    assert app_name["localizations"]["nl"]["stringUnit"] == {"state": "translated", "value": "FitrahTube"}
+    # R7 (amended) + W10: nl app_name is present in Android but identical to en, so it carries the
+    # value under `needs_review` (omitting it would render the raw key under nl). `shouldTranslate:
+    # false` above is what keeps the brand name out of the translation backlog.
+    assert app_name["localizations"]["nl"]["stringUnit"] == {"state": "needs_review", "value": "FitrahTube"}
 
     # R7 (amended): about_version_format is absent from ar/nl on Android -> both locales carry the
     # English value under `needs_review`, so the runtime shows English instead of the raw key.

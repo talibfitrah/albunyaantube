@@ -7,8 +7,8 @@ import Foundation
 /// flat-mode failure ever surfaces `.error`; only a load-more failure ever sets `lastLoadFailed`.
 ///
 /// Same `loadTask`/`loadMoreTask` ownership as `HomeViewModel`/`ContentListViewModel`: a full load
-/// always supersedes an in-flight load-more, load-more's own in-flight guard (`isLoadingMore`, set
-/// before its first `await`) is suffient on its own.
+/// always supersedes an in-flight load-more, never the reverse, and the same
+/// `loadGeneration`/`isFullLoading` token guards the two races `isLoadingMore` alone misses.
 @MainActor @Observable final class FeaturedViewModel {
     enum Mode: Equatable { case sections([HomeSection]), flat([ContentItem]) }
     enum State: Equatable { case loading, content(Mode, hasMore: Bool), error(String), empty }
@@ -53,7 +53,13 @@ import Foundation
     private var flatNextCursor: String?
     private var isSectionsMode = false
     private var isLoadingMore = false
-    private var isRefreshing = false
+
+    /// Gate wave-2 W2/W3 -- the same token `ContentListViewModel`/`HomeViewModel` use; see the
+    /// full rationale on `ContentListViewModel.loadGeneration`. Replaces the narrower
+    /// `isRefreshing` (which covered `refresh()` only, not `load()`) and makes the stale `defer`
+    /// in `fetchMore` generation-safe.
+    private var loadGeneration = 0
+    private var isFullLoading = false
 
     private var loadTask: Task<Void, Never>?
     private var loadMoreTask: Task<Void, Never>?
@@ -73,25 +79,31 @@ import Foundation
     /// RULINGS #20: never shows `.loading` -- the caller's `.refreshable` holds its own spinner
     /// while the existing content stays on screen, swapped only once the new page arrives.
     func refresh() async {
-        guard !isRefreshing else { return }
-        isRefreshing = true
+        guard !isFullLoading else { return }
         await performFullLoad(showLoading: false)
-        isRefreshing = false
     }
 
-    func loadMore() async {
-        // `!isRefreshing` for parity with `ContentListViewModel.loadMore` (gate B1-I4): without
-        // it, a pull-to-refresh's own layout churn could start a load-more against the arrays the
-        // refresh was in the middle of replacing.
-        guard !isLoadingMore, !isRefreshing, !lastLoadFailed else { return }
-        guard case .content(_, let hasMore) = state, hasMore else { return }
+    /// Returns whether the fetch actually ran -- `FeaturedView` commits its `PaginationGuard`
+    /// attempt only then (gate wave-2 W2).
+    @discardableResult
+    func loadMore() async -> Bool {
+        // `!isFullLoading` (gate B1-I4, widened by wave-2 W2): without it, a pull-to-refresh's own
+        // layout churn could start a load-more against the arrays the refresh was in the middle of
+        // replacing.
+        guard !isLoadingMore, !isFullLoading, !lastLoadFailed else { return false }
+        guard case .content(_, let hasMore) = state, hasMore else { return false }
         isLoadingMore = true // set before the first `await` -- the in-flight guard
-        let task = Task { await self.fetchMore() }
+        let generation = loadGeneration
+        let task = Task { await self.fetchMore(generation: generation) }
         loadMoreTask = task
         await task.value
+        return true
     }
 
     private func performFullLoad(showLoading: Bool) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        isFullLoading = true
         loadTask?.cancel()
         loadMoreTask?.cancel()
         isLoadingMore = false // a cancelled load-more never reaches its own cleanup (gate B1-I3)
@@ -99,6 +111,8 @@ import Foundation
         let task = Task { await self.fetchFirstPage(showLoading: showLoading) }
         loadTask = task
         await task.value
+        // Only the newest full load may reopen pagination -- `load()` never refuses.
+        if generation == loadGeneration { isFullLoading = false }
     }
 
     /// The backing arrays are cleared on the *success* paths, never before the `await` (gate
@@ -145,26 +159,28 @@ import Foundation
         }
     }
 
-    private func fetchMore() async {
-        defer { isLoadingMore = false } // covers the cancellation exits below too (gate B1-I3)
+    private func fetchMore(generation: Int) async {
+        // Covers the cancellation exits below too (gate B1-I3), but only while this is still the
+        // newest load-more: a superseded one returning late must not unlock a live guard (W2).
+        defer { if generation == loadGeneration { isLoadingMore = false } }
         if isSectionsMode {
-            await fetchMoreSections()
+            await fetchMoreSections(generation: generation)
         } else {
-            await fetchMoreFlat()
+            await fetchMoreFlat(generation: generation)
         }
     }
 
-    private func fetchMoreSections() async {
+    private func fetchMoreSections(generation: Int) async {
         do {
             let page = try await catalog.home(cursor: sectionsNextCursor, categoryLimit: Self.sectionPageSize,
                                                contentLimit: Self.contentPerSection, category: categoryId)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             let existingIDs = Set(sections.map(\.id)) // dedupe by id (gate B1-minor-6)
             sections.append(contentsOf: page.items.filter { !existingIDs.contains($0.id) })
             sectionsNextCursor = page.nextCursor
             state = .content(.sections(sections), hasMore: sectionsNextCursor != nil)
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             // Load-more failure keeps the cursor and re-emits the unchanged list, completely
             // silently (no error state, no banner) -- content-lists.md §7.4.
             lastLoadFailed = true
@@ -172,16 +188,16 @@ import Foundation
         }
     }
 
-    private func fetchMoreFlat() async {
+    private func fetchMoreFlat(generation: Int) async {
         do {
             let page = try await fetchFlatPage(cursor: flatNextCursor)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             let existingIDs = Set(flatItems.map(\.id)) // dedupe by id (gate B1-minor-6)
             flatItems.append(contentsOf: page.items.filter { !existingIDs.contains($0.id) })
             flatNextCursor = page.nextCursor
             state = .content(.flat(flatItems), hasMore: flatNextCursor != nil)
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             lastLoadFailed = true
             state = .content(.flat(flatItems), hasMore: flatNextCursor != nil)
         }

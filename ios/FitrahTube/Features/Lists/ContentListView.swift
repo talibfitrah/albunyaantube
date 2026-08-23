@@ -130,24 +130,10 @@ struct ContentListView: View {
         Binding(get: { viewModel?.query ?? "" }, set: { viewModel?.query = $0 })
     }
 
+    /// Shared chrome with `SearchView` (gate wave-2 W9); this one has neither auto-focus nor a
+    /// submit action -- it is one element of a header, and only the debounced `query` change fetches.
     private var searchBar: some View {
-        HStack(spacing: Spacing.sm) {
-            Image(systemName: "magnifyingglass").foregroundStyle(Color.textSecondary)
-            TextField(String(localized: "search_hint"), text: queryBinding)
-                .textFieldStyle(.plain)
-                .accessibilityLabel(String(localized: "cd_search_icon"))
-            if !queryBinding.wrappedValue.isEmpty {
-                Button { queryBinding.wrappedValue = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(Color.textSecondary)
-                }
-                .accessibilityLabel(String(localized: "search_clear"))
-            }
-        }
-        .padding(.horizontal, Spacing.md(widthClass))
-        .padding(.vertical, Spacing.sm)
-        .background(Color.surfaceVariant, in: RoundedRectangle(cornerRadius: Radius.pill))
-        .padding(.horizontal, Spacing.md(widthClass))
-        .padding(.top, Spacing.sm)
+        SearchField(text: queryBinding, accessibilityLabel: String(localized: "cd_search_icon"))
     }
 
     // MARK: - Filter chip (content-lists.md §4.9 -- "Category: %1$@" + Clear)
@@ -201,7 +187,7 @@ struct ContentListView: View {
                 // Fix round 1, finding #1: only the *first* load ever failing (nothing to show)
                 // gets the full-page error; a load/refresh failure after content already existed
                 // keeps that content on screen (via `lastItems`) plus the banner set by the
-                // `.onChange(of: terminalErrorWithContentFlag)` modifier above.
+                // `.onChange(of: viewModel?.errorToken)` modifier above.
                 if !viewModel.lastItems.isEmpty {
                     contentGrid(items: viewModel.lastItems, hasMore: false)
                 } else {
@@ -304,15 +290,17 @@ struct ContentListView: View {
         }
     }
 
+    /// Row shape per tab; the destination itself comes from the one shared item→route mapping
+    /// (gate wave-2 W9).
     @ViewBuilder
     private func rowView(_ item: ContentItem) -> some View {
         switch type {
         case .channels:
-            ChannelRow(item: item) { router.push(.channel(id: item.id, name: item.title, avatarURL: item.thumbnailURL)) }
+            ChannelRow(item: item) { router.push(Route(item: item)) }
         case .playlists:
-            PlaylistRow(item: item) { router.push(.playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount)) }
+            PlaylistRow(item: item) { router.push(Route(item: item)) }
         case .videos:
-            VideoGridCell(item: item) { router.push(.player(PlayerArgs(item: item))) }
+            VideoGridCell(item: item) { router.push(Route(item: item)) }
         }
     }
 
@@ -320,20 +308,35 @@ struct ContentListView: View {
 
     private func triggerScrollLoadMore(hasMore: Bool) {
         guard hasMore, !isLoadingMore else { return }
+        // Set synchronously, *before* the Task (gate wave-2 W2): several cells can appear in one
+        // frame and each used to spawn its own Task, since the flag only flipped inside one. The
+        // second Task bounced off the ViewModel's own guard and then cleared this flag while the
+        // first fetch was still in flight -- the footer spinner disappeared mid-load. One trigger
+        // per in-flight fetch now, so the spinner stays up for the whole of it.
+        isLoadingMore = true
         Task { await runLoadMore() }
     }
 
     private func triggerAutoFill() {
         guard !isLoadingMore, let viewModel, case .content(let items, let hasMore, let paginationError, _) = viewModel.state else { return }
-        guard paginationGuard.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: paginationError,
-                                              contentFits: contentFits, itemCount: items.count) else { return }
-        Task { await runLoadMore() }
+        // The attempt is committed only if the ViewModel actually starts the fetch (gate wave-2
+        // W2). `shouldAutoLoad` mutates: during a pull-to-refresh, layout churn triggered an
+        // autofill the ViewModel then refused, but the attempt was already spent *and* `lastCount`
+        // advanced -- so once the refresh landed with the same item count, guard 5's progress
+        // invariant refused every later autofill and a fits-on-screen iPad page never paginated
+        // again until the user pulled a second time.
+        var attempt = paginationGuard
+        guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: paginationError,
+                                      contentFits: contentFits, itemCount: items.count) else { return }
+        isLoadingMore = true
+        Task { if await runLoadMore() { paginationGuard = attempt } }
     }
 
-    private func runLoadMore() async {
-        isLoadingMore = true
-        await viewModel?.loadMore()
+    @discardableResult
+    private func runLoadMore() async -> Bool {
+        let started = await viewModel?.loadMore() ?? false
         isLoadingMore = false
+        return started
     }
 
     // MARK: - Per-type copy (content-lists.md §4.6, §A2 tab titles)

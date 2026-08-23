@@ -52,27 +52,11 @@ struct SearchView: View {
         Binding(get: { viewModel?.query ?? "" }, set: { viewModel?.query = $0 })
     }
 
+    /// Shared chrome with `ContentListView`'s inline header field (gate wave-2 W9); this one adds
+    /// the two things only this screen does: auto-focus on appear and submit-on-Search.
     private var searchField: some View {
-        HStack(spacing: Spacing.sm) {
-            Image(systemName: "magnifyingglass").foregroundStyle(Color.textSecondary)
-            TextField(String(localized: "search_hint"), text: queryBinding)
-                .focused($fieldFocused)
-                .textFieldStyle(.plain)
-                .submitLabel(.search)
-                .onSubmit { Task { await viewModel?.submit() } }
-                .accessibilityLabel(String(localized: "search_hint"))
-            if !queryBinding.wrappedValue.isEmpty {
-                Button { queryBinding.wrappedValue = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(Color.textSecondary)
-                }
-                .accessibilityLabel(String(localized: "search_clear"))
-            }
-        }
-        .padding(.horizontal, Spacing.md(widthClass))
-        .padding(.vertical, Spacing.sm)
-        .background(Color.surfaceVariant, in: RoundedRectangle(cornerRadius: Radius.pill))
-        .padding(.horizontal, Spacing.md(widthClass))
-        .padding(.top, Spacing.sm)
+        SearchField(text: queryBinding, accessibilityLabel: String(localized: "search_hint"),
+                    focus: $fieldFocused, onSubmit: { Task { await viewModel?.submit() } })
     }
 
     // MARK: - State body (§1.4 five-state visibility matrix)
@@ -183,11 +167,11 @@ struct SearchView: View {
     private func resultRow(_ item: ContentItem) -> some View {
         switch item.type {
         case .video:
-            VideoRow(item: item) { router.push(.player(PlayerArgs(item: item))) }
+            VideoRow(item: item) { router.push(Route(item: item)) }
         case .channel:
-            ChannelRow(item: item) { router.push(.channel(id: item.id, name: item.title, avatarURL: item.thumbnailURL)) }
+            ChannelRow(item: item) { router.push(Route(item: item)) }
         case .playlist:
-            PlaylistRow(item: item) { router.push(.playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount)) }
+            PlaylistRow(item: item) { router.push(Route(item: item)) }
         }
     }
 

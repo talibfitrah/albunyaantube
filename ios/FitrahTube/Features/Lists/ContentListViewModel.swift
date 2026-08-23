@@ -86,7 +86,19 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     private var nextCursor: String?
     private var hasMore = true
     private var isLoadingMore = false
-    private var isRefreshing = false
+
+    /// Gate wave-2 W2/W3 -- one mechanism, identical in `HomeViewModel` and `FeaturedViewModel`.
+    /// `performFullLoad` (load, refresh, search, filter change) bumps `loadGeneration` and holds
+    /// `isFullLoading` for its whole duration, which fixes two races at once:
+    ///  - a load-more can no longer *start* against the cursor a full load is about to replace.
+    ///    The old `!isRefreshing` guard covered only `refresh()`, not `load()` or the debounced
+    ///    search path, and `HomeViewModel` had no such guard at all -- so a load-more landing
+    ///    after the reload produced new-page-1 + old-page-2 and a cursor from the dead sequence;
+    ///  - a load-more that a full load cancelled while it was suspended can no longer, on its
+    ///    late return, clear a *newer* load-more's in-flight guard (its `defer` used to fire
+    ///    unconditionally) or append the page it fetched from the superseded cursor.
+    private var loadGeneration = 0
+    private var isFullLoading = false
 
     private var loadTask: Task<Void, Never>?
     private var loadMoreTask: Task<Void, Never>?
@@ -108,26 +120,35 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// Never shows `.loading` -- the caller's `.refreshable` holds its own spinner while the
     /// existing `.content`/`.error` stays on screen, swapped only once the new page arrives.
     func refresh() async {
-        guard !isRefreshing else { return }
-        isRefreshing = true
+        guard !isFullLoading else { return }
         await performFullLoad(showLoading: false)
-        isRefreshing = false
     }
 
-    func loadMore() async {
-        guard hasMore, !isLoadingMore, !isRefreshing else { return }
+    /// Returns whether the fetch actually ran. The view commits its `PaginationGuard` attempt only
+    /// on `true` (gate wave-2 W2): `shouldAutoLoad` used to spend an attempt -- and advance
+    /// `lastCount` -- on a load-more this guard then refused, and after a pull-to-refresh landed
+    /// with the same item count, guard 5's progress invariant refused every later autofill.
+    @discardableResult
+    func loadMore() async -> Bool {
+        guard hasMore, !isLoadingMore, !isFullLoading else { return false }
         isLoadingMore = true // set before the first `await` -- the in-flight guard
-        let task = Task { await self.fetchMore() }
+        let generation = loadGeneration
+        let task = Task { await self.fetchMore(generation: generation) }
         loadMoreTask = task
         await task.value
+        return true
     }
 
     /// Manual retry from the pagination-error `TransientBanner`. Identical to `loadMore()`: the
     /// cursor and `hasMore` survive a pagination failure (§2.5), so a plain retry is a plain
     /// load-more -- no separate code path needed.
-    func retryPagination() async { await loadMore() }
+    @discardableResult
+    func retryPagination() async -> Bool { await loadMore() }
 
     private func performFullLoad(showLoading: Bool) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        isFullLoading = true
         loadTask?.cancel()
         loadMoreTask?.cancel()
         // A cancelled load-more returns through its own `guard !Task.isCancelled` *before* it can
@@ -138,6 +159,9 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         let task = Task { await self.fetchFirstPage(showLoading: showLoading) }
         loadTask = task
         await task.value
+        // A superseded full load (`load()` never refuses -- a filter change must win) returns here
+        // late; only the newest one may reopen pagination.
+        if generation == loadGeneration { isFullLoading = false }
     }
 
     private func fetchFirstPage(showLoading: Bool) async {
@@ -160,11 +184,13 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         }
     }
 
-    private func fetchMore() async {
-        defer { isLoadingMore = false } // covers the cancellation exits below too (gate B1-I3)
+    private func fetchMore(generation: Int) async {
+        // Covers the cancellation exits below too (gate B1-I3), but only while this is still the
+        // newest load-more: a superseded one returning late must not unlock a live guard (W2).
+        defer { if generation == loadGeneration { isLoadingMore = false } }
         do {
             let page = try await catalog.content(type: type, cursor: nextCursor, limit: pageSize, filter: filter.state, query: queryParam)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             // Dedupe by id, mirroring `HomeViewModel.fetchMore` (gate B1-minor-6): the grid's
             // `ForEach(..., id: \.element.id)` is over blindly appended pages, so a cursor overlap
             // on the backend produces a SwiftUI identity collision and dropped/duplicated rows.
@@ -176,16 +202,22 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         } catch {
             // Pagination failure keeps accumulated items and the cursor (so a retry can still
             // work), just flags `paginationError` -- Android §2.5.
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             errorToken += 1
             state = .content(items: items, hasMore: hasMore, paginationError: true, isSearchActive: isSearchActive)
         }
     }
 
-    private var isSearchActive: Bool { !query.isEmpty }
+    /// Trimmed, like `SearchViewModel`/`SearchHistoryStore` (gate wave-2 W8): a field holding
+    /// only spaces is not an active search, and must not show the "No results" search empty state.
+    private var isSearchActive: Bool { !trimmedQuery.isEmpty }
 
     /// RULING 22: the server requires ≥2 chars; below that `q` is omitted entirely (falls back to
     /// the unfiltered list), not sent as a too-short string. Interpretation accepted as-is for
     /// these browse tabs: <2 chars means "show the unfiltered list", not "no results" / no fetch.
-    private var queryParam: String? { query.count >= 2 ? query : nil }
+    /// Whitespace does not count toward the threshold and is never sent (gate wave-2 W8): `"  "`
+    /// used to pass `count >= 2` and go out as `q="  "`.
+    private var queryParam: String? { trimmedQuery.count >= 2 ? trimmedQuery : nil }
+
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 }

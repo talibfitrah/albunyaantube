@@ -108,7 +108,14 @@ struct FeaturedView: View {
     private func sectionsContent(_ sections: [HomeSection], hasMore: Bool) -> some View {
         LazyVStack(spacing: 0) {
             ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
-                sectionRow(section)
+                // Shared with `HomeView` (gate wave-2 W9). Featured pushes the *localized* name
+                // (content-lists.md §4.2: nested sections navigate recursively into another
+                // Featured screen, always with the localized name -- fixing Android's own
+                // Home-vs-Featured naming inconsistency at the source).
+                HomeSectionRow(section: section, containerWidth: containerWidth) {
+                    router.push(.featured(categoryId: section.id,
+                                          categoryName: Format.sectionDisplayName(section, locale: locale)))
+                }
                     // codex-P2: sections mode had no row-appearance trigger at all. Its only path
                     // was `onContentFits`, which by definition declines once the content is tall
                     // enough to scroll (and is off entirely at compact width), so every section
@@ -127,58 +134,6 @@ struct FeaturedView: View {
                     .accessibilityLabel(String(localized: "home_loading_more"))
             }
         }
-    }
-
-    private func sectionRow(_ section: HomeSection) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            // content-lists.md §4.2: nested sections navigate recursively into another Featured
-            // screen (by destination, so it works whether this screen itself was reached from Home
-            // or from another Featured push) -- and always with the localized name, fixing
-            // Android's own Home-vs-Featured naming inconsistency at the source.
-            SectionHeader(
-                emoji: section.icon,
-                title: sectionTitle(section),
-                onSeeAll: { router.push(.featured(categoryId: section.id, categoryName: sectionTitle(section))) },
-                seeAllAccessibilityLabel: String(format: String(localized: "home_see_all_category"), sectionTitle(section))
-            )
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: GridRules.cardGap(widthClass)) {
-                    ForEach(section.items) { item in
-                        sectionItemView(item)
-                    }
-                }
-                .padding(.horizontal, Spacing.homeHorizontalMargin(widthClass))
-                .padding(.bottom, Spacing.sm)
-            }
-        }
-        .padding(.top, Spacing.lg(widthClass))
-    }
-
-    private func sectionTitle(_ section: HomeSection) -> String {
-        let lang = locale.language.languageCode?.identifier ?? "en"
-        return section.localizedNames?[lang] ?? section.name
-    }
-
-    @ViewBuilder
-    private func sectionItemView(_ item: ContentItem) -> some View {
-        switch item.type {
-        case .video:
-            MediaCard(item: item, width: cardWidth(for: .video)) { router.push(.player(PlayerArgs(item: item))) }
-        case .playlist:
-            MediaCard(item: item, width: cardWidth(for: .playlist)) {
-                router.push(.playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount))
-            }
-        case .channel:
-            HomeChannelItem(item: item) { router.push(.channel(id: item.id, name: item.title, avatarURL: item.thumbnailURL)) }
-        }
-    }
-
-    private func cardWidth(for type: ContentType) -> CGFloat {
-        guard containerWidth > 0 else { return 0 }
-        let visible = GridRules.carouselVisible(type, widthClass)
-        return max(0, GridRules.carouselCardWidth(
-            container: containerWidth, margin: Spacing.homeHorizontalMargin(widthClass), gap: GridRules.cardGap(widthClass), visible: visible
-        ))
     }
 
     // MARK: - Flat mode (mirrors ContentListView's Videos grid -- flat mode is always mixed types
@@ -207,13 +162,15 @@ struct FeaturedView: View {
 
     @ViewBuilder
     private func flatRow(_ item: ContentItem) -> some View {
+        // Row shape per item type; the destination itself comes from the one shared mapping
+        // (gate wave-2 W9).
         switch item.type {
         case .video:
-            VideoRow(item: item) { router.push(.player(PlayerArgs(item: item))) }
+            VideoRow(item: item) { router.push(Route(item: item)) }
         case .channel:
-            ChannelRow(item: item) { router.push(.channel(id: item.id, name: item.title, avatarURL: item.thumbnailURL)) }
+            ChannelRow(item: item) { router.push(Route(item: item)) }
         case .playlist:
-            PlaylistRow(item: item) { router.push(.playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount)) }
+            PlaylistRow(item: item) { router.push(Route(item: item)) }
         }
     }
 
@@ -222,14 +179,18 @@ struct FeaturedView: View {
 
     private func triggerScrollLoadMore(hasMore: Bool) {
         guard hasMore, !isLoadingMore, viewModel?.lastLoadFailed == false else { return }
+        isLoadingMore = true // synchronous, before the Task -- see `ContentListView` (gate wave-2 W2)
         Task { await runLoadMore() }
     }
 
     private func triggerAutoFill() {
         guard !isLoadingMore, let viewModel, case .content(_, let hasMore) = viewModel.state else { return }
-        guard paginationGuard.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: viewModel.lastLoadFailed,
-                                              contentFits: contentFits, itemCount: currentItemCount) else { return }
-        Task { await runLoadMore() }
+        // Attempt committed only if the fetch actually started -- see `ContentListView` (W2).
+        var attempt = paginationGuard
+        guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: viewModel.lastLoadFailed,
+                                      contentFits: contentFits, itemCount: currentItemCount) else { return }
+        isLoadingMore = true
+        Task { if await runLoadMore() { paginationGuard = attempt } }
     }
 
     private var currentItemCount: Int {
@@ -240,10 +201,11 @@ struct FeaturedView: View {
         }
     }
 
-    private func runLoadMore() async {
-        isLoadingMore = true
-        await viewModel?.loadMore()
+    @discardableResult
+    private func runLoadMore() async -> Bool {
+        let started = await viewModel?.loadMore() ?? false
         isLoadingMore = false
+        return started
     }
 }
 

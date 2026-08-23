@@ -48,6 +48,23 @@ nonisolated enum Route: Hashable, Sendable {
     case about
 }
 
+extension Route {
+    /// The catalog-item → destination mapping. One copy (gate wave-2 W9): the same three-case
+    /// switch was pasted into `HomeView`, `FeaturedView` (twice), `ContentListView` and
+    /// `SearchView`, and RULINGS #17 records a bug born of exactly that duplication -- the
+    /// `PlayerArgs(item:)` extraction below fixed only the player leg of it.
+    init(item: ContentItem) {
+        switch item.type {
+        case .video:
+            self = .player(PlayerArgs(item: item))
+        case .channel:
+            self = .channel(id: item.id, name: item.title, avatarURL: item.thumbnailURL)
+        case .playlist:
+            self = .playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount)
+        }
+    }
+}
+
 /// Android's `PlayerFragment` arguments (`PlayerFragment.kt:400-438`) -- the metadata fast path
 /// means playback can start from what the caller already has on hand, no backend fetch first.
 nonisolated struct PlayerArgs: Hashable, Sendable {

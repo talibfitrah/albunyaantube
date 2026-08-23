@@ -47,8 +47,13 @@ import SwiftData
             predicate: #Predicate { $0.videoId == videoId && $0.userId == uid }
         )
         if let existing = try context.fetch(descriptor).first {
+            // `dirty` only -- never `updatedAt` (gate wave-2 W12). `updatedAt` is the *server*
+            // timestamp and phase 4's monotonicity guard (`AND updated_at < :ts`,
+            // favorites-settings-about.md:20-33,60); Android's DAO leaves it alone on every local
+            // mutation for exactly that reason. Stamping it locally on a device whose clock runs
+            // ahead of the server writes a future timestamp that makes the guard reject every
+            // later server update to that row, permanently.
             existing.dirty = true
-            existing.updatedAt = Date()
             if existing.isRemoved {
                 // Resurrect: re-add of a soft-deleted row refreshes the snapshot fields too
                 // (DAO's `resurrectAndUpsert`, favorites-settings-about.md:41-42).
@@ -78,8 +83,7 @@ import SwiftData
         )
         for favorite in try context.fetch(descriptor) {
             favorite.isRemoved = true
-            favorite.dirty = true
-            favorite.updatedAt = Date()
+            favorite.dirty = true // not `updatedAt` -- see `toggle` (gate wave-2 W12)
         }
         try context.save()
         refresh()

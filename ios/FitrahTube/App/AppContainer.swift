@@ -94,9 +94,12 @@ nonisolated enum AppConfig {
             return try build()
         } catch {
             if !inMemory {
-                for url in [configuration.url,
-                            configuration.url.appendingPathExtension("shm"),
-                            configuration.url.appendingPathExtension("wal")] {
+                // `-shm`/`-wal`, appended to the path -- not `appendingPathExtension`, which
+                // produces `default.store.shm` (gate wave-2 W1). SQLite names its sidecars by
+                // suffixing the database *filename*, so the wrongly-named deletes left the real
+                // WAL and SHM files next to a deleted store: the rebuild replayed stale frames or
+                // failed again, dropping every launch to the in-memory fallback.
+                for url in ["", "-shm", "-wal"].map({ URL(fileURLWithPath: configuration.url.path + $0) }) {
                     try? FileManager.default.removeItem(at: url)
                 }
                 if let recovered = try? build() { return recovered }

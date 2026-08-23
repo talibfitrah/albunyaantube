@@ -35,7 +35,11 @@ import Observation
         await fetch()
     }
 
+    /// Same in-flight guard as `loadIfNeeded` (gate wave-2 W8): pull-to-refresh and the retry
+    /// button could run two `fetch()`es at once, and the first to finish hid the skeleton while
+    /// out-of-order completions left the older response in `all` (last writer wins).
     func reload() async {
+        guard !isLoading else { return }
         await fetch()
     }
 
@@ -57,6 +61,10 @@ import Observation
         error = nil
         do {
             all = try await client.categories()
+        } catch is CancellationError {
+            // A cancelled `.task` (the view went away mid-fetch) is not a failure to show the
+            // user (gate wave-2 W8) -- stored, it surfaced as a spurious error state the next
+            // time the screen appeared.
         } catch {
             self.error = error
         }

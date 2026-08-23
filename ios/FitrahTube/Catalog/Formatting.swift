@@ -77,6 +77,22 @@ nonisolated enum Format {
         return category.localizedNames?[lang] ?? category.name
     }
 
+    /// The same rule for a Home/Featured section title (gate wave-2 W9: `HomeView` and
+    /// `FeaturedView` each carried their own copy).
+    static func sectionDisplayName(_ section: HomeSection, locale: Locale) -> String {
+        let lang = locale.language.languageCode?.identifier ?? "en"
+        return section.localizedNames?[lang] ?? section.name
+    }
+
+    /// shell-home.md:207 -- VoiceOver label for a section's See-all control ("See all content in
+    /// {displayName}"), built from the same untruncated display name as the visible title. Routed
+    /// through `localizedFormat` like every other formatted string, so it resolves against the
+    /// app/environment locale; `HomeViewModel.seeAllLabel` used `Locale.current` and would have
+    /// produced a mixed-language label under an in-app locale override (gate wave-2 W8).
+    static func sectionSeeAllLabel(_ section: HomeSection, locale: Locale) -> String {
+        localizedFormat("home_see_all_category", locale: locale, sectionDisplayName(section, locale: locale))
+    }
+
     /// Built once from the app's three shipped languages -- a `static let` of a `Bundle`-valued
     /// dictionary needs no `nonisolated(unsafe)` because it's computed a single time and only
     /// ever read afterward.

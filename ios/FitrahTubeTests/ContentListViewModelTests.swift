@@ -82,6 +82,31 @@ struct ContentListViewModelTests {
         func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
     }
 
+    /// The Nth `content()` call suspends on `gates[N]` (1-based); every other call resolves at
+    /// once. Lets a test hold two load-mores in flight at the same time, which is what the gate
+    /// wave-2 W2 defer fix is about.
+    private actor MultiGateCatalogClient: CatalogClient {
+        private let page: CursorPage<ContentItem>
+        private let gates: [Int: Gate]
+        private(set) var callCount = 0
+
+        init(page: CursorPage<ContentItem>, gates: [Int: Gate]) {
+            self.page = page
+            self.gates = gates
+        }
+
+        func categories() async throws -> [FitrahTube.Category] { [] }
+        func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+            callCount += 1
+            if let gate = gates[callCount] { await gate.block() }
+            return page
+        }
+        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+    }
+
     // MARK: - Tests
 
     @Test func perTypeRequestShapes() async {
@@ -321,5 +346,64 @@ struct ContentListViewModelTests {
 
         #expect(vm.state == .error)
         #expect(vm.lastItems.isEmpty)
+    }
+
+
+    // MARK: - Gate wave-2
+
+    /// W2: load-more A is cancelled by a full load while it is suspended, then load-more B starts.
+    /// A's late return used to run an unconditional `defer { isLoadingMore = false }` and unlock
+    /// B's in-flight guard, so a third `loadMore()` ran concurrently with B against the same
+    /// cursor -- a duplicate fetch and a flickering spinner. The `defer` is generation-scoped now.
+    @Test func aCancelledLoadMoreDoesNotUnlockANewerOnesGuard() async {
+        let gateA = Gate()
+        let gateB = Gate()
+        let page = CursorPage(items: items(count: 20, prefix: "a"), nextCursor: "1")
+        let client = MultiGateCatalogClient(page: page, gates: [2: gateA, 4: gateB])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+
+        await vm.load()                              // call 1
+        let loadMoreA = Task { await vm.loadMore() } // call 2 -- suspends on gateA
+        await gateA.waitUntilBlocked()
+        await vm.refresh()                           // call 3 -- cancels A, resolves immediately
+        let loadMoreB = Task { await vm.loadMore() } // call 4 -- suspends on gateB
+        await gateB.waitUntilBlocked()
+
+        await gateA.release()                        // A returns late, cancelled
+        _ = await loadMoreA.value
+
+        #expect(await vm.loadMore() == false)        // B still holds the guard
+        #expect(await client.callCount == 4)         // no fifth request
+
+        await gateB.release()
+        _ = await loadMoreB.value
+    }
+
+    /// W8: whitespace does not count toward the ≥2-char threshold and is never sent, and a field
+    /// holding only spaces is not an active search (it used to show "No results" for `q="  "`).
+    @Test func whitespaceOnlyQueryIsNeitherSentNorTreatedAsAnActiveSearch() async {
+        let client = RecordingCatalogClient(pages: [CursorPage(items: items(count: 3, prefix: "a"), nextCursor: nil)])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+
+        await vm.load()
+        vm.query = "  "
+        await vm.searchTask?.value
+
+        let calls = await client.calls
+        #expect(calls.count == 2)
+        #expect(calls[1].query == nil)
+        guard case .content(_, _, _, let isSearchActive) = vm.state else { Issue.record("expected .content"); return }
+        #expect(isSearchActive == false)
+    }
+
+    @Test func queryIsTrimmedBeforeItIsSent() async {
+        let client = RecordingCatalogClient(pages: [CursorPage(items: items(count: 3, prefix: "a"), nextCursor: nil)])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+
+        await vm.load()
+        vm.query = "  ab  "
+        await vm.searchTask?.value
+
+        #expect(await client.calls[1].query == "ab")
     }
 }

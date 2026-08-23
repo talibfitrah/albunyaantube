@@ -48,6 +48,25 @@ struct FavoritesStoreTests {
         #expect(store.isFavorite("v1") == false)
     }
 
+    /// Gate wave-2 W12: `updatedAt` is the server timestamp and phase 4's monotonicity guard --
+    /// local mutations set `dirty` and leave it at the epoch-0 sentinel, exactly as Android's DAO
+    /// does. A locally stamped (possibly future) timestamp would make the server's own updates to
+    /// that row fail the `updated_at < :ts` guard forever.
+    @Test func localMutationsNeverAdvanceUpdatedAt() throws {
+        let store = makeStore()
+        let epoch = Date(timeIntervalSince1970: 0)
+
+        try store.toggle(makeItem())
+        #expect(store.items.first?.updatedAt == epoch)
+
+        try store.toggle(makeItem())   // soft-delete
+        try store.toggle(makeItem())   // resurrect
+        #expect(store.items.first?.updatedAt == epoch)
+
+        try store.clearAll()
+        #expect(store.items.isEmpty)
+    }
+
     @Test func retogglingSoftDeletedRowRevivesItWithFreshSnapshot() throws {
         let store = makeStore()
         try store.toggle(makeItem(title: "Original"))

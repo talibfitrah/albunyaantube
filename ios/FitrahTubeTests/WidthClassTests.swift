@@ -54,10 +54,11 @@ struct WidthClassTests {
     }
 
     /// Gate A-C2. The type was always right; `RootView` fed it the wrong size. It measured the
-    /// safe-area-*inset* content, so on iPad Pro 13" (1032×1376 pt) landscape reported a 987 pt
-    /// smallest dimension -- 13 pt under the `.large` threshold -- and the bucket flipped on
-    /// rotation. `RootView` now measures the window (`Color.clear.ignoresSafeArea()` background),
-    /// so both orientations hand this initializer the same 1032 pt.
+    /// safe-area-*inset* content, so on iPad Pro 13" (1032×1376 pt) landscape reported a 980 pt
+    /// smallest dimension -- 20 pt under the `.large` threshold -- and the bucket flipped on
+    /// rotation. `.ignoresSafeArea()` does not widen what `onGeometryChange` measures, so
+    /// `RootView` adds the proxy's own `safeAreaInsets` back instead (980 + 32 + 20 = the 1032 pt
+    /// window), and both orientations now hand this initializer the same 1032 pt.
     @Test func iPadPro13BucketsIdenticallyInBothOrientations() {
         let window = (portrait: CGSize(width: 1032, height: 1376), landscape: CGSize(width: 1376, height: 1032))
         #expect(WidthClass(size: window.portrait) == .large)
@@ -66,8 +67,8 @@ struct WidthClassTests {
                 == GridRules.listColumns(WidthClass(size: window.landscape)))
         #expect(Spacing.md(WidthClass(size: window.portrait)) == Spacing.md(WidthClass(size: window.landscape)))
 
-        // The size the old measurement handed in: 1032 − 24 pt status bar − 21 pt home indicator.
-        // Proof the 13 pt is what decided the bucket, i.e. that measuring the window is the fix.
-        #expect(WidthClass(size: CGSize(width: 1376, height: 1032 - 24 - 21)) == .regular)
+        // The size the old measurement handed in: 1032 − 32 pt top inset − 20 pt bottom inset.
+        // Proof the 52 pt of insets is what decided the bucket, i.e. that adding them back is the fix.
+        #expect(WidthClass(size: CGSize(width: 1376, height: 1032 - 32 - 20)) == .regular)
     }
 }

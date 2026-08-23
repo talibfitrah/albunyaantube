@@ -7,11 +7,11 @@ struct HomeView: View {
     @Environment(\.container) private var container
     @Environment(\.router) private var router
     @Environment(\.widthClass) private var widthClass
-    @Environment(\.locale) private var locale
 
     @State private var viewModel: HomeViewModel?
     @State private var containerWidth: CGFloat = 0
     @State private var contentFits = false
+    @State private var bannerMessage: BannerMessage?
     /// Home had no `PaginationGuard` at all, which was survivable only because its two geometry
     /// triggers were edge-triggered Bools that (accidentally) never re-fired. Now that
     /// `onContentFits` reports every layout delta, the autofill path needs the same six guards the
@@ -54,6 +54,18 @@ struct HomeView: View {
             }
         }
         .background(Color.homeSurface.ignoresSafeArea())
+        .transientBanner($bannerMessage)
+        // Gate wave-2 W4: a reload failure with sections already on screen keeps them (see
+        // `HomeViewModel.fetchFirstPage`) and says so here instead of blanking Home for a
+        // full-page error -- the same policy the lists follow (`content-lists.md:277-280`), driven
+        // off the same event channel (`errorToken`) so a second consecutive failure still fires.
+        // With nothing on screen the state is `.error`, which carries its own retry: no banner.
+        .onChange(of: viewModel?.errorToken) { _, _ in
+            guard let viewModel, case .content = viewModel.state else { return }
+            bannerMessage = BannerMessage(text: String(localized: "list_error_title"),
+                                          actionTitle: String(localized: "retry"),
+                                          action: { Task { await viewModel.load() } })
+        }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
         // Fix round 1, finding #4: a category applied on Categories/Subcategories (Task 11) pops
         // straight back to Home without re-running `.task` (this view was never removed from its
@@ -166,7 +178,12 @@ struct HomeView: View {
             case .content(let sections, _, let isLoadingMore):
                 LazyVStack(spacing: 0) {
                     ForEach(sections) { section in
-                        sectionRow(section, viewModel: viewModel)
+                        // Shared with `FeaturedView` (gate wave-2 W9). Home pushes the section's
+                        // raw `name`; Featured pushes the localized one -- the one real difference
+                        // between the two call sites, hence the closure.
+                        HomeSectionRow(section: section, containerWidth: containerWidth) {
+                            router.push(.featured(categoryId: section.id, categoryName: section.name))
+                        }
                     }
                     if isLoadingMore {
                         ProgressView()
@@ -181,65 +198,9 @@ struct HomeView: View {
         }
     }
 
-    /// Same single predicate  uses (gate B1-minor-2): a legacy empty-string
-    /// category id is not an active filter, even though it is non-nil.
     /// Same single predicate `ContentListView` uses (gate B1-minor-2): a legacy empty-string
     /// category id is not an active filter, even though it is non-nil.
     private var hasActiveFilter: Bool { !(container.filters.state.categoryId ?? "").isEmpty }
-
-    // MARK: - Sections / carousel (shell-home.md:B5-B7)
-
-    private func sectionRow(_ section: HomeSection, viewModel: HomeViewModel) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            SectionHeader(
-                emoji: section.icon,
-                title: sectionTitle(section),
-                onSeeAll: { router.push(.featured(categoryId: section.id, categoryName: section.name)) },
-                seeAllAccessibilityLabel: viewModel.seeAllLabel(for: section)
-            )
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: GridRules.cardGap(widthClass)) {
-                    ForEach(section.items) { item in
-                        itemView(item)
-                    }
-                }
-                .padding(.horizontal, Spacing.homeHorizontalMargin(widthClass)) // home_horizontal_margin (shell-home.md:227)
-                .padding(.bottom, Spacing.sm)
-            }
-        }
-        .padding(.top, Spacing.lg(widthClass)) // home_vertical_section_spacing 24/32/40 -- matches Spacing.lg exactly
-    }
-
-    private func sectionTitle(_ section: HomeSection) -> String {
-        let lang = locale.language.languageCode?.identifier ?? "en"
-        return section.localizedNames?[lang] ?? section.name
-    }
-
-    @ViewBuilder
-    private func itemView(_ item: ContentItem) -> some View {
-        switch item.type {
-        case .video:
-            MediaCard(item: item, width: cardWidth(for: .video)) {
-                router.push(.player(PlayerArgs(item: item)))
-            }
-        case .playlist:
-            MediaCard(item: item, width: cardWidth(for: .playlist)) {
-                router.push(.playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount))
-            }
-        case .channel:
-            HomeChannelItem(item: item) {
-                router.push(.channel(id: item.id, name: item.title, avatarURL: item.thumbnailURL))
-            }
-        }
-    }
-
-    private func cardWidth(for type: ContentType) -> CGFloat {
-        guard containerWidth > 0 else { return 0 }
-        let visible = GridRules.carouselVisible(type, widthClass)
-        return max(0, GridRules.carouselCardWidth(
-            container: containerWidth, margin: Spacing.homeHorizontalMargin(widthClass), gap: GridRules.cardGap(widthClass), visible: visible
-        ))
-    }
 
     // MARK: - Pagination triggers (shell-home.md:B11 auto-load, B13 scroll threshold)
 
@@ -259,9 +220,14 @@ struct HomeView: View {
         // Home's pagination failures are silent by contract (RULINGS #13), so there is no
         // `paginationError` for guard 3 to read; guard 5's `itemCount > lastCount` is what refuses
         // a retry after a failure left the section count unchanged.
-        guard paginationGuard.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: false,
-                                              contentFits: contentFits, itemCount: sections.count) else { return }
-        Task { await viewModel.loadMore() }
+        //
+        // The attempt is committed only if the ViewModel actually starts the fetch (gate wave-2
+        // W2): a load-more refused during a pull-to-refresh used to spend an attempt and advance
+        // `lastCount`, latching autofill off for good once the refresh landed with the same count.
+        var attempt = paginationGuard
+        guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: hasMore, paginationError: false,
+                                      contentFits: contentFits, itemCount: sections.count) else { return }
+        Task { if await viewModel.loadMore() { paginationGuard = attempt } }
     }
 }
 

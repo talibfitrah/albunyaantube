@@ -57,7 +57,9 @@ struct HomeViewModelTests {
     private actor GatedCatalogClient: CatalogClient {
         private let page: CursorPage<HomeSection>
         private let gate: Gate
-        private var callCount = 0
+        /// `private(set)`: the W3 test proves a load-more was *refused*, which is only observable
+        /// as the absence of a third request.
+        private(set) var callCount = 0
 
         init(page: CursorPage<HomeSection>, gate: Gate) {
             self.page = page
@@ -69,6 +71,19 @@ struct HomeViewModelTests {
             callCount += 1
             if callCount > 1 { await gate.block() }
             return page
+        }
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+    }
+
+    /// Every call fails -- for the "nothing on screen yet" terminal-error path.
+    private actor AlwaysFailingCatalogClient: CatalogClient {
+        struct Boom: Error {}
+        func categories() async throws -> [FitrahTube.Category] { [] }
+        func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
+            throw Boom()
         }
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
@@ -162,9 +177,60 @@ struct HomeViewModelTests {
         guard case .content = vm.state else { Issue.record("expected .content after refresh completes"); return }
     }
 
-    @Test func seeAllLabelContainsSectionName() {
-        let vm = HomeViewModel(catalog: FakeCatalogClient(), filter: FakeFilterStore(), widthClass: { .compact })
-        let label = vm.seeAllLabel(for: section("a"))
-        #expect(label.contains("Section a"))
+    // MARK: - Gate wave-2
+
+    /// W3 (the P1): a load-more that starts while `refresh()` is still awaiting used to fetch with
+    /// the *pre-refresh* cursor, and when both landed `sections` became new-page-1 + old-page-2
+    /// with `nextCursor` pointing into the dead cursor sequence. It must be refused outright.
+    @Test func loadMoreIsRefusedWhileARefreshIsInFlight() async {
+        let gate = Gate()
+        let client = GatedCatalogClient(page: CursorPage(items: [section("a")], nextCursor: "1"), gate: gate)
+        let vm = HomeViewModel(catalog: client, filter: FakeFilterStore(), widthClass: { .compact })
+
+        await vm.load() // call 1 -- not gated
+        let refreshTask = Task { await vm.refresh() }
+        await gate.waitUntilBlocked() // call 2 (the refresh) has genuinely suspended
+
+        #expect(await vm.loadMore() == false) // refused: no third request against the old cursor
+        #expect(await client.callCount == 2)
+
+        await gate.release()
+        await refreshTask.value
+        guard case .content(let sections, _, _) = vm.state else { Issue.record("expected .content"); return }
+        #expect(sections.map(\.id) == ["a"]) // exactly the refreshed page, nothing appended to it
+    }
+
+    /// W4: a refresh failure with sections already on screen keeps them and bumps `errorToken`
+    /// (the view shows a transient banner); only a failure with nothing to show is `.error`.
+    @Test func refreshFailureWithVisibleContentKeepsSectionsAndBumpsErrorToken() async {
+        let firstPage = CursorPage(items: [section("a")], nextCursor: nil)
+        let vm = HomeViewModel(catalog: FlakyCatalogClient(firstPage: firstPage), filter: FakeFilterStore(), widthClass: { .compact })
+
+        await vm.load()
+        #expect(vm.errorToken == 0)
+
+        await vm.refresh() // throws
+
+        guard case .content(let sections, _, let isLoadingMore) = vm.state else {
+            Issue.record("a refresh failure must not blank loaded Home content, got \(vm.state)")
+            return
+        }
+        #expect(sections.map(\.id) == ["a"])
+        #expect(isLoadingMore == false)
+        #expect(vm.errorToken == 1)
+
+        await vm.refresh() // second consecutive failure: state is byte-identical, the event is not
+        #expect(vm.errorToken == 2)
+    }
+
+    /// W4, the other half: with nothing on screen there is nothing to retain, so the first load
+    /// failing still gets the full-page `.error` (which carries its own retry).
+    @Test func firstLoadFailureWithNothingOnScreenIsStillATerminalError() async {
+        let vm = HomeViewModel(catalog: AlwaysFailingCatalogClient(), filter: FakeFilterStore(), widthClass: { .compact })
+
+        await vm.load()
+
+        #expect(vm.state == .error)
+        #expect(vm.errorToken == 1)
     }
 }

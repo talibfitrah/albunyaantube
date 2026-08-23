@@ -3,9 +3,9 @@ import Foundation
 /// Android's `HomeViewModel` (`shell-home.md` §B9-B11). One `Task`-typed property per "load kind" --
 /// `loadTask` for a full reload (`load`/`refresh`, Android's `loadJob`) and
 /// `loadMoreTask` for pagination (Android's `loadMoreJob`) -- so a fresh full reload always
-/// supersedes an in-flight load-more (B10 step 1), while load-more's own in-flight guard
-/// (`isLoadingMore`, set before its first `await`) is enough on its own: Android never cancels
-/// `loadJob` from `loadMoreSections()`, so a full load never cancels an unrelated load-more here.
+/// supersedes an in-flight load-more (B10 step 1), never the reverse. Load-more's own in-flight
+/// guard (`isLoadingMore`, set before its first `await`) is not sufficient on its own: see
+/// `loadGeneration`/`isFullLoading` below for the two races it misses.
 @MainActor @Observable final class HomeViewModel {
     enum State: Equatable {
         case loading
@@ -16,6 +16,12 @@ import Foundation
 
     private(set) var state: State = .loading
 
+    /// Bumped on every terminal (load/refresh) failure, exactly like `ContentListViewModel`'s.
+    /// `HomeView` drives its `TransientBanner` off this event rather than off a Bool level, so a
+    /// second consecutive refresh failure -- which leaves `state` byte-identical -- still fires
+    /// (gate wave-2 W4).
+    private(set) var errorToken = 0
+
     private let catalog: any CatalogClient
     private let filter: any FilterStore
     private let widthClass: () -> WidthClass
@@ -25,6 +31,15 @@ import Foundation
     private var hasMore = true // optimistic default, mirrors Android (shell-home.md:B9)
     private var isLoadingMore = false
     private var category: String?
+
+    /// Gate wave-2 W2/W3 -- the same token `ContentListViewModel`/`FeaturedViewModel` use; see the
+    /// full rationale there. Home was the P1 case: its `loadMore()` guard was only
+    /// `hasMore, !isLoadingMore`, so a load-more started while `fetchFirstPage` was awaiting (pull
+    /// to refresh, then scroll -- or the iPad autofill that `HomeView` re-arms right before
+    /// `refresh()`) fetched with the pre-refresh cursor, and when both landed `sections` became
+    /// new-page-1 + old-page-2 with `nextCursor` pointing into the dead cursor sequence.
+    private var loadGeneration = 0
+    private var isFullLoading = false
 
     private var loadTask: Task<Void, Never>?
     private var loadMoreTask: Task<Void, Never>?
@@ -45,29 +60,31 @@ import Foundation
 
     /// RULINGS #12: never shows `.loading` -- the caller (`.refreshable`) holds its own spinner
     /// while the existing content stays on screen, swapped only once the new page arrives.
-    func refresh() async { await performFullLoad(showLoading: false) }
+    func refresh() async {
+        guard !isFullLoading else { return }
+        await performFullLoad(showLoading: false)
+    }
 
-    func loadMore() async {
-        guard hasMore, !isLoadingMore else { return }
+    /// Returns whether the fetch actually ran -- `HomeView` commits its `PaginationGuard` attempt
+    /// only then (gate wave-2 W2).
+    @discardableResult
+    func loadMore() async -> Bool {
+        guard hasMore, !isLoadingMore, !isFullLoading else { return false }
         isLoadingMore = true // set before the first `await` -- the in-flight guard (shell-home.md:B10)
         if case .content(let currentSections, let currentHasMore, _) = state {
             state = .content(sections: currentSections, hasMore: currentHasMore, isLoadingMore: true)
         }
-        let task = Task { await self.fetchMore() }
+        let generation = loadGeneration
+        let task = Task { await self.fetchMore(generation: generation) }
         loadMoreTask = task
         await task.value
-    }
-
-    /// shell-home.md:207: VoiceOver label for a section's See-all control -- "See all content in
-    /// {displayName}" (`home_see_all_category`), built from the same untruncated display name as
-    /// the section title itself (`localizedNames[lang] ?? name`).
-    func seeAllLabel(for section: HomeSection) -> String {
-        let lang = Locale.current.language.languageCode?.identifier ?? "en"
-        let displayName = section.localizedNames?[lang] ?? section.name
-        return String(format: String(localized: "home_see_all_category"), displayName)
+        return true
     }
 
     private func performFullLoad(showLoading: Bool) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        isFullLoading = true
         loadTask?.cancel()
         loadMoreTask?.cancel()
         // A cancelled load-more returns through its own `guard !Task.isCancelled` before it can
@@ -81,6 +98,9 @@ import Foundation
         let task = Task { await self.fetchFirstPage(showLoading: showLoading) }
         loadTask = task
         await task.value
+        // Only the newest full load may reopen pagination -- `load()` never refuses (a filter
+        // change must win), so a superseded one can return here late.
+        if generation == loadGeneration { isFullLoading = false }
     }
 
     private func fetchFirstPage(showLoading: Bool) async {
@@ -95,25 +115,36 @@ import Foundation
             state = sections.isEmpty ? .empty : .content(sections: sections, hasMore: hasMore, isLoadingMore: false)
         } catch {
             guard !Task.isCancelled else { return }
-            state = .error
+            errorToken += 1
+            // Gate wave-2 W4: same policy as the lists (`content-lists.md:277-280`) -- a reload
+            // failure with content already on screen keeps that content and says so in a transient
+            // banner. Blanking a loaded Home for a full-page error on one dropped pull-to-refresh
+            // is the bug `ContentListViewModel` already fixed; Home never got it. `sections` is
+            // only ever reassigned on success, so it still holds the last good page here, and a
+            // category change builds a whole new `HomeViewModel` (`HomeView`), so retained
+            // sections can never be shown under a filter they weren't fetched for.
+            state = sections.isEmpty ? .error : .content(sections: sections, hasMore: hasMore, isLoadingMore: false)
         }
     }
 
-    private func fetchMore() async {
-        defer { isLoadingMore = false } // covers the cancellation exits below too (gate B1-I3)
+    private func fetchMore(generation: Int) async {
+        // Covers the cancellation exits below too (gate B1-I3), but only while this is still the
+        // newest load-more: a superseded one returning late must not unlock a live guard (W2).
+        defer { if generation == loadGeneration { isLoadingMore = false } }
         do {
             let page = try await catalog.home(cursor: nextCursor, categoryLimit: Self.categoryLimit,
                                                contentLimit: contentLimit(), category: category)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             let existingIDs = Set(sections.map(\.id))
             sections.append(contentsOf: page.items.filter { !existingIDs.contains($0.id) }) // dedupe by section id
             nextCursor = page.nextCursor
             hasMore = page.hasMore
             state = .content(sections: sections, hasMore: hasMore, isLoadingMore: false)
         } catch {
-            // RULINGS #13: pagination failures on Home are silent -- no error state, the footer
-            // spinner just disappears and the user can scroll again to retry.
-            guard !Task.isCancelled else { return }
+            // RULINGS #13: pagination failures on Home are silent -- no error state, no
+            // `errorToken` bump (no banner either), the footer spinner just disappears and the
+            // user can scroll again to retry.
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             state = .content(sections: sections, hasMore: hasMore, isLoadingMore: false)
         }
     }

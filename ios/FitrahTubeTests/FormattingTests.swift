@@ -136,4 +136,20 @@ struct FormattingTests {
         let category = Category(id: "1", name: "Quran", slug: "quran", parentId: nil)
         #expect(Format.categoryDisplayName(category, locale: Locale(identifier: "en")) == "Quran")
     }
+
+    // MARK: - Section title / See-all label (moved off `HomeViewModel.seeAllLabel`, gate wave-2
+    // W8/W9: one implementation for Home and Featured, resolved against the passed-in locale
+    // rather than `Locale.current`)
+
+    @Test func sectionDisplayNamePrefersTheLocalizedName() {
+        let section = HomeSection(id: "1", name: "Quran", localizedNames: ["en": "Quran", "ar": "قرآن"], icon: nil, items: [])
+        #expect(Format.sectionDisplayName(section, locale: Locale(identifier: "ar")) == "قرآن")
+        #expect(Format.sectionDisplayName(section, locale: Locale(identifier: "nl")) == "Quran") // no nl entry
+    }
+
+    @Test func sectionSeeAllLabelContainsTheDisplayName() {
+        let section = HomeSection(id: "1", name: "Quran", localizedNames: ["en": "Quran", "ar": "قرآن"], icon: nil, items: [])
+        #expect(Format.sectionSeeAllLabel(section, locale: Locale(identifier: "en")).contains("Quran"))
+        #expect(Format.sectionSeeAllLabel(section, locale: Locale(identifier: "ar")).contains("قرآن"))
+    }
 }

@@ -83,47 +83,34 @@ private struct StateButton: View {
     }
 }
 
-/// Android skeleton_content_item.xml: 120×90 thumbnail block + two text bars, shimmering; static under Reduce Motion.
+/// Android skeleton_content_item.xml: 120×90 thumbnail block + two text bars, shimmering; static
+/// under Reduce Motion. Drives off the shared `Shimmer` (gate wave-2 W9) -- the TimelineView tick,
+/// the phase and the Reduce Motion branch used to be re-implemented here, subtly out of step with
+/// the copy `SkeletonGrid`/`SkeletonCarousel` use.
 struct SkeletonListView: View {
     var rows: Int = 6
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.widthClass) private var widthClass
-    @State private var start = Date()
 
     var body: some View {
-        // Reduce Motion: skip TimelineView entirely rather than let it keep firing an unused
-        // per-second tick -- rows(phase:) is static there anyway since fill(_:) ignores phase.
-        if reduceMotion {
-            rows(phase: false)
-        } else {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let phase = Int(context.date.timeIntervalSince(start)) % 2 == 0
-                rows(phase: phase)
-                    .animation(.easeInOut(duration: 1), value: phase)
-            }
-        }
-    }
-
-    private func rows(phase: Bool) -> some View {
-        VStack(spacing: Spacing.md(widthClass)) {
-            ForEach(0..<rows, id: \.self) { _ in
-                HStack(spacing: Spacing.sm) {
-                    RoundedRectangle(cornerRadius: Radius.thumbnail)
-                        .fill(fill(phase))
-                        .frame(width: 120, height: 90)
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        RoundedRectangle(cornerRadius: Radius.chip).fill(fill(phase)).frame(height: 16)
-                        RoundedRectangle(cornerRadius: Radius.chip).fill(fill(phase)).frame(width: 140, height: 12)
+        Shimmer { fill in
+            VStack(spacing: Spacing.md(widthClass)) {
+                ForEach(0..<rows, id: \.self) { _ in
+                    HStack(spacing: Spacing.sm) {
+                        RoundedRectangle(cornerRadius: Radius.thumbnail)
+                            .fill(fill)
+                            .frame(width: 120, height: 90)
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                            RoundedRectangle(cornerRadius: Radius.chip).fill(fill).frame(height: 16)
+                            RoundedRectangle(cornerRadius: Radius.chip).fill(fill).frame(width: 140, height: 12)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
                 }
             }
+            .padding(Spacing.md(widthClass))
+            .accessibilityLabel(String(localized: "loading"))
         }
-        .padding(Spacing.md(widthClass))
-        .accessibilityLabel(String(localized: "loading"))
     }
-
-    private func fill(_ phase: Bool) -> Color { (phase && !reduceMotion) ? .skeletonShimmer : .skeleton }
 }
 
 #Preview("Empty") {

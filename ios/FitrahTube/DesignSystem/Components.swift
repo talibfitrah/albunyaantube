@@ -562,6 +562,119 @@ struct SectionHeader: View {
     }
 }
 
+// MARK: - HomeSectionRow (item_home_section.xml -- header + horizontal card rail)
+
+/// One carousel section: header, then a horizontal rail of cards. One copy (gate wave-2 W9):
+/// `HomeView.sectionRow` and `FeaturedView.sectionRow` were ~60 identical lines each, down to the
+/// card-width maths, the section-title fallback and the item→route switch.
+///
+/// `onSeeAll` stays a caller closure because the two screens genuinely differ there: Home pushes
+/// the section's raw `name`, Featured pushes the localized title.
+struct HomeSectionRow: View {
+    let section: HomeSection
+    /// The measured width of the screen the rail sits in -- carousel card widths derive from it.
+    let containerWidth: CGFloat
+    let onSeeAll: () -> Void
+
+    @Environment(\.router) private var router
+    @Environment(\.widthClass) private var widthClass
+    @Environment(\.locale) private var locale
+
+    init(section: HomeSection, containerWidth: CGFloat, onSeeAll: @escaping () -> Void) {
+        self.section = section
+        self.containerWidth = containerWidth
+        self.onSeeAll = onSeeAll
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            SectionHeader(
+                emoji: section.icon,
+                title: Format.sectionDisplayName(section, locale: locale),
+                onSeeAll: onSeeAll,
+                seeAllAccessibilityLabel: Format.sectionSeeAllLabel(section, locale: locale)
+            )
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: GridRules.cardGap(widthClass)) {
+                    ForEach(section.items) { item in
+                        itemView(item)
+                    }
+                }
+                .padding(.horizontal, Spacing.homeHorizontalMargin(widthClass)) // home_horizontal_margin (shell-home.md:227)
+                .padding(.bottom, Spacing.sm)
+            }
+        }
+        .padding(.top, Spacing.lg(widthClass)) // home_vertical_section_spacing 24/32/40 -- matches Spacing.lg exactly
+    }
+
+    @ViewBuilder
+    private func itemView(_ item: ContentItem) -> some View {
+        switch item.type {
+        case .video, .playlist:
+            MediaCard(item: item, width: cardWidth(for: item.type)) { router.push(Route(item: item)) }
+        case .channel:
+            HomeChannelItem(item: item) { router.push(Route(item: item)) }
+        }
+    }
+
+    private func cardWidth(for type: ContentType) -> CGFloat {
+        guard containerWidth > 0 else { return 0 }
+        let visible = GridRules.carouselVisible(type, widthClass)
+        return max(0, GridRules.carouselCardWidth(
+            container: containerWidth, margin: Spacing.homeHorizontalMargin(widthClass), gap: GridRules.cardGap(widthClass), visible: visible
+        ))
+    }
+}
+
+// MARK: - SearchField (the pill-shaped query field, shared by Search and the list tabs)
+
+/// Magnifier + text field + clear button in a `surfaceVariant` pill. One copy (gate wave-2 W9):
+/// `SearchView.searchField` and `ContentListView.searchBar` were near-identical, differing only in
+/// focus/submit behaviour and the field's VoiceOver label -- so the next styling change would have
+/// had to be made twice, correctly, to keep the two screens looking like one app.
+struct SearchField: View {
+    @Binding var text: String
+    let accessibilityLabel: String
+    /// Set by `SearchView` (auto-focus on appear); `nil` on the list tabs, whose field is just one
+    /// element of a header.
+    var focus: FocusState<Bool>.Binding?
+    /// Set by `SearchView`, which submits on the keyboard's Search key (bypassing its debounce);
+    /// `nil` on the list tabs, which only ever fetch on the debounced `query` change.
+    var onSubmit: (() -> Void)?
+
+    @Environment(\.widthClass) private var widthClass
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Color.textSecondary)
+            field
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Color.textSecondary)
+                }
+                .accessibilityLabel(String(localized: "search_clear"))
+            }
+        }
+        .padding(.horizontal, Spacing.md(widthClass))
+        .padding(.vertical, Spacing.sm)
+        .background(Color.surfaceVariant, in: RoundedRectangle(cornerRadius: Radius.pill))
+        .padding(.horizontal, Spacing.md(widthClass))
+        .padding(.top, Spacing.sm)
+    }
+
+    @ViewBuilder
+    private var field: some View {
+        let base = TextField(String(localized: "search_hint"), text: $text)
+            .textFieldStyle(.plain)
+            .accessibilityLabel(accessibilityLabel)
+        if let focus, let onSubmit {
+            base.focused(focus).submitLabel(.search).onSubmit(onSubmit)
+        } else {
+            base
+        }
+    }
+}
+
 // MARK: - CategoryPill (Home category filter pill)
 
 /// Always `categoryPill`-filled (brand text/icons); expand chevron and clear button are mutually
@@ -684,8 +797,17 @@ struct TransientBanner: ViewModifier {
             if let title = message.actionTitle, let action = message.action {
                 Button(title) { action(); self.message = nil }
                     .foregroundStyle(Color.accent)
+                // Gate wave-2 W5: pinning an actionable banner for VoiceOver/Switch Control (above)
+                // is right, but it left no way out except performing the action -- an offer of
+                // "Retry" a user who has decided not to retry cannot decline. A real control, plus
+                // the rotor action below so it is reachable without hunting for the glyph.
+                Button { self.message = nil } label: {
+                    Image(systemName: "xmark").foregroundStyle(.white)
+                }
+                .accessibilityLabel(String(localized: "banner_dismiss"))
             }
         }
+        .accessibilityAction(named: Text(String(localized: "banner_dismiss"))) { self.message = nil }
         .font(TypeScale.body(widthClass))
         .padding(Spacing.md(widthClass))
         .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: Radius.dialog))
@@ -702,10 +824,11 @@ extension View {
 
 // MARK: - Skeletons (RULINGS.md #16 shimmer + mirror layout; contradiction #8 one skeleton token)
 
-/// Shared shimmer driver for the grid/carousel skeletons -- same phase/reduce-motion pattern as
-/// `StateViews.SkeletonListView`, factored here instead of touching that file (out of this task's
-/// scope) so `SkeletonGrid`/`SkeletonCarousel` don't duplicate it against each other.
-private struct Shimmer<Content: View>: View {
+/// The one shimmer driver: TimelineView tick, two-phase fill, static under Reduce Motion. Used by
+/// `SkeletonGrid`/`SkeletonCarousel` here and by `SkeletonListView` in `StateViews.swift`, which
+/// hand-rolled its own copy until gate wave-2 W9 -- the two had already drifted (an extra
+/// `!reduceMotion` guard in one `fill`), so a timing or token change had to be made twice.
+struct Shimmer<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var start = Date()
     @ViewBuilder let content: (Color) -> Content

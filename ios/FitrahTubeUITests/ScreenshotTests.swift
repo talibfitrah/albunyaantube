@@ -21,8 +21,6 @@ final class ScreenshotTests: XCTestCase {
     private enum Anchor: Sendable {
         /// A row/card button whose VoiceOver label contains this substring.
         case button(String)
-        /// A `Text` whose label contains this substring.
-        case text(String)
         /// The first `Form` toggle (Settings) — locale-independent.
         case firstSwitch
         /// The second button on screen (Onboarding's Skip/CTA pair) — locale-independent.
@@ -244,8 +242,6 @@ final class ScreenshotTests: XCTestCase {
         switch anchor {
         case .button(let needle):
             return app.buttons.matching(NSPredicate(format: "label CONTAINS %@", needle)).firstMatch
-        case .text(let needle):
-            return app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", needle)).firstMatch
         case .firstSwitch:
             return app.switches.firstMatch
         case .secondButton:

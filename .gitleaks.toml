@@ -1,8 +1,19 @@
 [extend]
 useDefault = true
 
+# Scoped to the placeholder *values*, not to the files that hold them (gate wave-2 W7). The old
+# path allowlist skipped `GoogleService-Info.placeholder.plist` wholesale, and `.gitignore`'s
+# `**/GoogleService-Info.plist` pattern does not cover that name -- so a developer who creates the
+# placeholder by copying a real downloaded plist and forgets to blank `API_KEY` commits a live
+# Firebase key into a file gitleaks was told never to look at. Matching the placeholder token
+# instead fails closed: any real value, at any path, is still scanned.
+#
+# The convention every committed config template in this repo uses is `__REPLACE_WITH_<NAME>__`
+# (see `android/app/google-services.json.template`); a future iOS placeholder plist must use the
+# same tokens to be allowlisted.
 [allowlist]
-paths = [
-  '''ios/FitrahTube/Resources/GoogleService-Info\.placeholder\.plist''',
-  '''android/app/google-services\.json\.template''',
+description = "Committed config templates whose secret fields hold __REPLACE_WITH_*__ tokens"
+regexTarget = "line"
+regexes = [
+  '''__REPLACE_WITH_[A-Z0-9_]+__''',
 ]

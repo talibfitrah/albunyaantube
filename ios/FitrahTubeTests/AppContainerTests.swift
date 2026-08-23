@@ -12,6 +12,12 @@ struct AppContainerTests {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
         try Data("this is not a SQLite database".utf8).write(to: url)
+        // Gate wave-2 W1: SQLite's sidecars are `<file>-shm`/`<file>-wal`, and recovery deleted
+        // `<file>.shm`/`<file>.wal` instead, so the real stale WAL survived the rebuild. Seeded
+        // here with a sentinel the recovery must not leave behind.
+        let stale = Data("stale sidecar".utf8)
+        let sidecars = ["-shm", "-wal"].map { URL(fileURLWithPath: url.path + $0) }
+        for sidecar in sidecars { try stale.write(to: sidecar) }
         defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
 
         let container = AppContainer.makeModelContainer(inMemory: false, storeURL: url)
@@ -21,6 +27,12 @@ struct AppContainerTests {
         context.insert(FavoriteVideo(videoId: "v1", title: "T", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
         try context.save()
         #expect(try context.fetchCount(FetchDescriptor<FavoriteVideo>()) == 1)
+
+        // A sidecar recreated by the rebuilt store is fine; the *stale* bytes surviving is not.
+        for sidecar in sidecars {
+            let survived = (try? Data(contentsOf: sidecar))?.starts(with: stale) ?? false
+            #expect(!survived, "\(sidecar.lastPathComponent) survived the corrupt-store recovery")
+        }
     }
 
     @Test func fakeContainerServesCannedCategories() async throws {

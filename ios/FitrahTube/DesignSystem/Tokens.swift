@@ -52,8 +52,13 @@ extension Color {
     static let skeletonShimmer = Color(light: 0xFFFFFF, dark: 0x383838)
     static let navInactive = Color(light: 0x757575, dark: 0xB0B0B0)
     static let divider = Color(light: 0x1A000000, dark: 0x1AFFFFFF)
-    static let liveBadge = Color(light: 0xF44336, dark: 0xF44336)
-    static let upcomingBadge = Color(light: 0x2196F3, dark: 0x2196F3)
+    // Material red/blue 800, not 500 (gate wave-2 W8): `Badge` prints white caption2-bold on these
+    // fills, and white on #F44336 is 4.0:1 / on #2196F3 is 3.1:1 -- both under WCAG AA's 4.5:1.
+    // Darkening the fill is what actually fixes it: white here measures 5.6:1 on both, in both
+    // appearances. (Swapping the *text* to `onBrand` would not: it is white in light mode, and its
+    // dark-mode near-black on a red 500 fill is 3.1:1.)
+    static let liveBadge = Color(light: 0xC62828, dark: 0xC62828)
+    static let upcomingBadge = Color(light: 0x1565C0, dark: 0x1565C0)
     static let heroOverlay = Color(light: 0x40000000, dark: 0x66000000)
     static let settingsIconBackground = Color(light: 0xF0F0F0, dark: 0x2A3530)
     static let submissionPending = Color(light: 0xFFA000, dark: 0xFFA000)

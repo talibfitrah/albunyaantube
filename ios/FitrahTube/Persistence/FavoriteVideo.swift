@@ -32,7 +32,16 @@ enum FavoritesMigrationPlan: SchemaMigrationPlan {
 }
 
 @Model final class FavoriteVideo {
-    @Attribute(.unique) var videoId: String
+    /// Gate wave-2 W11: unique on the *pair*, not on `videoId` alone. SwiftData's unique attribute
+    /// upserts on collision, so once phase 4 sets a real `currentUserId`, user B favoriting a video
+    /// user A already had would have silently rewritten A's row -- its `userId`, its sync metadata,
+    /// its snapshot fields -- with no error, while `FavoritesStore` documents per-user scoping the
+    /// schema could not actually provide. Done now, inside V1, because it costs nothing while
+    /// `userId` is uniformly `""` (the pair is exactly as unique as `videoId` was) and nothing has
+    /// shipped; after auth lands it would need a data migration to deduplicate first.
+    #Unique<FavoriteVideo>([\.videoId, \.userId])
+
+    var videoId: String
     var title: String
     var channelName: String
     var thumbnailUrl: String?
