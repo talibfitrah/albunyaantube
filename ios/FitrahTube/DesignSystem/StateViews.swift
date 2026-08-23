@@ -65,11 +65,13 @@ private struct StateButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(title, action: action)
-            .buttonStyle(.borderedProminent)
-            .tint(.brand)
-            .foregroundStyle(Color.onBrand)
-            .frame(minHeight: Size.button)
+        Button(action: action) {
+            Text(title).frame(minHeight: Size.button)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(.brand)
+        .foregroundStyle(Color.onBrand)
     }
 }
 
