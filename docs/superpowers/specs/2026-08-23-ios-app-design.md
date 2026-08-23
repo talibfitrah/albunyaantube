@@ -310,6 +310,7 @@ Each phase ends with the 9-stage review pipeline from `AGENTS.md` and one PR int
 - App: `SplashRouter` matrix, `DeepLinkParser`, filter persistence, grid column rules, `SyncManager` merge matrix, ViewModels against `AppContainer.fake()`.
 - Backend: §12 tests.
 - Manual matrix per phase: iPhone 17 / iPad mini / iPad Pro 13", en + ar, light + dark.
+- Test time limits: 300 s wall-clock (`ios/scripts/test.sh` watchdog) and **60 s per test** — XCTest rounds `defaultTestExecutionTimeAllowance` up to 60 s and Swift Testing's `timeLimit` floor is one minute, so CLAUDE.md's 30 s per method is not expressible on iOS; 60 s is the platform floor (decided 2026-08-23).
 
 ---
 
