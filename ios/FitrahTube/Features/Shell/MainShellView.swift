@@ -68,8 +68,7 @@ struct MainShellView: View {
         Binding(get: { router.pendingBanner }, set: { router.pendingBanner = $0 })
     }
 
-    // task-11: Featured/Search/Categories/Subcategories replace the placeholder. Every other
-    // route (player, shorts, channel, playlist, favorites, settings, about) is still tasks 12-13.
+    // task-12: Favorites replaces the placeholder. `.settings`/`.about` are still task 13.
     @ViewBuilder
     private func destination(for route: Route) -> some View {
         switch route {
@@ -81,18 +80,20 @@ struct MainShellView: View {
             CategoriesView()
         case .subcategories(let parentId, let parentName):
             SubcategoriesView(parentId: parentId, parentName: parentName)
+        case .favorites:
+            FavoritesView()
         default:
             PhaseTwoPlaceholderView(route: route)
         }
     }
 
-    // Tab roots are placeholders for now -- tasks 12-13 replace the remaining ones.
+    // Tab roots: task-12 replaces the Me placeholder with the guest Me tab (spec D11).
     @ViewBuilder
     private func rootView(for tab: Tab) -> some View {
         switch tab {
         case .home: HomeView()
         case .channels: ContentListView(type: .channels)
-        case .me: Text("Me")
+        case .me: MeGuestView()
         case .playlists: ContentListView(type: .playlists)
         case .videos: ContentListView(type: .videos)
         }

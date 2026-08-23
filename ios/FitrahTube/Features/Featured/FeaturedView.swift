@@ -57,8 +57,12 @@ struct FeaturedView: View {
     /// one (content-lists.md's own noted inconsistency). Re-deriving the title here from the
     /// shared `CategoriesCache` -- rather than trusting whichever name the caller happened to pass
     /// -- fixes that without touching `HomeView`'s push call.
+    ///
+    /// `resolvedId` prefers the ViewModel's already-resolved `categoryId`; before `.task` creates
+    /// the ViewModel (a fraction-of-a-second window), it calls the same static resolver instead of
+    /// duplicating the fallback ternary locally (task-12 fold-in).
     private var navTitle: String {
-        let resolvedId = (categoryId?.isEmpty == false) ? categoryId! : FeaturedViewModel.featuredCategoryId
+        let resolvedId = viewModel?.categoryId ?? FeaturedViewModel.resolvedCategoryId(categoryId)
         if let localized = container.categories.displayName(for: resolvedId, locale: locale) {
             return localized
         }

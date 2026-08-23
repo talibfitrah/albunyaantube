@@ -40,12 +40,34 @@ SPECIFIER_OVERRIDES = {
     "about_version_format": lambda v: v.replace("%2$lld", "%2$@"),
 }
 
-# iOS-only keys with no Android source (task-11 brief / RULINGS 37... err 25): "Parent › Sub"
-# subcategory filter label. Each name is wrapped in Unicode isolates (U+2068 FSI / U+2069 PDI) so
-# a name's own bidi direction can't corrupt the "›"-joined surrounding text (RULINGS 25 "with bidi
-# isolates"). Identical across en/ar/nl -- the separator and isolates are locale-agnostic.
+# iOS-only keys with no Android source. A value is either a plain string (identical across every
+# locale -- e.g. filter_label_parent_child's separator, which is locale-agnostic) or a
+# {locale: text} dict for real translated prose (task-12: the guest Me-tab sign-in card, which
+# has no Android equivalent -- spec D11).
+#
+# filter_label_parent_child (task-11 / RULINGS 25): "Parent › Sub" subcategory filter label, each
+# name wrapped in Unicode isolates (U+2068 FSI / U+2069 PDI) so a name's own bidi direction can't
+# corrupt the "›"-joined surrounding text.
+#
+# me_guest_* (task-12, spec D11 "guest Me tab shows local favorites + a sign-in card"): no Android
+# source since Android always forces sign-in and has no guest state for this screen.
 EXTRA_KEYS = {
     "filter_label_parent_child": "⁨%1$@⁩ › ⁨%2$@⁩",
+    "me_guest_title": {
+        "en": "Sign in to sync your favorites",
+        "ar": "سجّل الدخول لمزامنة مفضلاتك",
+        "nl": "Meld je aan om je favorieten te synchroniseren",
+    },
+    "me_guest_body": {
+        "en": "Create a free account to sync your favorites across devices and unlock more features.",
+        "ar": "أنشئ حسابًا مجانيًا لمزامنة مفضلاتك عبر أجهزتك والاستفادة من ميزات إضافية.",
+        "nl": "Maak een gratis account aan om je favorieten op al je apparaten te synchroniseren en meer functies te ontgrendelen.",
+    },
+    "me_guest_sign_in": {
+        "en": "Sign In",
+        "ar": "تسجيل الدخول",
+        "nl": "Aanmelden",
+    },
 }
 
 def is_dead(key):
@@ -159,11 +181,12 @@ def main(check=False):
             entry["shouldTranslate"] = False
         out["strings"][key] = entry
 
-    # EXTRA_KEYS: no Android source, so R7's "never copy English as a translation" doesn't apply --
-    # these are deliberately identical across every locale.
+    # EXTRA_KEYS: no Android source, so R7's "never copy English as a translation" doesn't apply.
+    # A plain string is deliberately identical across every locale; a dict carries real per-locale text.
     for key, value in EXTRA_KEYS.items():
+        locs = value if isinstance(value, dict) else {loc: value for loc in ("en", "ar", "nl")}
         out["strings"][key] = {
-            "localizations": {loc: {"stringUnit": {"state": "translated", "value": value}} for loc in ("en", "ar", "nl")}
+            "localizations": {loc: {"stringUnit": {"state": "translated", "value": v}} for loc, v in locs.items()}
         }
 
     # R4: iterate the union of en/ar/nl plural keys, not just en_plurals -- a plural group that

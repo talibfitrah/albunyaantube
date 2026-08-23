@@ -128,14 +128,23 @@ struct SearchView: View {
         List {
             Section {
                 ForEach(history, id: \.self) { entry in
-                    Button { Task { await viewModel.selectHistory(entry) } } label: {
-                        HStack(spacing: Spacing.sm) {
-                            Image(systemName: "clock").foregroundStyle(Color.textSecondary)
-                            Text(entry).foregroundStyle(Color.textPrimary)
-                            Spacer(minLength: 0)
+                    HStack(spacing: Spacing.sm) {
+                        Button { Task { await viewModel.selectHistory(entry) } } label: {
+                            HStack(spacing: Spacing.sm) {
+                                Image(systemName: "clock").foregroundStyle(Color.textSecondary)
+                                Text(entry).foregroundStyle(Color.textPrimary)
+                                Spacer(minLength: 0)
+                            }
                         }
+                        .accessibilityLabel(localizedFormat("a11y_search_history", entry))
+                        // search-categories.md §1.6: an always-visible trailing delete button
+                        // (Android's persistent 48×48 button), in addition to the swipe action below.
+                        Button { viewModel.removeHistory(entry) } label: {
+                            Image(systemName: "xmark").foregroundStyle(Color.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(String(localized: "cd_delete_search_history"))
                     }
-                    .accessibilityLabel(localizedFormat("a11y_search_history", entry))
                     .swipeActions {
                         Button(role: .destructive) { viewModel.removeHistory(entry) } label: {
                             Label(String(localized: "cd_delete_search_history"), systemImage: "trash")

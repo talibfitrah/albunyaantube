@@ -29,6 +29,7 @@ struct FitrahTubeApp: App {
                     selectDebugTabIfRequested()
                     pushDebugRouteIfRequested()
                     showDebugBannerIfRequested()
+                    seedDebugFavoritesIfRequested()
                 }
         }
     }
@@ -91,6 +92,8 @@ struct FitrahTubeApp: App {
             router.push(.subcategories(parentId: arg(2) ?? "", parentName: arg(3) ?? ""))
         case "featured":
             router.push(.featured(categoryId: arg(2), categoryName: arg(3)))
+        case "favorites":
+            router.push(.favorites)
         default:
             break
         }
@@ -106,6 +109,24 @@ struct FitrahTubeApp: App {
         let args = ProcessInfo.processInfo.arguments
         guard let flagIndex = args.firstIndex(of: "-fitrah-banner"), args.indices.contains(flagIndex + 1) else { return }
         router.pendingBanner = BannerMessage(text: args[flagIndex + 1])
+        #endif
+    }
+
+    /// Debug-only launch hook (task-12 acceptance screenshots): `-fitrah-seed-favorites` favorites
+    /// 3 sample videos on launch. There's no player yet (phase 2) to favorite a real video from,
+    /// so this is the only way to get the Favorites screen / Me-tab favorites section populated
+    /// for a screenshot.
+    private func seedDebugFavoritesIfRequested() {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("-fitrah-seed-favorites") else { return }
+        for index in 1...3 {
+            let item = ContentItem(
+                id: "seed-favorite-\(index)", type: .video, title: "Seeded Favorite \(index)", category: nil,
+                description: nil, thumbnailURL: nil, durationSeconds: 300 + index * 60, uploadedDaysAgo: nil,
+                viewCount: nil, channelTitle: "Sample Channel", subscribers: nil, videoCount: nil, itemCount: nil
+            )
+            try? container.favorites.toggle(item)
+        }
         #endif
     }
 }

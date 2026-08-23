@@ -18,6 +18,13 @@ import Foundation
     /// specific `categoryId` was passed.
     static let featuredCategoryId = "itirf9pGpAvoBT5VSkEc"
 
+    /// Empty/nil `categoryId` falls back to `featuredCategoryId`. `static` so `FeaturedView`'s
+    /// own `navTitle` can resolve the same way before `.task` creates the ViewModel, without a
+    /// second copy of the ternary itself (task-12 fold-in).
+    static func resolvedCategoryId(_ raw: String?) -> String {
+        (raw?.isEmpty == false) ? raw! : featuredCategoryId
+    }
+
     private(set) var state: State = .loading
 
     /// Set (and only ever cleared by a full reload) when a load-more fetch fails --
@@ -33,7 +40,9 @@ import Foundation
     /// for free, which subsumes that fussy directional-scroll-delta mechanic as the recovery action.
     private(set) var lastLoadFailed = false
 
-    private let categoryId: String
+    /// Resolved once at init (empty/nil `categoryId` falls back to `featuredCategoryId`) and
+    /// exposed so `FeaturedView.navTitle` doesn't duplicate that same fallback (task-12 fold-in).
+    let categoryId: String
     private let categoryName: String?
     private let catalog: any CatalogClient
 
@@ -53,7 +62,7 @@ import Foundation
     private static let flatPageSize = 50 // FLAT_PAGE_SIZE, content-lists.md:627
 
     init(categoryId: String?, categoryName: String?, catalog: any CatalogClient) {
-        self.categoryId = (categoryId?.isEmpty == false) ? categoryId! : Self.featuredCategoryId
+        self.categoryId = Self.resolvedCategoryId(categoryId)
         self.categoryName = categoryName
         self.catalog = catalog
     }
