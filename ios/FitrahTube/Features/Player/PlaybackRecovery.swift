@@ -94,10 +94,72 @@ enum PlaybackRecovery {
         return .reResolveSameRung
     }
 
-    /// player.md §3.2: armed only after the first READY of the stream, and fires only if the buffered
-    /// position has NOT advanced -- a slow-but-working network re-arms instead (the caller resets its
-    /// progress mark on every advance, which is what keeps `elapsedSinceProgress` small).
+    /// The threshold primitive: how long a stall has to last before it counts. `StallWatchdog` below
+    /// is what decides *whether* the player is stalled at all.
     static func shouldFireStall(armed: Bool, elapsedSinceProgress: TimeInterval, isLive: Bool) -> Bool {
         armed && elapsedSinceProgress >= (isLive ? liveStallThreshold : vodStallThreshold)
+    }
+}
+
+/// The stall watchdog as a pure value (fix round 1, C1): the host feeds it one sample per periodic
+/// tick and it answers what changed. Previously this logic lived inline in
+/// `PlayerHostView.Coordinator.sample` and measured only `loadedTimeRanges` growth, which false-fired
+/// on healthy playback three ways -- a fully-buffered item (rung-2 MP4s finish downloading in
+/// seconds) stopped "progressing" and stalled 6 s later; a backward seek froze the mark against the
+/// lifetime max; a pause longer than the threshold fired the instant it resumed.
+///
+/// The fix mirrors Android (`PlayerFragment.kt:2237-2285`): the clock only accumulates while the
+/// player is ACTUALLY stalled -- `timeControlStatus == .waitingToPlayAtSpecifiedRate`, i.e. it wants
+/// to play and can't -- which is false while paused, while playing, and while fully buffered. Any
+/// playback-position change (forwards, backwards, a seek) resets the mark, and a buffered-position
+/// advance *during* a stall re-arms rather than fires (player.md §3.2: slow-but-working networks).
+struct StallWatchdog: Equatable {
+    /// player.md §3.2: armed only after the item's first READY. Never cleared again for the item --
+    /// a fired episode resets `stalledSince` instead, so the next event needs a fresh full threshold.
+    var armed = false
+
+    private var lastPlaybackTime: TimeInterval
+    private var lastBufferedEnd: TimeInterval = 0
+    private var stalledSince: Date?
+
+    /// - Parameter playbackTime: seed from the live player's `currentTime()`. A replacement item is
+    ///   seeked back to the outgoing item's position, so seeding from 0 would read that offset as
+    ///   real playback progress on the first tick and refund the recovery budget for free.
+    init(playbackTime: TimeInterval = 0) {
+        lastPlaybackTime = playbackTime.isFinite ? playbackTime : 0
+    }
+
+    struct Tick: Equatable {
+        /// The playback position moved: the stream is genuinely playing (budget refund).
+        var progressed = false
+        /// A stall lasted past the threshold: raise `RecoveryEvent.stall`.
+        var fire = false
+    }
+
+    mutating func tick(playbackTime: TimeInterval, bufferedEnd: TimeInterval, isStalled: Bool,
+                       isLive: Bool, now: Date) -> Tick {
+        var result = Tick()
+        if abs(playbackTime - lastPlaybackTime) > 0.1 {
+            lastPlaybackTime = playbackTime
+            stalledSince = nil
+            result.progressed = true
+        }
+        guard armed, isStalled else {
+            stalledSince = nil // paused, playing, or not yet ready: nothing accumulates
+            lastBufferedEnd = bufferedEnd
+            return result
+        }
+        if bufferedEnd > lastBufferedEnd + 0.1 {
+            lastBufferedEnd = bufferedEnd
+            stalledSince = nil // still downloading -- re-arm instead of firing
+        }
+        let since = stalledSince ?? now
+        stalledSince = since
+        if PlaybackRecovery.shouldFireStall(armed: armed, elapsedSinceProgress: now.timeIntervalSince(since),
+                                            isLive: isLive) {
+            stalledSince = nil // one event per stall episode
+            result.fire = true
+        }
+        return result
     }
 }

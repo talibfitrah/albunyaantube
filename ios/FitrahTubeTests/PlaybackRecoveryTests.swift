@@ -36,6 +36,8 @@ struct PlaybackRecoveryTests {
 
         // A stall is a different incident class -- it hasn't spent its own same-rung re-resolve.
         #expect(PlaybackRecovery.decide(event: .stall, state: budget) == .reResolveSameRung)
+        // M5: ...and the before-first-frame class still steps down, spent allowance or not.
+        #expect(PlaybackRecovery.decide(event: .failedBeforeFirstFrame, state: budget) == .stepDownRung)
     }
 
     // MARK: - budgets: retries 3 / re-resolves 2 (spec §10)
@@ -114,6 +116,112 @@ struct PlaybackRecoveryTests {
     @Test(arguments: [(6.0, false), (44.9, false), (45.0, true)])
     func liveStallFiresOnlyAtFortyFiveSeconds(_ elapsed: Double, _ expected: Bool) {
         #expect(PlaybackRecovery.shouldFireStall(armed: true, elapsedSinceProgress: elapsed, isLive: true) == expected)
+    }
+
+    // MARK: - StallWatchdog (fix round 1, C1): the clock only runs while the player is ACTUALLY
+    // stalled, and any playback-position change resets it
+
+    private static let t0 = Date(timeIntervalSinceReferenceDate: 0)
+
+    /// Drives `seconds.count` one-second ticks and returns each tick's answer. `playbackTime` is
+    /// held by `positions` (one per tick), so a frozen position is just a repeated value.
+    private func run(_ watchdog: inout StallWatchdog, positions: [TimeInterval], buffered: TimeInterval = 100,
+                     isStalled: Bool, isLive: Bool = false, from second: Int = 0) -> [StallWatchdog.Tick] {
+        positions.enumerated().map { offset, position in
+            watchdog.tick(playbackTime: position, bufferedEnd: buffered, isStalled: isStalled, isLive: isLive,
+                          now: Self.t0.addingTimeInterval(TimeInterval(second + offset)))
+        }
+    }
+
+    @Test func aFullyBufferedItemPlayingNormallyNeverStalls() {
+        // The pre-fix bug: a rung-2 MP4 finishes downloading in seconds, `loadedTimeRanges` stops
+        // growing, and the watchdog fired 6 s later on a perfectly healthy stream.
+        var watchdog = StallWatchdog()
+        watchdog.armed = true
+        let ticks = run(&watchdog, positions: (1...30).map(TimeInterval.init), isStalled: false)
+        #expect(ticks.allSatisfy { !$0.fire })
+        #expect(ticks.allSatisfy { $0.progressed })
+    }
+
+    @Test func aLongPauseDoesNotFireOnResume() {
+        // Pre-fix: `timeControlStatus == .paused` isn't stalled, but the progress mark went stale
+        // anyway, so the first tick after a >6 s pause fired instantly.
+        var watchdog = StallWatchdog(playbackTime: 12)
+        watchdog.armed = true
+        // A minute paused: the position is frozen, so nothing here is "progress" -- only the fact
+        // that a paused player isn't stalled keeps the clock from running.
+        let paused = run(&watchdog, positions: Array(repeating: 12, count: 60), isStalled: false)
+        #expect(paused.allSatisfy { !$0.fire })
+        #expect(paused.allSatisfy { !$0.progressed })
+
+        let resumed = run(&watchdog, positions: [12.5], isStalled: false, from: 60)
+        #expect(resumed[0].fire == false)
+        #expect(resumed[0].progressed == true)
+    }
+
+    @Test func aBackwardSeekCountsAsProgress() {
+        // Pre-fix: the mark tracked a lifetime maximum, so seeking backwards froze it.
+        var watchdog = StallWatchdog(playbackTime: 300)
+        watchdog.armed = true
+        let ticks = run(&watchdog, positions: [10], isStalled: true)
+        #expect(ticks[0].progressed == true)
+        #expect(ticks[0].fire == false)
+    }
+
+    @Test func aRealStallFiresOnceAfterSixSeconds() {
+        var watchdog = StallWatchdog(playbackTime: 12)
+        watchdog.armed = true
+        let ticks = run(&watchdog, positions: Array(repeating: 12, count: 9), isStalled: true)
+        // t0..t5 accumulate; the tick at +6 s fires; the episode then restarts its clock, so the
+        // remaining ticks stay quiet until another full threshold passes.
+        #expect(ticks.map(\.fire) == [false, false, false, false, false, false, true, false, false])
+        #expect(ticks.allSatisfy { !$0.progressed })
+    }
+
+    @Test func progressDuringAStallRestartsTheClock() {
+        var watchdog = StallWatchdog(playbackTime: 0)
+        watchdog.armed = true
+        // Five stalled seconds, then one frame of real progress, then five more stalled seconds:
+        // never a full 6 s window, so nothing fires.
+        var positions = Array(repeating: TimeInterval(0), count: 5)
+        positions.append(1)
+        positions.append(contentsOf: Array(repeating: TimeInterval(1), count: 5))
+        let ticks = run(&watchdog, positions: positions, isStalled: true)
+        #expect(ticks.allSatisfy { !$0.fire })
+        #expect(ticks.filter(\.progressed).count == 1)
+    }
+
+    @Test func aStalledButStillDownloadingStreamReArmsInsteadOfFiring() {
+        // player.md §3.2: a slow-but-working network re-arms. Buffered end creeps up every tick.
+        var watchdog = StallWatchdog(playbackTime: 12)
+        watchdog.armed = true
+        let ticks = (0..<12).map { second in
+            watchdog.tick(playbackTime: 12, bufferedEnd: 20 + TimeInterval(second), isStalled: true,
+                          isLive: false, now: Self.t0.addingTimeInterval(TimeInterval(second)))
+        }
+        #expect(ticks.allSatisfy { !$0.fire })
+    }
+
+    @Test func anUnarmedWatchdogNeverFiresHoweverLongTheStall() {
+        var watchdog = StallWatchdog(playbackTime: 0) // no first READY yet
+        let ticks = run(&watchdog, positions: Array(repeating: 0, count: 60), isStalled: true)
+        #expect(ticks.allSatisfy { !$0.fire })
+    }
+
+    @Test func liveStreamsWaitFortyFiveSecondsBeforeFiring() {
+        var watchdog = StallWatchdog(playbackTime: 12)
+        watchdog.armed = true
+        let ticks = run(&watchdog, positions: Array(repeating: 12, count: 46), isStalled: true, isLive: true)
+        #expect(ticks.prefix(45).allSatisfy { !$0.fire })
+        #expect(ticks[45].fire == true)
+    }
+
+    @Test func theSeededPositionIsNotMistakenForProgress() {
+        // I4: a replacement item is seeked back to the outgoing item's position; seeding from 0
+        // would read that offset as a whole item's worth of playback and refund the budget.
+        var watchdog = StallWatchdog(playbackTime: 42)
+        watchdog.armed = true
+        #expect(run(&watchdog, positions: [42], isStalled: true)[0].progressed == false)
     }
 
     // MARK: - VM integration (fake resolver; the same `StreamResolving` seam Task 2 introduced)
@@ -215,6 +323,32 @@ struct PlaybackRecoveryTests {
 
         #expect(vm.state == .recoveryExhausted(Self.hls))
         #expect(await resolver.calls.count == 1 + RecoveryBudget.maxRetries) // the 4th spends no network call
+    }
+
+    @Test @MainActor func concurrentEventsFromOneFailureSpendOneAttempt() async {
+        // I3: a dead stream raises `AVPlayerItemFailedToPlayToEndTime` and `status == .failed`
+        // together. Both used to be honoured: two budget slots, two resolves, one of them thrown
+        // away by the generation guard.
+        let gate = Gate()
+        let resolver = FakeResolver([.success(Self.hls), .success(Self.freshHLS), .success(Self.hls),
+                                     .success(Self.hls)], gate: gate, gatedCallIndex: 2)
+        let vm = makeViewModel(resolver)
+        await vm.open()
+
+        let first = Task { await vm.handleRecoveryEvent(.playbackError) }
+        await gate.waitUntilBlocked()
+        await vm.handleRecoveryEvent(.failedBeforeFirstFrame) // arrives mid-recovery: same incident
+        await gate.release()
+        await first.value
+
+        #expect(vm.state == .ready(Self.freshHLS))
+        #expect(await resolver.calls.count == 2) // open + ONE recovery resolve
+
+        // One slot spent, not two: three further events are still available before exhaustion.
+        for _ in 0..<2 { await vm.handleRecoveryEvent(.playbackError) }
+        #expect(vm.state == .ready(Self.hls)) // still recovering, not exhausted
+        await vm.handleRecoveryEvent(.playbackError)
+        #expect(vm.state == .recoveryExhausted(Self.hls))
     }
 
     @Test @MainActor func cooldownDuringRecoveryLandsOnTheCooldownStateNotAGenericError() async {

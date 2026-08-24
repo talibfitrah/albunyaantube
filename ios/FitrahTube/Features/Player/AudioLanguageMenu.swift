@@ -93,8 +93,11 @@ struct AudioLanguageMenu: View {
 
     @MainActor
     private func load() async {
-        guard let item = model.currentItem,
-              let mediaGroup = try? await item.asset.loadMediaSelectionGroup(for: .audible) else {
+        let item = model.currentItem
+        guard let item, let mediaGroup = try? await item.asset.loadMediaSelectionGroup(for: .audible) else {
+            // M4: the failure branch needs the same currentness guard as the success one -- a load
+            // that fails against the OLD asset must not blank the menu the new item just populated.
+            guard item === model.currentItem else { return }
             group = nil
             options = []
             return

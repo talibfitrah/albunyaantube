@@ -1,5 +1,6 @@
 import AVFoundation
 import AVKit
+import Combine
 import InnerTubeKit
 import Network
 import SwiftUI
@@ -122,23 +123,16 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// at teardown. No cycle -- the VM holds no reference to the host or coordinator.
         private(set) var model: PlayerViewModel?
 
-        private let now: () -> Date
         private weak var observedItem: AVPlayerItem?
         private weak var observedPlayer: AVPlayer?
-        private var statusObservation: NSKeyValueObservation?
+        private var statusCancellable: AnyCancellable?
         private var failedToEndObserver: NSObjectProtocol?
         private var timeObserverToken: Any?
         private var isLive = false
-        /// player.md §3.2: the watchdog is armed only after the item's first READY, and disarmed
-        /// again when it fires (the next buffered advance re-arms it).
-        private var armed = false
-        private var lastBufferedEnd: TimeInterval = 0
-        private var lastPlaybackTime: TimeInterval = 0
-        private var lastProgressAt: Date
+        /// All the watchdog's state and every decision it makes (fix round 1, C1).
+        private var watchdog = StallWatchdog()
 
-        init(now: @escaping () -> Date = Date.init) {
-            self.now = now
-            lastProgressAt = now()
+        init() {
             path = monitor.currentPath
             monitor.pathUpdateHandler = { [weak self] newPath in
                 MainActor.assumeIsolated {
@@ -155,23 +149,27 @@ struct PlayerHostView: UIViewControllerRepresentable {
             observedItem = item
             observedPlayer = player
             self.isLive = isLive
-            armed = false
-            lastBufferedEnd = 0
-            lastPlaybackTime = 0
-            lastProgressAt = now()
+            // I4: seeded from the live position, not 0 -- a replacement item is seeked back to the
+            // outgoing item's time, which a 0 seed would misread as a full item's worth of progress.
+            watchdog = StallWatchdog(playbackTime: player.currentTime().seconds)
 
-            statusObservation = item.observe(\.status, options: [.new]) { [weak self] observed, _ in
-                MainActor.assumeIsolated {
-                    guard let self, observed === self.observedItem else { return }
-                    switch observed.status {
-                    case .readyToPlay: self.armed = true
-                    // Unarmed == this rung never produced a first frame (spec §10 -> next rung);
-                    // armed == it played and then died, which is the 403-class incident.
-                    case .failed: self.fire(self.armed ? .playbackError : .failedBeforeFirstFrame)
-                    default: break
+            // I2: `AVPlayerItem.status` KVO carries NO queue guarantee, so the old
+            // `observe { MainActor.assumeIsolated { … } }` was a hard trap waiting for an off-main
+            // delivery. `receive(on:)` makes the main-thread hop explicit instead of assuming it.
+            statusCancellable = item.publisher(for: \.status, options: [.new])
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] status in
+                    MainActor.assumeIsolated {
+                        guard let self, item === self.observedItem else { return }
+                        switch status {
+                        case .readyToPlay: self.watchdog.armed = true
+                        // Unarmed == this rung never produced a first frame (spec §10 -> next rung);
+                        // armed == it played and then died, which is the 403-class incident.
+                        case .failed: self.fire(self.watchdog.armed ? .playbackError : .failedBeforeFirstFrame)
+                        default: break
+                        }
                     }
                 }
-            }
 
             failedToEndObserver = NotificationCenter.default.addObserver(
                 forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main) { [weak self] _ in
@@ -189,8 +187,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         }
 
         func stopObserving() {
-            statusObservation?.invalidate()
-            statusObservation = nil
+            statusCancellable = nil
             if let failedToEndObserver { NotificationCenter.default.removeObserver(failedToEndObserver) }
             failedToEndObserver = nil
             if let timeObserverToken, let observedPlayer { observedPlayer.removeTimeObserver(timeObserverToken) }
@@ -199,27 +196,18 @@ struct PlayerHostView: UIViewControllerRepresentable {
             observedPlayer = nil
         }
 
-        /// One tick of the stall watchdog. The *buffered* position is what the watchdog measures
-        /// (player.md §3.2: a slow-but-working network keeps buffering and re-arms instead of
-        /// firing); the *playback* position is what counts as "genuinely playing again" for the
-        /// budget refund.
+        /// Pure measurement, no decisions: read the player, hand the sample to `StallWatchdog`, act on
+        /// its answer. `waitingToPlayAtSpecifiedRate` is AVFoundation's own "wants to play, can't" --
+        /// false while paused, while playing, and while fully buffered, which is exactly the three
+        /// healthy cases the pre-fix version false-fired on.
         private func sample(time: TimeInterval) {
-            guard let item = observedItem else { return }
+            guard let item = observedItem, let player = observedPlayer else { return }
             let buffered = item.loadedTimeRanges.map { CMTimeRangeGetEnd($0.timeRangeValue).seconds }.max() ?? 0
-            if buffered > lastBufferedEnd + 0.1 {
-                lastBufferedEnd = buffered
-                lastProgressAt = now()
-            }
-            if time > lastPlaybackTime + 0.1 {
-                lastPlaybackTime = time
-                model?.recordPlaybackProgress()
-            }
-            guard PlaybackRecovery.shouldFireStall(
-                armed: armed, elapsedSinceProgress: now().timeIntervalSince(lastProgressAt), isLive: isLive) else {
-                return
-            }
-            armed = false // one event per stall episode; the next buffered advance re-arms
-            fire(.stall)
+            let tick = watchdog.tick(playbackTime: time, bufferedEnd: buffered,
+                                     isStalled: player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
+                                     isLive: isLive, now: Date())
+            if tick.progressed { model?.recordPlaybackProgress() }
+            if tick.fire { fire(.stall) }
         }
 
         private func fire(_ event: RecoveryEvent) {
@@ -227,6 +215,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
             Task { await model.handleRecoveryEvent(event) }
         }
 
+        /// Only the path monitor: the observers are torn down in `dismantleUIViewController` (which
+        /// SwiftUI always calls) via `stopObserving`, and `deinit` is nonisolated so it can't touch
+        /// them anyway.
         deinit { monitor.cancel() }
     }
 
@@ -251,11 +242,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
             return player
         }
         let resumeTime = existing.currentTime()
+        // I5 (player.md §3.2: a re-resolve saves position AND playWhenReady): resuming a stream the
+        // user had deliberately paused is a real behaviour bug -- recovery replaces the item under a
+        // paused player just as readily as under a playing one.
+        let wasPlaying = existing.timeControlStatus != .paused
         existing.replaceCurrentItem(with: item)
         if resumeTime.isValid, resumeTime.seconds.isFinite, resumeTime.seconds > 0 {
             existing.seek(to: resumeTime)
         }
-        existing.play()
+        if wasPlaying { existing.play() }
         return existing
     }
 

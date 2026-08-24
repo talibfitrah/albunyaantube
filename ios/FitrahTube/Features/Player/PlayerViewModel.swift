@@ -70,6 +70,7 @@ struct LiveStreamResolver: StreamResolving {
     private var generation = 0
     private var resolveTask: Task<Void, Never>?
     private var recoveryBudget = RecoveryBudget()
+    private var isRecovering = false
 
     init(resolver: any StreamResolving, catalog: any CatalogClient, favorites: any FavoritesStore,
          settings: any SettingsStore, args: PlayerArgs) {
@@ -108,7 +109,13 @@ struct LiveStreamResolver: StreamResolving {
     /// keeps the live `AVPlayer` and seeks the replacement item back to its `currentTime()`, but only
     /// while the state stays playable -- a `.loading` hop would drop the player and restart at 0.
     func handleRecoveryEvent(_ event: RecoveryEvent) async {
-        guard let resolved = Self.playable(state) else { return }
+        // I3: one failure raises several observers at once -- `AVPlayerItemFailedToPlayToEndTime`
+        // and `status == .failed` land together on a dead stream. Without this the same incident
+        // spent two budget slots and fired two resolves, one of which the generation guard then
+        // discarded. First event in wins; the rest are the same incident.
+        guard !isRecovering, let resolved = Self.playable(state) else { return }
+        isRecovering = true
+        defer { isRecovering = false }
         let action = PlaybackRecovery.decide(event: event, state: recoveryBudget)
         recoveryBudget.apply(action, for: event)
         switch action {
