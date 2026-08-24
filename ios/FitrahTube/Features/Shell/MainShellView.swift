@@ -137,6 +137,8 @@ struct MainShellView: View {
     @ViewBuilder
     private func destination(for route: Route) -> some View {
         switch route {
+        case .player(let args):
+            PlayerScreen(args: args)
         case .featured(let categoryId, let categoryName):
             FeaturedView(categoryId: categoryId, categoryName: categoryName)
         case .search:

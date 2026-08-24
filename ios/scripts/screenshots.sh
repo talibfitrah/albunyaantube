@@ -56,4 +56,22 @@ for device in "${DEVICES[@]}"; do
     xcrun simctl shutdown "$device" >/dev/null 2>&1
 done
 
+# Plan B1 (docs/superpowers/plans/2026-08-24-ios-phase2b1-player-core.md): one player screenshot,
+# no locale/rotation matrix -- proof the AVPlayer host decodes and plays the bundled local fixture
+# clip with no network. Later B1 tasks (quality menu, captions, recovery pill, metadata) add their
+# own `-only-testing:` case here rather than a new script.
+PLAYER_OUT="$ROOT/.superpowers/sdd/2026-08-24-ios-phase2b1-player-core/screenshots/b1-task3"
+echo "== player screenshot -> $PLAYER_OUT =="
+rm -rf "${PLAYER_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$PLAYER_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerScreen \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
 exit "$status"

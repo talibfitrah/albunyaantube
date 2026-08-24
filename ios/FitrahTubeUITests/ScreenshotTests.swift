@@ -25,6 +25,13 @@ final class ScreenshotTests: XCTestCase {
         case firstSwitch
         /// The second button on screen (Onboarding's Skip/CTA pair) — locale-independent.
         case secondButton
+        /// A non-button element whose VoiceOver label equals this string exactly.
+        /// `AVPlayerViewController`'s own content view labels itself this way once it hosts a
+        /// player — task-3-report.md: on this SDK its transport chrome (play/pause, scrubber) never
+        /// showed up as separate accessibility elements in an XCUITest run, so this is the anchor
+        /// `testPlayerScreen` uses instead — present as soon as the host mounts, not tied to chrome
+        /// auto-hide.
+        case element(String)
     }
 
     /// One capturable screen: the DEBUG launch hooks that land on it, plus its load anchor.
@@ -146,6 +153,33 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    // MARK: - B1 task 3: AVPlayer host (docs/superpowers/plans/2026-08-24-ios-phase2b1-player-core.md)
+
+    /// No locale/rotation matrix (unlike R-G above) -- this only needs to prove `PlayerHostView`
+    /// actually decodes and plays a real frame with zero network access. `-fitrah-fake-player`
+    /// swaps `PlayerScreen`'s resolver for one that resolves to the bundled `player-fixture.mp4`
+    /// (`ios/FitrahTube/Resources/`).
+    ///
+    /// Anchor: `AVPlayerViewController`'s content view (VoiceOver label "Video"), not its transport
+    /// chrome -- task-3-report.md's diagnosis (`app.debugDescription` dumped on a failed run) found
+    /// the play/pause button never appears as its own accessibility element on this SDK (Xcode
+    /// 26.3 / iOS 26.2 Simulator), so it's not a usable anchor here. The dump *did* show an
+    /// `Image` labeled "Liftable subject available" sized to the letterboxed video rect --
+    /// iOS's subject-lifting analysis only runs against real rendered pixels, so that (plus the
+    /// visibly colored, non-black captured frame) is the actual proof of decode; "Video" is just
+    /// the deterministic, chrome-independent load signal to gate the screenshot on.
+    func testPlayerScreen() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player",
+                            arguments: ["-fitrah-fake-player", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .element("Video"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let content = element(for: screen.anchor, in: app)
+        XCTAssertTrue(content.waitForExistence(timeout: 20), "player: AVPlayerViewController's content view never appeared")
+        try write(named: "player-ready", into: directory)
+    }
+
     // MARK: - Accessibility assertions (R-C, spec §14 "label + value on custom controls")
 
     /// Every list row must expose a VoiceOver label that carries the item title *and* the value the
@@ -246,6 +280,8 @@ final class ScreenshotTests: XCTestCase {
             return app.switches.firstMatch
         case .secondButton:
             return app.buttons.element(boundBy: 1)
+        case .element(let label):
+            return app.otherElements.matching(NSPredicate(format: "label == %@", label)).firstMatch
         }
     }
 }
