@@ -42,8 +42,15 @@ public struct StreamingData: Sendable, Equatable {
 public struct PlayerResponseParser: Sendable {
     public init() {}
 
-    public func parse(_ body: Data) throws -> Playability {
+    /// `visitorData` is `responseContext.visitorData` — the session token §6.3 says to take
+    /// from a successful response and send on every later call. It rides alongside the
+    /// `Playability` (not inside `.ok`) because YouTube returns it on every status.
+    public func parse(_ body: Data) throws -> (playability: Playability, visitorData: String?) {
         let wire = try JSONDecoder().decode(Wire.self, from: body)
+        return (playability(wire), wire.responseContext?.visitorData)
+    }
+
+    private func playability(_ wire: Wire) -> Playability {
         let status = wire.playabilityStatus.status
         let reason = wire.playabilityStatus.reason ?? status
 
@@ -60,6 +67,9 @@ public struct PlayerResponseParser: Sendable {
             }
             return .unavailable(reason: reason)
         case "UNPLAYABLE":
+            // ponytail: every UNPLAYABLE collapses to `.unplayableKids`, so a private/removed
+            // video walks the ladder instead of terminating. Splitting on `reason` needs real
+            // private/removed specimens to match against — deferred to Plan C.
             return .unplayableKids
         case "LIVE_STREAM_OFFLINE":
             // ponytail: no LIVE_STREAM_OFFLINE probe capture exists to confirm the scheduled-start
@@ -135,7 +145,11 @@ public struct PlayerResponseParser: Sendable {
             var isLive: Bool?
             var isLiveContent: Bool?
         }
+        struct ResponseContext: Decodable {
+            var visitorData: String?
+        }
 
+        var responseContext: ResponseContext?
         var playabilityStatus: PlayabilityStatus
         var streamingData: StreamingData?
         var captions: Captions?

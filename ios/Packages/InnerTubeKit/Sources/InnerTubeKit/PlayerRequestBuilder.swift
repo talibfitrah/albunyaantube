@@ -38,7 +38,7 @@ public struct PlayerRequestBuilder: Sendable {
         )
         // Encoding a fixed Codable shape with .sortedKeys and no randomness never fails.
         let data = (try? Self.encoder.encode(body)) ?? Data()
-        let headers = InnerTubeContext.headers(context: context, visitorData: visitorData)
+        let headers = InnerTubeContext.headers(context: context, visitorData: visitorData, locale: locale)
 
         return HTTPRequest(method: "POST", url: Self.requestURL, headers: headers, body: data)
     }

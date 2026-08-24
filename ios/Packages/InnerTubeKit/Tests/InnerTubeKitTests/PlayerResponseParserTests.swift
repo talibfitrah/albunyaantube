@@ -6,7 +6,7 @@ import Testing
     private let parser = PlayerResponseParser()
 
     @Test func okHlsFixtureYieldsPlayableStreamingData() throws {
-        let result = try parser.parse(try loadFixture("player-ok-hls"))
+        let result = try parser.parse(try loadFixture("player-ok-hls")).playability
         switch result {
         case .ok(let streaming):
             #expect(streaming.hlsManifestURL != nil)
@@ -28,17 +28,17 @@ import Testing
     // ios-app-plan.md §6.2 step 4, out of scope for parsing one response body. `.unplayableKids`
     // also carries no associated payload, so there is no itag18 URL to assert here.
     @Test func unplayableKidsFixtureYieldsUnplayableKids() throws {
-        let result = try parser.parse(try loadFixture("player-unplayable-kids"))
+        let result = try parser.parse(try loadFixture("player-unplayable-kids")).playability
         #expect(result == .unplayableKids)
     }
 
     @Test func ageGatedFixtureYieldsAgeGate() throws {
-        let result = try parser.parse(try loadFixture("player-age-gated"))
+        let result = try parser.parse(try loadFixture("player-age-gated")).playability
         #expect(result == .ageGate)
     }
 
     @Test func liveFixtureYieldsPlayableLiveStreamingData() throws {
-        let result = try parser.parse(try loadFixture("player-live"))
+        let result = try parser.parse(try loadFixture("player-live")).playability
         switch result {
         case .ok(let streaming):
             #expect(streaming.isLive)
@@ -61,7 +61,7 @@ import Testing
             """
             {"playabilityStatus": {"status": "OK"}, "videoDetails": {"isLive": false, "isLiveContent": true}}
             """.utf8)
-        let result = try parser.parse(body)
+        let result = try parser.parse(body).playability
         switch result {
         case .ok(let streaming):
             #expect(!streaming.isLive)
@@ -70,15 +70,24 @@ import Testing
         }
     }
 
+    // §6.3's session token: present on every real capture, absent from a body without a
+    // responseContext (the parser must not invent one).
+    @Test func parseSurfacesResponseContextVisitorData() throws {
+        let ok = try parser.parse(try loadFixture("player-ok-hls"))
+        #expect(ok.visitorData?.hasPrefix("CgtIdEVOUkk0ZHIwVSi") == true)
+        let synthetic = try parser.parse(Data(#"{"playabilityStatus": {"status": "OK"}}"#.utf8))
+        #expect(synthetic.visitorData == nil)
+    }
+
     @Test func botcheckFixtureYieldsBotCheck() throws {
-        let result = try parser.parse(try loadFixture("player-botcheck"))
+        let result = try parser.parse(try loadFixture("player-botcheck")).playability
         #expect(result == .botCheck)
     }
 
     // Synthetic fixture (not probe-captured — the embed-only case wasn't reproducible live in
     // Task 1): a response missing `streamingData` entirely, with a non-branching status.
     @Test func embedOnlyFixtureMissingStreamingDataYieldsUnavailable() throws {
-        let result = try parser.parse(try loadFixture("player-embed-only"))
+        let result = try parser.parse(try loadFixture("player-embed-only")).playability
         #expect(result == .unavailable(reason: "This video is unavailable"))
     }
 

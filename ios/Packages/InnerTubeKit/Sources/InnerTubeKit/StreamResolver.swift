@@ -75,7 +75,7 @@ public actor StreamResolver {
             inFlight[videoId]?.task.cancel()
             inFlight[videoId] = nil
         } else if let existing = inFlight[videoId] {
-            return try await existing.task.value
+            return try await awaitJob(existing.task, videoId: videoId)
         }
 
         nextJobId += 1
@@ -87,12 +87,30 @@ public actor StreamResolver {
         defer {
             if inFlight[videoId]?.id == jobId { inFlight[videoId] = nil }
         }
-        return try await job.value
+        return try await awaitJob(job, videoId: videoId)
+    }
+
+    /// Awaits a resolve job. `extraction.md` §5.1: a `CancellationException` is rethrown only
+    /// when the *awaiter's own* context is cancelled — a job cancelled by another caller's
+    /// `forceRefresh` must not surface as a spurious cancellation to everyone waiting on it.
+    ///
+    /// Deviation from §5.1's "otherwise converted to null": `resolve` returns a non-optional
+    /// `Resolved`, so a superseded awaiter adopts the superseding job's result (or the manifest
+    /// it just cached) instead of a nil; only a lost race with no successor left is `.cancelled`.
+    private func awaitJob(_ task: Task<Resolved, Error>, videoId: String) async throws -> Resolved {
+        do {
+            return try await task.value
+        } catch is CancellationError {
+            try Task.checkCancellation()
+            if let winner = inFlight[videoId] { return try await winner.task.value }
+            if let cached = await cache.get(videoId, now: wallClock.wallNow) { return cached }
+            throw ExtractionError.cancelled
+        }
     }
 
     // MARK: - the ladder
 
-    private enum RungResult {
+    private enum RungResult: Sendable {
         case resolved(Resolved)
         case advance
         case jumpToOpenInYouTube
@@ -109,9 +127,16 @@ public actor StreamResolver {
         for strategy in config.resolverOrder {
             let outcome: RungResult
             do {
-                outcome = try await runRung(strategy, videoId: videoId, config: config)
+                // The 8 s budget (§6.6 "8 s budget before demotion") covers the whole rung —
+                // a bot-check rung is POST + rotate + retry POST, which per-POST would allow ~16 s.
+                outcome = try await Self.withTimeout(Self.rungBudget) {
+                    try await self.runRung(strategy, videoId: videoId, config: config)
+                }
             } catch let error as ExtractionError where error.terminal {
                 throw error
+            } catch is CancellationError {
+                // A superseded/cancelled job stops here; it must not walk on down the ladder.
+                throw CancellationError()
             } catch {
                 lastError = error
                 continue
@@ -128,9 +153,18 @@ public actor StreamResolver {
         throw lastError
     }
 
+    /// Only `.hls`/`.progressive` are a real fetch: they carry URLs with a TTL worth caching, and
+    /// they are the only outcome that proves the session is healthy. Caching `embed`/`openInYouTube`
+    /// would pin a user on the fallback for the full TTL after a transient bot check clears, and
+    /// counting them as a clean fetch would fake a healthy session while the ladder bottomed out.
     private func succeed(_ resolved: Resolved, videoId: String) async -> Resolved {
-        await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
-        await sessionStore.recordSuccess()
+        switch resolved.stream {
+        case .hls, .progressive:
+            await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
+            await sessionStore.recordSuccess()
+        case .embed, .openInYouTube:
+            break
+        }
         return resolved
     }
 
@@ -158,8 +192,16 @@ public actor StreamResolver {
             videoId: videoId, family: family, context: context, visitorData: visitorData, locale: locale)
         let body = try await sendPlayerPost(request)
 
-        switch try responseParser.parse(body) {
+        let parsed = try responseParser.parse(body)
+
+        switch parsed.playability {
         case .ok(let streaming):
+            // §6.3: take `responseContext.visitorData` from a successful response and send it on
+            // every later call under this family (both `context.client` and `X-Goog-Visitor-Id`).
+            // Without this every POST goes out tokenless and the bot-check retry is a no-op.
+            if let visitor = parsed.visitorData {
+                await sessionStore.setVisitorData(visitor, for: family)
+            }
             let now = wallClock.wallNow
             let userAgent = context.userAgent ?? ""
             if expectHLS, let hls = streaming.hlsManifestURL {
@@ -193,8 +235,8 @@ public actor StreamResolver {
 
     // MARK: - network
 
-    /// Enforces ≥`minPostSpacing` between `player` POSTs and an 8 s per-rung
-    /// budget, then delegates to the injected transport.
+    /// Enforces ≥`minPostSpacing` between `player` POSTs, then delegates to the injected
+    /// transport. The 8 s budget wraps the whole rung, one level up.
     private func sendPlayerPost(_ request: HTTPRequest) async throws -> Data {
         if let last = lastPostInstant {
             let remaining = minPostSpacing - (monotonicClock.now - last)
@@ -202,11 +244,7 @@ public actor StreamResolver {
         }
         lastPostInstant = monotonicClock.now
 
-        let transport = self.transport
-        let response = try await Self.withTimeout(Self.rungBudget) {
-            try await transport.send(request)
-        }
-        return response.body
+        return try await transport.send(request).body
     }
 
     private static func withTimeout<T: Sendable>(
@@ -258,7 +296,7 @@ public actor StreamResolver {
     /// Maps a non-branching `UNPLAYABLE`/error reason to its terminal error
     /// (ruling 14: age-restricted / geo-blocked / private / removed are distinct,
     /// non-retryable states); anything else is a generic `.unavailable`.
-    private static func terminalError(reason: String, videoId: String) -> ExtractionError {
+    static func terminalError(reason: String, videoId: String) -> ExtractionError {
         let reason = reason.lowercased()
         if reason.contains("private") { return .private }
         if reason.contains("removed") || reason.contains("deleted") || reason.contains("terminated") || reason.contains("no longer available") {

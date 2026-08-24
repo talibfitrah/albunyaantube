@@ -15,20 +15,53 @@ import Testing
         private let lock = NSLock()
         private let responses: [HTTPResponse]
         private var index = 0
-        private var count = 0
+        private var sent: [HTTPRequest] = []
 
         init(_ responses: [HTTPResponse]) { self.responses = responses }
 
         var callCount: Int {
-            lock.withLock { count }
+            lock.withLock { sent.count }
+        }
+
+        /// The requests as they went out — what the session-hygiene assertions inspect.
+        var recorded: [HTTPRequest] {
+            lock.withLock { sent }
         }
 
         func send(_ request: HTTPRequest) async throws -> HTTPResponse {
             lock.withLock {
-                count += 1
+                sent.append(request)
                 let response = responses[min(index, responses.count - 1)]
                 index += 1
                 return response
+            }
+        }
+    }
+
+    /// Hangs the FIRST call until it is cancelled; later calls answer immediately. Lets a test
+    /// hold a resolve open at the transport while another caller supersedes it.
+    private final class GatedTransport: HTTPTransport, @unchecked Sendable {
+        // Sendable: all mutable state is guarded by `lock`.
+        private let lock = NSLock()
+        private var count = 0
+        private let response: HTTPResponse
+
+        init(_ response: HTTPResponse) { self.response = response }
+
+        var callCount: Int { lock.withLock { count } }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            let ordinal = lock.withLock { count += 1; return count }
+            if ordinal == 1 { try await Task.sleep(for: .seconds(30)) }
+            return response
+        }
+
+        /// Bounded wait so a wiring regression fails the assertions instead of hanging the suite.
+        func waitForFirstCall() async {
+            var attempts = 0
+            while callCount == 0, attempts < 1000 {
+                try? await Task.sleep(for: .milliseconds(1))
+                attempts += 1
             }
         }
     }
@@ -66,7 +99,8 @@ import Testing
         transport: HTTPTransport,
         gate: AvailabilityGate = StubGate(),
         clock: ManualClock = ManualClock(),
-        cache: ManifestCache = ManifestCache(configTTLSeconds: 3600)
+        cache: ManifestCache = ManifestCache(configTTLSeconds: 3600),
+        locale: InnerTubeLocale = InnerTubeLocale(hl: "en", gl: "US")
     ) -> (StreamResolver, SessionStore) {
         let session = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: InMemoryKeyValueStore())
         let configStore = RemoteConfigStore(
@@ -82,7 +116,7 @@ import Testing
             gate: gate,
             monotonicClock: clock,
             wallClock: clock,
-            locale: InnerTubeLocale(hl: "en", gl: "US"),
+            locale: locale,
             minPostSpacing: .zero
         )
         return (resolver, session)
@@ -160,8 +194,115 @@ import Testing
         guard case .hls = resolved.stream else { Issue.record("expected .hls after retry, got \(resolved.stream)"); return }
 
         #expect(transport.callCount == 2)
-        // rotate() cleared the visionos visitorData; it was not restored (no responseContext capture yet).
-        #expect(await session.visitorData(for: .visionos) == nil)
+        // The retry must carry a REFRESHED session, not a byte-identical repeat: rotate() dropped
+        // the tripped visitor, so the retry goes out tokenless and YouTube mints a new one.
+        let sent = transport.recorded
+        #expect(sent.count == 2)
+        #expect(sent.first?.headers["X-Goog-Visitor-Id"] == "v1")
+        #expect(sent.last?.headers["X-Goog-Visitor-Id"] == nil)
+        #expect(sent.first?.body != sent.last?.body)
+        // ...and the visitor the successful retry came back with is captured for the next call
+        // (§6.3). Without the `setVisitorData` wiring this is nil and the ladder stays tokenless.
+        let captured = try #require(await session.visitorData(for: .visionos))
+        let expected = try #require(try PlayerResponseParser().parse(fixtureResponse("player-ok-hls").body).visitorData)
+        #expect(captured == expected)
+    }
+
+    // MARK: - d2) the captured visitor is replayed on the next resolve (§6.3)
+
+    @Test func capturedVisitorDataIsReplayedOnTheNextResolve() async throws {
+        let transport = ScriptedTransport([try fixtureResponse("player-ok-hls")])
+        let (resolver, session) = makeResolver(transport: transport)
+
+        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        let captured = try #require(await session.visitorData(for: .visionos))
+        #expect(transport.recorded.first?.headers["X-Goog-Visitor-Id"] == nil)  // nothing to send yet
+
+        _ = try await resolver.resolve("abcdefghijk", purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        let replayed = try #require(transport.recorded.last)
+        #expect(replayed.headers["X-Goog-Visitor-Id"] == captured)
+        // Sent as `context.client.visitorData` too, not only as the header.
+        let body = try #require(replayed.body)
+        #expect(String(data: body, encoding: .utf8)?.contains(captured) == true)
+    }
+
+    // MARK: - d3) Accept-Language is pinned to the injected locale, not the device's
+
+    @Test func acceptLanguageIsPinnedToTheInjectedLocale() async throws {
+        let transport = ScriptedTransport([try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport, locale: InnerTubeLocale(hl: "ar", gl: "MA"))
+
+        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        #expect(transport.recorded.first?.headers["Accept-Language"] == "ar")
+    }
+
+    // MARK: - d4) fallback rungs are neither cached nor counted as a clean fetch
+
+    @Test func embedFallbackIsNotCachedAndDoesNotRecordSuccess() async throws {
+        // Both player rungs answer UNPLAYABLE, so the ladder bottoms out on `embed`.
+        let clock = ManualClock()
+        let cache = ManifestCache(configTTLSeconds: 3600)
+        let transport = ScriptedTransport([try fixtureResponse("player-unplayable-kids")])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache)
+        await session.recordBotCheck()
+        clock.advanceWall(by: .seconds(8 * 24 * 3600))  // past the 7-day clean-streak reset window
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .embed = resolved.stream else { Issue.record("expected .embed, got \(resolved.stream)"); return }
+
+        #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil)
+        #expect(await session.loadCooldown().tripCount == 1)
+    }
+
+    @Test func nativeStreamIsCachedAndRecordsSuccess() async throws {
+        let clock = ManualClock()
+        let cache = ManifestCache(configTTLSeconds: 3600)
+        let transport = ScriptedTransport([try fixtureResponse("player-ok-hls")])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache)
+        await session.recordBotCheck()
+        clock.advanceWall(by: .seconds(8 * 24 * 3600))
+
+        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+
+        #expect(await cache.get(Self.videoId, now: clock.wallNow) != nil)
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    // MARK: - d5) an awaiter superseded by another caller's forceRefresh adopts the winner
+
+    @Test func supersededAwaiterAdoptsWinnerInsteadOfCancellation() async throws {
+        let transport = GatedTransport(try fixtureResponse("player-ok-hls"))
+        let (resolver, _) = makeResolver(transport: transport)
+
+        async let superseded = resolver.resolve(
+            Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        await transport.waitForFirstCall()  // the first job is registered and out on the wire
+
+        let winner = try await resolver.resolve(
+            Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        guard case .hls = winner.stream else { Issue.record("expected .hls, got \(winner.stream)"); return }
+
+        // The cancelled job's awaiter gets the winner's stream, not a spurious CancellationError.
+        let adopted = try await superseded
+        guard case .hls = adopted.stream else { Issue.record("expected adopted .hls, got \(adopted.stream)"); return }
+        #expect(transport.callCount == 2)
+    }
+
+    // MARK: - d6) reason -> terminal error mapping (ruling 14)
+
+    @Test func terminalErrorMapsReasonToItsTerminalError() {
+        let cases: [(String, ExtractionError)] = [
+            ("This video is private", .private),
+            ("This video has been removed by the uploader", .removed),
+            ("This video is no longer available due to a copyright claim", .removed),
+            ("The uploader has not made this video available in your country", .geoBlocked),
+            ("Sign in to confirm your age", .ageRestricted),
+            ("This video is unavailable", .unavailable(videoId: Self.videoId)),
+        ]
+        for (reason, expected) in cases {
+            #expect(StreamResolver.terminalError(reason: reason, videoId: Self.videoId) == expected, "reason: \(reason)")
+            #expect(expected.terminal, "reason: \(reason)")
+        }
     }
 
     // MARK: - e) two concurrent resolves for the same id issue ONE player POST

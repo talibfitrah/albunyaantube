@@ -35,9 +35,14 @@ enum InnerTubeContext {
 
     /// `Web`'s context carries no `User-Agent` (Task-1 probe); only the visionos/android
     /// segment fetch needs it, so it's added only when the client context supplies one.
-    static func headers(context: ClientContext, visitorData: String?) -> [String: String] {
+    ///
+    /// `Accept-Language` is pinned to the injected `hl`: CFNetwork otherwise auto-injects one
+    /// derived from the *device* locale, which varies per device and contradicts the body's `hl`
+    /// — a per-device wobble in the byte-identical fingerprint §6.3 depends on.
+    static func headers(context: ClientContext, visitorData: String?, locale: InnerTubeLocale) -> [String: String] {
         var headers: [String: String] = [
             "Content-Type": "application/json",
+            "Accept-Language": locale.hl,
             "X-YouTube-Client-Name": String(context.clientNameId),
             "X-YouTube-Client-Version": context.clientVersion,
         ]
