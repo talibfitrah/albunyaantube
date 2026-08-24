@@ -63,6 +63,23 @@ enum QualityOption: CaseIterable {
         let ceiling = Self.ceiling(for: self, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
         item.preferredMaximumResolution = ceiling.resolution
         item.preferredPeakBitRate = ceiling.bitrate
+        // Fix-round-1 F2: defense-in-depth backstop. AVFoundation itself honours these two
+        // properties whenever it detects the CURRENT network is expensive, independent of the
+        // `isExpensive` this call was made with -- so a mid-playback Wi-Fi -> cellular handover
+        // is still capped even though nothing re-applies the manual clamp above until the next
+        // prepare/pick. The manual clamp stays the source of truth the tests pin; this never
+        // raises it (AVFoundation applies the more restrictive of the two on an expensive path).
+        item.preferredMaximumResolutionForExpensiveNetworks = Self.cellularResolution
+        item.preferredPeakBitRateForExpensiveNetworks = Self.cellularBitrate
+    }
+
+    /// Fix-round-1 F1: `preferredMaximumResolution` is a PIXEL dimension; `UIView.bounds.size` is
+    /// POINTS. The caller (`PlayerHostView.applyQuality`) must convert before this ever sees a
+    /// layer size, or AUTO's cap collapses to ~one-third of the real pixel size on a 3x device --
+    /// well below 480p, forcing every default session to the bottom rendition. Pure so it's
+    /// testable without a view hierarchy.
+    static func pixelSize(points: CGSize, scale: CGFloat) -> CGSize {
+        CGSize(width: points.width * scale, height: points.height * scale)
     }
 
     static func ceiling(for option: QualityOption, layerSize: CGSize, isExpensive: Bool,

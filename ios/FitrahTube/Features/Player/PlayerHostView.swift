@@ -43,9 +43,17 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.player = nil
     }
 
+    /// Fix-round-1 F1: `controller.view.bounds.size` is POINTS; `QualityOption.apply`'s
+    /// `layerSize` must be PIXELS (`preferredMaximumResolution` is a pixel dimension). The
+    /// window's own screen scale is authoritative when the controller is on-screen; before that
+    /// (first `makeUIViewController` pass, view not yet in a window) `traitCollection.displayScale`
+    /// is the best available estimate, with `2` as a last-resort floor -- never `0`, which would
+    /// collapse the cap to a zero-pixel size.
     private func applyQuality(to controller: AVPlayerViewController, context: Context) {
         guard let item = controller.player?.currentItem else { return }
-        quality.apply(to: item, layerSize: controller.view.bounds.size, network: context.coordinator.path)
+        let scale = controller.view.window?.screen.scale ?? controller.traitCollection.displayScale
+        let layerSize = QualityOption.pixelSize(points: controller.view.bounds.size, scale: scale > 0 ? scale : 2)
+        quality.apply(to: item, layerSize: layerSize, network: context.coordinator.path)
     }
 
     /// `!==` guard: writing the same reference every `updateUIViewController` pass (most of

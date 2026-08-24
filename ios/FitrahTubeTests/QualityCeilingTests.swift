@@ -1,4 +1,5 @@
 import AVFoundation
+import Network
 import Testing
 @testable import FitrahTube
 
@@ -63,6 +64,45 @@ struct QualityCeilingTests {
         QualityOption.auto.apply(to: item, layerSize: Self.layerSize, isExpensive: true, isConstrained: true)
         #expect(item.preferredMaximumResolution == CGSize(width: 854, height: 480))
         #expect(item.preferredPeakBitRate == 1_200_000)
+    }
+
+    /// Fix-round-1 F3: a zero layer size (view not yet laid out) on an expensive path must clamp
+    /// to the cellular ceiling, not collapse to a zero-pixel cap that blocks video entirely.
+    @Test func autoWithZeroLayerSizeOnAnExpensivePathClampsToTheCellularCeilingNotZero() {
+        let item = item()
+        QualityOption.auto.apply(to: item, layerSize: .zero, isExpensive: true, isConstrained: false)
+        #expect(item.preferredMaximumResolution == CGSize(width: 1280, height: 720))
+        #expect(item.preferredPeakBitRate == 2_500_000)
+    }
+
+    /// Fix-round-1 F2: the native backstop is always set, independent of the primary cap, so
+    /// AVFoundation itself still enforces a ceiling on a mid-playback network handover.
+    @Test func expensiveNetworkBackstopIsAlwaysSet() {
+        let item = item()
+        QualityOption.dataSaver.apply(to: item, layerSize: Self.layerSize, isExpensive: false, isConstrained: false)
+        #expect(item.preferredMaximumResolutionForExpensiveNetworks == CGSize(width: 1280, height: 720))
+        #expect(item.preferredPeakBitRateForExpensiveNetworks == 2_500_000)
+    }
+
+    /// Fix-round-1 F1: pins the points -> pixels conversion `PlayerHostView.applyQuality` needs
+    /// (`preferredMaximumResolution` is a pixel dimension; `UIView.bounds.size` is points).
+    @Test func pixelSizeMultipliesPointsByScale() {
+        let pixels = QualityOption.pixelSize(points: CGSize(width: 390, height: 844), scale: 3)
+        #expect(pixels == CGSize(width: 1170, height: 2532))
+    }
+
+    /// Fix-round-1 F4: thin test on the production `network: NWPath` overload -- the pass-through
+    /// seam where F1's points/pixels bug lived. A real `NWPath` (unlike a fabricated one) is
+    /// obtainable via `NWPathMonitor().currentPath`, so this pins the overload's delegation is
+    /// self-consistent with the bool-flag core, whatever this sandbox's actual path reports.
+    @Test func networkOverloadDelegatesToTheBoolFlagCore() {
+        let network = NWPathMonitor().currentPath
+        let item = item()
+        QualityOption.p1080.apply(to: item, layerSize: Self.layerSize, network: network)
+        let expected = QualityOption.ceiling(for: .p1080, layerSize: Self.layerSize,
+                                             isExpensive: network.isExpensive, isConstrained: network.isConstrained)
+        #expect(item.preferredMaximumResolution == expected.resolution)
+        #expect(item.preferredPeakBitRate == expected.bitrate)
     }
 
     @Test func labelsMatchTheAndroidFormat() {
