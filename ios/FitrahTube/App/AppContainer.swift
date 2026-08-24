@@ -1,5 +1,6 @@
 import FitrahAPI
 import Foundation
+import InnerTubeKit
 import SwiftData
 import SwiftUI
 
@@ -25,6 +26,27 @@ nonisolated enum AppConfig {
         }
         return url
     }
+
+    /// `ios-remote-config.json` at the repo root, read from `main` (spec `ios-app-design.md:76`) --
+    /// the same raw.githubusercontent.com pattern Android's Available-updates screen uses for
+    /// `releases-meta.json`, same repo/branch.
+    // ponytail: the file doesn't exist at the repo root yet -- RemoteConfigStore.refresh() 404s
+    // harmlessly and keeps serving InnerTubeKit's bundled default until it's published; swap
+    // nothing here when it ships, this URL is already where it will land.
+    static let innerTubeRemoteConfigURL = URL(string: "https://raw.githubusercontent.com/talibfitrah/albunyaantube/main/ios-remote-config.json")!
+}
+
+/// `UserDefaults` adapter for InnerTubeKit's `KeyValueStore` (persists the remote config's
+/// last-known-good copy and the session bot-check cooldown across restarts).
+private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
+    // `UserDefaults` predates Swift concurrency and isn't annotated `Sendable`, but Apple's docs
+    // guarantee it's thread-safe -- `InnerTubeKit`'s actors (`RemoteConfigStore`, `SessionStore`)
+    // call `get`/`set` from their own isolation, same as every other `UserDefaults`-backed store
+    // in this app (`UserDefaultsSettingsStore` et al.), just without their `@MainActor` wrapper.
+    let defaults: UserDefaults
+
+    func get(_ key: String) -> Data? { defaults.data(forKey: key) }
+    func set(_ key: String, _ value: Data) { defaults.set(value, forKey: key) }
 }
 
 /// Composition root. Built once in `FitrahTubeApp`; every ViewModel receives what it needs from here
@@ -40,6 +62,7 @@ nonisolated enum AppConfig {
     let catalog: any CatalogClient
     private let userDefaults: UserDefaults
     private let modelContainer: ModelContainer
+    private let apiBaseURL: URL
 
     private(set) lazy var settings: any SettingsStore = UserDefaultsSettingsStore(defaults: userDefaults)
     private(set) lazy var filters: any FilterStore = UserDefaultsFilterStore(defaults: userDefaults)
@@ -48,15 +71,37 @@ nonisolated enum AppConfig {
     private(set) lazy var categories: any CategoriesCache = LiveCategoriesCache(client: catalog)
     private(set) lazy var network = NetworkMonitor()
 
-    init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer) {
+    /// InnerTubeKit composition root (CF-B3/CF-B4, `ios-app-plan.md` §6.1) -- resolves a videoId to
+    /// a playable stream via `resolver`. `lazy`, same reasoning as the stores above: building it is
+    /// cheap and side-effect-free (no network call happens until something resolves or refreshes).
+    private(set) lazy var innerTube: InnerTube = InnerTube(
+        keyValueStore: UserDefaultsKeyValueStore(defaults: userDefaults),
+        availabilityGate: BackendAvailabilityGate(baseURL: apiBaseURL),
+        locale: Self.deviceLocale(),
+        remoteConfigURL: AppConfig.innerTubeRemoteConfigURL
+    )
+    var resolver: StreamResolver { innerTube.resolver }
+
+    init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer, apiBaseURL: URL) {
         self.catalog = catalog
         self.userDefaults = userDefaults
         self.modelContainer = modelContainer
+        self.apiBaseURL = apiBaseURL
     }
 
     static func live(baseURL: URL = AppConfig.apiBaseURL) -> AppContainer {
         let api = FitrahAPIClient.make(baseURL: baseURL, deviceId: .persisted())
-        return AppContainer(catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false))
+        return AppContainer(
+            catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false), apiBaseURL: baseURL)
+    }
+
+    /// Device language/region for InnerTube requests (`hl`/`gl`) -- ruling 19: the engine itself
+    /// never reads `Locale.current`, the app supplies it. Deliberately NOT
+    /// `SettingsStore.systemLocaleCode`, which clamps to the app's 3 supported UI languages
+    /// (en/ar/nl); YouTube's `hl`/`gl` should reflect the device's real locale/region.
+    private static func deviceLocale() -> InnerTubeLocale {
+        let locale = Locale.current
+        return InnerTubeLocale(hl: locale.language.languageCode?.identifier ?? "en", gl: locale.region?.identifier ?? "US")
     }
 
     #if DEBUG
@@ -72,7 +117,12 @@ nonisolated enum AppConfig {
         // container's stores (settings/filters/favorites/search history) must pass their own
         // suite with their own teardown, or repeated calls sharing the default suite name would
         // leak state between them. `sharedFake` wipes its suite once, at creation.
-        AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true))
+        //
+        // `apiBaseURL: AppConfig.apiBaseURL`: `innerTube`/`resolver` are still real network-backed
+        // InnerTubeKit actors here (the package has no fake variant) -- previews/tests that never
+        // touch them pay nothing (`lazy`); one that does gets `BackendAvailabilityGate`'s fail-open
+        // behaviour against an unreachable host instead of a crash.
+        AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true), apiBaseURL: AppConfig.apiBaseURL)
     }
     #endif
 

@@ -33,6 +33,8 @@ settings:
 packages:
   FitrahAPI:
     path: Packages/FitrahAPI
+  InnerTubeKit:
+    path: Packages/InnerTubeKit
 
 targets:
   FitrahTube:
@@ -45,6 +47,8 @@ targets:
     dependencies:
       - package: FitrahAPI
         product: FitrahAPI
+      - package: InnerTubeKit
+        product: InnerTubeKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.albunyaan.tube
@@ -88,6 +92,8 @@ targets:
       - target: FitrahTube
       - package: FitrahAPI
         product: FitrahAPI
+      - package: InnerTubeKit
+        product: InnerTubeKit
     settings:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

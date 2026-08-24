@@ -22,6 +22,12 @@ struct FitrahTubeApp: App {
     // (RULING 4: held in `pendingRoute`, applied once `Router.shellDidAppear()` runs).
     @State private var router = Router()
 
+    @Environment(\.scenePhase) private var scenePhase
+    // CF-B4: last time `remoteConfig.refresh()` fired, so returning to the foreground doesn't
+    // re-fetch on every scene-phase flicker.
+    @State private var lastRemoteConfigRefresh: Date?
+    private static let remoteConfigRefreshSpacing: TimeInterval = 15 * 60
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -34,8 +40,24 @@ struct FitrahTubeApp: App {
                     pushDebugRouteIfRequested()
                     showDebugBannerIfRequested()
                     seedDebugFavoritesIfRequested()
+                    refreshRemoteConfigIfDue()
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active { refreshRemoteConfigIfDue() }
                 }
         }
+    }
+
+    /// CF-B4: `RemoteConfigStore.refresh()` must run on launch and on every return to the
+    /// foreground, or `current()` serves InnerTubeKit's bundled default forever. `scenePhase`
+    /// becoming `.active` covers both launch and foreground -- the ≥15 min spacing below is what
+    /// keeps this to "launch + foreground", not every phase change. Fire-and-forget: never blocks
+    /// the UI on a network round trip.
+    private func refreshRemoteConfigIfDue() {
+        let now = Date()
+        if let last = lastRemoteConfigRefresh, now.timeIntervalSince(last) < Self.remoteConfigRefreshSpacing { return }
+        lastRemoteConfigRefresh = now
+        Task { await container.innerTube.remoteConfig.refresh() }
     }
 
     /// Debug-only launch hook (`-fitrah-deeplink <url>`, two argv tokens): exercises the exact
