@@ -45,6 +45,22 @@ struct LiveStreamResolver: StreamResolving {
     /// `PlayerHostView.applyQuality` uses for the quality ceiling.
     var currentItem: AVPlayerItem?
 
+    /// Same hand-off reasoning as `currentItem`, one level up: `CaptionOverlay` needs the live
+    /// `AVPlayer` itself (`addPeriodicTimeObserver` is an `AVPlayer` method, not `AVPlayerItem`'s),
+    /// and `PlayerHostView` is the only owner of the AVKit-managed player. Written alongside
+    /// `currentItem` in `PlayerHostView`'s make/update pair.
+    var currentPlayer: AVPlayer?
+
+    /// Task 6 (captions): the toggle's current pick (`nil` = Off). Session-only, like
+    /// `selectedQuality`/`stickyAudioLanguage` -- survives a re-resolve within one player lifetime,
+    /// never persisted.
+    var selectedCaptionTrack: CaptionTrack?
+
+    /// Guards the one-time "auto-enable the first track when VoiceOver's closed-captioning
+    /// setting is on" default (spec §10) so it never fights a later manual "Off" pick across
+    /// re-renders of the same session.
+    var captionsAutoEnableApplied = false
+
     private let resolver: any StreamResolving
     private let catalog: any CatalogClient
     private let favorites: any FavoritesStore

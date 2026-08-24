@@ -29,6 +29,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.player = Self.player(for: state, replacing: nil)
         applyQuality(to: controller, context: context)
         applyAudioLanguageHandoff(to: controller)
+        applyCaptionsHandoff(to: controller)
         return controller
     }
 
@@ -36,6 +37,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.player = Self.player(for: state, replacing: controller.player)
         applyQuality(to: controller, context: context)
         applyAudioLanguageHandoff(to: controller)
+        applyCaptionsHandoff(to: controller)
     }
 
     static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
@@ -63,6 +65,13 @@ struct PlayerHostView: UIViewControllerRepresentable {
     private func applyAudioLanguageHandoff(to controller: AVPlayerViewController) {
         guard let item = controller.player?.currentItem, item !== model.currentItem else { return }
         model.currentItem = item
+    }
+
+    /// Same `!==` guard as `applyAudioLanguageHandoff`, one level up -- `CaptionOverlay`'s
+    /// `addPeriodicTimeObserver` needs the `AVPlayer` itself.
+    private func applyCaptionsHandoff(to controller: AVPlayerViewController) {
+        guard let player = controller.player, player !== model.currentPlayer else { return }
+        model.currentPlayer = player
     }
 
     /// Holds the one `NWPathMonitor` this host needs for `QualityOption.apply`'s cellular/Low-Data

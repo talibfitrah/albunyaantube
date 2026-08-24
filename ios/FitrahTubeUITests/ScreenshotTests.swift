@@ -225,6 +225,28 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-audio-language-hidden", into: directory)
     }
 
+    /// Plan B1 task 6: `PlayerScreen.captionsMenu` (`player.captionsMenu.button` /
+    /// `player.captionsOption.*`) must stay HIDDEN when the resolved stream carries no caption
+    /// tracks. `FixtureHLSPlayerResolver` resolves `.hls` with `captionTracks: []` (no bundled HLS
+    /// sample carries real caption tracks), so -- same shape as Task 5's hidden-state proof --
+    /// this proves the negative: the button never appears once the player is ready (anchored on
+    /// the quality button, proving `.ready`, mirroring Task 5's pattern).
+    func testPlayerCaptionsMenuHiddenForFixtureWithNoTracks() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-captions",
+                            arguments: ["-fitrah-fake-player-hls", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .element("Video"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let content = element(for: screen.anchor, in: app)
+        XCTAssertTrue(content.waitForExistence(timeout: 20), "player-captions: AVPlayerViewController's content view never appeared")
+        let qualityButton = app.buttons["player.qualityMenu.button"]
+        XCTAssertTrue(qualityButton.waitForExistence(timeout: 10), "player-captions: quality menu button never appeared (sanity: player is ready)")
+        let captionsButton = app.buttons["player.captionsMenu.button"]
+        XCTAssertFalse(captionsButton.waitForExistence(timeout: 5), "player-captions: captions menu button should stay hidden when the stream has no caption tracks")
+        try write(named: "player-captions-hidden", into: directory)
+    }
+
     // MARK: - Accessibility assertions (R-C, spec §14 "label + value on custom controls")
 
     /// Every list row must expose a VoiceOver label that carries the item title *and* the value the
