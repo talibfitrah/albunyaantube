@@ -42,8 +42,13 @@ struct CaptionOverlay: View {
         let item = model.currentItem
         let fetched = (try? await CaptionsProvider().cues(for: track)) ?? []
         // Currentness guard (Task 5's known gap, task-6-brief.md): a re-resolve/item swap while
-        // this `await` was in flight must not apply a stale track's cues to the new item.
-        guard item === model.currentItem, let player = model.currentPlayer else { return }
+        // this `await` was in flight must not apply a stale track's cues to the new item. Fix
+        // round 1 F2: also re-check `selectedCaptionTrack == track` -- a rapid A->B track switch
+        // keeps the same item/player, so the item check alone let A's stale load win the race and
+        // overwrite B's overlay (`try?` swallows `CancellationError`, so `.task(id:)`'s
+        // cancellation of the old task isn't a reliable stop on its own).
+        guard item === model.currentItem, model.selectedCaptionTrack == track,
+              let player = model.currentPlayer else { return }
         observer.start(player: player, cues: fetched) { activeCue = $0 }
     }
 }
