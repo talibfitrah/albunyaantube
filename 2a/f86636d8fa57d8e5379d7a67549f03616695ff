@@ -1,0 +1,23 @@
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
+  s_18197a18aae8f1::t_8d1d925bcc1093 223-234
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/LiveResolveTests.swift
+  s_18197a18aae8f1::t_2da90aab6a9477 17-20
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_18197a18aae8f1::t_83e02a73e2260b 180-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2af86636d8fa57d8e5379d7a67549f03616695ff",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
