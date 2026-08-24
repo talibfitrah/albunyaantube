@@ -177,6 +177,32 @@ import Testing
         #expect(captured == expected)
     }
 
+    // MARK: - d1) a tokenless first call bootstraps its session from the bot-check response
+
+    /// The first-ever call under a family has no `visitorData`, so YouTube bot-checks it — but
+    /// that response carries a freshly-minted `responseContext.visitorData` (probe.py A.1's
+    /// "a bare request establishes the session"). Adopting it and retrying the SAME rung is what
+    /// turns the live ladder's first play into `.hls`; without it the retry repeats the tokenless
+    /// request, trips again, and the ladder demotes to ANDROID itag-18.
+    @Test func tokenlessFirstCallAdoptsTheBotCheckVisitorAndRetriesTheSameRung() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-botcheck"), try fixtureResponse("player-ok-hls")])
+        let (resolver, session) = makeResolver(transport: transport)  // no stored visitor
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .hls = resolved.stream else { Issue.record("expected .hls after bootstrap, got \(resolved.stream)"); return }
+
+        #expect(transport.callCount == 2)
+        let sent = transport.recorded
+        #expect(sent.first?.headers["X-Goog-Visitor-Id"] == nil)  // bare, as it must be
+        let bootstrapped = try #require(
+            try PlayerResponseParser().parse(fixtureResponse("player-botcheck").body).visitorData)
+        #expect(sent.last?.headers["X-Goog-Visitor-Id"] == bootstrapped)
+        #expect(String(data: try #require(sent.last?.body), encoding: .utf8)?.contains(bootstrapped) == true)
+        // The rotation budget is untouched — a bootstrap is not a rotation, so a genuine bot check
+        // later in this 10-minute window can still rotate.
+        #expect(await session.rotate(.visionos) == true)
+    }
+
     // MARK: - d2) the captured visitor is replayed on the next resolve (§6.3)
 
     @Test func capturedVisitorDataIsReplayedOnTheNextResolve() async throws {

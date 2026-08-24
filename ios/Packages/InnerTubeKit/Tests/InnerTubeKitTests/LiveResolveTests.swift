@@ -14,9 +14,10 @@ extension Tag {
 ///
 ///     INNERTUBE_LIVE=1 swift test --filter LiveResolveTests
 ///
-/// Deliberately not run as part of this task (controller scope change, task-13): visitorData
-/// capture (T9-1) is a known gap landing in the next fix round, and a tokenless live run here
-/// would burn a session rotation for nothing.
+/// Green as of 2026-08-24. It exercises the session bootstrap: the first POST goes out tokenless
+/// and comes back bot-checked, the resolver adopts that response's `responseContext.visitorData`
+/// and retries the same rung, which returns OK + `hlsManifestUrl`. A regression here shows up as
+/// `.progressive` (the ANDROID itag-18 rung) instead of `.hls`.
 @Suite struct LiveResolveTests {
     /// "Normal lecture" case from `probes/probe-2026-08-23.md` — confirmed VISIONOS OK +
     /// `hlsManifestUrl` present, no pot demanded, live-verified 2026-08-23.

@@ -220,6 +220,18 @@ public actor StreamResolver {
         case .ageGate:
             return .jumpToOpenInYouTube
         case .botCheck:
+            // Session bootstrap (Appendix A.1 `probe.py`: "a bare request establishes the session;
+            // reuse responseContext.visitorData for everything after"). The very first call under a
+            // family goes out tokenless and YouTube answers with a bot check that *carries* a
+            // freshly-minted `responseContext.visitorData`; adopting it and retrying flips the same
+            // rung to OK+HLS (verified live 2026-08-24 against `xc7keR2piUM`). This is session
+            // establishment, not a rotation — rotating here would clear the token we were just
+            // handed and burn the 10-minute rotation budget on the first play of every launch.
+            if visitorData == nil, canRotate, let visitor = parsed.visitorData {
+                await sessionStore.setVisitorData(visitor, for: family)
+                return try await runPlayerRung(
+                    family: family, videoId: videoId, config: config, expectHLS: expectHLS, canRotate: false)
+            }
             if canRotate, await sessionStore.rotate(family) {
                 return try await runPlayerRung(
                     family: family, videoId: videoId, config: config, expectHLS: expectHLS, canRotate: false)
