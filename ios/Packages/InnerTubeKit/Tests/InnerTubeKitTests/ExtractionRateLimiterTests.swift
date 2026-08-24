@@ -46,10 +46,7 @@ import Testing
 
         let decision = await limiter.check("abc123def45", kind: .player, now: .seconds(93))
 
-        guard case .blocked = decision else {
-            Issue.record("expected blocked, got \(decision)")
-            return
-        }
+        #expect(decision == .blocked(reason: "per-video limit (3 in 5min)", retryAfter: .seconds(207)))
     }
 
     @Test func prefetchBlockedAtAttemptsEqualsMaxMinusOneWhileAutoRecoveryStillAllowed() async {
@@ -61,10 +58,7 @@ import Testing
         // attemptsInWindow == 2 == MAX_ATTEMPTS_PER_VIDEO(3) - 1.
 
         let prefetchDecision = await limiter.check("abc123def45", kind: .prefetch, now: .seconds(62))
-        guard case .blocked = prefetchDecision else {
-            Issue.record("expected prefetch blocked, got \(prefetchDecision)")
-            return
-        }
+        #expect(prefetchDecision == .blocked(reason: "prefetch blocked (budget reserved)", retryAfter: .seconds(300)))
 
         let recoveryDecision = await limiter.check("abc123def45", kind: .autoRecovery, now: .seconds(62))
         #expect(recoveryDecision == .allowed)
@@ -78,16 +72,10 @@ import Testing
         }
 
         let eleventh = await limiter.check("vid10abcde12", kind: .player, now: .zero)
-        guard case .blocked = eleventh else {
-            Issue.record("expected 11th player blocked, got \(eleventh)")
-            return
-        }
+        #expect(eleventh == .blocked(reason: "global limit (10 per minute)", retryAfter: .seconds(60)))
 
         let prefetchBlocked = await limiter.check("vid11abcde12", kind: .prefetch, now: .zero)
-        guard case .blocked = prefetchBlocked else {
-            Issue.record("expected prefetch blocked by shared global limit, got \(prefetchBlocked)")
-            return
-        }
+        #expect(prefetchBlocked == .blocked(reason: "global limit (10 per minute)", retryAfter: .seconds(60)))
 
         let recovery = await limiter.check("vid12abcde12", kind: .autoRecovery, now: .zero)
         #expect(recovery == .allowed)
@@ -148,10 +136,7 @@ import Testing
         #expect(second == .allowed, "2nd reserved auto-recovery attempt should be allowed")
 
         let third = await limiter.check("abc123def45", kind: .autoRecovery, now: .seconds(155))
-        guard case .blocked = third else {
-            Issue.record("expected 3rd auto-recovery blocked (reserved budget + total exhausted), got \(third)")
-            return
-        }
+        #expect(third == .blocked(reason: "auto-recovery limit (2 per window)", retryAfter: .seconds(145)))
     }
 
     @Test func proactiveTTLRefreshDoesNotConsumeSharedPerVideoBudget() async {
@@ -171,10 +156,7 @@ import Testing
         #expect(second == .allowed)
 
         let third = await limiter.check("abc123def45", kind: .proactiveTTLRefresh, now: .seconds(155))
-        guard case .blocked = third else {
-            Issue.record("expected 3rd proactive TTL refresh blocked (own 2/window reserved budget), got \(third)")
-            return
-        }
+        #expect(third == .blocked(reason: "proactive TTL refresh limit (2 per window)", retryAfter: .seconds(238)))
     }
 
     @Test func proactiveTTLRefreshHasOwnGlobalCeilingIndependentOfSharedGlobal() async {
@@ -196,9 +178,38 @@ import Testing
         }
 
         let eleventh = await limiter.check("ttl10abcde12", kind: .proactiveTTLRefresh, now: .zero)
-        guard case .blocked = eleventh else {
-            Issue.record("expected 11th proactive TTL refresh blocked by its own 10/min ceiling, got \(eleventh)")
-            return
-        }
+        #expect(
+            eleventh
+                == .blocked(
+                    reason: "global proactive TTL refresh limit (10 per minute)", retryAfter: .seconds(60)))
+    }
+
+    // MARK: - B9: min-interval delayed path, per kind's own last-attempt field
+
+    @Test func secondPrefetchAttemptWithinMinIntervalIsDelayed() async {
+        let limiter = ExtractionRateLimiter()
+        _ = await limiter.check("abc123def45", kind: .prefetch, now: .zero)
+
+        let decision = await limiter.check("abc123def45", kind: .prefetch, now: .seconds(15))
+
+        #expect(decision == .delayed(.seconds(15), reason: "minimum interval"))
+    }
+
+    @Test func secondProactiveTTLRefreshAttemptWithinMinIntervalIsDelayed() async {
+        let limiter = ExtractionRateLimiter()
+        _ = await limiter.check("abc123def45", kind: .proactiveTTLRefresh, now: .zero)
+
+        let decision = await limiter.check("abc123def45", kind: .proactiveTTLRefresh, now: .seconds(15))
+
+        #expect(decision == .delayed(.seconds(15), reason: "minimum interval"))
+    }
+
+    @Test func nonFirstAutoRecoveryAttemptWithinMinIntervalIsDelayed() async {
+        let limiter = ExtractionRateLimiter()
+        _ = await limiter.check("abc123def45", kind: .autoRecovery, now: .zero)
+
+        let decision = await limiter.check("abc123def45", kind: .autoRecovery, now: .seconds(15))
+
+        #expect(decision == .delayed(.seconds(15), reason: "minimum interval"))
     }
 }

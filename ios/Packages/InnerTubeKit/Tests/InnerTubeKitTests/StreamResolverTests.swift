@@ -7,37 +7,6 @@ import Testing
 
     // MARK: - test doubles
 
-    /// Returns recorded responses in call order (repeating the last once exhausted)
-    /// and counts how many times it was hit — the call-counting the single-flight
-    /// and cache-hit assertions need.
-    private final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
-        // Sendable: all mutable state is guarded by `lock`.
-        private let lock = NSLock()
-        private let responses: [HTTPResponse]
-        private var index = 0
-        private var sent: [HTTPRequest] = []
-
-        init(_ responses: [HTTPResponse]) { self.responses = responses }
-
-        var callCount: Int {
-            lock.withLock { sent.count }
-        }
-
-        /// The requests as they went out — what the session-hygiene assertions inspect.
-        var recorded: [HTTPRequest] {
-            lock.withLock { sent }
-        }
-
-        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-            lock.withLock {
-                sent.append(request)
-                let response = responses[min(index, responses.count - 1)]
-                index += 1
-                return response
-            }
-        }
-    }
-
     /// Hangs the FIRST call until it is cancelled; later calls answer immediately. Lets a test
     /// hold a resolve open at the transport while another caller supersedes it.
     private final class GatedTransport: HTTPTransport, @unchecked Sendable {
@@ -142,7 +111,7 @@ import Testing
     // MARK: - a) VISIONOS ok -> .hls, and the manifest is cached
 
     @Test func visionosOkYieldsHLSAndCachesSecondResolve() async throws {
-        let transport = ScriptedTransport([try fixtureResponse("player-ok-hls")])
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, _) = makeResolver(transport: transport)
 
         let first = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
@@ -157,7 +126,7 @@ import Testing
     // MARK: - b) VISIONOS unplayableKids -> ANDROID itag18 -> .progressive("360p")
 
     @Test func unplayableKidsFallsToAndroidItag18() async throws {
-        let transport = ScriptedTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
         let (resolver, _) = makeResolver(transport: transport)
 
         let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
@@ -171,7 +140,7 @@ import Testing
     // MARK: - c) ageGate skips straight to openInYouTube, never rotates
 
     @Test func ageGateJumpsToOpenInYouTubeWithoutRotating() async throws {
-        let transport = ScriptedTransport([try fixtureResponse("player-age-gated")])
+        let transport = RecordingTransport([try fixtureResponse("player-age-gated")])
         let (resolver, session) = makeResolver(transport: transport)
         await session.setVisitorData("original-visitor", for: .visionos)
 
@@ -186,7 +155,7 @@ import Testing
     // MARK: - d) botCheck rotates once and retries the same rung, succeeding on retry
 
     @Test func botCheckRotatesAndRetriesSameRung() async throws {
-        let transport = ScriptedTransport([try fixtureResponse("player-botcheck"), try fixtureResponse("player-ok-hls")])
+        let transport = RecordingTransport([try fixtureResponse("player-botcheck"), try fixtureResponse("player-ok-hls")])
         let (resolver, session) = makeResolver(transport: transport)
         await session.setVisitorData("v1", for: .visionos)
 
@@ -211,7 +180,7 @@ import Testing
     // MARK: - d2) the captured visitor is replayed on the next resolve (§6.3)
 
     @Test func capturedVisitorDataIsReplayedOnTheNextResolve() async throws {
-        let transport = ScriptedTransport([try fixtureResponse("player-ok-hls")])
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, session) = makeResolver(transport: transport)
 
         _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
@@ -229,7 +198,7 @@ import Testing
     // MARK: - d3) Accept-Language is pinned to the injected locale, not the device's
 
     @Test func acceptLanguageIsPinnedToTheInjectedLocale() async throws {
-        let transport = ScriptedTransport([try fixtureResponse("player-ok-hls")])
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, _) = makeResolver(transport: transport, locale: InnerTubeLocale(hl: "ar", gl: "MA"))
 
         _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
@@ -242,7 +211,7 @@ import Testing
         // Both player rungs answer UNPLAYABLE, so the ladder bottoms out on `embed`.
         let clock = ManualClock()
         let cache = ManifestCache(configTTLSeconds: 3600)
-        let transport = ScriptedTransport([try fixtureResponse("player-unplayable-kids")])
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids")])
         let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache)
         await session.recordBotCheck()
         clock.advanceWall(by: .seconds(8 * 24 * 3600))  // past the 7-day clean-streak reset window
@@ -257,7 +226,7 @@ import Testing
     @Test func nativeStreamIsCachedAndRecordsSuccess() async throws {
         let clock = ManualClock()
         let cache = ManifestCache(configTTLSeconds: 3600)
-        let transport = ScriptedTransport([try fixtureResponse("player-ok-hls")])
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache)
         await session.recordBotCheck()
         clock.advanceWall(by: .seconds(8 * 24 * 3600))
@@ -308,7 +277,7 @@ import Testing
     // MARK: - e) two concurrent resolves for the same id issue ONE player POST
 
     @Test func concurrentResolvesShareOnePost() async throws {
-        let transport = ScriptedTransport([try fixtureResponse("player-ok-hls")])
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, _) = makeResolver(transport: transport)
 
         async let a = resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
@@ -324,7 +293,7 @@ import Testing
     // MARK: - f) invalid videoId throws before any transport call
 
     @Test func invalidVideoIdThrowsBeforeTransport() async throws {
-        let transport = ScriptedTransport([try fixtureResponse("player-ok-hls")])
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, _) = makeResolver(transport: transport)
 
         await expectThrows(.invalidVideoId) {
@@ -336,7 +305,7 @@ import Testing
     // MARK: - g) 410 from the availability gate throws .unavailable
 
     @Test func availabilityGateUnavailableThrowsUnavailable() async throws {
-        let transport = ScriptedTransport([try fixtureResponse("player-ok-hls")])
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, _) = makeResolver(transport: transport, gate: StubGate(available: false))
 
         await expectThrows(.unavailable(videoId: Self.videoId)) {

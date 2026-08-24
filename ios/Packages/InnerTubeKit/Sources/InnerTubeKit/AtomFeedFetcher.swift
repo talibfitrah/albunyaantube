@@ -14,6 +14,13 @@ public enum AtomFeedError: Error, Sendable, Equatable {
 /// that holds onto the last-known items across a 304; that layer doesn't exist on iOS yet, so
 /// this actor persists both the conditional-GET validators *and* the parsed items itself, keyed
 /// per channel in the injected `KeyValueStore` — a 304 replays the same list it returned last time.
+///
+/// Conditional-GET reality check (probed live 5x, 2026-08-23): `feeds/videos.xml` sends neither
+/// `ETag` nor `Last-Modified` — only `Cache-Control: max-age=900` — and ignores `If-Modified-Since`
+/// on request. The `If-None-Match`/`If-Modified-Since` machinery above is therefore dormant against
+/// the real endpoint today (kept: harmless, and would activate if YouTube adds validators later).
+/// Do not read this as "stays under per-IP limits via 304s" — that isn't happening; the actual
+/// throttle, if one is needed, would have to honor `max-age=900` via a stored fetch timestamp.
 public actor AtomFeedFetcher {
     private static let maxItems = 15
     private static let feedURL = URL(string: "https://www.youtube.com/feeds/videos.xml")!
@@ -66,14 +73,18 @@ public actor AtomFeedFetcher {
         var id: String
         var title: String
         var publishedText: String?
+        var thumbnailURL: String?
 
         init(_ item: VideoItem) {
             id = item.id
             title = item.title
             publishedText = item.publishedText
+            thumbnailURL = item.thumbnailURL?.absoluteString
         }
 
-        var videoItem: VideoItem { VideoItem(id: id, title: title, publishedText: publishedText) }
+        var videoItem: VideoItem {
+            VideoItem(id: id, title: title, publishedText: publishedText, thumbnailURL: thumbnailURL.flatMap(URL.init(string:)))
+        }
     }
 
     private struct Cache: Codable {
@@ -116,6 +127,7 @@ private final class AtomParserDelegate: NSObject, XMLParserDelegate {
     private var videoId: String?
     private var title: String?
     private var published: String?
+    private var thumbnailURL: URL?
 
     func parser(
         _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
@@ -127,6 +139,9 @@ private final class AtomParserDelegate: NSObject, XMLParserDelegate {
             videoId = nil
             title = nil
             published = nil
+            thumbnailURL = nil
+        } else if elementName == "media:thumbnail", inEntry, thumbnailURL == nil {
+            thumbnailURL = attributeDict["url"].flatMap(URL.init(string:))
         }
     }
 
@@ -146,7 +161,10 @@ private final class AtomParserDelegate: NSObject, XMLParserDelegate {
             if let id = videoId?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty,
                 let t = title?.trimmingCharacters(in: .whitespacesAndNewlines)
             {
-                items.append(VideoItem(id: id, title: t, publishedText: published?.trimmingCharacters(in: .whitespacesAndNewlines)))
+                items.append(
+                    VideoItem(
+                        id: id, title: t, publishedText: published?.trimmingCharacters(in: .whitespacesAndNewlines),
+                        thumbnailURL: thumbnailURL))
             }
         }
         currentElement = ""

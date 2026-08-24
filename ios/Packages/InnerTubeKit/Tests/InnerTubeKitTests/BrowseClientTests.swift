@@ -39,29 +39,6 @@ import Testing
         }
     }
 
-    /// Records every request body (as UTF-8 text) and replays responses in call order —
-    /// mirrors `StreamResolverTests.ScriptedTransport`.
-    private final class RecordingTransport: HTTPTransport, @unchecked Sendable {
-        // Sendable: all mutable state is guarded by `lock`.
-        private let lock = NSLock()
-        private let responses: [HTTPResponse]
-        private var index = 0
-        private var bodies: [String] = []
-
-        init(_ responses: [HTTPResponse]) { self.responses = responses }
-
-        var capturedBodies: [String] { lock.withLock { bodies } }
-
-        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-            lock.withLock {
-                bodies.append(String(data: request.body ?? Data(), encoding: .utf8) ?? "")
-                let response = responses[min(index, responses.count - 1)]
-                index += 1
-                return response
-            }
-        }
-    }
-
     // MARK: - a) channelVideos page 1 -> items + nextContinuation
 
     @Test func channelVideosPage1YieldsItemsAndNextContinuation() async throws {

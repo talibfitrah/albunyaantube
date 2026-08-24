@@ -34,7 +34,18 @@ import Testing
             """
             {"schemaVersion":2,"minAppVersion":"1.0.0","resolverOrder":["embed"],"manifestCacheSeconds":60,"clients":{}}
             """.utf8)
-        let oversizedBody = Data(repeating: 0x41, count: 64 * 1024 + 1)
+        // Well-formed (fully decodable) RemoteConfig padded past 64 KiB via one client's
+        // oversized userAgent — NOT non-JSON garbage. Garbage would fail to decode regardless of
+        // check ordering, so it can't catch a "decode before size check" regression; this can.
+        let oversizedConfig = RemoteConfig(
+            schemaVersion: 3, minAppVersion: "1.0.0", resolverOrder: ["embed"], manifestCacheSeconds: 60,
+            clients: [
+                "padding": ClientContext(
+                    clientName: "PADDING", clientVersion: "1", clientNameId: 1,
+                    userAgent: String(repeating: "a", count: 64 * 1024 + 1024))
+            ])
+        let oversizedBody = try! JSONEncoder().encode(oversizedConfig)
+        #expect(oversizedBody.count > RemoteConfigStore.maxBodyBytes)
         let transport = FixtureTransport(routes: [
             .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: goodBody))
         ])
@@ -66,7 +77,20 @@ import Testing
 
     @Test func semVerComparesNumericSegmentsNotLexicographically() {
         #expect(SemVer.compare("1.0.0", "1.0.10") == .orderedAscending)
-        #expect(SemVer.compare("1.2.0", "1.10.0") != .orderedDescending)
+        #expect(SemVer.compare("1.2.0", "1.10.0") == .orderedAscending)
+    }
+
+    @Test func semVerTreatsMissingTrailingSegmentsAsZero() {
+        #expect(SemVer.compare("1.0", "1.0.0") == .orderedSame)
+    }
+
+    @Test func requiresUpdateComparesAppVersionAgainstMinAppVersion() {
+        var config = RemoteConfig.bundledDefault
+        config.minAppVersion = "1.5.0"
+
+        #expect(config.requiresUpdate(appVersion: "1.4.9") == true)
+        #expect(config.requiresUpdate(appVersion: "1.5.0") == false)
+        #expect(config.requiresUpdate(appVersion: "1.5.1") == false)
     }
 }
 

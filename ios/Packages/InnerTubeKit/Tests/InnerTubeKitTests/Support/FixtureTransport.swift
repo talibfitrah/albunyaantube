@@ -31,6 +31,40 @@ struct FixtureTransport: HTTPTransport {
     }
 }
 
+/// Returns recorded responses in call order (repeating the last once exhausted) and records every
+/// request sent, in order — the call-counting / sent-request inspection the single-flight,
+/// cache-hit, and session-hygiene assertions across `StreamResolverTests`, `BrowseClientTests`,
+/// and `AtomFeedFetcherTests` all need. One shared double, previously duplicated per-file as
+/// `ScriptedTransport` / `RecordingTransport`.
+final class RecordingTransport: HTTPTransport, @unchecked Sendable {
+    // Sendable: all mutable state is guarded by `lock`.
+    private let lock = NSLock()
+    private let responses: [HTTPResponse]
+    private var index = 0
+    private var sent: [HTTPRequest] = []
+
+    init(_ responses: [HTTPResponse]) { self.responses = responses }
+
+    var callCount: Int { lock.withLock { sent.count } }
+
+    /// The requests as they went out, in order.
+    var recorded: [HTTPRequest] { lock.withLock { sent } }
+
+    /// `recorded` request bodies decoded as UTF-8 text (empty string for a nil/undecodable body).
+    var capturedBodies: [String] {
+        recorded.map { String(data: $0.body ?? Data(), encoding: .utf8) ?? "" }
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        lock.withLock {
+            sent.append(request)
+            let response = responses[min(index, responses.count - 1)]
+            index += 1
+            return response
+        }
+    }
+}
+
 /// Test-only clock: starts at `.zero` (monotonic) / a fixed epoch (wall),
 /// advances only when told to.
 final class ManualClock: MonotonicClock, WallClock, @unchecked Sendable {

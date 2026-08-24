@@ -38,6 +38,17 @@ public enum ClientFamily: Sendable {
         case .web: return false
         }
     }
+
+    /// The `context.client.clientName` value this family's `ClientContext` must carry
+    /// (`remote-config-default.json`) — guards against mixing a family with the wrong
+    /// context under one visitor (§6.3).
+    var expectedClientName: String {
+        switch self {
+        case .visionos: return "VISIONOS"
+        case .android: return "ANDROID"
+        case .web: return "WEB"
+        }
+    }
 }
 
 /// A resolved stream plus the context needed to play/expire it.

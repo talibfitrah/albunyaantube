@@ -8,29 +8,6 @@ import Testing
 @Suite struct AtomFeedFetcherTests {
     private static let channelId = "UCmMcOjsVehVlEOteyrhjI2Q"
 
-    /// Records every request and replays responses in call order — mirrors
-    /// `StreamResolverTests.ScriptedTransport` / `BrowseClientTests.RecordingTransport`.
-    private final class RecordingTransport: HTTPTransport, @unchecked Sendable {
-        // Sendable: all mutable state is guarded by `lock`.
-        private let lock = NSLock()
-        private let responses: [HTTPResponse]
-        private var index = 0
-        private var requests: [HTTPRequest] = []
-
-        init(_ responses: [HTTPResponse]) { self.responses = responses }
-
-        var capturedRequests: [HTTPRequest] { lock.withLock { requests } }
-
-        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-            lock.withLock {
-                requests.append(request)
-                let response = responses[min(index, responses.count - 1)]
-                index += 1
-                return response
-            }
-        }
-    }
-
     private func fixtureBody() throws -> Data {
         let url = try #require(Bundle.module.url(forResource: "atom-channel", withExtension: "xml", subdirectory: "Fixtures"))
         return try Data(contentsOf: url)
@@ -46,6 +23,7 @@ import Testing
         #expect(items[0].id == "R6YoAYNxAcE")
         #expect(items[0].title.hasPrefix("معلقة زهير"))
         #expect(items[0].publishedText == "2026-08-22T15:00:06+00:00")
+        #expect(items[0].thumbnailURL == URL(string: "https://i3.ytimg.com/vi/R6YoAYNxAcE/hqdefault.jpg"))
     }
 
     @Test func notModifiedReturnsPreviouslyParsedList() async throws {
@@ -72,7 +50,7 @@ import Testing
         _ = try await fetcher.latest(Self.channelId)
         _ = try await fetcher.latest(Self.channelId)
 
-        let requests = transport.capturedRequests
+        let requests = transport.recorded
         #expect(requests.count == 2)
         #expect(requests[0].headers["If-None-Match"] == nil)
         #expect(requests[1].headers["If-None-Match"] == "abc123")

@@ -30,6 +30,12 @@ public struct PlayerRequestBuilder: Sendable {
     public func build(
         videoId: String, family: ClientFamily, context: ClientContext, visitorData: String?, locale: InnerTubeLocale
     ) -> HTTPRequest {
+        // Never mix a family with the wrong client context under one visitor (§6.3) — a caller
+        // passing e.g. `family: .android` with the `web` ClientContext would silently mint a
+        // stream whose family/userAgent/visitor bookkeeping is for the wrong client.
+        precondition(
+            context.clientName == family.expectedClientName,
+            "PlayerRequestBuilder: family \(family) expects clientName \(family.expectedClientName), got \(context.clientName)")
         let body = Body(
             context: Body.Context(client: InnerTubeContext.client(context: context, visitorData: visitorData, locale: locale)),
             videoId: videoId,

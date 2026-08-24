@@ -378,7 +378,9 @@ public actor BrowseClient {
             for value in alert.values {
                 guard let renderer = value as? [String: Any] else { continue }
                 let text = (dig(renderer, "text", "simpleText") as? String) ?? (dig(renderer, "text", "content") as? String)
-                if let text, text.lowercased().contains("bot") {
+                // A known phrase fragment, not a bare "bot" substring — "bot" alone false-positives
+                // on "robot"/"bottom" etc. This is YouTube's actual interstitial copy.
+                if let text, text.lowercased().contains("confirm you're not a bot") {
                     return true
                 }
             }
