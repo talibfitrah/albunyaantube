@@ -1,13 +1,20 @@
 import AVFoundation
 import AVKit
 import InnerTubeKit
+import Network
 import SwiftUI
 
 /// `AVPlayerViewController` host for rung-1 (HLS) and rung-2 (progressive) playback (spec §10, plan
-/// §6.5). Stock chrome gives scrubber/±10s/speed/subtitle-menu/AirPlay for free; quality ceiling,
-/// captions overlay, audio-language menu, recovery and the toolbar are later tasks in this plan.
+/// §6.5). Stock chrome gives scrubber/±10s/speed/subtitle-menu/AirPlay for free; captions overlay,
+/// audio-language menu, recovery and the rest of the toolbar are later tasks in this plan.
 struct PlayerHostView: UIViewControllerRepresentable {
     let state: StreamState
+    /// The quality menu's current pick (`PlayerScreen`, `PlayerViewModel.selectedQuality`) --
+    /// applied to every item this view builds or reuses, per task 4's "on pick and on each new
+    /// prepare" contract.
+    let quality: QualityOption
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
@@ -16,16 +23,43 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // B2 (plan §6.5 "Background audio"/"PiP") flips this to true.
         controller.allowsPictureInPicturePlayback = false
         controller.player = Self.player(for: state, replacing: nil)
+        applyQuality(to: controller, context: context)
         return controller
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         controller.player = Self.player(for: state, replacing: controller.player)
+        applyQuality(to: controller, context: context)
     }
 
-    static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: ()) {
+    static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
         controller.player?.pause()
         controller.player = nil
+    }
+
+    private func applyQuality(to controller: AVPlayerViewController, context: Context) {
+        guard let item = controller.player?.currentItem else { return }
+        quality.apply(to: item, layerSize: controller.view.bounds.size, network: context.coordinator.path)
+    }
+
+    /// Holds the one `NWPathMonitor` this host needs for `QualityOption.apply`'s cellular/Low-Data
+    /// clamp -- same start/store/cancel shape as `NetworkMonitor` (`App/NetworkMonitor.swift`),
+    /// scoped to this view instead of shared, since nothing else in B1 needs live path data yet.
+    @MainActor final class Coordinator {
+        private(set) var path: NWPath
+        private let monitor = NWPathMonitor()
+
+        init() {
+            path = monitor.currentPath
+            monitor.pathUpdateHandler = { [weak self] newPath in
+                MainActor.assumeIsolated {
+                    self?.path = newPath
+                }
+            }
+            monitor.start(queue: .main)
+        }
+
+        deinit { monitor.cancel() }
     }
 
     // MARK: - Builder (static so `PlayerHostTests` can call it directly, no view hierarchy needed)

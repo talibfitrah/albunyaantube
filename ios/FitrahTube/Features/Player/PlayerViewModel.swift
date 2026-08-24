@@ -24,6 +24,12 @@ struct LiveStreamResolver: StreamResolving {
 @MainActor @Observable final class PlayerViewModel {
     private(set) var state: StreamState = .idle
 
+    /// The quality menu's current pick (spec §10, `QualityCeiling.swift`). Session-only, like
+    /// Android's -- `QualityTrackSelector` never persists it either (player.md §4.3). `PlayerHostView`
+    /// re-applies this to every new `AVPlayerItem` it builds, so a pick made mid-play survives a
+    /// re-resolve.
+    var selectedQuality: QualityOption = .auto
+
     private let resolver: any StreamResolving
     private let catalog: any CatalogClient
     private let favorites: any FavoritesStore

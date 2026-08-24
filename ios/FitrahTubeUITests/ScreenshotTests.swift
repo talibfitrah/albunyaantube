@@ -180,6 +180,28 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-ready", into: directory)
     }
 
+    /// Plan B1 task 4: proof the quality menu is FitrahTube's own SwiftUI control, not AVKit chrome
+    /// -- it's found and driven purely by `player.qualityMenu.button` / `player.qualityOption.*`
+    /// (`PlayerScreen.qualityMenu`), the identifiers this app defines, never an AVKit accessibility
+    /// element. `-fitrah-fake-player-hls` (not `-fitrah-fake-player`) is required: the plain fixture
+    /// resolves `.rung2Progressive`, where the control is hidden by contract (spec §10).
+    func testPlayerQualityMenu() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-quality",
+                            arguments: ["-fitrah-fake-player-hls", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .element("Video"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let content = element(for: screen.anchor, in: app)
+        XCTAssertTrue(content.waitForExistence(timeout: 20), "player-quality: AVPlayerViewController's content view never appeared")
+        let button = app.buttons["player.qualityMenu.button"]
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "player-quality: quality menu button never appeared")
+        button.tap()
+        let option = app.buttons["player.qualityOption.p720"]
+        XCTAssertTrue(option.waitForExistence(timeout: 10), "player-quality: quality menu never opened")
+        try write(named: "player-quality-menu", into: directory)
+    }
+
     // MARK: - Accessibility assertions (R-C, spec §14 "label + value on custom controls")
 
     /// Every list row must expose a VoiceOver label that carries the item title *and* the value the
