@@ -1,0 +1,45 @@
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/PlayerResponseParser.swift
+  s_18197a18aae8f1::t_992350e97c493b 110
+  s_18197a18aae8f1::t_b011b569ba1798 96-104
+  s_18197a18aae8f1::t_6b919cf09dbda9 86
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
+  s_18197a18aae8f1::t_0688e0fa8b4b84 263-267
+  s_18197a18aae8f1::t_8d82851b009e7e 123-130
+  s_18197a18aae8f1::t_2ae8ed89f67522 65-67
+  s_18197a18aae8f1::t_bb299ec406596c 316-320
+  s_18197a18aae8f1::t_c833c5d130cecb 269-273
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/Models.swift
+  s_18197a18aae8f1::t_5982cdd6eda6fc 80-82,90
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/InnerTube.swift
+  s_18197a18aae8f1::t_83c7166b87fa27 12-13,16-24
+  s_18197a18aae8f1::t_3d89e73576bc79 33,39
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/PlayerResponseParserTests.swift
+  s_18197a18aae8f1::t_c25d1b437ef311 82-98
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/ModelsTests.swift
+  s_18197a18aae8f1::t_c68ad951a12aec 61
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_18197a18aae8f1::t_ecc2ee21973ae4 43-68
+  s_18197a18aae8f1::t_27e45e0545e37c 104-105
+  s_18197a18aae8f1::t_7e1e005b8589f3 403-451
+  s_18197a18aae8f1::t_4029ffb9c179a5 122
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/ManifestCache.swift
+  s_18197a18aae8f1::t_5a49deb315cb38 41-43
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/ManifestCacheTests.swift
+  s_18197a18aae8f1::t_4785ef44b131b5 88-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "af2cd2b5e11dd817fbe974feebca2f2b6b81747c",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
