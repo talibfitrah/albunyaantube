@@ -62,6 +62,9 @@ public actor StreamResolver {
         self.minPostSpacing = minPostSpacing
     }
 
+    /// - Parameter purpose: the resolve lane (`.player` vs `.prefetch`, ruling 16). Reserved for
+    ///   caller-side rate-limiter lane coordination (`ExtractionRateLimiter`); it does NOT alter
+    ///   resolver behaviour today — kept in the signature to avoid a later break when it's wired.
     public func resolve(
         _ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool
     ) async throws -> Resolved {
@@ -117,6 +120,14 @@ public actor StreamResolver {
     }
 
     private func performResolve(_ videoId: String, sourceChannelId: String?) async throws -> Resolved {
+        // Self-gate on the persisted, restart-surviving escalating cooldown (§6.3): if a prior
+        // bot-check tripped it, suppress all API traffic until it elapses rather than hammering
+        // the `player` endpoint on every launch. Terminal — no rung can clear it.
+        let cooldownNow = wallClock.wallNow
+        if let remaining = await sessionStore.cooldownRemaining(now: cooldownNow) {
+            throw ExtractionError.cooldown(until: cooldownNow.addingTimeInterval(Self.seconds(remaining)))
+        }
+
         // Availability gate first; a throw (HTTP/transport error) is fail-open.
         let available = (try? await gate.verify(videoId: videoId, sourceChannelId: sourceChannelId)) ?? true
         guard available else { throw ExtractionError.unavailable(videoId: videoId) }
@@ -249,12 +260,17 @@ public actor StreamResolver {
 
     /// Enforces ≥`minPostSpacing` between `player` POSTs, then delegates to the injected
     /// transport. The 8 s budget wraps the whole rung, one level up.
+    ///
+    /// The slot is RESERVED synchronously (write `lastPostInstant` before the `await`): `Task.sleep`
+    /// is a suspension point, so two concurrent distinct-id resolves would otherwise both read the
+    /// same stale instant across the await and fire together, collapsing the throttle (I1). Reserving
+    /// first makes each concurrent caller serialise ≥ spacing behind the previous reservation.
     private func sendPlayerPost(_ request: HTTPRequest) async throws -> Data {
-        if let last = lastPostInstant {
-            let remaining = minPostSpacing - (monotonicClock.now - last)
-            if remaining > .zero { try await Task.sleep(for: remaining) }
-        }
-        lastPostInstant = monotonicClock.now
+        let now = monotonicClock.now
+        let scheduled = lastPostInstant.map { max(now, $0 + minPostSpacing) } ?? now
+        lastPostInstant = scheduled
+        let wait = scheduled - now
+        if wait > .zero { try await Task.sleep(for: wait) }
 
         return try await transport.send(request).body
     }
@@ -295,6 +311,11 @@ public actor StreamResolver {
         // ^[a-zA-Z0-9_-]{11} (NewPipeExtractorClient.kt:1045); YouTube IDs are exactly 11.
         let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
         return id.count == 11 && id.allSatisfy(allowed.contains)
+    }
+
+    private static func seconds(_ duration: Duration) -> TimeInterval {
+        let c = duration.components
+        return Double(c.seconds) + Double(c.attoseconds) / 1e18
     }
 
     private static func contextKey(_ family: ClientFamily) -> String {

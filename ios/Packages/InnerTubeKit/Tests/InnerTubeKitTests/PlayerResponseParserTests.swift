@@ -79,6 +79,23 @@ import Testing
         #expect(synthetic.visitorData == nil)
     }
 
+    // M2 defense-in-depth: a non-https manifest/format URL is dropped to nil so AVPlayer never
+    // sees a plain-http or spoofable URL — the field reads as absent and the ladder advances.
+    @Test func nonHttpsManifestAndFormatURLsAreTreatedAsAbsent() throws {
+        let body = Data(
+            """
+            {"playabilityStatus": {"status": "OK"}, "streamingData": {"hlsManifestUrl": "http://insecure.example.com/m.m3u8", "formats": [{"itag": 18, "url": "http://insecure.example.com/v?itag=18"}]}, "videoDetails": {"isLive": false}}
+            """.utf8)
+        let result = try parser.parse(body).playability
+        switch result {
+        case .ok(let streaming):
+            #expect(streaming.hlsManifestURL == nil)
+            #expect(streaming.itag18URL == nil)
+        default:
+            Issue.record("expected .ok, got \(result)")
+        }
+    }
+
     @Test func botcheckFixtureYieldsBotCheck() throws {
         let result = try parser.parse(try loadFixture("player-botcheck")).playability
         #expect(result == .botCheck)

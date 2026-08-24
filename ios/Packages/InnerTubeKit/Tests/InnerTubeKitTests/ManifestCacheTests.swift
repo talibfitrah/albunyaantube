@@ -85,6 +85,20 @@ import Testing
         #expect(await cache.get("vid00000001", now: now) != nil)  // fails iff the phantom slot lingered
     }
 
+    @Test func cacheExpiryClampsToStreamExpiresAtWhenSoonerThanTTL() async {
+        let cache = ManifestCache(configTTLSeconds: 3600)  // 1 h TTL
+        let now = Date(timeIntervalSince1970: 1000)
+        let resolved = Resolved(
+            stream: .hls(url: URL(string: "https://example.com/m.m3u8")!, isLive: false, audioOnlyURL: nil, captionTracks: []),
+            client: .visionos, userAgent: "ua", resolvedAt: now,
+            expiresAt: now.addingTimeInterval(120))  // real URL expiry 2 min << TTL
+
+        await cache.put(resolved, videoId: "clampexpiry1", now: now)
+        #expect(await cache.get("clampexpiry1", now: now.addingTimeInterval(119)) != nil)
+        // Evicted at the stream's real expiry, NOT at now+3600.
+        #expect(await cache.get("clampexpiry1", now: now.addingTimeInterval(121)) == nil)
+    }
+
     @Test func flushAllEmptiesCache() async {
         let cache = ManifestCache(configTTLSeconds: 100)
         let now = Date(timeIntervalSince1970: 1000)

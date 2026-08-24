@@ -40,6 +40,32 @@ import Testing
         }
     }
 
+    /// Records the real (wall) instant of each POST, relative to construction. Distinct from
+    /// `RecordingTransport`, which records requests but not their firing time — the ≥spacing
+    /// assertion needs the actual inter-POST gaps, which the resolver produces via `Task.sleep`
+    /// (real time), independent of the injected ManualClock.
+    private final class TimestampTransport: HTTPTransport, @unchecked Sendable {
+        // Sendable: all mutable state is guarded by `lock`.
+        private let lock = NSLock()
+        private let response: HTTPResponse
+        private let clock = ContinuousClock()
+        private let start: ContinuousClock.Instant
+        private var stamps: [Duration] = []
+
+        init(_ response: HTTPResponse) {
+            self.response = response
+            self.start = clock.now
+        }
+
+        var timestamps: [Duration] { lock.withLock { stamps } }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            let elapsed = clock.now - start
+            lock.withLock { stamps.append(elapsed) }
+            return response
+        }
+    }
+
     private struct StubGate: AvailabilityGate {
         var available: Bool = true
         var error: Error?
@@ -75,7 +101,8 @@ import Testing
         clock: ManualClock = ManualClock(),
         cache: ManifestCache = ManifestCache(configTTLSeconds: 3600),
         locale: InnerTubeLocale = InnerTubeLocale(hl: "en", gl: "US"),
-        configStore: RemoteConfigStore? = nil
+        configStore: RemoteConfigStore? = nil,
+        minPostSpacing: Duration = .zero
     ) -> (StreamResolver, SessionStore) {
         let session = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: InMemoryKeyValueStore())
         let resolvedConfigStore = configStore ?? RemoteConfigStore(
@@ -92,7 +119,7 @@ import Testing
             monotonicClock: clock,
             wallClock: clock,
             locale: locale,
-            minPostSpacing: .zero
+            minPostSpacing: minPostSpacing
         )
         return (resolver, session)
     }
@@ -370,6 +397,55 @@ import Testing
         guard case .hls = ra.stream, case .hls = rb.stream else {
             Issue.record("expected both .hls, got \(ra.stream) / \(rb.stream)"); return
         }
+        #expect(transport.callCount == 1)
+    }
+
+    // MARK: - e2) concurrent DISTINCT-id resolves space their POSTs ≥ minPostSpacing apart (I1)
+
+    /// The spacing throttle must survive actor reentrancy: three distinct videoIds resolve
+    /// concurrently (single-flight does NOT dedupe them), each reserving a slot BEFORE its
+    /// `Task.sleep`. With the old write-after-sleep ordering, concurrent callers read the same
+    /// stale `lastPostInstant` and fire together — the ≥500 ms control collapses under burst load.
+    @Test func concurrentDistinctIdResolvesSpacePlayerPostsAtLeastSpacingApart() async throws {
+        let spacing: Duration = .milliseconds(200)
+        let transport = TimestampTransport(try fixtureResponse("player-ok-hls"))
+        let (resolver, _) = makeResolver(transport: transport, minPostSpacing: spacing)
+
+        async let a = resolver.resolve("dQw4w9WgXcQ", purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        async let b = resolver.resolve("abcdefghijk", purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        async let c = resolver.resolve("ABCDEFGHIJK", purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        _ = try await (a, b, c)
+
+        let stamps = transport.timestamps.sorted()
+        #expect(stamps.count == 3)
+        // Real sleeps never return early, so with the fix each gap is ≥ spacing (small tolerance for
+        // arrival jitter in the three resolves' async prefix). Old ordering: two gaps ≈ 0 → fails.
+        for i in 1..<stamps.count {
+            let gap = stamps[i] - stamps[i - 1]
+            #expect(gap >= spacing - .milliseconds(40), "POST \(i) gap \(gap) < spacing \(spacing)")
+        }
+    }
+
+    // MARK: - e3) an active persisted cooldown short-circuits resolve with zero transport calls (I2)
+
+    @Test func activeCooldownShortCircuitsResolveThenProceedsOnceElapsed() async throws {
+        let clock = ManualClock()
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.recordBotCheck()  // 1st trip -> 1 h cooldown
+
+        do {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+            Issue.record("expected .cooldown to be thrown")
+        } catch let error as ExtractionError {
+            guard case .cooldown = error else { Issue.record("expected .cooldown, got \(error)"); return }
+        }
+        #expect(transport.callCount == 0)  // gated before any network
+
+        // Once the 1 h backoff elapses, resolve proceeds and hits the wire.
+        clock.advanceWall(by: .seconds(3600 + 1))
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .hls = resolved.stream else { Issue.record("expected .hls, got \(resolved.stream)"); return }
         #expect(transport.callCount == 1)
     }
 

@@ -38,7 +38,9 @@ public actor ManifestCache {
     public func put(_ resolved: Resolved, videoId: String, now: Date) {
         guard !isLive(resolved) else { return }
 
-        let expiresAt = now.addingTimeInterval(ttlSeconds())
+        // Clamp to the stream's real URL expiry: never serve past `resolved.expiresAt`, even if the
+        // TTL is longer (a short googlevideo `expiresInSeconds` would otherwise cache a dead URL).
+        let expiresAt = min(now.addingTimeInterval(ttlSeconds()), resolved.expiresAt ?? .distantFuture)
         let isNewKey = entries[videoId] == nil
         entries[videoId] = Entry(resolved: resolved, expiresAt: expiresAt)
 

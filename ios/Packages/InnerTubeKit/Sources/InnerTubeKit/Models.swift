@@ -32,13 +32,6 @@ public enum ClientFamily: Sendable {
     case android
     case web
 
-    public var userAgentIsRequired: Bool {
-        switch self {
-        case .visionos, .android: return true
-        case .web: return false
-        }
-    }
-
     /// The `context.client.clientName` value this family's `ClientContext` must carry
     /// (`remote-config-default.json`) — guards against mixing a family with the wrong
     /// context under one visitor (§6.3).
@@ -84,6 +77,9 @@ public enum ExtractionError: Error, Sendable, Equatable {
     case removed
     case liveOffline(startsAt: Date?)
     case botCheck
+    /// The persisted escalating cooldown is active; no rung ran and no network call was made.
+    /// `until` is when the backoff elapses (§6.3). Terminal for this resolve — retry after `until`.
+    case cooldown(until: Date)
     case allRungsFailed
     case cancelled
     case transport(String)
@@ -91,7 +87,7 @@ public enum ExtractionError: Error, Sendable, Equatable {
     /// True for errors that will never succeed on retry (ruling 14).
     public var terminal: Bool {
         switch self {
-        case .ageRestricted, .geoBlocked, .private, .removed, .unavailable, .liveOffline:
+        case .ageRestricted, .geoBlocked, .private, .removed, .unavailable, .liveOffline, .cooldown:
             return true
         case .invalidVideoId, .botCheck, .allRungsFailed, .cancelled, .transport:
             return false

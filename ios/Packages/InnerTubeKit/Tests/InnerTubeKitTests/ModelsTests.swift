@@ -58,6 +58,7 @@ import Testing
             .removed,
             .unavailable(videoId: "abc123def45"),
             .liveOffline(startsAt: nil),
+            .cooldown(until: Date(timeIntervalSince1970: 1000)),
         ]
         for error in terminal {
             #expect(error.terminal, "\(error) should be terminal")
@@ -73,11 +74,5 @@ import Testing
         for error in nonTerminal {
             #expect(!error.terminal, "\(error) should not be terminal")
         }
-    }
-
-    @Test func clientFamilyUserAgentIsRequired() {
-        #expect(ClientFamily.visionos.userAgentIsRequired)
-        #expect(ClientFamily.android.userAgentIsRequired)
-        #expect(!ClientFamily.web.userAgentIsRequired)
     }
 }
