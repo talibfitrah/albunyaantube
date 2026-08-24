@@ -1,0 +1,47 @@
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/BrowseClient.swift
+  s_18197a18aae8f1::t_987aba4f33502e 115
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/PlayerResponseParserTests.swift
+  s_18197a18aae8f1::t_361509139cb19c 73-81
+  s_18197a18aae8f1::t_52ff30400af9e1 9,31,36,41,64,83,90
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/PlayerResponseParser.swift
+  s_18197a18aae8f1::t_64a6682a35b446 45-48,50-53
+  s_18197a18aae8f1::t_c30335c52f58a1 70-72
+  s_18197a18aae8f1::t_edd10859175a27 148-150,152
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/PlayerRequestBuilder.swift
+  s_18197a18aae8f1::t_987aba4f33502e 41
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/InnerTubeContext.swift
+  s_18197a18aae8f1::t_718a68b37e171c 38-42,45
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_18197a18aae8f1::t_478a662dddad05 197-224,227-305
+  s_18197a18aae8f1::t_f30a36c147eecc 18,23-28,33,41-60,63
+  s_18197a18aae8f1::t_ad1ad292b51d42 102-103
+  s_18197a18aae8f1::t_6b426e35dccc2f 61-62,64
+  s_18197a18aae8f1::t_e5759d38873d7b 225-226
+  s_18197a18aae8f1::t_f5fa0e18b50ed4 119
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
+  s_18197a18aae8f1::t_2487aa9cc095d6 113
+  s_18197a18aae8f1::t_cfcddb904a6998 195-197,199-201
+  s_18197a18aae8f1::t_4f9a02bd9d2fd9 238-239
+  s_18197a18aae8f1::t_e6cca42228d0b1 202-204
+  s_18197a18aae8f1::t_c392bcad2c9639 130-134,137-139
+  s_18197a18aae8f1::t_b976029c6c5fbe 299
+  s_18197a18aae8f1::t_c501e233db2d2d 156-159,161-167
+  s_18197a18aae8f1::t_41d09cb673acce 78,90-108
+  s_18197a18aae8f1::t_e2c9f38cc384a0 247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bae93d61c08b963d15c8e4bb1fd27b978b734fd5",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
