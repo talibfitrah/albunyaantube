@@ -102,7 +102,7 @@ public actor StreamResolver {
             return try await task.value
         } catch is CancellationError {
             try Task.checkCancellation()
-            if let winner = inFlight[videoId] { return try await winner.task.value }
+            if let winner = inFlight[videoId] { return try await awaitJob(winner.task, videoId: videoId) }
             if let cached = await cache.get(videoId, now: wallClock.wallNow) { return cached }
             throw ExtractionError.cancelled
         }

@@ -64,6 +64,28 @@ import Testing
         #expect(await store2.current().schemaVersion == 2)
     }
 
+    @Test func refreshDropsClientWithMismatchedClientName() async {
+        // "visionos" renamed to something other than the expected "VISIONOS" — bad remote data,
+        // must drop-and-continue (same pattern as the unknown-resolver-strategy filter above)
+        // rather than crash `PlayerRequestBuilder.build`'s family/context precondition.
+        let config = RemoteConfig(
+            schemaVersion: 1, minAppVersion: "1.0.0", resolverOrder: ["visionosHLS"], manifestCacheSeconds: 3600,
+            clients: [
+                "visionos": ClientContext(clientName: "RENAMED_CLIENT", clientVersion: "1", clientNameId: 101),
+                "android": ClientContext(clientName: "ANDROID", clientVersion: "1", clientNameId: 3),
+            ])
+        let body = try! JSONEncoder().encode(config)
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: body))
+        ])
+        let store = RemoteConfigStore(
+            transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
+        await store.refresh()
+        let sanitized = await store.current()
+        #expect(sanitized.clients["visionos"] == nil)
+        #expect(sanitized.clients["android"] != nil)
+    }
+
     @Test func malformedFetchLeavesCurrentAtBundledDefault() async {
         let transport = FixtureTransport(routes: [
             .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: Data("not json".utf8)))

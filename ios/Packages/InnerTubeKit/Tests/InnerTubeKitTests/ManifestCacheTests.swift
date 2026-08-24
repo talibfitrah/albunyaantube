@@ -68,17 +68,21 @@ import Testing
         let cache = ManifestCache(configTTLSeconds: 100)
         let now = Date(timeIntervalSince1970: 1000)
 
-        await cache.put(hlsResolved(), videoId: "stale0000001", now: now)
-        // An expired `get` must remove the entry from BOTH `entries` and `order` — not just
-        // return nil — else a phantom `order` slot would trigger a premature LRU eviction below.
-        #expect(await cache.get("stale0000001", now: now.addingTimeInterval(101)) == nil)
-
-        for i in 0..<50 {
+        for i in 0..<49 {
             await cache.put(hlsResolved(), videoId: String(format: "vid%08d", i), now: now)
         }
+        await cache.put(hlsResolved(), videoId: "stale0000001", now: now)
+        // An expired `get` must remove the entry from BOTH `entries` and `order` — not just return
+        // nil — else a phantom `order` slot lingers (cache now holds 50 `order` entries: 49 fresh +
+        // the "removed" stale one) and the next two `put`s below trigger ONE EXTRA eviction beyond
+        // the one LRU eviction they're entitled to.
+        #expect(await cache.get("stale0000001", now: now.addingTimeInterval(101)) == nil)
 
-        #expect(await cache.get("vid00000000", now: now) != nil)
-        #expect(await cache.get("vid00000049", now: now) != nil)
+        await cache.put(hlsResolved(), videoId: "vid00000049", now: now)
+        await cache.put(hlsResolved(), videoId: "vid00000050", now: now)
+
+        #expect(await cache.get("vid00000000", now: now) == nil)  // oldest, evicted by design
+        #expect(await cache.get("vid00000001", now: now) != nil)  // fails iff the phantom slot lingered
     }
 
     @Test func flushAllEmptiesCache() async {

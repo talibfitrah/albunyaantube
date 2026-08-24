@@ -156,9 +156,21 @@ public actor RemoteConfigStore {
         }
     }
 
+    /// The `clientName` each known `clients[key]` must carry (mirrors `ClientFamily.expectedClientName`).
+    private static let expectedClientNames: [String: String] = [
+        "visionos": "VISIONOS", "android": "ANDROID", "web": "WEB",
+    ]
+
     private static func sanitized(_ config: RemoteConfig) -> RemoteConfig {
         var config = config
         config.resolverOrder = config.resolverOrder.filter { RemoteConfig.knownResolverStrategies.contains($0) }
+        // Bad remote data must drop-and-continue (same pattern as `resolverOrder` above), not crash
+        // `PlayerRequestBuilder.build`'s family/context match — a renamed clientName just loses that
+        // rung (`StreamResolver`'s `guard let context = config.clients[…]` already yields `.advance`).
+        config.clients = config.clients.filter { key, context in
+            guard let expected = expectedClientNames[key] else { return true }
+            return context.clientName == expected
+        }
         return config
     }
 }

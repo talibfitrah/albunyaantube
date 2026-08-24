@@ -7,28 +7,33 @@ import Testing
 
     // MARK: - test doubles
 
-    /// Hangs the FIRST call until it is cancelled; later calls answer immediately. Lets a test
-    /// hold a resolve open at the transport while another caller supersedes it.
+    /// Hangs the first `hangCount` calls until each is cancelled; later calls answer immediately.
+    /// Lets a test hold N resolves open at the transport while later callers each supersede the one
+    /// before (a `hangCount` of 1 is the plain single-supersede case).
     private final class GatedTransport: HTTPTransport, @unchecked Sendable {
         // Sendable: all mutable state is guarded by `lock`.
         private let lock = NSLock()
         private var count = 0
         private let response: HTTPResponse
+        private let hangCount: Int
 
-        init(_ response: HTTPResponse) { self.response = response }
+        init(_ response: HTTPResponse, hangCount: Int = 1) {
+            self.response = response
+            self.hangCount = hangCount
+        }
 
         var callCount: Int { lock.withLock { count } }
 
         func send(_ request: HTTPRequest) async throws -> HTTPResponse {
             let ordinal = lock.withLock { count += 1; return count }
-            if ordinal == 1 { try await Task.sleep(for: .seconds(30)) }
+            if ordinal <= hangCount { try await Task.sleep(for: .seconds(30)) }
             return response
         }
 
         /// Bounded wait so a wiring regression fails the assertions instead of hanging the suite.
-        func waitForFirstCall() async {
+        func waitForCall(_ ordinal: Int = 1) async {
             var attempts = 0
-            while callCount == 0, attempts < 1000 {
+            while callCount < ordinal, attempts < 1000 {
                 try? await Task.sleep(for: .milliseconds(1))
                 attempts += 1
             }
@@ -69,17 +74,18 @@ import Testing
         gate: AvailabilityGate = StubGate(),
         clock: ManualClock = ManualClock(),
         cache: ManifestCache = ManifestCache(configTTLSeconds: 3600),
-        locale: InnerTubeLocale = InnerTubeLocale(hl: "en", gl: "US")
+        locale: InnerTubeLocale = InnerTubeLocale(hl: "en", gl: "US"),
+        configStore: RemoteConfigStore? = nil
     ) -> (StreamResolver, SessionStore) {
         let session = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: InMemoryKeyValueStore())
-        let configStore = RemoteConfigStore(
+        let resolvedConfigStore = configStore ?? RemoteConfigStore(
             transport: NoopTransport(),
             keyValueStore: InMemoryKeyValueStore(),
             url: URL(string: "https://example.com/config.json")!
         )
         let resolver = StreamResolver(
             transport: transport,
-            remoteConfigStore: configStore,
+            remoteConfigStore: resolvedConfigStore,
             sessionStore: session,
             cache: cache,
             gate: gate,
@@ -271,7 +277,7 @@ import Testing
 
         async let superseded = resolver.resolve(
             Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        await transport.waitForFirstCall()  // the first job is registered and out on the wire
+        await transport.waitForCall()  // the first job is registered and out on the wire
 
         let winner = try await resolver.resolve(
             Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
@@ -298,6 +304,57 @@ import Testing
             #expect(StreamResolver.terminalError(reason: reason, videoId: Self.videoId) == expected, "reason: \(reason)")
             #expect(expected.terminal, "reason: \(reason)")
         }
+    }
+
+    // MARK: - d7) a sanitized-away client (renamed clientName) advances the rung, no crash
+
+    @Test func resolverAdvancesPastRungWhoseClientWasSanitizedAwayForMismatchedClientName() async throws {
+        let badConfig = RemoteConfig(
+            schemaVersion: 1, minAppVersion: "1.0.0", resolverOrder: ["visionosHLS", "openInYouTube"],
+            manifestCacheSeconds: 3600,
+            clients: [
+                "visionos": ClientContext(clientName: "RENAMED_CLIENT", clientVersion: "1", clientNameId: 101)
+            ])
+        let keyValueStore = InMemoryKeyValueStore()
+        keyValueStore.set(RemoteConfigStore.lastGoodKey, try JSONEncoder().encode(badConfig))
+        let configStore = RemoteConfigStore(
+            transport: NoopTransport(), keyValueStore: keyValueStore, url: URL(string: "https://example.com/config.json")!)
+        #expect(await configStore.current().clients["visionos"] == nil)  // sanitized away at load
+
+        // Never called: the "visionos" client is gone, so `runPlayerRung` never reaches
+        // `PlayerRequestBuilder.build` — the rung advances straight to `openInYouTube`.
+        let transport = RecordingTransport([])
+        let (resolver, _) = makeResolver(transport: transport, configStore: configStore)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .openInYouTube = resolved.stream else {
+            Issue.record("expected .openInYouTube (advanced past the sanitized rung), got \(resolved.stream)"); return
+        }
+        #expect(transport.callCount == 0)
+    }
+
+    // MARK: - d5b) chained supersede: an awaiter of a superseded awaiter still adopts the final winner
+
+    @Test func chainedSupersedeAdoptsFinalWinnerNotCancellation() async throws {
+        let transport = GatedTransport(try fixtureResponse("player-ok-hls"), hangCount: 2)
+        let (resolver, _) = makeResolver(transport: transport)
+
+        async let first = resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        await transport.waitForCall(1)  // job 1 is registered and out on the wire
+
+        async let second = resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        await transport.waitForCall(2)  // job 2 (job 1's supersede) is registered and out on the wire
+
+        let third = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        guard case .hls = third.stream else { Issue.record("expected .hls, got \(third.stream)"); return }
+
+        // job 1's awaiter was superseded by job 2, which was itself superseded by job 3 before job 1
+        // ever looked at job 2's outcome — it must adopt job 3's stream, not a raw CancellationError.
+        let firstResult = try await first
+        guard case .hls = firstResult.stream else { Issue.record("expected chained-adopted .hls, got \(firstResult.stream)"); return }
+        let secondResult = try await second
+        guard case .hls = secondResult.stream else { Issue.record("expected adopted .hls, got \(secondResult.stream)"); return }
+        #expect(transport.callCount == 3)
     }
 
     // MARK: - e) two concurrent resolves for the same id issue ONE player POST

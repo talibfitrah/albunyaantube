@@ -32,8 +32,11 @@ public struct PlayerRequestBuilder: Sendable {
     ) -> HTTPRequest {
         // Never mix a family with the wrong client context under one visitor (§6.3) — a caller
         // passing e.g. `family: .android` with the `web` ClientContext would silently mint a
-        // stream whose family/userAgent/visitor bookkeeping is for the wrong client.
-        precondition(
+        // stream whose family/userAgent/visitor bookkeeping is for the wrong client. This only
+        // ever catches an INTERNAL wiring mistake (dev-time); a mismatched *remote* config is
+        // filtered out upstream by `RemoteConfigStore.sanitized()` before it ever reaches here,
+        // so this stays debug-only rather than crashing release builds on bad served data.
+        assert(
             context.clientName == family.expectedClientName,
             "PlayerRequestBuilder: family \(family) expects clientName \(family.expectedClientName), got \(context.clientName)")
         let body = Body(
