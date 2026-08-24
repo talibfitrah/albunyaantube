@@ -119,7 +119,7 @@ SwiftUI app (iOS 18+, iPhone + iPad)
 2. `StreamResolver` walks `resolverOrder`. For `visionosHLS`: `POST youtubei/v1/player` with the VISIONOS context + `context.client.visitorData` + `X-Goog-Visitor-Id`. One in-flight task per videoId; superseded requests are cancelled.
 3. `playabilityStatus.status == OK` and `streamingData.hlsManifestUrl` present → `AVPlayer(url:)` (VOD or live). Audio-only mode uses the itag 140 URL from the same response.
 4. Branch on `status` **and** `reason`:
-   - `LOGIN_REQUIRED` + bot-check reason → rotate `visitorData` (at most once per 10 min), retry once; further failures → exponential back-off, next rung.
+   - `LOGIN_REQUIRED` + bot-check reason → **if no visitor is held yet, adopt the `responseContext.visitorData` the bot-check response itself carries and retry the same rung** (session bootstrap — no rotation consumed); if a visitor was already held, rotate it (at most once per 10 min) and retry once; further failures → exponential back-off, next rung. *(Corrected 2026-08-24 from live proof: the FIRST tokenless call is always bot-checked, so "rotate on bot-check" alone burns the rotation budget on a token never held and can never reach OK — the ladder silently demotes to ANDROID 360p. See `.superpowers/sdd/2026-08-23-ios-phase2-innertubekit/live-fix-report.md`.)*
    - `LOGIN_REQUIRED` / `AGE_CHECK_REQUIRED` + age reason → `openInYouTube` directly (the embed is also age-gated). Never rotate the session for an age gate.
    - `UNPLAYABLE` (kids) → `androidItag18` (`streamingData.formats[itag 18].url`, progressive MP4) → `embed` → `openInYouTube`. Once the catalog carries `madeForKids` / `embeddable` (§8), skip rungs that are known to fail.
    - `LIVE_STREAM_OFFLINE` → "scheduled" state with the start time; no rung change.
@@ -130,7 +130,7 @@ Per-play network cost from the phone: 1 InnerTube POST + media segments. Backend
 
 ### 6.3 Session hygiene (what turned 0/40 into playable)
 
-- Take `responseContext.visitorData` from the first successful response; store it; send it on every call as both `context.client.visitorData` and the `X-Goog-Visitor-Id` header.
+- Take `responseContext.visitorData` from the first response that CARRIES one — which is normally the initial `LOGIN_REQUIRED` bot check, NOT a `playabilityStatus OK` success (the establishing call is bot-checked by design; its response still includes a usable `visitorData`); store it; send it on every call as both `context.client.visitorData` and the `X-Goog-Visitor-Id` header. *(Corrected 2026-08-24: the old "first successful response" wording contradicted this file's own probe.py protocol note and was the direct source of a live HLS-rung failure.)*
 - Keep the client context byte-identical across calls (UA, versions). One `visitorData` per client family (VISIONOS for `player`, WEB for `browse`); never mix contexts under one visitor.
 - Dedicated `URLSession(configuration: .ephemeral)` with `httpCookieAcceptPolicy = .never`, `httpShouldSetCookies = false` (InnerTube sets `VISITOR_INFO1_LIVE`/`YSC`; a cookie jar would replay the old visitor next to a rotated one), fixed `httpAdditionalHeaders` per client, `timeoutIntervalForRequest = 15`, `waitsForConnectivity = false`.
 - Resolve on tap, not on scroll. Shorts: resolve the current item only (Android disables swipe-to-next deliberately, §6.8). ≥ 500 ms spacing between `player` POSTs; 300 ms settle debounce; a persisted cooldown on HTTP 429 / repeated bot checks (Android: `CooldownState.kt`, 1 h → 24 h).
