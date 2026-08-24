@@ -83,6 +83,19 @@ EXTRA_KEYS = {
         "ar": "جودة قياسية (360p)",
         "nl": "Standaardkwaliteit (360p)",
     },
+    # player_description_more/less (B1 task 8): the player metadata panel's description
+    # expand/collapse toggle. iOS-only -- there is no Android `PlayerFragment` equivalent string to
+    # port (grepped: no show_more/expand key exists there either).
+    "player_description_more": {
+        "en": "Show more",
+        "ar": "عرض المزيد",
+        "nl": "Meer weergeven",
+    },
+    "player_description_less": {
+        "en": "Show less",
+        "ar": "عرض أقل",
+        "nl": "Minder weergeven",
+    },
 }
 
 def is_dead(key):

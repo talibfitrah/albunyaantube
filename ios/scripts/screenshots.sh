@@ -139,4 +139,21 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$RUNG2_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 
+# Task 8 (metadata panel + toolbar): favorite/share/report row + title/channel/views/description
+# below the player, on the fixture HLS stream so the rung-1 (quality control) layout is what's
+# captured.
+METADATA_OUT="$ROOT/.superpowers/sdd/2026-08-24-ios-phase2b1-player-core/screenshots/b1-task8"
+echo "== player metadata + toolbar screenshot -> $METADATA_OUT =="
+rm -rf "${METADATA_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$METADATA_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerMetadataAndToolbar \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
 exit "$status"

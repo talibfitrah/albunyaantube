@@ -45,26 +45,41 @@ struct PlayerScreen: View {
         // the demotion; the rung-specific chrome differs inside it.
         case .ready, .rung2Progressive:
             let isRung1 = Self.isRung1(state)
-            ZStack(alignment: .topTrailing) {
-                PlayerHostView(state: state, quality: model.selectedQuality, model: model)
-                    .ignoresSafeArea()
-                if let selected = model.selectedCaptionTrack {
-                    CaptionOverlay(model: model, track: selected)
-                }
-                VStack(alignment: .trailing, spacing: 8) {
-                    // Quality control on rung 1 only -- rung 2 (progressive, single rendition)
-                    // hides it entirely per spec §10 ("Rung 2 hides the control") and shows the
-                    // persistent pill instead.
-                    if isRung1 {
-                        qualityMenu(model)
-                    } else {
-                        rung2Pill
+            // Task 8: metadata panel below the player, toolbar between the two (Android's
+            // action-row placement) -- ONE branch still, per Task 7's identity note above: the
+            // `PlayerHostView` call below is unconditional in both cases, so its view identity
+            // (and the live `AVPlayer` it wraps) survives a `.ready` <-> `.rung2Progressive`
+            // demotion exactly as before. Only the surrounding layout (full-bleed ZStack -> video
+            // box + scrolling content below) changed.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ZStack(alignment: .topTrailing) {
+                        PlayerHostView(state: state, quality: model.selectedQuality, model: model)
+                        if let selected = model.selectedCaptionTrack {
+                            CaptionOverlay(model: model, track: selected)
+                        }
+                        VStack(alignment: .trailing, spacing: 8) {
+                            // Quality control on rung 1 only -- rung 2 (progressive, single
+                            // rendition) hides it entirely per spec §10 ("Rung 2 hides the
+                            // control") and shows the persistent pill instead.
+                            if isRung1 {
+                                qualityMenu(model)
+                            } else {
+                                rung2Pill
+                            }
+                            AudioLanguageMenu(model: model)
+                            captionsMenu(model, tracks: Self.captionTracks(state))
+                        }
+                        .padding()
                     }
-                    AudioLanguageMenu(model: model)
-                    captionsMenu(model, tracks: Self.captionTracks(state))
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .background(Color.black)
+
+                    PlayerToolbar(args: args)
+                    PlayerMetadataView(args: args)
                 }
-                .padding()
             }
+            .background(Color.background.ignoresSafeArea())
         case .error(let messageKey):
             Text(messageKey)
         case .contentUnavailable:

@@ -111,7 +111,17 @@ struct FitrahTubeApp: App {
         }
         switch args[flagIndex + 1] {
         case "player":
-            router.push(.player(PlayerArgs(videoId: arg(2) ?? "fixture-video")))
+            // Task 8: title/channel/description/views so the metadata-panel screenshot has
+            // something real to show -- the plain `videoId`-only args used to leave the whole
+            // panel empty.
+            router.push(.player(PlayerArgs(
+                videoId: arg(2) ?? "fixture-video",
+                title: "Understanding Tawakkul: Trusting Allah in Every Situation",
+                channelName: "Sample Channel",
+                description: "A short reminder on tawakkul, with a link for further reading: "
+                    + "https://example.com/tawakkul and a second note after it.",
+                durationSeconds: 754, viewCount: 12_700_000
+            )))
         case "search":
             router.push(.search)
         case "categories":

@@ -266,6 +266,26 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-rung2-pill", into: directory)
     }
 
+    /// Plan B1 task 8: metadata panel + toolbar below the player. `-fitrah-route player` now seeds
+    /// title/channel/description/views (`FitrahTubeApp.pushDebugRouteIfRequested`), so the
+    /// screenshot shows real content, not an empty panel. Anchors on the favorite button (proves
+    /// the toolbar rendered) then on the metadata title (proves the panel rendered).
+    func testPlayerMetadataAndToolbar() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-metadata",
+                            arguments: ["-fitrah-fake-player-hls", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .element("Video"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let content = element(for: screen.anchor, in: app)
+        XCTAssertTrue(content.waitForExistence(timeout: 20), "player-metadata: AVPlayerViewController's content view never appeared")
+        let favoriteButton = app.buttons["player.favoriteButton"]
+        XCTAssertTrue(favoriteButton.waitForExistence(timeout: 10), "player-metadata: favorite button never appeared")
+        let title = app.staticTexts["player.metadata.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10), "player-metadata: metadata title never appeared")
+        try write(named: "player-metadata-toolbar", into: directory)
+    }
+
     // MARK: - Accessibility assertions (R-C, spec §14 "label + value on custom controls")
 
     /// Every list row must expose a VoiceOver label that carries the item title *and* the value the
