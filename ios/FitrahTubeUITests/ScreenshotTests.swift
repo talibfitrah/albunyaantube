@@ -202,6 +202,29 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-quality-menu", into: directory)
     }
 
+    /// Plan B1 task 5: `AudioLanguageMenu` (`player.audioLanguageMenu.button` /
+    /// `player.audioLanguageOption.*`) must stay HIDDEN when the asset's audible media-selection
+    /// group has <=1 option. The bundled `player-fixture.mp4` has exactly one audio track and no
+    /// bundled multi-audio HLS sample exists (task-5-report.md), so unlike task 4's menu-open shot
+    /// this proves the negative: the button never appears once the player is ready and the async
+    /// `loadMediaSelectionGroup(for:)` has had time to settle. A screenshot of the OPEN menu needs a
+    /// real multi-audio stream -- deferred to a later live pass (Task 10 / B1 live).
+    func testPlayerAudioLanguageMenuHiddenForSingleTrackFixture() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-audio-language",
+                            arguments: ["-fitrah-fake-player-hls", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .element("Video"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let content = element(for: screen.anchor, in: app)
+        XCTAssertTrue(content.waitForExistence(timeout: 20), "player-audio-language: AVPlayerViewController's content view never appeared")
+        let qualityButton = app.buttons["player.qualityMenu.button"]
+        XCTAssertTrue(qualityButton.waitForExistence(timeout: 10), "player-audio-language: quality menu button never appeared (sanity: player is ready)")
+        let audioButton = app.buttons["player.audioLanguageMenu.button"]
+        XCTAssertFalse(audioButton.waitForExistence(timeout: 5), "player-audio-language: audio-language menu button should stay hidden for a single-track asset")
+        try write(named: "player-audio-language-hidden", into: directory)
+    }
+
     // MARK: - Accessibility assertions (R-C, spec §14 "label + value on custom controls")
 
     /// Every list row must expose a VoiceOver label that carries the item title *and* the value the

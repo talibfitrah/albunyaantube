@@ -13,6 +13,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// applied to every item this view builds or reuses, per task 4's "on pick and on each new
     /// prepare" contract.
     let quality: QualityOption
+    /// Task 5's hand-off target: every (re)build/update publishes the live item to
+    /// `model.currentItem` so `AudioLanguageMenu` (a SwiftUI overlay with no view-hierarchy access
+    /// to the AVKit-managed item) can read/select its audible options.
+    let model: PlayerViewModel
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -24,12 +28,14 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.allowsPictureInPicturePlayback = false
         controller.player = Self.player(for: state, replacing: nil)
         applyQuality(to: controller, context: context)
+        applyAudioLanguageHandoff(to: controller)
         return controller
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         controller.player = Self.player(for: state, replacing: controller.player)
         applyQuality(to: controller, context: context)
+        applyAudioLanguageHandoff(to: controller)
     }
 
     static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
@@ -40,6 +46,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
     private func applyQuality(to controller: AVPlayerViewController, context: Context) {
         guard let item = controller.player?.currentItem else { return }
         quality.apply(to: item, layerSize: controller.view.bounds.size, network: context.coordinator.path)
+    }
+
+    /// `!==` guard: writing the same reference every `updateUIViewController` pass (most of
+    /// them -- state changes for reasons that have nothing to do with the item, e.g. a quality
+    /// pick) is harmless either way, but skipping the redundant write avoids churning
+    /// `AudioLanguageMenu`'s `.task(id: model.currentItem)`.
+    private func applyAudioLanguageHandoff(to controller: AVPlayerViewController) {
+        guard let item = controller.player?.currentItem, item !== model.currentItem else { return }
+        model.currentItem = item
     }
 
     /// Holds the one `NWPathMonitor` this host needs for `QualityOption.apply`'s cellular/Low-Data

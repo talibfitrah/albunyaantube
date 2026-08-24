@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import InnerTubeKit
 
@@ -29,6 +30,20 @@ struct LiveStreamResolver: StreamResolving {
     /// re-applies this to every new `AVPlayerItem` it builds, so a pick made mid-play survives a
     /// re-resolve.
     var selectedQuality: QualityOption = .auto
+
+    /// The audio-language menu's sticky pick (`AudioLanguageMenu.swift`, player.md §2.2/§8.6): an
+    /// extended-language-tag (or, for a track the asset gives no tag, its display name -- see
+    /// `AudioLanguageMenu`'s glue). Session-only, re-applied to every new/replaced `AVPlayerItem`
+    /// the same way `selectedQuality` is -- set on pick, read back by `AudioLanguageMenu` on every
+    /// prepare via the pure `AudioLanguageSelection.pickIndex`.
+    var stickyAudioLanguage: String?
+
+    /// Hand-off slot: `PlayerHostView` is the only place that owns the AVKit-managed `AVPlayerItem`
+    /// (`AVPlayerViewController.player.currentItem`); `AudioLanguageMenu` is a SwiftUI overlay in
+    /// `PlayerScreen` with no view-hierarchy access to that item, so this is how it reaches it to
+    /// read/apply audible-track selections. Written on every (re)build/update -- same hook
+    /// `PlayerHostView.applyQuality` uses for the quality ceiling.
+    var currentItem: AVPlayerItem?
 
     private let resolver: any StreamResolving
     private let catalog: any CatalogClient

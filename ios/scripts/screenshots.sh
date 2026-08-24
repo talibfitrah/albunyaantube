@@ -90,4 +90,21 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$QUALITY_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 
+# Task 5 (audio-language menu): the local fixture has one audio track, so this proves the HIDDEN
+# state (player.audioLanguageMenu.button absent) -- see testPlayerAudioLanguageMenuHiddenForSingleTrackFixture.
+# An open-menu shot needs a real multi-audio stream (deferred to a later live pass).
+AUDIO_LANGUAGE_OUT="$ROOT/.superpowers/sdd/2026-08-24-ios-phase2b1-player-core/screenshots/b1-task5"
+echo "== player audio-language menu (hidden) screenshot -> $AUDIO_LANGUAGE_OUT =="
+rm -rf "${AUDIO_LANGUAGE_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$AUDIO_LANGUAGE_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerAudioLanguageMenuHiddenForSingleTrackFixture \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
 exit "$status"

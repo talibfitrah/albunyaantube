@@ -40,14 +40,21 @@ struct PlayerScreen: View {
         // entirely per spec §10 ("Rung 2 hides the control").
         case .ready:
             ZStack(alignment: .topTrailing) {
-                PlayerHostView(state: state, quality: model.selectedQuality)
+                PlayerHostView(state: state, quality: model.selectedQuality, model: model)
                     .ignoresSafeArea()
-                qualityMenu(model)
-                    .padding()
+                VStack(alignment: .trailing, spacing: 8) {
+                    qualityMenu(model)
+                    AudioLanguageMenu(model: model)
+                }
+                .padding()
             }
         case .rung2Progressive:
-            PlayerHostView(state: state, quality: model.selectedQuality)
-                .ignoresSafeArea()
+            ZStack(alignment: .topTrailing) {
+                PlayerHostView(state: state, quality: model.selectedQuality, model: model)
+                    .ignoresSafeArea()
+                AudioLanguageMenu(model: model)
+                    .padding()
+            }
         case .error(let messageKey):
             Text(messageKey)
         case .contentUnavailable:
