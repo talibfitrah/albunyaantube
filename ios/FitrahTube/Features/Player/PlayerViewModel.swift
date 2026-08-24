@@ -69,6 +69,7 @@ struct LiveStreamResolver: StreamResolving {
 
     private var generation = 0
     private var resolveTask: Task<Void, Never>?
+    private var recoveryBudget = RecoveryBudget()
 
     init(resolver: any StreamResolving, catalog: any CatalogClient, favorites: any FavoritesStore,
          settings: any SettingsStore, args: PlayerArgs) {
@@ -91,11 +92,53 @@ struct LiveStreamResolver: StreamResolving {
         await resolve(forceRefresh: true)
     }
 
-    private func resolve(forceRefresh: Bool) async {
+    /// Task 7: one recovery incident (`PlayerHostView`'s KVO/notification/stall observers feed this).
+    /// Runs the pure budget machine, then either re-resolves in place or gives up.
+    ///
+    /// **Rung tracking**: there is none, deliberately. `StreamResolver` walks its whole
+    /// `resolverOrder` ladder top-down on every forced resolve and exposes no "start at rung N"
+    /// entry point, so `.reResolveSameRung` and `.stepDownRung` are the *same* network call -- the
+    /// rung is whatever the resolver hands back, read off `Resolved.stream` by `map` (`.hls` = rung
+    /// 1, `.progressive` = rung 2). A rung the resolver can still serve keeps playing; one that has
+    /// started failing at resolve time demotes on its own. The two actions differ only in budget
+    /// accounting (which is exactly what bounds the loop). A VM-side rung index would be a second,
+    /// unenforceable model of the resolver's ladder.
+    ///
+    /// Position is preserved by NOT passing through `.loading`: `PlayerHostView.player(for:replacing:)`
+    /// keeps the live `AVPlayer` and seeks the replacement item back to its `currentTime()`, but only
+    /// while the state stays playable -- a `.loading` hop would drop the player and restart at 0.
+    func handleRecoveryEvent(_ event: RecoveryEvent) async {
+        guard let resolved = Self.playable(state) else { return }
+        let action = PlaybackRecovery.decide(event: event, state: recoveryBudget)
+        recoveryBudget.apply(action, for: event)
+        switch action {
+        case .exhausted:
+            state = .recoveryExhausted(resolved)
+        case .reResolveSameRung, .stepDownRung:
+            await resolve(forceRefresh: true, resetBudget: false, showLoading: false)
+        }
+    }
+
+    /// The stream is genuinely playing again: refund what Android refunds (`RecoveryBudget`).
+    func recordPlaybackProgress() {
+        recoveryBudget.recordPlaybackProgress()
+    }
+
+    private static func playable(_ state: StreamState) -> Resolved? {
+        switch state {
+        case .ready(let resolved), .rung2Progressive(let resolved): return resolved
+        default: return nil
+        }
+    }
+
+    private func resolve(forceRefresh: Bool, resetBudget: Bool = true, showLoading: Bool = true) async {
         generation += 1
         let myGeneration = generation
         resolveTask?.cancel()
-        state = .loading
+        // A user-initiated open/retry is a fresh stream (or a deliberate fresh start on the same
+        // one): hand it a full budget. Recovery's own re-resolves must not refill their own budget.
+        if resetBudget { recoveryBudget = RecoveryBudget() }
+        if showLoading { state = .loading }
         let task = Task { await self.performResolve(generation: myGeneration, forceRefresh: forceRefresh) }
         resolveTask = task
         await task.value

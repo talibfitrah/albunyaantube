@@ -247,6 +247,25 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-captions-hidden", into: directory)
     }
 
+    /// Plan B1 task 7: rung 2 (`-fitrah-fake-player` resolves `.progressive`, which
+    /// `PlayerViewModel.map` tags `.rung2Progressive`) shows the persistent
+    /// "Standard quality (360p)" pill and hides the quality control entirely (spec §10: "Rung 2
+    /// hides the control"). Both halves asserted: the pill present, the quality button absent.
+    func testPlayerRung2Pill() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-rung2",
+                            arguments: ["-fitrah-fake-player", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .element("Video"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let content = element(for: screen.anchor, in: app)
+        XCTAssertTrue(content.waitForExistence(timeout: 20), "player-rung2: AVPlayerViewController's content view never appeared")
+        let pill = app.staticTexts["player.rung2Pill"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), "player-rung2: the standard-quality pill never appeared")
+        XCTAssertFalse(app.buttons["player.qualityMenu.button"].exists, "player-rung2: the quality control must be hidden on rung 2")
+        try write(named: "player-rung2-pill", into: directory)
+    }
+
     // MARK: - Accessibility assertions (R-C, spec §14 "label + value on custom controls")
 
     /// Every list row must expose a VoiceOver label that carries the item title *and* the value the

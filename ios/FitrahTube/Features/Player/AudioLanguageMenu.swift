@@ -99,6 +99,11 @@ struct AudioLanguageMenu: View {
             options = []
             return
         }
+        // T5-1 (folded in by Task 7): currentness guard, same shape as `CaptionOverlay.load()`'s.
+        // Recovery replaces the item under this view (`replaceCurrentItem` on every re-resolve), so
+        // a load still in flight across that swap would otherwise publish the OLD asset's options
+        // and `select` into the old item -- silently undoing the fresh item's own sticky pick.
+        guard item === model.currentItem else { return }
         group = mediaGroup
         options = mediaGroup.options.map { Self.option(mediaGroup, $0) }
         applySticky(item: item, group: mediaGroup)

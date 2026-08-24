@@ -10946,6 +10946,28 @@
         }
       }
     },
+    "player_standard_quality": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جودة قياسية (360p)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard quality (360p)"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standaardkwaliteit (360p)"
+          }
+        }
+      }
+    },
     "player_start_reason_auto": {
       "localizations": {
         "ar": {

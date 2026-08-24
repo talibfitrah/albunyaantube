@@ -37,10 +37,14 @@ struct PlayerScreen: View {
     @ViewBuilder
     private func stateView(_ state: StreamState, model: PlayerViewModel) -> some View {
         switch state {
-        // Quality control shown only here -- rung 2 (progressive, single rendition) hides it
-        // entirely per spec §10 ("Rung 2 hides the control").
-        case .ready(let resolved):
-            let tracks = Self.captionTracks(resolved)
+        // Task 7: ONE branch for both playable rungs, deliberately. Two `case`s each building their
+        // own `PlayerHostView` gave SwiftUI two different view identities, so a mid-play demotion
+        // (`.ready` -> `.rung2Progressive`) dismantled the host and rebuilt it from scratch --
+        // dropping the `AVPlayer` whose `currentTime()` is the only thing carrying the position
+        // over (`PlayerHostView.player(for:replacing:)`). Sharing the branch keeps one host across
+        // the demotion; the rung-specific chrome differs inside it.
+        case .ready, .rung2Progressive:
+            let isRung1 = Self.isRung1(state)
             ZStack(alignment: .topTrailing) {
                 PlayerHostView(state: state, quality: model.selectedQuality, model: model)
                     .ignoresSafeArea()
@@ -48,18 +52,18 @@ struct PlayerScreen: View {
                     CaptionOverlay(model: model, track: selected)
                 }
                 VStack(alignment: .trailing, spacing: 8) {
-                    qualityMenu(model)
+                    // Quality control on rung 1 only -- rung 2 (progressive, single rendition)
+                    // hides it entirely per spec §10 ("Rung 2 hides the control") and shows the
+                    // persistent pill instead.
+                    if isRung1 {
+                        qualityMenu(model)
+                    } else {
+                        rung2Pill
+                    }
                     AudioLanguageMenu(model: model)
-                    captionsMenu(model, tracks: tracks)
+                    captionsMenu(model, tracks: Self.captionTracks(state))
                 }
                 .padding()
-            }
-        case .rung2Progressive:
-            ZStack(alignment: .topTrailing) {
-                PlayerHostView(state: state, quality: model.selectedQuality, model: model)
-                    .ignoresSafeArea()
-                AudioLanguageMenu(model: model)
-                    .padding()
             }
         case .error(let messageKey):
             Text(messageKey)
@@ -163,10 +167,30 @@ struct PlayerScreen: View {
             : track.languageName
     }
 
-    /// Only `.hls` carries `captionTracks` (rung-2 progressive has none).
-    private static func captionTracks(_ resolved: Resolved) -> [CaptionTrack] {
-        if case .hls(_, _, _, let captionTracks) = resolved.stream { return captionTracks }
-        return []
+    /// Only `.hls` carries `captionTracks` (rung-2 progressive has none), so this doubles as the
+    /// "hide the captions toggle on rung 2" rule.
+    private static func captionTracks(_ state: StreamState) -> [CaptionTrack] {
+        guard case .ready(let resolved) = state, case .hls(_, _, _, let tracks) = resolved.stream else { return [] }
+        return tracks
+    }
+
+    private static func isRung1(_ state: StreamState) -> Bool {
+        if case .ready = state { return true }
+        return false
+    }
+
+    /// The persistent rung-2 badge (spec §10): rung 2 is a single 360p progressive rendition, so
+    /// instead of a quality control the user gets a standing statement of what they're watching --
+    /// which is also the visible half of "never silently swap a native stream" (the demotion is a
+    /// distinct `StreamState`, and Task 9's state-view announcements read it out).
+    private var rung2Pill: some View {
+        Text(String(localized: "player_standard_quality"))
+            .font(.caption)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.black.opacity(0.55), in: Capsule())
+            .accessibilityIdentifier("player.rung2Pill")
     }
 
     /// `-fitrah-fake-player`: the UI-test/screenshot hook -- swaps the real InnerTubeKit-backed

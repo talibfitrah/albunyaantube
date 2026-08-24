@@ -75,6 +75,14 @@ EXTRA_KEYS = {
         "ar": "تسجيل الدخول",
         "nl": "Aanmelden",
     },
+    # player_standard_quality (B1 task 7): the persistent rung-2 pill. iOS-only -- Android's rung-2
+    # equivalent is a toast on the degradation path, not a standing badge, so there is no source
+    # string to port.
+    "player_standard_quality": {
+        "en": "Standard quality (360p)",
+        "ar": "جودة قياسية (360p)",
+        "nl": "Standaardkwaliteit (360p)",
+    },
 }
 
 def is_dead(key):
