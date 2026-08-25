@@ -225,11 +225,25 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Use production signing if keystore exists, otherwise debug
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            // Production signing when the keystore is present. When it is NOT present we
+            // deliberately leave the release UNSIGNED rather than falling back to the debug
+            // key. The old fallback silently produced a debug-signed release: uploading one
+            // to Play permanently registers `CN=Android Debug` as the app's upload key, and
+            // a debug keystore is auto-generated and never backed up — losing it means no
+            // further updates without Google's key-reset process. An unsigned artifact fails
+            // loudly at upload instead, which is recoverable.
+            // Pass -PallowDebugSignedRelease to opt back in for local smoke-testing only.
+            signingConfig = when {
+                keystorePropertiesFile.exists() -> signingConfigs.getByName("release")
+                project.hasProperty("allowDebugSignedRelease") -> signingConfigs.getByName("debug")
+                else -> null
+            }
+            if (signingConfig == null) {
+                logger.warn(
+                    "\n*** release build is UNSIGNED: keystore.properties not found. ***\n" +
+                        "    Create android/keystore.properties before building for Play.\n" +
+                        "    For a local install-only build: -PallowDebugSignedRelease\n"
+                )
             }
             buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
         }
