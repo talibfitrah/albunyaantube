@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -59,6 +60,9 @@ class AccountControllerTest {
 
     @MockBean
     com.albunyaan.tube.service.MailService mailService;
+
+    @MockBean
+    com.albunyaan.tube.service.AuthService authService;
 
     ObjectMapper objectMapper;
 
@@ -291,5 +295,58 @@ class AccountControllerTest {
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+    }
+
+    // ── DELETE /api/account/me — self-serve account deletion ────────────────
+    // Google Play policy 13327111 requires an in-app deletion path for any app
+    // that allows in-app account creation.
+
+    @Test
+    void deleteMe_returnsNoContent_andDelegatesToAuthService() throws Exception {
+        mockMvc.perform(delete("/api/account/me"))
+                .andExpect(status().isNoContent());
+
+        verify(authService).deleteAccountPermanently(TEST_UID);
+    }
+
+    @Test
+    void deleteMe_returnsUnauthorized_whenPrincipalIsNull() throws Exception {
+        SecurityContextHolder.clearContext();  // override @BeforeEach
+
+        mockMvc.perform(delete("/api/account/me"))
+                .andExpect(status().isUnauthorized());
+
+        // No principal ⇒ no uid ⇒ the destructive call must never be reached.
+        org.mockito.Mockito.verifyNoInteractions(authService);
+    }
+
+    @Test
+    void deleteMe_returnsConflict_whenCallerIsLastActiveAdmin() throws Exception {
+        org.mockito.Mockito.doThrow(
+                        new com.albunyaan.tube.exception.LastAdminException(
+                                "Cannot delete the last active admin account."))
+                .when(authService).deleteAccountPermanently(TEST_UID);
+
+        mockMvc.perform(delete("/api/account/me"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("LAST_ADMIN_PROTECTED"));
+    }
+
+    @Test
+    void deleteMe_secondCallIsIdempotent() throws Exception {
+        // The service is idempotent on an already-deleted account (it returns
+        // without throwing), so the endpoint must answer 204 both times rather
+        // than 404/409 on the retry — a mobile client that lost the first
+        // response must be able to retry safely.
+        mockMvc.perform(delete("/api/account/me"))
+                .andExpect(status().isNoContent())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .content().string(""));
+        mockMvc.perform(delete("/api/account/me"))
+                .andExpect(status().isNoContent())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .content().string(""));
+
+        verify(authService, org.mockito.Mockito.times(2)).deleteAccountPermanently(TEST_UID);
     }
 }
