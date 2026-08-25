@@ -1,0 +1,42 @@
+backend/src/test/java/com/albunyaan/tube/integration/SelfDeleteAccountIT.java
+  s_ae9966eb1abc77::t_fd16aebdd02d6b 1-13,15-87,95-192,198-248
+  s_ae9966eb1abc77::t_0292ff5cb3ff6b 88-94
+  s_ae9966eb1abc77::t_8c96a24b56afbb 14
+  s_ae9966eb1abc77::t_1bdec070946fc8 193-197
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerTest.java
+  s_ae9966eb1abc77::t_792c77a98fbcd7 351
+  s_ae9966eb1abc77::t_f133565fce4f73 38,64-66,299-350
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_ae9966eb1abc77::t_e27654626bf20b 226-227
+  s_ae9966eb1abc77::t_f133565fce4f73 55,60-61,66,209-225
+backend/src/main/java/com/albunyaan/tube/service/AuditLogService.java
+  s_ae9966eb1abc77::t_f133565fce4f73 173-184
+backend/src/test/java/com/albunyaan/tube/controller/LegalPagesControllerTest.java
+  s_ae9966eb1abc77::t_538e895d1eebc7 1-6,8-32,41-93
+  s_ae9966eb1abc77::t_f9990168ad4570 33-40
+  s_ae9966eb1abc77::t_5aabe00187b72e 7
+backend/src/main/java/com/albunyaan/tube/controller/LegalPagesController.java
+  s_ae9966eb1abc77::t_ac977cb86cbb4f 1-40,53-575
+  s_ae9966eb1abc77::t_d5d94709bedb22 41-52
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_ae9966eb1abc77::t_f133565fce4f73 776-875,878-881,892-1007
+  s_ae9966eb1abc77::t_d9326a3ea5ecfc 876-877,882-891
+backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java
+  s_ae9966eb1abc77::t_f133565fce4f73 68-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "57f8cb04f1e0d445223c736b4545e4b27e7c744a",
+  "prompts": {},
+  "sessions": {
+    "s_ae9966eb1abc77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c29aa3de-be36-4086-834a-2b11c80036b8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
