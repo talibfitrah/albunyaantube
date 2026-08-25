@@ -1,0 +1,32 @@
+android/app/src/main/java/com/albunyaan/tube/preferences/SettingsPreferences.kt
+  s_ae9966eb1abc77::t_faf48e18c6075a 19-24
+android/app/src/main/res/layout/fragment_settings.xml
+  s_ae9966eb1abc77::t_20caa9f844f52e 252-258
+android/app/src/test/java/com/albunyaan/tube/ManifestBackupTest.kt
+  s_ae9966eb1abc77::t_fe47a83523fa5d 1-35
+android/app/src/main/res/layout-sw600dp/fragment_settings.xml
+  s_ae9966eb1abc77::t_c90f3949010088 223-224
+android/app/src/main/res/layout-sw720dp/fragment_settings.xml
+  s_ae9966eb1abc77::t_11a42859c93135 233-234
+backend/src/main/java/com/albunyaan/tube/controller/LegalPagesController.java
+  s_ae9966eb1abc77::t_3e796cfacd315e 218-219
+  s_ae9966eb1abc77::t_0eaf4641958fc7 190-191
+android/app/src/main/AndroidManifest.xml
+  s_ae9966eb1abc77::t_13afef3ee6dc68 31-42,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "477d32619c6842f770c4300a7adb193358d7a730",
+  "prompts": {},
+  "sessions": {
+    "s_ae9966eb1abc77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c29aa3de-be36-4086-834a-2b11c80036b8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
