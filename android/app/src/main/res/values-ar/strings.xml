@@ -743,6 +743,21 @@
     <string name="profile_password">كلمة المرور</string>
     <string name="profile_password_dots">••••••••••</string>
 
+    <!-- ANDROID-ACCT-DEL-01: in-app account deletion (Google Play policy 13327111) -->
+    <string name="profile_delete_account">حذف الحساب</string>
+    <string name="profile_delete_account_deleting">جارٍ حذف الحساب…</string>
+    <string name="profile_delete_account_dialog_title">هل تريد حذف حسابك؟</string>
+    <string name="profile_delete_account_dialog_message">سيؤدي هذا إلى حذف حسابك في FitrahTube نهائيًا. سيتم محو اسمك وبريدك الإلكتروني ورقم هاتفك وتاريخ ميلادك، إلى جانب اشتراكاتك وقوائم التشغيل المحفوظة والمفضلة وكل فيديو تم تنزيله على هذا الجهاز. لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="profile_delete_account_confirm">حذف الحساب</string>
+    <string name="profile_delete_account_error_last_admin">أنت آخر مسؤول نشط. امنح حسابًا آخر صلاحية المسؤول قبل حذف هذا الحساب.</string>
+    <string name="profile_delete_account_error_network">تعذّر حذف حسابك. تحقق من اتصالك وحاول مرة أخرى.</string>
+    <string name="profile_delete_account_error_unknown">تعذّر حذف حسابك. يرجى المحاولة لاحقًا.</string>
+
+    <!-- Terminal account-status dialog (MainActivity). Previously English-only:
+         the deletion flow above makes this a primary user-facing screen. -->
+    <string name="account_deleted_title">تم حذف الحساب</string>
+    <string name="account_deleted_body">تم حذف حسابك. لاستخدام FitrahTube مرة أخرى، أنشئ حسابًا جديدًا.</string>
+
     <!-- Edit email bottom sheet (Plan G T21) -->
     <string name="edit_email_title">تغيير البريد الإلكتروني</string>
     <string name="edit_email_current_password">كلمة المرور الحالية</string>
