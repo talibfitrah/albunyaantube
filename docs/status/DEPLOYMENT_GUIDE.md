@@ -112,7 +112,7 @@ sudo chown albunyaan:albunyaan /opt/albunyaan/firebase-service-account.json
 sudo -u albunyaan bash -c '
   cd /opt/albunyaan/repo/backend
   ./gradlew clean build -x test
-  cp build/libs/tube-0.0.1-SNAPSHOT.jar /opt/albunyaan/backend.jar
+  cp "$(ls build/libs/*.jar | grep -v -- -plain | head -1)" /opt/albunyaan/backend.jar
 '
 ```
 
@@ -353,7 +353,7 @@ No restart needed.
 cd /opt/albunyaan/repo
 git pull
 cd backend && ./gradlew clean build -x test
-cp build/libs/tube-0.0.1-SNAPSHOT.jar /opt/albunyaan/backend.jar
+cp "$(ls build/libs/*.jar | grep -v -- -plain | head -1)" /opt/albunyaan/backend.jar
 sudo systemctl restart albunyaan-backend
 ```
 
@@ -365,7 +365,7 @@ git pull
 
 # Backend
 cd backend && ./gradlew clean build -x test
-cp build/libs/tube-0.0.1-SNAPSHOT.jar /opt/albunyaan/backend.jar
+cp "$(ls build/libs/*.jar | grep -v -- -plain | head -1)" /opt/albunyaan/backend.jar
 sudo systemctl restart albunyaan-backend
 
 # Frontend
