@@ -435,18 +435,13 @@ public class LegalPagesController {
     //
     // Enumerated from android/app/build.gradle.kts (read-only).
     //
-    // TODO(owner): LICENSING DECISION REQUIRED — DO NOT SHIP WITHOUT REVIEW.
-    //   1. The repository has NO LICENSE file. FitrahTube's own licence is
-    //      therefore undetermined. Nothing on this page states one, deliberately.
-    //   2. NewPipeExtractor is GPLv3 and ffmpeg-kit-min-gpl is a GPL build.
-    //      Linking GPLv3 code into a distributed Android application normally
-    //      makes the combined work subject to GPLv3, which requires offering the
-    //      Corresponding Source to recipients (GPLv3 s6). Neither this page nor
-    //      the app currently makes that offer.
-    //   Decide, with legal input: (a) FitrahTube's own licence, (b) whether the
-    //   Corresponding Source will be published or offered on request, and (c)
-    //   whether ffmpeg-kit-min-gpl can be swapped for an LGPL build. Then add
-    //   the resulting statement to this page.
+    // Licensing settled by the owner 2026-08-25: FitrahTube is GPLv3, which is what
+    // linking NewPipeExtractor (GPL-3.0, and the app's playback engine) requires. The
+    // LICENSE file at the repository root carries the full text, and the source is
+    // public at github.com/talibfitrah/albunyaantube, which is how the GPLv3 s6
+    // Corresponding Source offer is met. The statement below must stay consistent with
+    // both -- if the repository ever goes private, this offer breaks and the licence
+    // obligation is no longer satisfied.
 
     @GetMapping(value = "/licenses", produces = MediaType.TEXT_HTML_VALUE)
     @ResponseBody
@@ -460,10 +455,16 @@ public class LegalPagesController {
                 under. Full licence texts are available from each project.</p>
 
                 <div class="callout">
-                  <h2>Copyleft components</h2>
-                  <p>Two of the components below are distributed under the
-                  <strong>GNU General Public License</strong>, which carries source-code
-                  obligations that the permissive licences above do not:</p>
+                  <h2>FitrahTube is free software</h2>
+                  <p>FitrahTube is licensed under the
+                  <strong>GNU General Public License, version 3</strong>. You may use, study,
+                  share and modify it under those terms.</p>
+                  <p>The complete corresponding source code is published at
+                  <a href="https://github.com/talibfitrah/albunyaantube">github.com/talibfitrah/albunyaantube</a>,
+                  where the full licence text is in the <code>LICENSE</code> file. If you
+                  would rather receive the source another way, write to
+                  <a href="mailto:%1$s">%1$s</a> and we will send it to you.</p>
+                  <p>The app is GPLv3 because it builds on two copyleft components:</p>
                   <ul>
                     <li><strong>NewPipeExtractor</strong> (v0.26.5) &mdash;
                         GNU GPL v3.0. Used to read publicly available YouTube metadata and
@@ -473,8 +474,6 @@ public class LegalPagesController {
                         build of FFmpeg. Used to merge downloaded audio and video
                         tracks.</li>
                   </ul>
-                  <p>For any question about these licences or about source code, write to
-                  <a href="mailto:%1$s">%1$s</a>.</p>
                 </div>
 
                 <h2>Apache License 2.0</h2>
