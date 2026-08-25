@@ -28,9 +28,34 @@ if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
 
-// Public production host. Also the default for share.base.url below, and the origin
-// the app's About screen opens for the privacy, terms and licences pages.
+// Public production host. The release build type below uses this for both API_BASE_URL
+// and SHARE_BASE_URL — the latter is the origin the About screen opens for the privacy,
+// terms and licences pages.
 val PROD_API_BASE_URL = "https://app.fitrahtube.com/"
+
+// Refuse to produce a release artifact against the placeholder Firebase config.
+//
+// google-services.json is gitignored, so git cannot warn about it, and the repo ships a
+// .ci-stub for local builds whose project_id is "fitrahtube-ci-stub". A release built on
+// top of it points Firebase Auth at a project that does not exist: sign-in fails, and
+// because the app gates all content behind sign-in, a reviewer would see an empty app and
+// reject it as broken. That is silent — the build succeeds and the APK looks normal.
+gradle.taskGraph.whenReady {
+    val buildingRelease = allTasks.any {
+        it.name.contains("Release") &&
+            (it.name.startsWith("assemble") || it.name.startsWith("bundle"))
+    }
+    if (!buildingRelease) return@whenReady
+    val gsj = file("google-services.json")
+    if (gsj.exists() && gsj.readText().contains("ci-stub")) {
+        throw GradleException(
+            "\ngoogle-services.json is the CI placeholder (project_id contains 'ci-stub').\n" +
+                "A release built with it cannot sign anyone in.\n" +
+                "Download the real file from the Firebase console — it must contain an\n" +
+                "Android client for BOTH com.albunyaan.tube and com.albunyaan.tube.play.\n"
+        )
+    }
+}
 
 kotlin {
     compilerOptions {
