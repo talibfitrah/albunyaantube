@@ -1,0 +1,56 @@
+android/app/src/sideload/AndroidManifest.xml
+  s_ae9966eb1abc77::t_8a882694573607 1-46
+android/app/src/main/AndroidManifest.xml
+  s_ae9966eb1abc77::t_59f7b91e850a20 146-148
+  s_ae9966eb1abc77::t_6eba21d332dd32 17-21
+android/app/src/play/java/com/albunyaan/tube/update/NoUpdateGateway.kt
+  s_ae9966eb1abc77::t_88ec3eb6aea56a 29
+  s_ae9966eb1abc77::t_00d3bc8366ea7a 1-28,30-53
+android/app/src/main/res/layout-sw720dp/fragment_settings.xml
+  s_ae9966eb1abc77::t_d2dffffbda8f81 295
+android/app/google-services.json.template
+  s_ae9966eb1abc77::t_417d741c7797fa 36-64
+android/app/src/testPlay/java/com/albunyaan/tube/update/NoUpdateGatewayTest.kt
+  s_ae9966eb1abc77::t_05d3ea8e8dabda 1-44
+android/app/google-services.json.ci-stub
+  s_ae9966eb1abc77::t_180f9b40c02e42 36-64
+android/app/src/main/java/com/albunyaan/tube/ui/settings/SettingsFragment.kt
+  s_ae9966eb1abc77::t_d7179c6ae4ec32 38-41,43
+  s_ae9966eb1abc77::t_a4171316f078ef 379-396,399-401,405-408
+android/app/src/main/res/layout-sw600dp/fragment_settings.xml
+  s_ae9966eb1abc77::t_d2dffffbda8f81 285
+android/app/src/main/res/layout/fragment_settings.xml
+  s_ae9966eb1abc77::t_d2dffffbda8f81 317
+android/app/src/sideload/java/com/albunyaan/tube/update/UpdateGatewayModule.kt
+  s_ae9966eb1abc77::t_80ff84f38925e0 1-22
+android/app/build.gradle.kts
+  s_ae9966eb1abc77::t_61025795c095b5 126-161
+  s_ae9966eb1abc77::t_47a4c63830116a 295-300
+android/app/src/sideload/java/com/albunyaan/tube/update/UpdatePromptFlow.kt
+  s_ae9966eb1abc77::t_5c1079e9aefb36 55-64
+  s_ae9966eb1abc77::t_37535fdc0c4347 122-255
+android/app/src/main/java/com/albunyaan/tube/update/UpdateInfo.kt
+  s_ae9966eb1abc77::t_5e87f48bd47989 1-20
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_ae9966eb1abc77::t_468f92e9a2119a 25,75,152,157,264
+  s_ae9966eb1abc77::t_885d8d393d0a6f 89-90
+  s_ae9966eb1abc77::t_13e9d44866fd45 148-151
+android/app/src/main/java/com/albunyaan/tube/update/UpdateGateway.kt
+  s_ae9966eb1abc77::t_752165f6ecc8af 1-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "dd27e466cc1d06514092a6608078de245ff650c1",
+  "prompts": {},
+  "sessions": {
+    "s_ae9966eb1abc77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c29aa3de-be36-4086-834a-2b11c80036b8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
