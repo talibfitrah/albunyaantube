@@ -1,0 +1,40 @@
+android/app/src/main/java/com/albunyaan/tube/ui/shorts/ShortsPlayerFragment.kt
+  s_ae9966eb1abc77::t_9b35c97d78e338 400-401
+  s_ae9966eb1abc77::t_1775143537a522 44
+android/app/src/main/java/com/albunyaan/tube/ui/detail/PlaylistDetailFragment.kt
+  s_ae9966eb1abc77::t_a0ba742df93d01 719-721
+  s_ae9966eb1abc77::t_1775143537a522 41
+android/app/src/main/java/com/albunyaan/tube/download/DownloadNotifications.kt
+  s_ae9966eb1abc77::t_83905764a04c41 3,10,15,20-49
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_ae9966eb1abc77::t_1775143537a522 81
+  s_ae9966eb1abc77::t_f2dafc1876d0f9 570-572
+android/app/src/main/java/com/albunyaan/tube/ui/MainActivity.kt
+  s_ae9966eb1abc77::t_a576fe6caa53aa 25
+  s_ae9966eb1abc77::t_59e671bb8cd236 56-80
+  s_ae9966eb1abc77::t_ce8411d150f12a 3,9
+android/app/src/test/java/com/albunyaan/tube/download/DownloadNotificationPermissionTest.kt
+  s_ae9966eb1abc77::t_32b030a75e74a2 1-34
+android/app/src/main/res/xml/downloads_file_paths.xml
+  s_ae9966eb1abc77::t_da0c508af53188 6-11
+android/app/src/main/java/com/albunyaan/tube/ui/settings/AboutFragment.kt
+  s_ae9966eb1abc77::t_a0e142ba8a34a6 89-101
+android/app/src/main/AndroidManifest.xml
+  s_ae9966eb1abc77::t_b0e15679192680 13-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b3f77ed984df5719d77b82f851790ff15ff99a4d",
+  "prompts": {},
+  "sessions": {
+    "s_ae9966eb1abc77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c29aa3de-be36-4086-834a-2b11c80036b8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
