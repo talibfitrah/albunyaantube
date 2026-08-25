@@ -1,0 +1,236 @@
+android/app/src/test/java/com/albunyaan/tube/auth/AccountRepositoryImplTest.kt
+  s_e026945d130ffb::t_96e04f05377221 91,96
+  s_ae9966eb1abc77::t_5251f74702a20d 6,9,12,14
+  s_dac267759ff6fd::t_de470e4cc294b6 69-71,73
+  s_e026945d130ffb::t_3b0101b772dc08 105
+  s_ccab34f3b38945::t_0ebf3eb09068cf 197-199,201
+  s_ae9966eb1abc77::t_26f2ab64dc0000 118-196
+  s_e026945d130ffb::t_24ee1d90c2aed2 200
+.github/workflows/android-ci.yml
+  s_ae9966eb1abc77::t_ec54e3a9ba306b 132-141,143-144,149-154,156-157,159
+  s_ae9966eb1abc77::t_3b08ac94dcae22 173-184,186,190
+  s_43dfb8dc8c3e6a::t_2d07dd8c345538 58-63,67
+  s_43dfb8dc8c3e6a::t_df8b78fbf42802 68-79,86-91,96-119,129
+  s_ae9966eb1abc77::t_a3644c0e9fdd42 212
+  s_ae9966eb1abc77::t_6155aa06771cdd 80-85,92-94
+  s_43dfb8dc8c3e6a::t_5d48f8146c3def 206-211,213-214,216
+  s_ae9966eb1abc77::t_45bb25e95cc888 120-128
+  s_ae9966eb1abc77::t_0b30d0ce4d2e41 232-236
+  s_43dfb8dc8c3e6a::t_b58e108400eec0 195-205,215
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_dac267759ff6fd::t_57ab9be02c0814 421,457-475,484,486,491-493
+  s_dac267759ff6fd::t_3191d787d38a56 728,739
+  s_dac267759ff6fd::t_cfe0cb1f2f5d14 729-738,740
+  s_dac267759ff6fd::t_437c29893cbdde 742-744
+  s_dac267759ff6fd::t_07b990be9ee8f7 640-646
+  s_99ef915f306233::t_16c1a622ef96f8 652,660
+  s_ae9966eb1abc77::t_92fef677be653c 986-987
+  s_dac267759ff6fd::t_c37adbb0d58280 1073-1091
+  s_dac267759ff6fd::t_f09178f0780422 286-323,333-335,340
+  s_dac267759ff6fd::t_d927ad9484c155 619-620
+  s_dac267759ff6fd::t_6c6aa3bfb592bb 152-171,196-197,210-211
+  s_99ef915f306233::t_ae20fb23911bd9 324-332,336-339
+  s_99ef915f306233::t_418a0049821397 431-439
+  s_dac267759ff6fd::t_a73d951dd9ca19 687-698
+  s_99ef915f306233::t_80bb27a7fe374f 172-195,198-209
+  dac267759ff6fd5f 357,565,579,608,725,1116,1230
+  s_ae9966eb1abc77::t_d9326a3ea5ecfc 888-889,894-903
+  s_99ef915f306233::t_cedb1711bc255c 1152,1160
+  s_dac267759ff6fd::t_3ba3fba91de1a7 1249-1251
+  s_dac267759ff6fd::t_24bd779c0a9602 392-395,667-670,751-754,1167-1170,1258-1261
+  s_dac267759ff6fd::t_d95c83ab1068ca 13-14
+  s_dac267759ff6fd::t_c371757fd2c89d 1126-1127
+  s_99ef915f306233::t_b728a7ed82118c 23,27-28,59-69,420,422-430,440-456,481-483
+  s_dac267759ff6fd::t_3659096d2c526c 1185-1194
+  s_ae9966eb1abc77::t_f133565fce4f73 776-817,829-849,851-857,866,870-887,890-893,904,908-911,913-917,919-921,925-928,930-931,937-955,988-1061
+  s_ae9966eb1abc77::t_4786db9cdcd570 818-828,850,858-865,867-869,905-907,912,918,922-924,929,932-936,956-985
+  s_99ef915f306233::t_f9bf5972fb9524 375,383
+android/app/build.gradle.kts
+  s_ae9966eb1abc77::t_0f5bc56174694a 283-291,293-299
+  s_ff9bdf102dfe37::t_5bc7eeb0e10164 370
+  s_ff9bdf102dfe37::t_a4bb12f4b6678d 371-373,383
+  s_0f8a313510a2b6::t_975680433deb32 332-334,341-353,364-369,374-375,382,384-385
+  s_ff9bdf102dfe37::t_9639455fc55856 436,458,461-467,472,511,513,519,526,538-539,542,547-548,551-552,557,562,578,580-584,590-594,596-597,599,601,612-616
+  s_ff9bdf102dfe37::t_f0052d6ea8db4e 545-546,598,600
+  s_ae9966eb1abc77::t_88e1f95b215c2f 75-78
+  s_b45b82b9589d49::t_9ff3e1558fd878 103-106
+  s_13eb3230c8051b::t_5b98d14d80a679 188-194
+  s_dac267759ff6fd::t_1a0747362983e3 357-361
+  s_13eb3230c8051b::t_80124b7d305058 186-187,195-199,207-209
+  s_ae9966eb1abc77::t_feedc04cc215d4 235-244,258-260
+  s_ff9bdf102dfe37::t_7e7e934479d3bc 435
+  s_f6f6a601e51753::t_323d4e929f78f8 474-477,489-491,493-495,502
+  s_0f8a313510a2b6::t_22315b5670b1a5 129-130,141-146
+  s_ae9966eb1abc77::t_866ec968ad59e8 261-277
+  s_ff9bdf102dfe37::t_4049699305919f 492,509
+  s_ff9bdf102dfe37::t_6fc2d3a074f71a 496,498-500,507-508,510,532-537,605,607
+  s_ae9966eb1abc77::t_ef9aa959ab9ef9 245-257
+  s_ae9966eb1abc77::t_47a4c63830116a 376-381
+  s_ae9966eb1abc77::t_715cfcfb2e18ad 31-34
+  s_ae9966eb1abc77::t_d777413f03eafc 48-64
+  s_f6f6a601e51753::t_c82fa09bdc627b 497,501
+  s_ae9966eb1abc77::t_1d9c0a32299066 280-282,292
+  s_ae9966eb1abc77::t_61025795c095b5 149-184
+  s_ff9bdf102dfe37::t_8356df7f82e6b8 444-446,448-457
+  s_dac267759ff6fd::t_f59296bf3830cc 335
+  s_ff9bdf102dfe37::t_0598613263c32b 575
+  s_ff9bdf102dfe37::t_8f986b6958eb78 35-40
+  s_f6f6a601e51753::t_ea1f984a12f541 478-488
+  s_b45b82b9589d49::t_e4e927b46e07d9 108
+  s_31a12c3902afdd::t_67d4896d465646 65-66
+  s_ff9bdf102dfe37::t_897909085e20b2 437-443,447
+  s_0f8a313510a2b6::t_aea45b6a4c6887 331,336-340
+android/app/src/main/res/values-ar/strings_onboarding.xml
+  s_799e14961175c6::t_9456cc5177ca02 33-38
+  s_ae9966eb1abc77::t_3db6f3209edd4b 31
+backend/src/test/java/com/albunyaan/tube/integration/SelfDeleteAccountIT.java
+  s_ae9966eb1abc77::t_318e4487f9f4fd 296,314-315
+  s_ae9966eb1abc77::t_1bdec070946fc8 328-332
+  s_ae9966eb1abc77::t_4786db9cdcd570 12-13,15,24-25,28,30,176-271,284-295,297-313
+  s_ae9966eb1abc77::t_8c96a24b56afbb 17
+  s_ae9966eb1abc77::t_fd16aebdd02d6b 1-11,14,16,18-23,26-27,29,31-94,102-175,272-283,316-327,333-383
+  s_ae9966eb1abc77::t_0292ff5cb3ff6b 95-101
+android/app/src/main/res/values-nl/strings_onboarding.xml
+  s_ae9966eb1abc77::t_2471f5b0c0a2cb 31
+  s_799e14961175c6::t_a98da88b399909 33-38
+android/app/src/main/java/com/albunyaan/tube/data/account/LocalAccountDataWiper.kt
+  s_ae9966eb1abc77::t_04ee5decc74173 4
+  s_ae9966eb1abc77::t_cd5b75eae3ad60 1-3,5-25,27-52,63-72
+  s_ae9966eb1abc77::t_2e5cd70b881475 26
+  s_ae9966eb1abc77::t_cc9beab3c10968 53-62
+android/app/src/main/java/com/albunyaan/tube/ui/settings/AboutFragment.kt
+  s_ae9966eb1abc77::t_a0e142ba8a34a6 89-101
+  s_ae9966eb1abc77::t_91b1fed8c3c2d4 33-35
+  s_ae9966eb1abc77::t_c57e8b249ab219 173-174
+  s_ae9966eb1abc77::t_03ab0cdb7582af 155-165,167-172,175-176,179,183,187,190-191,193
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_dac267759ff6fd::t_ea42e83ba4bd09 227-232
+  s_fc285cbffbb215::t_f28cf66d88876e 13
+  s_dac267759ff6fd::t_5dc6f5888e4a98 99-112,115,123
+  s_ccab34f3b38945::t_89bc298fc26e5d 198,213-215
+  s_e026945d130ffb::t_505efdc90315ff 208
+  s_dac267759ff6fd::t_ac176543563fa0 235-238,244,256,258-260
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 87-92
+  s_dac267759ff6fd::t_3bf0902b7fabd0 126-134,139-145
+  s_ae9966eb1abc77::t_d377c045133979 257
+  s_dac267759ff6fd::t_9fffc7d913ccc6 27-35
+  s_ae9966eb1abc77::t_5db3514206764c 179-197
+  s_ae9966eb1abc77::t_118e8658f2f475 39-50
+  s_ae9966eb1abc77::t_59967b06b5e629 3,7-8
+  s_e026945d130ffb::t_1f290352752fc2 152,157
+  s_dac267759ff6fd::t_b2ad973a9482b4 67-71
+  s_ccab34f3b38945::t_853fa3634b465e 220
+  s_dac267759ff6fd::t_da512b3fa1d578 239-243,245-253
+  s_e026945d130ffb::t_291960a95b7a17 221
+  s_fc285cbffbb215::t_4d3f2364da089e 199-207,209-212
+  s_dac267759ff6fd::t_7f8ac112e6b10a 25-26,36-38,56-66,93-97
+  s_ae9966eb1abc77::t_bbe9fa0c67115c 72-86
+  s_dac267759ff6fd::t_ec844c8af0f115 14
+backend/src/test/java/com/albunyaan/tube/controller/LegalPagesControllerTest.java
+  s_ae9966eb1abc77::t_4786db9cdcd570 11,44-71,81-82,86-99,123-134,136
+  s_ae9966eb1abc77::t_801e1261db8ee0 137-138
+  s_ae9966eb1abc77::t_538e895d1eebc7 1-6,8-10,12-33,42-43,72-80,83-85,100-122,139-152
+  s_ae9966eb1abc77::t_5aabe00187b72e 7
+  s_ae9966eb1abc77::t_a55cc3db90746a 135
+  s_ae9966eb1abc77::t_f9990168ad4570 34-41
+android/app/src/test/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapViewModelTest.kt
+  s_e026945d130ffb::t_68ec4b4513a75b 89
+  s_ccab34f3b38945::t_dd0321147e3188 87
+  s_f0c0ac5bbf8a9e::t_9af46e8251ade3 142-143,145-148,150-153,155-159,161-162,164-165,169-173,176,178-182,185-187,189-193,196-198,200-204,207-209,211-215,245
+  s_ae9966eb1abc77::t_b330291414f2df 246-264
+  s_799e14961175c6::t_2ee2745a873c0e 34,43-47
+  s_799e14961175c6::t_e94dd7ec6dfb51 9
+  s_ae9966eb1abc77::t_7d6d160f608cc1 106-111
+  s_e026945d130ffb::t_4f8dcb42a4b4a0 3-4,22,24,29,35,48-49,74,85,88,93-94,102,112-113,121,126-127,140,144,149,154,160,163,166-168,174-175,177,183-184,188,194-195,199,205-206,210,216-244
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/DeleteAccountViewModel.kt
+  s_ae9966eb1abc77::t_5235a08821d633 3
+  s_ae9966eb1abc77::t_9d3b2a872c0cc7 104
+  s_ae9966eb1abc77::t_d6c6e50077d308 75-89
+  s_ae9966eb1abc77::t_04f45fdff5f275 1-2,4-74,90-103,105-116
+android/app/src/main/res/values/strings_onboarding.xml
+  s_ae9966eb1abc77::t_af60558c74783e 31
+  s_799e14961175c6::t_29d121fc27319c 33-38
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapViewModel.kt
+  s_e026945d130ffb::t_50982a333eb1b2 3,8,11,26-27,44,50-51,72,80-92,100-112,135-142,164,171,178
+  s_ae9966eb1abc77::t_0d7f98f5cac74e 25
+  s_ae9966eb1abc77::t_ee1f21dac7003f 93-99
+  s_1d5d33b5872c46::t_abc42852922e3c 165-166,169-170
+  s_ae9966eb1abc77::t_7257953aa52178 221-230
+  s_799e14961175c6::t_a348237b90f537 9,17,22-24,28-32,43,52-69,117-126,143-150,174-177,179-188,190-210,212-215,218-220
+backend/src/main/java/com/albunyaan/tube/controller/LegalPagesController.java
+  s_ae9966eb1abc77::t_d5d94709bedb22 41
+  s_ae9966eb1abc77::t_4786db9cdcd570 42-57,71-74,151-167,324-326,341-342,366-374,411-412
+  s_ae9966eb1abc77::t_9ee7f6c123917d 456-462
+  s_ae9966eb1abc77::t_bf74f790152707 476-485
+  s_ae9966eb1abc77::t_ac977cb86cbb4f 1-40,58-70,75-150,168-323,327-340,343-365,375-410,413-455,463-475,486-592
+backend/src/main/java/com/albunyaan/tube/model/User.java
+  s_ae9966eb1abc77::t_70a6f08a5f8ec6 301
+  s_aec293bbfa68e6::t_f7e7b1bd9ba6fa 78-79
+  s_e026945d130ffb::t_25d72d55450bda 73-75
+  s_e026945d130ffb::t_9bdc8f898e48ac 308-310
+  s_e026945d130ffb::t_c580f03747fabc 346
+  s_ae9966eb1abc77::t_4786db9cdcd570 54-66,299-300,343
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapFragment.kt
+  s_e026945d130ffb::t_4bb96be3ca33eb 84-85,88-92
+  s_ae9966eb1abc77::t_017e3915b135dd 282-291
+  s_e026945d130ffb::t_7d61d45b0782f8 281
+  s_799e14961175c6::t_b2ba0d4a7f01b3 113-122
+  s_dac267759ff6fd::t_0b956d4a2376ff 200-215,225
+  s_e026945d130ffb::t_2e34e7a3d5c695 73-78,81-82
+  s_799e14961175c6::t_a8308de01020a0 153-157,173-184
+  s_e026945d130ffb::t_4613828a1fbfa0 62-65
+  s_799e14961175c6::t_901207295d6069 57-61
+  s_799e14961175c6::t_b9cb684800ba78 23
+  s_e026945d130ffb::t_f7d37d36d405fc 18-20
+  s_e026945d130ffb::t_04726bd54c5399 71-72,79-80,83,86-87,93-94
+  s_ae9966eb1abc77::t_d15dc221137503 216-222,226
+  s_e026945d130ffb::t_b07a8e3414388f 262-265
+  s_e026945d130ffb::t_6cd1d402909257 241
+  s_e026945d130ffb::t_a124efb25266e1 158-161
+  s_ae9966eb1abc77::t_44fcd302d04f84 253-257
+  s_e026945d130ffb::t_79e13d586cc57a 187-193
+  s_799e14961175c6::t_4efae673d673c6 242-250,258-261,272-277
+backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java
+  s_fc285cbffbb215::t_8e81cf7198f742 127-128
+  s_ae9966eb1abc77::t_f133565fce4f73 68-73
+  s_fc285cbffbb215::t_fedd14bc12e60f 129-130
+  s_ae9966eb1abc77::t_4786db9cdcd570 74-85
+  dac267759ff6fd5f 90-97
+  s_3d81cee1b53617::t_92f42df0477ead 116-121
+android/app/src/test/java/com/albunyaan/tube/ui/me/profile/DeleteAccountViewModelTest.kt
+  s_ae9966eb1abc77::t_f20c69c8e405fc 24,27,78-79,90-91,98,107,115-127,129-130,153-162
+  s_ae9966eb1abc77::t_bb75189fa250bd 8
+  s_ae9966eb1abc77::t_a8ff321212e33c 23
+  s_ae9966eb1abc77::t_a9cca0c6f43554 1-7,9-22,25-26,28-77,80-89,92-97,99-103,108-114,128,163-164
+  s_ae9966eb1abc77::t_f56ab2cdc18292 104-106
+  s_ae9966eb1abc77::t_97130490605796 131-152
+android/app/src/main/java/com/albunyaan/tube/auth/di/AccountModule.kt
+  s_ae9966eb1abc77::t_7bff9edbc333bf 7
+  s_ae9966eb1abc77::t_650125dae51c84 36-39,46
+  s_dac267759ff6fd::t_1cdc0adda0499c 5,12-14,21-30,33-35,40-45,47-48
+android/app/src/test/java/com/albunyaan/tube/data/account/LocalAccountDataWiperTest.kt
+  s_ae9966eb1abc77::t_aa9fc9399fa8b9 1-5,8-32,34-41,53-57,77-129
+  s_ae9966eb1abc77::t_589f3e87b7f9e3 6-7
+  s_ae9966eb1abc77::t_b6128ad7278a8e 33,42-52,58-75
+android/app/src/test/java/com/albunyaan/tube/ui/bootstrap/MinimumAgeTest.kt
+  s_ae9966eb1abc77::t_4fff9b5bb0cd39 1-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b3154aa811e3fac09bc3f30802cad8c49eada967",
+  "prompts": {
+    "dac267759ff6fd5f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar",
+      "total_additions": 1971,
+      "total_deletions": 3074,
+      "accepted_lines": 15,
+      "overriden_lines": 0
+    }
+  }
+}
