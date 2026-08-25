@@ -1,0 +1,117 @@
+backend/src/main/java/com/albunyaan/tube/controller/LegalPagesController.java
+  s_ae9966eb1abc77::t_ac977cb86cbb4f 1-40,53-575
+  s_ae9966eb1abc77::t_d5d94709bedb22 41-52
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_dac267759ff6fd::t_d95c83ab1068ca 13-14
+  s_dac267759ff6fd::t_07b990be9ee8f7 640-646
+  s_99ef915f306233::t_b728a7ed82118c 23,27-28,59-69,420,422-430,440-456,481-483
+  s_dac267759ff6fd::t_57ab9be02c0814 421,457-475,484,486,491-493
+  s_dac267759ff6fd::t_3191d787d38a56 728,739
+  s_ae9966eb1abc77::t_f133565fce4f73 776-875,878-881,892-1007
+  s_99ef915f306233::t_f9bf5972fb9524 375,383
+  s_99ef915f306233::t_ae20fb23911bd9 324-332,336-339
+  s_dac267759ff6fd::t_f09178f0780422 286-323,333-335,340
+  s_dac267759ff6fd::t_437c29893cbdde 742-744
+  s_dac267759ff6fd::t_6c6aa3bfb592bb 152-171,196-197,210-211
+  s_dac267759ff6fd::t_a73d951dd9ca19 687-698
+  s_99ef915f306233::t_cedb1711bc255c 1098,1106
+  s_dac267759ff6fd::t_3ba3fba91de1a7 1195-1197
+  s_dac267759ff6fd::t_24bd779c0a9602 392-395,667-670,751-754,1113-1116,1204-1207
+  s_dac267759ff6fd::t_c371757fd2c89d 1072-1073
+  s_dac267759ff6fd::t_d927ad9484c155 619-620
+  dac267759ff6fd5f 357,565,579,608,725,1062,1176
+  s_99ef915f306233::t_16c1a622ef96f8 652,660
+  s_99ef915f306233::t_80bb27a7fe374f 172-195,198-209
+  s_dac267759ff6fd::t_cfe0cb1f2f5d14 729-738,740
+  s_ae9966eb1abc77::t_d9326a3ea5ecfc 876-877,882-891
+  s_dac267759ff6fd::t_c37adbb0d58280 1019-1037
+  s_dac267759ff6fd::t_3659096d2c526c 1131-1140
+  s_99ef915f306233::t_418a0049821397 431-439
+backend/src/main/java/com/albunyaan/tube/service/AuditLogService.java
+  s_ae9966eb1abc77::t_f133565fce4f73 173-184
+  s_dac267759ff6fd::t_8d1dab4fedbecb 292-296,305
+  s_1fbc050eee1b0a::t_7e2800b6acb8a5 240,248-249,273,306,363,369-370
+  s_ccab34f3b38945::t_2e9e3a2c1b26dd 224-230,235-236
+  s_dac267759ff6fd::t_c47941e2ee9709 353-355,361,364-368,372,377-378,389
+  s_dac267759ff6fd::t_b2b2b9220422ef 356-360,362,371,373-376,379-388
+  s_ccab34f3b38945::t_5f59d678123ccb 215,222-223,237-238
+  s_dac267759ff6fd::t_bc6b180661d3a9 262-265,274-291,298-299,302-304
+  s_fc285cbffbb215::t_8786ce4de5b11c 231-234
+  s_dac267759ff6fd::t_c4cb6b418383f1 266-268,270-272
+  s_1fbc050eee1b0a::t_13ca4c677e02bf 300-301
+  s_fc285cbffbb215::t_8f798cb7840754 216-221
+  s_dac267759ff6fd::t_658bd600b87fc9 259-261
+  dac267759ff6fd5f 3,15-16,28,30-32,35,241,255-257,308-327,331-333
+  s_dac267759ff6fd::t_bcd2f9570c0ebf 118-142
+  s_1fbc050eee1b0a::t_23ace3abf4fbbe 269,297
+backend/src/test/java/com/albunyaan/tube/integration/SelfDeleteAccountIT.java
+  s_ae9966eb1abc77::t_0292ff5cb3ff6b 88-94
+  s_ae9966eb1abc77::t_fd16aebdd02d6b 1-13,15-87,95-192,198-248
+  s_ae9966eb1abc77::t_1bdec070946fc8 193-197
+  s_ae9966eb1abc77::t_8c96a24b56afbb 14
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_0ca987a98657ad::t_091e3fa8532dcb 54
+  s_ccab34f3b38945::t_3fe414488b7c3f 89-98
+  s_0ca987a98657ad::t_9e6445c0f46198 48,50
+  s_0ca987a98657ad::t_441cce9de6c15a 122
+  s_0f8a313510a2b6::t_ae759b9a4cd18b 74,139
+  s_ae9966eb1abc77::t_e27654626bf20b 226-227
+  s_dac267759ff6fd::t_b64ce31d8b69fd 145-157
+  dac267759ff6fd5f 228-261
+  s_ccab34f3b38945::t_008183b637d737 296,298,301-302
+  s_ccab34f3b38945::t_5485c8e6703298 5
+  s_e026945d130ffb::t_de551a81579c3a 85
+  s_0ca987a98657ad::t_ed70fabe07739a 30
+  s_0ca987a98657ad::t_8adca0c597eee2 53,58-59,64-65
+  s_0ca987a98657ad::t_3d1f741c8293b2 106-116,118-120,123-128
+  s_99ef915f306233::t_7c38a315dd98e8 176-193
+  s_0ca987a98657ad::t_cbed5285adf85b 12,14
+  s_ccab34f3b38945::t_68aa81a638d35c 18
+  s_0ca987a98657ad::t_27a5d965cad9b9 13
+  s_dac267759ff6fd::t_bb4253f59007a3 141-144
+  s_0ca987a98657ad::t_32cfaf9c9853aa 99-105,117,121,129-134
+  s_e026945d130ffb::t_e147ec568ec630 75-83
+  s_dac267759ff6fd::t_ea210542b2aa8a 168-175,194-205
+  s_ccab34f3b38945::t_9c789627540546 297,299-300
+  s_99ef915f306233::t_ee21b37fdf42c8 21-22
+  s_99ef915f306233::t_dace2e54e4654d 47,49
+  s_ae9966eb1abc77::t_f133565fce4f73 55,60-61,66,209-225
+backend/src/test/java/com/albunyaan/tube/controller/LegalPagesControllerTest.java
+  s_ae9966eb1abc77::t_f9990168ad4570 33-40
+  s_ae9966eb1abc77::t_538e895d1eebc7 1-6,8-32,41-93
+  s_ae9966eb1abc77::t_5aabe00187b72e 7
+backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java
+  s_fc285cbffbb215::t_8e81cf7198f742 119-120
+  s_ae9966eb1abc77::t_f133565fce4f73 68-77
+  s_fc285cbffbb215::t_fedd14bc12e60f 121-122
+  s_3d81cee1b53617::t_92f42df0477ead 108-113
+  dac267759ff6fd5f 82-89
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerTest.java
+  s_0ca987a98657ad::t_39081be2b53a87 61-63
+  s_ae9966eb1abc77::t_792c77a98fbcd7 351
+  s_e026945d130ffb::t_c906cb52b5068b 279-298
+  s_ae9966eb1abc77::t_f133565fce4f73 38,64-66,299-350
+  s_e026945d130ffb::t_de551a81579c3a 107,113,127,133,146,152,168,235,242,273
+  s_e026945d130ffb::t_3a4545b00d3ea7 74
+  s_0f8a313510a2b6::t_b50282f6991bbc 250-272,274-278
+  s_dac267759ff6fd::t_e8e4079c1a8612 192-196,209-221,228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8dcb28c11251ce4c5cdc8f907c4fa81d2a139558",
+  "prompts": {
+    "dac267759ff6fd5f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Farouq Abou Umar",
+      "total_additions": 1971,
+      "total_deletions": 3074,
+      "accepted_lines": 84,
+      "overriden_lines": 0
+    }
+  }
+}
