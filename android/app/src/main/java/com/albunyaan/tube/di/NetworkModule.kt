@@ -93,16 +93,38 @@ object NetworkModule {
         // logged the request before headers were added — less useful for debug.
         return OkHttpClient.Builder()
             .addInterceptor { chain ->
+                // Host-scoped, exactly like FirebaseAuthInterceptor's Bearer guard.
+                // X-Device-Id is a stable per-install UUID. Without this guard it rode
+                // every request made on this client -- including the hourly channel-feed
+                // worker, which fetches youtube.com/feeds/videos.xml. That handed Google
+                // a persistent install fingerprint alongside the user's subscribed
+                // channel IDs, made "data is not shared" false on the Play Data Safety
+                // form, and broke this codebase's own stated rule (DataModule: "must
+                // never be sent to YouTube/Innertube").
+                // Reuses firebaseAuthInterceptor.apiHost rather than re-deriving it, so
+                // the Bearer and the device id can never disagree about what "our
+                // backend" means.
+                val request = chain.request()
+                if (request.url.host != firebaseAuthInterceptor.apiHost) {
+                    return@addInterceptor chain.proceed(request)
+                }
                 chain.proceed(
-                    chain.request().newBuilder()
+                    request.newBuilder()
                         .header("X-Device-Id", deviceId)
                         .build()
                 )
             }
             .addInterceptor(firebaseAuthInterceptor)
             .addInterceptor(accountStatusInterceptor)
+            // Debug only. At BASIC this logs the request line, and search runs through
+            // this client as /api/v1/search?q=<the user's query> — so in release it wrote
+            // what people search for into logcat, readable by anything with log access.
             .addNetworkInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
+                level = if (BuildConfig.DEBUG) {
+                    HttpLoggingInterceptor.Level.BASIC
+                } else {
+                    HttpLoggingInterceptor.Level.NONE
+                }
             })
             // No HTTP cache — API responses are admin-curated and change frequently.
             // Server-side Caffeine cache handles backend performance.
@@ -212,7 +234,11 @@ object NetworkModule {
     fun provideYouTubeImportApi(moshi: Moshi): YouTubeImportApi {
         val youtubeClient = OkHttpClient.Builder()
             .addNetworkInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
+                level = if (BuildConfig.DEBUG) {
+                    HttpLoggingInterceptor.Level.BASIC
+                } else {
+                    HttpLoggingInterceptor.Level.NONE
+                }
             })
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
