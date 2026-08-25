@@ -38,6 +38,7 @@ import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.share.ShareLinks
 import com.albunyaan.tube.share.ShareMetadataPublisher
+import com.albunyaan.tube.ui.MainActivity
 import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import com.albunyaan.tube.ui.detail.adapters.PlaylistVideosAdapter
 import com.google.android.material.chip.Chip
@@ -714,6 +715,9 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
                 thumbnailUrl = item.thumbnailUrl
             )
         }
+
+        // ANDROID-PLAY-02: see MainActivity.requestNotificationPermissionForDownload.
+        (activity as? MainActivity)?.requestNotificationPermissionForDownload()
 
         val enqueuedCount = downloadRepository.enqueuePlaylist(
             playlistId = event.playlistId,

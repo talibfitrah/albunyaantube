@@ -9,11 +9,19 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- ANDROID-PLAY-01: WRITE_EXTERNAL_STORAGE and READ_EXTERNAL_STORAGE (both
+         maxSdkVersion="32") were declared but never used. Downloads land in
+         app-private internal storage (download/DownloadStorage.kt -> context.filesDir),
+         which needs no storage permission on any API level, and the app calls no
+         permission API and no Environment.getExternal*/getExternalFilesDir at all.
+         Google's Photo and Video Permissions policy treats an unjustified
+         media/storage permission as removable-app territory. Do not add them back
+         without a real external-storage code path. -->
+    <!-- ANDROID-PLAY-02: POST_NOTIFICATIONS above is requested at runtime from
+         MainActivity.requestNotificationPermissionForDownload(), contextually at
+         the first download rather than at app launch. -->
+
     <!-- ANDROID-FLAVOR-01: REQUEST_INSTALL_PACKAGES and UPDATE_PACKAGES_WITHOUT_USER_ACTION
          live in app/src/sideload/AndroidManifest.xml, NOT here. Google Play's Device and
          Network Abuse policy forbids self-installing APKs and Play scans the merged

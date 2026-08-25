@@ -78,6 +78,7 @@ import com.albunyaan.tube.player.StreamRequestTelemetry
 import com.albunyaan.tube.player.applyCaptionStyle
 import com.albunyaan.tube.player.normalizeSubtitleCue
 import com.albunyaan.tube.data.report.ReportTargetType
+import com.albunyaan.tube.ui.MainActivity
 import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import javax.inject.Inject
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -566,6 +567,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             val targetHeight = result.getInt(DownloadQualityDialog.RESULT_TARGET_HEIGHT)
                 .takeIf { it != DownloadQualityDialog.NO_HEIGHT }
             val isAudioOnly = result.getBoolean(DownloadQualityDialog.RESULT_IS_AUDIO_ONLY)
+            // ANDROID-PLAY-02: ask for POST_NOTIFICATIONS here, at the first real
+            // download, not at app launch. Denial does not block the download.
+            (activity as? MainActivity)?.requestNotificationPermissionForDownload()
             val started = viewModel.downloadCurrent(targetHeight, isAudioOnly)
             if (started) {
                 Toast.makeText(requireContext(), R.string.download_started, Toast.LENGTH_SHORT).show()

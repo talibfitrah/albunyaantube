@@ -1,10 +1,12 @@
 package com.albunyaan.tube.ui
 
+import android.Manifest
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.bundleOf
@@ -20,6 +22,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.auth.AccountStatusEvent
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.databinding.ActivityMainBinding
+import com.albunyaan.tube.download.DownloadNotificationPermission
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.preferences.SettingsPreferences
@@ -49,6 +52,31 @@ class MainActivity : AppCompatActivity() {
 
     // Track pending navigation listener to prevent memory leaks
     private var pendingNavigationListener: NavController.OnDestinationChangedListener? = null
+
+    /**
+     * ANDROID-PLAY-02: single POST_NOTIFICATIONS launcher for every download
+     * entry point. Registered as a field initializer because the ActivityResult
+     * API requires registration before the activity reaches STARTED; the three
+     * fragments that start downloads (player, shorts, playlist) all live in this
+     * one activity, so they route through [requestNotificationPermissionForDownload]
+     * instead of each registering their own launcher.
+     *
+     * The result is intentionally ignored: a denied notification permission must
+     * not stop the download, it only means the progress notification is lost.
+     */
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* download proceeds either way */ }
+
+    /**
+     * Ask for notification permission at the moment a download starts. No-op on
+     * API < 33 and when already granted; the OS itself no-ops after the user has
+     * permanently denied, so no extra "already asked" bookkeeping is needed.
+     */
+    fun requestNotificationPermissionForDownload() {
+        if (DownloadNotificationPermission.shouldRequest(this)) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     // Track initial theme/locale applied at startup for correction check
     private var startupTheme: String? = null

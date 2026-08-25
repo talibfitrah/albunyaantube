@@ -86,9 +86,19 @@ class AboutFragment : Fragment() {
         val versionText = view.findViewById<MaterialTextView>(R.id.versionText)
         versionText?.text = getString(R.string.about_version_format, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
 
-        // Hidden developer options: 7 taps on version text (like Android's developer options)
-        versionText?.setOnClickListener {
-            handleDeveloperOptionsTap()
+        // Hidden developer options: 7 taps on version text (like Android's developer options).
+        //
+        // ANDROID-PLAY-03: debug builds only. The dialog exposes which YouTube
+        // client the app impersonates plus trip/reset controls for the extraction
+        // cooldown — user-reachable rate-limit and impersonation switches are a
+        // liability in Play review, and an ordinary user who taps around can break
+        // their own playback with them. Leaving the listener unregistered in
+        // release is what makes the dialog unreachable; the dialog itself still
+        // compiles in every flavor.
+        if (BuildConfig.DEBUG) {
+            versionText?.setOnClickListener {
+                handleDeveloperOptionsTap()
+            }
         }
     }
 
