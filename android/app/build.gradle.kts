@@ -28,6 +28,10 @@ if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
 
+// Public production host. Also the default for share.base.url below, and the origin
+// the app's About screen opens for the privacy, terms and licences pages.
+val PROD_API_BASE_URL = "https://app.fitrahtube.com/"
+
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
@@ -68,7 +72,10 @@ android {
 
         // API Base URL configuration
         // Configure via local.properties: api.base.url=http://YOUR_IP:8080/
-        // Default: Emulator localhost (10.0.2.2)
+        // Default here is the emulator loopback, which is correct for debug only —
+        // the release build type overrides it with PROD_API_BASE_URL below. Shipping
+        // 10.0.2.2 to a real device resolves to nothing and the app renders empty,
+        // which reads to a reviewer as broken functionality.
         val apiBaseUrl = localProperties.getProperty("api.base.url", "http://10.0.2.2:8080/")
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
@@ -246,6 +253,13 @@ android {
                 )
             }
             buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
+
+            // Release must never inherit defaultConfig's emulator loopback. Verified
+            // 2026-08-25: the previous release bundle shipped "10.0.2.2" in its dex, so
+            // every install would have reached no backend at all. local.properties still
+            // wins when set, so a staging host can be pointed at deliberately.
+            val prodApiBaseUrl = localProperties.getProperty("api.base.url", PROD_API_BASE_URL)
+            buildConfigField("String", "API_BASE_URL", "\"$prodApiBaseUrl\"")
         }
 
         create("benchmark") {
