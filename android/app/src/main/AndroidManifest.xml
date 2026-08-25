@@ -33,6 +33,23 @@
         <profileable
             android:shell="${profileable}"
             tools:targetApi="29" />
+
+        <!-- ANDROID-SDK36-01: android:enableOnBackInvokedCallback is deliberately
+             ABSENT, which means it defaults to true at targetSdk 36. Do not add it
+             set to "false" — that would opt the app out of Android 16's predictive
+             back and is not needed: every back handler in the app already routes
+             through androidx OnBackPressedCallback on onBackPressedDispatcher
+             (MainActivity, AgeIneligibleFragment, ProfileBootstrapFragment,
+             EmailVerificationFragment). There is no onBackPressed() override and
+             no KEYCODE_BACK handling anywhere, so the migration Android 16 asks
+             for was already complete before the targetSdk bump.
+
+             Also deliberately absent: PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY.
+             The app declares no android:screenOrientation, resizableActivity,
+             minAspectRatio or maxAspectRatio, and already ships adaptive
+             layout-sw600dp/ and layout-sw720dp/ variants, so it has nothing to opt
+             out of. The opt-out is temporary in any case — it stops working at
+             targetSdk 37. -->
         <activity
             android:name="com.albunyaan.tube.ui.MainActivity"
             android:supportsPictureInPicture="true"
