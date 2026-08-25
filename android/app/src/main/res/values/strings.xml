@@ -759,6 +759,16 @@
     <string name="profile_error_age_dialog_message">Your date of birth no longer meets our age requirement. You\'ll be signed out.</string>
     <string name="profile_dob_pick">Pick a date</string>
 
+    <!-- ANDROID-ACCT-DEL-01: in-app account deletion (Google Play policy 13327111) -->
+    <string name="profile_delete_account">Delete account</string>
+    <string name="profile_delete_account_deleting">Deleting account…</string>
+    <string name="profile_delete_account_dialog_title">Delete your account?</string>
+    <string name="profile_delete_account_dialog_message">This permanently deletes your FitrahTube account. Your name, email, phone number and date of birth are erased, along with your subscriptions, saved playlists, favourites and every video downloaded on this device. This cannot be undone.</string>
+    <string name="profile_delete_account_confirm">Delete account</string>
+    <string name="profile_delete_account_error_last_admin">You\'re the last active administrator. Give another account admin access before deleting this one.</string>
+    <string name="profile_delete_account_error_network">Couldn\'t delete your account. Check your connection and try again.</string>
+    <string name="profile_delete_account_error_unknown">Couldn\'t delete your account. Please try again later.</string>
+
     <!-- Me screen kebab menu -->
     <string name="me_kebab_profile">Profile</string>
     <string name="me_kebab_suggest_content">Suggest content</string>
