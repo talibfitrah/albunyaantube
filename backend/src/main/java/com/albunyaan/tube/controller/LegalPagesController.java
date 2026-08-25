@@ -78,7 +78,7 @@ public class LegalPagesController {
                   <h2>Option 2 &mdash; ask us to delete it</h2>
                   <p>If you have already uninstalled the app, or you cannot sign in, email us
                   and we will delete the account for you:</p>
-                  <p class="path"><a href="mailto:%1$s?subject=Account%%20deletion%%20request">%1$s</a></p>
+                  <p class="path"><!--email_off--><a href="mailto:%1$s?subject=Account%%20deletion%%20request">%1$s</a><!--email_on--></p>
                   <p>Send the request <strong>from the email address the account was
                   registered with</strong>, so we can confirm the account is yours. We do not
                   ask for a password. We aim to complete the deletion within 30 days of
@@ -121,7 +121,7 @@ public class LegalPagesController {
                 you can simply sign out or uninstall it. Deletion is permanent; uninstalling
                 is not.</p>
 
-                <p>Questions? <a href="mailto:%1$s">%1$s</a> &middot;
+                <p>Questions? <!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on--> &middot;
                 <a href="/privacy">Privacy Policy</a></p>
                 """.formatted(CONTACT));
     }
@@ -182,7 +182,7 @@ public class LegalPagesController {
                 <h2>1. Who is responsible</h2>
                 <p>FitrahTube is operated by the FitrahTube team. For any privacy question,
                 or to exercise any right described below, contact
-                <a href="mailto:%1$s">%1$s</a>.</p>
+                <!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on-->.</p>
 
                 <h2>2. What we collect</h2>
 
@@ -326,7 +326,7 @@ public class LegalPagesController {
                       (&#8942; is the three-dot menu at the top of the Me tab).</li>
                   <li><strong>On the web, without reinstalling the app:</strong>
                       <a href="/delete-account">%3$s/delete-account</a>.</li>
-                  <li><strong>By email:</strong> <a href="mailto:%1$s">%1$s</a>, from the
+                  <li><strong>By email:</strong> <!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on-->, from the
                       address the account is registered with.</li>
                 </ul>
                 <p>Deletion destroys your sign-in record, your profile fields, your whole
@@ -340,13 +340,13 @@ public class LegalPagesController {
                 export, restrict or object to our use of your data, and to withdraw consent.
                 You can view and correct your display name, date of birth, phone number and
                 email address in the app under Me &rarr; &#8942; &rarr; Profile. For anything
-                else, write to <a href="mailto:%1$s">%1$s</a>.</p>
+                else, write to <!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on-->.</p>
 
                 <h2>9. Children</h2>
                 <p>FitrahTube is not for children under 13. We ask for a date of birth during
                 sign-up and refuse any account that reports an age under 13; that account is
                 deactivated immediately. If you believe a child under 13 has created an
-                account, write to <a href="mailto:%1$s">%1$s</a> and we will delete it.</p>
+                account, write to <!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on--> and we will delete it.</p>
 
                 <h2>10. Security</h2>
                 <p>All traffic is encrypted in transit. Authentication is delegated to Google
@@ -358,7 +358,7 @@ public class LegalPagesController {
                 Material changes will also be announced in the app.</p>
 
                 <h2>12. Contact</h2>
-                <p><a href="mailto:%1$s">%1$s</a></p>
+                <p><!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on--></p>
                 """.formatted(CONTACT, LAST_UPDATED, "app.fitrahtube.com"));
     }
 
@@ -445,7 +445,7 @@ public class LegalPagesController {
                 accept the updated terms.</p>
 
                 <h2>11. Contact</h2>
-                <p><a href="mailto:%1$s">%1$s</a></p>
+                <p><!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on--></p>
                 """.formatted(CONTACT, LAST_UPDATED));
     }
 
@@ -481,7 +481,7 @@ public class LegalPagesController {
                   <a href="https://github.com/talibfitrah/albunyaantube">github.com/talibfitrah/albunyaantube</a>,
                   where the full licence text is in the <code>LICENSE</code> file. If you
                   would rather receive the source another way, write to
-                  <a href="mailto:%1$s">%1$s</a> and we will send it to you.</p>
+                  <!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on--> and we will send it to you.</p>
                   <p>The app is GPLv3 because it builds on two copyleft components:</p>
                   <ul>
                     <li><strong>NewPipeExtractor</strong> (v0.26.5) &mdash;
