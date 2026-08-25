@@ -52,15 +52,18 @@ public class AccountController {
     private final UserRepository userRepository;
     private final FirebaseAuth firebaseAuth;
     private final MailService mailService;
+    private final com.albunyaan.tube.service.AuthService authService;
 
     public AccountController(AccountProfileService accountProfileService,
                               UserRepository userRepository,
                               FirebaseAuth firebaseAuth,
-                              MailService mailService) {
+                              MailService mailService,
+                              com.albunyaan.tube.service.AuthService authService) {
         this.accountProfileService = accountProfileService;
         this.userRepository = userRepository;
         this.firebaseAuth = firebaseAuth;
         this.mailService = mailService;
+        this.authService = authService;
     }
 
     @PostMapping("/profile")
@@ -201,6 +204,25 @@ public class AccountController {
             throw new LazyCreateInterruptedException(uid, e);
         }
         return ResponseEntity.ok(AccountMeResponse.from(user));
+    }
+
+    /**
+     * Self-serve, permanent account deletion — the in-app half of Google Play
+     * policy 13327111. The public web half (for users who already uninstalled)
+     * is {@code GET /delete-account}, served by {@link LegalPagesController}.
+     *
+     * <p>Deletes only the caller's own account: the uid comes from the verified
+     * ID token, never from the request, so there is no target to tamper with.
+     * Answers 204 on both the first call and an idempotent retry;
+     * {@link com.albunyaan.tube.exception.LastAdminException} maps to 409 via
+     * {@code GlobalExceptionHandler}.
+     */
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> deleteMe(
+            @AuthenticationPrincipal FirebaseUserDetails principal) throws Exception {
+        if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        authService.deleteAccountPermanently(principal.getUid());
+        return ResponseEntity.noContent().build();
     }
 
     /**

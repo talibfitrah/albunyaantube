@@ -170,6 +170,19 @@ public class AuditLogService {
     }
 
     /**
+     * Builder for USER_SELF_DELETED action log — the user's own, permanent
+     * self-serve deletion (Google Play policy 13327111), as opposed to the
+     * admin-initiated, reversible USER_SOFT_DELETED. Actor is the user
+     * themselves. Does NOT persist — the caller writes it inside the same
+     * AuthService transaction that stamps the tombstone, so the audit row and
+     * the erasure commit together or not at all.
+     */
+    public AuditLog buildSelfDelete(String targetUid, String reason) {
+        return AuditLog.of("USER_SELF_DELETED", "user", targetUid, targetUid,
+            reason != null ? Map.of("reason", reason) : Map.of());
+    }
+
+    /**
      * Builder for USER_RECOVERED action log.
      * Used in transactional user recovery (Task 6).
      * Does NOT persist — caller must use tx.set() within AuthService transaction.

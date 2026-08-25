@@ -65,6 +65,16 @@ public class SecurityConfig {
                         // link unfurlers (WhatsApp/Telegram/Slack/Skype) can crawl og:image.
                         // Permit both GET and HEAD — Slack, Facebook and others probe HEAD
                         // first to sniff Content-Type before committing to a full fetch.
+                        // Public legal pages served by LegalPagesController.
+                        // /delete-account is mandated by Google Play policy
+                        // 13327111: a user who has already uninstalled the app
+                        // must be able to reach it, so it cannot require a
+                        // token. /privacy, /terms and /licenses are linked from
+                        // the app's About screen and a dead privacy URL is an
+                        // automatic Play rejection. No method restriction — the
+                        // handlers are GET-only, so anything else 405s in MVC
+                        // without ever reaching a handler.
+                        .requestMatchers("/delete-account", "/privacy", "/terms", "/licenses").permitAll()
                         .requestMatchers(HttpMethod.GET, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/watch/**").permitAll()

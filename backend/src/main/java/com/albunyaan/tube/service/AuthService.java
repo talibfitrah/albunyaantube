@@ -773,6 +773,239 @@ public class AuthService {
     }
 
     /**
+     * Reason recorded on the tombstone and the {@code USER_SELF_DELETED} audit
+     * row so operators can tell a user-initiated erasure apart from an admin
+     * soft-delete ({@link #softDeleteUser}) or the COPPA rejection path
+     * ({@code AccountProfileService.rejectUnderAge}, reason "age-ineligible").
+     */
+    static final String SELF_DELETE_REASON = "user-requested";
+
+    /**
+     * Page size for the post-tombstone purge. Matches
+     * {@link com.albunyaan.tube.repository.SyncRepository#SYNC_PAGE_SIZE} —
+     * also the Firestore per-batch write ceiling (500).
+     */
+    private static final int PURGE_PAGE_SIZE =
+            com.albunyaan.tube.repository.SyncRepository.SYNC_PAGE_SIZE;
+
+    /** Registry collections that can carry a uid inside {@code personalGrants[]}. */
+    private static final java.util.List<String> GRANTED_COLLECTIONS =
+            java.util.List.of("channels", "playlists", "videos");
+
+    /**
+     * Self-serve, permanent account deletion (Google Play policy 13327111).
+     *
+     * <p>This is NOT {@link #softDeleteUser}. Soft-delete is an admin action that
+     * leaves every field intact and is reversible via {@link #recoverUser}. This
+     * is the user erasing themselves: irreversible, no grace period.
+     *
+     * <p>What survives, deliberately:
+     * <ul>
+     *   <li>An <em>anonymised tombstone</em> at {@code users/{uid}} — uid, role,
+     *       status, deletedAt, deleteReason only. Hard-deleting the doc would
+     *       leave every {@code submittedBy} reference on public content dangling
+     *       in the admin UI.</li>
+     *   <li>{@code audit_logs} rows, including {@code actorDisplayName}. Google
+     *       explicitly permits retention for security and audit purposes; this
+     *       retention is disclosed on the public {@code /privacy} page.</li>
+     *   <li>{@code submittedBy} uids on public content. Once the Firebase Auth
+     *       record is gone and the user doc is scrubbed, the uid is a
+     *       destroyed-key pseudonym.</li>
+     * </ul>
+     *
+     * <p>Ordering is chosen so a partial failure leaves recoverable state:
+     * <ol>
+     *   <li>Already-DELETED → idempotent success (no second tombstone, no second
+     *       audit row, no purge). Note this branch is effectively unreachable
+     *       over HTTP: {@code FirebaseAuthFilter} does an <em>uncached</em>
+     *       status read on {@code /api/account/*} and 403s any deleted user
+     *       before the controller runs. It exists so a direct service-level
+     *       retry cannot destroy the library of a user an admin soft-deleted
+     *       and may still {@link #recoverUser}.</li>
+     *   <li>Last-active-admin guard inside the tx → {@link LastAdminException}
+     *       (409). Mirrors the count check in {@link #softDeleteUser}; unlike
+     *       that path there is no blanket self-action ban, because a non-last
+     *       admin is entitled to delete their own account.</li>
+     *   <li>Tombstone + audit row commit atomically in one transaction.</li>
+     *   <li>Cache evicted, so no cached ACTIVE entry can let a sync write
+     *       re-create library rows mid-purge.</li>
+     *   <li>Refresh tokens revoked, then the Firebase Auth record hard-deleted —
+     *       no new ID token can be minted against this uid.</li>
+     *   <li>Library, download events and personal grants swept. Idempotent by
+     *       uid; a failure here logs ERROR + an orphan audit row and rethrows,
+     *       following the convention in {@code AccountProfileService}.</li>
+     * </ol>
+     *
+     * <p>Because deletion happens server-side through the Admin SDK, Firebase's
+     * client-side "recent login" re-authentication requirement does not apply.
+     *
+     * @throws UserNotFoundException if {@code uid} has no Firestore document
+     * @throws LastAdminException    if the caller is the last active admin
+     */
+    public void deleteAccountPermanently(String uid) throws Exception {
+        Boolean transitioned = runLifecycleTx(tx -> {
+            DocumentReference userRef = firestore.collection("users").document(uid);
+            DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (!snap.exists()) {
+                throw new UserNotFoundException(uid);
+            }
+            User target = snap.toObject(User.class);
+
+            // (a) Idempotent — see javadoc for why this does NOT fall through
+            // to the purge.
+            if (target.isDeleted()) {
+                return Boolean.FALSE;
+            }
+
+            // (b) Last-active-admin guard. All reads must precede all writes,
+            // hence sentinel-read → admin-count read → sentinel-write.
+            if (target.isAdmin()) {
+                lockAdminSentinelRead(tx);
+                QuerySnapshot admins = tx.get(firestore.collection("users")
+                        .whereEqualTo("role", "admin")
+                        .whereEqualTo("status", "active"))
+                        .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                if (admins.size() <= 1) {
+                    throw new LastAdminException(
+                            "Cannot delete the last active admin account. "
+                                    + "Promote another admin first.");
+                }
+                lockAdminSentinelWrite(tx, "self-delete");
+            }
+
+            // (c) Anonymise every personal field, then stamp the tombstone.
+            // Direct identifiers first…
+            target.setEmail(null);
+            target.setDisplayName(null);
+            target.setDateOfBirth(null);
+            target.setPhoneNumber(null);
+            // …then the behavioural metadata. A timestamp hanging off an
+            // identifier still describes the human ("when they last opened the
+            // app", "when they signed up", "which admin created them"), so
+            // leaving these behind would make the tombstone anonymised in name
+            // only. What survives is exactly uid, role, status, deletedAt,
+            // deletedBy (self) and deleteReason, plus the createdAt/updatedAt
+            // record-keeping stamps every lifecycle write maintains.
+            target.setLastLoginAt(null);
+            target.setProfileCompletedAt(null);
+            target.setCreatedBy(null);
+            target.recordSoftDelete(uid, SELF_DELETE_REASON);
+
+            tx.set(userRef, target, SetOptions.merge());
+            auditLogRepository.saveInTransaction(tx,
+                    auditLogService.buildSelfDelete(uid, SELF_DELETE_REASON));
+            return Boolean.TRUE;
+        });
+
+        // (d) Always evict, transition or not — cheap and defensive.
+        evictUserStatus(uid);
+
+        if (!Boolean.TRUE.equals(transitioned)) {
+            logger.info("Self-delete no-op: uid={} was already deleted", uid);
+            return;
+        }
+
+        try {
+            // (e) Revoke before delete: if deleteUser fails, the surviving Auth
+            // record at least cannot mint fresh ID tokens.
+            firebaseAuth.revokeRefreshTokens(uid);
+            firebaseAuth.deleteUser(uid);
+            // (f)
+            purgeUserData(uid);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            logger.error("SELF_DELETE: purge failed for uid={} AFTER the tombstone committed — "
+                    + "the Firebase Auth record and/or library rows may survive. "
+                    + "Manual cleanup required.", uid, e);
+            try {
+                auditLogService.logSystem(
+                        "USER_SELF_DELETE_PURGE_FAILED",
+                        "user", uid,
+                        "purge-failed: " + e.getClass().getSimpleName());
+            } catch (RuntimeException auditEx) {
+                logger.error("SELF_DELETE: orphan audit emission also failed uid={}", uid, auditEx);
+            }
+            throw e;
+        }
+
+        logger.info("Permanently deleted account uid={} (self-serve)", uid);
+    }
+
+    /**
+     * Hard-delete everything keyed to {@code uid} outside the tombstone.
+     *
+     * <p>ponytail: inline sequential sweep — three subcollection scans, one
+     * {@code download_events} scan and three {@code personalGrants} scans, each
+     * paged at {@link #PURGE_PAGE_SIZE} and committed in 500-write batches, all
+     * on the caller's request thread. Ceiling: a user with tens of thousands of
+     * library rows or grants costs one round-trip pair per page, so the HTTP
+     * request stretches linearly with library size. Upgrade path: enqueue the
+     * sweep off the committed tombstone (an {@code @Async} task or a scheduled
+     * reaper that scans for {@code deleteReason="user-requested"} tombstones
+     * whose purge has not completed) — the tombstone already makes the account
+     * unusable the instant the transaction commits, so the sweep does not have
+     * to be synchronous to satisfy the policy.
+     *
+     * <p>Every step is idempotent by uid, so a re-run after a partial failure is
+     * safe.
+     */
+    private void purgeUserData(String uid) throws Exception {
+        DocumentReference userRef = firestore.collection("users").document(uid);
+        for (String coll : java.util.List.of(
+                com.albunyaan.tube.repository.SyncRepository.SUBS_COLL,
+                com.albunyaan.tube.repository.SyncRepository.PLAYLISTS_COLL,
+                com.albunyaan.tube.repository.SyncRepository.FAVORITES_COLL)) {
+            deleteMatchingPaged(userRef.collection(coll));
+        }
+
+        // Write-only analytics rows (DownloadService.trackDownload*) — no reader
+        // anywhere in the backend, so nothing breaks by removing them.
+        deleteMatchingPaged(firestore.collection("download_events").whereEqualTo("userId", uid));
+
+        for (String coll : GRANTED_COLLECTIONS) {
+            removeGrantPaged(coll, uid);
+        }
+    }
+
+    /** Delete every document matching {@code query}, one {@link #PURGE_PAGE_SIZE} page at a time. */
+    private void deleteMatchingPaged(com.google.cloud.firestore.Query query) throws Exception {
+        while (true) {
+            java.util.List<com.google.cloud.firestore.QueryDocumentSnapshot> docs =
+                    query.limit(PURGE_PAGE_SIZE).get()
+                            .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS)
+                            .getDocuments();
+            if (docs.isEmpty()) return;
+            com.google.cloud.firestore.WriteBatch batch = firestore.batch();
+            for (var doc : docs) batch.delete(doc.getReference());
+            batch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (docs.size() < PURGE_PAGE_SIZE) return;
+        }
+    }
+
+    /**
+     * Strip {@code uid} from {@code personalGrants[]} on every doc in
+     * {@code collection} that still names it. Each committed page shrinks the
+     * result set, so re-running the same query converges without a cursor.
+     */
+    private void removeGrantPaged(String collection, String uid) throws Exception {
+        while (true) {
+            java.util.List<com.google.cloud.firestore.QueryDocumentSnapshot> docs =
+                    firestore.collection(collection)
+                            .whereArrayContains("personalGrants", uid)
+                            .limit(PURGE_PAGE_SIZE).get()
+                            .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS)
+                            .getDocuments();
+            if (docs.isEmpty()) return;
+            com.google.cloud.firestore.WriteBatch batch = firestore.batch();
+            for (var doc : docs) {
+                batch.update(doc.getReference(), "personalGrants", FieldValue.arrayRemove(uid));
+            }
+            batch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (docs.size() < PURGE_PAGE_SIZE) return;
+        }
+    }
+
+    /**
      * Plan F (ADMIN-USER-01, F6) — stand-alone refresh-token revocation.
      * Extracted from the inline calls in {@link #blockUser} / {@link #softDeleteUser}
      * so admins can force-logout a user without changing their account state.
