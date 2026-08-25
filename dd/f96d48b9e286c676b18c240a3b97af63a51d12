@@ -1,0 +1,92 @@
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_578923fdf04fef::t_87fe96e3f9b0aa 251-254,258
+  s_578923fdf04fef::t_ebb4b451f32172 249-250,255-257
+  s_578923fdf04fef::t_96e1489c046037 147,153-156,158-159
+  s_99ef915f306233::t_53a7fed0334f06 296-303,324-325
+  s_578923fdf04fef::t_6d87f952a205dd 226-228
+  s_578923fdf04fef::t_8336316e94c77b 24
+  s_578923fdf04fef::t_d7c31b52cdee10 160-164,166
+  s_ae9966eb1abc77::t_885d8d393d0a6f 89-90
+  s_ff9bdf102dfe37::t_c9badd2fc64a29 85-88,91-95
+  s_ff9bdf102dfe37::t_100b8c4c80098d 33,99,101,104-105,229-235,240-242
+  s_ae9966eb1abc77::t_13e9d44866fd45 148-151
+  s_578923fdf04fef::t_20c58649006dad 76
+  s_dac267759ff6fd::t_59f26de7210c30 269-275,282,284,288-292
+  s_ae9966eb1abc77::t_468f92e9a2119a 25,75,152,157,264
+  s_dac267759ff6fd::t_708d8221dca5f2 134-138
+  s_ff9bdf102dfe37::t_733c9f16c1e6f6 96-98,100,102-103,236-239
+android/app/src/main/res/layout-sw600dp/fragment_settings.xml
+  s_5a4541eb21d3e4::t_21b8adc2ee8ba5 69,109,148,187,196,205,214
+  s_0f79e29c020bf2::t_5e33eb56ee3d61 265-284,286-294
+  s_ae9966eb1abc77::t_d2dffffbda8f81 285
+android/app/src/main/java/com/albunyaan/tube/update/UpdateGateway.kt
+  s_ae9966eb1abc77::t_752165f6ecc8af 1-59
+android/app/google-services.json.template
+  s_ae9966eb1abc77::t_417d741c7797fa 36-64
+android/app/src/main/AndroidManifest.xml
+  s_ae9966eb1abc77::t_59f7b91e850a20 146-148
+  s_ae9966eb1abc77::t_6eba21d332dd32 17-21
+android/app/src/play/java/com/albunyaan/tube/update/NoUpdateGateway.kt
+  s_ae9966eb1abc77::t_88ec3eb6aea56a 29
+  s_ae9966eb1abc77::t_00d3bc8366ea7a 1-28,30-53
+android/app/src/sideload/java/com/albunyaan/tube/update/UpdateGatewayModule.kt
+  s_ae9966eb1abc77::t_80ff84f38925e0 1-22
+android/app/src/main/res/layout-sw720dp/fragment_settings.xml
+  s_ae9966eb1abc77::t_d2dffffbda8f81 295
+  s_5a4541eb21d3e4::t_21b8adc2ee8ba5 79,119,158,197,206,215,224
+  s_0f79e29c020bf2::t_e4c2ce7127d98a 275-294,296-304
+android/app/src/testPlay/java/com/albunyaan/tube/update/NoUpdateGatewayTest.kt
+  s_ae9966eb1abc77::t_05d3ea8e8dabda 1-44
+android/app/src/sideload/AndroidManifest.xml
+  s_ae9966eb1abc77::t_8a882694573607 1-46
+android/app/src/sideload/java/com/albunyaan/tube/update/UpdatePromptFlow.kt
+  s_ae9966eb1abc77::t_5c1079e9aefb36 55-64
+  s_ae9966eb1abc77::t_37535fdc0c4347 122,142,255
+android/app/build.gradle.kts
+  s_ff9bdf102dfe37::t_0598613263c32b 494
+  s_ff9bdf102dfe37::t_f0052d6ea8db4e 464-465,517,519
+  s_dac267759ff6fd::t_1a0747362983e3 276-280
+  s_ae9966eb1abc77::t_47a4c63830116a 295-300
+  s_ff9bdf102dfe37::t_6fc2d3a074f71a 415,417-419,426-427,429,451-456,524,526
+  s_ff9bdf102dfe37::t_5bc7eeb0e10164 289
+  s_13eb3230c8051b::t_5b98d14d80a679 165-171
+  s_ff9bdf102dfe37::t_a4bb12f4b6678d 290-292,302
+  s_0f8a313510a2b6::t_22315b5670b1a5 106-107,118-123
+  s_0f8a313510a2b6::t_975680433deb32 251-253,260-272,283-288,293-294,301,303-304
+  s_ff9bdf102dfe37::t_4049699305919f 411,428
+  s_ff9bdf102dfe37::t_9639455fc55856 355,377,380-386,391,430,432,438,445,457-458,461,466-467,470-471,476,481,497,499-503,509-513,515-516,518,520,531-535
+  s_ff9bdf102dfe37::t_897909085e20b2 356-362,366
+  s_b45b82b9589d49::t_9ff3e1558fd878 80-83
+  s_ae9966eb1abc77::t_61025795c095b5 126-161
+  s_dac267759ff6fd::t_f59296bf3830cc 254
+  s_b45b82b9589d49::t_e4e927b46e07d9 85
+  s_13eb3230c8051b::t_80124b7d305058 163-164,172-176,184-186
+  s_ff9bdf102dfe37::t_7e7e934479d3bc 354
+  s_ff9bdf102dfe37::t_8f986b6958eb78 31-36
+  s_f6f6a601e51753::t_c82fa09bdc627b 416,420
+  s_ff9bdf102dfe37::t_8356df7f82e6b8 363-365,367-376
+  s_f6f6a601e51753::t_ea1f984a12f541 397-407
+  s_f6f6a601e51753::t_323d4e929f78f8 393-396,408-410,412-414,421
+  s_31a12c3902afdd::t_67d4896d465646 45-46
+  s_0f8a313510a2b6::t_aea45b6a4c6887 250,255-259
+android/app/src/main/java/com/albunyaan/tube/update/UpdateInfo.kt
+  s_ae9966eb1abc77::t_5e87f48bd47989 1-20
+android/app/google-services.json.ci-stub
+  s_ae9966eb1abc77::t_180f9b40c02e42 36-64
+android/app/src/main/java/com/albunyaan/tube/ui/settings/SettingsFragment.kt
+  s_ae9966eb1abc77::t_a4171316f078ef 379-396,399-401,405-408
+  s_ae9966eb1abc77::t_d7179c6ae4ec32 38-41,43
+  s_0f79e29c020bf2::t_667442ecddd0b3 45-47
+  s_dac267759ff6fd::t_55c8f38ca7ba22 121-124,126
+  s_0f79e29c020bf2::t_f339af69f5250f 397-398,402-404,409-415
+android/app/src/main/res/layout/fragment_settings.xml
+  s_5a4541eb21d3e4::t_21b8adc2ee8ba5 97,137,177,216,225,234,243,320
+  s_0f79e29c020bf2::t_3b3e6a51de4908 307-315
+  s_ae9966eb1abc77::t_d2dffffbda8f81 317
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ddf96d48b9e286c676b18c240a3b97af63a51d12",
+  "prompts": {}
+}
