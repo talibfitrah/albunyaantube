@@ -187,8 +187,8 @@ public class LegalPagesController {
                 <h2>2. What we collect</h2>
 
                 <h3>2.1 Account information</h3>
-                <p>You can browse FitrahTube without an account. If you create one, we
-                collect:</p>
+                <p>FitrahTube requires an account, so we collect the following when you
+                create one:</p>
                 <ul>
                   <li><strong>Email address</strong> and, for email/password sign-in, a
                       password. Passwords are handled entirely by Google Firebase
@@ -215,8 +215,8 @@ public class LegalPagesController {
                 <h3>2.3 Downloads</h3>
                 <p>When you download a video for offline viewing, we record the video
                 identifier, the chosen quality, an estimated file size, a coarse device
-                category and a timestamp. If you are signed in, this record is linked to your
-                account; if you are not, it is recorded anonymously.</p>
+                category and a timestamp. Because the app requires an account, this record
+                is linked to yours.</p>
 
                 <h3>2.4 Device identifier</h3>
                 <p>The app generates a random identifier for each installation and sends it

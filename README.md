@@ -53,7 +53,6 @@ This repository contains the complete codebase (Android app, admin dashboard, ba
 - Advanced video player: quality selection, audio-only mode, subtitles, PiP, Chromecast
 - Offline downloads with 30-day expiry and audio-only option
 - Search with persistent history (max 10 items)
-- Safe mode toggle for family-friendly filtering
 - Multi-language: English, Arabic (RTL), Dutch
 
 **Admin Dashboard (Web):**

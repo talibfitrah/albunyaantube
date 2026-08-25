@@ -19,7 +19,6 @@ Your trusted source for Islamic content - videos, channels & playlists
 - Filter content by category (Quran, Hadith, Fiqh, History, etc.)
 - Filter by video length and upload date
 - Sort by popularity or newest first
-- Family-friendly safe mode (enabled by default)
 
 **📥 Offline Viewing**
 - Download videos for offline playback
@@ -48,7 +47,6 @@ Your trusted source for Islamic content - videos, channels & playlists
 
 **🔒 Privacy & Safety**
 - No ads, no tracking
-- Family-friendly content filtering
 - Curated content from trusted sources
 - Offline EULA for downloads
 

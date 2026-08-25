@@ -230,29 +230,8 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Content Section -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/settings_content"
-                android:textSize="@dimen/text_section_title"
-                android:textStyle="bold"
-                android:textColor="?attr/colorOnSurface"
-                android:textAlignment="viewStart"
-                android:layout_marginBottom="@dimen/spacing_sm"/>
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/spacing_lg"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="@dimen/corner_radius_medium"
-                app:cardElevation="0dp">
-
-                <!-- Family-Friendly Safe Mode -->
-                <include layout="@layout/settings_item_safe_mode"/>
-
-            </com.google.android.material.card.MaterialCardView>
+            <!-- ANDROID-SAFEMODE-01: "Content" section removed with the dead Safe Mode
+                 switch — see the note in layout/fragment_settings.xml. -->
 
             <!-- About & Support Section -->
             <TextView

@@ -493,9 +493,6 @@
     <string name="settings_quality_high_desc">عالية (1080p) - أفضل جودة</string>
     <string name="settings_quality_changed">تم تعيين جودة التنزيل إلى %1$s</string>
     <string name="settings_quality_change_failed">فشل تغيير جودة التنزيل. يرجى المحاولة مرة أخرى.</string>
-    <string name="settings_content">المحتوى</string>
-    <string name="settings_safe_mode">الوضع الآمن</string>
-    <string name="settings_safe_mode_desc">عرض المحتوى المناسب للعائلة فقط</string>
     <string name="settings_appearance">المظهر</string>
     <string name="settings_language">اللغة</string>
     <string name="settings_language_desc">اختر لغتك المفضلة</string>
@@ -541,7 +538,6 @@
     <string name="about_open_source_licenses">تراخيص المصادر المفتوحة</string>
     <string name="settings_support_center">مركز المساعدة</string>
     <string name="settings_support_center_desc">احصل على المساعدة وأرسل ملاحظاتك</string>
-    <string name="settings_icon_safe_mode">أيقونة إعداد الوضع الآمن</string>
     <string name="cancel">إلغاء</string>
 
     <!-- Pagination -->
