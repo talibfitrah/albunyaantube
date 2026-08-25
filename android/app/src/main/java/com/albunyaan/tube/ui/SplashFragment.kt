@@ -22,7 +22,7 @@ import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.sync.SyncManager
 import com.albunyaan.tube.preferences.SettingsPreferences
 import com.albunyaan.tube.update.UpdateInfo
-import com.albunyaan.tube.update.UpdatePromptFlow
+import com.albunyaan.tube.update.UpdateGateway
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Deferred
@@ -72,7 +72,7 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
     /** Plan D T26: bind is fired in background once uid is confirmed. */
     @Inject lateinit var syncManager: SyncManager
 
-    @Inject lateinit var updatePromptFlow: UpdatePromptFlow
+    @Inject lateinit var updateGateway: UpdateGateway
 
     /** Track running animators for cleanup on fragment destruction */
     private val runningAnimators = mutableListOf<Animator>()
@@ -86,8 +86,8 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         /**
          * Total unconditional delay this fragment runs BEFORE it awaits the update
          * probe. The probe is launched at t=0 and read only after all of it, so any
-         * probe budget up to this value is free — see
-         * [UpdatePromptFlow.CHECK_TIMEOUT_MS], which a unit test pins against this.
+         * probe budget up to this value is free — see `UpdatePromptFlow.CHECK_TIMEOUT_MS`
+         * (sideload source set), which UpdatePromptFlowTest pins against this constant.
          *
          * If you add or remove a `delay()` on the path to `updateInfoDeferred.await()`,
          * update this too, or the update probe's budget silently stops matching the
@@ -145,12 +145,16 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             }
 
             // GitHub update probe — runs in parallel with the splash animation, bounded by
-            // [UpdatePromptFlow.checkForUpdate]'s own timeout so a slow network can't stall
+            // ANDROID-FLAVOR-01: on the `play` flavor the injected UpdateGateway is
+            // NoUpdateGateway, so this returns null immediately and the splash routes as
+            // if there were no update. The parallel `async` is kept either way so the
+            // sideload cold start does not grow by the probe's duration.
+            // [UpdateGateway.checkForUpdate]'s own timeout so a slow network can't stall
             // cold start. Null result means "no update / failed / timed out" — splash continues
             // routing unchanged. Non-null result triggers the gating dialog before routing
             // so the user sees the prompt *before* the sign-in screen.
             val updateInfoDeferred: Deferred<UpdateInfo?> = async {
-                updatePromptFlow.checkForUpdate()
+                updateGateway.checkForUpdate()
             }
 
             // Check if this is a deep link launch - if so, skip splash entirely.
@@ -257,7 +261,7 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         // An earlier draft showed it as a toast 50-100ms before the dialog —
         // the dialog focus swallowed the toast (Stage 1 review P1). Now the
         // warning lives above the dialog body so the user can't miss it.
-        updatePromptFlow.showUpdateDialogAndAwait(host, host, info)
+        updateGateway.showUpdateDialogAndAwait(host, host, info)
     }
 
     /** Routing logic in [SplashRouter] so it's unit-testable in isolation. */

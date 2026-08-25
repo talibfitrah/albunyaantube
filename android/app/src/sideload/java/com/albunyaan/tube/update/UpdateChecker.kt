@@ -15,18 +15,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Represents a newer release of the app published on GitHub. Constructed by [UpdateChecker]
- * only when the remote version is strictly greater than the locally-built version.
- */
-data class UpdateInfo(
-    val versionName: String,
-    val releaseName: String,
-    val apkUrl: String,
-    val apkSizeBytes: Long,
-    val publishedAt: java.time.Instant? = null,   // null when GitHub omits it
-)
-
-/**
  * Shared DTO for both the single-release endpoint (`GET /releases/latest`) and the
  * release-list endpoint (`GET /releases`). Originally split into two DTOs so they
  * could evolve independently; consolidated 2026-05-25 after Task 7 (commit fe2335a2)

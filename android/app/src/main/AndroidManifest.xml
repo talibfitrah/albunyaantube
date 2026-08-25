@@ -14,10 +14,11 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- ANDROID-MULTI-01 Issue 3: required to hand off downloaded APKs to the package
-         installer. On Android 8+ the user must separately grant "install unknown apps"
-         via Settings; the app flow walks them through this on first use. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- ANDROID-FLAVOR-01: REQUEST_INSTALL_PACKAGES and UPDATE_PACKAGES_WITHOUT_USER_ACTION
+         live in app/src/sideload/AndroidManifest.xml, NOT here. Google Play's Device and
+         Network Abuse policy forbids self-installing APKs and Play scans the merged
+         manifest, so these must be structurally absent from the `play` flavor rather than
+         gated at runtime. Do not move them back into src/main. -->
 
     <application
         android:name=".AlBunyaanApplication"
@@ -142,21 +143,9 @@
                 android:resource="@xml/downloads_file_paths" />
         </provider>
 
-        <!--
-          Transparent trampoline Activity for PackageInstaller status callbacks.
-          The PendingIntent created in ApkInstaller.launchInstaller delivers here.
-          Uses an Activity (not BroadcastReceiver) so the OS launches it directly
-          via PendingIntent — Huawei/Honor BAL restrictions block startActivity
-          from a BroadcastReceiver context. excludeFromRecents keeps it out of
-          the task switcher; taskAffinity="" prevents it from joining the main
-          task stack.
-        -->
-        <activity
-            android:name=".update.InstallStatusActivity"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:taskAffinity="" />
+        <!-- ANDROID-FLAVOR-01: InstallStatusActivity is declared in
+             app/src/sideload/AndroidManifest.xml — the class itself only exists in the
+             sideload source set. See the uses-permission note at the top of this file. -->
 
         <!-- Google Cast SDK configuration -->
         <meta-data
