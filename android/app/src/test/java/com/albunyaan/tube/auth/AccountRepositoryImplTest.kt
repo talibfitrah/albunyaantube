@@ -3,11 +3,15 @@ package com.albunyaan.tube.auth
 import com.albunyaan.tube.data.account.AccountMeResponseDto
 import com.albunyaan.tube.data.account.AccountService
 import com.albunyaan.tube.data.account.CompleteProfileRequestDto
+import com.albunyaan.tube.data.account.LocalAccountDataWiper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -109,6 +113,85 @@ class AccountRepositoryImplTest {
 
         repository.signOut()
         assertEquals(AccountState.NotSignedIn, repository.accountState.value)
+    }
+
+    // ── Terminal-event wiping ──────────────────────────────────────────────
+    //
+    // Deletion succeeding server-side while the device keeps everything is the
+    // hole LocalAccountDataWiper exists to close, and DeleteAccountViewModel is
+    // not enough on its own: it skips the wipe on any HTTP failure (correctly —
+    // a live account's library must survive a failed call), and it never runs at
+    // all for an admin-side deletion. Both of those reach the app the same way:
+    // a 403 ACCOUNT_DELETED envelope → AccountStatusInterceptor →
+    // AccountStatusEvent.Deleted. Wiping HERE closes both.
+
+    private fun repositoryObserving(
+        events: MutableSharedFlow<AccountStatusEvent>,
+        wiper: LocalAccountDataWiper,
+        scope: kotlinx.coroutines.CoroutineScope,
+    ) = AccountRepositoryImpl(
+        service,
+        backoffMs = 0L,
+        authStatusEvents = events,
+        observerScope = scope,
+        wiper = wiper,
+    )
+
+    @Test fun `Deleted event wipes this device's local data`() = runTest(dispatcher) {
+        val events = MutableSharedFlow<AccountStatusEvent>()
+        val wiper = mock<LocalAccountDataWiper>()
+        val repo = repositoryObserving(events, wiper, backgroundScope)
+        runCurrent()
+
+        events.emit(AccountStatusEvent.Deleted)
+        advanceUntilIdle()
+
+        verifyBlocking(wiper) { wipe() }
+        assertEquals(AccountState.NotSignedIn, repo.accountState.value)
+    }
+
+    @Test fun `Blocked event signs out but never wipes`() = runTest(dispatcher) {
+        val events = MutableSharedFlow<AccountStatusEvent>()
+        val wiper = mock<LocalAccountDataWiper>()
+        val repo = repositoryObserving(events, wiper, backgroundScope)
+        runCurrent()
+
+        events.emit(AccountStatusEvent.Blocked)
+        advanceUntilIdle()
+
+        // A block is reversible — destroying the library would be a data-loss bug.
+        verifyBlocking(wiper, never()) { wipe() }
+        assertEquals(AccountState.NotSignedIn, repo.accountState.value)
+    }
+
+    @Test fun `SignedOut event signs out but never wipes`() = runTest(dispatcher) {
+        val events = MutableSharedFlow<AccountStatusEvent>()
+        val wiper = mock<LocalAccountDataWiper>()
+        repositoryObserving(events, wiper, backgroundScope)
+        runCurrent()
+
+        events.emit(AccountStatusEvent.SignedOut)
+        advanceUntilIdle()
+
+        // Sign-out deliberately keeps local data — the same person signs back in.
+        verifyBlocking(wiper, never()) { wipe() }
+    }
+
+    @Test fun `a failing wipe does not kill the collector`() = runTest(dispatcher) {
+        val events = MutableSharedFlow<AccountStatusEvent>()
+        val wiper = mock<LocalAccountDataWiper>()
+        wiper.stub { onBlocking { wipe() } doAnswer { throw IOException("disk full") } }
+        repositoryObserving(events, wiper, backgroundScope)
+        runCurrent()
+
+        events.emit(AccountStatusEvent.Deleted)
+        advanceUntilIdle()
+        events.emit(AccountStatusEvent.Deleted)
+        advanceUntilIdle()
+
+        // An escaping exception would end collect{} and leave every later
+        // terminal event unhandled for the process lifetime.
+        verifyBlocking(wiper, times(2)) { wipe() }
     }
 
     private fun dto(status: String, displayName: String = "Alice", dateOfBirth: String? = null) =

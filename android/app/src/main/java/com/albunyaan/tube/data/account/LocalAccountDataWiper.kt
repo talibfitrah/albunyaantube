@@ -1,6 +1,7 @@
 package com.albunyaan.tube.data.account
 
 import android.content.Context
+import coil.ImageLoader
 import com.albunyaan.tube.data.local.AppDatabase
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,7 @@ import javax.inject.Singleton
 class LocalAccountDataWiper @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: AppDatabase,
+    private val imageLoader: ImageLoader,
 ) {
 
     suspend fun wipe() = withContext(Dispatchers.IO) {
@@ -47,6 +49,16 @@ class LocalAccountDataWiper @Inject constructor(
             .edit()
             .remove(DEVICE_ID_KEY)
             .commit()
+
+        // Thumbnails of the previous owner's channels, playlists and videos —
+        // up to 60 MB on disk (DataModule.kt:409-414) plus 10% of heap in RAM.
+        // Coil's own clear() rather than deleting cacheDir/coil_image_cache:
+        // the DiskLruCache journal is held open for the process lifetime, so
+        // removing the directory from underneath it is unspecified. The memory
+        // cache matters just as much — a file delete would leave the previous
+        // owner's artwork rendering from RAM for the rest of the process.
+        imageLoader.diskCache?.clear()
+        imageLoader.memoryCache?.clear()
 
         Unit
     }

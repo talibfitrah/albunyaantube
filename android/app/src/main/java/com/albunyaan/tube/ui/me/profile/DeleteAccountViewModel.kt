@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.me.profile
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.auth.AccountStatusEmitter
@@ -71,7 +72,21 @@ class DeleteAccountViewModel @Inject constructor(
             // Server-side erasure has already succeeded and is irreversible, so
             // a local cleanup failure must not strand the user signed in to an
             // account that no longer exists.
-            runCatching { wiper.wipe() }
+            //
+            // Cancellation is NOT a cleanup failure. `runCatching` captures
+            // CancellationException into Result.failure, so a scope torn down
+            // mid-wipe (the user backs out — `by viewModels()` cancels) fell
+            // through to signOut + emit as if the wipe had finished. Rethrow it,
+            // matching `update/CallExtensions.kt:44-50` (`runCatchingCoroutine`,
+            // which lives in the sideload source set and so is not reachable
+            // from here).
+            try {
+                wiper.wipe()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "local wipe after account deletion failed", e)
+            }
             authRepository.signOut()
             statusEmitter.emit(AccountStatusEvent.Deleted)
         }
@@ -86,6 +101,7 @@ class DeleteAccountViewModel @Inject constructor(
 
     private companion object {
         const val HTTP_CONFLICT = 409
+        const val TAG = "DeleteAccountViewModel"
     }
 }
 

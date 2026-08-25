@@ -3,6 +3,8 @@ package com.albunyaan.tube.data.account
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import coil.ImageLoader
+import coil.disk.DiskCache
 import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.FavoriteVideo
 import kotlinx.coroutines.test.runTest
@@ -28,6 +30,7 @@ class LocalAccountDataWiperTest {
 
     private lateinit var context: Context
     private lateinit var db: AppDatabase
+    private lateinit var imageLoader: ImageLoader
     private lateinit var wiper: LocalAccountDataWiper
 
     @Before
@@ -36,11 +39,40 @@ class LocalAccountDataWiperTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        wiper = LocalAccountDataWiper(context, db)
+        // A REAL disk cache at the same location DataModule uses
+        // (DataModule.kt:409-414) so the assertions below are about bytes that
+        // actually left the disk, not about a mock being called.
+        imageLoader = ImageLoader.Builder(context)
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(File(context.cacheDir, "coil_image_cache"))
+                    .build()
+            }
+            .build()
+        wiper = LocalAccountDataWiper(context, db, imageLoader)
     }
 
     @After
     fun tearDown() = db.close()
+
+    /**
+     * Thumbnails of the previous owner's channels, playlists and videos are
+     * personal data about them. Nothing else in the app clears them, so without
+     * this the next person to sign in on the device browses the previous
+     * owner's library artwork.
+     */
+    @Test
+    fun `wipe clears the cached thumbnails`() = runTest {
+        val disk = imageLoader.diskCache!!
+        val editor = disk.openEditor("https://i.ytimg.com/vi/private/hq.jpg")!!
+        disk.fileSystem.write(editor.data) { writeUtf8("previous owner's thumbnail bytes") }
+        editor.commit()
+        assertTrue("Precondition: something is actually cached", disk.size > 0L)
+
+        wiper.wipe()
+
+        assertEquals(0L, disk.size)
+    }
 
     @Test
     fun `wipe empties room`() = runTest {

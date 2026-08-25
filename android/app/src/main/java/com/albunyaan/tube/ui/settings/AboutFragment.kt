@@ -170,12 +170,10 @@ class AboutFragment : Fragment() {
         // resolves but 404s, and app.fitrahtube.com serves the API only — its
         // root 403s. Hidden rather than pointed at a 404, because Play
         // reviewers do click these. To re-enable once a site exists, delete
-        // these two visibility lines.
+        // these two visibility lines and add back a listener that opens
+        // https://fitrahtube.com.
         view.findViewById<View>(R.id.websiteItem)?.visibility = View.GONE
         view.findViewById<View>(R.id.websiteDivider)?.visibility = View.GONE
-        view.findViewById<View>(R.id.websiteItem)?.setOnClickListener {
-            openUrl("https://fitrahtube.com")
-        }
 
         view.findViewById<View>(R.id.privacyItem)?.setOnClickListener {
             openUrl("$webBase/privacy")

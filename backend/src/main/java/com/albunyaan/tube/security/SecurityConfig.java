@@ -71,10 +71,18 @@ public class SecurityConfig {
                         // must be able to reach it, so it cannot require a
                         // token. /privacy, /terms and /licenses are linked from
                         // the app's About screen and a dead privacy URL is an
-                        // automatic Play rejection. No method restriction — the
-                        // handlers are GET-only, so anything else 405s in MVC
-                        // without ever reaching a handler.
-                        .requestMatchers("/delete-account", "/privacy", "/terms", "/licenses").permitAll()
+                        // automatic Play rejection.
+                        //
+                        // GET+HEAD only, same shape as /watch/** below. The
+                        // previous blanket permitAll handed EVERY verb to the
+                        // dispatcher, making these four the only anonymous
+                        // non-GET surface in the chain — an anonymous POST
+                        // reached MVC and came back 500, not 405 (pinned by
+                        // SelfDeleteAccountIT#publicLegalPages_doNotPermitWritesAnonymously).
+                        .requestMatchers(HttpMethod.GET,
+                                "/delete-account", "/privacy", "/terms", "/licenses").permitAll()
+                        .requestMatchers(HttpMethod.HEAD,
+                                "/delete-account", "/privacy", "/terms", "/licenses").permitAll()
                         .requestMatchers(HttpMethod.GET, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/watch/**").permitAll()

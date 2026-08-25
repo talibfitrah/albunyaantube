@@ -1,8 +1,11 @@
 package com.albunyaan.tube.auth
 
+import android.util.Log
 import com.albunyaan.tube.data.account.AccountMeResponseDto
 import com.albunyaan.tube.data.account.AccountService
 import com.albunyaan.tube.data.account.CompleteProfileRequestDto
+import com.albunyaan.tube.data.account.LocalAccountDataWiper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +36,18 @@ class AccountRepositoryImpl(
      */
     authStatusEvents: kotlinx.coroutines.flow.SharedFlow<AccountStatusEvent>? = null,
     observerScope: kotlinx.coroutines.CoroutineScope? = null,
+    /**
+     * Erases everything this install holds for the signed-in user. Non-null
+     * when wired through Hilt; null for the lightweight test-default
+     * constructor, same shape as [authStatusEvents] above.
+     *
+     * Runs on [AccountStatusEvent.Deleted] ONLY. Deletion is the one terminal
+     * event that is irreversible server-side, so it is the only one where
+     * keeping local data is wrong: a block is reversible and an ordinary
+     * sign-out deliberately keeps the library for the same person signing back
+     * in.
+     */
+    private val wiper: LocalAccountDataWiper? = null,
 ) : AccountRepository {
 
     private val _state = MutableStateFlow<AccountState>(AccountState.NotSignedIn)
@@ -54,7 +69,21 @@ class AccountRepositoryImpl(
                     // compile error here instead of silently no-opping.
                     val unused: Unit = when (event) {
                         AccountStatusEvent.Blocked -> signOut()
-                        AccountStatusEvent.Deleted -> signOut()
+                        // The account is gone server-side and cannot come back,
+                        // so this device must not keep the library, downloads
+                        // or device id for the next person to sign in here.
+                        // DeleteAccountViewModel wipes on its own success path,
+                        // but it deliberately does NOT wipe when the request
+                        // fails — and a failed request can still mean a deleted
+                        // account (the tombstone commits before the purge). The
+                        // retry then 403s ACCOUNT_DELETED and lands here. Same
+                        // route an admin-side deletion takes, which nothing
+                        // wiped for before. Double-wiping is harmless: every
+                        // step is idempotent.
+                        AccountStatusEvent.Deleted -> {
+                            signOut()
+                            wipeLocalData()
+                        }
                         // Clear local state on user-initiated sign-out so any
                         // concurrent coroutine racing the back-stack teardown
                         // sees NotSignedIn rather than the old user's Loaded
@@ -147,6 +176,25 @@ class AccountRepositoryImpl(
         _state.value = AccountState.NotSignedIn
     }
 
+    /**
+     * Best-effort local erase. Nothing may escape: an exception here would end
+     * the `collect {}` in [init] and leave every later terminal event unhandled
+     * for the rest of the process. CancellationException is rethrown rather
+     * than swallowed — same trap `update/CallExtensions.kt:44-50`
+     * (`runCatchingCoroutine`) documents; that helper lives in the sideload
+     * source set, so it is not reachable from here.
+     */
+    private suspend fun wipeLocalData() {
+        val target = wiper ?: return
+        try {
+            target.wipe()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "local wipe after account deletion failed", e)
+        }
+    }
+
     override fun applyProfileUpdate(response: AccountMeResponseDto) {
         // Atomic CAS via MutableStateFlow.update so a concurrent signOut
         // from an off-main observerScope can't be clobbered by a
@@ -206,6 +254,7 @@ class AccountRepositoryImpl(
     }
 
     companion object {
+        private const val TAG = "AccountRepository"
         private const val MAX_ATTEMPTS = 3
         private const val MAX_ERROR_BODY_BYTES = 4_096L
     }

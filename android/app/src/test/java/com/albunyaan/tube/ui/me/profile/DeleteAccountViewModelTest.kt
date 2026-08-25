@@ -5,6 +5,7 @@ import com.albunyaan.tube.auth.AccountStatusEvent
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.account.AccountService
 import com.albunyaan.tube.data.account.LocalAccountDataWiper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -125,6 +126,28 @@ class DeleteAccountViewModelTest {
         assertEquals(DeleteAccountState.FailedUnknown, vm.state.value)
         verify(wiper, never()).wipe()
         assertTrue(emitter.events.isEmpty())
+    }
+
+    /**
+     * `runCatching` captures CancellationException into `Result.failure`, so a
+     * scope torn down mid-wipe (the user backs out — `by viewModels()` cancels)
+     * used to fall straight through to signOut + emit(Deleted) as though the
+     * cleanup had finished. Same trap the sideload source set already documents
+     * in `update/CallExtensions.kt:44-50` (`runCatchingCoroutine`).
+     */
+    @Test
+    fun `cancellation during the wipe is not swallowed into a completed deletion`() = runTest(dispatcher) {
+        service.stub { onBlocking { deleteAccount() } doReturn Response.success(204, Unit) }
+        wiper.stub {
+            onBlocking { wipe() } doAnswer { throw CancellationException("viewModelScope cancelled") }
+        }
+
+        val vm = newVm()
+        vm.delete()
+        advanceUntilIdle()
+
+        assertTrue("A cancelled coroutine must not announce a finished deletion", emitter.events.isEmpty())
+        verifyNoInteractions(authRepository)
     }
 
     @Test
