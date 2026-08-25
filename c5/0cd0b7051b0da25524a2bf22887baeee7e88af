@@ -1,0 +1,24 @@
+android/app/src/main/java/com/albunyaan/tube/di/NetworkModule.kt
+  s_ae9966eb1abc77::t_c0c842d9272922 96-103,107,109-110,112
+  s_ae9966eb1abc77::t_1b1245820580ec 237-241
+  s_ae9966eb1abc77::t_76933dcceb8e78 119-121,123-127
+  s_ae9966eb1abc77::t_d092c97ef00442 104-106,108
+android/app/build.gradle.kts
+  s_ae9966eb1abc77::t_daaaaad4e677a4 31-33,36-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c50cd0b7051b0da25524a2bf22887baeee7e88af",
+  "prompts": {},
+  "sessions": {
+    "s_ae9966eb1abc77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c29aa3de-be36-4086-834a-2b11c80036b8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
