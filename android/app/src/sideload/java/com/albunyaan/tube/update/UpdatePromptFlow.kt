@@ -52,7 +52,16 @@ class UpdatePromptFlow @Inject constructor(
     private val installer: ApkInstaller,
     private val catalog: ReleaseCatalogCache,
     private val lastInstallAttempt: LastInstallAttempt,
-) {
+) : UpdateGateway {
+
+    /**
+     * ANDROID-FLAVOR-01: this flavor DOES ship a self-updater. The Play flavor binds
+     * `NoUpdateGateway`, which returns false. Deliberately a constant and not
+     * `!installSource.isPlayStore()` — that runtime question is asked separately by
+     * SettingsFragment, so the two concerns ("was this build compiled with an updater"
+     * vs "was this copy installed from Play") stay independently readable.
+     */
+    override val hasUpdater: Boolean = true
 
     /**
      * Serializes download+install flow so the splash auto-check and the manual
@@ -110,7 +119,7 @@ class UpdatePromptFlow @Inject constructor(
      * ("no update available" or "check failed") because the user explicitly asked. Splash
      * cold-start uses [checkForUpdate] + [showUpdateDialogAndAwait] instead.
      */
-    fun runCheck(activity: Activity, lifecycleOwner: LifecycleOwner) {
+    override fun runCheck(activity: Activity, lifecycleOwner: LifecycleOwner) {
         lifecycleOwner.lifecycleScope.launch {
             val result = checker.checkForUpdate()
             val info = result.getOrNull()
@@ -130,7 +139,7 @@ class UpdatePromptFlow @Inject constructor(
      * and shared snapshot are owned by [ReleaseCatalogCache] so the Available Updates
      * screen reuses the same network call without an extra roundtrip.
      */
-    suspend fun checkForUpdate(): UpdateInfo? {
+    override suspend fun checkForUpdate(): UpdateInfo? {
         if (promptDismissedThisProcess) {
             Log.d(TAG, "probe skipped: prompt already handled this process")
             return null
@@ -243,7 +252,7 @@ class UpdatePromptFlow @Inject constructor(
      * tears down the dialog without marking it as dismissed so the recreated SplashFragment
      * can re-show it — the `promptDismissedThisProcess` doc explains the contract.
      */
-    suspend fun showUpdateDialogAndAwait(
+    override suspend fun showUpdateDialogAndAwait(
         activity: Activity,
         lifecycleOwner: LifecycleOwner,
         info: UpdateInfo

@@ -35,8 +35,12 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
     @Inject
     lateinit var downloadStorage: DownloadStorage
 
+    /**
+     * ANDROID-FLAVOR-01: the seam, not the updater. Sideload binds UpdatePromptFlow;
+     * play binds NoUpdateGateway and `hasUpdater` is false.
+     */
     @Inject
-    lateinit var updatePromptFlow: com.albunyaan.tube.update.UpdatePromptFlow
+    lateinit var updateGateway: com.albunyaan.tube.update.UpdateGateway
 
     @Inject
     lateinit var installSource: com.albunyaan.tube.update.InstallSource
@@ -372,19 +376,36 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                 }
             }
 
-            // ANDROID-MULTI-01 Issue 3: manual update check
-            view.findViewById<View>(R.id.updateCheckItem)?.setOnClickListener {
-                val activity = activity ?: return@setOnClickListener
-                updatePromptFlow.runCheck(activity, viewLifecycleOwner)
-            }
-
-            // ANDROID-VERSIONS-01: Available updates row — hidden on Play Store installs
+            // Update affordances: "Available updates" (ANDROID-VERSIONS-01) and
+            // "Check for updates" (ANDROID-MULTI-01 Issue 3). Both are suppressed
+            // together, for two independent reasons:
+            //
+            //  1. `!updateGateway.hasUpdater` — ANDROID-FLAVOR-01. The `play` flavor
+            //     contains no updater at all (Play forbids self-installing APKs), so
+            //     neither row can do anything. Compile-time, per flavor.
+            //  2. `installSource.isPlayStore()` — a sideload build that was nevertheless
+            //     installed from Play must not sideload over itself and break Play's
+            //     auto-updates. Pre-existing behaviour, preserved.
+            //
+            // Bug fix: `updateCheckItem` was previously left VISIBLE in case 2 — only
+            // the Available-updates row was hidden. Tapping it ran a GitHub check that
+            // UpdateChecker then short-circuited, so the user got a "You're up to date"
+            // toast that was not actually the result of a check. Both rows and both
+            // dividers are now gated by the same condition.
+            val updateCheckRow = view.findViewById<View>(R.id.updateCheckItem)
+            val updateCheckDivider = view.findViewById<View>(R.id.updateCheckDivider)
             val availableVersionsRow = view.findViewById<View>(R.id.availableVersionsItem)
             val availableVersionsDivider = view.findViewById<View>(R.id.availableVersionsDivider)
-            if (installSource.isPlayStore()) {
+            if (!updateGateway.hasUpdater || installSource.isPlayStore()) {
+                updateCheckRow?.visibility = View.GONE
+                updateCheckDivider?.visibility = View.GONE
                 availableVersionsRow?.visibility = View.GONE
                 availableVersionsDivider?.visibility = View.GONE
             } else {
+                updateCheckRow?.setOnClickListener {
+                    val activity = activity ?: return@setOnClickListener
+                    updateGateway.runCheck(activity, viewLifecycleOwner)
+                }
                 availableVersionsRow?.setOnClickListener {
                     if (findNavController().currentDestination?.id == R.id.settingsFragment) {
                         findNavController().navigate(R.id.action_settingsFragment_to_availableVersionsFragment)

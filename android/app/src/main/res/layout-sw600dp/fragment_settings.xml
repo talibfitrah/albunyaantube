@@ -282,6 +282,7 @@
                     <include layout="@layout/settings_item_available_versions"/>
 
                     <View
+                        android:id="@+id/updateCheckDivider"
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
                         android:background="?attr/colorOutlineVariant"

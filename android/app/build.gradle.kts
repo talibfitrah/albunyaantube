@@ -123,6 +123,42 @@ android {
         buildConfigField("boolean", "ENABLE_TTL_WATCHER", "$enableTtlWatcher")
     }
 
+    // Distribution split (ANDROID-FLAVOR-01). Google Play's Device and Network Abuse
+    // policy forbids an app that downloads and installs an APK on its own, and Play
+    // scans the MERGED MANIFEST — so a runtime `InstallSource.isPlayStore()` gate is
+    // not sufficient. The permissions and the installer classes must be absent from
+    // the Play artifact at COMPILE TIME. Gating this behind a runtime/remote flag
+    // would additionally violate the Deceptive Behavior (review-evasion) policy.
+    //
+    //  - sideload: every current behaviour, self-updater included. Default flavor.
+    //  - play:     identical MINUS the self-updater. Extraction, downloads and
+    //              background playback are unchanged.
+    //
+    // See app/src/sideload/AndroidManifest.xml (permissions + InstallStatusActivity),
+    // app/src/sideload/java/.../update (the updater itself) and
+    // app/src/play/java/.../update/NoUpdateGateway.kt (the inert seam).
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("sideload") {
+            dimension = "distribution"
+            // Keeps `com.albunyaan.tube` — the applicationId every existing
+            // sideload install already has, so the in-app updater keeps upgrading
+            // them in place instead of installing a second copy.
+            isDefault = true
+        }
+        create("play") {
+            dimension = "distribution"
+            // Distinct package so a tester can hold both builds at once. Requires a
+            // matching client entry in google-services.json (see the .ci-stub).
+            applicationIdSuffix = ".play"
+            // No versionNameSuffix on purpose: VERSION_NAME is user-visible in
+            // About and is the key into releases-meta.json. The two artifacts
+            // already land in separate build/outputs/apk/<flavor>/ directories,
+            // so there is nothing to disambiguate at the cost of a wrong version
+            // string on screen.
+        }
+    }
+
     signingConfigs {
         // Re-enable v1 (JAR) signing alongside v2/v3. With minSdk 26, AGP disables
         // v1 by default (v2 covers API 24+), producing v2-only APKs. But the in-app
@@ -256,7 +292,12 @@ android {
     // either follow the naming or be added here.
     testOptions {
         unitTests.all {
-            if (it.name == "testReleaseUnitTest") {
+            // ANDROID-FLAVOR-01: matched by suffix, not equality. Adding product
+            // flavors renamed this task to testSideloadReleaseUnitTest /
+            // testPlayReleaseUnitTest, so the old `== "testReleaseUnitTest"` check
+            // silently stopped matching and the migration tests would have started
+            // failing with FileNotFoundException on the release variants.
+            if (it.name.endsWith("ReleaseUnitTest")) {
                 it.exclude("**/AppDatabaseMigration*Test*")
                 it.exclude("**/ImportMigrationTest*")
             }
