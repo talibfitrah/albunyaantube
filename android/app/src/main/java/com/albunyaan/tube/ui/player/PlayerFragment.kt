@@ -40,6 +40,7 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.albunyaan.tube.data.extractor.QualityConstraintMode
 import com.albunyaan.tube.player.AspectPolicy
+import com.albunyaan.tube.player.OrientationPolicy
 import com.albunyaan.tube.player.QualityTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -3387,6 +3388,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         val currentConfig = resources.configuration
         val isCurrentlyLandscape = currentConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        // Android 16 (targetSdk 36) ignores setRequestedOrientation on sw>=600dp windows,
+        // so on a tablet the requests below are no-ops and NO onConfigurationChanged will
+        // arrive. Both branches park state waiting for that callback, so they have to
+        // settle inline instead. See OrientationPolicy.
+        val orientationRequestHonored = OrientationPolicy.honorsRequestedOrientation(currentConfig)
 
         if (isFullscreen) {
             // Entering fullscreen via button — clear dismiss flag so auto-fullscreen works
@@ -3410,7 +3416,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // will never fire to clear the lock-pending flags. Clear them now so a
             // later non-orientation config change (font scale, locale, theme) can't
             // accidentally take the reached-target branch with stale state.
-            if (targetIsLandscape == isCurrentlyLandscape) {
+            // Same reasoning when the platform ignores the request outright (Android 16,
+            // sw>=600dp): no rotation is coming, so the flags would otherwise stay set
+            // for the whole fullscreen session.
+            if (targetIsLandscape == isCurrentlyLandscape || !orientationRequestHonored) {
                 weLockedOrientation = false
                 targetOrientationIsLandscape = null
             }
@@ -3445,8 +3454,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Entering fullscreen — apply immediately (landscape will arrive and re-apply)
             updateFullscreenUi()
             showFullscreenZoomHintOnce()
-        } else if (!isCurrentlyLandscape) {
-            // Already in portrait — apply exit immediately (no rotation coming)
+        } else if (!isCurrentlyLandscape || !orientationRequestHonored) {
+            // Already in portrait — apply exit immediately (no rotation coming).
+            // Also the Android 16 / sw>=600dp case: the SCREEN_ORIENTATION_PORTRAIT
+            // request above was ignored, so the window stays landscape and no
+            // onConfigurationChanged will arrive to run the deferred exit. Deferring
+            // here left the user in fullscreen chrome (system bars + bottom nav hidden)
+            // until the safety runnable fired ORIENTATION_UNLOCK_FALLBACK_MS + 500 =
+            // 3.5s later. Landscape measurements are correct in this case precisely
+            // because the window is not going to rotate.
             updateFullscreenUi()
         } else {
             // Exiting fullscreen while in landscape — rotation to portrait is pending.

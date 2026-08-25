@@ -41,7 +41,23 @@ android {
     defaultConfig {
         applicationId = "com.albunyaan.tube"
         minSdk = 26
-        targetSdk = 35
+        // API 36 (Android 16) — mandatory for new Play submissions from 2026-08-31.
+        // Behavior changes audited at the bump (ANDROID-SDK36-01):
+        //  - Edge-to-edge opt-out removed: no-op here. The app never set
+        //    windowOptOutEdgeToEdgeEnforcement, and enforcement already applied at
+        //    targetSdk 35 on Android 15, so nothing changes.
+        //  - Predictive back on by default: no-op here. Every back handler already
+        //    goes through OnBackPressedCallback / onBackPressedDispatcher; there is
+        //    no onBackPressed() override and no KEYCODE_BACK handling. See the note
+        //    in src/main/AndroidManifest.xml.
+        //  - Orientation/resizability/aspect-ratio ignored on sw>=600dp: real. The
+        //    player's fullscreen enter/exit both waited on an onConfigurationChanged
+        //    that no longer arrives on tablets. Handled via
+        //    player/OrientationPolicy.kt at the two toggleFullscreen() call sites.
+        //  - elegantTextHeight ignored, ScheduledExecutorService fixed-rate change,
+        //    MediaStore#getVersion, Safer Intents, health/Bluetooth permissions,
+        //    GPU syscall filtering: not used by this app.
+        targetSdk = 36
         versionCode = 59
         versionName = "1.0.0-beta.45"
 
