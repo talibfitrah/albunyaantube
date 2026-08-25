@@ -257,7 +257,6 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
             val audioOnlySwitch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.audioOnlySwitch)
             val backgroundPlaySwitch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.backgroundPlaySwitch)
             val wifiOnlySwitch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.wifiOnlySwitch)
-            val safeModeSwitch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.safeModeSwitch)
 
             // Get value TextViews for language, theme, and download quality
             val languageValue = view.findViewById<TextView>(R.id.languageValue)
@@ -273,7 +272,6 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                 audioOnlySwitch?.isChecked = preferences.audioOnly.first()
                 backgroundPlaySwitch?.isChecked = preferences.backgroundPlay.first()
                 wifiOnlySwitch?.isChecked = preferences.wifiOnly.first()
-                safeModeSwitch?.isChecked = preferences.safeMode.first()
 
                 // Load language selection and display
                 val localeSelection = preferences.localeSelection.first()
@@ -351,7 +349,6 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
             val audioOnlySwitch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.audioOnlySwitch)
             val backgroundPlaySwitch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.backgroundPlaySwitch)
             val wifiOnlySwitch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.wifiOnlySwitch)
-            val safeModeSwitch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.safeModeSwitch)
 
             // Language setting - show language selection dialog
             languageItem?.setOnClickListener {
@@ -429,12 +426,6 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
             wifiOnlySwitch?.setOnCheckedChangeListener { _, isChecked ->
                 viewLifecycleOwner.lifecycleScope.launch {
                     preferences.setWifiOnly(isChecked)
-                }
-            }
-
-            safeModeSwitch?.setOnCheckedChangeListener { _, isChecked ->
-                viewLifecycleOwner.lifecycleScope.launch {
-                    preferences.setSafeMode(isChecked)
                 }
             }
         }

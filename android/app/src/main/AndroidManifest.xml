@@ -28,9 +28,21 @@
          manifest, so these must be structurally absent from the `play` flavor rather than
          gated at runtime. Do not move them back into src/main. -->
 
+    <!-- ANDROID-BACKUP-01: Auto Backup is OFF and must stay off. With allowBackup="true"
+         and no dataExtractionRules/fullBackupContent, Android copies the whole of filesDir
+         to the user's Google Drive — that is downloaded video files
+         (download/DownloadStorage.kt -> context.filesDir), the Room database, and the
+         per-install device UUID. Three consequences: account deletion cannot erase the
+         cloud copy; the privacy policy's "a random identifier for each installation"
+         becomes false the moment a restore carries that UUID to a new install; and
+         YouTube-derived media gets uploaded into Google's infrastructure under this
+         package name. Do not flip this back — ManifestBackupTest asserts it. If some
+         future preference genuinely needs to survive a device swap, add
+         android:dataExtractionRules with an explicit include-list for that one file,
+         never a blanket allowBackup="true". -->
     <application
         android:name=".AlBunyaanApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"

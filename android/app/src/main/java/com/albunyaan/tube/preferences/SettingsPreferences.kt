@@ -16,7 +16,12 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Settings preferences manager using DataStore.
- * Handles all app settings including locale, playback, downloads, and content filtering.
+ * Handles all app settings including locale, playback, downloads, and theme.
+ *
+ * ANDROID-SAFEMODE-01: the "safe_mode" key was removed. It was written by the Settings
+ * switch and read by nothing — the app advertised content filtering it never performed.
+ * Preferences DataStore is schemaless, so an existing install's stored safe_mode entry is
+ * simply never read again; there is no migration to run and nothing to break.
  */
 class SettingsPreferences(private val context: Context) {
 
@@ -78,9 +83,6 @@ class SettingsPreferences(private val context: Context) {
         // Download preferences
         val DOWNLOAD_QUALITY_KEY = stringPreferencesKey("download_quality")
         val WIFI_ONLY_KEY = booleanPreferencesKey("wifi_only_downloads")
-
-        // Content preferences
-        val SAFE_MODE_KEY = booleanPreferencesKey("safe_mode")
 
         // Theme preference (for future dark mode support)
         val THEME_KEY = stringPreferencesKey("theme")
@@ -169,7 +171,6 @@ class SettingsPreferences(private val context: Context) {
         const val DEFAULT_AUDIO_ONLY = false
         const val DEFAULT_BACKGROUND_PLAY = true
         const val DEFAULT_WIFI_ONLY = false
-        const val DEFAULT_SAFE_MODE = true
     }
 
     /**
@@ -249,17 +250,6 @@ class SettingsPreferences(private val context: Context) {
     suspend fun setWifiOnly(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[WIFI_ONLY_KEY] = enabled
-        }
-    }
-
-    // Safe mode (family-friendly content filtering)
-    val safeMode: Flow<Boolean> = context.dataStore.data.map { preferences ->
-        preferences[SAFE_MODE_KEY] ?: DEFAULT_SAFE_MODE
-    }
-
-    suspend fun setSafeMode(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[SAFE_MODE_KEY] = enabled
         }
     }
 

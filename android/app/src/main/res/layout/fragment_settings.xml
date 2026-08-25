@@ -249,29 +249,13 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Content Section -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/settings_content"
-                android:textSize="@dimen/text_section_title"
-                android:textStyle="bold"
-                android:textColor="?attr/colorOnSurface"
-                android:textAlignment="viewStart"
-                android:layout_marginBottom="@dimen/spacing_sm"/>
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/spacing_lg"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="@dimen/corner_radius_medium"
-                app:cardElevation="0dp">
-
-                <!-- Family-Friendly Safe Mode -->
-                <include layout="@layout/settings_item_safe_mode"/>
-
-            </com.google.android.material.card.MaterialCardView>
+            <!-- ANDROID-SAFEMODE-01: the "Content" section held one row, a "Safe Mode"
+                 switch subtitled "Show only family-friendly content" that was persisted
+                 and read by nothing — no consumer in the app or the backend. It was a
+                 content-safety claim the app did not implement, and the whole catalogue
+                 is admin-curated and approved anyway, so the switch also implied there
+                 was unsafe content being filtered. Row, section and preference removed
+                 together; do not re-add a toggle without a real filter behind it. -->
 
             <!-- About & Support Section -->
             <TextView

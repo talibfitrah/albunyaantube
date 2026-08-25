@@ -510,9 +510,6 @@
     <string name="settings_quality_high_desc">High (1080p) - Best quality</string>
     <string name="settings_quality_changed">Download quality set to %1$s</string>
     <string name="settings_quality_change_failed">Failed to change download quality. Please try again.</string>
-    <string name="settings_content">Content</string>
-    <string name="settings_safe_mode">Safe Mode</string>
-    <string name="settings_safe_mode_desc">Show only family-friendly content</string>
     <string name="settings_appearance">Appearance</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_desc">Choose your preferred language</string>
@@ -561,7 +558,6 @@
     <string name="settings_support_center_desc">Get help and send feedback</string>
     <string name="settings_icon_wifi">WiFi only setting icon</string>
     <string name="settings_icon_background_play">Background play setting icon</string>
-    <string name="settings_icon_safe_mode">Safe mode setting icon</string>
     <string name="cancel">Cancel</string>
 
     <!-- Search Screen -->
