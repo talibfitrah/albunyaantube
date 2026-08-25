@@ -213,9 +213,17 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
             .setStart(nowUtcMs - 120L * 365 * 24 * 60 * 60 * 1000)
             .setValidator(com.google.android.material.datepicker.DateValidatorPointBackward.before(nowUtcMs))
             .build()
+        // Open on a plausible adult birth year, NOT on today. Without this the picker
+        // lands on the current month, so the nearest tappable day yields an age of 0 --
+        // and the server treats under-13 as permanent: it revokes tokens, disables the
+        // Firebase account and tombstones it (AccountProfileService.rejectUnderAge), with
+        // no recovery. One mis-tap therefore destroys the account for good, which for a
+        // Play reviewer means destroying the test credentials we gave them.
+        val defaultDobUtcMs = nowUtcMs - ADULT_DOB_DEFAULT_YEARS * 365L * 24 * 60 * 60 * 1000
         val picker = MaterialDatePicker.Builder.datePicker()
             .setTitleText(getString(R.string.bootstrap_dob_label))
             .setCalendarConstraints(constraints)
+            .setSelection(defaultDobUtcMs)
             .build()
         picker.addOnPositiveButtonClickListener { utcMillis ->
             val date = Instant.ofEpochMilli(utcMillis).atOffset(ZoneOffset.UTC).toLocalDate()
@@ -242,8 +250,11 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
 
         displayNameLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_NAME }
             ?.let { getString(R.string.bootstrap_error_invalid_name) }
-        dobLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_DOB }
-            ?.let { getString(R.string.bootstrap_error_invalid_dob) }
+        dobLayout.error = when (state.error) {
+            BootstrapError.INVALID_DOB -> getString(R.string.bootstrap_error_invalid_dob)
+            BootstrapError.UNDER_AGE -> getString(R.string.bootstrap_error_under_age)
+            else -> null
+        }
         passwordLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_PASSWORD }
             ?.let { getString(R.string.bootstrap_error_invalid_password) }
         passwordConfirmLayout.error = state.error?.takeIf { it == BootstrapError.PASSWORD_MISMATCH }
@@ -268,5 +279,14 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
     }
 
 
-    companion object { private const val TAG = "ProfileBootstrapFragment" }
+    companion object {
+        private const val TAG = "ProfileBootstrapFragment"
+
+        /**
+         * Year offset the date picker opens on. Any comfortably-adult value works; the
+         * point is only that it is not the current year, so an accidental tap cannot
+         * produce an under-13 date of birth. See [openDatePicker].
+         */
+        private const val ADULT_DOB_DEFAULT_YEARS = 25
+    }
 }

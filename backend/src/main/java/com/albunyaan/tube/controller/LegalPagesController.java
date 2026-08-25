@@ -39,17 +39,22 @@ public class LegalPagesController {
 
     // ── /delete-account ────────────────────────────────────────────────────
     //
-    // TODO(owner): THE IN-APP PATH DESCRIBED BELOW DOES NOT EXIST YET.
-    //   Verified 2026-08-25: grepping android/app/src/main/res/values/strings.xml
-    //   and android/app/src/main/java/com/albunyaan/tube/ui/settings/ for
-    //   "delete account" returns nothing — the Android Settings screen has no
-    //   delete-account entry, so "Settings -> Account -> Delete account" is a
-    //   forward reference to UI that still has to be built against the new
-    //   DELETE /api/account/me endpoint. Either ship that UI at the same exact
-    //   wording, or change the wording here to match whatever the app ends up
-    //   calling it. Google Play policy 13327111 requires BOTH halves (in-app
-    //   AND web), so the app-side control is not optional. The email route
-    //   below works today regardless.
+    // The in-app control shipped in 249c7d75, so the wording below is no longer
+    // a forward reference. It is NOT under Settings — every occurrence of the
+    // path on this and the other pages must stay pinned to what the app really
+    // does:
+    //   res/layout/fragment_me.xml:11,16 ....... Me tab toolbar, title nav_me
+    //   res/menu/menu_me_kebab.xml ............. overflow item action_profile,
+    //                                            title me_kebab_profile
+    //   ui/me/MeFragment.kt:279 ................ navigates action_me_to_profile
+    //   res/navigation/main_tabs_nav.xml:60,71 . → profileFragment
+    //   res/layout/fragment_profile.xml:257,268  deleteAccountRow, label
+    //                                            profile_delete_account
+    //   ui/me/profile/ProfileFragment.kt:81 .... row → confirmDeleteAccount()
+    // Settings has an Account section, but fragment_settings.xml:34-65 shows it
+    // holds settings_item_signout ONLY — no delete control and no profile
+    // fields. LegalPagesControllerTest pins the exact published string so the
+    // three copies cannot drift apart again.
 
     @GetMapping(value = "/delete-account", produces = MediaType.TEXT_HTML_VALUE)
     @ResponseBody
@@ -63,9 +68,10 @@ public class LegalPagesController {
                 <div class="callout">
                   <h2>Option 1 &mdash; delete it in the app</h2>
                   <p>Open FitrahTube and go to:</p>
-                  <p class="path"><strong>Settings &rarr; Account &rarr; Delete account</strong></p>
-                  <p>Confirm when prompted. Your account is deleted immediately and you are
-                  signed out.</p>
+                  <p class="path"><strong>Me &rarr; &#8942; &rarr; Profile &rarr; Delete account</strong></p>
+                  <p>&#8942; is the three-dot menu at the top of the <strong>Me</strong>
+                  tab. Confirm when prompted. Your account is deleted immediately and you
+                  are signed out.</p>
                 </div>
 
                 <div class="callout">
@@ -142,6 +148,23 @@ public class LegalPagesController {
     //   config/NewPipeConfiguration.java:62-63 ......... hardcoded Locale.US,
     //                                    so no user locale is sent to YouTube
     //   scheduler/TombstoneGcScheduler.java:29 ......... 90-day tombstone GC
+    //
+    // Open questions for the owner. These MUST stay in `//` comments: an HTML
+    // comment written inside the text block below is served verbatim to every
+    // reader of the published policy.
+    //
+    // TODO(owner): confirm the legal entity name, registered address and
+    //   data-controller identity, and whether an EU/UK representative or a
+    //   DPO must be named. Left generic in section 1 because the repository
+    //   does not record it anywhere.
+    // TODO(owner): audit-log retention is currently unbounded (there is no GC
+    //   job for the audit_logs collection). If a fixed maximum retention period
+    //   is required for GDPR proportionality, set one and state it in
+    //   section 6.
+    // TODO(owner): confirm the lead supervisory authority to name for the
+    //   right-to-complain disclosure in section 8 (the app ships in en/ar/nl,
+    //   which suggests an EU nexus), and whether a self-service data export is
+    //   required.
 
     @GetMapping(value = "/privacy", produces = MediaType.TEXT_HTML_VALUE)
     @ResponseBody
@@ -156,10 +179,6 @@ public class LegalPagesController {
                 Android app (package <code>com.albunyaan.tube</code>) and the service at
                 <code>app.fitrahtube.com</code>.</p>
 
-                <!-- TODO(owner): confirm the legal entity name, registered address and
-                     data-controller identity, and whether an EU/UK representative or a
-                     DPO must be named. Left generic here because the repository does not
-                     record it anywhere. -->
                 <h2>1. Who is responsible</h2>
                 <p>FitrahTube is operated by the FitrahTube team. For any privacy question,
                 or to exercise any right described below, contact
@@ -297,16 +316,14 @@ public class LegalPagesController {
                       is the one category of data that survives deletion in identifiable
                       form.</li>
                 </ul>
-                <!-- TODO(owner): audit-log retention is currently unbounded (there is no GC
-                     job for the audit_logs collection). If a fixed maximum retention period
-                     is required for GDPR proportionality, set one and state it here. -->
 
                 <h2>7. Deleting your account and your data</h2>
                 <p>You can delete your account and its data at any time, permanently and
                 without a waiting period:</p>
                 <ul>
-                  <li><strong>In the app:</strong> Settings &rarr; Account &rarr; Delete
-                      account.</li>
+                  <li><strong>In the app:</strong>
+                      Me &rarr; &#8942; &rarr; Profile &rarr; Delete account
+                      (&#8942; is the three-dot menu at the top of the Me tab).</li>
                   <li><strong>On the web, without reinstalling the app:</strong>
                       <a href="/delete-account">%3$s/delete-account</a>.</li>
                   <li><strong>By email:</strong> <a href="mailto:%1$s">%1$s</a>, from the
@@ -321,11 +338,9 @@ public class LegalPagesController {
                 <h2>8. Your rights</h2>
                 <p>Depending on where you live, you may have the right to access, correct,
                 export, restrict or object to our use of your data, and to withdraw consent.
-                You can view and correct your profile in the app under Settings. For anything
+                You can view and correct your display name, date of birth, phone number and
+                email address in the app under Me &rarr; &#8942; &rarr; Profile. For anything
                 else, write to <a href="mailto:%1$s">%1$s</a>.</p>
-                <!-- TODO(owner): confirm the lead supervisory authority to name for the
-                     right-to-complain disclosure (the app ships in en/ar/nl, which suggests
-                     an EU nexus), and whether a self-service data export is required. -->
 
                 <h2>9. Children</h2>
                 <p>FitrahTube is not for children under 13. We ask for a date of birth during
@@ -348,6 +363,15 @@ public class LegalPagesController {
     }
 
     // ── /terms ─────────────────────────────────────────────────────────────
+    //
+    // Open question for the owner. Same rule as /privacy: `//` only, never an
+    // HTML comment inside the text block — that would be published.
+    //
+    // TODO(owner): these terms are a factual baseline derived from how the
+    //   product actually behaves. Before relying on them commercially, have
+    //   them reviewed and settle: the contracting legal entity, the governing
+    //   law and forum, the limitation-of-liability and warranty-disclaimer
+    //   wording, and the project's own software licence (see /licenses).
 
     @GetMapping(value = "/terms", produces = MediaType.TEXT_HTML_VALUE)
     @ResponseBody
@@ -355,12 +379,6 @@ public class LegalPagesController {
         return html("FitrahTube Terms of Service", """
                 <h1>FitrahTube Terms of Service</h1>
                 <p class="meta">Last updated: %2$s</p>
-
-                <!-- TODO(owner): these terms are a factual baseline derived from how the
-                     product actually behaves. Before relying on them commercially, have
-                     them reviewed and settle: the contracting legal entity, the governing
-                     law and forum, the limitation-of-liability and warranty-disclaimer
-                     wording, and the project's own software licence (see /licenses). -->
 
                 <h2>1. What FitrahTube is</h2>
                 <p>FitrahTube is an ad-free client for viewing a curated selection of
@@ -390,8 +408,8 @@ public class LegalPagesController {
                 impersonate anyone.</p>
 
                 <h2>4. Deleting your account</h2>
-                <p>You may delete your account at any time, permanently, from Settings &rarr;
-                Account &rarr; Delete account in the app, or from
+                <p>You may delete your account at any time, permanently, from
+                Me &rarr; &#8942; &rarr; Profile &rarr; Delete account in the app, or from
                 <a href="/delete-account">the account deletion page</a>. Deletion cannot be
                 undone. See the <a href="/privacy">Privacy Policy</a> for exactly what is
                 erased and what is retained.</p>

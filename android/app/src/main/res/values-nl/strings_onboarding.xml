@@ -28,6 +28,7 @@
     <string name="bootstrap_submit_button">Continue</string>
     <string name="bootstrap_error_invalid_name">Please tell us your name (1–40 characters)</string>
     <string name="bootstrap_error_invalid_dob">Please choose your date of birth</string>
+    <string name="bootstrap_error_under_age">Je moet minstens 13 jaar zijn om FitrahTube te gebruiken. Controleer het jaar dat je hebt gekozen.</string>
     <string name="bootstrap_error_save_failed">Couldn\'t save your profile — try again</string>
     <string name="bootstrap_password_explainer">Stel een wachtwoord in zodat je later ook vanuit een browser kunt inloggen op het dashboard.</string>
     <string name="bootstrap_password_label">Wachtwoord</string>

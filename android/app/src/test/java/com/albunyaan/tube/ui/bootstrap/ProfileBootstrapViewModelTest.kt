@@ -103,7 +103,12 @@ class ProfileBootstrapViewModelTest {
             .thenReturn(Result.failure(AgeIneligibleError()))
 
         viewModel.onDisplayNameChanged("Kid")
-        viewModel.onDobChanged(LocalDate.of(2020, 1, 1))
+        // Deliberately an adult date. This test is about handling the server's 422
+        // AGE_INELIGIBLE response, which the mock above supplies -- the server stays the
+        // authority on age. An under-13 date here would now be stopped by the client's
+        // own validation (see MinimumAgeTest) and the request would never be sent, so the
+        // test would silently stop exercising the path it is named for.
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
         viewModel.onPhoneCountryChanged("NL")
         viewModel.onPhoneNumberChanged("612345678")
         viewModel.submit()
@@ -238,4 +243,23 @@ class ProfileBootstrapViewModelTest {
         advanceUntilIdle()
         assertEquals(BootstrapError.INVALID_PHONE, viewModel.ui.value.error)
     }
+
+    /**
+     * The server's under-13 rejection is permanent: it revokes tokens, disables the
+     * Firebase account and tombstones it, with no recovery. So a mistyped year must never
+     * reach it. This pins that the request is not even sent.
+     */
+    @Test fun `submit with an under-age dob surfaces UNDER_AGE and never calls the server`() =
+        runTest(dispatcher) {
+            viewModel.onDisplayNameChanged("Alice")
+            viewModel.onDobChanged(LocalDate.now().minusYears(12))
+            viewModel.onPhoneCountryChanged("NL")
+            viewModel.onPhoneNumberChanged("612345678")
+            viewModel.submit()
+            advanceUntilIdle()
+
+            assertEquals(BootstrapError.UNDER_AGE, viewModel.ui.value.error)
+            assertEquals(BootstrapNav.Idle, viewModel.nav.value)
+            verify(repository, never()).completeProfile(any(), any(), any())
+        }
 }

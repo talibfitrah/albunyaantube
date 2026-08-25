@@ -242,24 +242,61 @@ android {
             // Pass -PallowDebugSignedRelease to opt back in for local smoke-testing only.
             signingConfig = when {
                 keystorePropertiesFile.exists() -> signingConfigs.getByName("release")
-                project.hasProperty("allowDebugSignedRelease") -> signingConfigs.getByName("debug")
+                project.hasProperty("allowDebugSignedRelease") -> {
+                    // WARN here too, not only on the unsigned branch. `hasProperty` is also
+                    // satisfied by a line in gradle.properties or an ORG_GRADLE_PROJECT_ env
+                    // var, so someone who sets it once for a smoke test would otherwise get
+                    // debug-signed releases forever in total silence — reintroducing exactly
+                    // the failure this guard exists to prevent.
+                    logger.warn(
+                        "\n*** release is DEBUG-SIGNED via -PallowDebugSignedRelease. ***\n" +
+                            "    Local install testing only. NEVER upload this to Google Play:\n" +
+                            "    it would register the debug key as the app's upload key.\n"
+                    )
+                    signingConfigs.getByName("debug")
+                }
                 else -> null
             }
             if (signingConfig == null) {
-                logger.warn(
-                    "\n*** release build is UNSIGNED: keystore.properties not found. ***\n" +
-                        "    Create android/keystore.properties before building for Play.\n" +
-                        "    For a local install-only build: -PallowDebugSignedRelease\n"
-                )
+                // Deferred to the task graph so this fires only when a release is actually
+                // being built. Warning at configuration time printed on every assembleDebug
+                // and test run for anyone without a keystore — i.e. every contributor —
+                // which trains people to ignore precisely the message that matters.
+                gradle.taskGraph.whenReady {
+                    val buildingRelease = allTasks.any {
+                        it.name.contains("Release") &&
+                            (it.name.startsWith("assemble") || it.name.startsWith("bundle"))
+                    }
+                    if (buildingRelease) {
+                        logger.warn(
+                            "\n*** release build is UNSIGNED: keystore.properties not found. ***\n" +
+                                "    Create android/keystore.properties before building for Play.\n" +
+                                "    For a local install-only build: -PallowDebugSignedRelease\n"
+                        )
+                    }
+                }
             }
             buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
 
             // Release must never inherit defaultConfig's emulator loopback. Verified
             // 2026-08-25: the previous release bundle shipped "10.0.2.2" in its dex, so
-            // every install would have reached no backend at all. local.properties still
-            // wins when set, so a staging host can be pointed at deliberately.
-            val prodApiBaseUrl = localProperties.getProperty("api.base.url", PROD_API_BASE_URL)
+            // every install would have reached no backend at all.
+            //
+            // Deliberately does NOT read local.properties. Developers are told to set
+            // api.base.url there for day-to-day work, so honouring it here would make the
+            // common workstation state one where a release silently ships a dev or LAN
+            // host — the same bug in a new costume. An explicit -P flag is required to
+            // point a release at anything other than production.
+            val prodApiBaseUrl = (project.findProperty("releaseApiBaseUrl") as String?)
+                ?: PROD_API_BASE_URL
             buildConfigField("String", "API_BASE_URL", "\"$prodApiBaseUrl\"")
+
+            // Same reasoning for the share/web host: it is what the About screen opens for
+            // the privacy, terms and licences pages, so a dev override leaking into a
+            // release would ship a dead privacy link — an automatic Play rejection.
+            val prodShareBaseUrl = (project.findProperty("releaseShareBaseUrl") as String?)
+                ?: PROD_API_BASE_URL.trimEnd('/')
+            buildConfigField("String", "SHARE_BASE_URL", "\"$prodShareBaseUrl\"")
         }
 
         create("benchmark") {

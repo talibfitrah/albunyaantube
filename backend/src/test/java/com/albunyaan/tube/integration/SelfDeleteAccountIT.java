@@ -9,7 +9,10 @@ import com.albunyaan.tube.service.AuthService;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
+import com.google.firebase.ErrorCode;
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,9 +21,13 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import java.util.List;
 import java.util.Map;
 
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -166,6 +173,102 @@ class SelfDeleteAccountIT extends BaseIntegrationTest {
         verify(firebaseAuth).deleteUser(adminA);
     }
 
+    // ── A failed purge must stay recoverable ───────────────────────────────
+    //
+    // The tombstone commits first, so the account is unusable the instant the
+    // transaction lands. If the sweep that follows throws, the user is locked
+    // out while their library, download rows and grants survive — and nothing
+    // in the system ever retries. These tests pin the recovery: the tombstone
+    // records purgeCompleted=false, and any later call finishes the sweep.
+
+    @Test
+    void secondCall_afterAFailedPurge_completesTheSweep() throws Exception {
+        String uid = seedUser("resume@t.com", "user");
+        seedSyncRow(uid, SyncRepository.FAVORITES_COLL, "fav-1");
+        seedSyncRow(uid, SyncRepository.SUBS_COLL, "sub-1");
+        seedDownloadEvent(uid, "vid-a");
+        seedGrantedChannel("ch-1", List.of(uid));
+
+        // Fail after the tombstone commits, before the sweep can run.
+        doThrow(new IllegalStateException("simulated purge failure"))
+                .when(firebaseAuth).deleteUser(uid);
+        assertThrows(IllegalStateException.class,
+                () -> authService.deleteAccountPermanently(uid));
+
+        // The hole this test exists for: locked out, data intact.
+        assertEquals("deleted",
+                firestore.collection("users").document(uid).get().get().getString("status"));
+        assertEquals(1, countSyncRows(uid, SyncRepository.FAVORITES_COLL),
+                "Precondition: the sweep really did not run");
+
+        doNothing().when(firebaseAuth).deleteUser(uid);
+        authService.deleteAccountPermanently(uid);
+
+        for (String coll : List.of(SyncRepository.SUBS_COLL,
+                                   SyncRepository.PLAYLISTS_COLL,
+                                   SyncRepository.FAVORITES_COLL)) {
+            assertEquals(0, countSyncRows(uid, coll),
+                    "users/" + uid + "/" + coll + " must be swept by the retry");
+        }
+        assertEquals(0, countDownloadEvents(uid));
+        assertEquals(List.of(), grantsOf("channels", "ch-1"));
+        assertEquals(Boolean.TRUE,
+                firestore.collection("users").document(uid).get().get().getBoolean("purgeCompleted"),
+                "A completed sweep must be recorded so later calls stop re-running it");
+        assertEquals(1, auditCount("USER_SELF_DELETED", uid),
+                "Resuming the sweep must not write a second audit row");
+    }
+
+    /**
+     * The realistic shape of the failure: {@code deleteUser} succeeded on the
+     * first attempt and only the Firestore sweep blew up. The retry therefore
+     * meets a uid that no longer exists in Firebase Auth, and must sweep anyway
+     * instead of dying on the missing record.
+     */
+    @Test
+    void resumedSweep_toleratesAnAlreadyDestroyedAuthRecord() throws Exception {
+        String uid = seedUser("auth-gone@t.com", "user");
+        seedSyncRow(uid, SyncRepository.FAVORITES_COLL, "fav-1");
+
+        doThrow(new IllegalStateException("simulated purge failure"))
+                .when(firebaseAuth).deleteUser(uid);
+        assertThrows(IllegalStateException.class,
+                () -> authService.deleteAccountPermanently(uid));
+
+        doThrow(new FirebaseAuthException(ErrorCode.NOT_FOUND, "no user record",
+                null, null, AuthErrorCode.USER_NOT_FOUND))
+                .when(firebaseAuth).deleteUser(uid);
+
+        assertDoesNotThrow(() -> authService.deleteAccountPermanently(uid),
+                "An Auth record destroyed by the earlier attempt must not block the sweep");
+        assertEquals(0, countSyncRows(uid, SyncRepository.FAVORITES_COLL));
+    }
+
+    /**
+     * Guard on the resume branch. An admin soft-delete also lands status=deleted
+     * but is reversible via {@code recoverUser}, and its library must survive —
+     * that is exactly what the pre-existing idempotent short-circuit protected.
+     * Only a {@code deleteReason="user-requested"} tombstone may be swept.
+     */
+    @Test
+    void adminSoftDeletedUser_isNeverSwept_byASelfDeleteRetry() throws Exception {
+        String admin = seedUser("acting-admin@t.com", "admin");
+        seedUser("second-admin@t.com", "admin");
+        String victim = seedUser("soft-deleted@t.com", "user");
+        seedSyncRow(victim, SyncRepository.FAVORITES_COLL, "fav-keep");
+
+        authService.softDeleteUser(victim, admin, "policy review");
+
+        authService.deleteAccountPermanently(victim);
+
+        assertEquals(1, countSyncRows(victim, SyncRepository.FAVORITES_COLL),
+                "A recoverable soft-delete must keep its library");
+        assertEquals("soft-deleted@t.com",
+                firestore.collection("users").document(victim).get().get().getString("email"),
+                "A recoverable soft-delete must keep its PII for recoverUser");
+        verify(firebaseAuth, never()).deleteUser(victim);
+    }
+
     // ── The public pages must be anonymously reachable ─────────────────────
     // LegalPagesControllerTest runs with addFilters=false, so only this test —
     // which goes through the REAL Spring Security chain — proves permitAll.
@@ -176,6 +279,38 @@ class SelfDeleteAccountIT extends BaseIntegrationTest {
             mvc.perform(get(path))
                     .andExpect(status().isOk());
         }
+    }
+
+    /**
+     * The legal paths are anonymous because they must be. That exemption should
+     * cover reading them, not writing to them: a blanket {@code permitAll}
+     * hands every verb to the dispatcher, so the four paths are the only
+     * anonymous non-GET surface in the whole chain. Same GET+HEAD shape the
+     * {@code /watch/**} rules two lines below already use.
+     */
+    @Test
+    void publicLegalPages_doNotPermitWritesAnonymously() throws Exception {
+        for (String path : List.of("/delete-account", "/privacy", "/terms", "/licenses")) {
+            mvc.perform(post(path))
+                    .andExpect(status().is(anyOf(is(401), is(403))));
+        }
+    }
+
+    // ── DELETE /api/account/me must not be anonymous ───────────────────────
+    // AccountControllerTest runs with addFilters=false, so this is the only
+    // place the real Spring Security chain is exercised for the endpoint that
+    // irreversibly destroys an account.
+
+    @Test
+    void deleteAccountMe_isRefusedForAnonymousCallers() throws Exception {
+        String uid = seedUser("not-yours@t.com", "user");
+
+        mvc.perform(delete("/api/account/me"))
+                .andExpect(status().is(anyOf(is(401), is(403))));
+
+        DocumentSnapshot doc = firestore.collection("users").document(uid).get().get();
+        assertEquals("active", doc.getString("status"), "An anonymous DELETE must change nothing");
+        assertEquals("not-yours@t.com", doc.getString("email"));
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────

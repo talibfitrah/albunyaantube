@@ -22,6 +22,7 @@ import javax.inject.Inject
 enum class BootstrapError {
     INVALID_NAME,
     INVALID_DOB,
+    UNDER_AGE,
     INVALID_PHONE_COUNTRY,
     INVALID_PHONE,
     INVALID_PASSWORD,
@@ -89,6 +90,13 @@ class ProfileBootstrapViewModel @Inject constructor(
         val name = s.displayName.trim()
         if (name.isBlank() || name.length > 40) return BootstrapError.INVALID_NAME
         if (s.dateOfBirth == null)              return BootstrapError.INVALID_DOB
+        // Catch under-13 here, before submitting. The server's rejection is deliberately
+        // permanent -- it revokes tokens, disables the Firebase account and tombstones it
+        // (AccountProfileService.rejectUnderAge) so the age gate cannot be retried around.
+        // That is correct for a real under-13 user, but it means a mistyped or mis-tapped
+        // year destroys the account with no recovery. Failing locally keeps an honest
+        // mistake a correctable form error.
+        if (isUnderMinimumAge(s.dateOfBirth)) return BootstrapError.UNDER_AGE
         if (s.phoneCountry.isNullOrBlank())     return BootstrapError.INVALID_PHONE_COUNTRY
         PhoneFormat.formatE164(appContext, s.phoneCountry, s.phoneNumber)
             ?: return BootstrapError.INVALID_PHONE
@@ -210,5 +218,15 @@ class ProfileBootstrapViewModel @Inject constructor(
 
     companion object {
         const val MIN_PASSWORD_LENGTH = 8
+
+        /** Mirrors AccountProfileService.MIN_AGE on the backend. */
+        const val MIN_AGE_YEARS = 13
+
+        /**
+         * True when [dob] is younger than [MIN_AGE_YEARS] as of [today]. Pure and
+         * parameterised on today so it is testable without touching the clock.
+         */
+        fun isUnderMinimumAge(dob: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
+            dob.isAfter(today.minusYears(MIN_AGE_YEARS.toLong()))
     }
 }

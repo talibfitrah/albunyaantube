@@ -815,13 +815,17 @@ public class AuthService {
      *
      * <p>Ordering is chosen so a partial failure leaves recoverable state:
      * <ol>
-     *   <li>Already-DELETED → idempotent success (no second tombstone, no second
-     *       audit row, no purge). Note this branch is effectively unreachable
-     *       over HTTP: {@code FirebaseAuthFilter} does an <em>uncached</em>
-     *       status read on {@code /api/account/*} and 403s any deleted user
-     *       before the controller runs. It exists so a direct service-level
-     *       retry cannot destroy the library of a user an admin soft-deleted
-     *       and may still {@link #recoverUser}.</li>
+     *   <li>Already-DELETED → no second tombstone and no second audit row. The
+     *       sweep, however, RESUMES when this is a {@code user-requested}
+     *       tombstone whose {@code purgeCompleted} flag is not true: without
+     *       that, a sweep that died after the tombstone committed left the user
+     *       locked out with their library intact and nothing to retry it. An
+     *       admin soft-delete is still short-circuited — it is reversible via
+     *       {@link #recoverUser}, so a direct service-level retry must not
+     *       destroy its library. Note the HTTP route into this branch is
+     *       narrow: {@code FirebaseAuthFilter} does an <em>uncached</em> status
+     *       read on {@code /api/account/*} and 403s any deleted user before the
+     *       controller runs.</li>
      *   <li>Last-active-admin guard inside the tx → {@link LastAdminException}
      *       (409). Mirrors the count check in {@link #softDeleteUser}; unlike
      *       that path there is no blanket self-action ban, because a non-last
@@ -843,7 +847,7 @@ public class AuthService {
      * @throws LastAdminException    if the caller is the last active admin
      */
     public void deleteAccountPermanently(String uid) throws Exception {
-        Boolean transitioned = runLifecycleTx(tx -> {
+        SelfDelete outcome = runLifecycleTx(tx -> {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
@@ -851,10 +855,18 @@ public class AuthService {
             }
             User target = snap.toObject(User.class);
 
-            // (a) Idempotent — see javadoc for why this does NOT fall through
-            // to the purge.
+            // (a) Already a tombstone. Resume the sweep only for a self-delete
+            // whose purge never finished; an admin soft-delete is recoverable
+            // and its library must survive (see javadoc).
+            //
+            // ponytail: "any later call finishes the job" is the whole recovery
+            // mechanism — there is no reaper. Upgrade path is the scheduled scan
+            // named on purgeUserData below, which this flag is what makes
+            // queryable (deleteReason == user-requested && purgeCompleted != true).
             if (target.isDeleted()) {
-                return Boolean.FALSE;
+                boolean sweepOwed = SELF_DELETE_REASON.equals(target.getDeleteReason())
+                        && !Boolean.TRUE.equals(target.getPurgeCompleted());
+                return sweepOwed ? SelfDelete.RESUME_SWEEP : SelfDelete.ALREADY_DONE;
             }
 
             // (b) Last-active-admin guard. All reads must precede all writes,
@@ -890,28 +902,38 @@ public class AuthService {
             target.setProfileCompletedAt(null);
             target.setCreatedBy(null);
             target.recordSoftDelete(uid, SELF_DELETE_REASON);
+            // The sweep below has not run yet. Recording that on the tombstone
+            // is what lets a later call tell "finished" from "died halfway".
+            target.setPurgeCompleted(false);
 
             tx.set(userRef, target, SetOptions.merge());
             auditLogRepository.saveInTransaction(tx,
                     auditLogService.buildSelfDelete(uid, SELF_DELETE_REASON));
-            return Boolean.TRUE;
+            return SelfDelete.TOMBSTONED;
         });
 
         // (d) Always evict, transition or not — cheap and defensive.
         evictUserStatus(uid);
 
-        if (!Boolean.TRUE.equals(transitioned)) {
+        if (outcome == SelfDelete.ALREADY_DONE) {
             logger.info("Self-delete no-op: uid={} was already deleted", uid);
             return;
+        }
+        if (outcome == SelfDelete.RESUME_SWEEP) {
+            logger.warn("SELF_DELETE: resuming an unfinished purge for uid={}", uid);
         }
 
         try {
             // (e) Revoke before delete: if deleteUser fails, the surviving Auth
             // record at least cannot mint fresh ID tokens.
-            firebaseAuth.revokeRefreshTokens(uid);
-            firebaseAuth.deleteUser(uid);
+            destroyAuthRecord(uid);
             // (f)
             purgeUserData(uid);
+            // (g) Only now is the account genuinely gone. Until this lands, any
+            // later call re-enters at (a) and finishes the sweep.
+            firestore.collection("users").document(uid)
+                    .update("purgeCompleted", true)
+                    .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
         } catch (Exception e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             logger.error("SELF_DELETE: purge failed for uid={} AFTER the tombstone committed — "
@@ -929,6 +951,38 @@ public class AuthService {
         }
 
         logger.info("Permanently deleted account uid={} (self-serve)", uid);
+    }
+
+    /** Outcome of the self-delete transaction — see {@link #deleteAccountPermanently}. */
+    private enum SelfDelete {
+        /** Fresh tombstone written; sweep owed. */
+        TOMBSTONED,
+        /** Tombstone already present but its sweep never finished. */
+        RESUME_SWEEP,
+        /** Nothing left to do — completed self-delete, or a recoverable soft-delete. */
+        ALREADY_DONE
+    }
+
+    /**
+     * Revoke tokens and hard-delete the Firebase Auth record, treating a record
+     * that is already gone as success.
+     *
+     * <p>A resumed sweep normally meets a uid whose Auth record the FAILED
+     * attempt already destroyed — that is the exact shape of the bug this
+     * resume path exists for (Auth deleted, Firestore sweep threw). Without
+     * this, the retry would die here and never reach the purge it exists to
+     * finish.
+     */
+    private void destroyAuthRecord(String uid) throws FirebaseAuthException {
+        try {
+            firebaseAuth.revokeRefreshTokens(uid);
+            firebaseAuth.deleteUser(uid);
+        } catch (FirebaseAuthException e) {
+            if (e.getAuthErrorCode() != com.google.firebase.auth.AuthErrorCode.USER_NOT_FOUND) {
+                throw e;
+            }
+            logger.info("SELF_DELETE: Auth record for uid={} was already destroyed; sweeping on", uid);
+        }
     }
 
     /**
