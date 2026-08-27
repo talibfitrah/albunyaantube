@@ -55,6 +55,7 @@ Implementers inherit nothing from earlier plans. All of the following are bindin
 - **Rung 4 is never an automatic hand-off** (spec §6.6 "Rung 4 | confirmation sheet, never an automatic hand-off"). Nothing in this plan may call `UIApplication.open` without a user tap on a confirmation.
 - **No new `.md` files.** This plan is the only document B3 creates. `docs/superpowers/HANDOFF.md`, `docs/superpowers/plans/2026-08-23-ios-phase2a-innertubekit.md` and any `ios/` peer docs are untracked work owned by other agents — **never `git add` them**; stage only the exact files each task's commit step names.
 - **The simulator cannot prove the embed.** A real IFrame load needs the network and YouTube's cooperation; error codes 100/101/150 need videos that are actually removed / embedding-disabled; `webViewWebContentProcessDidTerminate` needs a real jetsam. Each task states exactly what the simulator *can* assert; Task 5 collects the rest and marks the device-only items USER-BLOCKED (the repo has no signing identity — `DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)` is unset).
+- **Ship-dark decision (controller 2026-08-27):** `embed` is removed from the bundled `resolverOrder` (default ladder = `visionosHLS → androidItag18 → terminal`); `RemoteConfig.sanitize` still accepts `embed`, so a published config can enable it as disaster recovery. Rationale: live captures show YouTube's wordmark/chrome/related thumbnails inside the frame, and 0/19 catalog ids need the embed today.
 
 ---
 
@@ -185,6 +186,8 @@ git commit -m "[FIX]: iOS Safe Mode settings strings"
 ---
 
 ### Task 2: `StreamState.embed` / `.openInYouTube`, the Safe Mode ladder filter, and the rung-4 confirmation sheet
+
+**Superseded 2026-08-27 (owner directive, RULINGS Q75):** rung 4 / `StreamState.openInYouTube` / the confirmation sheet were removed in 2177fa53; terminal outcomes are `StreamState.unplayable(messageKey:)`. Code blocks below are historical — do not implement them.
 
 **Why this is second:** it kills the CF-B1-7 placeholder and delivers a complete, shippable rung 4 with nothing stubbed. Rung 3's UI lands in Task 4; between this task and that one, `.embed` renders the same terminal card rung 4 shows minus the button — honest, never an automatic hand-off, and one line to replace.
 
@@ -445,6 +448,8 @@ git commit -m "[FEAT]: iOS open in YouTube rung and Safe Mode"
 
 ### Task 3: The bundled `embed.html` and the four pure embed policies
 
+**Superseded 2026-08-27 (owner directive, RULINGS Q75):** rung 4 / `StreamState.openInYouTube` / the confirmation sheet were removed in 2177fa53; terminal outcomes are `StreamState.unplayable(messageKey:)`. Code blocks below are historical — do not implement them.
+
 **Why this is third:** every decision the embed rung makes — what HTML gets loaded, which navigations are allowed, what a bridge message means, what an error code does — is a pure function of its inputs. Getting all four right and tested *before* any `WKWebView` exists means Task 4 is glue with nothing to reason about. It also puts the injection trust boundary (`videoId` into a `<script>`) under test before it has a caller.
 
 **Files:**
@@ -475,24 +480,24 @@ In a new `ios/FitrahTubeTests/EmbedPolicyTests.swift`:
 
 ```swift
 @Test func htmlSubstitutesOnlyAValidVideoIdAndLocale() {
-    #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "ar", captionsPreferred: false)?
-        .contains("dQw4w9WgXcQ") == true)
+    #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "ar", captionsPreferred: false)?
+        .contains("xc7keR2piUM") == true)
     // The one injection point in this app that puts a value inside a <script>. A validated 11-char
     // id is the whole defence -- escaping is not attempted, refusal is.
     #expect(EmbedPage.html(videoId: "\";alert(1);//", locale: "en", captionsPreferred: false) == nil)
     #expect(EmbedPage.html(videoId: "short", locale: "en", captionsPreferred: false) == nil)
-    #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "en-US\";x", captionsPreferred: false) == nil)
+    #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "en-US\";x", captionsPreferred: false) == nil)
 }
 
 @Test func htmlCarriesThePlayerVarsPlan64RequiresAndNothingElse() {
-    let html = EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "nl", captionsPreferred: true)!
+    let html = EmbedPage.html(videoId: "xc7keR2piUM", locale: "nl", captionsPreferred: true)!
     #expect(html.contains("playsinline"))
     #expect(html.contains("enablejsapi"))
     #expect(html.contains("rel"))
     #expect(html.contains("youtube-nocookie.com"))
     #expect(html.contains("hl") && html.contains("nl"))
     #expect(html.contains("cc_load_policy"))          // captionsPreferred: true
-    #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "nl", captionsPreferred: false)!
+    #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "nl", captionsPreferred: false)!
         .contains("cc_load_policy") == false)
     // 2.5.2 / plan §6.14: the ONLY remote script is YouTube's own IFrame API.
     let scripts = html.components(separatedBy: "src=\"").dropFirst().map { $0.prefix(while: { $0 != "\"" }) }
@@ -739,11 +744,11 @@ In a new `ios/FitrahTubeTests/PlayerScreenEmbedTests.swift`, plus additions to t
     // CF-B2-4: `onPolicyAction` reads `model.state` live, so a background policy action that fires
     // during a native->embed transition sees `.embed`. `player(for:)` must then pause and release
     // the outgoing player rather than swap its URL.
-    let resolved = Resolved(stream: .embed(videoId: "dQw4w9WgXcQ"), client: .web, userAgent: "",
+    let resolved = Resolved(stream: .embed(videoId: "xc7keR2piUM"), client: .web, userAgent: "",
                              resolvedAt: Date(), expiresAt: nil)
     let existing = AVPlayer(playerItem: AVPlayerItem(url: URL(string: "https://x/y.m3u8")!))
     #expect(PlayerHostView.player(for: .embed(resolved), replacing: existing) == nil)
-    #expect(PlayerHostView.streamURL(.embed(videoId: "dQw4w9WgXcQ")) == nil)
+    #expect(PlayerHostView.streamURL(.embed(videoId: "xc7keR2piUM")) == nil)
 }
 
 @Test func theEmbedRungAdvertisesNoNowPlayingEntry() {
@@ -751,9 +756,9 @@ In a new `ios/FitrahTubeTests/PlayerScreenEmbedTests.swift`, plus additions to t
     // rung 1 for the embed cannot leave the previous video's metadata on the lock screen. The
     // clearing itself is `PlayerHostView.dismantleUIViewController` -> `detach()` ->
     // `removeRemoteCommands()`, which runs because the embed branch does not mount the host.
-    let resolved = Resolved(stream: .embed(videoId: "dQw4w9WgXcQ"), client: .web, userAgent: "",
+    let resolved = Resolved(stream: .embed(videoId: "xc7keR2piUM"), client: .web, userAgent: "",
                              resolvedAt: Date(), expiresAt: nil)
-    #expect(NowPlayingSnapshot.make(args: PlayerArgs(videoId: "dQw4w9WgXcQ"), state: .embed(resolved),
+    #expect(NowPlayingSnapshot.make(args: PlayerArgs(videoId: "xc7keR2piUM"), state: .embed(resolved),
                                      elapsed: 0, duration: 120, rate: 1) == nil)
 }
 
@@ -885,6 +890,15 @@ These need YouTube but not a device. Pick the video ids from the catalog, and re
 
 **Defect found and fixed by the live pass:** a terminal embed error rendered a **Retry** that could only fail again (ruling 14 forbids it) — fixed with `StreamState.unplayable(messageKey:)`. See CF-B3-10.
 
+**Additional carry-forwards from the final fix round (2026-08-27):**
+
+- **CF-B3-13:** embed load watchdog — no bridge event ever arrives when `iframe_api` is unreachable while the device is online (a hung load, not an error code). Fixed in the B3 final fix round.
+- **CF-B3-14:** Safe Mode's subtitle promises "turn off autoplay" — B5 must wire it before any user build (**BLOCKING**).
+- **CF-B3-15:** the live nav-lock test needed a positive `CANCEL` assertion, not just the absence of a main-frame navigation. Fixed in the final fix round.
+- **CF-B3-16:** this plan doc's rung-4 text is superseded (this edit — see the banners on Tasks 2 and 3 above).
+
+**Decision:** the age gate now aborts the ladder *before* the embed rung — terminal `.ageRestricted` — where it previously jumped to rung 4.
+
 - [ ] **Step 4: Record the device checklist — USER-BLOCKED, do not attempt**
 
 The repo has no signing identity (`DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)` is unset; `CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]: NO` is the only reason simulator builds work). Report these to the controller as blocked, with this list verbatim:
@@ -920,3 +934,7 @@ The repo has no signing identity (`DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)` is unset
 - **CF-B3-3:** the embed and the native host both activate/deactivate `AVAudioSession` (CF-B2-8's warning, now with a second owner). Today they never overlap because a `PlayerScreen` branch change dismantles one before mounting the other; Shorts (B4) adding a third player on the same screen would break that invariant. Whoever adds it owns making the ownership explicit.
 - **CF-B3-4:** `player_error_generic` is now rung 4's reason line for *both* "the ladder bottomed out" and "the web content process died twice". If those ever want distinct copy, that is a new key, not a re-purposed one.
 - **CF-B3-5:** the `WKWebView` bridge round-trip test (Task 3) is the only test in the iOS suite that needs a live web content process. If it proves flaky in CI, the fix is to keep it and quarantine it into a separate test plan — not to delete the only coverage of the handler-name/message-shape seam.
+- **CF-B3-13:** embed load watchdog — no bridge event ever arrives when `iframe_api` is unreachable while the device is online (a hung load, not an error code). Fixed in the B3 final fix round.
+- **CF-B3-14:** Safe Mode's subtitle promises "turn off autoplay" — B5 must wire it before any user build (**BLOCKING**).
+- **CF-B3-15:** the live nav-lock test needed a positive `CANCEL` assertion, not just the absence of a main-frame navigation. Fixed in the final fix round.
+- **CF-B3-16:** this plan doc's rung-4 text is superseded (this edit — see the banners on Tasks 2 and 3 above).
