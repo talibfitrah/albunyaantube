@@ -1,0 +1,23 @@
+ios/FitrahTubeTests/SettingsRowsTests.swift
+  s_66ddb7c44de816::t_15359ce9b8bbb3 52-69
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_66ddb7c44de816::t_caf2f9fec4491e 10179-10266,10272,10278,10284,10839-10882,14199-14220,14837-14876
+ios/scripts/convert-strings.py
+  s_66ddb7c44de816::t_8e78f55718fe96 107-109,111-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9db4128eb5deebe8ea5a2b07ddc1c863a7c55af6",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
