@@ -1633,7 +1633,7 @@ git commit -m "[FEAT]: iOS resolve rate limiting and TTL refresh"
 
 **Files:** touch only what a finding requires; screenshots under `screenshots/b2-task7/`.
 
-- [ ] **Step 1: Simulator matrix (do this yourself)**
+- [x] **Step 1: Simulator matrix (do this yourself)**
 
 Run `ios/scripts/screenshots.sh` (full matrix) and check:
   - The audio-only control appears on rung 1 with an itag 140 URL and is absent on rung 2 (`-fitrah-fake-player` fixture) — the "hide the control that has no backing" rule.
@@ -1642,20 +1642,66 @@ Run `ios/scripts/screenshots.sh` (full matrix) and check:
   - VoiceOver: the audio-only button reads its label and its on/off state.
   - Backgrounding the simulator (`xcrun simctl launch` then Cmd-Shift-H) and returning does not crash, does not restart playback from 0, and does not resume a stream the user had paused.
 
-- [ ] **Step 2: Fix anything the matrix surfaces**, re-run `ios/scripts/test.sh`, commit `[FIX]: iOS B2 accessibility and layout pass`.
+**Result (2026-08-27):** `ios/scripts/screenshots.sh "iPhone 17"` — every leg `** TEST SUCCEEDED **`, 33 PNGs regenerated and read: the Phase-1 catalog a11y3/offline leg, b1-task3…b1-task10 (incl. the iPad leg the script runs unconditionally) and b2-task3. Three checks had no capture before this pass and were added to `ScreenshotTests` rather than left as prose: the audio-only control's **absence on rung 2** (`testPlayerRung2Pill`), and the audio-only surface in **ar portrait** and at **Dynamic Type `.accessibility3`** (`testPlayerAudioOnly`, two extra passes writing into `b2-task3`). The `.accessibility3` pill wraps to two lines and stays inside the screen; the ar pill mirrors to the leading edge with the rest of the overlay column. VoiceOver state is pinned as `isSelected` (the control carries `.isSelected`, not an `accessibilityValue` — no catalog string for on/off exists).
 
-- [ ] **Step 3: Record the device checklist — USER-BLOCKED, do not attempt**
+**What the matrix could not show:** the fixture clip is 4:3, so the player host pillarboxes it and the overlay pills/buttons — whose backgrounds are a translucent scrim — sit partly over the black letterbox, where the scrim is invisible against black. The white text stays high-contrast, the frames are fully on-screen (asserted), and a real 16:9 stream fills the host, so this is a fixture artifact, not a layout defect. Now Playing / the lock screen cannot be captured in the simulator at all (see Step 3).
 
-The repo has no signing identity (`DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)` is unset; `CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]: NO` is the only reason the simulator builds work). Nothing below can be executed until the user supplies an Apple Team ID and a provisioning profile. Report these to the controller as blocked, with this list verbatim — do not mark B2 "verified" without them:
+- [x] **Step 2: Fix anything the matrix surfaces**, re-run `ios/scripts/test.sh`, commit `[FIX]: iOS B2 accessibility and layout pass`.
 
-  1. **Background audio** — start a video, lock the screen: audio continues with Background play ON; audio stops with Background play OFF (ruling 34, the whole point of the setting).
-  2. **Automatic audio-only swap** — with Background play ON, background the app and confirm on a metered connection that video segments stop being fetched (Settings → Cellular data usage before/after, or a proxy).
-  3. **Interruption** — take an incoming call mid-playback: audio pauses at `.began` and resumes at `.ended` **only if it was playing before** (ruling 44).
-  4. **Route change** — unplug wired headphones / power off Bluetooth headphones mid-playback: playback pauses (`.oldDeviceUnavailable`).
-  5. **Now Playing** — lock screen and Control Centre show title, channel, artwork, a correct scrubber (and **no** scrubber duration on a live stream); play/pause, ±10 s and scrub all work; next/previous are absent, not dead.
-  6. **Auto-PiP** — swipe home mid-playback with Background play ON: PiP starts; with Background play OFF: it does not.
-  7. **AirPlay** (ruling 29, free from the stock transport) — route to an Apple TV and confirm playback starts. Plan §6.5 flags an IP-binding risk here: if the external device 403s the item, the documented remedy is `allowsExternalPlayback = false` so the video mirrors from the phone instead. Report the result; do not pre-emptively implement the remedy.
-  8. **Swipe-to-dismiss** (player.md §24, iOS's narrower version of Android's task-removed contract) — swipe the app out of the App Switcher while audio plays: iOS terminates the process and audio stops. Confirm this is acceptable, or raise it.
+**Result:** the matrix surfaced no defect, so no fix commit exists. The one real defect this task did fix came from the Task 5 review, not the matrix: `PlayerHostView.Coordinator` had no `deinit` backstop, so a back-navigation out of the player while PiP was live deallocated the coordinator with the deferred teardown still owed — leaking the audio session, the lock-screen dictionary and the remote-command handlers for the life of the process (`[FIX]: iOS PiP teardown backstop`, red→green against a test that asserts `nowPlayingInfo == nil` and the transport disabled after the last reference drops).
+
+- [x] **Step 3: Record the device checklist — USER-BLOCKED, do not attempt**
+
+**USER-BLOCKED: no Apple Team ID.** The repo has no signing identity (`DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)` is unset; `CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]: NO` is the only reason the simulator builds work). Nothing below can be executed until the user supplies an Apple Team ID and a provisioning profile. **B2 is not "verified" until this list has been run on real hardware** — the simulator has no lock screen, no phone call, no route change, no real audio hardware and only partial PiP, so every behaviour B2 exists to deliver is unproven.
+
+This is the single consolidated list: the eight items this plan wrote up front, plus everything Tasks 2, 5 and 6 turned up while implementing (each of those tasks reported behaviour it could not prove in the simulator; those are folded in here rather than left in task reports). Each item names its pass criterion.
+
+**A — Background audio and the setting (ruling 34, the ruling the whole plan turns on)**
+
+1. **Lock-screen audio, Background play ON** — start a video, lock the screen. *Pass:* audio continues uninterrupted; the video surface coming back on unlock does not restart or re-buffer.
+2. **Background play OFF** — same, with the setting off. *Pass:* audio stops on lock (`audiovisualBackgroundPlaybackPolicy = .pauses`), and resumes only when the user presses play again — it must NOT auto-resume on unlock.
+3. **Home-swipe, not just lock** — swipe home mid-playback with Background play ON. *Pass:* audio continues (this is a different lifecycle path from lock; both must hold).
+4. **Polite hand-back** — start music in another app, pause it, play a FitrahTube video, then leave the player. *Pass:* the other app resumes (`setActive(false, options: .notifyOthersOnDeactivation)` in `detach()`), rather than the device going silent.
+
+**B — Interruptions and route changes (ruling 44)**
+
+5. **Incoming call, playing** — take a call mid-playback. *Pass:* audio pauses at `.began` and resumes at `.ended` when the system sends `.shouldResume`.
+6. **Incoming call, already paused** — pause first, then take a call. *Pass:* playback does NOT start on `.ended` (`wasPlayingBeforeInterruption` is the whole point of that flag).
+7. **Wired headphone unplug** — unplug mid-playback. *Pass:* playback pauses (`.oldDeviceUnavailable`); audio does not blast out of the speaker.
+8. **Bluetooth headphone power-off** — same test over Bluetooth. *Pass:* identical to 7 (the route-change reason is the same; the delivery timing is not).
+
+**C — Audio-only (Task 3)**
+
+9. **Automatic audio-only swap** — with Background play ON, background the app and watch data usage on a metered connection (Settings → Cellular data usage before/after, or a proxy). *Pass:* video segments stop being fetched; audio keeps playing.
+10. **One swap, not two** — background, wait past the URL-expiry margin, foreground again. *Pass:* the item is swapped to audio-only exactly once going in and restored to video exactly once coming out, position preserved, no double re-buffer (Task 6 orders the pre-emptive re-resolve BEFORE `.restoreVideo` precisely so this holds).
+11. **Manual audio-only toggle on a real stream** — open a real (non-fixture) video with an itag 140 rendition, toggle audio-only on and off. *Pass:* the swap is seamless and position-preserving; the quality / captions / audio-language controls disappear while audio-only and come back after; the m4a rendition does not 403 (it carries the resolved `User-Agent`).
+
+**D — Now Playing and the remote command centre (Task 4)**
+
+12. **Lock screen and Control Centre** — *Pass:* title, channel and artwork are correct, and the scrubber tracks real playback.
+13. **Live stream** — *Pass:* no scrubber duration on a live stream (`MPNowPlayingInfoPropertyIsLiveStream`), and nothing shows a bogus 0:00 length.
+14. **Transport commands** — play/pause, ±10 s and scrub from the lock screen. *Pass:* every one moves playback and the lock-screen elapsed/rate updates immediately, not on the next tick.
+15. **Next / previous** — *Pass:* absent, not dead (B5 owns the queue; ruling 28).
+16. **Main-thread delivery (Task 4 concern, unproven in the simulator)** — drive the commands hard from the lock screen and from a Bluetooth remote. *Pass:* no crash, no `_dispatch_assert_queue` trap — `MPRemoteCommand` handlers touch `@MainActor` state and their delivery queue is undocumented.
+
+**E — Picture in Picture (Task 5, ruling 43)**
+
+17. **Auto-PiP, Background play ON** — swipe home mid-playback. *Pass:* PiP starts (AVKit performs it; the app never calls `startPictureInPicture()`).
+18. **Auto-PiP, Background play OFF** — same. *Pass:* PiP does NOT start and playback pauses (a user who turned background playback off must not get a floating video window).
+19. **Stock PiP button** — tap the PiP button in the AVKit transport with the setting in each position. *Pass:* it works in both — the setting gates only the automatic-from-inline transition, never the explicit button.
+20. **PiP restore** — tap the restore control on the PiP window. *Pass:* the player screen comes back with playback continuing (the completion handler answers `true` synchronously); no black frame, no restart from 0.
+21. **Back-navigation during PiP** — start PiP, then navigate back out of the player. *Pass:* the audio session, the lock-screen entry and the remote commands are all handed back — no orphaned Now Playing entry and no dead transport on the lock screen (this is what `Coordinator.deinit`'s backstop exists for). **Known limitation, not a defect:** the PiP window itself closes with the route; making it survive needs an app-scoped player holder (CF-B2-1 → B5).
+22. **Re-resolve suppressed under PiP** — leave a PiP window running long enough for the stream URL to approach expiry, then return to the app. *Pass:* the PiP window does not re-buffer or blank on the way back (the pre-emptive re-resolve is skipped while `pictureInPictureActive`).
+
+**F — Foreground re-resolve and rate limiting (Task 6)**
+
+23. **Pre-emptive re-resolve, no spinner** — background the app past `resolvedAt + expires − margin`, then return. *Pass:* playback continues from the same position with a fresh URL; the screen never hops to a loading spinner or an error state, and a failing refresh leaves the healthy stream playing (the `silent:` contract).
+24. **Rate-limit cooldown self-clears** — tap Retry repeatedly until the cooldown state appears, then wait it out. *Pass:* the countdown runs down and Retry works again with no app relaunch.
+
+**G — AirPlay and process lifecycle**
+
+25. **AirPlay** (ruling 29, free from the stock transport) — route to an Apple TV. *Pass:* playback starts on the TV. Plan §6.5 flags an IP-binding risk: if the external device 403s the item, the documented remedy is `allowsExternalPlayback = false` so the video mirrors from the phone instead. Report the result; do not pre-emptively implement the remedy.
+26. **Swipe-to-dismiss** (player.md §24, iOS's narrower version of Android's task-removed contract) — swipe the app out of the App Switcher while audio plays. *Pass:* iOS terminates the process and audio stops, leaving no orphaned lock-screen entry. Confirm this is acceptable, or raise it.
 
 ---
 
@@ -1671,5 +1717,5 @@ The repo has no signing identity (`DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)` is unset
 
 ## Carry-forward for B3+
 
-- **CF-B2-1:** `BackgroundPlaybackController.detach()` calls `AVAudioSession.setActive(false, options: .notifyOthersOnDeactivation)` unconditionally. Once the embed rung (B3) or Shorts (B4) also owns audio, exactly one owner must deactivate the session, or leaving one player will silence the other.
-- **CF-B2-2:** `NowPlayingSnapshot.make` returns `nil` for `.embed` states, so backgrounding the embed rung leaves a stale Now Playing entry. B3 must clear it when the embed takes over (the embed is paused on background anyway — plan §6.4 row 3 — so "clear it" is the correct behaviour).
+- **CF-B2-8:** `BackgroundPlaybackController.detach()` calls `AVAudioSession.setActive(false, options: .notifyOthersOnDeactivation)` unconditionally. Once the embed rung (B3) or Shorts (B4) also owns audio, exactly one owner must deactivate the session, or leaving one player will silence the other.
+- **CF-B2-9:** `NowPlayingSnapshot.make` returns `nil` for `.embed` states, so backgrounding the embed rung leaves a stale Now Playing entry. B3 must clear it when the embed takes over (the embed is paused on background anyway — plan §6.4 row 3 — so "clear it" is the correct behaviour).
