@@ -1,0 +1,21 @@
+docs/superpowers/plans/2026-08-27-ios-phase2b5-fullscreen-queue.md
+  s_66ddb7c44de816::t_5ff79ea6ccf345 43,73,109-110,116-132,134-146,380-384,386,393-395,455-458,463-484,679-682,735-762,822,830,846-850,853,1010,1012-1013,1110-1111
+  s_66ddb7c44de816::t_e0a7ace7fd45b9 83
+  s_66ddb7c44de816::t_549650ae10a3f6 1-42,44-72,74-82,84-108,111-115,133,147-379,385,387-392,396-454,459-462,485-678,683-734,763-821,823-829,831-845,851-852,854-1009,1011,1014-1109,1112-1189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "65b4f6af244b1b71a299628dffe855904d3a1a1c",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
