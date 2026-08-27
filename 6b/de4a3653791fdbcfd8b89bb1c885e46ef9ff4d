@@ -1,0 +1,65 @@
+docs/superpowers/specs/2026-05-22-admin-bulk-url-submission-design.md
+  s_66ddb7c44de816::t_2ab9265c54995f 418,435
+docs/superpowers/plans/2026-08-27-ios-phase2b5-fullscreen-queue.md
+  s_66ddb7c44de816::t_7148ef58b5572e 132
+  s_66ddb7c44de816::t_b8555fcfed13f5 794
+docs/superpowers/plans/2026-08-27-ios-phase2b2-background-audio.md
+  s_66ddb7c44de816::t_a6fa3e86027198 779,784
+  s_66ddb7c44de816::t_5523464456bcef 1715
+docs/superpowers/plans/2026-05-22-admin-bulk-url-submission.md
+  s_66ddb7c44de816::t_2ab9265c54995f 210,212,219,221,226,233,235,276,278,283,295,301,303,309,311,1503,1505,1508,1534,1537,1554,1557,1573,3203,3216,3234
+docs/architecture/ios-app-plan.md
+  s_66ddb7c44de816::t_29fd95d6f09bd9 204
+  s_66ddb7c44de816::t_957f4297be7827 45
+  s_66ddb7c44de816::t_6555103087a1dc 403
+  s_66ddb7c44de816::t_5adbd983f1b392 144-146
+  s_66ddb7c44de816::t_537527e13aa808 401
+  s_66ddb7c44de816::t_04e45a6ba52b7a 13
+  s_66ddb7c44de816::t_84aab6e3acf878 109
+  s_66ddb7c44de816::t_d98d88432a62b4 123-124
+  s_66ddb7c44de816::t_22ec8c49d18db0 172-173
+  s_66ddb7c44de816::t_c5807d597bad61 223
+  s_66ddb7c44de816::t_c0d9bc2b5eeefd 242-243
+  s_66ddb7c44de816::t_e80f0d285ffb98 398
+docs/superpowers/plans/2026-08-24-ios-phase2b1-player-core.md
+  s_66ddb7c44de816::t_0721d3300e8b80 175
+  s_66ddb7c44de816::t_768ebdade0154b 57
+docs/superpowers/plans/2026-08-27-ios-phase2c-detail-report-share.md
+  s_66ddb7c44de816::t_188bb9cc7354e5 596
+  s_66ddb7c44de816::t_152afc04612119 1124
+docs/superpowers/plans/2026-05-10-archived-content-leak-fix.md
+  s_66ddb7c44de816::t_2ab9265c54995f 146-147,371,373,377
+docs/superpowers/plans/2026-08-23-ios-phase2-research/RULINGS.md
+  s_66ddb7c44de816::t_90c3e59b197b01 94-96
+  s_66ddb7c44de816::t_36b9bc01c951bb 1
+docs/superpowers/plans/2026-08-27-ios-phase2b4-shorts.md
+  s_66ddb7c44de816::t_e44dfd5cd53ae2 7
+  s_66ddb7c44de816::t_fc0120ab9f3973 561
+  s_66ddb7c44de816::t_6a6994808dfa36 30
+  s_66ddb7c44de816::t_9ba5e44725ddcb 90
+  s_66ddb7c44de816::t_2ab9265c54995f 135-136,143-144
+docs/superpowers/specs/2026-08-23-ios-app-design.md
+  s_66ddb7c44de816::t_52524814b15553 241
+  s_66ddb7c44de816::t_f16cf098cfbf4b 243
+  s_66ddb7c44de816::t_63f186afca6a61 220
+  s_66ddb7c44de816::t_0697c375131472 188
+  s_66ddb7c44de816::t_1889dd10ef1222 227
+  s_66ddb7c44de816::t_ce3a8e18643d69 191
+  s_66ddb7c44de816::t_5e2f8cb2d4f2ce 223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6bde4a3653791fdbcfd8b89bb1c885e46ef9ff4d",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
