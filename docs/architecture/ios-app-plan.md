@@ -10,7 +10,7 @@ Build a native SwiftUI app (iOS 18+, iPhone + iPad) that:
 
 1. Uses the existing backend (`/api/v1/*`, `/api/account/*`) for the curated catalog, accounts and sync. No server-side stream resolution, no media proxy.
 2. Resolves streams **on the phone** with the **VISIONOS** InnerTube client → YouTube's own HLS manifest → `AVPlayer`. No poToken, no JS-player deciphering, one POST per play. Works for lectures, nasheeds and **live streams**; does not work for made-for-kids videos.
-3. Ships a **fallback ladder** ordered by remote config: VISIONOS HLS → ANDROID itag 18 (360p, verified on all 18 kids videos in the sample) → official YouTube embed in `WKWebView` (navigation-locked) → "Open in YouTube". The embed is the only path YouTube's Terms authorize (§9); `resolverOrder: ["embed"]` makes the app a fully compliant embed client without a release.
+3. Ships a **fallback ladder** ordered by remote config: VISIONOS HLS → ANDROID itag 18 (360p, verified on all 18 kids videos in the sample) → official YouTube embed in `WKWebView` (navigation-locked). *(Owner directive 2026-08-27: the ladder ends here — no "Open in YouTube" hand-off, ever.)* The embed is the only path YouTube's Terms authorize (§9); `resolverOrder: ["embed"]` makes the app a fully compliant embed client without a release.
 4. Lists **channel and playlist pages on the phone** with InnerTube `browse`, exactly as Android does with NewPipeExtractor today (§6.7) — the catalog is 845 channels and 452 playlists; the 245 standalone videos are the small part.
 5. Ships **every Android feature** (§7) in two releases: v1 = everything usable without an account; v1.1 = accounts, Me tab, sync, submissions, import. Downloads and in-app update do not port (App Store rules); Chromecast becomes AirPlay.
 6. Keeps every YouTube-facing parameter as **remote-config data**; ships **no over-the-air code** and **no dormant poToken minter** (the minter is kept built and tested on a branch, §6.12).
@@ -42,7 +42,7 @@ The open product problem is **made-for-kids content**: VISIONOS refuses it, ever
 | ANDROID itag 18 (360p muxed) streams fully without a token, with AVPlayer's User-Agent | 18/18 kids IDs: `OK`, itag 18 present, `AppleCoreMedia` UA ranges 206 | Verified floor for kids videos; yt-dlp lists `android` as "GVS or Player" token-required, so this is selective enforcement and can end (android_vr precedent) |
 | `hlsManifestUrl` from VISIONOS plays natively in AVPlayer with no proxy and any User-Agent; manual captions arrive as `EXT-X-MEDIA:TYPE=SUBTITLES` renditions; auto-generated captions do not | macOS AVFoundation test; HLS masters inspected | No `AVAssetResourceLoader` proxy; captions menu works for manual tracks; auto-captions need an overlay (§6.5) |
 | Stream URLs are bound to the client IP (`ip=` / `/ip/`) and expire (`expire=`, `expiresInSeconds = 21540`) | Every VISIONOS URL inspected | Cache in memory only, invalidate on network-path change, re-resolve on 403 (§6.2); AirPlay needs testing (§6.5) |
-| Age-restricted videos return `LOGIN_REQUIRED` with an age reason; YouTube's embed refuses them too | yt-dlp `AGE_GATE_REASONS`; YouTube Help: age-restricted videos "cannot be watched on most third-party websites" | Branch on `reason`; never rotate the session for an age gate; go straight to "Open in YouTube". Curation should reject `ytRating = ytAgeRestricted` (§8) |
+| Age-restricted videos return `LOGIN_REQUIRED` with an age reason; YouTube's embed refuses them too | yt-dlp `AGE_GATE_REASONS`; YouTube Help: age-restricted videos "cannot be watched on most third-party websites" | Branch on `reason`; never rotate the session for an age gate; go straight to the terminal "not available" state (Owner directive 2026-08-27: no "Open in YouTube" hand-off). Curation should reject `ytRating = ytAgeRestricted` (§8) |
 | Apple 5.2.3 names YouTube explicitly for downloads | Guideline text (§9) | No download feature on iOS |
 | YouTube's Terms authorize only the embeddable player; Apple 5.2.2/5.2.3 say "authorization must be provided upon request" | Verbatim text (§9) | Embed is the compliance floor and must always work; `resolverOrder: ["embed"]` stays one config edit away |
 | Apple requires guest access when accounts are not essential, in-app account deletion when accounts exist, Sign in with Apple next to Google Sign-In, and a privacy manifest | 5.1.1(v), 4.8, privacy-manifest requirement since 2024-05-01 (§9) | Guest mode is mandatory on iOS (Android forces sign-in); accounts ship in v1.1 with deletion and Sign in with Apple |
@@ -106,7 +106,7 @@ SwiftUI app (iOS 18+, iPhone + iPad)
 ├── StreamResolver (actor) → InnerTube `player` POST per strategy; client contexts from RemoteConfig
 │     ├── SessionStore     → visitorData per client family (UserDefaults; Keychain survives uninstall — not wanted), rotation rules §6.3
 │     ├── ManifestCache    → memory-only, TTL = min(config, expires − duration − 600 s, 1 h), flushed on NWPathMonitor change
-│     └── strategies       → visionosHLS | androidItag18 | embed | openInYouTube
+│     └── strategies       → visionosHLS | androidItag18 | embed  (Owner directive 2026-08-27: no openInYouTube rung)
 ├── Player                 → AVPlayerViewController + custom toolbar; PiP, AirPlay, Now Playing, background audio, captions overlay (§6.5)
 ├── EmbedPlayer            → WKWebView + bundled IFrame-API HTML wrapper, navigation-locked (§6.4 row 3, §6.10)
 ├── LocalStore             → SwiftData: favorites, subscriptions, saved playlists (sync columns as Android's Room schema), search history (10), settings
@@ -120,8 +120,8 @@ SwiftUI app (iOS 18+, iPhone + iPad)
 3. `playabilityStatus.status == OK` and `streamingData.hlsManifestUrl` present → `AVPlayer(url:)` (VOD or live). Audio-only mode uses the itag 140 URL from the same response.
 4. Branch on `status` **and** `reason`:
    - `LOGIN_REQUIRED` + bot-check reason → **if no visitor is held yet, adopt the `responseContext.visitorData` the bot-check response itself carries and retry the same rung** (session bootstrap — no rotation consumed); if a visitor was already held, rotate it (at most once per 10 min) and retry once; further failures → exponential back-off, next rung. *(Corrected 2026-08-24 from live proof: the FIRST tokenless call is always bot-checked, so "rotate on bot-check" alone burns the rotation budget on a token never held and can never reach OK — the ladder silently demotes to ANDROID 360p. See `.superpowers/sdd/2026-08-23-ios-phase2-innertubekit/live-fix-report.md`.)*
-   - `LOGIN_REQUIRED` / `AGE_CHECK_REQUIRED` + age reason → `openInYouTube` directly (the embed is also age-gated). Never rotate the session for an age gate.
-   - `UNPLAYABLE` (kids) → `androidItag18` (`streamingData.formats[itag 18].url`, progressive MP4) → `embed` → `openInYouTube`. Once the catalog carries `madeForKids` / `embeddable` (§8), skip rungs that are known to fail.
+   - `LOGIN_REQUIRED` / `AGE_CHECK_REQUIRED` + age reason → terminal "not available" state directly (the embed is also age-gated). Never rotate the session for an age gate. *(Owner directive 2026-08-27: no "Open in YouTube" hand-off — this was previously `openInYouTube`.)*
+   - `UNPLAYABLE` (kids) → `androidItag18` (`streamingData.formats[itag 18].url`, progressive MP4) → `embed` → terminal "not available". Once the catalog carries `madeForKids` / `embeddable` (§8), skip rungs that are known to fail.
    - `LIVE_STREAM_OFFLINE` → "scheduled" state with the start time; no rung change.
 5. Mid-play recovery: `AVPlayerItem.status == .failed` before the first frame → next rung. A 403 in `errorLog()`, `AVPlayerItemFailedToPlayToEndTime`, or a stall > 8 s → re-resolve the **same** rung once, `replaceCurrentItem(with:)` + `seek(to: lastTime)`; only then step down. On `willEnterForeground`, re-resolve pre-emptively if past `resolvedAt + expires − margin`. Never swap a playing native stream into the embed silently (it restarts with YouTube chrome and possibly an ad) — show the state change (§6.6).
 6. Failures are counted locally for the developer screen (§7); nothing is uploaded in v1 (no backend sink exists; §6.13).
@@ -141,8 +141,9 @@ Per-play network cost from the phone: 1 InnerTube POST + media segments. Backend
 |---|---|---|---|---|
 | 1 | `visionosHLS` — VOD and live | up to 2160p, AVPlayer ABR | no | verified |
 | 2 | `androidItag18` — VOD only (live has no `formats[]`) | 360p muxed progressive, labelled "Standard quality" | no (selective enforcement) | verified on 18/18 kids videos |
-| 3 | `embed` — bundled HTML wrapper around the official IFrame API (`youtube-nocookie.com`, `playsinline=1`, `rel=0`, `enablejsapi=1` + `origin` equal to the `baseURL` origin, `hl=<app locale>`), loaded with `loadHTMLString(_:baseURL:)` so a Referer is sent; `allowsInlineMediaPlayback = true`, `mediaTypesRequiringUserActionForPlayback = []`, `allowsPictureInPictureMediaPlayback`, ≥ 200×200, no native overlays, no pre-tap autoplay; `decidePolicyFor` cancels every main-frame navigation off the bundled page and `createWebViewWith` returns nil (§6.10); one `WKScriptMessageHandler` (weak proxy, removed on teardown) bridging `onReady/onStateChange/onError`; `webViewWebContentProcessDidTerminate` → reload once then rung 4; paused on `didEnterBackground`; AVPlayer torn down before the embed loads | YouTube's player: YouTube's ads; `rel=0` only narrows related videos to the same channel; no background audio (III.I.9) | no | the only YouTube-authorized path; IFrame errors 100 (deleted/private), 101/150 (uploader disabled embedding), 153 (no Referer — a wrapper bug), 2/5 (retry once) |
-| 4 | `openInYouTube` — confirmation sheet, then `UIApplication.open(youtube://watch?v=)` with `https://youtu.be/` in the completion fallback | — | no | terminal; hidden entirely in Safe Mode (§6.10) |
+| 3 | `embed` — bundled HTML wrapper around the official IFrame API (`youtube-nocookie.com`, `playsinline=1`, `rel=0`, `enablejsapi=1` + `origin` equal to the `baseURL` origin, `hl=<app locale>`), loaded with `loadHTMLString(_:baseURL:)` so a Referer is sent; `allowsInlineMediaPlayback = true`, `mediaTypesRequiringUserActionForPlayback = []`, `allowsPictureInPictureMediaPlayback`, ≥ 200×200, no native overlays, no pre-tap autoplay; `decidePolicyFor` cancels every main-frame navigation off the bundled page and `createWebViewWith` returns nil (§6.10); one `WKScriptMessageHandler` (weak proxy, removed on teardown) bridging `onReady/onStateChange/onError`; `webViewWebContentProcessDidTerminate` → reload once then terminal "not available" state; paused on `didEnterBackground`; AVPlayer torn down before the embed loads | YouTube's player: YouTube's ads; `rel=0` only narrows related videos to the same channel; no background audio (III.I.9) | no | the only YouTube-authorized path; IFrame errors 100 (deleted/private), 101/150 (uploader disabled embedding), 153 (no Referer — a wrapper bug), 2/5 (retry once) |
+
+*(Owner directive 2026-08-27: rung 4 — `openInYouTube`, a confirmation sheet then `UIApplication.open(youtube://watch?v=)` with `https://youtu.be/` fallback — is removed. The ladder ends at rung 3 (embed); anything unplayable past that is a terminal "not available" state. No redirect or hand-off to YouTube, in any form, regardless of Safe Mode.)*
 
 `iosPotSyntheticHLS` (IOS client + web token → byte-range HLS) is **removed**: web tokens are not valid for the IOS client (§3). The embed guarantees App Review never meets a dead player, and `resolverOrder: ["embed"]` is the configuration under which the app uses YouTube only as its Terms allow. It does not make the rungs above it authorized — never present it that way in a 5.2.2 inquiry (§9).
 
@@ -168,8 +169,8 @@ Per-play network cost from the phone: 1 InnerTube POST + media segments. Backend
 | Rung 1 playing | stock chrome + toolbar | — |
 | Rung 2 playing | persistent pill **"Standard quality (360p)"**; quality button hidden; `currentTime` carried over when demoted mid-play | "HD", silent downgrade |
 | Rung 3 (embed) | caption **above** the frame, "Playing in YouTube's player" (RMF forbids overlays on the player); all FitrahTube controls hidden (quality, audio-only, PiP, background); end screen covered by a FitrahTube "Replay / Back" card on ENDED | "ad-free" anywhere in-app; any kids-vs-lecture explanation (say what is playing, never why) |
-| Embed errors | 100 → "This video was removed"; 101/150 → "The creator only allows this video on YouTube" + Open in YouTube (unless Safe Mode); 2/5/153 → retry once, log | — |
-| Rung 4 | confirmation sheet, never an automatic hand-off | — |
+| Embed errors | 100 → "This video was removed"; 101/150 → "This video isn't available" (never "only on YouTube", never an Open in YouTube action); 2/5/153 → retry once, log | — |
+| Rung 4 | removed — Owner directive 2026-08-27: no redirect or hand-off to YouTube, ever; anything past the embed rung is a terminal "not available" state | an automatic hand-off; any "Open in YouTube" affordance |
 | Transitions | `AccessibilityNotification.Announcement` ("Playing in standard quality", "Playing in YouTube's player"); cross-dissolve, static under Reduce Motion | — |
 
 ### 6.7 Channel and playlist pages (what Android does with NewPipe)
@@ -200,7 +201,7 @@ Android forces sign-in (every signed-out route ends at `SignInFragment`; provide
 Android's `safe_mode` switch is written by Settings and **read by nothing** (grep); iOS implements it for real, default **on**, named "Safe Mode" (never "parental gate" — 2.3.8 wording):
 
 - The embed is navigation-locked always (§6.4 row 3): taps on the title, logo, "Watch on YouTube", share, and end-screen cards never navigate in-app; `onStateChange` checks `getVideoData().video_id == expected`, else `stopVideo()`; the end screen is covered on ENDED.
-- Safe Mode additionally removes the `openInYouTube` rung and disables playlist auto-advance (the PRD's "no autoplay to next video" persona promise; Android auto-advances playlists on `STATE_ENDED`).
+- Safe Mode additionally disables playlist auto-advance (the PRD's "no autoplay to next video" persona promise; Android auto-advances playlists on `STATE_ENDED`). *(Owner directive 2026-08-27: the `openInYouTube` rung this bullet used to remove no longer exists at all — there is no YouTube hand-off in or out of Safe Mode. Safe Mode is now just: auto-advance off + the embed navigation lock above, full stop.)*
 - Test under a Screen Time child account with Web Content = "Only Approved Websites" and specify the blocked-load state (§10 item 8). These rules are also what justifies answering "Unrestricted Web Access: No" in the age-rating questionnaire (§9).
 
 ### 6.11 iPad, RTL, accessibility
@@ -219,7 +220,7 @@ The harness in Appendix A.2/A.3 (bgutils-js in a `WKWebView` at a youtube.com or
 {
   "schemaVersion": 1,
   "minAppVersion": "1.0.0",
-  "resolverOrder": ["visionosHLS", "androidItag18", "embed", "openInYouTube"],
+  "resolverOrder": ["visionosHLS", "androidItag18", "embed"],
   "manifestCacheSeconds": 3600,
   "clients": {
     "visionos": {
@@ -237,6 +238,8 @@ The harness in Appendix A.2/A.3 (bgutils-js in a `WKWebView` at a youtube.com or
   }
 }
 ```
+
+*(Owner directive 2026-08-27: `openInYouTube` is no longer a valid `resolverOrder` entry. `RemoteConfig.sanitize` drops any `openInYouTube` entry it finds, so a published config can never re-enable it.)*
 
 Every field above is something YouTube has changed in the last 12 months; keeping them as data is the difference between a JSON edit and a 1–3 day App Review cycle. Rules: data only (strings and orderings consumed by bundled code — nothing is fetched and executed); unknown strategy names are dropped; a bundled default and the last-known-good copy cover unreachable or malformed config; body capped at 64 KiB; fetched on launch and `willEnterForeground` with ≥ 15 min spacing (raw.githubusercontent serves `max-age=300`). Not signed in v1: the config contains no code, the damage model is availability only, and TLS + repository ACLs cover it; add an Ed25519 signature if the repo gains more writers. 2.3.1 line: parameter tweaks (versions, UA, order among shipped strategies) are config; a new strategy or client family is an App Store submission.
 
@@ -392,12 +395,12 @@ Run from a real iPhone on **cellular** and on **Wi-Fi** (IPv6-enabled), plus one
 | Symptom | Likely cause | Action (remote config first, app release last) |
 |---|---|---|
 | `LOGIN_REQUIRED` spikes on `player` | session signals rejected | app already rotates `visitorData` (rate-limited); bump `clientVersion`/`osVersion`/UA to current from yt-dlp `_base.py` |
-| HLS segments 403 after ~60 s on VISIONOS | poToken enforcement arrived (android_vr pattern) | same day: `resolverOrder: ["androidItag18", "embed", "openInYouTube"]`. Then merge the branch-built minter (§6.12), bundle it, use the placement yt-dlp lands on (`/pot/{token}` manifest path or `&pot=`), ship through App Review |
+| HLS segments 403 after ~60 s on VISIONOS | poToken enforcement arrived (android_vr pattern) | same day: `resolverOrder: ["androidItag18", "embed"]` (Owner directive 2026-08-27: no `openInYouTube` rung to fall back to). Then merge the branch-built minter (§6.12), bundle it, use the placement yt-dlp lands on (`/pot/{token}` manifest path or `&pot=`), ship through App Review |
 | `UNPLAYABLE` for non-kids videos | client version retired | change `clients.visionos.clientVersion` (watch NewPipeExtractor `ClientsConstants` and yt-dlp) |
 | SABR-only responses (no `hlsManifestUrl`, `serverAbrStreamingUrl` present) | client moved to SABR | swap `resolverOrder` to the next client; if every JS-less client is gone, bundle youtubei.js in a WKWebView (sig/n deciphering) and ship through App Review |
-| itag 18 403s (yt-dlp already lists `android` as token-required) | selective enforcement ended | kids videos → embed; kids ∧ `embeddable=false` → `openInYouTube` only. That set's size (§10 item 7) is the true unsolved gap |
+| itag 18 403s (yt-dlp already lists `android` as token-required) | selective enforcement ended | kids videos → embed; kids ∧ `embeddable=false` → terminal "not available" (Owner directive 2026-08-27: no `openInYouTube` fallback). That set's size (§10 item 7) is the true unsolved gap |
 | `browse` bot-checked | channel pages empty | degraded mode (Atom + approved playlists) is automatic; then the backend-proxy alternative (§6.7) |
-| Everything fails | — | `resolverOrder: ["embed", "openInYouTube"]` keeps the app functional while you work |
+| Everything fails | — | `resolverOrder: ["embed"]` keeps the app functional while you work (Owner directive 2026-08-27: no `openInYouTube` rung remains to append) |
 
 ---
 

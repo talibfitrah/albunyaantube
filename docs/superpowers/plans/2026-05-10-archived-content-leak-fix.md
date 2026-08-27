@@ -143,8 +143,8 @@ class StreamIndexServiceTest {
 
     @Test
     void markStreamArchived_callsRepositoryMarkInvisible() throws Exception {
-        streamIndexService.markStreamArchived("dQw4w9WgXcQ");
-        verify(streamRepository).markInvisible("dQw4w9WgXcQ");
+        streamIndexService.markStreamArchived("xc7keR2piUM");
+        verify(streamRepository).markInvisible("xc7keR2piUM");
     }
 }
 ```
@@ -368,13 +368,13 @@ void validatePlaylists_archivedPlaylist_callsRemoveSource() throws Exception {
 
 @Test
 void validateVideos_archivedVideo_callsMarkStreamArchived() throws Exception {
-    Video v = videoMissingFromYouTube("dQw4w9WgXcQ", "Video A");
+    Video v = videoMissingFromYouTube("xc7keR2piUM", "Video A");
     when(videoRepository.findValidationCandidates(anyInt())).thenReturn(List.of(v));
-    stubYouTubeVideoMissing("dQw4w9WgXcQ");
+    stubYouTubeVideoMissing("xc7keR2piUM");
 
     contentValidationService.validateVideos(10, runId);
 
-    verify(streamIndexService).markStreamArchived("dQw4w9WgXcQ");
+    verify(streamIndexService).markStreamArchived("xc7keR2piUM");
 }
 ```
 

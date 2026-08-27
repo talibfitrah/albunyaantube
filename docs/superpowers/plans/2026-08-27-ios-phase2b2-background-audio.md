@@ -776,11 +776,12 @@ static func streamURL(_ stream: ResolvedStream, audioOnly: Bool) -> URL? {
         return audioOnly ? (audioOnlyURL ?? url) : url
     case .progressive(let url, _):
         return url   // rung 2 has no separate audio rendition; the toggle is hidden there anyway
-    case .embed, .openInYouTube:
+    case .embed:
         return nil   // B3
     }
 }
 ```
+*(Owner directive 2026-08-27: `ResolvedStream` has no `.openInYouTube` case — the ladder ends at `.embed`, so this switch has one fewer arm than earlier drafts assumed.)*
 
 In the `Coordinator`, feed the controller the real setting and act on the swap actions:
 
@@ -1711,7 +1712,7 @@ This is the single consolidated list: the eight items this plan wrote up front, 
 
 ## Out of scope for B2 (later sub-plans, or deliberate deferrals)
 
-- **The embed rung's control-hiding.** Plan §6.6's rung-3 row hides quality, audio-only, PiP and background for the embed — B2 has no embed player to hide them on, so **B3 owns that**. Note for the B3 implementer: `PlayerViewModel.audioOnlyAvailable(for:)` already returns `false` for `.embed`/`.openInYouTube`, and `PlayerHostView.streamURL` returns `nil`, so the native controls are already inert there; B3 must additionally suppress PiP on the `WKWebView` rung. **Checked and corrected**: §6.6 does *not* hide PiP or audio-only on rung 2 (progressive) — only the quality control. B2 hides audio-only on rung 2 for a different reason (a muxed 360p progressive has no separate audio rendition), and leaves PiP on.
+- **The embed rung's control-hiding.** Plan §6.6's rung-3 row hides quality, audio-only, PiP and background for the embed — B2 has no embed player to hide them on, so **B3 owns that**. Note for the B3 implementer: `PlayerViewModel.audioOnlyAvailable(for:)` already returns `false` for `.embed` (*Owner directive 2026-08-27*: there is no `.openInYouTube` case to also cover), and `PlayerHostView.streamURL` returns `nil`, so the native controls are already inert there; B3 must additionally suppress PiP on the `WKWebView` rung. **Checked and corrected**: §6.6 does *not* hide PiP or audio-only on rung 2 (progressive) — only the quality control. B2 hides audio-only on rung 2 for a different reason (a muxed 360p progressive has no separate audio rendition), and leaves PiP on.
 - **PiP surviving a back-navigation out of the player.** Popping `PlayerScreen` releases the `@State PlayerViewModel` and the `AVPlayer` with it. Keeping PiP alive across the route change needs an app-scoped player holder; B2 only guarantees PiP survives backgrounding, and refuses to pause the player during dismantle while PiP is active.
 - **Audio-only auto-swap on cellular** (plan §6.5's "or when backgrounded on cellular"). The Background play + Audio only settings already carry user intent; adding an `NWPath`-driven third trigger buys a data saving the user can already choose. Add it if metered-data complaints arrive.
 - **Next / previous remote commands and lock-screen queue** — B5 (Up Next, playlist queue, auto-advance). B2 explicitly disables both commands.

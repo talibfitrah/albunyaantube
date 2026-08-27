@@ -593,7 +593,7 @@ git commit -m "[FEAT]: iOS browse layer with degraded fallback"
   - `nonisolated struct ReportBody: Encodable, Equatable` — the seven wire fields, `parentType`/`parentId`/`contentSubType` optional and omitted when nil.
   - `nonisolated enum ReportPayload { static func make(context:reasons:otherText:) -> Result<ReportBody, ReportValidation> }` and `static let maxReasons = 10`.
   - `ReportState = .idle | .submitting | .succeeded | .rateLimited | .failed(messageKey:)`.
-  - `nonisolated enum ShareLinks` — `video(id) / channel(id) / playlist(id) -> URL` and `message(for:title:locale:) -> String`.
+  - `nonisolated enum ShareLinks` — `video(id) / channel(id) / playlist(id) -> URL` and `message(for:title:locale:) -> String`. All three builders produce `https://app.fitrahtube.com/...` URLs only (`ShareLinksTests.swift` below, `:689-691`) — never a `youtube.com`/`youtu.be` link. *(Owner directive 2026-08-27: no share or deep-link surface may produce a YouTube link; already the case here — stated for the record.)*
   - `DetailKebab(share: ShareLinks.Target, report: ReportContext)` — a `Menu` with two items and nothing else.
 
 **Reconciliation — the report body cannot go through the generated client, so `ReportClient` is hand-written.**
@@ -1121,7 +1121,7 @@ The app already fetches `https://raw.githubusercontent.com/talibfitrah/albunyaan
 
 Write it to be **byte-compatible with the bundled default** (`ios/Packages/InnerTubeKit/Sources/InnerTubeKit/Resources/remote-config-default.json`) — same `schemaVersion`, `minAppVersion`, `resolverOrder`, `manifestCacheSeconds`, and the same three `clients` entries with identical `clientName` values. Two hard rules from the sanitizer and the plan:
 
-- `RemoteConfigStore.sanitized` (`RemoteConfig.swift:164-175`) drops any `resolverOrder` entry outside `{visionosHLS, androidItag18, embed, openInYouTube}` and drops any known client key whose `clientName` does not match `{visionos: VISIONOS, android: ANDROID, web: WEB}`. A typo in either place silently removes a rung.
+- `RemoteConfigStore.sanitized` (`RemoteConfig.swift:164-175`) drops any `resolverOrder` entry outside `{visionosHLS, androidItag18, embed}` and drops any known client key whose `clientName` does not match `{visionos: VISIONOS, android: ANDROID, web: WEB}`. A typo in either place silently removes a rung. *(Owner directive 2026-08-27: `openInYouTube` is no longer in the allow-list — the sanitizer drops it unconditionally, so a published config can never re-enable a YouTube hand-off. See RULINGS.md Q75.)*
 - **Data only** (`ios-app-plan.md:241`): strings and orderings consumed by bundled code. No URLs to code, no new strategy names. "Parameter tweaks are config; a new strategy or client family is an App Store submission."
 - Body ≤64 KiB (`RemoteConfig.swift:120`) — the document is under 2 KB, so this is a ceiling, not a constraint.
 

@@ -4,7 +4,7 @@
 
 **Goal:** `Route.shorts` exists, `albunyaantube://shorts/{id}` parses into it, and it renders `PhaseTwoPlaceholderView` — a debug list of arguments. B4 makes it a real screen: one 9:16 short, looping, with the tap-to-pause indicator, the scrub bar, the action rail and the kebab, portrait-locked, over the same resolve ladder the main player already walks. It is the last Phase-2 *playback surface*; B5 owns fullscreen, gestures and Up Next.
 
-**Architecture:** There is **no feed and no pager** — see reconciliation note 1, which is the single most important paragraph in this plan. `ShortsScreen` owns exactly one `PlayerViewModel` (B1) driving exactly one `PlayerHostView` (B1/B2), and that reuse is the whole design: the resolve ladder, the recovery budget, the stall watchdog, the quality ceiling, the audio-language menu, the caption tracks, the audio session, the Safe Mode filter and the `.embed` / `.openInYouTube` rungs all arrive already built and already tested. B4 adds one parameter to the host (`presentation`), one screen, and the chrome that hangs off it. Everything decidable is pure and testable without AVFoundation: `ShortsPresentation`'s knob table, `ShortsOverlay.showsChannelRow`, `ShortsScrub.progress` / `.time`. The `AVPlayerViewController` glue lives where it already lives.
+**Architecture:** There is **no feed and no pager** — see reconciliation note 1, which is the single most important paragraph in this plan. `ShortsScreen` owns exactly one `PlayerViewModel` (B1) driving exactly one `PlayerHostView` (B1/B2), and that reuse is the whole design: the resolve ladder, the recovery budget, the stall watchdog, the quality ceiling, the audio-language menu, the caption tracks, the audio session, the Safe Mode filter and the `.embed` rung — the ladder's terminal rung (*Owner directive 2026-08-27*: there is no `.openInYouTube` rung; a video unplayable past `.embed` renders a terminal "not available" state) — all arrive already built and already tested. B4 adds one parameter to the host (`presentation`), one screen, and the chrome that hangs off it. Everything decidable is pure and testable without AVFoundation: `ShortsPresentation`'s knob table, `ShortsOverlay.showsChannelRow`, `ShortsScrub.progress` / `.time`. The `AVPlayerViewController` glue lives where it already lives.
 
 **Tech Stack:** Swift 6, SwiftUI, AVKit, `@Observable`, Swift Testing; app target `ios/FitrahTube` only (`ios/Packages/InnerTubeKit` is read-only in this plan — B4 changes no package source). XcodeGen. Gate: `ios/scripts/test.sh` (300 s wall). Acceptance screenshots via `ios/scripts/screenshots.sh`.
 
@@ -27,7 +27,7 @@
 | 36 | Quality: per-stream pick | Task 3 — the kebab's picker is `QualityOption` verbatim (CF-B1-5) |
 | 37 | ONE formatter (`Format`) | Task 3 — the only formatted number on this screen is the scrub time (`player_duration_minutes_seconds`) |
 | 14 | Age-restricted / geo-blocked / private / removed are terminal, no retries | Task 3 — inherited: `.contentUnavailable` renders `PlayerStateView`, exactly as `PlayerScreen`'s `default:` branch does |
-| 58 | Safe Mode's first real effect | Task 3 — inherited whole from B3: `PlayerViewModel.map(_:safeMode:)` already removes rung 4 before `ShortsScreen` ever sees a state. **B4 adds no Safe Mode code.** |
+| 58 | Safe Mode's first real effect | Task 3 — inherited whole from B3: `PlayerViewModel.map(_:safeMode:)` already applies Safe Mode before `ShortsScreen` ever sees a state. *(Owner directive 2026-08-27: rung 4 no longer exists at all, in or out of Safe Mode — RULINGS.md Q75 supersedes ruling 58's rung-4 wording.)* **B4 adds no Safe Mode code.** |
 | 40 | Acceptance bar = "plays reliably, position-preserving refresh on failure", not Android's ladder-for-ladder parity | Task 4 |
 | 67 | Inbound *watch* links open the regular player even for Shorts | Task 1 — untouched: `albunyaantube://video/{id}` and the `app.fitrahtube.com/watch/…` Universal Links still map to `.player`. Only the explicit `albunyaantube://shorts/{id}` scheme reaches this screen. |
 | 11 | Shorts loading state renders the 9:16 skeleton grid | **Not here.** That ruling is about the channel detail **Shorts tab grid** — Plan C. B4's loading state is the player's own (`PlayerStateView`). |
@@ -87,7 +87,7 @@ Spec §10's Shorts paragraph ends "feed = content service + channel Shorts tab b
 
 **3. Ruling 57's "status bar hidden" is honoured, and the tab bar comes for free.** `Route.shorts` is pushed onto the selected tab's own `NavigationStack` (`MainShellView.navigationStack(for:)`), so the tab bar stays visible on iPhone with no code — exactly Android's behaviour, and the reason its overlay margins exist (brief §9.5). What does take code is the top: `.statusBarHidden(true)` plus `.toolbar(.hidden, for: .navigationBar)`, and then a Back control of our own, because hiding the bar hides the system chevron. See fork D — this is the one place B4 deliberately re-creates an Android affordance instead of taking the platform's.
 
-**4. Safe Mode, the ladder, the availability gate and the report payload are all inherited, not re-implemented.** `PlayerViewModel` already applies B3's `map(_:safeMode:)` (rung 4 removed under Safe Mode), already routes through `RateLimitedResolver`, already maps `ExtractionError` onto the terminal states of ruling 14, and already carries B1's HEAD availability gate through `StreamResolver`. `ShortsScreen` constructs the same view model with the same container dependencies and reads its `state`. **If a Safe Mode, ladder or gate behaviour is missing on this screen, the bug is in the shared code and must be fixed there** — never with a Shorts-only branch.
+**4. Safe Mode, the ladder, the availability gate and the report payload are all inherited, not re-implemented.** `PlayerViewModel` already applies B3's `map(_:safeMode:)` (*Owner directive 2026-08-27*: there is no rung 4 to remove — it doesn't exist regardless of Safe Mode; the ladder ends at `.embed`), already routes through `RateLimitedResolver`, already maps `ExtractionError` onto the terminal states of ruling 14, and already carries B1's HEAD availability gate through `StreamResolver`. `ShortsScreen` constructs the same view model with the same container dependencies and reads its `state`. **If a Safe Mode, ladder or gate behaviour is missing on this screen, the bug is in the shared code and must be fixed there** — never with a Shorts-only branch.
 
 ---
 
@@ -132,16 +132,16 @@ In `DeepLinkParserTests.swift`, update whatever currently asserts `.shorts(id:)`
 @Test func shortsSchemeCarriesPlayerArgsWithOnlyTheVideoId() {
     // Ruling 51: the deep link is a SINGLE short, not an entry into a feed -- so everything except
     // the id is nil and the screen resolves exactly one video.
-    let route = DeepLinkParser.route(for: URL(string: "albunyaantube://shorts/dQw4w9WgXcQ")!)
-    #expect(route == .shorts(PlayerArgs(videoId: "dQw4w9WgXcQ")))
+    let route = DeepLinkParser.route(for: URL(string: "albunyaantube://shorts/xc7keR2piUM")!)
+    #expect(route == .shorts(PlayerArgs(videoId: "xc7keR2piUM")))
 }
 
 @Test func watchLinksStillOpenTheRegularPlayerEvenForAShort() {
     // Ruling 67, verbatim: "Inbound watch links open the regular player even for Shorts (parity;
     // the receiver cannot know it is a Short before resolution)". This is the test that stops a
     // well-meaning future change from sniffing durations at parse time.
-    let route = DeepLinkParser.route(for: URL(string: "https://app.fitrahtube.com/api/watch/dQw4w9WgXcQ")!)
-    #expect(route == .player(PlayerArgs(videoId: "dQw4w9WgXcQ")))
+    let route = DeepLinkParser.route(for: URL(string: "https://app.fitrahtube.com/api/watch/xc7keR2piUM")!)
+    #expect(route == .player(PlayerArgs(videoId: "xc7keR2piUM")))
 }
 ```
 
@@ -558,7 +558,7 @@ case .embed(let resolved):
 
 `EmbedRungView` gains `let aspectRatio: CGFloat = 16.0 / 9.0` and uses it in its one `.aspectRatio(...)` call. **Nothing else about the rung changes** — the navigation lock, the weak message-handler proxy, the end cover, the caption above the frame, `allowsPictureInPicturePlayback = false` and the non-persistent data store all stay exactly as B3 built them. B3's Task 4 asks the parameterising plan to re-check the 200×200 pt floor because 9:16 makes width the tight dimension; here is that check: the frame is `.fit` inside a portrait, portrait-**locked** screen, so height is the binding constraint on every supported device and width comes out at `height × 9/16`. Narrowest realistic case is a 320 pt-wide phone, where the width binds instead at 320 pt and height is 569 pt — both over 200. On the iPad the centred column is at most `Size.playerMaxWidth` wide and at least ~500 pt (a 950 pt-tall landscape window × 9/16). **The one geometry that would breach it — a ~390 pt-tall iPhone landscape window, giving a 219 pt-wide frame — cannot occur, because this screen is portrait-locked.** So, as in B3: no `minHeight`, and the screenshot matrix is where a regression shows. If fork C is ever answered "no portrait lock", **re-do this arithmetic**.
 
-**The `.openInYouTube` arm** rides `default:` → `PlayerStateView`, the same way `PlayerScreen` handles it. **Verify B3's actual shape before writing it**: if B3 attached its confirmation `.sheet` to `PlayerScreen`'s body rather than to a view `PlayerStateView` can carry, move that modifier onto a small shared wrapper both screens use. Two copies of a hand-off confirmation is exactly the duplication ruling 66 ("ONE report path") was written about, applied to a different sheet.
+**The terminal "not available" arm** (*Owner directive 2026-08-27*: `.openInYouTube` no longer exists — unplayable past `.embed` is a terminal not-available card, never a hand-off confirmation) rides `default:` → `PlayerStateView`, the same way `PlayerScreen` handles it. **Verify B3's actual shape before writing it**: if B3 attached that card as a `.sheet` on `PlayerScreen`'s body rather than to a view `PlayerStateView` can carry, move that modifier onto a small shared wrapper both screens use. Two copies of the same terminal-state UI is exactly the duplication ruling 66 ("ONE report path") was written about, applied to a different case.
 
 **Rung announcements.** `PlayerScreen` has an `.onChange(of: model?.state)` that announces the rung-2 transition (and, after B3, the embed transition). `ShortsScreen` needs the identical announcement — plan §6.11: "every rung transition announced". Lift it into a small view modifier (`.rungAnnouncements(state:)`) in `PlayerStateView.swift` or alongside it, and apply it on both screens. One copy.
 

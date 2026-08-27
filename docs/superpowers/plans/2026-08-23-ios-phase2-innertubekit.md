@@ -1,5 +1,7 @@
 # InnerTubeKit Implementation Plan (iOS Phase 2, Plan A)
 
+> **Owner directive 2026-08-27 (superseding):** the `openInYouTube` rung described below was REMOVED — the app never offers any hand-off to YouTube (RULINGS.md Q75). Historical text left as written.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build `InnerTubeKit`, the pure-Swift local package that turns a YouTube videoId into a playable stream (and channel/playlist data into browse results), so the Phase 2 player and detail screens have an engine to consume — testable with `swift test`, no simulator.

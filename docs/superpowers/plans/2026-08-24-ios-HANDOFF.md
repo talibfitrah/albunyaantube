@@ -1,5 +1,7 @@
 # FitrahTube iOS — Session Handoff (2026-08-24 ~16:10, PAUSED)
 
+> **Owner directive 2026-08-27 (superseding):** the `openInYouTube` rung described below was REMOVED — the app never offers any hand-off to YouTube (RULINGS.md Q75). Historical text left as written.
+
 Read this first on the next session. It is the single source of "where we are / what's next". Trust it plus `git log` and the SDD ledger over any recollection.
 
 **Branch:** `feature/ios-app` (off `develop`). **Nothing pushed.** No PR opened.

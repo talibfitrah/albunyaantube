@@ -129,7 +129,7 @@ So B5 adds one case:
     case queueEnded
 ```
 
-**Every exhaustive `StreamState` switch it touches, enumerated** (the same audit B3 ran when it added `.embed`/`.openInYouTube`) — check each one, do not assume:
+**Every exhaustive `StreamState` switch it touches, enumerated** (the same audit B3 ran when it added `.embed`) — check each one, do not assume. *(Owner directive 2026-08-27: `StreamState.openInYouTube` does not exist — the ladder ends at `.embed`; do not add a switch arm for it.)*
 
 | Site | Exhaustive? | What B5 must do |
 |---|---|---|
@@ -791,7 +791,7 @@ Then walk reconciliation note 9's enumeration table and confirm each site. The o
 
 **`PlayerScreen`**:
 
-1. **Every `args` inside `stateView` becomes `model.args`** — `PlayerToolbar(args:)`, `PlayerMetadataView(args:)`, `PlayerStateView(thumbnailURL:)`, `Self.openInYouTube(videoId:)`. The screen's own `let args` is now only the initial value passed into the view model.
+1. **Every `args` inside `stateView` becomes `model.args`** — `PlayerToolbar(args:)`, `PlayerMetadataView(args:)`, `PlayerStateView(thumbnailURL:)`. *(Owner directive 2026-08-27: there is no `Self.openInYouTube(videoId:)` — that case is removed; drop it from this list, do not port it.)* The screen's own `let args` is now only the initial value passed into the view model.
 2. The Up Next section, after `PlayerMetadataView`, inside the same `if verticalSizeClass != .compact` group is **wrong** — Up Next belongs below the toolbar and should be visible in the non-fullscreen landscape column too. Put it after the metadata guard, at the same level:
    ```swift
    // Ruling 33: the whole section, header included, is absent when there is nothing queued.

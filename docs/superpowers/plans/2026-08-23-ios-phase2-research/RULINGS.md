@@ -1,4 +1,4 @@
-# Phase 2 rulings on INDEX.md Q1–Q74 (2026-08-23)
+# Phase 2 rulings on INDEX.md Q1–Q75 (2026-08-23, Q75 added 2026-08-27)
 
 Default: Android parity. Deviate only where Android is buggy (the 39 recorded defects), where iOS
 has no equivalent, or where the spec already decided. Each line: ruling — why — cost if wrong.
@@ -91,3 +91,6 @@ has no equivalent, or where the spec already decided. Each line: ruling — why 
 72. 429 keeps the user's selected reasons and text (inline rate-limit message; Android's dismiss-and-discard is user-hostile and its own Error path already keeps input) — cost: none.
 73. `menu_report.xml` ports nothing (dead) — cost: none.
 74. iOS claims the `albunyaantube` scheme (CLAUDE.md back-compat rule; the backend watch pages work unmodified; Phase 1's DeepLinkParser already implements it) — cost: none.
+
+## Player ladder — no YouTube hand-off (Q75)
+75. **No YouTube hand-off, ever.** Owner directive, 2026-08-27, binding, overrides the spec: the app must never offer any redirect or hand-off to YouTube — no "Open in YouTube" button, no confirmation sheet, no `youtube://` / `youtu.be` / `youtube.com` opens, regardless of Safe Mode. A hand-off defeats the purpose of a curated ad-free halal client. The playback ladder now ends at the embed rung (plan §6.4 rungs 1–3); anything unplayable past that is a terminal "not available" state — copy must never say "only on YouTube". `RemoteConfig.sanitize` drops any `openInYouTube` entry so a published config cannot re-enable it. This supersedes the rung-4 parts of ruling 58 (Safe Mode: there is no `openInYouTube` rung left for Safe Mode to remove — Safe Mode is now just auto-advance-off + the always-on embed navigation lock) and every ladder ruling that assumed a rung 4 existed (including the plan's §6.2/§6.4/§6.6/§6.10 ladder definition and design spec §9/§10). Grep guard for drift: `openInYouTube|youtube://|youtu\.be|UIApplication\.shared\.open` across `docs/` and app code must return only comments/history annotations — any un-annotated feature description is a regression — cost: none (removes a rung, adds no code).
