@@ -52,7 +52,7 @@ struct EmbedRungView: View {
                     .accessibilityIdentifier("player.embedCaption")
 
                 ZStack {
-                    EmbedWebView(videoId: Self.videoId(resolved) ?? "", resolved: resolved,
+                    EmbedWebView(videoId: Self.videoId(resolved), resolved: resolved,
                                  model: model, locale: Self.embedLocale(container.settings.resolvedLocale),
                                  replayToken: replayToken,
                                  // `|| debugSeedEnded` makes the screenshot rig's seeded cover
@@ -87,14 +87,17 @@ struct EmbedRungView: View {
     /// recommendation cards are never visible and never tappable.
     private var endCover: some View {
         VStack(spacing: Spacing.md(widthClass)) {
-            Button(String(localized: "player_embed_replay")) {
-                ended = false
-                replayToken += 1
-            }
+            // The cover is NOT cleared here: `ended` is owned by the bridge, and the next state
+            // message (1 playing) clears it. Clearing on tap uncovers YouTube's end screen for as
+            // long as the `seekTo`/`playVideo` round trip takes -- exactly the frames the cover
+            // exists to hide -- and leaves it uncovered for good if the round trip never lands.
+            Button(String(localized: "player_embed_replay")) { replayToken += 1 }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("player.embedReplay")
 
             Button(String(localized: "back")) { dismiss() }
+                // The cover is opaque black; the stock accent is too dark on it to read.
+                .foregroundStyle(.white)
                 .accessibilityIdentifier("player.embedBack")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -111,10 +114,10 @@ struct EmbedRungView: View {
         event == .state(0)
     }
 
-    /// Ruling 19: device locale for `hl`, en fallback. `EmbedPage.html` REFUSES an unsupported tag
-    /// (it is a substitution into a `<script>`), so the narrowing has to happen here, before the
-    /// call -- otherwise a Dutch-Belgian or French device would take the rung down on its own
-    /// locale. Region is dropped: YouTube's `hl` wants a language.
+    /// Ruling 19: device locale for `hl`, en fallback. `EmbedPage.html` defaults an unsupported
+    /// tag to en on its own (a3302261 -- `hl` is JSON-encoded, not a security boundary), so this is
+    /// belt and braces rather than the only guard; it stays because the CHOICE of catalog language
+    /// belongs to the app, not to the page. Region is dropped: YouTube's `hl` wants a language.
     static func embedLocale(_ locale: Locale) -> String {
         let code = locale.language.languageCode?.identifier ?? "en"
         return ["en", "ar", "nl"].contains(code) ? code : "en"
@@ -138,8 +141,14 @@ struct EmbedRungView: View {
 }
 
 /// The `WKWebView` itself. Nothing here decides anything (see `EmbedPolicy.swift`).
-private struct EmbedWebView: UIViewRepresentable {
-    let videoId: String
+///
+/// Internal rather than `private` only so `PlayerScreenEmbedTests` can reach `Coordinator` and
+/// assert the navigation lock's `@objc` thunk exists (C1, Task 4 review). Nothing else refers to it.
+struct EmbedWebView: UIViewRepresentable {
+    /// Optional, and never defaulted to `""`: this branch only ever mounts for a `.embed` stream, so
+    /// nil is unreachable -- and a placeholder id would be a SECOND unreachable path to reason
+    /// about. Nil takes the same "refused substitution" route a bad id already takes (`load`).
+    let videoId: String?
     let resolved: Resolved
     let model: PlayerViewModel
     let locale: String
@@ -214,15 +223,22 @@ private struct EmbedWebView: UIViewRepresentable {
         /// PER LOAD, and a user Retry gets a fresh one for free: Retry re-walks the ladder through
         /// `.loading`, which swaps `PlayerScreen`'s branch, dismantles this view and builds a new
         /// coordinator. Plan §6.6: retry once, then report -- never a loop.
+        ///
+        /// ONE budget shared by BOTH recoverable failures -- an IFrame error and a web content
+        /// process termination -- deliberately: "retry once" is a property of this mount, not of
+        /// each failure kind, so a page that crashes its process and then reports error 5 gets one
+        /// reload between them, not two.
         private var alreadyReloaded = false
         private var lastReplayToken = 0
         var onEnded: ((Bool) -> Void)?
 
-        init(videoId: String, resolved: Resolved, model: PlayerViewModel, locale: String) {
+        init(videoId: String?, resolved: Resolved, model: PlayerViewModel, locale: String) {
             self.resolved = resolved
             self.model = model
-            self.html = EmbedPage.html(videoId: videoId, locale: locale,
-                                       captionsPreferred: UIAccessibility.isClosedCaptioningEnabled)
+            self.html = videoId.flatMap {
+                EmbedPage.html(videoId: $0, locale: locale,
+                               captionsPreferred: UIAccessibility.isClosedCaptioningEnabled)
+            }
         }
 
         func start(web: WKWebView) {
@@ -307,15 +323,21 @@ private struct EmbedWebView: UIViewRepresentable {
                 // reload), so the page is re-loaded from the string built at mount.
                 if let web { load(web: web) }
             case .fail, .offerYouTube:
-                model.applyEmbedAction(action, resolved: resolved)
+                // DEFERRED, not synchronous: `load` reaches this from `start(web:)`, which runs
+                // inside `makeUIView` -- and publishing a `StreamState` there mutates the state
+                // SwiftUI is in the middle of reading ("Modifying state during view update"), which
+                // swaps `PlayerScreen`'s branch out from under the view being built. Every other
+                // caller arrives from a WebKit callback where the hop is a no-op turn.
+                Task { @MainActor in model.applyEmbedAction(action, resolved: resolved) }
             }
         }
 
         private func load(web: WKWebView) {
             guard let html else {
-                // A refused substitution (an id or locale that failed validation) is never followed
-                // by an unvalidated fallback -- the rung reports and loads nothing at all.
-                model.applyEmbedAction(.fail(messageKey: "player_error_message"), resolved: resolved)
+                // A refused substitution (an id that failed validation, or no id at all) is never
+                // followed by an unvalidated fallback -- the rung reports and loads nothing at all.
+                // Through `apply`, so this shares the one deferred-mutation sink (I1).
+                apply(.fail(messageKey: "player_error_message"), web: web)
                 return
             }
             // `loadHTMLString(_:baseURL:)`, NEVER `loadFileURL`: the https base URL is what makes
@@ -329,8 +351,12 @@ private struct EmbedWebView: UIViewRepresentable {
 
         // MARK: - Navigation lock (plan §6.4 row 3, §6.10, §9's "Unrestricted Web Access: No")
 
+        // `@MainActor @Sendable` is NOT decoration: the SDK declares the handler with both, and
+        // this is an OPTIONAL protocol requirement -- a signature that only nearly matches compiles
+        // with a warning, gets NO `@objc` thunk, and is never called, so WebKit silently allows
+        // every navigation. Pinned by `PlayerScreenEmbedTests.theNavigationLockIsInstalledOnTheCoordinator`.
         func webView(_ web: WKWebView, decidePolicyFor action: WKNavigationAction,
-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+                     decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
             // `targetFrame == nil` is a NEW-WINDOW navigation -- treated as main frame, i.e.
             // cancelled, which is what closes the "Watch on YouTube" / share / end-screen escapes.
             let isMainFrame = action.targetFrame?.isMainFrame ?? true

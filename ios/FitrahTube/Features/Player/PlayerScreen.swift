@@ -50,22 +50,34 @@ struct PlayerScreen: View {
         // -- `EmbedRungView` deliberately posts nothing of its own. `.onChange` fires only on a real
         // transition, so entering `.embed` announces exactly once.
         .onChange(of: model?.state) { _, newValue in
-            switch newValue {
-            case .rung2Progressive:
-                // M1 (B1 final review): the announcement is a sentence about what just happened
-                // ("Playing in standard quality", spec §6.6 Transitions row, verbatim); the PILL is
-                // a standing label ("Standard quality (360p)"). Reading the pill's noun phrase out
-                // as an event was the wrong register -- two different strings, deliberately.
-                AccessibilityNotification.Announcement(String(localized: "player_announce_standard_quality")).post()
-            case .embed:
-                // Spec §6.6 Transitions: a native->embed demotion is NEVER silent. The caption above
-                // the frame is the visible half; this is the audible one, and it is the same
-                // sentence ("Playing in YouTube's player") rather than a second string, because the
-                // caption already IS a statement of what just happened.
-                AccessibilityNotification.Announcement(String(localized: "player_embed_caption")).post()
-            default:
-                break
+            if let text = Self.transitionAnnouncement(for: newValue, isOnline: container.network.isOnline) {
+                AccessibilityNotification.Announcement(text).post()
             }
+        }
+    }
+
+    /// What a transition INTO `state` says out loud, or nil for silence. Pure, so
+    /// `PlayerScreenEmbedTests` can pin the offline case that `.onChange` can't be asked about.
+    static func transitionAnnouncement(for state: StreamState?, isOnline: Bool) -> String? {
+        switch state {
+        case .rung2Progressive:
+            // M1 (B1 final review): the announcement is a sentence about what just happened
+            // ("Playing in standard quality", spec §6.6 Transitions row, verbatim); the PILL is a
+            // standing label ("Standard quality (360p)"). Reading the pill's noun phrase out as an
+            // event was the wrong register -- two different strings, deliberately.
+            return String(localized: "player_announce_standard_quality")
+        case .embed:
+            // Spec §6.6 Transitions: a native->embed demotion is NEVER silent. The caption above the
+            // frame is the visible half; this is the audible one, and it is the same sentence
+            // ("Playing in YouTube's player") rather than a second string, because the caption
+            // already IS a statement of what just happened.
+            //
+            // I2 (Task 4 review): ONLINE only. Offline, `.embed` never mounts `EmbedRungView` at all
+            // -- the branch below routes it to the offline card -- so this announced a player that
+            // is not on screen, over a card that says the opposite.
+            return isOnline ? String(localized: "player_embed_caption") : nil
+        default:
+            return nil
         }
     }
 
