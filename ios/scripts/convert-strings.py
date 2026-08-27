@@ -104,14 +104,57 @@ EXTRA_KEYS = {
         "ar": "الإبلاغ قادم قريبًا",
         "nl": "Rapporteren komt binnenkort",
     },
-    # player_error_generic (T2-1 / deferred-minors.md): `PlayerViewModel.map`'s placeholder for the
-    # `.embed`/`.openInYouTube` resolver outcomes, which B1 has no player for yet (B3 replaces this
-    # whole codepath with the real embed rung). iOS-only -- there is no Android equivalent because
-    # Android's embed rung already exists.
+    # player_error_generic (B1 placeholder, re-purposed in B3 task 2): the reason line above the
+    # rung-4 "Open in YouTube" card, and the terminal copy when Safe Mode has removed that rung.
+    # No "yet" -- there is no later rung.
     "player_error_generic": {
-        "en": "This video can't be played in the app yet",
-        "ar": "لا يمكن تشغيل هذا الفيديو داخل التطبيق بعد",
-        "nl": "Deze video kan nog niet in de app worden afgespeeld",
+        "en": "This video can't be played in the app",
+        "ar": "لا يمكن تشغيل هذا الفيديو داخل التطبيق",
+        "nl": "Deze video kan niet in de app worden afgespeeld",
+    },
+    # Safe Mode strings (B3 task 1). These WERE Android keys and were deleted from
+    # values/strings.xml on 2026-08-25 (commit 2ffde712, "Remove the fake Safe Mode switch") --
+    # Android's switch gated nothing, so it went. iOS keeps the setting because ruling 58 gives it
+    # a real effect, so the strings have to be authored here or the row renders its own key.
+    # The subtitle is NOT Android's old "Show only family-friendly content": iOS Safe Mode does no
+    # content filtering (the catalog is admin-curated), it keeps playback inside the app and turns
+    # autoplay off. Promising filtering again would re-ship the placebo that got it deleted.
+    "settings_content": {"en": "Content", "ar": "المحتوى", "nl": "Inhoud"},
+    "settings_safe_mode": {"en": "Safe Mode", "ar": "الوضع الآمن", "nl": "Veilige modus"},
+    "settings_safe_mode_desc": {
+        "en": "Keep playback inside the app and turn off autoplay",
+        "ar": "أبقِ التشغيل داخل التطبيق وأوقف التشغيل التلقائي",
+        "nl": "Houd afspelen in de app en schakel automatisch afspelen uit",
+    },
+    # Embed rung (B3 tasks 3-4). iOS-only: Android has no IFrame embed player at all (grep of
+    # android/app/src/main: no embed.html, no youtube-nocookie, no IFrame error codes), so there is
+    # no source string to port for any of these.
+    "player_embed_caption": {
+        "en": "Playing in YouTube's player",
+        "ar": "يتم التشغيل في مشغّل يوتيوب",
+        "nl": "Speelt af in de YouTube-speler",
+    },
+    "player_embed_removed": {
+        "en": "This video was removed",
+        "ar": "تمت إزالة هذا الفيديو",
+        "nl": "Deze video is verwijderd",
+    },
+    "player_embed_owner_only": {
+        "en": "The creator only allows this video on YouTube",
+        "ar": "يسمح صاحب القناة بمشاهدة هذا الفيديو على يوتيوب فقط",
+        "nl": "De maker staat deze video alleen op YouTube toe",
+    },
+    "player_embed_replay": {"en": "Replay", "ar": "إعادة التشغيل", "nl": "Opnieuw afspelen"},
+    # Rung 4 (B3 task 2). Confirmation sheet, never an automatic hand-off (spec §6.6).
+    "player_open_in_youtube": {
+        "en": "Open in YouTube",
+        "ar": "فتح في يوتيوب",
+        "nl": "Openen in YouTube",
+    },
+    "player_open_in_youtube_confirm": {
+        "en": "Open this video in YouTube?",
+        "ar": "فتح هذا الفيديو في يوتيوب؟",
+        "nl": "Deze video in YouTube openen?",
     },
     # player_cooldown_retry (B1 task 9, spec §6.6 `.cooldown` row): "Try again in {relative}" over
     # the live countdown `PlayerStateCopy.cooldownText` formats with `Format.duration`. iOS-only --

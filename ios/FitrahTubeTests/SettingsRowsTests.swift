@@ -49,6 +49,24 @@ struct SettingsRowsTests {
         #expect(SettingsSection.allCases.count == 6)
     }
 
+    // Pins every row's titleKey/descriptionKey and every section's titleKey against the real
+    // catalog, not just the three keys Android deleted on 2026-08-25 (commit 2ffde712). A missing
+    // key is not a crash and not a build error -- `String(localized:)` returns the key itself, so
+    // the row renders "settings_safe_mode" to the user. One assertion over the whole layout, so
+    // the next deletion fails here instead of shipping invisible.
+    @Test func everySettingsKeyResolvesToRealCopy() {
+        for row in SettingsLayout.rows {
+            let title = String(localized: String.LocalizationValue(row.row.titleKey))
+            #expect(title != row.row.titleKey, "missing catalog entry for \(row.row.titleKey)")
+            let section = String(localized: String.LocalizationValue(row.section.titleKey))
+            #expect(section != row.section.titleKey, "missing catalog entry for \(row.section.titleKey)")
+            if let descriptionKey = row.row.descriptionKey {
+                let description = String(localized: String.LocalizationValue(descriptionKey))
+                #expect(description != descriptionKey, "missing catalog entry for \(descriptionKey)")
+            }
+        }
+    }
+
     // MARK: - TapGate (favorites-settings-about.md:279-288)
 
     @Test func firstThreeTapsAreSilent() {

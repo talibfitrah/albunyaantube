@@ -10176,24 +10176,112 @@
         }
       }
     },
-    "player_error_generic": {
+    "player_embed_caption": {
       "localizations": {
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "لا يمكن تشغيل هذا الفيديو داخل التطبيق بعد"
+            "value": "يتم التشغيل في مشغّل يوتيوب"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This video can't be played in the app yet"
+            "value": "Playing in YouTube's player"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deze video kan nog niet in de app worden afgespeeld"
+            "value": "Speelt af in de YouTube-speler"
+          }
+        }
+      }
+    },
+    "player_embed_owner_only": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يسمح صاحب القناة بمشاهدة هذا الفيديو على يوتيوب فقط"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The creator only allows this video on YouTube"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De maker staat deze video alleen op YouTube toe"
+          }
+        }
+      }
+    },
+    "player_embed_removed": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تمت إزالة هذا الفيديو"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video was removed"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze video is verwijderd"
+          }
+        }
+      }
+    },
+    "player_embed_replay": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إعادة التشغيل"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replay"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opnieuw afspelen"
+          }
+        }
+      }
+    },
+    "player_error_generic": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يمكن تشغيل هذا الفيديو داخل التطبيق"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video can't be played in the app"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze video kan niet in de app worden afgespeeld"
           }
         }
       }
@@ -10744,6 +10832,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "Offline openen"
+          }
+        }
+      }
+    },
+    "player_open_in_youtube": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فتح في يوتيوب"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in YouTube"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Openen in YouTube"
+          }
+        }
+      }
+    },
+    "player_open_in_youtube_confirm": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فتح هذا الفيديو في يوتيوب؟"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open this video in YouTube?"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze video in YouTube openen?"
           }
         }
       }
@@ -14064,6 +14196,28 @@
         }
       }
     },
+    "settings_content": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "المحتوى"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inhoud"
+          }
+        }
+      }
+    },
     "settings_download_location": {
       "localizations": {
         "ar": {
@@ -14676,6 +14830,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "Gemiddeld (720p) - Gebalanceerd"
+          }
+        }
+      }
+    },
+    "settings_safe_mode": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الوضع الآمن"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safe Mode"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Veilige modus"
+          }
+        }
+      }
+    },
+    "settings_safe_mode_desc": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أبقِ التشغيل داخل التطبيق وأوقف التشغيل التلقائي"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep playback inside the app and turn off autoplay"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Houd afspelen in de app en schakel automatisch afspelen uit"
           }
         }
       }
