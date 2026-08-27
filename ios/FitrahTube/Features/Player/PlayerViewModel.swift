@@ -80,16 +80,6 @@ extension StreamState {
     var isPlayable: Bool { resolved != nil }
 }
 
-/// What the embed rung does about one IFrame error (plan §6.6 "embed errors" row).
-/// **Temporary home**: B3 task 3 moves this to `EmbedPolicy.swift` alongside `EmbedErrorPolicy`,
-/// which is the pure truth table that produces it. It lives here for now because
-/// `PlayerViewModel.applyEmbedAction` is the only consumer that exists yet.
-enum EmbedErrorAction: Equatable, Sendable {
-    case reloadOnce
-    case fail(messageKey: String)
-    case offerYouTube(messageKey: String)
-}
-
 /// Android's `PlayerViewModel` resolve pipeline (`player.md` §2.2), the InnerTubeKit-backed slice
 /// of it: `open()`/`retry()` walk `StreamResolver`'s ladder and map the outcome onto `StreamState`.
 /// Same generation-guard discipline as `HomeViewModel`/`ContentListViewModel` (cancel the prior job,
