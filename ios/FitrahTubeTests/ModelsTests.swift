@@ -43,4 +43,15 @@ struct ModelsTests {
         )
         #expect(PlayerArgs(item: withoutChannelTitle).channelName == "Fallback Category")
     }
+
+    /// B4 task 1: `channelAvatarURL` is new and defaults to nil, so this mapping -- pasted nowhere
+    /// else, gate s1-2 -- does not need to change to keep producing a correct `.player` route.
+    @Test func channelAvatarDefaultsToNilAndDoesNotDisturbTheCatalogMapping() {
+        let item = ContentItem(id: "v1", type: .video, title: "T", category: "Cat", description: nil,
+                               thumbnailURL: nil, durationSeconds: 30, uploadedDaysAgo: nil,
+                               viewCount: nil, channelTitle: "Real Channel", subscribers: nil,
+                               videoCount: nil, itemCount: nil)
+        #expect(PlayerArgs(item: item).channelAvatarURL == nil)
+        #expect(PlayerArgs(item: item).channelName == "Real Channel")   // RULINGS #17, still true
+    }
 }

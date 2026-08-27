@@ -23,7 +23,22 @@ struct DeepLinkParserTests {
 
     @Test func customSchemeShorts() {
         let route = DeepLinkParser.route(for: URL(string: "albunyaantube://shorts/sh1")!)
-        #expect(route == .shorts(id: "sh1"))
+        #expect(route == .shorts(PlayerArgs(videoId: "sh1")))
+    }
+
+    @Test func shortsSchemeCarriesPlayerArgsWithOnlyTheVideoId() {
+        // Ruling 51: the deep link is a SINGLE short, not an entry into a feed -- so everything except
+        // the id is nil and the screen resolves exactly one video.
+        let route = DeepLinkParser.route(for: URL(string: "albunyaantube://shorts/xc7keR2piUM")!)
+        #expect(route == .shorts(PlayerArgs(videoId: "xc7keR2piUM")))
+    }
+
+    @Test func watchLinksStillOpenTheRegularPlayerEvenForAShort() {
+        // Ruling 67, verbatim: "Inbound watch links open the regular player even for Shorts (parity;
+        // the receiver cannot know it is a Short before resolution)". This is the test that stops a
+        // well-meaning future change from sniffing durations at parse time.
+        let route = DeepLinkParser.route(for: URL(string: "https://app.fitrahtube.com/api/watch/xc7keR2piUM")!)
+        #expect(route == .player(PlayerArgs(videoId: "xc7keR2piUM")))
     }
 
     // Universal Link: https://app.fitrahtube.com/{watch|channel|playlist}/{id}

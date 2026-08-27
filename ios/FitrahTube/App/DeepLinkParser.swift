@@ -41,7 +41,7 @@ nonisolated enum DeepLinkParser {
         case "video": return .player(PlayerArgs(videoId: id))
         case "channel": return .channel(id: id, name: nil, avatarURL: nil)
         case "playlist": return .playlist(id: id, title: nil, category: nil, count: nil)
-        case "shorts": return .shorts(id: id)
+        case "shorts": return .shorts(PlayerArgs(videoId: id))
         default: return nil
         }
     }

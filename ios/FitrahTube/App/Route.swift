@@ -36,7 +36,7 @@ extension Tab {
 /// its real screen lands in a later task.
 nonisolated enum Route: Hashable, Sendable {
     case player(PlayerArgs)
-    case shorts(id: String)
+    case shorts(PlayerArgs)
     case channel(id: String, name: String?, avatarURL: URL?)
     case playlist(id: String, title: String?, category: String?, count: Int?)
     case search
@@ -77,6 +77,11 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     var durationSeconds: Int? = nil
     var viewCount: Int64? = nil
     var channelId: String? = nil
+    /// Shorts only (B4): the channel avatar the Shorts bottom overlay shows next to the @handle
+    /// (`ShortsPageViewHolder.kt:44-60`). The main player has no avatar affordance, so this is nil on
+    /// every `.player` route -- and nil is also the honest value for a Short opened from a deep link,
+    /// where the sender supplies nothing but an id.
+    var channelAvatarURL: URL? = nil
 }
 
 extension PlayerArgs {

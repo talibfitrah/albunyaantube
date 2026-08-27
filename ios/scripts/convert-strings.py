@@ -186,6 +186,12 @@ EXTRA_KEYS = {
         "ar": "غير مُضاف للمفضلة",
         "nl": "Niet toegevoegd aan favorieten",
     },
+    # Shorts chrome (B4 tasks 2-3). Both are iOS-only. Android's kebab content description is a
+    # hard-coded "More options" literal in fragment_shorts_player.xml:44 (recorded as a defect in
+    # playlist-detail-shorts.md 9.3, not a string resource we can port), and its scrub bar is an
+    # ExoPlayer DefaultTimeBar with no accessibility label at all.
+    "shorts_more_options_cd": {"en": "More options", "ar": "المزيد من الخيارات", "nl": "Meer opties"},
+    "shorts_seek_cd": {"en": "Seek", "ar": "التنقل في المقطع", "nl": "Zoeken in video"},
 }
 
 def is_dead(key):

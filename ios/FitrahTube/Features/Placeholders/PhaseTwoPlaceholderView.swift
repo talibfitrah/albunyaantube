@@ -42,19 +42,9 @@ struct PhaseTwoPlaceholderView: View {
     private var arguments: [(label: String, value: String)] {
         switch route {
         case .player(let args):
-            [
-                ("videoId", args.videoId),
-                ("playlistId", args.playlistId ?? "nil"),
-                ("title", args.title ?? "nil"),
-                ("channelName", args.channelName ?? "nil"),
-                ("thumbnailURL", args.thumbnailURL?.absoluteString ?? "nil"),
-                ("description", args.description ?? "nil"),
-                ("durationSeconds", args.durationSeconds.map(String.init) ?? "nil"),
-                ("viewCount", args.viewCount.map(String.init) ?? "nil"),
-                ("channelId", args.channelId ?? "nil"),
-            ]
-        case .shorts(let id):
-            [("id", id)]
+            playerArguments(args)
+        case .shorts(let args):
+            playerArguments(args)
         case .channel(let id, let name, let avatarURL):
             [("id", id), ("name", name ?? "nil"), ("avatarURL", avatarURL?.absoluteString ?? "nil")]
         case .playlist(let id, let title, let category, let count):
@@ -66,6 +56,24 @@ struct PhaseTwoPlaceholderView: View {
         case .search, .categories, .favorites, .settings, .about:
             []
         }
+    }
+
+    /// One copy for both `.player` and `.shorts` (they carry the same `PlayerArgs` payload since
+    /// B4 task 1) -- see `Route.swift`'s own "one copy" doc comment for why a second copy of this
+    /// list is exactly the bug RULINGS #17 was.
+    private func playerArguments(_ args: PlayerArgs) -> [(label: String, value: String)] {
+        [
+            ("videoId", args.videoId),
+            ("playlistId", args.playlistId ?? "nil"),
+            ("title", args.title ?? "nil"),
+            ("channelName", args.channelName ?? "nil"),
+            ("thumbnailURL", args.thumbnailURL?.absoluteString ?? "nil"),
+            ("description", args.description ?? "nil"),
+            ("durationSeconds", args.durationSeconds.map(String.init) ?? "nil"),
+            ("viewCount", args.viewCount.map(String.init) ?? "nil"),
+            ("channelId", args.channelId ?? "nil"),
+            ("channelAvatarURL", args.channelAvatarURL?.absoluteString ?? "nil"),
+        ]
     }
 }
 
