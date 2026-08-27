@@ -66,6 +66,10 @@ targets:
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, ar, nl]
         UILaunchScreen: {}
+        # CF-B1-1: without this the audio session is torn down at suspension and background audio
+        # is impossible regardless of what `BackgroundPlaybackController` asks for.
+        UIBackgroundModes:
+          - audio
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

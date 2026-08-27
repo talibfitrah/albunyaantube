@@ -2,7 +2,8 @@
 # Runs the full iOS Phase 0 test suite under a 300s wall-clock watchdog (AGENTS.md mandate):
 #   convert-strings.py --check (catalog must already be up to date) -> xcodegen generate ->
 #   xcodebuild test (iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test
-#   (FitrahAPI package) -> xcodebuild build (Release, simulator SDK -- compiles the non-DEBUG paths).
+#   (FitrahAPI + InnerTubeKit packages) -> xcodebuild build (Release, simulator SDK -- compiles the
+#   non-DEBUG paths).
 # Per-test limit: 60s -- XCTest rounds `defaultTestExecutionTimeAllowance` up to 60s and Swift
 # Testing's own floor is also one minute, so 60s is the real effective limit regardless of the
 # number configured (FitrahTube.xctestplan sets 60 to match); CLAUDE.md's 30s note is a
@@ -84,6 +85,17 @@ run_all() {
     local package_status=${PIPESTATUS[0]}
     if [ "$package_status" -ne 0 ]; then
         return "$package_status"
+    fi
+
+    # InnerTubeKit's own 90 package tests were never run by this gate -- `xcodebuild test` builds the
+    # package as a dependency but runs only the app's test targets, so a parser/resolver regression
+    # got through green. `LiveResolveTests` stays off (it is `.enabled(if: INNERTUBE_LIVE == 1)`), so
+    # this adds no network calls.
+    echo "== InnerTubeKit package =="
+    (cd Packages/InnerTubeKit && swift test) 2>&1 | grep -E "$SUMMARY"
+    local innertube_status=${PIPESTATUS[0]}
+    if [ "$innertube_status" -ne 0 ]; then
+        return "$innertube_status"
     fi
 
     # Debug is what the test steps above compile; Release flips DEBUG off (AppContainer.swift's

@@ -27,13 +27,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // ponytail: B1 never turns PiP on (App Review flags autoplay-into-PiP as a review risk);
         // B2 (plan §6.5 "Background audio"/"PiP") flips this to true.
         controller.allowsPictureInPicturePlayback = false
-        // C1 (B1 final review): without a category, the app inherits `.soloAmbient` -- which obeys
-        // the ring/silent switch, so a muted phone plays a silent video. `.playback` +
-        // `.moviePlayback` is the media-playback pair. B2 owns the rest of the session contract
-        // (`setActive`, `UIBackgroundModes`, interruption and route-change handling); this is only
-        // the category, and it is idempotent, so B2 can move it without a migration.
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         controller.player = Self.player(for: state, replacing: nil)
+        applyBackgroundController(to: controller, context: context)
         applyQuality(to: controller, context: context)
         applyAudioLanguageHandoff(to: controller)
         applyCaptionsHandoff(to: controller)
@@ -43,6 +38,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         controller.player = Self.player(for: state, replacing: controller.player)
+        applyBackgroundController(to: controller, context: context)
         applyQuality(to: controller, context: context)
         applyAudioLanguageHandoff(to: controller)
         applyCaptionsHandoff(to: controller)
@@ -57,6 +53,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// safe precisely because a dismantled host owns nothing any more.
     static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
         coordinator.stopObserving()
+        // Same one-owner teardown as `stopObserving`: drops the lifecycle/interruption/route
+        // observers and hands the audio session back with `.notifyOthersOnDeactivation`.
+        coordinator.background.detach()
         // M6 (B1 final review): the coordinator can outlive this call (SwiftUI holds it until the
         // representable's own storage goes), and a live `NWPathMonitor` keeps a queue callback
         // firing for a host that owns nothing any more. `deinit`'s cancel stays as the backstop --
@@ -77,6 +76,14 @@ struct PlayerHostView: UIViewControllerRepresentable {
             return
         }
         context.coordinator.observe(item: item, player: player, model: model, isLive: Self.isLive(state))
+    }
+
+    /// CF-B1-1: the audio session, `UIBackgroundModes: audio`, interruptions and route changes are
+    /// `BackgroundPlaybackController`'s -- this is only the hand-off of whichever `AVPlayer` is
+    /// live now. `attach` no-ops on an unchanged player, so this is safe on every update pass.
+    private func applyBackgroundController(to controller: AVPlayerViewController, context: Context) {
+        guard let player = controller.player else { return }
+        context.coordinator.background.attach(player: player)
     }
 
     private static func isLive(_ state: StreamState) -> Bool {
@@ -128,6 +135,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
     @MainActor final class Coordinator {
         private(set) var path: NWPath
         private let monitor = NWPathMonitor()
+
+        /// The audio session / background-playback owner (CF-B1-1). Lives here rather than in the
+        /// representable struct because it must survive every `updateUIViewController` pass.
+        let background = BackgroundPlaybackController(backgroundPlay: true)   // Task 3 feeds the real setting
 
         /// Strong, and deliberately so: `dismantleUIViewController` is `static` and gets only the
         /// controller + this coordinator, so this is the sole route back to the VM's hand-off slots
