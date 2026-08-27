@@ -20,7 +20,8 @@ public enum ResolvedStream: Sendable {
     case hls(url: URL, isLive: Bool, audioOnlyURL: URL?, captionTracks: [CaptionTrack])
     case progressive(url: URL, label: String)
     case embed(videoId: String)
-    case openInYouTube(url: URL)
+    // No `openInYouTube` case: owner directive 2026-08-27 bans every redirect and hand-off to
+    // YouTube. The ladder's floor is `embed`; anything below it is a terminal `ExtractionError`.
 }
 
 /// The InnerTube client family a resolve was performed under. The `userAgent`

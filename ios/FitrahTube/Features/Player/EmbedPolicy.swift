@@ -107,25 +107,37 @@ enum EmbedMessage {
 /// What the embed rung does about one IFrame error (plan §6.6 "embed errors" row).
 enum EmbedErrorAction: Equatable, Sendable {
     case reloadOnce
+    /// Retryable: the load failed in a way another attempt could survive (a transient IFrame error
+    /// past its one reload, a dead web content process).
     case fail(messageKey: String)
-    case offerYouTube(messageKey: String)
+    /// TERMINAL, ruling 14: a reload cannot un-remove a video and cannot talk the IFrame into
+    /// playing one it refuses, so this arm carries no Retry. Found live in B3 task 5 -- these codes
+    /// used to land on `.fail`, which renders a Retry that re-walks the ladder into the identical
+    /// refusal every time.
+    case unplayable(messageKey: String)
+    // No hand-off action. Owner directive 2026-08-27: the app never offers a route out to YouTube,
+    // so an embed the IFrame refuses is simply terminal.
 }
 
 /// Plan §6.6's embed-errors row, as a truth table:
-///   100 -> removed (terminal, distinct copy) | 101/150 -> embedding disabled by the owner, offer
-///   rung 4 | everything else (2 malformed id, 5 HTML5 player, 153 missing Referer) -> retry once,
-///   log, then give up.
-/// Safe Mode never offers rung 4 (spec §10 / plan §6.10), so its branch lands on the same terminal
-/// card without the hand-off button.
+///   100 -> removed (terminal, distinct copy) | 101/150 -> the IFrame refuses to play it, terminal
+///   | everything else (2 malformed id, 5 HTML5 player, 153 missing Referer) -> retry once, log,
+///   then give up.
+///
+/// No branch anywhere offers YouTube, and none takes a `safeMode` argument any more: owner
+/// directive 2026-08-27 removed the hand-off outright, which is also why 101/150 no longer say
+/// "the creator only allows this video on YouTube" -- naming YouTube as the place to watch it is
+/// the redirect, just phrased as copy. It lands on the same "not available" surface as every other
+/// terminal reason (ruling 14).
 enum EmbedErrorPolicy {
-    static func decide(code: Int, alreadyReloaded: Bool, safeMode: Bool) -> EmbedErrorAction {
+    static func decide(code: Int, alreadyReloaded: Bool) -> EmbedErrorAction {
         log("iframe error \(code) (alreadyReloaded: \(alreadyReloaded))")
         switch code {
         case 100:
             // A reload cannot un-remove a video: terminal on the first occurrence.
-            return .fail(messageKey: "player_embed_removed")
+            return .unplayable(messageKey: "player_embed_removed")
         case 101, 150:
-            return offerYouTube(messageKey: "player_embed_owner_only", safeMode: safeMode)
+            return .unplayable(messageKey: "player_stream_unavailable")
         default:
             return alreadyReloaded ? .fail(messageKey: "player_error_message") : .reloadOnce
         }
@@ -133,14 +145,9 @@ enum EmbedErrorPolicy {
 
     /// `webViewWebContentProcessDidTerminate` (plan §6.4 row 3): a jetsam is transient, so reload
     /// once; a second one is the web content process telling us it cannot host this video.
-    static func decideProcessTermination(alreadyReloaded: Bool, safeMode: Bool) -> EmbedErrorAction {
+    static func decideProcessTermination(alreadyReloaded: Bool) -> EmbedErrorAction {
         log("web content process terminated (alreadyReloaded: \(alreadyReloaded))")
-        guard alreadyReloaded else { return .reloadOnce }
-        return offerYouTube(messageKey: "player_error_generic", safeMode: safeMode)
-    }
-
-    private static func offerYouTube(messageKey: String, safeMode: Bool) -> EmbedErrorAction {
-        safeMode ? .fail(messageKey: messageKey) : .offerYouTube(messageKey: messageKey)
+        return alreadyReloaded ? .fail(messageKey: "player_error_generic") : .reloadOnce
     }
 
     private static func log(_ message: String) {

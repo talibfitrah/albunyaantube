@@ -304,7 +304,7 @@ struct SearchViewModelTests {
     @Test func urlLikeQueryIsForwardedVerbatimToSearch() async {
         let (history, defaults, suite) = makeHistoryStore()
         defer { defaults.removePersistentDomain(forName: suite) }
-        let url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        let url = "https://www.youtube.com/watch?v=xc7keR2piUM"
         let client = RecordingCatalogClient(results: items(count: 1, prefix: "r"))
         let vm = SearchViewModel(catalog: client, history: history, sleep: noSleep)
 

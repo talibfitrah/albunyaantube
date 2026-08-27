@@ -5,13 +5,31 @@ import Testing
 @Suite struct RemoteConfigTests {
     @Test func bundledDefaultDecodesWithConfirmedClientTable() {
         let config = RemoteConfig.bundledDefault
-        #expect(config.resolverOrder == ["visionosHLS", "androidItag18", "embed", "openInYouTube"])
+        #expect(config.resolverOrder == ["visionosHLS", "androidItag18", "embed"])
         #expect(config.schemaVersion == 1)
         #expect(config.minAppVersion == "1.0.0")
         #expect(config.manifestCacheSeconds == 3600)
         #expect(config.clients["visionos"]?.clientNameId == 101)
         #expect(config.clients["android"]?.userAgent == "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip")
         #expect(config.clients["web"]?.userAgent == nil)
+    }
+
+    /// OWNER DIRECTIVE 2026-08-27: the app never hands off to YouTube. `openInYouTube` is no longer
+    /// a known strategy, so a published config that still lists it -- an older config, or one
+    /// authored before the directive -- must have that rung DROPPED rather than honoured. This is
+    /// the same drop-and-continue filter unknown strategies already went through.
+    @Test func refreshDropsAPublishedOpenInYouTubeRung() async {
+        let body = Data(
+            """
+            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS","openInYouTube","embed"],"manifestCacheSeconds":3600,"clients":{}}
+            """.utf8)
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: body))
+        ])
+        let store = RemoteConfigStore(
+            transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
+        await store.refresh()
+        #expect(await store.current().resolverOrder == ["visionosHLS", "embed"])
     }
 
     @Test func refreshDropsUnknownResolverStrategy() async {

@@ -9,7 +9,7 @@ import Testing
     @Test func visionOSBuildCarriesVisitorDataInBodyAndHeaderAndInjectedLocale() throws {
         let context = RemoteConfig.bundledDefault.clients["visionos"]!
         let request = builder.build(
-            videoId: "dQw4w9WgXcQ", family: .visionos, context: context, visitorData: "VISITOR123", locale: locale)
+            videoId: "xc7keR2piUM", family: .visionos, context: context, visitorData: "VISITOR123", locale: locale)
 
         #expect(request.method == "POST")
         #expect(request.url.absoluteString == "https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false")
@@ -30,9 +30,9 @@ import Testing
     @Test func identicalInputsProduceByteIdenticalBodies() {
         let context = RemoteConfig.bundledDefault.clients["visionos"]!
         let request1 = builder.build(
-            videoId: "dQw4w9WgXcQ", family: .visionos, context: context, visitorData: "VISITOR123", locale: locale)
+            videoId: "xc7keR2piUM", family: .visionos, context: context, visitorData: "VISITOR123", locale: locale)
         let request2 = builder.build(
-            videoId: "dQw4w9WgXcQ", family: .visionos, context: context, visitorData: "VISITOR123", locale: locale)
+            videoId: "xc7keR2piUM", family: .visionos, context: context, visitorData: "VISITOR123", locale: locale)
 
         #expect(request1.body == request2.body)
     }
@@ -41,7 +41,7 @@ import Testing
         let context = RemoteConfig.bundledDefault.clients["web"]!
         #expect(context.userAgent == nil)
         let request = builder.build(
-            videoId: "dQw4w9WgXcQ", family: .web, context: context, visitorData: nil, locale: locale)
+            videoId: "xc7keR2piUM", family: .web, context: context, visitorData: nil, locale: locale)
 
         #expect(request.headers["User-Agent"] == nil)
         #expect(request.headers.keys.contains("User-Agent") == false)

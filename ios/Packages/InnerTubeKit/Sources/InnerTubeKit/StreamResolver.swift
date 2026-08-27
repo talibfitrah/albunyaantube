@@ -116,7 +116,6 @@ public actor StreamResolver {
     private enum RungResult: Sendable {
         case resolved(Resolved)
         case advance
-        case jumpToOpenInYouTube
     }
 
     private func performResolve(_ videoId: String, sourceChannelId: String?) async throws -> Resolved {
@@ -157,23 +156,21 @@ public actor StreamResolver {
                 return await succeed(resolved, videoId: videoId)
             case .advance:
                 continue
-            case .jumpToOpenInYouTube:
-                return await succeed(makeOpenInYouTube(videoId), videoId: videoId)
             }
         }
         throw lastError
     }
 
     /// Only `.hls`/`.progressive` are a real fetch: they carry URLs with a TTL worth caching, and
-    /// they are the only outcome that proves the session is healthy. Caching `embed`/`openInYouTube`
-    /// would pin a user on the fallback for the full TTL after a transient bot check clears, and
-    /// counting them as a clean fetch would fake a healthy session while the ladder bottomed out.
+    /// they are the only outcome that proves the session is healthy. Caching `embed` would pin a
+    /// user on the fallback for the full TTL after a transient bot check clears, and counting it as
+    /// a clean fetch would fake a healthy session while the ladder bottomed out.
     private func succeed(_ resolved: Resolved, videoId: String) async -> Resolved {
         switch resolved.stream {
         case .hls, .progressive:
             await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
             await sessionStore.recordSuccess()
-        case .embed, .openInYouTube:
+        case .embed:
             break
         }
         return resolved
@@ -186,9 +183,11 @@ public actor StreamResolver {
         case "androidItag18":
             return try await runPlayerRung(family: .android, videoId: videoId, config: config, expectHLS: false, canRotate: true)
         case "embed":
+            // The floor of the ladder. There is no rung below it: owner directive 2026-08-27 bans
+            // every redirect or hand-off to YouTube, so a video `embed` cannot play is a terminal
+            // `ExtractionError`, never an escape hatch out of the app. `RemoteConfig` drops an
+            // `openInYouTube` entry from a published config for the same reason.
             return .resolved(makeEmbed(videoId))
-        case "openInYouTube":
-            return .resolved(makeOpenInYouTube(videoId))
         default:
             return .advance
         }
@@ -229,7 +228,10 @@ public actor StreamResolver {
         case .unplayableKids:
             return .advance
         case .ageGate:
-            return .jumpToOpenInYouTube
+            // Terminal, not a hand-off (owner directive 2026-08-27). `ageRestricted` is already one
+            // of ruling 14's terminal states and the app maps it onto its single "not playable"
+            // surface.
+            throw ExtractionError.ageRestricted
         case .botCheck:
             // Session bootstrap (Appendix A.1 `probe.py`: "a bare request establishes the session;
             // reuse responseContext.visitorData for everything after"). The very first call under a
@@ -293,12 +295,6 @@ public actor StreamResolver {
 
     private func makeEmbed(_ videoId: String) -> Resolved {
         Resolved(stream: .embed(videoId: videoId), client: .web, userAgent: "", resolvedAt: wallClock.wallNow, expiresAt: nil)
-    }
-
-    private func makeOpenInYouTube(_ videoId: String) -> Resolved {
-        // videoId is validated to 11 URL-safe chars, so this URL always parses.
-        let url = URL(string: "https://www.youtube.com/watch?v=\(videoId)")!
-        return Resolved(stream: .openInYouTube(url: url), client: .web, userAgent: "", resolvedAt: wallClock.wallNow, expiresAt: nil)
     }
 
     private func expiry(_ streaming: StreamingData, from now: Date) -> Date? {

@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import InnerTubeKit
 import Testing
+import WebKit
 @testable import FitrahTube
 
 /// B3 task 4 (`docs/superpowers/plans/2026-08-27-ios-phase2b3-embed-safemode.md`): the embed rung is
@@ -12,7 +13,7 @@ import Testing
 @MainActor
 @Suite(.perTest)
 struct PlayerScreenEmbedTests {
-    private static func embed(_ videoId: String = "dQw4w9WgXcQ") -> Resolved {
+    private static func embed(_ videoId: String = "xc7keR2piUM") -> Resolved {
         Resolved(stream: .embed(videoId: videoId), client: .web, userAgent: "",
                  resolvedAt: Date(), expiresAt: nil)
     }
@@ -25,7 +26,7 @@ struct PlayerScreenEmbedTests {
         existing.play()
         #expect(PlayerHostView.player(for: .embed(Self.embed()), replacing: existing) == nil)
         #expect(existing.rate == 0)
-        #expect(PlayerHostView.streamURL(.embed(videoId: "dQw4w9WgXcQ")) == nil)
+        #expect(PlayerHostView.streamURL(.embed(videoId: "xc7keR2piUM")) == nil)
     }
 
     @Test func endedStateShowsTheCoverAndNothingElseDoes() {
@@ -46,7 +47,7 @@ struct PlayerScreenEmbedTests {
         #expect(EmbedRungView.embedLocale(Locale(identifier: "nl-BE")) == "nl")
         #expect(EmbedRungView.embedLocale(Locale(identifier: "en-US")) == "en")
         #expect(EmbedRungView.embedLocale(Locale(identifier: "fr-FR")) == "en")
-        #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ",
+        #expect(EmbedPage.html(videoId: "xc7keR2piUM",
                                locale: EmbedRungView.embedLocale(Locale(identifier: "fr-FR")),
                                captionsPreferred: false) != nil)
     }
@@ -72,13 +73,76 @@ struct PlayerScreenEmbedTests {
         let settings = UserDefaultsSettingsStore(
             defaults: UserDefaults(suiteName: "PlayerScreenEmbedTests.\(UUID().uuidString)")!)
         let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings,
-                                    args: PlayerArgs(videoId: "dQw4w9WgXcQ", channelId: "ch1"))
-        let coordinator = EmbedWebView.Coordinator(videoId: "dQw4w9WgXcQ", resolved: Self.embed(),
+                                    args: PlayerArgs(videoId: "xc7keR2piUM", channelId: "ch1"))
+        let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", resolved: Self.embed(),
                                                    model: model, locale: "en")
         #expect(coordinator.responds(to: Selector("webView:decidePolicyForNavigationAction:decisionHandler:")))
         // The other half of the lock: without this `window.open` / `target="_blank"` escapes it.
         #expect(coordinator.responds(
             to: Selector("webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:")))
+    }
+
+    /// M5 (Task 4 review, resolved in Task 5): `WKWebView.configuration` is `@NSCopying` -- it hands
+    /// back a COPY, so `teardown`'s `web.configuration.userContentController.removeScriptMessageHandler`
+    /// only unregisters anything if that copy shares the SAME `WKUserContentController` object.
+    ///
+    /// Asserted against the JS world, not against the controller: `WKUserContentController` exposes
+    /// no list of registered names, and `add(_:name:)` under an already-taken name does NOT raise on
+    /// this SDK (verified -- the obvious "re-adding throws" check passes with the removal deleted,
+    /// i.e. it is vacuous). What a removal actually changes is observable exactly once: the next
+    /// document loses `window.webkit.messageHandlers.<name>`. A `weak`/`deinit` probe cannot see it
+    /// either -- the handler is registered through a WEAK proxy, so the coordinator deallocates
+    /// whether or not the registration was removed.
+    @MainActor
+    @Test(.timeLimit(.minutes(1))) func teardownActuallyRemovesTheScriptMessageHandler() async {
+        let settings = UserDefaultsSettingsStore(
+            defaults: UserDefaults(suiteName: "PlayerScreenEmbedTests.\(UUID().uuidString)")!)
+        let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings,
+                                    args: PlayerArgs(videoId: "xc7keR2piUM", channelId: "ch1"))
+        let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", resolved: Self.embed(),
+                                                   model: model, locale: "en")
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .nonPersistent()
+        let controller = config.userContentController
+        controller.add(ProbeMessageHandler(), name: EmbedPage.handlerName)
+        let web = WKWebView(frame: .zero, configuration: config)
+        #expect(web.configuration.userContentController === controller)
+
+        web.loadHTMLString(Self.probePage, baseURL: EmbedPage.baseURL)
+        #expect(await Self.waitForHandler(web, present: true), "the handler was never installed to begin with")
+
+        // Teardown removes the registration and loads `about:blank`. The removal becomes visible on
+        // the NEXT document -- and it has to be a document on the same base URL: `about:blank` has
+        // no `window.webkit.messageHandlers` at all, so checking there passes whether or not the
+        // handler was removed (verified: that version of this test is vacuous).
+        coordinator.teardown(web: web)
+        web.loadHTMLString(Self.probePage, baseURL: EmbedPage.baseURL)
+        #expect(await Self.waitForHandler(web, present: false),
+                "the handler namespace survived teardown -- the registration leaked with a dead target")
+    }
+
+    private static let probePage = "<html><head><title>fitrah-probe</title></head><body>probe</body></html>"
+
+    /// Polls the page for the handler namespace. Polling, not a one-shot read, because a document
+    /// load is asynchronous; the timeout is what makes the negative case fail rather than hang. The
+    /// title half of the answer is what keeps an intervening `about:blank` (which has no
+    /// `messageHandlers` object at all) from being mistaken for a successful removal.
+    private static func waitForHandler(_ web: WKWebView, present: Bool) async -> Bool {
+        let expected = present ? "true:true" : "true:false"
+        let js = "[String(document.title === 'fitrah-probe'), " +
+                 "String(!!(window.webkit && window.webkit.messageHandlers && " +
+                 "window.webkit.messageHandlers.\(EmbedPage.handlerName)))].join(':')"
+        for _ in 0..<50 {
+            if await evaluateString(web, js) == expected { return true }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        return false
+    }
+
+    private static func evaluateString(_ web: WKWebView, _ js: String) async -> String? {
+        await withCheckedContinuation { continuation in
+            web.evaluateJavaScript(js) { value, _ in continuation.resume(returning: value as? String) }
+        }
     }
 
     /// I2 (Task 4 review): the offline gate above swaps `EmbedRungView` for the offline card, so the
@@ -94,4 +158,11 @@ struct PlayerScreenEmbedTests {
         #expect(PlayerScreen.transitionAnnouncement(for: .loading, isOnline: true) == nil)
         #expect(PlayerScreen.transitionAnnouncement(for: nil, isOnline: true) == nil)
     }
+}
+
+/// A stand-in for `EmbedWebView`'s private weak proxy: the test above only needs SOMETHING
+/// registered under the handler name, not the real forwarding behaviour.
+private final class ProbeMessageHandler: NSObject, WKScriptMessageHandler {
+    nonisolated func userContentController(_ controller: WKUserContentController,
+                                           didReceive message: WKScriptMessage) {}
 }

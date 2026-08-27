@@ -41,6 +41,12 @@ enum PlayerStateCopy {
                 return Copy(message: String(localized: "connectivity_offline_banner"), showsRetry: true, announces: false)
             }
             return Copy(message: String(localized: String.LocalizationValue(messageKey)), showsRetry: true, announces: true)
+        case .unplayable(let messageKey):
+            // No Retry (ruling 14, and the B3 task 5 live pass that found the Retry): the ladder
+            // that produced this refusal produces it again. Announced, because it is a real change
+            // of state a VoiceOver user otherwise only learns from silence.
+            return Copy(message: String(localized: String.LocalizationValue(messageKey)),
+                        showsRetry: false, announces: true)
         case .contentUnavailable:
             // Ruling 14: one non-retryable "not playable" surface for every terminal reason
             // (age-restricted/geo-blocked/private/removed/unavailable) -- `player_stream_unavailable`
@@ -61,11 +67,6 @@ enum PlayerStateCopy {
             }
             preconditionFailure("PlayerStateCopy never maps the online embed rung -- PlayerScreen " +
                                  "mounts EmbedRungView for it (B3 task 4)")
-        case .openInYouTube(_, let messageKey):
-            // No Retry: the ladder that produced this state will produce it again. The hand-off
-            // button (`PlayerScreen`'s secondary action) is the exit.
-            return Copy(message: String(localized: String.LocalizationValue(messageKey)),
-                        showsRetry: false, announces: true)
         case .recoveryExhausted:
             // T7-M3 (deferred-minors.md, MUST): the manual Retry escape hatch -- this used to be a
             // bare `ProgressView` dead end.
@@ -96,10 +97,6 @@ struct PlayerStateView: View {
     let state: StreamState
     let isOnline: Bool
     let thumbnailURL: URL?
-    /// B3 task 2: the rung-4 hand-off ("Open in YouTube"). Supplied by `PlayerScreen`, because the
-    /// hand-off itself sits behind a confirmation only that screen can present (spec §6.6: rung 4
-    /// is never an automatic hand-off).
-    var secondaryAction: (title: String, handler: () -> Void)? = nil
     let retry: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -130,15 +127,12 @@ struct PlayerStateView: View {
     @ViewBuilder
     private func content(now: Date) -> some View {
         let copy = PlayerStateCopy.map(state, isOnline: isOnline, locale: locale, now: now)
-        // ONE action slot, and `copy.showsRetry` decides who owns it: no `StreamState` offers a
-        // Retry and a hand-off at once (`.openInYouTube` is `showsRetry: false` by contract --
-        // pinned by `PlayerStateViewTests.rung4CopyOffersYouTubeAndNoRetry`). Riding the shared
-        // slot leaves `StateViews.swift` -- which every list in the app uses -- untouched, and
-        // renders the rung-4 button identically to Retry instead of hand-rolling a second control
-        // (`StateButton` is private to that file).
+        // ONE action slot, and it is always Retry: the only other control this view ever offered
+        // was the YouTube hand-off, removed by owner directive 2026-08-27. A terminal state shows
+        // no button at all rather than an escape route out of the app.
         let action: (title: String, run: () -> Void)? = copy.showsRetry
             ? (title: String(localized: "retry"), run: retry)
-            : secondaryAction.map { (title: $0.title, run: $0.handler) }
+            : nil
         EmptyStateView(
             systemImage: "exclamationmark.triangle.fill",
             iconColor: .accentRed,
@@ -146,7 +140,7 @@ struct PlayerStateView: View {
             action: action,
             customIcon: (Self.isLoadingLike(state) && isOnline) ? AnyView(loadingIcon) : nil,
             messageAccessibilityIdentifier: Self.isCooldown(state) ? "player.state.countdown" : "player.state.message",
-            actionAccessibilityIdentifier: copy.showsRetry ? "player.state.retryButton" : "player.openInYouTube.button",
+            actionAccessibilityIdentifier: "player.state.retryButton",
             combinesMessageWithIcon: false
         )
         .background(Color.background)

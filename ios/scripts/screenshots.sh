@@ -223,4 +223,80 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$TASK10_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
 
+# ---------------------------------------------------------------------------------------------
+# Plan B3 (docs/superpowers/plans/2026-08-27-ios-phase2b3-embed-safemode.md): the embed rung, the
+# open-in-YouTube rung and Safe Mode. Same one-block-per-task shape as the B1/B2 blocks above.
+
+# No task-2 block: rung 4 (the "Open in YouTube" hand-off card and its confirmation) was removed
+# outright by owner directive 2026-08-27 -- the app never redirects to YouTube -- so both of its
+# screenshot cases are gone with it.
+
+# Task 4 (rung 3): the caption above the frame with every FitrahTube playback control gone, and the
+# Replay/Back cover over the end screen.
+B3_TASK4_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b3-embed-safemode/screenshots/b3-task4"
+echo "== B3 task 4 embed rung screenshots -> $B3_TASK4_OUT =="
+rm -rf "${B3_TASK4_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$B3_TASK4_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerEmbedRung \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerEmbedEnded \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
+# Task 5 (acceptance matrix): the embed rung at Dynamic Type .accessibility3 and in ar (RTL), then
+# the iPad in both orientations -- each asserting plan §6.4's 200x200 pt floor on the web view's
+# own frame. Both legs share ONE directory, so only the iPhone leg clears it.
+B3_TASK5_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b3-embed-safemode/screenshots/b3-task5"
+echo "== B3 task 5 embed a11y/RTL pass (iPhone) -> $B3_TASK5_OUT =="
+rm -rf "${B3_TASK5_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$B3_TASK5_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerEmbedB3Task5IPhone \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
+echo "== B3 task 5 embed a11y/RTL pass (iPad) -> $B3_TASK5_OUT =="
+TEST_RUNNER_FITRAH_SHOTS_DIR="$B3_TASK5_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerEmbedB3Task5IPad \
+    -destination "platform=iOS Simulator,name=iPad Pro 13-inch (M5)" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
+
+# Task 5 step 2 (live IFrame pass): OPT-IN, because these talk to youtube.com and a machine with no
+# network would fail them for the wrong reason -- the same contract InnerTubeKit's LiveResolveTests
+# has with INNERTUBE_LIVE. Run with:  EMBED_LIVE=1 ios/scripts/screenshots.sh
+if [ "${EMBED_LIVE:-0}" = "1" ]; then
+    B3_LIVE_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b3-embed-safemode/screenshots/b3-task5-live"
+    echo "== B3 task 5 LIVE IFrame checks -> $B3_LIVE_OUT =="
+    rm -rf "${B3_LIVE_OUT:?}"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$B3_LIVE_OUT" TEST_RUNNER_EMBED_LIVE=1 xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testEmbedLivePlaysAndAutoplays \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testEmbedLiveNavigationLockCancelsEveryEscape \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testEmbedLiveEndedRaisesCoverAndReplayRestarts \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testEmbedLiveRemovedCard \
+        -destination "platform=iOS Simulator,name=iPhone 17" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|EMBED_LIVE|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+fi
+
 exit "$status"

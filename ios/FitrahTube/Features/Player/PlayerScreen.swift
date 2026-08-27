@@ -16,9 +16,6 @@ struct PlayerScreen: View {
     /// window even in landscape), so this never fires there.
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var model: PlayerViewModel?
-    /// B3 task 2: rung 4 is a CONFIRMATION, never an automatic hand-off (spec §6.6) -- nothing in
-    /// this app calls `UIApplication.open` without a tap on the dialog this flag presents.
-    @State private var confirmOpenInYouTube = false
 
     var body: some View {
         Group {
@@ -186,36 +183,13 @@ struct PlayerScreen: View {
         // doc comment for why one shared view identity (not a case per state) is what makes the
         // cross-dissolve animation and transition announcements work.
         default:
+            // No secondary action and no confirmation dialog: owner directive 2026-08-27 bans every
+            // redirect and hand-off to YouTube, so a terminal state offers Retry or nothing. Nothing
+            // in this app calls `UIApplication.open` with a YouTube URL, in any Safe Mode setting.
             PlayerStateView(state: state, isOnline: container.network.isOnline,
-                            thumbnailURL: args.thumbnailURL,
-                            secondaryAction: Self.isRung4(state)
-                                ? (String(localized: "player_open_in_youtube"), { confirmOpenInYouTube = true })
-                                : nil) {
+                            thumbnailURL: args.thumbnailURL) {
                 Task { await model.retry() }
             }
-            .confirmationDialog(String(localized: "player_open_in_youtube_confirm"),
-                                isPresented: $confirmOpenInYouTube, titleVisibility: .visible) {
-                Button(String(localized: "player_open_in_youtube")) { Self.openInYouTube(videoId: args.videoId) }
-                Button(String(localized: "cancel"), role: .cancel) {}
-            }
-        }
-    }
-
-    private static func isRung4(_ state: StreamState) -> Bool {
-        if case .openInYouTube = state { return true }
-        return false
-    }
-
-    /// Rung 4 (plan §6.4 row 4). `youtube://` first so the YouTube app takes it; the completion
-    /// handler -- not `canOpenURL` -- carries the `https://youtu.be/` fallback, which is why no
-    /// `LSApplicationQueriesSchemes` entry is needed in Info.plist (that key gates `canOpenURL`
-    /// only). The fallback is also what covers an iPad-on-Mac install, where `youtube://` has no
-    /// handler at all (plan §9).
-    private static func openInYouTube(videoId: String) {
-        guard let app = URL(string: "youtube://watch?v=\(videoId)"),
-              let web = URL(string: "https://youtu.be/\(videoId)") else { return }
-        UIApplication.shared.open(app) { opened in
-            if !opened { UIApplication.shared.open(web) }
         }
     }
 
@@ -415,9 +389,6 @@ struct PlayerScreen: View {
         if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-embed") {
             return FixtureEmbedResolver()
         }
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-open-in-youtube") {
-            return FixtureOpenInYouTubeResolver()
-        }
         if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player") {
             return FixturePlayerResolver()
         }
@@ -505,29 +476,13 @@ private struct FixtureCooldownResolver: StreamResolving {
     }
 }
 
-/// B3 task 2 screenshot rig: rung 3. `.embed` needs no network and no bundled asset -- the video id
-/// is the whole stream. Until task 4 mounts `EmbedRungView` this renders the terminal placeholder
-/// card (`PlayerStateCopy.map`'s `.embed` arm), never an automatic hand-off.
+/// B3 task 2 screenshot rig: rung 3, the ladder's floor. `.embed` needs no network and no bundled
+/// asset -- the video id is the whole stream.
 private struct FixtureEmbedResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         Resolved(stream: .embed(videoId: videoId), client: .web,
                  userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
-    }
-}
-
-/// B3 task 2 screenshot rig: rung 4. Safe Mode is ON by default, which maps this outcome to
-/// `.contentUnavailable` -- launch with `-safe_mode NO` (the `NSArgumentDomain` override
-/// `UserDefaultsSettingsStore` already reads, same route as `-onboarding_completed YES`) to capture
-/// the hand-off card itself.
-private struct FixtureOpenInYouTubeResolver: StreamResolving {
-    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
-        guard let url = URL(string: "https://www.youtube.com/watch?v=\(videoId)") else {
-            throw ExtractionError.invalidVideoId
-        }
-        return Resolved(stream: .openInYouTube(url: url), client: .web,
-                        userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
 }
 

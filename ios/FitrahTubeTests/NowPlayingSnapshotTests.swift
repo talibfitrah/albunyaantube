@@ -71,9 +71,9 @@ import Testing
     /// nothing in `EmbedRungView` publishes a Now Playing entry of its own (YouTube API Services
     /// policy III.I.9: no background player for embed content).
     @Test func theEmbedRungAdvertisesNoNowPlayingEntry() {
-        let resolved = Resolved(stream: .embed(videoId: "dQw4w9WgXcQ"), client: .web, userAgent: "",
+        let resolved = Resolved(stream: .embed(videoId: "xc7keR2piUM"), client: .web, userAgent: "",
                                 resolvedAt: Date(), expiresAt: nil)
-        #expect(NowPlayingSnapshot.make(args: PlayerArgs(videoId: "dQw4w9WgXcQ"),
+        #expect(NowPlayingSnapshot.make(args: PlayerArgs(videoId: "xc7keR2piUM"),
                                         state: .embed(resolved),
                                         elapsed: 0, duration: 120, rate: 1) == nil)
     }

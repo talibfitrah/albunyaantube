@@ -14,7 +14,6 @@ struct PlayerViewModelTests {
     private static let hls = resolved(.hls(url: URL(string: "https://example.com/a.m3u8")!, isLive: false, audioOnlyURL: nil, captionTracks: []))
     private static let progressive = resolved(.progressive(url: URL(string: "https://example.com/a.mp4")!, label: "360p"))
     private static let embed = resolved(.embed(videoId: "abcdefghijk"))
-    private static let openInYouTube = resolved(.openInYouTube(url: URL(string: "https://www.youtube.com/watch?v=abcdefghijk")!))
 
     /// `Self.hls` carries `expiresAt: nil`, which `shouldPreemptivelyReResolve` reads as "never
     /// expires" -- the silent-refresh test below needs a stream that actually does expire.
@@ -89,25 +88,16 @@ struct PlayerViewModelTests {
         #expect(vm.state == .embed(Self.embed))
     }
 
-    @Test func openInYouTubeIsOfferedWhenSafeModeIsOff() async {
-        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.openInYouTube)]), safeMode: false)
-        await vm.open()
-        #expect(vm.state == .openInYouTube(Self.openInYouTube, messageKey: "player_error_generic"))
-    }
-
-    @Test func safeModeRemovesTheOpenInYouTubeRung() async {
-        // Spec §10 / plan §6.10: rung 4 is hidden ENTIRELY in Safe Mode. Ruling 14's single terminal
-        // "not playable" surface is where it lands -- not an error with a Retry that can never succeed.
-        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.openInYouTube)]), safeMode: true)
-        await vm.open()
-        #expect(vm.state == .contentUnavailable)
-    }
-
-    @Test func safeModeDoesNotSuppressTheEmbedRung() async {
-        // The rung that keeps a child inside the app is the one Safe Mode must KEEP. Only rung 4 goes.
-        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.embed)]), safeMode: true)
-        await vm.open()
-        #expect(vm.state == .embed(Self.embed))
+    /// OWNER DIRECTIVE 2026-08-27: there is no hand-off rung, in EITHER Safe Mode setting. The
+    /// ladder's floor is the embed, and the embed is what Safe Mode must keep -- it is the rung that
+    /// holds a child inside the app. (The resolver can no longer even emit a hand-off: the enum case
+    /// is gone, which is what makes this test's `for` loop exhaustive rather than illustrative.)
+    @Test func theLadderNeverProducesAHandOffInEitherSafeModeState() async {
+        for safeMode in [false, true] {
+            let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.embed)]), safeMode: safeMode)
+            await vm.open()
+            #expect(vm.state == .embed(Self.embed), "safeMode: \(safeMode)")
+        }
     }
 
     @Test func aSilentRefreshNeverSwapsAPlayingStreamIntoTheEmbed() async {
@@ -125,10 +115,10 @@ struct PlayerViewModelTests {
 
     @Test func embedActionsMapOntoTerminalStates() {
         let vm = makeViewModel(resolver: FakeResolver(outcomes: []), safeMode: false)
-        vm.applyEmbedAction(.fail(messageKey: "player_embed_removed"), resolved: Self.embed)
+        vm.applyEmbedAction(.fail(messageKey: "player_embed_removed"))
         #expect(vm.state == .error(messageKey: "player_embed_removed"))
-        vm.applyEmbedAction(.offerYouTube(messageKey: "player_embed_owner_only"), resolved: Self.embed)
-        #expect(vm.state == .openInYouTube(Self.embed, messageKey: "player_embed_owner_only"))
+        vm.applyEmbedAction(.fail(messageKey: "player_stream_unavailable"))
+        #expect(vm.state == .error(messageKey: "player_stream_unavailable"))
     }
 
     @Test func unavailableMapsToContentUnavailable() async {

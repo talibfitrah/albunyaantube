@@ -21,6 +21,10 @@ extension Tag {
 @Suite struct LiveResolveTests {
     /// "Normal lecture" case from `probes/probe-2026-08-23.md` — confirmed VISIONOS OK +
     /// `hlsManifestUrl` present, no pot demanded, live-verified 2026-08-23.
+    /// The repo's ONE shared video id, used by every offline fixture and every live check across
+    /// the iOS targets. It is a lecture from the app's approved catalog: owner directive 2026-08-27
+    /// forbids a music video (or any arbitrary YouTube video) as a test id -- this is a Muslim
+    /// audience app -- so nothing here may be swapped for a "famous" id.
     private static let knownGoodVideoId = "xc7keR2piUM"
 
     private struct AlwaysAvailable: AvailabilityGate {

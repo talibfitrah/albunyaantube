@@ -519,7 +519,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             return audioOnly ? (audioOnlyURL ?? url) : url
         case .progressive(let url, _):
             return url   // rung 2 has no separate audio rendition; the toggle is hidden there anyway
-        case .embed, .openInYouTube:
+        case .embed:
             return nil // B3
         }
     }

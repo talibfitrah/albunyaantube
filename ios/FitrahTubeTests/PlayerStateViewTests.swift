@@ -20,17 +20,6 @@ struct PlayerStateViewTests {
         stream: .progressive(url: URL(string: "https://example.com/a.mp4")!, label: "360p"),
         client: .visionos, userAgent: "ua", resolvedAt: Date(), expiresAt: nil)
 
-    // MARK: - Rung 4 (B3 task 2)
-
-    @Test func rung4CopyOffersYouTubeAndNoRetry() {
-        let resolved = Resolved(stream: .openInYouTube(url: URL(string: "https://www.youtube.com/watch?v=x")!),
-                                 client: .web, userAgent: "", resolvedAt: Date(), expiresAt: nil)
-        let copy = PlayerStateCopy.map(.openInYouTube(resolved, messageKey: "player_embed_owner_only"), isOnline: true)
-        #expect(copy.message == String(localized: "player_embed_owner_only"))
-        #expect(copy.showsRetry == false)     // retrying the ladder lands here again; the hand-off is the exit
-        #expect(copy.announces)               // spec §6.6 Transitions
-    }
-
     // MARK: - Loading / offline gate
 
     @Test func idleWhileOnlineShowsLoadingCopyWithNoRetryAndNoAnnouncement() {
@@ -81,7 +70,7 @@ struct PlayerStateViewTests {
     }
 
     @Test func errorResolvesADifferentMessageKeyIndependently() {
-        // T2-1: the embed/openInYouTube placeholder's key, added via EXTRA_KEYS this task.
+        // T2-1: the ladder's generic terminal key, added via EXTRA_KEYS in B3 task 2.
         let copy = PlayerStateCopy.map(.error(messageKey: "player_error_generic"), isOnline: true, locale: Self.enUS)
         #expect(copy.message == String(localized: "player_error_generic"))
     }

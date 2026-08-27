@@ -10198,28 +10198,6 @@
         }
       }
     },
-    "player_embed_owner_only": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يسمح صاحب القناة بمشاهدة هذا الفيديو على يوتيوب فقط"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The creator only allows this video on YouTube"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "De maker staat deze video alleen op YouTube toe"
-          }
-        }
-      }
-    },
     "player_embed_removed": {
       "localizations": {
         "ar": {
@@ -10832,50 +10810,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Offline openen"
-          }
-        }
-      }
-    },
-    "player_open_in_youtube": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "فتح في يوتيوب"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open in YouTube"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Openen in YouTube"
-          }
-        }
-      }
-    },
-    "player_open_in_youtube_confirm": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "فتح هذا الفيديو في يوتيوب؟"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open this video in YouTube?"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Deze video in YouTube openen?"
           }
         }
       }

@@ -33,7 +33,7 @@ import Testing
         let config = await innerTube.remoteConfig.current()
         #expect(config.resolverOrder == RemoteConfig.bundledDefault.resolverOrder)
 
-        let decision = await innerTube.rateLimiter.check("dQw4w9WgXcQ", kind: .player, now: .zero)
+        let decision = await innerTube.rateLimiter.check("xc7keR2piUM", kind: .player, now: .zero)
         #expect(decision == .allowed)
     }
 }

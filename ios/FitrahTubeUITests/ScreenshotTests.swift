@@ -403,55 +403,6 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-recovery-exhausted-state", into: directory)
     }
 
-    /// Plan B3 task 2: rung 4 -- reason line + "Open in YouTube", NO Retry, and the hand-off behind
-    /// a confirmation (spec §6.6: "never an automatic hand-off"). Safe Mode defaults to ON, which
-    /// maps this outcome to `.contentUnavailable` instead, so `-safe_mode NO` turns it off through
-    /// the `NSArgumentDomain` route `-onboarding_completed YES` already uses. Two shots: the card,
-    /// then the confirmation dialog it presents.
-    func testPlayerOpenInYouTubeState() throws {
-        let directory = try shotsDirectory()
-        let screen = Screen(key: "player-open-in-youtube",
-                            arguments: ["-fitrah-fake-player-open-in-youtube", "-safe_mode", "NO",
-                                        "-fitrah-route", "player", "fixture-video"],
-                            anchor: .button("unused"))
-        XCUIDevice.shared.orientation = .portrait
-        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
-        let handoff = app.buttons["player.openInYouTube.button"]
-        XCTAssertTrue(handoff.waitForExistence(timeout: 20), "player-open-in-youtube: hand-off button never appeared")
-        XCTAssertFalse(app.buttons["player.state.retryButton"].exists,
-                       "player-open-in-youtube: rung 4 must not offer Retry")
-        try write(named: "player-open-in-youtube-state", into: directory)
-
-        handoff.tap()
-        // The dialog's own title, not an identifier: `confirmationDialog` renders a system sheet
-        // whose title is a plain static text. Nothing has opened YouTube at this point -- that is
-        // the whole assertion (spec §6.6, rung 4 is never automatic).
-        let confirmation = app.staticTexts["Open this video in YouTube?"]
-        XCTAssertTrue(confirmation.waitForExistence(timeout: 10),
-                      "player-open-in-youtube: confirmation never appeared")
-        try write(named: "player-open-in-youtube-confirmation", into: directory)
-    }
-
-    /// Plan B3 task 2: the same rung-4 outcome with Safe Mode at its DEFAULT (on) -- the rung is
-    /// removed entirely and lands on the one terminal "not playable" card, with no hand-off button
-    /// and no Retry (spec §10 / plan §6.10, ruling 14).
-    func testPlayerSafeModeRemovesOpenInYouTubeRung() throws {
-        let directory = try shotsDirectory()
-        let screen = Screen(key: "player-safe-mode-rung4-removed",
-                            arguments: ["-fitrah-fake-player-open-in-youtube",
-                                        "-fitrah-route", "player", "fixture-video"],
-                            anchor: .button("unused"))
-        XCUIDevice.shared.orientation = .portrait
-        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
-        let message = app.staticTexts["player.state.message"]
-        XCTAssertTrue(message.waitForExistence(timeout: 20), "player-safe-mode: message never appeared")
-        XCTAssertFalse(app.buttons["player.openInYouTube.button"].exists,
-                       "player-safe-mode: Safe Mode must remove the hand-off entirely")
-        XCTAssertFalse(app.buttons["player.state.retryButton"].exists,
-                       "player-safe-mode: terminal state must not offer Retry")
-        try write(named: "player-safe-mode-rung4-removed", into: directory)
-    }
-
     /// Plan B3 task 4: rung 3 -- the caption ABOVE the frame (never an overlay on the player, RMF),
     /// the 16:9 frame, and FitrahTube's toolbar + metadata below it. Every FitrahTube PLAYBACK
     /// control (quality / captions / audio-language / audio-only / rung-2 pill / PiP) is absent by
@@ -467,7 +418,7 @@ final class ScreenshotTests: XCTestCase {
                             // `EmbedPage.html` refuses anything that fails `^[A-Za-z0-9_-]{11}$`
                             // (it is a substitution into a `<script>`), and a refusal takes the
                             // rung straight to the error card with no caption to capture.
-                            arguments: ["-fitrah-fake-player-embed", "-fitrah-route", "player", "dQw4w9WgXcQ"],
+                            arguments: ["-fitrah-fake-player-embed", "-fitrah-route", "player", Self.liveEmbeddableId],
                             anchor: .button("unused"))
         XCUIDevice.shared.orientation = .portrait
         let app = launch(screen, locale: Self.locales[0], extraArguments: [])
@@ -498,7 +449,7 @@ final class ScreenshotTests: XCTestCase {
         let directory = try shotsDirectory()
         let screen = Screen(key: "player-embed-ended",
                             arguments: ["-fitrah-fake-player-embed", "-fitrah-fake-embed-ended",
-                                        "-fitrah-route", "player", "dQw4w9WgXcQ"],
+                                        "-fitrah-route", "player", Self.liveEmbeddableId],
                             anchor: .button("unused"))
         XCUIDevice.shared.orientation = .portrait
         let app = launch(screen, locale: Self.locales[0], extraArguments: [])
@@ -506,6 +457,233 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(replay.waitForExistence(timeout: 20), "player-embed-ended: replay never appeared")
         XCTAssertTrue(app.buttons["player.embedBack"].exists, "player-embed-ended: back never appeared")
         try write(named: "player-embed-ended-cover", into: directory)
+    }
+
+    // MARK: - B3 task 5: acceptance matrix + the live-YouTube pass
+
+    /// The live checks load real videos, so the ids are drawn ONLY from the app's approved catalog
+    /// (owner directive 2026-08-27: never an arbitrary YouTube video, and never a music video --
+    /// this is a Muslim audience app). Both come from the InnerTubeKit browse fixtures, i.e. the
+    /// curated lecture channels this app actually serves:
+    ///   - `xc7keR2piUM`  the shared catalog lecture id (`LiveResolveTests.knownGoodVideoId`), 2h21m
+    ///   - `16QZlP5da1Y`  a 52 s catalog clip -- short enough to reach ENDED without a long seek
+    ///   - `aaaaaaaaaaa`  NOT a video at all: a well-formed id that matches nothing, which is how
+    ///                    IFrame error 100 ("removed or private") is provoked without loading
+    ///                    anyone's content.
+    /// There is no live check for IFrame error 101/150: every video in the approved catalog is
+    /// embeddable (all 19 fixture ids probed 2026-08-27, `"playableInEmbed":true`), and reaching
+    /// that code would mean loading a video from outside the catalog. `EmbedPolicyTests` pins the
+    /// 101/150 mapping instead.
+    private static let liveEmbeddableId = "xc7keR2piUM"
+    private static let liveShortId = "16QZlP5da1Y"
+    private static let liveRemovedId = "aaaaaaaaaaa"
+
+    /// The live checks talk to youtube.com. They are OFF by default (a red test on a machine with
+    /// no network proves nothing) and run under `EMBED_LIVE=1`, exactly like InnerTubeKit's
+    /// `LiveResolveTests` and its `INNERTUBE_LIVE`. `ios/scripts/screenshots.sh` passes it through
+    /// as `TEST_RUNNER_EMBED_LIVE`.
+    private func requireLive() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["EMBED_LIVE"] == "1",
+                          "live IFrame checks are opt-in: EMBED_LIVE=1")
+    }
+
+    private func embedScreen(_ videoId: String, extra: [String] = []) -> Screen {
+        Screen(key: "player-embed-live",
+               arguments: ["-fitrah-fake-player-embed"] + extra + ["-fitrah-route", "player", videoId],
+               anchor: .button("unused"))
+    }
+
+    /// Plan §6.4 row 3's floor is "at least 200x200 pt of video". This reads the WKWebView's own
+    /// frame (points, not pixels) rather than trusting the 16:9 aspect ratio to have produced it.
+    private func assertEmbedFrameFloor(_ app: XCUIApplication, _ label: String) {
+        let frame = app.webViews["player.embedFrame"]
+        XCTAssertTrue(frame.waitForExistence(timeout: 20), "\(label): embed frame never appeared")
+        XCTAssertGreaterThanOrEqual(frame.frame.width, 200, "\(label): embed frame narrower than 200 pt")
+        XCTAssertGreaterThanOrEqual(frame.frame.height, 200, "\(label): embed frame shorter than 200 pt")
+    }
+
+    /// iPhone leg of the B3 acceptance matrix: en portrait at Dynamic Type `.accessibility3` (the
+    /// caption wraps, it does not clip) and ar portrait (RTL -- the caption is leading-aligned and
+    /// mirrors; the 16:9 frame does not).
+    func testPlayerEmbedB3Task5IPhone() throws {
+        let directory = try shotsDirectory()
+        let screen = embedScreen(Self.liveEmbeddableId)
+
+        XCUIDevice.shared.orientation = .portrait
+        var app = launch(screen, locale: Self.locales[0], extraArguments: Self.accessibility3)
+        XCTAssertTrue(app.staticTexts["player.embedCaption"].waitForExistence(timeout: 20),
+                      "b3-task5 iphone a11y3: caption never appeared")
+        assertEmbedFrameFloor(app, "b3-task5 iphone a11y3")
+        try write(named: "player-embed-iphone-en-a11y3-portrait", into: directory)
+
+        app = launch(screen, locale: Self.locales[1], extraArguments: [])
+        let caption = app.staticTexts["player.embedCaption"]
+        XCTAssertTrue(caption.waitForExistence(timeout: 20), "b3-task5 iphone ar: caption never appeared")
+        XCTAssertEqual(caption.label, "يتم التشغيل في مشغّل يوتيوب",
+                       "b3-task5 iphone ar: the caption must be the Arabic copy, not the key or the en value")
+        assertEmbedFrameFloor(app, "b3-task5 iphone ar")
+        try write(named: "player-embed-iphone-ar-portrait", into: directory)
+    }
+
+    /// iPad leg: portrait and landscape, both over the 200x200 pt floor with the content column
+    /// capped at `Size.playerMaxWidth`.
+    func testPlayerEmbedB3Task5IPad() throws {
+        let directory = try shotsDirectory()
+        let screen = embedScreen(Self.liveEmbeddableId)
+
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.staticTexts["player.embedCaption"].waitForExistence(timeout: 20),
+                      "b3-task5 ipad portrait: caption never appeared")
+        assertEmbedFrameFloor(app, "b3-task5 ipad portrait")
+        try write(named: "player-embed-ipad-en-portrait", into: directory)
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        settle(app, landscape: true)
+        assertEmbedFrameFloor(app, "b3-task5 ipad landscape")
+        try write(named: "player-embed-ipad-en-landscape", into: directory)
+        XCUIDevice.shared.orientation = .portrait
+    }
+
+    // MARK: - B3 task 5 step 2: live IFrame checks (EMBED_LIVE=1)
+
+    /// The bridge's own record of what the web content process did. `-fitrah-embed-debug-events`
+    /// renders it under the frame (DEBUG only) because a `WKWebView`'s remote content exposes
+    /// nothing else an XCUITest can assert on.
+    private func embedLog(_ app: XCUIApplication) -> String {
+        // `.label` on a missing element THROWS ("no matches found"), so the existence check is not
+        // defensive padding -- the log view only appears once the first event lands, and the first
+        // poll always runs before that.
+        let element = app.staticTexts["player.embedDebugLog"]
+        return element.exists ? element.label : ""
+    }
+
+    private func waitForEmbedLog(_ app: XCUIApplication, containing needle: String,
+                                 timeout: TimeInterval = 45) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if embedLog(app).contains(needle) { return true }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return false
+    }
+
+    /// Live 1: a real embeddable video loads, the `origin` player var is accepted (error 153 is the
+    /// "no/!bad Referer" answer and must never appear), and the page AUTOPLAYS off `onReady` --
+    /// state 1 arrives without anyone tapping anything.
+    func testEmbedLivePlaysAndAutoplays() throws {
+        try requireLive()
+        let directory = try shotsDirectory()
+        let app = launch(embedScreen(Self.liveEmbeddableId, extra: ["-fitrah-embed-debug-events"]),
+                         locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.staticTexts["player.embedCaption"].waitForExistence(timeout: 20),
+                      "live: caption never appeared")
+        XCTAssertTrue(waitForEmbedLog(app, containing: "ready"), "live: onReady never arrived — log: \(embedLog(app))")
+        XCTAssertTrue(waitForEmbedLog(app, containing: "state(1)"),
+                      "live: never autoplayed (no state 1) — log: \(embedLog(app))")
+        let log = embedLog(app)
+        XCTAssertFalse(log.contains("error(153)"), "live: origin rejected (error 153) — log: \(log)")
+        XCTAssertFalse(log.contains("error("), "live: unexpected IFrame error — log: \(log)")
+        print("[EMBED_LIVE] playsAndAutoplays log:\n\(log)")
+        try write(named: "live-embed-playing", into: directory)
+    }
+
+    /// Live 2: every escape the IFrame offers (title, channel avatar, YouTube logo, "Watch on
+    /// YouTube", share, end-screen cards) is a MAIN-FRAME navigation, and the lock cancels every
+    /// one. Asserted from the lock's own verdicts: no main-frame navigation off
+    /// `app.fitrahtube.com` may ever be allowed.
+    func testEmbedLiveNavigationLockCancelsEveryEscape() throws {
+        try requireLive()
+        let directory = try shotsDirectory()
+        let app = launch(embedScreen(Self.liveEmbeddableId, extra: ["-fitrah-embed-debug-events"]),
+                         locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(waitForEmbedLog(app, containing: "state(1)"),
+                      "live nav lock: video never started — log: \(embedLog(app))")
+        let frame = app.webViews["player.embedFrame"]
+        XCTAssertTrue(frame.exists, "live nav lock: embed frame never appeared")
+
+        // Reveal the player chrome, then hit each escape in turn: the title bar (title + channel
+        // avatar + "Watch on YouTube"/share at the top of the frame) and the YouTube logo in the
+        // bottom-right of the control bar.
+        let targets: [(String, CGVector)] = [
+            ("center/controls", CGVector(dx: 0.5, dy: 0.5)),
+            ("title", CGVector(dx: 0.25, dy: 0.12)),
+            ("watch-on-youtube/share", CGVector(dx: 0.92, dy: 0.12)),
+            ("channel avatar", CGVector(dx: 0.06, dy: 0.12)),
+            ("youtube logo", CGVector(dx: 0.9, dy: 0.9))
+        ]
+        for (name, offset) in targets {
+            frame.coordinate(withNormalizedOffset: offset).tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            XCTAssertEqual(app.state, .runningForeground, "live nav lock: \(name) backgrounded FitrahTube")
+            XCTAssertTrue(app.staticTexts["player.embedCaption"].exists,
+                          "live nav lock: \(name) left the embed screen")
+        }
+
+        let log = embedLog(app)
+        print("[EMBED_LIVE] navigationLock log:\n\(log)")
+        for line in log.split(separator: "\n").map(String.init) where line.hasPrefix("allow main ") {
+            XCTAssertTrue(line.contains("https://app.fitrahtube.com") || line.contains("about:blank"),
+                          "live nav lock: a main-frame navigation off the bundled page was ALLOWED: \(line)")
+        }
+        try write(named: "live-embed-after-escape-taps", into: directory)
+    }
+
+    /// Live 3: a genuinely short video reaches ENDED, the bridge carries state 0, the cover rises
+    /// over YouTube's end screen, and Replay restarts it (state 1 again after the cover is gone).
+    /// No `-fitrah-fake-embed-ended` here -- that seeds the cover with no IFrame behind it.
+    func testEmbedLiveEndedRaisesCoverAndReplayRestarts() throws {
+        try requireLive()
+        let directory = try shotsDirectory()
+        let app = launch(embedScreen(Self.liveShortId,
+                                     extra: ["-fitrah-embed-debug-events", "-fitrah-embed-seek-to-end"]),
+                         locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(waitForEmbedLog(app, containing: "state(0)"),
+                      "live ended: state 0 never arrived — log: \(embedLog(app))")
+        let replay = app.buttons["player.embedReplay"]
+        XCTAssertTrue(replay.waitForExistence(timeout: 15),
+                      "live ended: the cover never rose — log: \(embedLog(app))")
+        XCTAssertTrue(app.buttons["player.embedBack"].exists, "live ended: Back missing from the cover")
+        print("[EMBED_LIVE] ended log:\n\(embedLog(app))")
+        try write(named: "live-embed-ended-cover", into: directory)
+
+        replay.tap()
+        // Replay seeks to 0 and plays: state 1 clears the cover through the bridge, never locally
+        // (M2, Task 4 review). Polled rather than `expectation(for:evaluatedWith:)` -- that API
+        // sends `self` across an isolation boundary, which Swift 6 rejects in this target.
+        let deadline = Date().addingTimeInterval(30)
+        while replay.exists, Date() < deadline { Thread.sleep(forTimeInterval: 0.5) }
+        XCTAssertFalse(replay.exists, "live ended: Replay did not restart playback — log: \(embedLog(app))")
+        print("[EMBED_LIVE] after replay log:\n\(embedLog(app))")
+        try write(named: "live-embed-after-replay", into: directory)
+    }
+
+    /// Live 4: a well-formed but nonexistent id answers 100 -> the removed card. Terminal in both
+    /// Safe Mode states, with no route out of the app in either (owner directive 2026-08-27).
+    func testEmbedLiveRemovedCard() throws {
+        try requireLive()
+        let directory = try shotsDirectory()
+        for (suffix, extra) in [("safemode-on", [String]()), ("safemode-off", ["-safe_mode", "NO"])] {
+            let app = launch(embedScreen(Self.liveRemovedId,
+                                         extra: ["-fitrah-embed-debug-events"] + extra),
+                             locale: Self.locales[0], extraArguments: [])
+            let message = app.staticTexts["player.state.message"]
+            XCTAssertTrue(message.waitForExistence(timeout: 45),
+                          "live removed (\(suffix)): never left the embed — log: \(embedLog(app))")
+            let copy = message.label
+            print("[EMBED_LIVE] removed(\(suffix)) copy=\(copy) log:\n\(embedLog(app))")
+            // The exact code is YouTube's to choose (observed live 2026-08-27: 150, not the 100 the
+            // plan predicted for a nonexistent id), so the assertion is the INVARIANT rather than
+            // the code: whatever it answers, the rung is terminal, silent about YouTube, and has no
+            // Retry that could only fail again.
+            XCTAssertTrue(["This video was removed", "This video is not available for playback."].contains(copy),
+                          "live removed (\(suffix)): unexpected terminal copy \(copy)")
+            XCTAssertFalse(app.buttons["player.state.retryButton"].exists,
+                           "live removed (\(suffix)): a terminal embed error must offer no Retry")
+            XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label CONTAINS 'YouTube'")).count, 0,
+                           "live removed (\(suffix)): no control may route the user out to YouTube")
+            try write(named: "live-embed-removed-\(suffix)", into: directory)
+        }
     }
 
     // MARK: - B1 task 10: iPad / RTL / Dynamic Type / VoiceOver pass

@@ -13,8 +13,8 @@ struct EmbedPolicyTests {
     // MARK: - EmbedPage
 
     @Test func htmlSubstitutesOnlyAValidVideoIdAndLocale() {
-        #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "ar", captionsPreferred: false)?
-            .contains("dQw4w9WgXcQ") == true)
+        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "ar", captionsPreferred: false)?
+            .contains("xc7keR2piUM") == true)
         // The one injection point in this app that puts a value inside a <script>. A validated
         // 11-char id is the whole defence -- escaping is not attempted, refusal is.
         #expect(EmbedPage.html(videoId: "\";alert(1);//", locale: "en", captionsPreferred: false) == nil)
@@ -25,21 +25,21 @@ struct EmbedPolicyTests {
         // `hl` is JSON-encoded, not a security boundary (unlike `videoId`, which stays strict and
         // nil-returning): any value outside {en, ar, nl} -- including one shaped like an injection
         // attempt -- just defaults to "en" rather than failing the whole embed.
-        #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "fr", captionsPreferred: false)?
+        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "fr", captionsPreferred: false)?
             .contains("\"hl\":\"en\"") == true)
-        #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "en-US\";x", captionsPreferred: false)?
+        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "en-US\";x", captionsPreferred: false)?
             .contains("\"hl\":\"en\"") == true)
     }
 
     @Test func htmlCarriesThePlayerVarsPlan64RequiresAndNothingElse() {
-        let html = EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "nl", captionsPreferred: true)!
+        let html = EmbedPage.html(videoId: "xc7keR2piUM", locale: "nl", captionsPreferred: true)!
         #expect(html.contains("playsinline"))
         #expect(html.contains("enablejsapi"))
         #expect(html.contains("rel"))
         #expect(html.contains("youtube-nocookie.com"))
         #expect(html.contains("hl") && html.contains("nl"))
         #expect(html.contains("cc_load_policy"))          // captionsPreferred: true
-        #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "nl", captionsPreferred: false)!
+        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "nl", captionsPreferred: false)!
             .contains("cc_load_policy") == false)
         // 2.5.2 / plan §6.14: the ONLY remote script is YouTube's own IFrame API.
         let scripts = html.components(separatedBy: "src=\"").dropFirst().map { $0.prefix(while: { $0 != "\"" }) }
@@ -51,7 +51,7 @@ struct EmbedPolicyTests {
         // a path never matches. `baseURL` (with `/embed`) stays the `loadHTMLString` base and the
         // navigation lock's one accepted URL; `origin` is the app-owned https origin, not youtube.com
         // and not `baseURL`'s full path.
-        let html = EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "en", captionsPreferred: false)!
+        let html = EmbedPage.html(videoId: "xc7keR2piUM", locale: "en", captionsPreferred: false)!
         #expect(html.contains("\"origin\":\"https://app.fitrahtube.com\""))
         #expect(html.contains("https://app.fitrahtube.com/embed") == false)
         #expect(EmbedPage.baseURL.absoluteString == "https://app.fitrahtube.com/embed")
@@ -60,7 +60,7 @@ struct EmbedPolicyTests {
     @Test func htmlAutoplaysOnReadyAndReportsTheFourEvents() {
         // Ruled: autoplay is driven from `onReady`, not the `autoplay` player var -- the var races
         // the API's own readiness and is ignored on iOS without a user gesture in some builds.
-        let html = EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "en", captionsPreferred: false)!
+        let html = EmbedPage.html(videoId: "xc7keR2piUM", locale: "en", captionsPreferred: false)!
         #expect(html.contains("playVideo()"))
         #expect(html.contains("onReady"))
         #expect(html.contains("onStateChange"))
@@ -121,33 +121,63 @@ struct EmbedPolicyTests {
 
     // MARK: - EmbedErrorPolicy
 
+    /// Ruling 14: an error a reload cannot fix is TERMINAL -- no Retry. Found live (B3 task 5):
+    /// a nonexistent id answered 150, landed on `.error(messageKey:)`, and rendered a Retry button
+    /// that re-walked the ladder into the identical refusal. `.unplayable` is the arm with no Retry;
+    /// `.fail` is the genuinely retryable one (a transient load failure, a dead content process).
+    @Test func codesAReloadCannotFixAreTerminalWithNoRetry() {
+        for code in [100, 101, 150] {
+            guard case .unplayable(let key) = EmbedErrorPolicy.decide(code: code, alreadyReloaded: false) else {
+                Issue.record("code \(code) is not terminal"); continue
+            }
+            #expect(PlayerStateCopy.map(.unplayable(messageKey: key), isOnline: true).showsRetry == false)
+        }
+        // ...and the genuinely transient ones keep theirs.
+        #expect(PlayerStateCopy.map(.error(messageKey: "player_error_message"), isOnline: true).showsRetry)
+    }
+
     @Test func errorCodesMapExactlyAsPlan66Says() {
         // 100 -> removed. Terminal, distinct copy.
-        #expect(EmbedErrorPolicy.decide(code: 100, alreadyReloaded: false, safeMode: false)
-            == .fail(messageKey: "player_embed_removed"))
-        // 101/150 -> creator only allows it on YouTube, + Open in YouTube UNLESS Safe Mode.
-        #expect(EmbedErrorPolicy.decide(code: 101, alreadyReloaded: false, safeMode: false)
-            == .offerYouTube(messageKey: "player_embed_owner_only"))
-        #expect(EmbedErrorPolicy.decide(code: 150, alreadyReloaded: false, safeMode: false)
-            == .offerYouTube(messageKey: "player_embed_owner_only"))
-        #expect(EmbedErrorPolicy.decide(code: 150, alreadyReloaded: false, safeMode: true)
-            == .fail(messageKey: "player_embed_owner_only"))
+        #expect(EmbedErrorPolicy.decide(code: 100, alreadyReloaded: false)
+            == .unplayable(messageKey: "player_embed_removed"))
+        // 101/150 -> the IFrame refuses to play it. Terminal, on the app's ONE "not available"
+        // surface -- owner directive 2026-08-27: no hand-off, and no copy naming YouTube as the
+        // place to watch it either, which would be the same redirect phrased as a sentence.
+        #expect(EmbedErrorPolicy.decide(code: 101, alreadyReloaded: false)
+            == .unplayable(messageKey: "player_stream_unavailable"))
+        #expect(EmbedErrorPolicy.decide(code: 150, alreadyReloaded: false)
+            == .unplayable(messageKey: "player_stream_unavailable"))
         // 2/5/153 -> retry once, then give up. 153 is a missing Referer, i.e. OUR bug -- one reload
         // covers a transient load failure and the second occurrence is worth surfacing, not looping.
         for code in [2, 5, 153, 999] {
-            #expect(EmbedErrorPolicy.decide(code: code, alreadyReloaded: false, safeMode: false) == .reloadOnce)
-            #expect(EmbedErrorPolicy.decide(code: code, alreadyReloaded: true, safeMode: false)
+            #expect(EmbedErrorPolicy.decide(code: code, alreadyReloaded: false) == .reloadOnce)
+            #expect(EmbedErrorPolicy.decide(code: code, alreadyReloaded: true)
                 == .fail(messageKey: "player_error_message"))
         }
         // 100 and 101/150 are terminal on the FIRST occurrence: a reload cannot un-remove a video.
-        #expect(EmbedErrorPolicy.decide(code: 100, alreadyReloaded: true, safeMode: false)
-            == .fail(messageKey: "player_embed_removed"))
-        // Content-process termination: reload once, then rung 4 (plan §6.4 row 3), Safe Mode excepted.
-        #expect(EmbedErrorPolicy.decideProcessTermination(alreadyReloaded: false, safeMode: false) == .reloadOnce)
-        #expect(EmbedErrorPolicy.decideProcessTermination(alreadyReloaded: true, safeMode: false)
-            == .offerYouTube(messageKey: "player_error_generic"))
-        #expect(EmbedErrorPolicy.decideProcessTermination(alreadyReloaded: true, safeMode: true)
+        #expect(EmbedErrorPolicy.decide(code: 100, alreadyReloaded: true)
+            == .unplayable(messageKey: "player_embed_removed"))
+        // Content-process termination: reload once, then report. Never an escape hatch.
+        #expect(EmbedErrorPolicy.decideProcessTermination(alreadyReloaded: false) == .reloadOnce)
+        #expect(EmbedErrorPolicy.decideProcessTermination(alreadyReloaded: true)
             == .fail(messageKey: "player_error_generic"))
+    }
+
+    /// OWNER DIRECTIVE 2026-08-27, pinned as behaviour rather than as a deleted enum case: NO embed
+    /// error code, at any point in the reload budget, may produce anything but a reload or a
+    /// terminal message -- and none of those messages may name YouTube as somewhere to go instead.
+    @Test func noEmbedErrorEverRoutesTheUserOutToYouTube() {
+        for code in [1, 2, 5, 100, 101, 150, 153, 999] {
+            for reloaded in [false, true] {
+                let key: String
+                switch EmbedErrorPolicy.decide(code: code, alreadyReloaded: reloaded) {
+                case .reloadOnce: continue
+                case .fail(let messageKey), .unplayable(let messageKey): key = messageKey
+                }
+                let copy = String(localized: String.LocalizationValue(key))
+                #expect(copy.contains("YouTube") == false, "code \(code) copy points the user at YouTube")
+            }
+        }
     }
 
     // MARK: - The one non-pure test

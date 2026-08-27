@@ -139,23 +139,11 @@ EXTRA_KEYS = {
         "ar": "تمت إزالة هذا الفيديو",
         "nl": "Deze video is verwijderd",
     },
-    "player_embed_owner_only": {
-        "en": "The creator only allows this video on YouTube",
-        "ar": "يسمح صاحب القناة بمشاهدة هذا الفيديو على يوتيوب فقط",
-        "nl": "De maker staat deze video alleen op YouTube toe",
-    },
+    # No `player_embed_owner_only` / `player_open_in_youtube` / `player_open_in_youtube_confirm`:
+    # owner directive 2026-08-27 bans every redirect and hand-off to YouTube, and naming YouTube as
+    # the place to watch a video the embed refused is that redirect phrased as copy. IFrame errors
+    # 101/150 now land on `player_stream_unavailable` like every other terminal reason.
     "player_embed_replay": {"en": "Replay", "ar": "إعادة التشغيل", "nl": "Opnieuw afspelen"},
-    # Rung 4 (B3 task 2). Confirmation sheet, never an automatic hand-off (spec §6.6).
-    "player_open_in_youtube": {
-        "en": "Open in YouTube",
-        "ar": "فتح في يوتيوب",
-        "nl": "Openen in YouTube",
-    },
-    "player_open_in_youtube_confirm": {
-        "en": "Open this video in YouTube?",
-        "ar": "فتح هذا الفيديو في يوتيوب؟",
-        "nl": "Deze video in YouTube openen?",
-    },
     # player_cooldown_retry (B1 task 9, spec §6.6 `.cooldown` row): "Try again in {relative}" over
     # the live countdown `PlayerStateCopy.cooldownText` formats with `Format.duration`. iOS-only --
     # the persisted escalating cooldown (`ExtractionError.cooldown`) is an iOS-side resolver

@@ -3,7 +3,7 @@ import Testing
 @testable import InnerTubeKit
 
 @Suite struct StreamResolverTests {
-    private static let videoId = "dQw4w9WgXcQ"
+    private static let videoId = "xc7keR2piUM"
 
     // MARK: - test doubles
 
@@ -178,16 +178,18 @@ import Testing
         #expect(transport.callCount == 2)
     }
 
-    // MARK: - c) ageGate skips straight to openInYouTube, never rotates
+    // MARK: - c) ageGate is terminal, never rotates, and never hands off to YouTube
 
-    @Test func ageGateJumpsToOpenInYouTubeWithoutRotating() async throws {
+    /// OWNER DIRECTIVE 2026-08-27: an age gate used to jump the ladder to a YouTube hand-off. There
+    /// is no hand-off any more, so it is simply terminal (`ageRestricted`, which the app already
+    /// maps onto its one "not playable" surface -- ruling 14).
+    @Test func ageGateIsTerminalAndNeverHandsOffToYouTube() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-age-gated")])
         let (resolver, session) = makeResolver(transport: transport)
         await session.setVisitorData("original-visitor", for: .visionos)
 
-        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        guard case .openInYouTube = resolved.stream else {
-            Issue.record("expected .openInYouTube, got \(resolved.stream)"); return
+        await #expect(throws: ExtractionError.ageRestricted) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         }
         #expect(await session.visitorData(for: .visionos) == "original-visitor")
         #expect(transport.callCount == 1)
@@ -345,7 +347,7 @@ import Testing
 
     @Test func resolverAdvancesPastRungWhoseClientWasSanitizedAwayForMismatchedClientName() async throws {
         let badConfig = RemoteConfig(
-            schemaVersion: 1, minAppVersion: "1.0.0", resolverOrder: ["visionosHLS", "openInYouTube"],
+            schemaVersion: 1, minAppVersion: "1.0.0", resolverOrder: ["visionosHLS", "embed"],
             manifestCacheSeconds: 3600,
             clients: [
                 "visionos": ClientContext(clientName: "RENAMED_CLIENT", clientVersion: "1", clientNameId: 101)
@@ -357,13 +359,14 @@ import Testing
         #expect(await configStore.current().clients["visionos"] == nil)  // sanitized away at load
 
         // Never called: the "visionos" client is gone, so `runPlayerRung` never reaches
-        // `PlayerRequestBuilder.build` — the rung advances straight to `openInYouTube`.
+        // `PlayerRequestBuilder.build` — the rung advances straight to `embed`, the last rung there
+        // is (the YouTube hand-off rung was removed by owner directive 2026-08-27).
         let transport = RecordingTransport([])
         let (resolver, _) = makeResolver(transport: transport, configStore: configStore)
 
         let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        guard case .openInYouTube = resolved.stream else {
-            Issue.record("expected .openInYouTube (advanced past the sanitized rung), got \(resolved.stream)"); return
+        guard case .embed = resolved.stream else {
+            Issue.record("expected .embed (advanced past the sanitized rung), got \(resolved.stream)"); return
         }
         #expect(transport.callCount == 0)
     }
@@ -419,7 +422,7 @@ import Testing
         let transport = TimestampTransport(try fixtureResponse("player-ok-hls"))
         let (resolver, _) = makeResolver(transport: transport, minPostSpacing: spacing)
 
-        async let a = resolver.resolve("dQw4w9WgXcQ", purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        async let a = resolver.resolve("xc7keR2piUM", purpose: .player, sourceChannelId: nil, forceRefresh: false)
         async let b = resolver.resolve("abcdefghijk", purpose: .player, sourceChannelId: nil, forceRefresh: false)
         async let c = resolver.resolve("ABCDEFGHIJK", purpose: .player, sourceChannelId: nil, forceRefresh: false)
         _ = try await (a, b, c)

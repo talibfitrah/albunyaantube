@@ -12,6 +12,10 @@ enum StreamState {
     case ready(Resolved)
     case rung2Progressive(Resolved)
     case error(messageKey: String)
+    /// Terminal with its OWN copy: an embed error no reload can fix (100 removed, 101/150 refused).
+    /// `.contentUnavailable` is the same "no Retry" surface with one fixed message; this keeps the
+    /// distinct reason ruling 14 asks for without handing back a button that can only fail again.
+    case unplayable(messageKey: String)
     case contentUnavailable
     case cooldown(until: Date)
     case recoveryExhausted(Resolved)
@@ -19,11 +23,9 @@ enum StreamState {
     /// A DIFFERENT surface, not a degraded `AVPlayer` -- which is why it is its own state and its
     /// own `PlayerScreen` branch, and why nothing promotes it back to rung 1/2 automatically.
     case embed(Resolved)
-    /// Rung 4 (plan §6.4 row 4): terminal. The card carries a reason line and an "Open in YouTube"
-    /// button; the hand-off itself is behind a confirmation (spec §6.6: "never an automatic
-    /// hand-off"). `messageKey` is why we got here -- the ladder bottomed out
-    /// (`player_error_generic`) or the embed reported 101/150 (`player_embed_owner_only`).
-    case openInYouTube(Resolved, messageKey: String)
+    // There is no hand-off state. Owner directive 2026-08-27: the app never redirects or hands off
+    // to YouTube, in any Safe Mode setting -- so the ladder's floor is `.embed`, and everything
+    // below it lands on `.error`/`.contentUnavailable` like any other terminal outcome.
 }
 
 extension StreamState: Equatable {
@@ -35,10 +37,9 @@ extension StreamState: Equatable {
         case (.rung2Progressive(let l), .rung2Progressive(let r)): return l.comparisonKey == r.comparisonKey
         case (.recoveryExhausted(let l), .recoveryExhausted(let r)): return l.comparisonKey == r.comparisonKey
         case (.error(let l), .error(let r)): return l == r
+        case (.unplayable(let l), .unplayable(let r)): return l == r
         case (.cooldown(let l), .cooldown(let r)): return l == r
         case (.embed(let l), .embed(let r)): return l.comparisonKey == r.comparisonKey
-        case (.openInYouTube(let l, let lk), .openInYouTube(let r, let rk)):
-            return l.comparisonKey == r.comparisonKey && lk == rk
         default: return false
         }
     }
@@ -55,7 +56,6 @@ private extension Resolved {
         case .hls(let url, let isLive, _, _): streamKey = "hls:\(url.absoluteString):\(isLive)"
         case .progressive(let url, let label): streamKey = "progressive:\(url.absoluteString):\(label)"
         case .embed(let videoId): streamKey = "embed:\(videoId)"
-        case .openInYouTube(let url): streamKey = "openInYouTube:\(url.absoluteString)"
         }
         return "\(client):\(userAgent):\(resolvedAt.timeIntervalSince1970):\(streamKey)"
     }

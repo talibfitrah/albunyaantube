@@ -280,7 +280,7 @@ extension StreamState {
             let resolved = try await resolver.resolve(
                 args.videoId, purpose: .player, kind: kind,
                 sourceChannelId: args.channelId, forceRefresh: forceRefresh)
-            result = Self.map(resolved, safeMode: settings.safeMode)
+            result = Self.map(resolved)
         } catch {
             result = Self.map(error)
         }
@@ -300,36 +300,32 @@ extension StreamState {
         state = result
     }
 
-    private static func map(_ resolved: Resolved, safeMode: Bool) -> StreamState {
+    /// No Safe Mode branch: owner directive 2026-08-27 removed the YouTube hand-off outright, so
+    /// there is no longer an outcome for Safe Mode to filter here. `PlayerViewModel.safeMode` stays
+    /// as the reader B5's auto-advance gate uses (ruling 58, CF-B3-2).
+    private static func map(_ resolved: Resolved) -> StreamState {
         switch resolved.stream {
         case .hls:
             return .ready(resolved)
         case .progressive:
             return .rung2Progressive(resolved)
         case .embed:
-            // Safe Mode deliberately does NOT suppress this rung: it keeps playback inside the app,
-            // which is the thing Safe Mode exists to preserve.
+            // The floor of the ladder. Safe Mode deliberately does NOT suppress this rung: it keeps
+            // playback inside the app, which is the thing Safe Mode exists to preserve.
             return .embed(resolved)
-        case .openInYouTube:
-            // Spec §10 / plan §6.10: Safe Mode removes rung 4 entirely -- and filtering the OUTCOME
-            // rather than `RemoteConfig.resolverOrder` is what also closes the age-gate route
-            // (`StreamResolver`'s `.jumpToOpenInYouTube` bypasses the order). Ruling 14: the
-            // suppressed rung lands on the one terminal "not playable" surface.
-            return safeMode ? .contentUnavailable
-                            : .openInYouTube(resolved, messageKey: "player_error_generic")
         }
     }
 
     /// Task 4's bridge from an IFrame error to a `StreamState`. Split from `EmbedErrorPolicy`
-    /// (which is pure and knows nothing about `Resolved`) so the policy stays a truth table.
-    func applyEmbedAction(_ action: EmbedErrorAction, resolved: Resolved) {
+    /// (which is pure) so the policy stays a truth table.
+    func applyEmbedAction(_ action: EmbedErrorAction) {
         switch action {
         case .reloadOnce:
             break                       // the view reloads its own web view; the state does not move
         case .fail(let messageKey):
             state = .error(messageKey: messageKey)
-        case .offerYouTube(let messageKey):
-            state = .openInYouTube(resolved, messageKey: messageKey)
+        case .unplayable(let messageKey):
+            state = .unplayable(messageKey: messageKey)
         }
     }
 

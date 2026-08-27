@@ -64,8 +64,13 @@ public struct RemoteConfig: Sendable, Codable, Equatable {
 extension RemoteConfig {
     /// Strategy names the bundled resolver ladder actually implements (spec
     /// §6.13: "unknown strategy names are dropped").
+    ///
+    /// `openInYouTube` is deliberately ABSENT (owner directive 2026-08-27: the app never redirects
+    /// or hands off to YouTube). Leaving it out of this set is what makes `sanitized(_:)` DROP the
+    /// rung from any published config that still lists it -- the ban survives a remote config the
+    /// app did not author.
     public static let knownResolverStrategies: Set<String> = [
-        "visionosHLS", "androidItag18", "embed", "openInYouTube",
+        "visionosHLS", "androidItag18", "embed",
     ]
 
     /// Loaded once from the bundled `remote-config-default.json` (Task 1's frozen client table).

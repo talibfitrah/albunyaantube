@@ -36,6 +36,9 @@ struct EmbedRungView: View {
     /// Bumped by Replay. A token rather than a shared mutable player handle: `updateUIView` is the
     /// one place allowed to talk to the web view, and a monotonic counter is the whole message.
     @State private var replayToken = 0
+    /// Task 5 ruling: when the cover appears VoiceOver focus moves to Replay, so the announcement
+    /// below is followed by the control it names rather than by wherever focus happened to be.
+    @AccessibilityFocusState private var replayFocused: Bool
 
     var body: some View {
         ScrollView {
@@ -70,6 +73,27 @@ struct EmbedRungView: View {
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .background(Color.black)
                 .animation(reduceMotion ? nil : .easeInOut, value: ended)
+                // Task 5 ruling: the cover is a silent screen change for a VoiceOver user -- the
+                // video simply stops. Announce it once (on the false->true edge only) with the
+                // Replay button's own label, then put focus on that button.
+                .onChange(of: ended) { _, isEnded in
+                    guard isEnded else { return }
+                    AccessibilityNotification.Announcement(String(localized: "player_embed_replay")).post()
+                    replayFocused = true
+                }
+
+                #if DEBUG
+                // `-fitrah-embed-debug-events` (Task 5 live pass): the bridge events and the
+                // navigation lock's own verdicts, on screen, so an XCUITest with a REAL IFrame load
+                // can read back what the web content process actually did. Compiled out of Release.
+                if EmbedDebugLog.isEnabled {
+                    Text(EmbedDebugLog.shared.text)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.textSecondary)
+                        .padding(.horizontal, Spacing.md(widthClass))
+                        .accessibilityIdentifier("player.embedDebugLog")
+                }
+                #endif
 
                 PlayerToolbar(args: args)
                 if verticalSizeClass != .compact {
@@ -94,6 +118,7 @@ struct EmbedRungView: View {
             Button(String(localized: "player_embed_replay")) { replayToken += 1 }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("player.embedReplay")
+            .accessibilityFocused($replayFocused)
 
             Button(String(localized: "back")) { dismiss() }
                 // The cover is opaque black; the stock accent is too dark on it to read.
@@ -181,6 +206,10 @@ struct EmbedWebView: UIViewRepresentable {
                                          name: EmbedPage.handlerName)
 
         let web = WKWebView(frame: .zero, configuration: config)
+        // Task 5: the ≥ 200x200 pt floor (plan §6.4 row 3) is asserted, not assumed -- the
+        // identifier goes on the UIView, not on the SwiftUI ZStack around it, because only a real
+        // UIKit view is guaranteed to surface as an XCUIElement with a readable `frame`.
+        web.accessibilityIdentifier = "player.embedFrame"
         web.isOpaque = false
         web.backgroundColor = .black
         web.scrollView.isScrollEnabled = false
@@ -299,19 +328,31 @@ struct EmbedWebView: UIViewRepresentable {
         }
 
         private func handle(_ event: EmbedMessage.Event, web: WKWebView?) {
+            #if DEBUG
+            EmbedDebugLog.shared.append("\(event)")
+            #endif
             switch event {
             case .ready:
                 // Second activation, deliberately (CF-B2-8's ordering race -- see `start`). The
                 // cover is NOT cleared here: `.ready` says the player exists, not that it is
                 // playing, and only a state message moves the cover.
                 BackgroundPlaybackController.configureAudioSession()
+                #if DEBUG
+                // `-fitrah-embed-seek-to-end` (Task 5 live pass): drives a REAL ENDED through the
+                // real bridge without needing a video short enough to sit through. Unlike
+                // `-fitrah-fake-embed-ended` (which seeds the cover with no IFrame at all) this
+                // proves state 0 actually arrives from YouTube's player.
+                if ProcessInfo.processInfo.arguments.contains("-fitrah-embed-seek-to-end") {
+                    web?.evaluateJavaScript(
+                        "if (window.player) { player.seekTo(Math.max(0, player.getDuration() - 2), true); }")
+                }
+                #endif
             case .state:
                 onEnded?(EmbedRungView.showsEndCover(for: event))
             case .error(let code):
                 // Called exactly once per error: `EmbedErrorPolicy.decide` logs, so asking it
                 // speculatively would put phantom errors in the log.
-                apply(EmbedErrorPolicy.decide(code: code, alreadyReloaded: alreadyReloaded,
-                                              safeMode: model.safeMode), web: web)
+                apply(EmbedErrorPolicy.decide(code: code, alreadyReloaded: alreadyReloaded), web: web)
             }
         }
 
@@ -322,13 +363,13 @@ struct EmbedWebView: UIViewRepresentable {
                 // `web.reload()` on a string-loaded page is unreliable (there is no navigable URL to
                 // reload), so the page is re-loaded from the string built at mount.
                 if let web { load(web: web) }
-            case .fail, .offerYouTube:
+            case .fail, .unplayable:
                 // DEFERRED, not synchronous: `load` reaches this from `start(web:)`, which runs
                 // inside `makeUIView` -- and publishing a `StreamState` there mutates the state
                 // SwiftUI is in the middle of reading ("Modifying state during view update"), which
                 // swaps `PlayerScreen`'s branch out from under the view being built. Every other
                 // caller arrives from a WebKit callback where the hop is a no-op turn.
-                Task { @MainActor in model.applyEmbedAction(action, resolved: resolved) }
+                Task { @MainActor in model.applyEmbedAction(action) }
             }
         }
 
@@ -360,21 +401,28 @@ struct EmbedWebView: UIViewRepresentable {
             // `targetFrame == nil` is a NEW-WINDOW navigation -- treated as main frame, i.e.
             // cancelled, which is what closes the "Watch on YouTube" / share / end-screen escapes.
             let isMainFrame = action.targetFrame?.isMainFrame ?? true
-            decisionHandler(EmbedNavigationPolicy.allows(url: action.request.url,
-                                                         isMainFrame: isMainFrame,
-                                                         baseURL: EmbedPage.baseURL) ? .allow : .cancel)
+            let allowed = EmbedNavigationPolicy.allows(url: action.request.url,
+                                                       isMainFrame: isMainFrame,
+                                                       baseURL: EmbedPage.baseURL)
+            #if DEBUG
+            EmbedDebugLog.shared.append(
+                "\(allowed ? "allow" : "CANCEL") \(isMainFrame ? "main" : "sub") \(action.request.url?.absoluteString ?? "nil")")
+            #endif
+            decisionHandler(allowed ? .allow : .cancel)
         }
 
         /// `target="_blank"` opens nothing. Without this the lock above is one `window.open` short
         /// of complete.
         func webView(_ web: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                      for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            nil
+            #if DEBUG
+            EmbedDebugLog.shared.append("CANCEL window.open \(action.request.url?.absoluteString ?? "nil")")
+            #endif
+            return nil
         }
 
         func webViewWebContentProcessDidTerminate(_ web: WKWebView) {
-            apply(EmbedErrorPolicy.decideProcessTermination(alreadyReloaded: alreadyReloaded,
-                                                            safeMode: model.safeMode), web: web)
+            apply(EmbedErrorPolicy.decideProcessTermination(alreadyReloaded: alreadyReloaded), web: web)
         }
     }
 }
@@ -397,3 +445,29 @@ private final class WeakScriptMessageProxy: NSObject, WKScriptMessageHandler {
         MainActor.assumeIsolated { target?.userContentController(controller, didReceive: message) }
     }
 }
+
+#if DEBUG
+/// Task 5's live-pass instrument, and nothing else: a bounded tail of what the web content process
+/// did (bridge events in, navigation verdicts out), rendered under the frame only when
+/// `-fitrah-embed-debug-events` is passed. It exists because an XCUITest cannot see inside a
+/// `WKWebView` -- the IFrame's own chrome exposes no elements -- so without this the live checks
+/// could only assert "the app did not crash". Compiled out of Release entirely.
+@Observable
+@MainActor
+final class EmbedDebugLog {
+    static let shared = EmbedDebugLog()
+    static let isEnabled = ProcessInfo.processInfo.arguments.contains("-fitrah-embed-debug-events")
+
+    private(set) var text = ""
+    private var lines: [String] = []
+
+    func append(_ line: String) {
+        guard Self.isEnabled else { return }
+        lines.append(line)
+        // A bounded tail: a live IFrame emits a steady trickle of subframe navigations, and an
+        // unbounded log would push the toolbar off screen inside a minute.
+        lines = lines.suffix(12)
+        text = lines.joined(separator: "\n")
+    }
+}
+#endif
