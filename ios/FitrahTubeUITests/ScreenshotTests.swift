@@ -286,6 +286,68 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-metadata-toolbar", into: directory)
     }
 
+    /// Plan B1 task 9: `.error` -- real localized message (not the raw key the old placeholder
+    /// rendered) + Retry (`PlayerStateCopy.map`, `PlayerStateView`). `-fitrah-fake-player-error`
+    /// throws `ExtractionError.transport`, no network involved.
+    func testPlayerErrorState() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-error",
+                            arguments: ["-fitrah-fake-player-error", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .button("unused"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let retryButton = app.buttons["player.state.retryButton"]
+        XCTAssertTrue(retryButton.waitForExistence(timeout: 20), "player-error: retry button never appeared")
+        try write(named: "player-error-state", into: directory)
+    }
+
+    /// Plan B1 task 9: `.contentUnavailable` -- no Retry (ruling 14: terminal, not retryable).
+    func testPlayerContentUnavailableState() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-unavailable",
+                            arguments: ["-fitrah-fake-player-unavailable", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .button("unused"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let message = app.staticTexts["player.state.message"]
+        XCTAssertTrue(message.waitForExistence(timeout: 20), "player-unavailable: message never appeared")
+        XCTAssertFalse(app.buttons["player.state.retryButton"].exists, "player-unavailable: must not offer Retry")
+        try write(named: "player-unavailable-state", into: directory)
+    }
+
+    /// Plan B1 task 9: `.cooldown(until:)` -- live countdown, Retry hidden until it reaches zero.
+    /// `-fitrah-fake-player-cooldown` is 45s out, so the captured frame always shows a non-zero
+    /// countdown with no Retry button.
+    func testPlayerCooldownState() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-cooldown",
+                            arguments: ["-fitrah-fake-player-cooldown", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .button("unused"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let countdown = app.staticTexts["player.state.countdown"]
+        XCTAssertTrue(countdown.waitForExistence(timeout: 20), "player-cooldown: countdown never appeared")
+        XCTAssertFalse(app.buttons["player.state.retryButton"].exists, "player-cooldown: must not offer Retry yet")
+        try write(named: "player-cooldown-state", into: directory)
+    }
+
+    /// T7-M3 (deferred-minors.md, MUST): `.recoveryExhausted` used to be a bare `ProgressView` dead
+    /// end -- `-fitrah-fake-player-recovery-exhausted` forces it via
+    /// `PlayerViewModel.debugForceRecoveryExhausted()` after a real fixture resolve, same technique
+    /// as `NetworkMonitor`'s `-fitrah-offline` hook.
+    func testPlayerRecoveryExhaustedState() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-recovery-exhausted",
+                            arguments: ["-fitrah-fake-player", "-fitrah-fake-player-recovery-exhausted",
+                                        "-fitrah-route", "player", "fixture-video"],
+                            anchor: .button("unused"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let retryButton = app.buttons["player.state.retryButton"]
+        XCTAssertTrue(retryButton.waitForExistence(timeout: 20), "player-recovery-exhausted: retry button never appeared")
+        try write(named: "player-recovery-exhausted-state", into: directory)
+    }
+
     // MARK: - Accessibility assertions (R-C, spec §14 "label + value on custom controls")
 
     /// Every list row must expose a VoiceOver label that carries the item title *and* the value the

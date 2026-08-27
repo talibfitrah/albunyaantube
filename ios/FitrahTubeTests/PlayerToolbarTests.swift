@@ -76,6 +76,10 @@ struct PlayerToolbarTests {
         store.favoritedIds = ["v1"] // store disagrees with the caller's `wasFavorite` below
         let result = FavoriteToggle.perform(item: makeItem(), wasFavorite: false, store: store)
         #expect(result.isFavorite == false) // store's true state after toggling out of "v1"
+        // T8-R1: the banner text must key on the same post-toggle read as `isFavorite` above, not
+        // on the caller's stale `wasFavorite` -- negating the stale belief would wrongly announce
+        // "added" for what was actually a removal.
+        #expect(result.banner.text == String(localized: "player_removed_from_favorites"))
     }
 
     @Test func aThrowingStoreRevertsToThePreToggleStateAndShowsAnErrorBanner() {

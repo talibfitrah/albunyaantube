@@ -105,8 +105,14 @@ enum FavoriteToggle {
     static func perform(item: ContentItem, wasFavorite: Bool, store: any FavoritesStore) -> Result {
         do {
             try store.toggle(item)
-            return Result(isFavorite: store.isFavorite(item.id), banner: BannerMessage(
-                text: String(localized: wasFavorite ? "player_removed_from_favorites" : "player_added_to_favorites")))
+            // T8-R1 fix: the banner text used to be keyed on `wasFavorite` (the caller's PRE-toggle
+            // belief) while `isFavorite` above was already correctly read back from the store --
+            // when that belief is stale (see `toggleReadsBackTheStoresActualStateWhenTheCallersBeliefIsStale`
+            // below), the two disagreed and the banner announced the opposite of what happened.
+            // Both are now keyed on the same post-toggle read.
+            let now = store.isFavorite(item.id)
+            return Result(isFavorite: now, banner: BannerMessage(
+                text: String(localized: now ? "player_added_to_favorites" : "player_removed_from_favorites")))
         } catch {
             return Result(isFavorite: wasFavorite, banner: BannerMessage(text: String(localized: "player_favorite_toggle_error")))
         }

@@ -9824,6 +9824,28 @@
         }
       }
     },
+    "player_cooldown_retry": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حاول مرة أخرى خلال %1$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again in %1$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probeer het over %1$@ opnieuw"
+          }
+        }
+      }
+    },
     "player_current_item": {
       "localizations": {
         "ar": {
@@ -10106,6 +10128,28 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "%1$lld:%2$02lld"
+          }
+        }
+      }
+    },
+    "player_error_generic": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يمكن تشغيل هذا الفيديو داخل التطبيق بعد"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video can't be played in the app yet"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze video kan nog niet in de app worden afgespeeld"
           }
         }
       }

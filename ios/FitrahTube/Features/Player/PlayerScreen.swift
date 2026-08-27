@@ -26,14 +26,26 @@ struct PlayerScreen: View {
                                       favorites: container.favorites, settings: container.settings, args: args)
             model = vm
             await vm.open()
+            #if DEBUG
+            // Task 9 screenshot rig: jumps straight to `.recoveryExhausted` after a real fixture
+            // resolve (see `PlayerViewModel.debugForceRecoveryExhausted`) -- the budget machine
+            // itself is exhaustively unit-tested in `PlaybackRecoveryTests` and would otherwise need
+            // a genuinely failing `AVPlayerItem` to drive for real.
+            if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-recovery-exhausted") {
+                vm.debugForceRecoveryExhausted()
+            }
+            #endif
+        }
+        // Task 9: the one announcement `PlayerStateView` can't make itself, since `.rung2Progressive`
+        // never mounts it (Task 7's identity note keeps both playable rungs in the switch case
+        // below). Fires on every transition INTO rung 2, including a later re-resolve while already
+        // on rung 2 (a fresh stream swap is worth announcing again).
+        .onChange(of: model?.state) { _, newValue in
+            guard case .rung2Progressive = newValue else { return }
+            AccessibilityNotification.Announcement(String(localized: "player_standard_quality")).post()
         }
     }
 
-    // ponytail: Task 9 replaces every branch here with the real per-state UI (loading skeleton,
-    // cooldown countdown, contentUnavailable/error copy + retry, the rung-2 pill, recoveryExhausted
-    // escape hatch). This task only needs *a* screen to route `.player(args)` to and proof the host
-    // decodes a real frame, so every non-playable state gets one shared spinner or the raw message
-    // key as placeholder text -- not real, localized copy.
     @ViewBuilder
     private func stateView(_ state: StreamState, model: PlayerViewModel) -> some View {
         switch state {
@@ -80,12 +92,14 @@ struct PlayerScreen: View {
                 }
             }
             .background(Color.background.ignoresSafeArea())
-        case .error(let messageKey):
-            Text(messageKey)
-        case .contentUnavailable:
-            Text(String(localized: "player_error_message"))
-        case .idle, .loading, .cooldown, .recoveryExhausted:
-            ProgressView()
+        // Task 9: every non-playable state (`.idle`/`.loading`/`.error`/`.contentUnavailable`/
+        // `.cooldown`/`.recoveryExhausted`) shares ONE `PlayerStateView` mount -- see that type's
+        // doc comment for why one shared view identity (not a case per state) is what makes the
+        // cross-dissolve animation and transition announcements work.
+        default:
+            PlayerStateView(state: state, isOnline: container.network.isOnline, thumbnailURL: args.thumbnailURL) {
+                Task { await model.retry() }
+            }
         }
     }
 
@@ -221,6 +235,18 @@ struct PlayerScreen: View {
         if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-hls") {
             return FixtureHLSPlayerResolver()
         }
+        // Task 9 screenshot rig: each of these throws the `ExtractionError` `PlayerViewModel.map`
+        // maps onto the state it's named for, so `ScreenshotTests` can capture every row of spec
+        // §6.6's state table with no network access.
+        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-error") {
+            return FixtureErrorResolver()
+        }
+        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-unavailable") {
+            return FixtureUnavailableResolver()
+        }
+        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-cooldown") {
+            return FixtureCooldownResolver()
+        }
         if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player") {
             return FixturePlayerResolver()
         }
@@ -257,6 +283,30 @@ private struct FixturePlayerResolver: StreamResolving {
         }
         return Resolved(stream: .progressive(url: url, label: "360p"), client: .visionos,
                          userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+    }
+}
+
+/// Task 9 screenshot rig: `.transport` maps to `.error(messageKey: "player_error_message")` --
+/// the real error path a network failure takes, exercised here with no network at all.
+private struct FixtureErrorResolver: StreamResolving {
+    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        throw ExtractionError.transport("fixture error")
+    }
+}
+
+/// Task 9 screenshot rig: `.unavailable` maps to `.contentUnavailable` (ruling 14: one
+/// non-retryable "not playable" surface for every terminal not-available reason).
+private struct FixtureUnavailableResolver: StreamResolving {
+    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        throw ExtractionError.unavailable(videoId: videoId)
+    }
+}
+
+/// Task 9 screenshot rig: `.cooldown(until:)` maps straight through to `StreamState.cooldown`.
+/// 45s out so the captured frame always shows a non-trivial countdown.
+private struct FixtureCooldownResolver: StreamResolving {
+    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        throw ExtractionError.cooldown(until: Date().addingTimeInterval(45))
     }
 }
 

@@ -104,6 +104,24 @@ EXTRA_KEYS = {
         "ar": "الإبلاغ قادم قريبًا",
         "nl": "Rapporteren komt binnenkort",
     },
+    # player_error_generic (T2-1 / deferred-minors.md): `PlayerViewModel.map`'s placeholder for the
+    # `.embed`/`.openInYouTube` resolver outcomes, which B1 has no player for yet (B3 replaces this
+    # whole codepath with the real embed rung). iOS-only -- there is no Android equivalent because
+    # Android's embed rung already exists.
+    "player_error_generic": {
+        "en": "This video can't be played in the app yet",
+        "ar": "لا يمكن تشغيل هذا الفيديو داخل التطبيق بعد",
+        "nl": "Deze video kan nog niet in de app worden afgespeeld",
+    },
+    # player_cooldown_retry (B1 task 9, spec §6.6 `.cooldown` row): "Try again in {relative}" over
+    # the live countdown `PlayerStateCopy.cooldownText` formats with `Format.duration`. iOS-only --
+    # the persisted escalating cooldown (`ExtractionError.cooldown`) is an iOS-side resolver
+    # concept with no Android string to port.
+    "player_cooldown_retry": {
+        "en": "Try again in %1$@",
+        "ar": "حاول مرة أخرى خلال %1$@",
+        "nl": "Probeer het over %1$@ opnieuw",
+    },
 }
 
 def is_dead(key):

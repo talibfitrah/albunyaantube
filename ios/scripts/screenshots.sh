@@ -156,4 +156,23 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$METADATA_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 
+# Task 9 (state UI + VoiceOver): error/unavailable/cooldown/recoveryExhausted, each a distinct
+# StreamState the fixture resolvers (or the recoveryExhausted debug hook) force with no network.
+STATE_OUT="$ROOT/.superpowers/sdd/2026-08-24-ios-phase2b1-player-core/screenshots/b1-task9"
+echo "== player state UI screenshots -> $STATE_OUT =="
+rm -rf "${STATE_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$STATE_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerErrorState \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerContentUnavailableState \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerCooldownState \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerRecoveryExhaustedState \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
 exit "$status"

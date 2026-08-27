@@ -180,6 +180,18 @@ struct LiveStreamResolver: StreamResolving {
         }
     }
 
+    #if DEBUG
+    /// Task 9 screenshot rig (`PlayerScreen`'s `-fitrah-fake-player-recovery-exhausted` hook): jumps
+    /// straight to `.recoveryExhausted` for whatever `Resolved` the fixture already resolved to,
+    /// skipping the real budget machine -- which is exhaustively unit-tested in
+    /// `PlaybackRecoveryTests` and would otherwise need a genuinely failing `AVPlayerItem` to drive
+    /// for real. Same technique as `NetworkMonitor`'s `-fitrah-offline` hook.
+    func debugForceRecoveryExhausted() {
+        guard let resolved = Self.playable(state) else { return }
+        state = .recoveryExhausted(resolved)
+    }
+    #endif
+
     private static func map(_ error: Error) -> StreamState {
         guard let extractionError = error as? ExtractionError else {
             return .error(messageKey: "player_error_message")
