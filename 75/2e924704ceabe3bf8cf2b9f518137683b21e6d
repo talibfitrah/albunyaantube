@@ -1,0 +1,23 @@
+docs/superpowers/plans/2026-08-27-ios-phase2b2-background-audio.md
+  s_66ddb7c44de816::t_d727a8f0e2bbd0 1636,1645,1647,1649,1651
+  s_66ddb7c44de816::t_ce8417e26a329e 1653-1704,1720-1721
+docs/superpowers/plans/2026-08-23-ios-phase2-research/PHASE2-CARRYFORWARDS.md
+  s_66ddb7c44de816::t_ecb445d15d3063 42-62
+  s_66ddb7c44de816::t_d3a3a23b0e7725 63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "752e924704ceabe3bf8cf2b9f518137683b21e6d",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
