@@ -69,9 +69,11 @@ struct PlayerToolbar: View {
 
     private var reportButton: some View {
         Button {
-            // ponytail: Plan C wires the real report flow (VIDEO, with parent PLAYLIST/CHANNEL +
-            // subtype, per spec §10). B1 only needs the button present in the toolbar; there is
-            // nothing to open yet, so the action is an honest no-op rather than a fake sheet.
+            // ponytail: Plan C replaces this banner with the real report flow (VIDEO, with parent
+            // PLAYLIST/CHANNEL + subtype, per spec §10). B1 only needs the button to do something
+            // honest -- a silent no-op is a VoiceOver dead-end -- so it shows the same
+            // `transientBanner` mechanism the favorite toast above already uses.
+            bannerMessage = BannerMessage(text: String(localized: "player_report_coming_soon"))
         } label: {
             toolbarLabel(systemImage: "flag", title: String(localized: "player_action_report"))
         }
@@ -90,7 +92,10 @@ struct PlayerToolbar: View {
 /// Pure optimistic-toggle logic (TDD'd in `PlayerToolbarTests` against a fake throwing
 /// `FavoritesStore`, no SwiftUI/SwiftData involved): the banner text is chosen from the PRE-toggle
 /// state (Phase-1 `FavoritesView` failure-banner pattern), so it reads correctly whether the
-/// toggle actually happened or not.
+/// toggle actually happened or not. `isFavorite` on the success path is read back from the store
+/// (not `!wasFavorite`) -- the store flips whatever it actually has persisted, independently of
+/// the caller's belief, which can be stale (e.g. `PlayerToolbar`'s `.task` seed hasn't completed
+/// yet when the user taps). Negating a stale belief reports the opposite of reality.
 enum FavoriteToggle {
     struct Result {
         let isFavorite: Bool
@@ -100,7 +105,7 @@ enum FavoriteToggle {
     static func perform(item: ContentItem, wasFavorite: Bool, store: any FavoritesStore) -> Result {
         do {
             try store.toggle(item)
-            return Result(isFavorite: !wasFavorite, banner: BannerMessage(
+            return Result(isFavorite: store.isFavorite(item.id), banner: BannerMessage(
                 text: String(localized: wasFavorite ? "player_removed_from_favorites" : "player_added_to_favorites")))
         } catch {
             return Result(isFavorite: wasFavorite, banner: BannerMessage(text: String(localized: "player_favorite_toggle_error")))

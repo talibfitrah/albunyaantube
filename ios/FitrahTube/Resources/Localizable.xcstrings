@@ -401,8 +401,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Your account has been deleted. To use FitrahTube again, create a new account."
+            "state": "translated",
+            "value": "تم حذف حسابك. لاستخدام FitrahTube مرة أخرى، أنشئ حسابًا جديدًا."
           }
         },
         "en": {
@@ -413,8 +413,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Your account has been deleted. To use FitrahTube again, create a new account."
+            "state": "translated",
+            "value": "Je account is verwijderd. Maak een nieuw account aan om FitrahTube weer te gebruiken."
           }
         }
       }
@@ -423,8 +423,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Account deleted"
+            "state": "translated",
+            "value": "تم حذف الحساب"
           }
         },
         "en": {
@@ -435,8 +435,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Account deleted"
+            "state": "translated",
+            "value": "Account verwijderd"
           }
         }
       }
@@ -1560,6 +1560,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Couldn't save your profile — try again"
+          }
+        }
+      }
+    },
+    "bootstrap_error_under_age": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يجب ألا يقل عمرك عن 13 عامًا لاستخدام FitrahTube. يرجى التحقق من السنة التي اخترتها."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You need to be at least 13 to use FitrahTube. Please check the year you selected."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je moet minstens 13 jaar zijn om FitrahTube te gebruiken. Controleer het jaar dat je hebt gekozen."
           }
         }
       }
@@ -10902,6 +10924,28 @@
         }
       }
     },
+    "player_report_coming_soon": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الإبلاغ قادم قريبًا"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reporting is coming soon"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rapporteren komt binnenkort"
+          }
+        }
+      }
+    },
     "player_resize_mode_fit": {
       "localizations": {
         "ar": {
@@ -12014,6 +12058,182 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Date of birth"
+          }
+        }
+      }
+    },
+    "profile_delete_account": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حذف الحساب"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete account"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account verwijderen"
+          }
+        }
+      }
+    },
+    "profile_delete_account_confirm": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حذف الحساب"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete account"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account verwijderen"
+          }
+        }
+      }
+    },
+    "profile_delete_account_deleting": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ حذف الحساب…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deleting account…"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account verwijderen…"
+          }
+        }
+      }
+    },
+    "profile_delete_account_dialog_message": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سيؤدي هذا إلى حذف حسابك في FitrahTube نهائيًا. سيتم محو اسمك وبريدك الإلكتروني ورقم هاتفك وتاريخ ميلادك، إلى جانب اشتراكاتك وقوائم التشغيل المحفوظة والمفضلة وكل فيديو تم تنزيله على هذا الجهاز. لا يمكن التراجع عن هذا الإجراء."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This permanently deletes your FitrahTube account. Your name, email, phone number and date of birth are erased, along with your subscriptions, saved playlists, favourites and every video downloaded on this device. This cannot be undone."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hiermee wordt je FitrahTube-account definitief verwijderd. Je naam, e-mailadres, telefoonnummer en geboortedatum worden gewist, samen met je abonnementen, opgeslagen afspeellijsten, favorieten en elke video die op dit apparaat is gedownload. Dit kan niet ongedaan worden gemaakt."
+          }
+        }
+      }
+    },
+    "profile_delete_account_dialog_title": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "هل تريد حذف حسابك؟"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete your account?"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je account verwijderen?"
+          }
+        }
+      }
+    },
+    "profile_delete_account_error_last_admin": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أنت آخر مسؤول نشط. امنح حسابًا آخر صلاحية المسؤول قبل حذف هذا الحساب."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You're the last active administrator. Give another account admin access before deleting this one."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je bent de laatste actieve beheerder. Geef een ander account beheerdersrechten voordat je dit account verwijdert."
+          }
+        }
+      }
+    },
+    "profile_delete_account_error_network": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر حذف حسابك. تحقق من اتصالك وحاول مرة أخرى."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't delete your account. Check your connection and try again."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je account kon niet worden verwijderd. Controleer je verbinding en probeer het opnieuw."
+          }
+        }
+      }
+    },
+    "profile_delete_account_error_unknown": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر حذف حسابك. يرجى المحاولة لاحقًا."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't delete your account. Please try again later."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je account kon niet worden verwijderd. Probeer het later opnieuw."
           }
         }
       }
@@ -13712,28 +13932,6 @@
         }
       }
     },
-    "settings_content": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "المحتوى"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Content"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Inhoud"
-          }
-        }
-      }
-    },
     "settings_download_location": {
       "localizations": {
         "ar": {
@@ -13950,28 +14148,6 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Background play setting icon"
-          }
-        }
-      }
-    },
-    "settings_icon_safe_mode": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "أيقونة إعداد الوضع الآمن"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Safe mode setting icon"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Icoon veilige modus instelling"
           }
         }
       }
@@ -14368,50 +14544,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Gemiddeld (720p) - Gebalanceerd"
-          }
-        }
-      }
-    },
-    "settings_safe_mode": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الوضع الآمن"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Safe Mode"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Veilige modus"
-          }
-        }
-      }
-    },
-    "settings_safe_mode_desc": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "عرض المحتوى المناسب للعائلة فقط"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show only family-friendly content"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Toon alleen gezinsvriendelijke inhoud"
           }
         }
       }

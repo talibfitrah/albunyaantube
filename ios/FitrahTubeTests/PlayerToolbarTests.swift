@@ -61,9 +61,21 @@ struct PlayerToolbarTests {
 
     @Test func togglingWhenFavoritedShowsRemovedBannerAndFlipsToFalse() {
         let store = FakeFavoritesStore()
+        store.favoritedIds = ["v1"] // persisted state agrees with wasFavorite here (non-stale case)
         let result = FavoriteToggle.perform(item: makeItem(), wasFavorite: true, store: store)
         #expect(result.isFavorite == false)
         #expect(result.banner.text == String(localized: "player_removed_from_favorites"))
+    }
+
+    /// Pins the read-back fix: `perform` must report whatever the store actually persisted, not
+    /// `!wasFavorite`. Here the caller's belief (`wasFavorite: false`, e.g. from the `.task` seed
+    /// gap in `PlayerToolbar`) is stale -- the store already has it favorited -- so `toggle` flips
+    /// it to *not* favorited. The negation of the stale belief would wrongly claim `true`.
+    @Test func toggleReadsBackTheStoresActualStateWhenTheCallersBeliefIsStale() {
+        let store = FakeFavoritesStore()
+        store.favoritedIds = ["v1"] // store disagrees with the caller's `wasFavorite` below
+        let result = FavoriteToggle.perform(item: makeItem(), wasFavorite: false, store: store)
+        #expect(result.isFavorite == false) // store's true state after toggling out of "v1"
     }
 
     @Test func aThrowingStoreRevertsToThePreToggleStateAndShowsAnErrorBanner() {
@@ -109,12 +121,20 @@ struct PlayerToolbarTests {
     private(set) var items: [FavoriteVideo] = []
     private(set) var toggledItems: [ContentItem] = []
     var errorToThrow: Error?
+    /// Persisted state, settable by tests -- mirrors `SwiftDataFavoritesStore.toggle` flipping the
+    /// record it actually holds, independently of any caller's `wasFavorite` belief.
+    var favoritedIds: Set<String> = []
 
-    func isFavorite(_ videoId: String) -> Bool { false }
+    func isFavorite(_ videoId: String) -> Bool { favoritedIds.contains(videoId) }
 
     func toggle(_ item: ContentItem) throws {
         if let errorToThrow { throw errorToThrow }
         toggledItems.append(item)
+        if favoritedIds.contains(item.id) {
+            favoritedIds.remove(item.id)
+        } else {
+            favoritedIds.insert(item.id)
+        }
     }
 
     func clearAll() throws {}

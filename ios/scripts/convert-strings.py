@@ -96,6 +96,14 @@ EXTRA_KEYS = {
         "ar": "عرض أقل",
         "nl": "Minder weergeven",
     },
+    # player_report_coming_soon (B1 task 8 fix round 1): the Report button's `transientBanner`
+    # until Plan C wires the real report flow. iOS-only -- Android's Report is fully wired, so
+    # there is no Android source string for a "coming soon" placeholder to port.
+    "player_report_coming_soon": {
+        "en": "Reporting is coming soon",
+        "ar": "الإبلاغ قادم قريبًا",
+        "nl": "Rapporteren komt binnenkort",
+    },
 }
 
 def is_dead(key):
