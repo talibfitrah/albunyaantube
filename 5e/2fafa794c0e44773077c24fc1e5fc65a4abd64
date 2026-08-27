@@ -1,0 +1,34 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_66ddb7c44de816::t_3e3bd1f92d1b6c 102,113-114,119,129-134,280,295
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/ManifestCacheTests.swift
+  s_66ddb7c44de816::t_b7dee613f60d5b 6-22,34,44,52,73,78,85,106,120,130,138-149
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_66ddb7c44de816::t_f8a80700b6c1c2 68-76
+ios/FitrahTube/App/FitrahTubeApp.swift
+  s_66ddb7c44de816::t_71bd4598b5e227 58-59
+  s_66ddb7c44de816::t_53202437a72686 64-69
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/PlayerResponseParser.swift
+  s_66ddb7c44de816::t_71bd4598b5e227 85-88,92,136
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/PlayerResponseParserTests.swift
+  s_66ddb7c44de816::t_10e12cc3f19330 14-18,116-160
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/ManifestCache.swift
+  s_66ddb7c44de816::t_330c24ecbf69c2 16,22-23,38,43,72-74,78
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/InnerTube.swift
+  s_66ddb7c44de816::t_330c24ecbf69c2 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5e2fafa794c0e44773077c24fc1e5fc65a4abd64",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
