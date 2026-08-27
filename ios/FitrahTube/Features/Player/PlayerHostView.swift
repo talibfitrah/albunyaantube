@@ -198,8 +198,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// OFF cannot get a floating video window by backgrounding (ruling 34); the stock PiP button in
     /// the transport stays available either way.
     ///
-    /// B3: the embed rung has no `AVPlayer` at all (`streamURL` returns nil for `.embed`), so there
-    /// is no PiP to hide there yet -- B3 owns whatever the embed rung's chrome becomes.
+    /// B3 task 4 (the answer): the embed rung has no `AVPlayer` and no `AVPlayerViewController` at
+    /// all (`streamURL` returns nil for `.embed`, so this host is never mounted on that branch), and
+    /// `EmbedRungView` sets `allowsPictureInPictureMediaPlayback = false` on its `WKWebView`. There
+    /// is therefore no PiP affordance on rung 3 whatsoever -- which is what spec §6.6's rung-3 row
+    /// asks for and what YouTube API Services policy III.I.9 requires of embed content.
     static func configurePictureInPicture(_ controller: AVPlayerViewController, backgroundPlay: Bool) {
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = backgroundPlay

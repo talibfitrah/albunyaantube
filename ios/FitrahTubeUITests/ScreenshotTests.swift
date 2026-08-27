@@ -452,6 +452,62 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-safe-mode-rung4-removed", into: directory)
     }
 
+    /// Plan B3 task 4: rung 3 -- the caption ABOVE the frame (never an overlay on the player, RMF),
+    /// the 16:9 frame, and FitrahTube's toolbar + metadata below it. Every FitrahTube PLAYBACK
+    /// control (quality / captions / audio-language / audio-only / rung-2 pill / PiP) is absent by
+    /// construction: that whole overlay column lives in `PlayerScreen`'s `.ready`/`.rung2Progressive`
+    /// branch, and this is a different branch with no `AVPlayer` at all.
+    ///
+    /// The IFrame itself exposes NOTHING to XCUITest (remote content) and on a machine with no
+    /// network it never loads, so every assertion here anchors on FitrahTube's own identifiers.
+    func testPlayerEmbedRung() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-embed",
+                            // A REAL 11-char id, unlike every other player shot's "fixture-video":
+                            // `EmbedPage.html` refuses anything that fails `^[A-Za-z0-9_-]{11}$`
+                            // (it is a substitution into a `<script>`), and a refusal takes the
+                            // rung straight to the error card with no caption to capture.
+                            arguments: ["-fitrah-fake-player-embed", "-fitrah-route", "player", "dQw4w9WgXcQ"],
+                            anchor: .button("unused"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let caption = app.staticTexts["player.embedCaption"]
+        XCTAssertTrue(caption.waitForExistence(timeout: 20), "player-embed: caption never appeared")
+        XCTAssertEqual(caption.label, "Playing in YouTube's player")
+        XCTAssertFalse(app.buttons["player.qualityMenu.button"].exists,
+                       "player-embed: the embed rung hides every FitrahTube playback control")
+        XCTAssertFalse(app.buttons["player.audioOnly.button"].exists,
+                       "player-embed: the embed rung hides every FitrahTube playback control")
+        XCTAssertFalse(app.buttons["player.captionsMenu.button"].exists,
+                       "player-embed: the embed rung hides every FitrahTube playback control")
+        XCTAssertFalse(app.staticTexts["player.rung2Pill"].exists,
+                       "player-embed: the rung-2 pill belongs to the native branch")
+        // The toolbar and metadata are NOT playback controls and stay (plan task 4's layout ruling).
+        XCTAssertTrue(app.buttons["player.shareButton"].waitForExistence(timeout: 10),
+                      "player-embed: the toolbar stays below the frame")
+        XCTAssertTrue(app.staticTexts["player.metadata.views"].exists,
+                      "player-embed: the metadata panel stays below the toolbar")
+        try write(named: "player-embed-rung", into: directory)
+    }
+
+    /// Plan B3 task 4: ENDED -> FitrahTube's own opaque Replay/Back cover over the frame, so
+    /// YouTube's end-screen recommendation cards are never visible or tappable. `-fitrah-fake-embed-ended`
+    /// seeds the cover (same `#if DEBUG` launch-arg technique as `-fitrah-fake-player-recovery-exhausted`)
+    /// because driving a real ENDED needs a real IFrame load, a network and a short video.
+    func testPlayerEmbedEnded() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-embed-ended",
+                            arguments: ["-fitrah-fake-player-embed", "-fitrah-fake-embed-ended",
+                                        "-fitrah-route", "player", "dQw4w9WgXcQ"],
+                            anchor: .button("unused"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let replay = app.buttons["player.embedReplay"]
+        XCTAssertTrue(replay.waitForExistence(timeout: 20), "player-embed-ended: replay never appeared")
+        XCTAssertTrue(app.buttons["player.embedBack"].exists, "player-embed-ended: back never appeared")
+        try write(named: "player-embed-ended-cover", into: directory)
+    }
+
     // MARK: - B1 task 10: iPad / RTL / Dynamic Type / VoiceOver pass
     // (docs/superpowers/plans/2026-08-24-ios-phase2b1-player-core.md, spec §6.11)
 

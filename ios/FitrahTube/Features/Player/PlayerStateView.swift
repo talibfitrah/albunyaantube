@@ -51,9 +51,16 @@ enum PlayerStateCopy {
             return Copy(message: cooldownText(remainingSeconds: max(0, remaining), locale: locale),
                        showsRetry: remaining <= 0, announces: remaining > 0)
         case .embed:
-            // Replaced in B3 task 4 by `PlayerScreen`'s own embed branch; until then an embed
-            // resolve is honestly terminal rather than silently handed off (spec §6.6 rung 4).
-            return Copy(message: String(localized: "player_error_generic"), showsRetry: true, announces: true)
+            // B3 task 4: the embed rung has its own `PlayerScreen` branch (`EmbedRungView`) and must
+            // never reach this shared state view -- ONLINE. Offline it must: loading a `WKWebView`
+            // with no network paints a black frame under a caption claiming something is playing, so
+            // the `.embed` ENTRY is gated on connectivity and lands on the same single offline
+            // surface `.idle`/`.loading`/`.error` already collapse to (I2, B1 final review).
+            guard isOnline else {
+                return Copy(message: String(localized: "connectivity_offline_banner"), showsRetry: true, announces: false)
+            }
+            preconditionFailure("PlayerStateCopy never maps the online embed rung -- PlayerScreen " +
+                                 "mounts EmbedRungView for it (B3 task 4)")
         case .openInYouTube(_, let messageKey):
             // No Retry: the ladder that produced this state will produce it again. The hand-off
             // button (`PlayerScreen`'s secondary action) is the exit.

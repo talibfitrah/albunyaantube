@@ -44,17 +44,28 @@ struct PlayerScreen: View {
             }
             #endif
         }
-        // Task 9: the one announcement `PlayerStateView` can't make itself, since `.rung2Progressive`
-        // never mounts it (Task 7's identity note keeps both playable rungs in the switch case
-        // below). Fires on every transition INTO rung 2, including a later re-resolve while already
-        // on rung 2 (a fresh stream swap is worth announcing again).
+        // Task 9 + B3 task 4: the two announcements `PlayerStateView` can't make itself, since
+        // neither `.rung2Progressive` nor `.embed` mounts it (Task 7's identity note keeps both
+        // playable rungs in the switch case below; `.embed` has its own branch). ONE site for both
+        // -- `EmbedRungView` deliberately posts nothing of its own. `.onChange` fires only on a real
+        // transition, so entering `.embed` announces exactly once.
         .onChange(of: model?.state) { _, newValue in
-            guard case .rung2Progressive = newValue else { return }
-            // M1 (B1 final review): the announcement is a sentence about what just happened
-            // ("Playing in standard quality", spec §6.6 Transitions row, verbatim); the PILL is a
-            // standing label ("Standard quality (360p)"). Reading the pill's noun phrase out as an
-            // event was the wrong register -- two different strings, deliberately.
-            AccessibilityNotification.Announcement(String(localized: "player_announce_standard_quality")).post()
+            switch newValue {
+            case .rung2Progressive:
+                // M1 (B1 final review): the announcement is a sentence about what just happened
+                // ("Playing in standard quality", spec §6.6 Transitions row, verbatim); the PILL is
+                // a standing label ("Standard quality (360p)"). Reading the pill's noun phrase out
+                // as an event was the wrong register -- two different strings, deliberately.
+                AccessibilityNotification.Announcement(String(localized: "player_announce_standard_quality")).post()
+            case .embed:
+                // Spec §6.6 Transitions: a native->embed demotion is NEVER silent. The caption above
+                // the frame is the visible half; this is the audible one, and it is the same
+                // sentence ("Playing in YouTube's player") rather than a second string, because the
+                // caption already IS a statement of what just happened.
+                AccessibilityNotification.Announcement(String(localized: "player_embed_caption")).post()
+            default:
+                break
+            }
         }
     }
 
@@ -142,6 +153,22 @@ struct PlayerScreen: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color.background.ignoresSafeArea())
+        // B3 task 4: rung 3 gets its OWN branch -- legitimately, because it is a different playback
+        // surface with no `AVPlayer` to preserve across a transition, which is the only thing the
+        // shared branch above exists to protect. It never mounts `PlayerHostView`.
+        case .embed(let resolved):
+            // Offline gate, same rule the `.idle`/`.loading`/`.error` states already follow (I2, B1
+            // final review): a `WKWebView` pointed at `youtube-nocookie.com` with no network renders
+            // a black frame under a caption claiming something is playing. One offline surface with
+            // a Retry, not a lie plus a spinner. `PlayerStateCopy.map` answers the offline copy for
+            // `.embed` and `preconditionFailure`s for it online, where this branch owns the screen.
+            if container.network.isOnline {
+                EmbedRungView(resolved: resolved, model: model, args: args)
+            } else {
+                PlayerStateView(state: state, isOnline: false, thumbnailURL: args.thumbnailURL) {
+                    Task { await model.retry() }
+                }
+            }
         // Task 9: every non-playable state (`.idle`/`.loading`/`.error`/`.contentUnavailable`/
         // `.cooldown`/`.recoveryExhausted`) shares ONE `PlayerStateView` mount -- see that type's
         // doc comment for why one shared view identity (not a case per state) is what makes the

@@ -64,6 +64,20 @@ import Testing
                                         elapsed: 0, duration: nil, rate: 0) == nil)
     }
 
+    /// CF-B2-9: `make` already returns nil for the embed rung; what this pins is that it STAYS nil,
+    /// so leaving rung 1 for the embed cannot leave the previous video's metadata on the lock
+    /// screen. The clearing itself is `PlayerHostView.dismantleUIViewController` -> `detach()` ->
+    /// `removeRemoteCommands()`, which runs because the embed branch never mounts the host --
+    /// nothing in `EmbedRungView` publishes a Now Playing entry of its own (YouTube API Services
+    /// policy III.I.9: no background player for embed content).
+    @Test func theEmbedRungAdvertisesNoNowPlayingEntry() {
+        let resolved = Resolved(stream: .embed(videoId: "dQw4w9WgXcQ"), client: .web, userAgent: "",
+                                resolvedAt: Date(), expiresAt: nil)
+        #expect(NowPlayingSnapshot.make(args: PlayerArgs(videoId: "dQw4w9WgXcQ"),
+                                        state: .embed(resolved),
+                                        elapsed: 0, duration: 120, rate: 1) == nil)
+    }
+
     @Test func remoteCommandsExposePlayPauseAndSeekButNotNextOrPrevious() {
         let player = AVPlayer()
         let controller = BackgroundPlaybackController(backgroundPlay: true)

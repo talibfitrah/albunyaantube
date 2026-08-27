@@ -67,6 +67,17 @@ struct PlayerHostTests {
         #expect(PlayerHostView.player(for: .cooldown(until: Date()), replacing: nil) == nil)
     }
 
+    /// B3 task 4: rungs 3 and 4 are not `AVPlayer` surfaces at all -- rung 3 is a `WKWebView`
+    /// (`EmbedRungView`) and rung 4 is a terminal card. `streamURL` returning nil for both is what
+    /// makes `player(for:replacing:)` pause and release rather than swap (CF-B2-4), and it is also
+    /// why no PiP affordance exists on rung 3: there is no `AVPlayerViewController` to offer one.
+    @Test func openInYouTubeBuildsNoPlayer() {
+        let resolved = Self.resolved(.openInYouTube(url: URL(string: "https://www.youtube.com/watch?v=x")!))
+        #expect(PlayerHostView.player(for: .openInYouTube(resolved, messageKey: "player_error_generic"),
+                                      replacing: nil) == nil)
+        #expect(PlayerHostView.streamURL(.openInYouTube(url: URL(string: "https://www.youtube.com/watch?v=x")!)) == nil)
+    }
+
     // MARK: - Ruling 32: session-only resume -- replacing an existing player for the SAME URL keeps it
 
     @Test func sameURLReusesTheExistingPlayerInstance() {
