@@ -8,7 +8,16 @@ enum PlaybackLifecycleEvent: Equatable, Sendable {
     case routeChanged(oldDeviceUnavailable: Bool)
 }
 
-enum PlaybackPolicyAction: Equatable, Sendable { case none, pause, resume, swapToAudioOnly, restoreVideo }
+/// `restoreVideo` vs `restoreVideoNow` (fix round 2): both undo an automatic audio-only swap, and
+/// they differ only in WHO performs the item replacement. `.restoreVideo` is the ordinary
+/// foreground transition -- it leaves the replace to the host's next SwiftUI update pass, so a TTL
+/// re-resolve still in flight cannot be beaten to the punch by a stale one (IMP-1). `.restoreVideoNow`
+/// is the auto-PiP undo, which runs inside the home-swipe transition where that update pass may
+/// never run before suspension; it must put the video url back on the live player itself or AVKit
+/// opens its window over an audio-only item. `decide` never returns it -- only `undoAutoSwapIfAny()`.
+enum PlaybackPolicyAction: Equatable, Sendable {
+    case none, pause, resume, swapToAudioOnly, restoreVideo, restoreVideoNow
+}
 
 /// Whether AVFoundation should keep the player running when the app backgrounds
 /// (`AVPlayer.audiovisualBackgroundPlaybackPolicy`, mapped by the controller).

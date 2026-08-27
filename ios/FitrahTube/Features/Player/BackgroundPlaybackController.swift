@@ -195,10 +195,15 @@ import UIKit
     /// item is a black box. Called from `playerViewControllerWillStartPictureInPicture`; a no-op
     /// unless this controller performed an automatic swap, so an explicit PiP button press on a
     /// foregrounded player emits nothing.
+    ///
+    /// Fix round 2: `.restoreVideoNow`, not `.restoreVideo`. This runs inside the home-swipe
+    /// transition, and there is no guarantee SwiftUI re-runs `updateUIViewController` before the
+    /// app suspends -- the same hazard Task 3's C2 fixed for the swap direction. A restore deferred
+    /// to that pass leaves AVKit opening the window over the itag 140 item.
     func undoAutoSwapIfAny() {
         guard autoSwappedToAudioOnly else { return }
         autoSwappedToAudioOnly = false
-        onPolicyAction?(.restoreVideo)
+        onPolicyAction?(.restoreVideoNow)
     }
 
     private func handle(_ event: PlaybackLifecycleEvent) {
@@ -208,7 +213,9 @@ import UIKit
         case .pause: player?.pause()
         case .resume: player?.play()
         case .swapToAudioOnly: autoSwappedToAudioOnly = true
-        case .restoreVideo: autoSwappedToAudioOnly = false
+        // `.restoreVideoNow` never comes from `decide` (only `undoAutoSwapIfAny`, which clears the
+        // flag itself), but the same clearing is the right answer if it ever does.
+        case .restoreVideo, .restoreVideoNow: autoSwappedToAudioOnly = false
         }
         onPolicyAction?(action)   // Task 3 performs the actual URL swap
     }

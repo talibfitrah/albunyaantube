@@ -105,21 +105,37 @@ struct PlayerHostView: UIViewControllerRepresentable {
         background.backgroundPlay = model.backgroundPlay
         background.userAudioOnly = model.audioOnly
         background.audioOnlyAvailable = PlayerViewModel.audioOnlyAvailable(for: state)
-        // Fix round 1, C2: the handler must never swap against a stale `state`. It is REASSIGNED
-        // on every pass, and it reads `model.state` at ACTION time rather than capturing this
-        // pass's copy -- Task 6's pre-emptive re-resolve settles between the foreground
-        // notification and the `.restoreVideo` it produces, and SwiftUI has not re-run this method
-        // by then, so a captured copy would restore the very URL the refresh just replaced.
-        background.onPolicyAction = { [weak model, weak player] action in
-            guard let model else { return }
-            Self.applyPolicyAction(action, state: model.state, player: player, model: model)
-        }
+        background.onPolicyAction = Self.policyHandler(model: model, player: player,
+                                                       coordinator: context.coordinator)
         // CF-B1-3: awaited by the controller BEFORE the foreground policy runs (and skipped while
         // PiP is live), so the restore above builds its item from the freshly resolved stream.
         background.onWillEnterForeground = { [weak model] in
             await model?.reResolveIfExpiring()
         }
         background.attach(player: player)
+    }
+
+    /// `BackgroundPlaybackController.onPolicyAction`, built here rather than inline above so the
+    /// tests drive the REAL production closure. Fix round 2: the inline version never passed the
+    /// coordinator, so `applyPolicyAction`'s `coordinator:` defaulted to nil in the app and MIN-4's
+    /// observer re-arm ran only in the tests that passed one by hand -- every real swap left the
+    /// recovery observers on the outgoing item.
+    ///
+    /// Fix round 1, C2: the handler must never swap against a stale `state`. It is REASSIGNED on
+    /// every update pass, and it reads `model.state` at ACTION time rather than capturing this
+    /// pass's copy -- Task 6's pre-emptive re-resolve settles between the foreground notification
+    /// and the `.restoreVideo` it produces, and SwiftUI has not re-run the host by then, so a
+    /// captured copy would restore the very URL the refresh just replaced.
+    ///
+    /// Every capture is weak: the controller is owned by the coordinator, so a strong coordinator
+    /// here would close the cycle coordinator -> controller -> handler -> coordinator.
+    static func policyHandler(model: PlayerViewModel?, player: AVPlayer?,
+                              coordinator: Coordinator?) -> (PlaybackPolicyAction) -> Void {
+        { [weak model, weak player, weak coordinator] action in
+            guard let model else { return }
+            Self.applyPolicyAction(action, state: model.state, player: player, model: model,
+                                   coordinator: coordinator)
+        }
     }
 
     /// The `.swapToAudioOnly` / `.restoreVideo` half of the background policy, split out of the
@@ -134,7 +150,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                   player: AVPlayer?, model: PlayerViewModel?,
                                   coordinator: Coordinator? = nil) {
         switch action {
-        case .swapToAudioOnly:
+        case .swapToAudioOnly, .restoreVideoNow:
             // Fix round 1, C2: `model.audioOnly` alone only SCHEDULES a SwiftUI update, and there
             // is no guarantee `updateUIViewController` runs before the app suspends -- the phone
             // could keep pulling video segments for the whole background stint, which is the one
@@ -142,8 +158,14 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // on the live player. `player(for:replacing:audioOnly:)` reuses that same `AVPlayer`
             // (position and playWhenReady carried across by its own replace path); it never builds
             // a second one.
+            //
+            // Fix round 2: `.restoreVideoNow` is the mirror image and shares this path for the same
+            // reason -- it is the auto-PiP undo, emitted mid-home-swipe, and a window opened over
+            // the itag 140 item is black until the user comes back. (The ORDINARY foreground
+            // restore is `.restoreVideo` below, which stays deferred.)
+            let audioOnly = action == .swapToAudioOnly
             if let player {
-                _ = Self.player(for: state, replacing: player, audioOnly: true)
+                _ = Self.player(for: state, replacing: player, audioOnly: audioOnly)
                 // MIN-4 (final review): that replace built a NEW `AVPlayerItem`, and every recovery
                 // observer (status KVO, failed-to-play-to-end, the periodic stall sampler) is
                 // per-item -- left on the outgoing one, an audio-only stream that dies in the
@@ -153,7 +175,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                     coordinator?.observe(item: item, player: player, model: model, isLive: Self.isLive(state))
                 }
             }
-            model?.audioOnly = true
+            model?.audioOnly = audioOnly
         case .restoreVideo:
             // IMP-1 (final review): NO synchronous replace on the way back. The foreground
             // transition runs this on a 2 s deadline, so a TTL refresh can still be in flight --

@@ -16,13 +16,22 @@ import UIKit
     /// A real, playable local item -- the same 2 s clip the screenshot rig plays (the unit target's
     /// host IS the app, see `SmokeTests`), plus a second LOCAL url standing in for the itag 140
     /// rendition, so the swap is observable as an asset-url change with no network traffic at all.
-    private static func fixture() throws -> (state: StreamState, video: URL, audio: URL) {
+    private static func fixture() throws -> (state: StreamState, resolved: Resolved, video: URL, audio: URL) {
         let video = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
         let audio = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("fitrah-audio-only.m4a")
         let resolved = Resolved(stream: .hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: []),
                                 client: .visionos, userAgent: "TestUA", resolvedAt: Date(), expiresAt: nil)
-        return (.ready(resolved), video, audio)
+        return (.ready(resolved), resolved, video, audio)
+    }
+
+    /// Just enough `StreamResolving` to put a real `PlayerViewModel` into `.ready(fixture)` --
+    /// `state` is `private(set)`, so `open()` is the only door in.
+    private struct OneShotResolver: StreamResolving {
+        let resolved: Resolved
+        init(_ resolved: Resolved) { self.resolved = resolved }
+        func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                     sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved { resolved }
     }
 
     /// The observers are registered with `queue: .main`, so delivery is a run-loop hop away rather
@@ -152,16 +161,27 @@ import UIKit
     /// When the background half wins, the item is already the itag 140 audio rendition by the time
     /// AVKit opens the floating window -- a video window with no video track, i.e. a black box.
     /// `willStartPictureInPicture` therefore UNDOES the automatic swap it finds.
+    ///
+    /// Fix round 2: SYNCHRONOUSLY. IMP-1 moved the ordinary foreground `.restoreVideo` onto the
+    /// SwiftUI update pass (one replace, against the freshest `Resolved`) -- but this path runs
+    /// inside the home-swipe transition, where that pass may never get to run before the app
+    /// suspends, which is exactly the hazard Task 3's C2 fixed for the swap direction. A deferred
+    /// restore here means AVKit opens the window over the itag 140 item: a black box until the
+    /// user comes back. So the undo puts the video url back on the live player itself.
     @Test func startingPictureInPictureUndoesAnAutomaticBackgroundSwap() async throws {
         let fixture = try Self.fixture()
         let player = try #require(PlayerHostView.player(for: fixture.state, replacing: nil, audioOnly: false))
         let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
         let controller = coordinator.background
         controller.audioOnlyAvailable = true
+        let videoItem = try #require(player.currentItem)
+        coordinator.observe(item: videoItem, player: player, model: nil, isLive: false)
+        defer { coordinator.stopObserving() }
         var actions: [PlaybackPolicyAction] = []
-        controller.onPolicyAction = { [weak player] action in
+        controller.onPolicyAction = { [weak player, weak coordinator] action in
             actions.append(action)
-            PlayerHostView.applyPolicyAction(action, state: fixture.state, player: player, model: nil)
+            PlayerHostView.applyPolicyAction(action, state: fixture.state, player: player, model: nil,
+                                             coordinator: coordinator)
         }
         controller.attach(player: player)
         defer { controller.detach() }
@@ -169,11 +189,51 @@ import UIKit
         NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
         try await wait { actions.contains(.swapToAudioOnly) }
         #expect(Self.assetURL(player) == fixture.audio)
+        let audioItem = try #require(player.currentItem)
 
         coordinator.playerViewControllerWillStartPictureInPicture(AVPlayerViewController())
 
-        #expect(actions.filter { $0 != .none } == [.swapToAudioOnly, .restoreVideo])
+        // The window AVKit is about to open must have a video track to draw RIGHT NOW.
+        #expect(Self.assetURL(player) == fixture.video)
+        #expect(player.currentItem !== audioItem)
+        // MIN-4, same as the swap direction: the recovery observers are per-item, so a synchronous
+        // replace that left them on the outgoing item would silently disarm the recovery ladder.
+        #expect(coordinator.observedItem === player.currentItem)
+        #expect(actions.filter { $0 != .none } == [.swapToAudioOnly, .restoreVideoNow])
         #expect(controller.autoSwappedToAudioOnly == false)
+    }
+
+    /// Fix round 2, the wiring itself: every other test here builds its own `onPolicyAction`
+    /// closure by hand, which is exactly how the app shipped an `applyPolicyAction` call that
+    /// dropped the `coordinator:` argument -- MIN-4's observer re-arm never ran outside the tests
+    /// that passed one deliberately. This one installs the PRODUCTION handler
+    /// (`PlayerHostView.policyHandler`) and drives it with a real notification.
+    @Test func theProductionPolicyHandlerReArmsTheRecoveryObserversOnTheSwappedItem() async throws {
+        let fixture = try Self.fixture()
+        let model = PlayerViewModel(resolver: OneShotResolver(fixture.resolved),
+                                    settings: UserDefaultsSettingsStore(
+                                        defaults: UserDefaults(suiteName: "BGPolicyHandler.\(UUID().uuidString)")!),
+                                    args: PlayerArgs(videoId: "abcdefghijk", channelId: "ch1"))
+        await model.open()
+        #expect(model.state == fixture.state)
+        let player = try #require(PlayerHostView.player(for: model.state, replacing: nil, audioOnly: false))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
+        let videoItem = try #require(player.currentItem)
+        coordinator.observe(item: videoItem, player: player, model: model, isLive: false)
+        defer { coordinator.stopObserving() }
+        let controller = coordinator.background
+        controller.audioOnlyAvailable = true
+        controller.onPolicyAction = PlayerHostView.policyHandler(model: model, player: player,
+                                                                 coordinator: coordinator)
+        controller.attach(player: player)
+        defer { controller.detach() }
+
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        try await wait { model.audioOnly }
+
+        #expect(Self.assetURL(player) == fixture.audio)
+        #expect(player.currentItem !== videoItem)
+        #expect(coordinator.observedItem === player.currentItem)
     }
 
     /// The other half: the ordinary case (PiP started from the transport button with nothing
