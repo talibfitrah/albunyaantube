@@ -19,7 +19,16 @@ struct EmbedPolicyTests {
         // 11-char id is the whole defence -- escaping is not attempted, refusal is.
         #expect(EmbedPage.html(videoId: "\";alert(1);//", locale: "en", captionsPreferred: false) == nil)
         #expect(EmbedPage.html(videoId: "short", locale: "en", captionsPreferred: false) == nil)
-        #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "en-US\";x", captionsPreferred: false) == nil)
+    }
+
+    @Test func htmlDefaultsUnsupportedHlToEnglish() {
+        // `hl` is JSON-encoded, not a security boundary (unlike `videoId`, which stays strict and
+        // nil-returning): any value outside {en, ar, nl} -- including one shaped like an injection
+        // attempt -- just defaults to "en" rather than failing the whole embed.
+        #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "fr", captionsPreferred: false)?
+            .contains("\"hl\":\"en\"") == true)
+        #expect(EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "en-US\";x", captionsPreferred: false)?
+            .contains("\"hl\":\"en\"") == true)
     }
 
     @Test func htmlCarriesThePlayerVarsPlan64RequiresAndNothingElse() {
@@ -37,12 +46,14 @@ struct EmbedPolicyTests {
         #expect(scripts == ["https://www.youtube.com/iframe_api"])
     }
 
-    @Test func htmlPinsTheOriginPlayerVarToTheBundledPagesOwnBaseURL() {
-        // Ruled: `origin` is the app-owned https base the page is loaded under, not youtube.com --
-        // it is what the IFrame API validates postMessage against, and what the navigation lock
-        // accepts as the one legal main-frame URL.
+    @Test func htmlPinsTheOriginPlayerVarToASchemeAndHostOnlyOrigin() {
+        // Ruled (review round 1): YouTube's IFrame API docs specify `origin` as scheme+host only --
+        // a path never matches. `baseURL` (with `/embed`) stays the `loadHTMLString` base and the
+        // navigation lock's one accepted URL; `origin` is the app-owned https origin, not youtube.com
+        // and not `baseURL`'s full path.
         let html = EmbedPage.html(videoId: "dQw4w9WgXcQ", locale: "en", captionsPreferred: false)!
-        #expect(html.contains("https://app.fitrahtube.com/embed"))
+        #expect(html.contains("\"origin\":\"https://app.fitrahtube.com\""))
+        #expect(html.contains("https://app.fitrahtube.com/embed") == false)
         #expect(EmbedPage.baseURL.absoluteString == "https://app.fitrahtube.com/embed")
     }
 
@@ -77,6 +88,12 @@ struct EmbedPolicyTests {
         #expect(EmbedNavigationPolicy.allows(url: URL(string: "https://accounts.google.com/signin")!,
                                              isMainFrame: true, baseURL: base) == false)
         #expect(EmbedNavigationPolicy.allows(url: URL(string: "javascript:alert(1)")!,
+                                             isMainFrame: true, baseURL: base) == false)
+        // Non-http(s) top-frame schemes a malicious page could pivot to: same denial path as
+        // `javascript:` -- scheme mismatch, no allowlist to fall into.
+        #expect(EmbedNavigationPolicy.allows(url: URL(string: "data:text/html,<script>alert(1)</script>")!,
+                                             isMainFrame: true, baseURL: base) == false)
+        #expect(EmbedNavigationPolicy.allows(url: URL(string: "blob:https://app.fitrahtube.com/x")!,
                                              isMainFrame: true, baseURL: base) == false)
         #expect(EmbedNavigationPolicy.allows(url: nil, isMainFrame: true, baseURL: base) == false)
         // Same host, wrong scheme: still cancelled. An http downgrade is not the bundled page.

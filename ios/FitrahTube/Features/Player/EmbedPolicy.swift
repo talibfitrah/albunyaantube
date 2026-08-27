@@ -13,6 +13,12 @@ enum EmbedPage {
     /// the only main-frame URL the navigation lock accepts.
     static let baseURL = URL(string: "https://app.fitrahtube.com/embed")!
 
+    /// The `origin` player var: scheme+host only, per YouTube's IFrame API docs -- a path (like
+    /// `baseURL`'s `/embed`) never matches what the API compares against. Derived from `baseURL` so
+    /// the host can't drift between the two; `baseURL` itself stays the `loadHTMLString` base and
+    /// the navigation lock's one accepted URL.
+    private static let origin = "\(baseURL.scheme!)://\(baseURL.host!)"
+
     /// The `window.webkit.messageHandlers.<name>` namespace. Declared once: `embed.html`'s JS reads
     /// it through the `__HANDLER__` placeholder, task 4 registers it, the round-trip test asserts
     /// on it -- a typo in any one of the three cannot drift from the others.
@@ -20,9 +26,11 @@ enum EmbedPage {
 
     private static let supportedLocales: Set<String> = ["en", "ar", "nl"]
 
-    /// nil when either substitution value fails validation. The caller shows the generic error --
-    /// it never falls back to an unvalidated substitution. This is the app's only place where a
-    /// runtime value lands inside a `<script>`; refusal is the defence, not escaping.
+    /// nil only when `videoId` fails validation; the caller shows the generic error and never falls
+    /// back to an unvalidated substitution. `locale` is different: it's JSON-encoded, not a security
+    /// boundary, so an unsupported value just defaults to `"en"` rather than failing the whole embed.
+    /// This is the app's only place where a runtime value lands inside a `<script>`; refusal is
+    /// `videoId`'s defence, not escaping.
     ///
     /// No `customUserAgent` is set anywhere in this rung: plan §6.3's fixed per-client UAs govern
     /// InnerTube API calls, and `youtube-nocookie.com` serves a different player to a UA it does
@@ -31,19 +39,20 @@ enum EmbedPage {
         // `^[A-Za-z0-9_-]{11}$`, spelled without a `Regex` so nothing non-Sendable is stored.
         guard videoId.count == 11,
               videoId.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }),
-              supportedLocales.contains(locale),                  // ruling 19, en fallback upstream
               let template = Bundle.main.url(forResource: "embed", withExtension: "html")
                   .flatMap({ try? String(contentsOf: $0, encoding: .utf8) })
         else { return nil }
+        let hl = supportedLocales.contains(locale) ? locale : "en"  // ruling 19; not a security boundary
         var vars: [String: Any] = ["playsinline": 1, "rel": 0, "enablejsapi": 1]
-        vars["origin"] = baseURL.absoluteString
-        vars["hl"] = locale
+        vars["origin"] = origin
+        vars["hl"] = hl
         if captionsPreferred {                                     // plan §6.5's cc_* pair
             vars["cc_load_policy"] = 1
-            vars["cc_lang_pref"] = locale
+            vars["cc_lang_pref"] = hl
         }
-        // `.withoutEscapingSlashes`: the default writer emits `https:\/\/…` for `origin`, which the
-        // IFrame API compares byte-for-byte against the page's real origin.
+        // `.withoutEscapingSlashes`: cosmetic only -- JS unescapes `\/` at parse time, so the
+        // default escaped form would not have broken the origin comparison either. Kept for
+        // readable HTML source when inspecting the bundle.
         guard let json = try? JSONSerialization.data(withJSONObject: vars, options: [.withoutEscapingSlashes]),
               let varsJSON = String(data: json, encoding: .utf8) else { return nil }
         return template
