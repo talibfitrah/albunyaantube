@@ -122,6 +122,16 @@ EXTRA_KEYS = {
         "ar": "حاول مرة أخرى خلال %1$@",
         "nl": "Probeer het over %1$@ opnieuw",
     },
+    # player_action_not_favorited (B1 task 10, spec §6.11 "Favorite, Not favorited" example): the
+    # favorite toolbar button's VoiceOver value when unfavorited -- a constant "Favorite" label
+    # (player_action_favorite) plus this value, mirroring player_action_favorited on the other
+    # side. iOS-only: Android conveys the toggle through the icon/caption swap alone, with no
+    # separate content-description string for the "off" state to port.
+    "player_action_not_favorited": {
+        "en": "Not favorited",
+        "ar": "غير مُضاف للمفضلة",
+        "nl": "Niet toegevoegd aan favorieten",
+    },
 }
 
 def is_dead(key):

@@ -9,26 +9,44 @@ struct EmptyStateView: View {
     var title: String? = nil
     let message: String
     var action: (title: String, run: () -> Void)? = nil
+    /// Task 10 carry-in (I1, `PlayerStateView`'s loading state): overrides the plain
+    /// `Image(systemName:)` render below with a caller-supplied icon (a thumbnail + spinner
+    /// overlay, in that case). `nil` (every other caller) keeps the SF Symbol render unchanged.
+    var customIcon: AnyView? = nil
+    /// Task 10 carry-in (I1): lets a caller's message/button stay individually queryable by
+    /// XCUITest instead of merged into the `.combine` block below -- `PlayerStateView`'s
+    /// `player.state.message`/`player.state.countdown`/`player.state.retryButton` identifiers,
+    /// which UI tests anchor on directly (`combinesMessageWithIcon` below opts out of the merge).
+    var messageAccessibilityIdentifier: String? = nil
+    var actionAccessibilityIdentifier: String? = nil
+    /// Every existing caller (Home/Search/Favorites/...) keeps ONE combined "icon + title +
+    /// message" VoiceOver element, unchanged from before this task. `PlayerStateView` opts out
+    /// (`false`) so its message stays its own element -- see the identifier params above.
+    var combinesMessageWithIcon: Bool = true
     @Environment(\.widthClass) private var widthClass
 
     var body: some View {
         VStack(spacing: Spacing.md(widthClass)) {
             VStack(spacing: Spacing.md(widthClass)) {
-                Image(systemName: systemImage)
-                    .font(.system(size: Size.iconXL(widthClass)))
-                    .foregroundStyle(iconColor)
-                    .accessibilityHidden(true)
+                if let customIcon {
+                    customIcon
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: Size.iconXL(widthClass)))
+                        .foregroundStyle(iconColor)
+                        .accessibilityHidden(true)
+                }
                 if let title {
                     Text(title)
                         .font(TypeScale.headline(widthClass))
                         .foregroundStyle(Color.textPrimary)
                         .accessibilityAddTraits(.isHeader)
                 }
-                StateMessage(text: message)
+                StateMessage(text: message, accessibilityIdentifier: messageAccessibilityIdentifier)
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: combinesMessageWithIcon ? .combine : .contain)
             if let action {
-                StateButton(title: action.title, action: action.run)
+                StateButton(title: action.title, action: action.run, accessibilityIdentifier: actionAccessibilityIdentifier)
             }
         }
         .padding(Spacing.lg(widthClass))
@@ -55,6 +73,7 @@ struct ErrorStateView: View {
 
 private struct StateMessage: View {
     let text: String
+    var accessibilityIdentifier: String? = nil
     @Environment(\.widthClass) private var widthClass
 
     var body: some View {
@@ -63,12 +82,14 @@ private struct StateMessage: View {
             .foregroundStyle(Color.textSecondary)
             .multilineTextAlignment(.center)
             .frame(maxWidth: Size.stateBodyMaxWidth(widthClass))
+            .accessibilityIdentifier(accessibilityIdentifier ?? "")
     }
 }
 
 private struct StateButton: View {
     let title: String
     let action: () -> Void
+    var accessibilityIdentifier: String? = nil
     @Environment(\.widthClass) private var widthClass
 
     var body: some View {
@@ -80,6 +101,7 @@ private struct StateButton: View {
         .buttonStyle(.borderedProminent)
         .controlSize(widthClass == .large ? .extraLarge : .large)
         .tint(.brand)
+        .accessibilityIdentifier(accessibilityIdentifier ?? "")
     }
 }
 

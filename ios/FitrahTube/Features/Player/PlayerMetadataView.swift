@@ -9,6 +9,11 @@ struct PlayerMetadataView: View {
 
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
+    // Task 10 (spec §6.11 "no clipped title" at `.accessibility3`): the fixed `.lineLimit(2)`
+    // below (Task 8's `text_section_title` "max 2 lines" port) reduced a real title down to
+    // "Understanding Tawakkul: Trusti…" at that size -- same `isAccessibilitySize` escape hatch
+    // `GridRules.columns` already uses (`Layout.swift`), applied here instead of a second token.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var isDescriptionExpanded = false
 
     // ponytail: fixed collapsed line count rather than measuring actual text-wrap truncation
@@ -23,7 +28,7 @@ struct PlayerMetadataView: View {
                 Text(title)
                     .font(TypeScale.headline(widthClass))
                     .foregroundStyle(Color.textPrimary)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     .accessibilityIdentifier("player.metadata.title")
             }
 

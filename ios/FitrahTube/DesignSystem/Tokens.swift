@@ -188,4 +188,13 @@ enum Size {
     static func buttonMinWidth(_ w: WidthClass) -> CGFloat { w.pick(120, 140, 160) }
     static func iconXL(_ w: WidthClass) -> CGFloat { w.pick(96, 96, 128) }
     static func stateBodyMaxWidth(_ w: WidthClass) -> CGFloat { w.pick(300, 400, 480) }
+
+    /// Android `content_max_width` (`values/dimens.xml`, `values-sw720dp/dimens.xml:32`) --
+    /// on Android this dimen is applied ONLY by `layout-sw600dp/fragment_player.xml`, so the
+    /// player is the one screen a tablet content column isn't full-width (spec §7 grids note /
+    /// `ios-app-design.md` §11); list and grid screens stay full-width on tablets, unaffected.
+    /// `nil` below the sw600 threshold matches Android leaving the phone layout unconstrained.
+    static func playerMaxWidth(_ w: WidthClass) -> CGFloat? {
+        w.pick(nil, 1200, 1600)
+    }
 }

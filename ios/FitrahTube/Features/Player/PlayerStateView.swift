@@ -76,7 +76,6 @@ struct PlayerStateView: View {
     let retry: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
 
     var body: some View {
@@ -96,44 +95,33 @@ struct PlayerStateView: View {
         .onChange(of: state) { _, _ in announceIfNeeded() }
     }
 
+    /// Task 10 carry-in (I1): built on the shared `EmptyStateView`/`StateButton`
+    /// (`StateViews.swift`) instead of retyping icon/message/button here -- the thumbnail+spinner
+    /// case rides the `customIcon` hook, and `combinesMessageWithIcon: false` keeps the message
+    /// and retry button individually queryable (`player.state.message`/`.countdown`/
+    /// `.retryButton`, which `ScreenshotTests` anchors on directly).
     @ViewBuilder
     private func content(now: Date) -> some View {
         let copy = PlayerStateCopy.map(state, isOnline: isOnline, locale: locale, now: now)
-        VStack(spacing: Spacing.md(widthClass)) {
-            icon
-            Text(copy.message)
-                .font(TypeScale.body(widthClass))
-                .foregroundStyle(Color.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: Size.stateBodyMaxWidth(widthClass))
-                .accessibilityIdentifier(Self.isCooldown(state) ? "player.state.countdown" : "player.state.message")
-            if copy.showsRetry {
-                Button(String(localized: "retry"), action: retry)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(widthClass == .large ? .extraLarge : .large)
-                    .tint(.brand)
-                    .accessibilityIdentifier("player.state.retryButton")
-            }
-        }
-        .padding(Spacing.lg(widthClass))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EmptyStateView(
+            systemImage: "exclamationmark.triangle.fill",
+            iconColor: .accentRed,
+            message: copy.message,
+            action: copy.showsRetry ? (String(localized: "retry"), retry) : nil,
+            customIcon: (Self.isLoadingLike(state) && isOnline) ? AnyView(loadingIcon) : nil,
+            messageAccessibilityIdentifier: Self.isCooldown(state) ? "player.state.countdown" : "player.state.message",
+            actionAccessibilityIdentifier: "player.state.retryButton",
+            combinesMessageWithIcon: false
+        )
         .background(Color.background)
     }
 
-    @ViewBuilder
-    private var icon: some View {
-        if Self.isLoadingLike(state), isOnline {
-            ZStack {
-                RemoteImage(url: thumbnailURL, contentMode: .fit)
-                    .frame(width: 240, height: 135)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.thumbnail))
-                ProgressView().tint(.brand)
-            }
-        } else {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: Size.iconXL(widthClass)))
-                .foregroundStyle(Color.accentRed)
-                .accessibilityHidden(true)
+    private var loadingIcon: some View {
+        ZStack {
+            RemoteImage(url: thumbnailURL, contentMode: .fit)
+                .frame(width: 240, height: 135)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.thumbnail))
+            ProgressView().tint(.brand)
         }
     }
 

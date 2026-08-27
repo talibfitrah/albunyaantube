@@ -52,6 +52,13 @@ struct PlayerToolbar: View {
                         title: String(localized: isFavorite ? "player_action_favorited" : "player_action_favorite"))
         }
         .accessibilityIdentifier("player.favoriteButton")
+        // Task 10 (spec §6.11 "Favorite, Not favorited" example): a constant role label + a value
+        // that carries the toggled state, plus `.isSelected` (same toggle idiom `NavigationRailView`/
+        // `SettingsView`'s theme rows already use) -- rather than the visible caption's own
+        // Favorite/Favorited swap doubling as the accessibility label.
+        .accessibilityLabel(String(localized: "player_action_favorite"))
+        .accessibilityValue(String(localized: isFavorite ? "player_action_favorited" : "player_action_not_favorited"))
+        .accessibilityAddTraits(isFavorite ? [.isSelected] : [])
     }
 
     /// `SwiftDataFavoritesStore.isFavorite` reads live from the SwiftData context on every call --

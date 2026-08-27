@@ -10,6 +10,11 @@ struct PlayerScreen: View {
     let args: PlayerArgs
 
     @Environment(\.container) private var container
+    @Environment(\.widthClass) private var widthClass
+    /// Task 10 (spec §6.11): compact vertical size class == iPhone landscape -- the signal that
+    /// hides the metadata panel below the player. iPad landscape stays `.regular` (a much taller
+    /// window even in landscape), so this never fires there.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var model: PlayerViewModel?
 
     var body: some View {
@@ -87,9 +92,19 @@ struct PlayerScreen: View {
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
                     .background(Color.black)
 
-                    PlayerToolbar(args: args)
-                    PlayerMetadataView(args: args)
+                    // Task 10 (spec §6.11): compact-height landscape (iPhone landscape) hides the
+                    // metadata panel -- the toolbar (favorite/share/report) stays available.
+                    if verticalSizeClass != .compact {
+                        PlayerToolbar(args: args)
+                        PlayerMetadataView(args: args)
+                    }
                 }
+                // Task 10 (`ios-app-design.md` §11 `content_max_width`): the ONE screen where a
+                // tablet content column isn't full width -- nil below the sw600 threshold, 1200/
+                // 1600 pt above it (`Size.playerMaxWidth`). The outer `.frame(maxWidth: .infinity)`
+                // centers this narrower column within the full scroll width.
+                .frame(maxWidth: Size.playerMaxWidth(widthClass))
+                .frame(maxWidth: .infinity)
             }
             .background(Color.background.ignoresSafeArea())
         // Task 9: every non-playable state (`.idle`/`.loading`/`.error`/`.contentUnavailable`/
@@ -132,7 +147,12 @@ struct PlayerScreen: View {
                 .background(.black.opacity(0.55), in: Circle())
         }
         .accessibilityIdentifier("player.qualityMenu.button")
-        .accessibilityLabel(String(localized: "player_quality_dialog_title"))
+        // Task 10 (spec §6.11 "label + value on custom controls"): label = the control's role
+        // ("Quality"), value = the live pick ("Auto") -- same split `CategoryPill` already uses
+        // (`Components.swift`). `QualityOption.label` is deliberately unlocalized (its own doc
+        // comment), matching the brief's own "Quality, Auto" example verbatim.
+        .accessibilityLabel(String(localized: "player_quality_selector"))
+        .accessibilityValue(model.selectedQuality.label)
     }
 
     /// The captions toggle (spec §10 Captions paragraph; plan §6.5) -- own SwiftUI control, same
@@ -179,6 +199,9 @@ struct PlayerScreen: View {
             }
             .accessibilityIdentifier("player.captionsMenu.button")
             .accessibilityLabel(String(localized: "player_action_captions"))
+            // Task 10: "Captions, Off" (spec §6.11 example, verbatim) when no track is selected,
+            // else the selected track's own label.
+            .accessibilityValue(model.selectedCaptionTrack.map(Self.captionLabel) ?? String(localized: "player_captions_off"))
             .task(id: tracks.map(\.languageCode)) {
                 guard !model.captionsAutoEnableApplied else { return }
                 model.captionsAutoEnableApplied = true

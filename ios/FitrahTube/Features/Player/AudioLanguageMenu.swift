@@ -76,6 +76,9 @@ struct AudioLanguageMenu: View {
                 }
                 .accessibilityIdentifier("player.audioLanguageMenu.button")
                 .accessibilityLabel(String(localized: "shorts_audio_track_title"))
+                // Task 10 (spec §6.11 "label + value on custom controls"): the currently-selected
+                // track's display name (already carries "Original: X" for the default option).
+                .accessibilityValue(options.first(where: { $0.tag == selectedTag })?.displayName ?? "")
             }
         }
         .task(id: model.currentItem) { await load() }

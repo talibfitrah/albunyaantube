@@ -348,6 +348,79 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-recovery-exhausted-state", into: directory)
     }
 
+    // MARK: - B1 task 10: iPad / RTL / Dynamic Type / VoiceOver pass
+    // (docs/superpowers/plans/2026-08-24-ios-phase2b1-player-core.md, spec §6.11)
+
+    /// iPhone leg: en portrait (playing + metadata), en landscape (metadata hidden -- compact
+    /// vertical size class), ar portrait (RTL leading-aligned metadata), en `.accessibility3`
+    /// portrait (no clipped title/channel/views/toolbar/state text). Same fixture-HLS launch as
+    /// `testPlayerMetadataAndToolbar` so a real title/channel/description/views panel is on
+    /// screen, not an empty one.
+    func testPlayerB1Task10IPhone() throws {
+        let directory = try shotsDirectory()
+        // No `.element("Video")` anchor here (unlike the other B1 player tests): AVKit's content
+        // view label is a SYSTEM-localized string ("Video" only under English), so it never
+        // matches under the ar leg below. `player.metadata.title` is our own accessibility
+        // identifier -- locale-independent, and a strictly stronger readiness signal anyway (it
+        // only renders inside `PlayerScreen`'s `.ready`/`.rung2Progressive` branch alongside
+        // `PlayerHostView`, so its existence already proves the player is mounted).
+        let screen = Screen(key: "player-b1-task10",
+                            arguments: ["-fitrah-fake-player-hls", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .button("unused"))
+
+        XCUIDevice.shared.orientation = .portrait
+        var app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        var title = app.staticTexts["player.metadata.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 20), "b1-task10 iphone en portrait: metadata title never appeared")
+        try write(named: "player-b1task10-iphone-en-portrait", into: directory)
+
+        // Compact vertical size class (iPhone landscape) hides the metadata panel (spec §6.11).
+        XCUIDevice.shared.orientation = .landscapeLeft
+        settle(app, landscape: true)
+        XCTAssertFalse(app.staticTexts["player.metadata.title"].exists,
+                       "b1-task10 iphone en landscape: metadata must be hidden at compact vertical size class")
+        try write(named: "player-b1task10-iphone-en-landscape", into: directory)
+        XCUIDevice.shared.orientation = .portrait
+
+        // ar portrait -- fresh launch, locale is a launch argument.
+        app = launch(screen, locale: Self.locales[1], extraArguments: [])
+        title = app.staticTexts["player.metadata.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 20), "b1-task10 iphone ar portrait: metadata title never appeared")
+        try write(named: "player-b1task10-iphone-ar-portrait", into: directory)
+
+        // en .accessibility3 portrait.
+        app = launch(screen, locale: Self.locales[0], extraArguments: Self.accessibility3)
+        title = app.staticTexts["player.metadata.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 20), "b1-task10 iphone a11y3: metadata title never appeared")
+        try write(named: "player-b1task10-iphone-en-a11y3-portrait", into: directory)
+    }
+
+    /// iPad leg: en portrait and en landscape, proving the content column is capped at
+    /// `Size.playerMaxWidth` (spec §11 `content_max_width`) and metadata/toolbar stay visible in
+    /// landscape -- iPad landscape is `.regular` vertical size class, not `.compact`, so only
+    /// iPhone landscape hides the panel.
+    func testPlayerB1Task10IPad() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-b1-task10-ipad",
+                            arguments: ["-fitrah-fake-player-hls", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .element("Video"))
+
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let content = element(for: screen.anchor, in: app)
+        XCTAssertTrue(content.waitForExistence(timeout: 20), "b1-task10 ipad en portrait: player never appeared")
+        let title = app.staticTexts["player.metadata.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10), "b1-task10 ipad en portrait: metadata title never appeared")
+        try write(named: "player-b1task10-ipad-en-portrait", into: directory)
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        settle(app, landscape: true)
+        XCTAssertTrue(app.staticTexts["player.metadata.title"].exists,
+                      "b1-task10 ipad en landscape: metadata must stay visible (regular vertical size class)")
+        try write(named: "player-b1task10-ipad-en-landscape", into: directory)
+        XCUIDevice.shared.orientation = .portrait
+    }
+
     // MARK: - Accessibility assertions (R-C, spec §14 "label + value on custom controls")
 
     /// Every list row must expose a VoiceOver label that carries the item title *and* the value the

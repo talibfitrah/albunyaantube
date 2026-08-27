@@ -175,4 +175,35 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$STATE_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 
+# Task 10 (iPad / RTL / Dynamic Type / VoiceOver pass): iPhone leg (en portrait, en landscape
+# with metadata hidden, ar portrait, en .accessibility3 portrait) then the iPad leg (en portrait,
+# en landscape, proving the content column stays capped at Size.playerMaxWidth). Both legs share
+# ONE output directory -- only the first `rm -rf` below clears it, so the iPad run's shots don't
+# wipe the iPhone run's.
+TASK10_OUT="$ROOT/.superpowers/sdd/2026-08-24-ios-phase2b1-player-core/screenshots/b1-task10"
+echo "== player iPad/RTL/a11y pass (iPhone) -> $TASK10_OUT =="
+rm -rf "${TASK10_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$TASK10_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerB1Task10IPhone \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
+echo "== player iPad/RTL/a11y pass (iPad) -> $TASK10_OUT =="
+TEST_RUNNER_FITRAH_SHOTS_DIR="$TASK10_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerB1Task10IPad \
+    -destination "platform=iOS Simulator,name=iPad Pro 13-inch (M5)" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
+
 exit "$status"

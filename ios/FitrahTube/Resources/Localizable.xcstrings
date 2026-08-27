@@ -9362,6 +9362,28 @@
         }
       }
     },
+    "player_action_not_favorited": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "غير مُضاف للمفضلة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not favorited"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Niet toegevoegd aan favorieten"
+          }
+        }
+      }
+    },
     "player_action_pause": {
       "localizations": {
         "ar": {
