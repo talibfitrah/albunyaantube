@@ -866,17 +866,38 @@ These need YouTube but not a device. Pick the video ids from the catalog, and re
 
 - [ ] **Step 3: Fix anything steps 1–2 surface**, re-run `ios/scripts/test.sh`, commit `[FIX]: iOS B3 embed accessibility and layout pass`.
 
+**OUTCOME (2026-08-27).** Steps 1–3 are done. Everything below is what actually happened, including where it contradicts the steps above.
+
+**Superseded by owner directive.** Rung 4 no longer exists: the app never offers a redirect or hand-off to YouTube, in any Safe Mode setting (`[FIX]: Remove the Open in YouTube rung`). Step 1's `-fitrah-fake-player-open-in-youtube` bullets and Step 2's items 2 and 3 are therefore void as written — the embed rung is the ladder's floor, and every error below it lands on one terminal card with no Retry and no route out. Step 4's device item 1 is void with them.
+
+**Simulator matrix (Step 1).** Wired into `ios/scripts/screenshots.sh` as `b3-task4` (rung 3 + the ENDED cover) and `b3-task5` (Dynamic Type `.accessibility3`, `ar` RTL, iPad Pro 13-inch portrait + landscape), output under `.superpowers/sdd/2026-08-27-ios-phase2b3-embed-safemode/screenshots/`. Plan §6.4's ≥ 200 × 200 pt floor is now **asserted, not assumed**: `assertEmbedFrameFloor` reads the `WKWebView`'s own frame (identifier `player.embedFrame`) on every device and orientation. There is no `b3-task2` block — its two cases were rung-4 cases.
+
+**Live IFrame checks (Step 2), run on the simulator with network, opt-in behind `EMBED_LIVE=1`** (`TEST_RUNNER_EMBED_LIVE`, the same contract InnerTubeKit's `LiveResolveTests` has with `INNERTUBE_LIVE`). Ids are drawn **only** from the approved catalog (second owner directive):
+
+| Check | Result |
+|---|---|
+| Page loads, `origin` accepted, autoplays off `onReady` | **PASS** — `ready → state(-1) → state(3) → state(1)` with no tap; `origin=https%3A%2F%2Fapp.fitrahtube.com` in the IFrame URL and **no `error(153)`** |
+| Every IFrame escape (title, avatar, logo, "Watch on YouTube", share, end cards) | **PASS** — two `CANCEL window.open https://www.youtube.com/watch?v=…` verdicts logged, the share sheet stayed a subframe `#bottom-sheet` navigation, and **no** main-frame navigation off `app.fitrahtube.com` was ever allowed |
+| ENDED raises the cover through the bridge; Replay restarts | **PASS** — real `state(0)` from a 52 s catalog clip, cover raised, Replay → `state(1)` |
+| Error 100 on a nonexistent id → terminal card | **PASS with a correction** — the id answered **101/150**, not 100 (see CF-B3-9); the card is terminal, identical in both Safe Mode states, with no Retry and no YouTube control |
+| Error 101/150 on an embed-disabled video | **NOT RUN** — every approved-catalog id is embeddable (CF-B3-8); provoking the code needs a video from outside the catalog |
+| Airplane-mode mid-embed (Step 2 item 5) | **NOT RUN** — a simulator has no per-device network toggle; the one-reload-then-report budget is pinned by `EmbedPolicyTests` |
+
+**Defect found and fixed by the live pass:** a terminal embed error rendered a **Retry** that could only fail again (ruling 14 forbids it) — fixed with `StreamState.unplayable(messageKey:)`. See CF-B3-10.
+
 - [ ] **Step 4: Record the device checklist — USER-BLOCKED, do not attempt**
 
 The repo has no signing identity (`DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)` is unset; `CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]: NO` is the only reason simulator builds work). Report these to the controller as blocked, with this list verbatim:
 
-  1. **`youtube://` hand-off** — rung 4 on a device with the YouTube app installed opens the app, not Safari; with it uninstalled, the completion fallback opens `https://youtu.be/…`.
+  1. ~~**`youtube://` hand-off**~~ — **VOID.** The owner directive removed the rung; there is no hand-off left to test, and its absence is asserted instead (`ScreenshotTests.testEmbedLiveRemovedCard` counts zero controls labelled "YouTube").
   2. **Screen Time / Web Content = "Only Approved Websites"** (plan §6.10, §10 item 8) — install under a child account with that restriction and record what the embed does: whether the frame loads, blank-loads, or shows Apple's block page, and whether FitrahTube reports it sanely rather than spinning. This is the evidence behind the age-rating answer "Unrestricted Web Access: No" (plan §9); it must be recorded, not assumed.
   3. **Content-process termination** — force a jetsam of the web content process (memory pressure, or `killall -9 com.apple.WebKit.WebContent` on a development device) and confirm the one reload, then the rung-4 card.
   4. **Background** — start the embed and lock the screen: audio stops (this is the *opposite* of rung 1's behaviour and is required by YouTube API policy III.I.9; if it keeps playing, the `didEnterBackground` observer is not firing).
   5. **No PiP affordance** on the embed — the web player offers no PiP button and a home-swipe does not produce a floating window.
   6. **Ringer switch / silent mode** — the embed's audio is not silenced by the hardware switch (this is what the `.playback` category buys).
   7. **Storage** — sign in to YouTube inside the embed if it offers to (it should not be able to: the navigation lock cancels `accounts.google.com`), then relaunch and confirm no session persists (`WKWebsiteDataStore.nonPersistent()`).
+
+**Report these six to the user verbatim as USER-BLOCKED** (item 1 is void). They are the whole of what the simulator could not answer: the live-YouTube half of the acceptance is done and green (see OUTCOME above), so this list is genuinely hardware-only — a real lock screen, a real jetsam, a real ringer switch, a real Screen Time restriction and a real PiP gesture.
 
 ---
 
