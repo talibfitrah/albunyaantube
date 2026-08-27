@@ -166,7 +166,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     }
 
     private static func isLive(_ state: StreamState) -> Bool {
-        guard let resolved = resolvedStream(for: state), case .hls(_, let isLive, _, _) = resolved.stream else {
+        guard let resolved = state.resolved, case .hls(_, let isLive, _, _) = resolved.stream else {
             return false
         }
         return isLive
@@ -407,7 +407,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// restart playback). Ruling 32 (session-only resume): `replacing`'s `currentTime()` carries into
     /// the replacement item; nothing here persists past this `AVPlayer`'s own lifetime.
     static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false) -> AVPlayer? {
-        guard let resolved = resolvedStream(for: state),
+        guard let resolved = state.resolved,
               let url = streamURL(resolved.stream, audioOnly: audioOnly) else {
             existing?.pause()
             return nil
@@ -455,13 +455,6 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
     static func assetOptions(userAgent: String) -> [String: Any] {
         [AVURLAssetHTTPUserAgentKey: userAgent]
-    }
-
-    private static func resolvedStream(for state: StreamState) -> Resolved? {
-        switch state {
-        case .ready(let resolved), .rung2Progressive(let resolved): return resolved
-        default: return nil
-        }
     }
 
     /// Not private: `PlayerHostTests` pins the audio-only selection directly.

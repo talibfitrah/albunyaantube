@@ -82,10 +82,6 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     )
     var resolver: StreamResolver { innerTube.resolver }
 
-    /// ONE instance for the app's lifetime (CF-B1-2). `SystemClock` measures elapsed time from a
-    /// baseline captured at its own init, so a fresh one per player screen would hand
-    /// `ExtractionRateLimiter` a new zero and reset every interval it enforces.
-    let monotonicClock = SystemClock()
 
     init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer, apiBaseURL: URL) {
         self.catalog = catalog

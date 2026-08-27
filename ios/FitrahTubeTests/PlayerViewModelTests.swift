@@ -235,7 +235,9 @@ struct PlayerViewModelTests {
             #expect(Bool(false), "expected a cooldown")
         } catch let error as ExtractionError {
             guard case .cooldown(let until) = error else { return #expect(Bool(false), "expected .cooldown") }
-            #expect(until > Date())
+            // M2: `until > Date()` passes for a one-second cooldown too. The limiter's per-video
+            // retryAfter is `oldest attempt + 5 min - now` = 0 + 300 - 120 = 180 s, so pin that.
+            #expect(abs(until.timeIntervalSinceNow - 180) <= 5)
         } catch { #expect(Bool(false), "wrong error type") }
     }
 
@@ -298,6 +300,10 @@ struct PlayerViewModelTests {
                              resolvedAt: now, expiresAt: now.addingTimeInterval(30))
         #expect(PlayerViewModel.shouldPreemptivelyReResolve(.ready(fresh), now: now) == false)
         #expect(PlayerViewModel.shouldPreemptivelyReResolve(.ready(stale), now: now) == true)
+        // M4: `.rung2Progressive` shares the playable branch, so it must answer identically -- a
+        // `playable`/`resolved` helper that only matched `.ready` would leave rung 2 never refreshed.
+        #expect(PlayerViewModel.shouldPreemptivelyReResolve(.rung2Progressive(fresh), now: now) == false)
+        #expect(PlayerViewModel.shouldPreemptivelyReResolve(.rung2Progressive(stale), now: now) == true)
         #expect(PlayerViewModel.shouldPreemptivelyReResolve(.loading, now: now) == false)
     }
 
@@ -339,6 +345,42 @@ struct PlayerViewModelTests {
             guard case .ready(let after) = model.state else { return #expect(Bool(false), "state was demoted") }
             #expect(after.resolvedAt == opened.resolvedAt)
             #expect(resolver.calls.last?.kind == .proactiveTTLRefresh)
+        }
+    }
+
+    /// Fix round 1, C1. A silent TTL refresh that starts while a recovery resolve is in flight
+    /// bumps `generation`, so the recovery's completion is discarded -- and the refresh's OWN
+    /// failure is then swallowed by the silent rule. The player is left holding a `.failed`
+    /// `AVPlayerItem` inside `.ready`: frozen, no error surface, no retry. The recovery is
+    /// invisible to `shouldPreemptivelyReResolve` (it deliberately runs with `showLoading: false`,
+    /// so the state is still the old `.ready`), which is why the guard is `isRecovering`.
+    @Test func aTTLRefreshNeverPreemptsAnInFlightRecovery() async {
+        let resolver = RecordingResolver(.hls, holdsUntilReleased: true)
+        let model = makeViewModel(resolver: resolver)
+        resolver.release()
+        await model.open()
+
+        resolver.outcome = .progressive                 // the recovery's answer
+        let recovery = Task { await model.handleRecoveryEvent(.playbackError) }
+        await resolver.waitUntilCalled(count: 2)        // recovery resolve entered, now held
+        resolver.outcome = .hls                         // what a pre-empting refresh would land
+
+        let proactive = Task { await model.reResolveIfExpiring(now: .distantFuture) }
+        // Released on a timer rather than inline: a guarded refresh never touches the resolver, an
+        // unguarded one is sitting in the hold right now, and this frees BOTH -- so a regression
+        // fails on the assertions below instead of deadlocking the suite.
+        let releaser = Task {
+            try? await Task.sleep(for: .milliseconds(50))
+            resolver.release()
+            resolver.release()
+        }
+        await proactive.value
+        await recovery.value
+        await releaser.value
+
+        #expect(resolver.calls.map(\.kind) == [.player, .autoRecovery])
+        guard case .rung2Progressive = model.state else {
+            return #expect(Bool(false), "recovery result discarded, state is \(model.state)")
         }
     }
 

@@ -14,7 +14,11 @@ public struct InnerTube: Sendable {
     public let remoteConfig: RemoteConfigStore
 
     private let sessionStore: SessionStore
-    private let clock: SystemClock
+    /// ONE instance for the app's lifetime. `SystemClock` measures elapsed time from a baseline
+    /// captured at its own init, so a second one built app-side would hand `ExtractionRateLimiter`
+    /// a fresh zero and reset every interval it enforces -- public so consumers reuse THIS clock
+    /// instead of making that mistake.
+    public let clock: SystemClock
 
     /// Remaining backoff from the persisted, restart-surviving bot-check cooldown, if one is active
     /// (§6.3). Passthrough to `SessionStore` so the player can show "try again in X"; the resolver

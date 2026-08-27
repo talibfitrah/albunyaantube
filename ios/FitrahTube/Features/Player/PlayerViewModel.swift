@@ -65,13 +65,19 @@ struct RateLimitedResolver: StreamResolving {
 }
 
 extension StreamState {
-    /// True for the two states that share `PlayerScreen`'s single playable `switch` branch.
-    var isPlayable: Bool {
+    /// The `Resolved` behind the two states that share `PlayerScreen`'s single playable `switch`
+    /// branch, `nil` for every other state. M5 (fix round 1): this was three copies of the same
+    /// switch -- `StreamState.isPlayable`, `PlayerViewModel.playable` and
+    /// `PlayerHostView.resolvedStream` -- so a new playable state had to be remembered in three
+    /// files or the player would half-recognise it.
+    var resolved: Resolved? {
         switch self {
-        case .ready, .rung2Progressive: return true
-        default: return false
+        case .ready(let resolved), .rung2Progressive(let resolved): return resolved
+        default: return nil
         }
     }
+
+    var isPlayable: Bool { resolved != nil }
 }
 
 /// Android's `PlayerViewModel` resolve pipeline (`player.md` §2.2), the InnerTubeKit-backed slice
@@ -195,7 +201,7 @@ extension StreamState {
         // and `status == .failed` land together on a dead stream. Without this the same incident
         // spent two budget slots and fired two resolves, one of which the generation guard then
         // discarded. First event in wins; the rest are the same incident.
-        guard !isRecovering, let resolved = Self.playable(state) else { return }
+        guard !isRecovering, let resolved = state.resolved else { return }
         isRecovering = true
         defer { isRecovering = false }
         let action = PlaybackRecovery.decide(event: event, state: recoveryBudget)
@@ -216,26 +222,26 @@ extension StreamState {
         recoveryBudget.recordPlaybackProgress()
     }
 
-    private static func playable(_ state: StreamState) -> Resolved? {
-        switch state {
-        case .ready(let resolved), .rung2Progressive(let resolved): return resolved
-        default: return nil
-        }
-    }
-
     /// §6.2 step 5: "On `willEnterForeground`, re-resolve pre-emptively if past
     /// `resolvedAt + expires - margin`". Note this is NOT ruling 20's rejected 50-minute live timer --
     /// that was a periodic timer against a self-refreshing HLS manifest; this fires once, only on
     /// return to the foreground, only when the URL is genuinely near expiry.
     static func shouldPreemptivelyReResolve(_ state: StreamState, now: Date, margin: TimeInterval = 60) -> Bool {
-        guard let resolved = playable(state), let expiresAt = resolved.expiresAt else { return false }
+        guard let resolved = state.resolved, let expiresAt = resolved.expiresAt else { return false }
         return now >= expiresAt.addingTimeInterval(-margin)
     }
 
     /// CF-B1-3. Re-resolves in place if the above says so. Never hops out of the playable branch --
     /// on ANY outcome, success or failure.
     func reResolveIfExpiring(now: Date = Date()) async {
-        guard Self.shouldPreemptivelyReResolve(state, now: now) else { return }
+        // `!isRecovering` (fix round 1, C1): a recovery resolve deliberately runs with
+        // `showLoading: false`, so while it is in flight `state` is still the OLD `.ready` -- which
+        // can be past its TTL, which is exactly what makes this fire. Starting here would bump
+        // `generation` and discard the recovery's completion, and then the silent rule below would
+        // swallow this refresh's own failure too: a `.failed` `AVPlayerItem` frozen inside `.ready`
+        // with no error surface and no retry. The recovery owns the stream until it finishes; the
+        // refresh gets its next chance on the following foreground.
+        guard !isRecovering, Self.shouldPreemptivelyReResolve(state, now: now) else { return }
         // `showLoading: false` + `silent: true` are both load-bearing and are NOT the same flag:
         // `showLoading: false` holds the playable branch on the way IN (a `.loading` hop dismantles
         // PlayerHostView and drops the AVPlayer whose `currentTime()` carries the position);
@@ -309,7 +315,7 @@ extension StreamState {
     /// `PlaybackRecoveryTests` and would otherwise need a genuinely failing `AVPlayerItem` to drive
     /// for real. Same technique as `NetworkMonitor`'s `-fitrah-offline` hook.
     func debugForceRecoveryExhausted() {
-        guard let resolved = Self.playable(state) else { return }
+        guard let resolved = state.resolved else { return }
         state = .recoveryExhausted(resolved)
     }
     #endif

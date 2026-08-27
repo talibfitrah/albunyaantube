@@ -20,6 +20,9 @@ import UIKit
     /// CF-B1-3: the pre-emptive TTL re-resolve (`PlayerViewModel.reResolveIfExpiring`). AWAITED
     /// before the foreground lifecycle policy runs -- see `willEnterForeground()`.
     var onWillEnterForeground: (() async -> Void)?
+    /// I2: how long the lifecycle policy waits for `onWillEnterForeground` before running anyway.
+    /// Injected so a test does not spend two real seconds proving the deadline fires.
+    var foregroundRefreshDeadline: Duration = .seconds(2)
 
     private weak var player: AVPlayer?
     private var observers: [NSObjectProtocol] = []
@@ -32,6 +35,9 @@ import UIKit
     private var artworkTask: Task<Void, Never>?
     private var wasPlayingBeforeInterruption = false
     private(set) var autoSwappedToAudioOnly = false
+    /// I1 (fix round 1): bumped by every event that invalidates an in-flight foreground refresh --
+    /// re-backgrounding, and `detach()`. The awaited hook can outlive both.
+    private var lifecycleGeneration = 0
 
     init(backgroundPlay: Bool) {
         self.backgroundPlay = backgroundPlay
@@ -66,7 +72,10 @@ import UIKit
         let center = NotificationCenter.default
         observers = [
             center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.handle(.enteredBackground) }
+                MainActor.assumeIsolated {
+                    self?.lifecycleGeneration += 1
+                    self?.handle(.enteredBackground)
+                }
             },
             center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.willEnterForeground() }
@@ -93,6 +102,7 @@ import UIKit
     }
 
     func detach() {
+        lifecycleGeneration += 1
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         player = nil
@@ -147,13 +157,34 @@ import UIKit
     /// Skipped entirely while PiP is live: the floating window is playing the very item a
     /// re-resolve replaces, so it would re-buffer or blank. The stream is unexpired by definition
     /// (it is still playing), and the refresh gets its next chance on the following foreground.
+    ///
+    /// The wait is bounded (I2) and generation-guarded (I1). Bounded, because the hook walks the
+    /// resolver ladder and each rung's transport timeout is 15 s -- a returning user must not sit in
+    /// front of an audio-only player for that long; a refresh that lands after the deadline still
+    /// swaps through the normal `updateUIViewController` path. Guarded, because the hook can outlive
+    /// the transition it belongs to: re-background mid-refresh and the `.willEnterForeground` that
+    /// lands afterwards restores the VIDEO url on a backgrounded player, pulling video segments for
+    /// a screen nobody is looking at. The policy cannot see that on its own -- re-backgrounding
+    /// answers `.none` (the audio-only flag is already set), so `autoSwappedToAudioOnly` stays true
+    /// and the stale restore looks legitimate.
     private func willEnterForeground() {
         guard let onWillEnterForeground, !pictureInPictureActive else {
             return handle(.willEnterForeground)
         }
+        let mine = lifecycleGeneration
+        // ponytail: NOT `withTaskGroup` -- a task group awaits every child before it returns, so
+        // cancelling the loser would not actually bound the wait. The hook is left running when the
+        // deadline wins (deliberately: its result still reaches the player through the host's normal
+        // update pass); only the waiting stops.
+        let deadline = Task { try await Task.sleep(for: foregroundRefreshDeadline) }
         Task { @MainActor in
             await onWillEnterForeground()
-            handle(.willEnterForeground)
+            deadline.cancel()   // the hook won the race
+        }
+        Task { @MainActor [weak self] in
+            _ = try? await deadline.value
+            guard let self, mine == self.lifecycleGeneration else { return }
+            self.handle(.willEnterForeground)
         }
     }
 

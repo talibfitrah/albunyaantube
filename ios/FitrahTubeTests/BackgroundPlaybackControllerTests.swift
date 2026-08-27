@@ -182,4 +182,101 @@ import UIKit
 
         #expect(reResolves == 0)
     }
+
+    // MARK: - Foreground refresh races (fix round 1)
+
+    /// A `onWillEnterForeground` hook the test can hold open, so the window between "the refresh
+    /// started" and "the refresh finished" is observable. Same 1 ms poll as `RecordingResolver`'s
+    /// gate -- a continuation registry would be more code than the whole helper.
+    private final class HeldHook: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _entered = false
+        private var _released = false
+        var entered: Bool { lock.withLock { _entered } }
+        func release() { lock.withLock { _released = true } }
+        func wait() async {
+            lock.withLock { _entered = true }
+            while !lock.withLock({ _released }) { try? await Task.sleep(for: .milliseconds(1)) }
+        }
+    }
+
+    /// I1: the awaited hook outlives the foreground transition. If the user re-backgrounds while a
+    /// refresh is still in flight, the `.willEnterForeground` that lands afterwards is stale -- and
+    /// `.restoreVideo` puts the VIDEO url back on a player that is now in the background, pulling
+    /// video segments over the network for a screen nobody is looking at. The policy cannot catch
+    /// this on its own: re-backgrounding answers `.none` (the user's audio-only flag is already
+    /// set), so `autoSwappedToAudioOnly` stays true and the stale restore looks legitimate.
+    @Test func aStaleForegroundRestoreIsDroppedWhenTheAppReBackgrounds() async throws {
+        let fixture = try Self.fixture()
+        let player = try #require(PlayerHostView.player(for: fixture.state, replacing: nil, audioOnly: false))
+        let controller = BackgroundPlaybackController(backgroundPlay: true)
+        controller.audioOnlyAvailable = true
+        let hook = HeldHook()
+        var actions: [PlaybackPolicyAction] = []
+        controller.onWillEnterForeground = { await hook.wait() }
+        controller.onPolicyAction = { actions.append($0) }
+        controller.attach(player: player)
+        defer { controller.detach() }
+
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        try await wait { actions.contains(.swapToAudioOnly) }
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+        try await wait { hook.entered }
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        hook.release()
+        try await Task.sleep(for: .milliseconds(200))   // a stale restore would have landed by now
+
+        #expect(!actions.contains(.restoreVideo))
+    }
+
+    /// Same race, the other trigger: the host is dismantled mid-refresh. A controller that has
+    /// detached owns no player and no audio session; running the lifecycle policy afterwards
+    /// republishes decisions for a player that is gone.
+    @Test func aForegroundRestoreIsDroppedWhenTheHostDetachesMidRefresh() async throws {
+        let fixture = try Self.fixture()
+        let player = try #require(PlayerHostView.player(for: fixture.state, replacing: nil, audioOnly: false))
+        let controller = BackgroundPlaybackController(backgroundPlay: true)
+        controller.audioOnlyAvailable = true
+        let hook = HeldHook()
+        var actions: [PlaybackPolicyAction] = []
+        controller.onWillEnterForeground = { await hook.wait() }
+        controller.onPolicyAction = { actions.append($0) }
+        controller.attach(player: player)
+
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        try await wait { actions.contains(.swapToAudioOnly) }
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+        try await wait { hook.entered }
+        controller.detach()
+        hook.release()
+        try await Task.sleep(for: .milliseconds(200))
+
+        #expect(!actions.contains(.restoreVideo))
+    }
+
+    /// I2: the hook walks the resolver ladder, whose per-rung transport timeout is 15 s. Waiting it
+    /// out would leave the returning user staring at an audio-only player for a quarter of a minute.
+    /// The policy runs on a deadline instead; a refresh that lands late still swaps through the
+    /// normal `updateUIViewController` path.
+    @Test func theLifecyclePolicyStillRunsWhenTheRefreshOutlivesItsDeadline() async throws {
+        let fixture = try Self.fixture()
+        let player = try #require(PlayerHostView.player(for: fixture.state, replacing: nil, audioOnly: false))
+        let controller = BackgroundPlaybackController(backgroundPlay: true)
+        controller.audioOnlyAvailable = true
+        controller.foregroundRefreshDeadline = .milliseconds(50)
+        let hook = HeldHook()   // never released until the assertions are done
+        var actions: [PlaybackPolicyAction] = []
+        controller.onWillEnterForeground = { await hook.wait() }
+        controller.onPolicyAction = { actions.append($0) }
+        controller.attach(player: player)
+        defer { hook.release(); controller.detach() }
+
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        try await wait { actions.contains(.swapToAudioOnly) }
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+        try await wait { actions.contains(.restoreVideo) }
+
+        #expect(actions.contains(.restoreVideo))
+        #expect(hook.entered)   // the deadline fired because the hook was still running, not skipped
+    }
 }

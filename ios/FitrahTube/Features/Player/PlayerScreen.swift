@@ -351,7 +351,7 @@ struct PlayerScreen: View {
         // never be rate limited.
         return RateLimitedResolver(wrapping: LiveStreamResolver(resolver: container.resolver),
                                    rateLimiter: container.innerTube.rateLimiter,
-                                   clock: container.monotonicClock)
+                                   clock: container.innerTube.clock)
     }
 }
 
