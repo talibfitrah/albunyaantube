@@ -29,10 +29,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.showsPlaybackControls = true
-        // ponytail: B1 never turns PiP on (App Review flags autoplay-into-PiP as a review risk);
-        // B2 (plan §6.5 "Background audio"/"PiP") flips this to true.
-        controller.allowsPictureInPicturePlayback = false
+        controller.delegate = context.coordinator
         controller.player = Self.player(for: state, replacing: nil, audioOnly: audioOnly)
+        Self.configurePictureInPicture(controller, backgroundPlay: model.backgroundPlay)
         applyBackgroundController(to: controller, context: context)
         applyNowPlaying(context: context)
         applyQuality(to: controller, context: context)
@@ -44,6 +43,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly)
+        // Live on every pass, exactly like `background.backgroundPlay` below: a Background-play flip
+        // made in Settings while the player is open must change auto-PiP now, not on the next launch.
+        Self.configurePictureInPicture(controller, backgroundPlay: model.backgroundPlay)
         applyBackgroundController(to: controller, context: context)
         applyNowPlaying(context: context)
         applyQuality(to: controller, context: context)
@@ -60,18 +62,17 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// safe precisely because a dismantled host owns nothing any more.
     static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
         coordinator.stopObserving()
-        // Same one-owner teardown as `stopObserving`: drops the lifecycle/interruption/route
-        // observers and hands the audio session back with `.notifyOthersOnDeactivation`.
-        coordinator.background.detach()
         // M6 (B1 final review): the coordinator can outlive this call (SwiftUI holds it until the
         // representable's own storage goes), and a live `NWPathMonitor` keeps a queue callback
         // firing for a host that owns nothing any more. `deinit`'s cancel stays as the backstop --
-        // `NWPathMonitor.cancel()` is idempotent.
+        // `NWPathMonitor.cancel()` is idempotent. These three run in EVERY case, PiP or not: they
+        // only drop references to a host that is gone either way.
         coordinator.stopMonitoring()
         coordinator.model?.currentItem = nil
         coordinator.model?.currentPlayer = nil
-        controller.player?.pause()
-        controller.player = nil
+        // Task 5: the audio-session detach and the player release are the two things a live PiP
+        // window still needs, so they go through the policy instead of running unconditionally.
+        coordinator.finishTeardown(of: controller, hostDismantled: true)
     }
 
     /// Task 7 glue: (re)attach the recovery observers to whatever item is live now. The coordinator
@@ -142,6 +143,21 @@ struct PlayerHostView: UIViewControllerRepresentable {
         model?.audioOnly = audioOnly
     }
 
+    /// Ruling 43: platform-standard PiP via AVKit. `canStartPictureInPictureAutomaticallyFromInline`
+    /// is NOT programmatic PiP -- the user backgrounding the app is the trigger and AVKit performs
+    /// the transition; what spec §10 and plan §6.5 forbid (and App Review rejects) is calling
+    /// `startPictureInPicture()` from code, which this app never does (grep: no call site exists).
+    /// Auto-start is gated on the Background play setting so a user who turned background playback
+    /// OFF cannot get a floating video window by backgrounding (ruling 34); the stock PiP button in
+    /// the transport stays available either way.
+    ///
+    /// B3: the embed rung has no `AVPlayer` at all (`streamURL` returns nil for `.embed`), so there
+    /// is no PiP to hide there yet -- B3 owns whatever the embed rung's chrome becomes.
+    static func configurePictureInPicture(_ controller: AVPlayerViewController, backgroundPlay: Bool) {
+        controller.allowsPictureInPicturePlayback = true
+        controller.canStartPictureInPictureAutomaticallyFromInline = backgroundPlay
+    }
+
     private static func isLive(_ state: StreamState) -> Bool {
         guard let resolved = resolvedStream(for: state), case .hls(_, let isLive, _, _) = resolved.stream else {
             return false
@@ -188,7 +204,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// status, the failed-to-play-to-end notification, `loadedTimeRanges` growth), which the unit
     /// target can't produce. All the *decisions* live in `PlaybackRecovery`, which is tested
     /// exhaustively.
-    @MainActor final class Coordinator {
+    @MainActor final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
         private(set) var path: NWPath
         private let monitor = NWPathMonitor()
 
@@ -210,15 +226,67 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// All the watchdog's state and every decision it makes (fix round 1, C1).
         private var watchdog = StallWatchdog()
 
+        /// Set when `dismantleUIViewController` ran while a PiP window was still playing, so
+        /// `…DidStopPictureInPicture` knows it owes the deferred detach + player release.
+        private var dismantledWhilePiP = false
+
         init(backgroundPlay: Bool) {
             background = BackgroundPlaybackController(backgroundPlay: backgroundPlay)
             path = monitor.currentPath
+            super.init()
             monitor.pathUpdateHandler = { [weak self] newPath in
                 MainActor.assumeIsolated {
                     self?.path = newPath
                 }
             }
             monitor.start(queue: .main)
+        }
+
+        // MARK: - AVPlayerViewControllerDelegate (Task 5)
+
+        /// WILL, not DID: `AudioSessionPolicy.decide(.enteredBackground, …)` reads
+        /// `pictureInPictureActive`, and the ordering of this callback against
+        /// `didEnterBackgroundNotification` is not guaranteed -- flipping it on the DID callback
+        /// would let an auto-PiP background transition be read as a plain background and swap the
+        /// item to audio-only, blanking the PiP window it just opened.
+        func playerViewControllerWillStartPictureInPicture(_ controller: AVPlayerViewController) {
+            background.pictureInPictureActive = true
+        }
+
+        func playerViewControllerDidStopPictureInPicture(_ controller: AVPlayerViewController) {
+            background.pictureInPictureActive = false
+            finishTeardown(of: controller, hostDismantled: dismantledWhilePiP)
+        }
+
+        /// The player screen is still mounted behind the PiP window, so there is nothing to
+        /// restore -- answer `true` immediately or AVKit waits on a completion that never comes.
+        func playerViewController(_ controller: AVPlayerViewController,
+                                  restoreUserInterfaceForPictureInPictureStopWithCompletionHandler
+                                  completionHandler: @escaping (Bool) -> Void) {
+            completionHandler(true)
+        }
+
+        /// The one place the two teardown steps a live PiP window still needs are decided
+        /// (`PiPDismantlePolicy`), for both entry points: SwiftUI's dismantle and AVKit's
+        /// "PiP stopped". Idempotent -- a second call with nothing owed does nothing.
+        ///
+        /// ponytail: PiP survives BACKGROUNDING, not a back-navigation out of the player -- SwiftUI
+        /// pops `PlayerScreen`, which releases the `@State PlayerViewModel`, and once AVKit lets the
+        /// controller go the deferred teardown below never runs. Making PiP outlive the route needs
+        /// an app-scoped player holder; deferred.
+        func finishTeardown(of controller: AVPlayerViewController, hostDismantled: Bool) {
+            let actions = PiPDismantlePolicy.teardown(
+                pictureInPictureActive: background.pictureInPictureActive, hostDismantled: hostDismantled)
+            dismantledWhilePiP = actions.deferUntilPiPStops
+            // Same one-owner teardown as `stopObserving`: drops the lifecycle/interruption/route
+            // observers, the remote commands and the Now Playing surface, and hands the audio
+            // session back with `.notifyOthersOnDeactivation`. Skipped while PiP is live -- the
+            // floating window needs the session and the lock screen exactly as much as the app did.
+            if actions.detachBackground { background.detach() }
+            if actions.releasePlayer {
+                controller.player?.pause()
+                controller.player = nil
+            }
         }
 
         func observe(item: AVPlayerItem, player: AVPlayer, model: PlayerViewModel, isLive: Bool) {
@@ -388,5 +456,32 @@ struct PlayerHostView: UIViewControllerRepresentable {
         case .embed, .openInYouTube:
             return nil // B3
         }
+    }
+}
+
+/// What `PlayerHostView`'s teardown still owes, given whether a PiP window is holding the player.
+struct PiPTeardownActions: Equatable, Sendable {
+    /// Hand the audio session, the lifecycle observers, the remote commands and Now Playing back.
+    var detachBackground: Bool
+    /// Pause the `AVPlayer` and drop it off the controller.
+    var releasePlayer: Bool
+    /// Remember the host is gone so `…DidStopPictureInPicture` can finish the job later.
+    var deferUntilPiPStops: Bool
+}
+
+/// Plan §6.5's "never detach the player while PiP is active", as a truth table over the two inputs
+/// the AVKit path cannot be unit-tested against. Both call sites -- SwiftUI's
+/// `dismantleUIViewController` and AVKit's `…DidStopPictureInPicture` -- ask this same question, so
+/// the deferred teardown is one decision, not two hand-mirrored branches.
+enum PiPDismantlePolicy {
+    static func teardown(pictureInPictureActive: Bool, hostDismantled: Bool) -> PiPTeardownActions {
+        // Nothing is owed while the host is still mounted: it owns the player and the session.
+        guard hostDismantled else {
+            return PiPTeardownActions(detachBackground: false, releasePlayer: false, deferUntilPiPStops: false)
+        }
+        // Detaching would cut the audio session and Now Playing out from under a live PiP window;
+        // pausing and nil-ing the player would blank it.
+        let now = !pictureInPictureActive
+        return PiPTeardownActions(detachBackground: now, releasePlayer: now, deferUntilPiPStops: !now)
     }
 }

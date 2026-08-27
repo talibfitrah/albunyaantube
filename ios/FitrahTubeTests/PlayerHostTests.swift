@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import Foundation
 import InnerTubeKit
 import Testing
@@ -155,6 +156,73 @@ struct PlayerHostTests {
     }
 
     // MARK: - A non-playable state tears playback down instead of leaving a stale player
+
+    // MARK: - Task 5: Picture in Picture
+
+    @Test func pictureInPictureIsEnabledAndAutoStartFollowsTheBackgroundPlaySetting() {
+        // ruling 43 + plan §6.5: PiP is on; auto-start-from-inline is on only when the user has
+        // allowed background playback, so backgrounding with the setting OFF cannot smuggle video
+        // into a floating window the user asked not to have (ruling 34).
+        let controller = AVPlayerViewController()
+        PlayerHostView.configurePictureInPicture(controller, backgroundPlay: true)
+        #expect(controller.allowsPictureInPicturePlayback)
+        #expect(controller.canStartPictureInPictureAutomaticallyFromInline)
+
+        PlayerHostView.configurePictureInPicture(controller, backgroundPlay: false)
+        #expect(controller.allowsPictureInPicturePlayback)
+        #expect(controller.canStartPictureInPictureAutomaticallyFromInline == false)
+    }
+
+    // MARK: - Task 5: the teardown truth table (pure -- the AVKit path itself is untestable here)
+
+    @Test func teardownReleasesEverythingWhenNoPiPWindowIsHoldingThePlayer() {
+        #expect(PiPDismantlePolicy.teardown(pictureInPictureActive: false, hostDismantled: true)
+                == PiPTeardownActions(detachBackground: true, releasePlayer: true, deferUntilPiPStops: false))
+    }
+
+    @Test func teardownDefersEverythingWhilePiPIsActive() {
+        // Detaching would hand back the audio session and clear Now Playing under a live PiP
+        // window; pausing/nil-ing the player would blank it.
+        #expect(PiPDismantlePolicy.teardown(pictureInPictureActive: true, hostDismantled: true)
+                == PiPTeardownActions(detachBackground: false, releasePlayer: false, deferUntilPiPStops: true))
+    }
+
+    @Test func pipStoppingWithTheHostStillMountedTearsNothingDown() {
+        #expect(PiPDismantlePolicy.teardown(pictureInPictureActive: false, hostDismantled: false)
+                == PiPTeardownActions(detachBackground: false, releasePlayer: false, deferUntilPiPStops: false))
+        #expect(PiPDismantlePolicy.teardown(pictureInPictureActive: true, hostDismantled: false)
+                == PiPTeardownActions(detachBackground: false, releasePlayer: false, deferUntilPiPStops: false))
+    }
+
+    // MARK: - Task 5: the delegate wiring
+
+    @Test func pipStateFlipsOnWillStartNotDidStart() {
+        // WILL, not DID: `.enteredBackground` reads `pictureInPictureActive`, and the ordering of
+        // the AVKit delegate callback against `didEnterBackgroundNotification` is not guaranteed.
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
+        let controller = AVPlayerViewController()
+        coordinator.playerViewControllerWillStartPictureInPicture(controller)
+        #expect(coordinator.background.pictureInPictureActive)
+        coordinator.playerViewControllerDidStopPictureInPicture(controller)
+        #expect(coordinator.background.pictureInPictureActive == false)
+    }
+
+    @Test func dismantlingDuringPiPKeepsThePlayerUntilPiPStops() {
+        let url = URL(string: "https://example.com/a.m3u8")!
+        let resolved = Self.resolved(.hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
+        let controller = AVPlayerViewController()
+        controller.player = PlayerHostView.player(for: .ready(resolved), replacing: nil)
+        coordinator.playerViewControllerWillStartPictureInPicture(controller)
+
+        PlayerHostView.dismantleUIViewController(controller, coordinator: coordinator)
+        #expect(controller.player != nil)   // a live PiP window is still playing it
+
+        coordinator.playerViewControllerDidStopPictureInPicture(controller)
+        #expect(controller.player == nil)   // the deferred teardown finally runs
+    }
+
+    // MARK: - A non-playable state tears playback down instead of leaving a stale player (cont.)
 
     @Test func transitioningToANonPlayableStatePausesTheExistingPlayer() {
         let url = URL(string: "https://example.com/a.m3u8")!
