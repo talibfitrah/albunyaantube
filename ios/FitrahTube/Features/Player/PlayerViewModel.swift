@@ -69,7 +69,11 @@ struct LiveStreamResolver: StreamResolving {
 
     private let resolver: any StreamResolving
     private let settings: any SettingsStore
-    private let args: PlayerArgs
+    /// Task 4: `PlayerHostView` reads this for the Now Playing metadata (title / channel /
+    /// thumbnail / seed duration). Readable rather than passed to the host as a second stored
+    /// property -- the host already holds this VM, so a parallel `args` parameter would mean the
+    /// same value arriving twice by two routes.
+    let args: PlayerArgs
 
     private var generation = 0
     private var resolveTask: Task<Void, Never>?

@@ -81,24 +81,34 @@ struct RemoteImage: View {
     }
 
     private func load() async {
-        // https only (gate cso-F4). `URLSession` honours `file://` for data tasks, so a compromised
-        // or mis-configured backend could otherwise make the app read a local file and decode it as
-        // an image. Enforced here rather than at the `LiveCatalogClient` mapping boundary because
-        // every image fetch in the app funnels through this one call -- including the favorites
-        // store's own persisted thumbnail strings, which never pass through that mapper.
-        guard let url, url.scheme?.lowercased() == "https" else { image = nil; return }
-        if let cached = Self.cache.object(forKey: url as NSURL) {
+        // The synchronous cache hit stays here so a re-appearing cell never flashes the skeleton.
+        if let url, let cached = Self.cache.object(forKey: url as NSURL) {
             image = cached
             return
         }
         image = nil
+        image = await Self.cachedImage(for: url)
+    }
+
+    /// The one image fetch in the app, shared with `BackgroundPlaybackController`'s Now Playing
+    /// artwork (Task 4) -- same https guard, same 10 MB cap, same decoded-image cache, so the
+    /// player's artwork URL is normally already resolved by the card the user tapped.
+    ///
+    /// https only (gate cso-F4). `URLSession` honours `file://` for data tasks, so a compromised
+    /// or mis-configured backend could otherwise make the app read a local file and decode it as
+    /// an image. Enforced here rather than at the `LiveCatalogClient` mapping boundary because
+    /// every image fetch in the app funnels through this one call -- including the favorites
+    /// store's own persisted thumbnail strings, which never pass through that mapper.
+    static func cachedImage(for url: URL?) async -> UIImage? {
+        guard let url, url.scheme?.lowercased() == "https" else { return nil }
+        if let cached = cache.object(forKey: url as NSURL) { return cached }
         // ponytail: decode happens on the calling (main) actor -- fine at card/thumbnail sizes
         // (max ~320 pt here); move to a background decode if profiling shows main-thread jank.
-        guard let data = try? await Self.boundedImageData(from: url),
-              let decoded = UIImage(data: data) else { return }
+        guard let data = try? await boundedImageData(from: url),
+              let decoded = UIImage(data: data) else { return nil }
         let cost = decoded.cgImage.map { $0.bytesPerRow * $0.height } ?? data.count
-        Self.cache.setObject(decoded, forKey: url as NSURL, cost: cost)
-        image = decoded
+        cache.setObject(decoded, forKey: url as NSURL, cost: cost)
+        return decoded
     }
 
     private static let maxImageBytes = 10 << 20 // 10 MB

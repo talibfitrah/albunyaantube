@@ -34,6 +34,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.allowsPictureInPicturePlayback = false
         controller.player = Self.player(for: state, replacing: nil, audioOnly: audioOnly)
         applyBackgroundController(to: controller, context: context)
+        applyNowPlaying(context: context)
         applyQuality(to: controller, context: context)
         applyAudioLanguageHandoff(to: controller)
         applyCaptionsHandoff(to: controller)
@@ -44,6 +45,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly)
         applyBackgroundController(to: controller, context: context)
+        applyNowPlaying(context: context)
         applyQuality(to: controller, context: context)
         applyAudioLanguageHandoff(to: controller)
         applyCaptionsHandoff(to: controller)
@@ -81,6 +83,14 @@ struct PlayerHostView: UIViewControllerRepresentable {
             return
         }
         context.coordinator.observe(item: item, player: player, model: model, isLive: Self.isLive(state))
+    }
+
+    /// Task 4: republish the lock-screen surface on every pass -- which is every item replacement
+    /// too (the audio-only swap in and out, a recovery `replaceCurrentItem`, a quality pick all
+    /// arrive through `updateUIViewController`), not just the first prepare. A state with nothing
+    /// playable retracts the surface instead of leaving the previous video's metadata standing.
+    private func applyNowPlaying(context: Context) {
+        context.coordinator.background.update(args: model.args, state: state)
     }
 
     /// CF-B1-1: the audio session, `UIBackgroundModes: audio`, interruptions and route changes are
@@ -228,6 +238,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
                 MainActor.assumeIsolated {
                     self?.sample(time: time.seconds)
+                    // Task 4: the ONE periodic observer feeds both the stall watchdog and the lock
+                    // screen's elapsed/rate. AVFoundation fires it on rate changes and time jumps
+                    // as well as on the interval, so a play/pause/seek made in the stock AVKit
+                    // chrome republishes here without a second observer.
+                    self?.background.refreshNowPlaying()
                 }
             }
         }
