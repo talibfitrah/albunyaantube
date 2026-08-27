@@ -5,7 +5,16 @@ import UIKit
 
 private extension Color {
     /// Dynamic color from two hex values (0xRRGGBB or 0xAARRGGBB).
-    init(light: UInt32, dark: UInt32) {
+    ///
+    /// `nonisolated` is load-bearing, not tidiness. The app target compiles with
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor`, so without it the trait-resolution closure below
+    /// is MainActor-isolated -- and UIKit invokes a `UIColor(dynamicProvider:)` block on whatever
+    /// thread is resolving the color. SwiftUI resolves shape styles off the main thread during an
+    /// async view-graph update (`ViewGraph.updateOutputsAsync` -> `ColorBox.resolve`), which is what
+    /// presenting a `confirmationDialog` over a screen using these tokens does: the isolation check
+    /// in `swift_task_checkIsolated` then trapped, SIGILL, app gone. Every token in this file goes
+    /// through this one initializer, so one keyword covers all of them.
+    nonisolated init(light: UInt32, dark: UInt32) {
         self.init(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark ? UIColor(argb: dark) : UIColor(argb: light)
         })
@@ -13,7 +22,9 @@ private extension Color {
 }
 
 extension UIColor {
-    convenience init(argb: UInt32) {
+    /// `nonisolated` for the same reason as `Color.init(light:dark:)` above -- it is called from
+    /// inside that initializer's off-main trait-resolution closure.
+    nonisolated convenience init(argb: UInt32) {
         // Heuristic: 0x00RRGGBB (fully transparent, non-zero RGB) is indistinguishable from opaque 0xRRGGBB; no token uses that.
         let hasAlpha = argb > 0xFFFFFF
         let a = hasAlpha ? CGFloat((argb >> 24) & 0xFF) / 255 : 1
