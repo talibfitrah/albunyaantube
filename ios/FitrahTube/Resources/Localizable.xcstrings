@@ -9626,6 +9626,28 @@
         }
       }
     },
+    "player_announce_standard_quality": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتم التشغيل بجودة قياسية"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playing in standard quality"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afspelen in standaardkwaliteit"
+          }
+        }
+      }
+    },
     "player_audio_only_label": {
       "localizations": {
         "ar": {
@@ -10722,6 +10744,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "Offline openen"
+          }
+        }
+      }
+    },
+    "player_quality_auto": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تلقائي"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch"
+          }
+        }
+      }
+    },
+    "player_quality_data_saver": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "توفير البيانات"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Data Saver"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Databesparing"
           }
         }
       }

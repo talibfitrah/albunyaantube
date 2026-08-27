@@ -49,6 +49,26 @@ struct BackendAvailabilityGateTests {
         #expect(try await gate.verify(videoId: Self.videoId, sourceChannelId: nil) == true)
     }
 
+    /// I6 (B1 final review): a backend that accepts the connection and then never answers must
+    /// not hold the player on "Loading…" -- the gate expires and fails open, well inside spec
+    /// §6.6's 8 s budget. Driven with a 50 ms timeout so the test itself stays fast; the
+    /// production default is 3 s.
+    private struct HangingTransport: HTTPTransport {
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            try await Task.sleep(for: .seconds(60))
+            return HTTPResponse(status: 410, headers: [:], body: Data())
+        }
+    }
+
+    @Test func aHangingBackendExpiresAndFailsOpenWithinTheBudget() async throws {
+        let gate = BackendAvailabilityGate(transport: HangingTransport(), baseURL: Self.baseURL,
+                                           timeout: .milliseconds(50))
+        let started = ContinuousClock.now
+        let available = try await gate.verify(videoId: Self.videoId, sourceChannelId: nil)
+        #expect(available == true)
+        #expect(ContinuousClock.now - started < .seconds(1))
+    }
+
     @Test func noSourceChannelIdHitsVideosEndpointWithHEAD() async throws {
         let box = RequestBox()
         let gate = BackendAvailabilityGate(transport: StubTransport(status: 200, box: box), baseURL: Self.baseURL)

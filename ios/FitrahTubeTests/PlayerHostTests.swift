@@ -78,6 +78,29 @@ struct PlayerHostTests {
         #expect(second === first)
     }
 
+    /// I7 (B1 final review): a same-URL re-resolve after the item FAILED must not hand the dead
+    /// item back -- an `AVPlayerItem` whose status is `.failed` never recovers, so reusing it
+    /// freezes the player on a retry that looks like it did something.
+    @Test func sameURLDoesNotReuseAPlayerWhoseItemFailed() async throws {
+        // A local file that doesn't exist fails deterministically (and fast) once the player
+        // tries to load it -- the only way to get a real `.failed` item in a unit target.
+        let url = URL(fileURLWithPath: "/nonexistent/fitrah-failed-item.mp4")
+        let resolved = Self.resolved(.progressive(url: url, label: "360p"))
+        let first = try #require(PlayerHostView.player(for: .rung2Progressive(resolved), replacing: nil))
+        let failedItem = try #require(first.currentItem)
+        var waited = 0
+        while failedItem.status != .failed, waited < 100 {
+            try await Task.sleep(for: .milliseconds(50))
+            waited += 1
+        }
+        #expect(failedItem.status == .failed)
+
+        let second = PlayerHostView.player(for: .rung2Progressive(resolved), replacing: first)
+
+        #expect(second === first) // same AVPlayer -- only the dead ITEM must be replaced
+        #expect(second?.currentItem !== failedItem)
+    }
+
     // MARK: - A state update to a DIFFERENT URL replaces the item, carrying `currentTime` over
 
     @Test func differentURLReplacesTheItemOnTheSamePlayer() throws {

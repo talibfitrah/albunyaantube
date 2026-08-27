@@ -379,6 +379,11 @@ final class ScreenshotTests: XCTestCase {
         settle(app, landscape: true)
         XCTAssertFalse(app.staticTexts["player.metadata.title"].exists,
                        "b1-task10 iphone en landscape: metadata must be hidden at compact vertical size class")
+        // I1 (B1 final review): only the METADATA panel is compact-height-hidden. The toolbar
+        // stays -- Favorite has no other route in from the player, so hiding it in landscape lost
+        // the action entirely.
+        XCTAssertTrue(app.buttons["player.favoriteButton"].exists,
+                      "b1-task10 iphone en landscape: the toolbar must stay visible (spec §6.11 hides metadata only)")
         try write(named: "player-b1task10-iphone-en-landscape", into: directory)
         XCUIDevice.shared.orientation = .portrait
 

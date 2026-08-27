@@ -29,6 +29,17 @@ struct AudioLanguageTests {
         #expect(AudioLanguageSelection.pickIndex(sticky: nil, options: Self.options) == 0)
     }
 
+    /// T5-2 (B1 final review): the default option is NOT always index 0 -- pin a group whose
+    /// default sits at index 1 so a `return 0` shortcut in `pickIndex` can't pass.
+    @Test func nilStickyPicksTheDefaultOptionEvenWhenItIsNotFirst() {
+        let options: [(tag: String, isDefault: Bool)] = [
+            (tag: "en", isDefault: false),
+            (tag: "ar", isDefault: true),
+            (tag: "nl", isDefault: false),
+        ]
+        #expect(AudioLanguageSelection.pickIndex(sticky: nil, options: options) == 1)
+    }
+
     @Test func noMatchAndNoDefaultReturnsNil() {
         let options: [(tag: String, isDefault: Bool)] = [(tag: "en", isDefault: false), (tag: "ar", isDefault: false)]
         #expect(AudioLanguageSelection.pickIndex(sticky: "fr", options: options) == nil)

@@ -122,6 +122,29 @@ EXTRA_KEYS = {
         "ar": "حاول مرة أخرى خلال %1$@",
         "nl": "Probeer het over %1$@ opnieuw",
     },
+    # player_quality_auto / player_quality_data_saver (B1 final review I5): the two word-labels in
+    # `QualityOption.label` -- user-visible menu rows and a VoiceOver value, hardcoded English
+    # until now. Android's own quality dialog is built from stream labels plus `quality_auto`-less
+    # code paths, so there is no source string to port; authored here for all three locales.
+    "player_quality_auto": {
+        "en": "Auto",
+        "ar": "تلقائي",
+        "nl": "Automatisch",
+    },
+    "player_quality_data_saver": {
+        "en": "Data Saver",
+        "ar": "توفير البيانات",
+        "nl": "Databesparing",
+    },
+    # player_announce_standard_quality (B1 final review M1): the VoiceOver announcement posted on a
+    # transition INTO rung 2 (spec §6.6 Transitions row, verbatim). Distinct from
+    # `player_standard_quality`, which is the standing pill label -- an event sentence, not a noun
+    # phrase. iOS-only, same reason as the pill.
+    "player_announce_standard_quality": {
+        "en": "Playing in standard quality",
+        "ar": "يتم التشغيل بجودة قياسية",
+        "nl": "Afspelen in standaardkwaliteit",
+    },
     # player_action_not_favorited (B1 task 10, spec §6.11 "Favorite, Not favorited" example): the
     # favorite toolbar button's VoiceOver value when unfavorited -- a constant "Favorite" label
     # (player_action_favorite) plus this value, mirroring player_action_favorited on the other

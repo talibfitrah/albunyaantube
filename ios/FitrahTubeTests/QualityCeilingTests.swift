@@ -106,10 +106,12 @@ struct QualityCeilingTests {
     }
 
     @Test func labelsMatchTheAndroidFormat() {
-        #expect(QualityOption.auto.label == "Auto")
+        // I5 (B1 final review): the two word-labels are localized now -- pinned against the
+        // catalog keys, not the English literals, so the ar/nl legs aren't silently English.
+        #expect(QualityOption.auto.label == String(localized: "player_quality_auto"))
         #expect(QualityOption.p1080.label == "1080p (1920×1080)")
         #expect(QualityOption.p720.label == "720p (1280×720)")
         #expect(QualityOption.p480.label == "480p (854×480)")
-        #expect(QualityOption.dataSaver.label == "Data Saver")
+        #expect(QualityOption.dataSaver.label == String(localized: "player_quality_data_saver"))
     }
 }

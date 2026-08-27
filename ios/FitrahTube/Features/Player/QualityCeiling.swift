@@ -39,11 +39,14 @@ enum QualityOption: CaseIterable {
     /// "Auto", "1080p (1920×1080)", … -- no `asset.variants` peak-resolution list exists anywhere
     /// in InnerTubeKit's `Resolved`/`ResolvedStream` (checked: `.hls` carries one opaque manifest
     /// URL, no per-rendition data), so every label is the "else the option name" branch the brief
-    /// allows; `player_quality_dialog_title` (the menu's title) is the only localized string here.
+    /// allows. I5 (B1 final review): the two word-labels are catalog strings, not English
+    /// literals -- they are user-visible menu rows and a VoiceOver value, and B4's Shorts kebab
+    /// reuses this same type. The resolution labels stay literal (digits + "p" + a ×-separated
+    /// pixel pair, identical in all three locales).
     var label: String {
         switch self {
-        case .auto: return "Auto"
-        case .dataSaver: return "Data Saver"
+        case .auto: return String(localized: "player_quality_auto")
+        case .dataSaver: return String(localized: "player_quality_data_saver")
         default:
             guard let size = explicitResolution else { return "" }
             return "\(Int(size.height))p (\(Int(size.width))×\(Int(size.height)))"

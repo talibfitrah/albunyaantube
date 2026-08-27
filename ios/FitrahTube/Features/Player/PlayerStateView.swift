@@ -33,6 +33,13 @@ enum PlayerStateCopy {
                 ? Copy(message: String(localized: "loading"), showsRetry: false, announces: false)
                 : Copy(message: String(localized: "connectivity_offline_banner"), showsRetry: true, announces: false)
         case .error(let messageKey):
+            // I2 (B1 final review): the offline gate covers `.error` too. Offline, the resolve
+            // fails within ~300 ms and used to land on the generic error copy -- so offline was
+            // TWO surfaces (a blink of spinner, then "there was a problem"), where spec §6.6 wants
+            // ONE state that names the real cause and offers Retry.
+            guard isOnline else {
+                return Copy(message: String(localized: "connectivity_offline_banner"), showsRetry: true, announces: false)
+            }
             return Copy(message: String(localized: String.LocalizationValue(messageKey)), showsRetry: true, announces: true)
         case .contentUnavailable:
             // Ruling 14: one non-retryable "not playable" surface for every terminal reason

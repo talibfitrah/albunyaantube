@@ -27,6 +27,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // ponytail: B1 never turns PiP on (App Review flags autoplay-into-PiP as a review risk);
         // B2 (plan §6.5 "Background audio"/"PiP") flips this to true.
         controller.allowsPictureInPicturePlayback = false
+        // C1 (B1 final review): without a category, the app inherits `.soloAmbient` -- which obeys
+        // the ring/silent switch, so a muted phone plays a silent video. `.playback` +
+        // `.moviePlayback` is the media-playback pair. B2 owns the rest of the session contract
+        // (`setActive`, `UIBackgroundModes`, interruption and route-change handling); this is only
+        // the category, and it is idempotent, so B2 can move it without a migration.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         controller.player = Self.player(for: state, replacing: nil)
         applyQuality(to: controller, context: context)
         applyAudioLanguageHandoff(to: controller)
@@ -51,6 +57,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// safe precisely because a dismantled host owns nothing any more.
     static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
         coordinator.stopObserving()
+        // M6 (B1 final review): the coordinator can outlive this call (SwiftUI holds it until the
+        // representable's own storage goes), and a live `NWPathMonitor` keeps a queue callback
+        // firing for a host that owns nothing any more. `deinit`'s cancel stays as the backstop --
+        // `NWPathMonitor.cancel()` is idempotent.
+        coordinator.stopMonitoring()
         coordinator.model?.currentItem = nil
         coordinator.model?.currentPlayer = nil
         controller.player?.pause()
@@ -186,6 +197,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
             }
         }
 
+        /// M6: `monitor` is private, so teardown goes through here (see
+        /// `dismantleUIViewController`). Separate from `stopObserving` on purpose -- the per-item
+        /// observers are torn down and re-attached on every item swap; the path monitor is not.
+        func stopMonitoring() { monitor.cancel() }
+
         func stopObserving() {
             statusCancellable = nil
             if let failedToEndObserver { NotificationCenter.default.removeObserver(failedToEndObserver) }
@@ -232,7 +248,13 @@ struct PlayerHostView: UIViewControllerRepresentable {
             existing?.pause()
             return nil
         }
-        if let existing, (existing.currentItem?.asset as? AVURLAsset)?.url == url {
+        // I7 (B1 final review): reuse the live item only while it can still play. An
+        // `AVPlayerItem` that reached `.failed` never recovers, so handing it back on a same-URL
+        // re-resolve (exactly what manual Retry and the recovery ladder do) froze the player on a
+        // retry that looked like it had done something. A failed item falls through to the replace
+        // path below, which builds a fresh item on the SAME `AVPlayer` (position carried over).
+        if let existing, (existing.currentItem?.asset as? AVURLAsset)?.url == url,
+           existing.currentItem?.status != .failed {
             return existing
         }
         let item = AVPlayerItem(asset: asset(url: url, userAgent: resolved.userAgent))

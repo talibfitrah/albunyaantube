@@ -60,6 +60,15 @@ struct PlayerStateViewTests {
         #expect(copy.announces == true)
     }
 
+    /// B1 final review I2: the offline gate covers `.error` too. A resolve that fails ~300 ms in
+    /// because the device is offline used to render the generic error copy, so offline was two
+    /// surfaces (spinner-then-error) instead of spec §6.6's ONE.
+    @Test func errorWhileOfflineCollapsesToTheOfflineStateWithRetry() {
+        let copy = PlayerStateCopy.map(.error(messageKey: "player_error_message"), isOnline: false, locale: Self.enUS)
+        #expect(copy.message == String(localized: "connectivity_offline_banner"))
+        #expect(copy.showsRetry == true)
+    }
+
     @Test func errorResolvesADifferentMessageKeyIndependently() {
         // T2-1: the embed/openInYouTube placeholder's key, added via EXTRA_KEYS this task.
         let copy = PlayerStateCopy.map(.error(messageKey: "player_error_generic"), isOnline: true, locale: Self.enUS)

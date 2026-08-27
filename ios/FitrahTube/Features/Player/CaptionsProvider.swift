@@ -22,8 +22,12 @@ struct CaptionsProvider {
     }
 
     /// Fetches `track.url` (already `&fmt=vtt`, per `CaptionTrack`'s doc) and parses its cues.
-    func cues(for track: CaptionTrack) async throws -> [Cue] {
-        let request = HTTPRequest(method: "GET", url: track.url, headers: [:], body: nil)
+    /// `userAgent` is the resolve's own `Resolved.userAgent` (I4, B1 final review): sending no
+    /// User-Agent let CFNetwork fill in its default, which leaks the app build and the iOS version
+    /// to YouTube on every caption fetch -- and pairs a different UA with the same session the
+    /// `player` call established (plan §6.3: the client context stays byte-identical across calls).
+    func cues(for track: CaptionTrack, userAgent: String) async throws -> [Cue] {
+        let request = HTTPRequest(method: "GET", url: track.url, headers: ["User-Agent": userAgent], body: nil)
         let response = try await transport.send(request)
         guard response.status == 200, let text = String(data: response.body, encoding: .utf8) else { return [] }
         return Self.parseVTT(text)
@@ -36,7 +40,11 @@ struct CaptionsProvider {
     /// settings after the end timestamp, multi-line cue text (joined with `\n`), and strips
     /// inline `<c>`/`<v Speaker>`-style tags from the text.
     static func parseVTT(_ text: String) -> [Cue] {
-        let lines = text.components(separatedBy: .newlines)
+        // M5 (B1 final review): real `timedtext` payloads are CRLF-terminated, and
+        // `components(separatedBy: .newlines)` splits on EACH of \r and \n -- so every CRLF became
+        // an extra empty line, and the cue-text loop below (which stops at the first empty line)
+        // truncated every multi-line cue to nothing. Normalise first, then split.
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: .newlines)
         var cues: [Cue] = []
         var index = 0
         while index < lines.count {

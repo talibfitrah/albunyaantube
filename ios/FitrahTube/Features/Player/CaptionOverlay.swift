@@ -10,6 +10,10 @@ import SwiftUI
 struct CaptionOverlay: View {
     let model: PlayerViewModel
     let track: CaptionTrack
+    /// I4 (B1 final review): the resolve's own `Resolved.userAgent`, threaded through to the
+    /// `timedtext` fetch so it doesn't go out under CFNetwork's default (which names the app build
+    /// and the iOS version).
+    let userAgent: String
 
     @State private var observer = TimeObserver()
     @State private var activeCue: CaptionsProvider.Cue?
@@ -40,7 +44,7 @@ struct CaptionOverlay: View {
         observer.stop()
         activeCue = nil
         let item = model.currentItem
-        let fetched = (try? await CaptionsProvider().cues(for: track)) ?? []
+        let fetched = (try? await CaptionsProvider().cues(for: track, userAgent: userAgent)) ?? []
         // Currentness guard (Task 5's known gap, task-6-brief.md): a re-resolve/item swap while
         // this `await` was in flight must not apply a stale track's cues to the new item. Fix
         // round 1 F2: also re-check `selectedCaptionTrack == track` -- a rapid A->B track switch
