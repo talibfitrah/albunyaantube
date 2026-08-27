@@ -37,10 +37,7 @@ public struct InnerTube: Sendable {
 
         let sessionStore = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: keyValueStore)
         self.sessionStore = sessionStore
-        // ponytail: TTL pinned to the bundled default at wiring time — `init` is sync and
-        // RemoteConfigStore's live value needs `await`. Re-wire once ManifestCache accepts a
-        // live TTL source instead of a fixed Int at construction.
-        let manifestCache = ManifestCache(configTTLSeconds: RemoteConfig.bundledDefault.manifestCacheSeconds)
+        let manifestCache = ManifestCache(remoteConfig: remoteConfig)
 
         resolver = StreamResolver(
             transport: URLSessionTransport(),

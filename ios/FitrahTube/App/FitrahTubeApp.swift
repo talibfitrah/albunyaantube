@@ -55,9 +55,16 @@ struct FitrahTubeApp: App {
     /// the UI on a network round trip.
     private func refreshRemoteConfigIfDue() {
         let now = Date()
-        if let last = lastRemoteConfigRefresh, now.timeIntervalSince(last) < Self.remoteConfigRefreshSpacing { return }
+        guard Self.isRemoteConfigRefreshDue(
+            now: now, last: lastRemoteConfigRefresh, spacing: Self.remoteConfigRefreshSpacing) else { return }
         lastRemoteConfigRefresh = now
         Task { await container.innerTube.remoteConfig.refresh() }
+    }
+
+    /// CF-B1-13: the spacing decision, extracted so it is testable without a running scene.
+    static func isRemoteConfigRefreshDue(now: Date, last: Date?, spacing: TimeInterval) -> Bool {
+        guard let last else { return true }
+        return now.timeIntervalSince(last) >= spacing
     }
 
     /// Debug-only launch hook (`-fitrah-deeplink <url>`, two argv tokens): exercises the exact

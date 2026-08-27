@@ -3,6 +3,23 @@ import Testing
 @testable import InnerTubeKit
 
 @Suite struct ManifestCacheTests {
+    /// A cache whose TTL comes from a *published* remote config carrying `manifestCacheSeconds`
+    /// -- the live source CF-B1-11 asks for, not the bundled default pinned at construction.
+    private func makeCache(configTTLSeconds: Int) async -> ManifestCache {
+        let body = Data(
+            """
+            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS"],"manifestCacheSeconds":\(configTTLSeconds),"clients":{}}
+            """.utf8)
+        let store = RemoteConfigStore(
+            transport: FixtureTransport(routes: [
+                .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: body))
+            ]),
+            keyValueStore: InMemoryKeyValueStore(),
+            url: URL(string: "https://example.com/config.json")!)
+        await store.refresh()
+        return ManifestCache(remoteConfig: store)
+    }
+
     private func hlsResolved(isLive: Bool = false) -> Resolved {
         Resolved(
             stream: .hls(url: URL(string: "https://example.com/manifest.m3u8")!, isLive: isLive, audioOnlyURL: nil, captionTracks: []),
@@ -14,7 +31,7 @@ import Testing
     }
 
     @Test func putThenGetWithinTTLIsHitThenMissAfterTTL() async {
-        let cache = ManifestCache(configTTLSeconds: 100)
+        let cache = await makeCache(configTTLSeconds: 100)
         let now = Date(timeIntervalSince1970: 1000)
 
         await cache.put(hlsResolved(), videoId: "abc123def45", now: now)
@@ -24,7 +41,7 @@ import Testing
     }
 
     @Test func liveHLSIsNeverStored() async {
-        let cache = ManifestCache(configTTLSeconds: 100)
+        let cache = await makeCache(configTTLSeconds: 100)
         let now = Date(timeIntervalSince1970: 1000)
 
         await cache.put(hlsResolved(isLive: true), videoId: "live12345678", now: now)
@@ -32,7 +49,7 @@ import Testing
     }
 
     @Test func lruEvictsLeastRecentlyGotten() async {
-        let cache = ManifestCache(configTTLSeconds: 10_000)
+        let cache = await makeCache(configTTLSeconds: 10_000)
         let now = Date(timeIntervalSince1970: 1000)
 
         for i in 0..<50 {
@@ -53,19 +70,19 @@ import Testing
     @Test func ttlClampsConfigAbove3600ButPassesLowerConfigThrough() async {
         let now = Date(timeIntervalSince1970: 1000)
 
-        let clamped = ManifestCache(configTTLSeconds: 7200)
+        let clamped = await makeCache(configTTLSeconds: 7200)
         await clamped.put(hlsResolved(), videoId: "clamp0000001", now: now)
         #expect(await clamped.get("clamp0000001", now: now.addingTimeInterval(3599)) != nil)
         #expect(await clamped.get("clamp0000001", now: now.addingTimeInterval(3601)) == nil)
 
-        let unclamped = ManifestCache(configTTLSeconds: 1800)
+        let unclamped = await makeCache(configTTLSeconds: 1800)
         await unclamped.put(hlsResolved(), videoId: "short0000001", now: now)
         #expect(await unclamped.get("short0000001", now: now.addingTimeInterval(1799)) != nil)
         #expect(await unclamped.get("short0000001", now: now.addingTimeInterval(1801)) == nil)
     }
 
     @Test func expiredGetEvictsStaleEntrySoItDoesNotOccupyALRUSlot() async {
-        let cache = ManifestCache(configTTLSeconds: 100)
+        let cache = await makeCache(configTTLSeconds: 100)
         let now = Date(timeIntervalSince1970: 1000)
 
         for i in 0..<49 {
@@ -86,7 +103,7 @@ import Testing
     }
 
     @Test func cacheExpiryClampsToStreamExpiresAtWhenSoonerThanTTL() async {
-        let cache = ManifestCache(configTTLSeconds: 3600)  // 1 h TTL
+        let cache = await makeCache(configTTLSeconds: 3600)  // 1 h TTL
         let now = Date(timeIntervalSince1970: 1000)
         let resolved = Resolved(
             stream: .hls(url: URL(string: "https://example.com/m.m3u8")!, isLive: false, audioOnlyURL: nil, captionTracks: []),
@@ -100,7 +117,7 @@ import Testing
     }
 
     @Test func flushAllEmptiesCache() async {
-        let cache = ManifestCache(configTTLSeconds: 100)
+        let cache = await makeCache(configTTLSeconds: 100)
         let now = Date(timeIntervalSince1970: 1000)
         await cache.put(hlsResolved(), videoId: "abc123def45", now: now)
 
@@ -110,12 +127,25 @@ import Testing
     }
 
     @Test func invalidateRemovesSingleEntry() async {
-        let cache = ManifestCache(configTTLSeconds: 100)
+        let cache = await makeCache(configTTLSeconds: 100)
         let now = Date(timeIntervalSince1970: 1000)
         await cache.put(hlsResolved(), videoId: "abc123def45", now: now)
 
         await cache.invalidate("abc123def45")
 
         #expect(await cache.get("abc123def45", now: now) == nil)
+    }
+
+    // CF-B1-11: the TTL must follow whatever the *published* config says, not the value that
+    // happened to be bundled when `ManifestCache` was constructed.
+    @Test func ttlFollowsThePublishedRemoteConfigNotTheBundledDefault() async {
+        #expect(RemoteConfig.bundledDefault.manifestCacheSeconds == 3600)  // the value it must NOT use
+        let cache = await makeCache(configTTLSeconds: 5)
+        let now = Date(timeIntervalSince1970: 1_000_000)
+
+        await cache.put(hlsResolved(), videoId: "livettl00001", now: now)
+
+        #expect(await cache.get("livettl00001", now: now.addingTimeInterval(4)) != nil)
+        #expect(await cache.get("livettl00001", now: now.addingTimeInterval(6)) == nil)
     }
 }

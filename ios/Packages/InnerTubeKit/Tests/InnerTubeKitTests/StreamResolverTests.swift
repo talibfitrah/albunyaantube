@@ -99,7 +99,7 @@ import Testing
         transport: HTTPTransport,
         gate: AvailabilityGate = StubGate(),
         clock: ManualClock = ManualClock(),
-        cache: ManifestCache = ManifestCache(configTTLSeconds: 3600),
+        cache: ManifestCache? = nil,
         locale: InnerTubeLocale = InnerTubeLocale(hl: "en", gl: "US"),
         configStore: RemoteConfigStore? = nil,
         minPostSpacing: Duration = .zero
@@ -110,11 +110,13 @@ import Testing
             keyValueStore: InMemoryKeyValueStore(),
             url: URL(string: "https://example.com/config.json")!
         )
+        // Un-refreshed store => the bundled default's 3600 s TTL, the value this builder pinned before.
+        let resolvedCache = cache ?? ManifestCache(remoteConfig: resolvedConfigStore)
         let resolver = StreamResolver(
             transport: transport,
             remoteConfigStore: resolvedConfigStore,
             sessionStore: session,
-            cache: cache,
+            cache: resolvedCache,
             gate: gate,
             monotonicClock: clock,
             wallClock: clock,
@@ -122,6 +124,12 @@ import Testing
             minPostSpacing: minPostSpacing
         )
         return (resolver, session)
+    }
+
+    private func defaultConfigStore() -> RemoteConfigStore {
+        RemoteConfigStore(
+            transport: NoopTransport(), keyValueStore: InMemoryKeyValueStore(),
+            url: URL(string: "https://example.com/config.json")!)
     }
 
     private struct NoopTransport: HTTPTransport {
@@ -269,7 +277,7 @@ import Testing
     @Test func embedFallbackIsNotCachedAndDoesNotRecordSuccess() async throws {
         // Both player rungs answer UNPLAYABLE, so the ladder bottoms out on `embed`.
         let clock = ManualClock()
-        let cache = ManifestCache(configTTLSeconds: 3600)
+        let cache = ManifestCache(remoteConfig: defaultConfigStore())
         let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids")])
         let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache)
         await session.recordBotCheck()
@@ -284,7 +292,7 @@ import Testing
 
     @Test func nativeStreamIsCachedAndRecordsSuccess() async throws {
         let clock = ManualClock()
-        let cache = ManifestCache(configTTLSeconds: 3600)
+        let cache = ManifestCache(remoteConfig: defaultConfigStore())
         let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache)
         await session.recordBotCheck()

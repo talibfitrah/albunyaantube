@@ -11,6 +11,11 @@ import Testing
         case .ok(let streaming):
             #expect(streaming.hlsManifestURL != nil)
             #expect(streaming.expiresInSeconds == 21540)
+            // The real capture has NO `formats` key at all -- itag 140 (audio-only m4a) lives in
+            // `adaptiveFormats`, which is why `audioOnlyURL` was permanently nil (CF-B2).
+            let audioOnly = try #require(streaming.itag140URL)
+            #expect(audioOnly.host()?.hasSuffix("googlevideo.com") == true)
+            #expect(audioOnly.path == "/videoplayback")
             // Real Arabic ASR caption track; baseUrl already has a `?...` query string, so the
             // parser must append with `&`, not `?`.
             #expect(streaming.captionTracks.count == 1)
@@ -106,6 +111,53 @@ import Testing
     @Test func embedOnlyFixtureMissingStreamingDataYieldsUnavailable() throws {
         let result = try parser.parse(try loadFixture("player-embed-only")).playability
         #expect(result == .unavailable(reason: "This video is unavailable"))
+    }
+
+    // CF-B2: itag 140 is an ADAPTIVE format. Synthetic bodies (shape derived from the real
+    // `player-ok-hls` capture: `streamingData.adaptiveFormats[].{itag,url}`) so the lookup order
+    // and the https guard can be asserted without a 74 KB fixture per case.
+    @Test func parsesItag140FromAdaptiveFormats() throws {
+        let body = Data(
+            """
+            {"playabilityStatus":{"status":"OK"},"streamingData":{"hlsManifestUrl":"https://manifest.googlevideo.com/x.m3u8","formats":[{"itag":18,"url":"https://r1.googlevideo.com/v18"}],"adaptiveFormats":[{"itag":140,"url":"https://r1.googlevideo.com/a140"},{"itag":137,"url":"https://r1.googlevideo.com/v137"}]}}
+            """.utf8)
+        let result = try parser.parse(body).playability
+        switch result {
+        case .ok(let streaming):
+            #expect(streaming.itag140URL?.absoluteString == "https://r1.googlevideo.com/a140")
+            #expect(streaming.itag18URL?.absoluteString == "https://r1.googlevideo.com/v18")
+        default:
+            Issue.record("expected .ok, got \(result)")
+        }
+    }
+
+    @Test func itag140IsNilWhenNoAudioOnlyFormatExists() throws {
+        let body = Data(
+            """
+            {"playabilityStatus":{"status":"OK"},"streamingData":{"hlsManifestUrl":"https://manifest.googlevideo.com/x.m3u8","adaptiveFormats":[{"itag":137,"url":"https://r1.googlevideo.com/v137"}]}}
+            """.utf8)
+        let result = try parser.parse(body).playability
+        switch result {
+        case .ok(let streaming):
+            #expect(streaming.itag140URL == nil)
+        default:
+            Issue.record("expected .ok, got \(result)")
+        }
+    }
+
+    @Test func itag140MustBeHTTPS() throws {
+        let body = Data(
+            """
+            {"playabilityStatus":{"status":"OK"},"streamingData":{"hlsManifestUrl":"https://manifest.googlevideo.com/x.m3u8","adaptiveFormats":[{"itag":140,"url":"http://r1.googlevideo.com/a140"}]}}
+            """.utf8)
+        let result = try parser.parse(body).playability
+        switch result {
+        case .ok(let streaming):
+            // httpsURL() drops non-https at the trust boundary (M2).
+            #expect(streaming.itag140URL == nil)
+        default:
+            Issue.record("expected .ok, got \(result)")
+        }
     }
 
     private func loadFixture(_ name: String) throws -> Data {

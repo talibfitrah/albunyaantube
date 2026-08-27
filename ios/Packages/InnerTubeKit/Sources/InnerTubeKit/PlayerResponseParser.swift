@@ -82,10 +82,14 @@ public struct PlayerResponseParser: Sendable {
 
     private func streamingData(from wire: Wire) -> StreamingData {
         let formats = wire.streamingData?.formats ?? []
+        // itag 140 (audio-only m4a) is an ADAPTIVE format -- it is never in `formats`, which carries
+        // only the muxed renditions (itag 18/22). Reading it from `formats` made `audioOnlyURL`
+        // permanently nil. `formats` stays as a defensive second lookup.
+        let adaptive = wire.streamingData?.adaptiveFormats ?? []
         return StreamingData(
             hlsManifestURL: Self.httpsURL(wire.streamingData?.hlsManifestUrl),
             itag18URL: url(forItag: 18, in: formats),
-            itag140URL: url(forItag: 140, in: formats),
+            itag140URL: url(forItag: 140, in: adaptive) ?? url(forItag: 140, in: formats),
             expiresInSeconds: wire.streamingData?.expiresInSeconds.flatMap(Int.init),
             isLive: wire.videoDetails?.isLive ?? wire.videoDetails?.isLiveContent ?? false,
             captionTracks: captionTracks(from: wire.captions)
@@ -129,6 +133,7 @@ public struct PlayerResponseParser: Sendable {
             var expiresInSeconds: String?
             var hlsManifestUrl: String?
             var formats: [Format]?
+            var adaptiveFormats: [Format]?
         }
         struct CaptionTrackWire: Decodable {
             var baseUrl: String?

@@ -13,14 +13,14 @@ public actor ManifestCache {
         var expiresAt: Date
     }
 
-    private let configTTLSeconds: Int
+    private let remoteConfig: RemoteConfigStore
 
     /// Oldest → newest by last `get`; new keys are appended on `put`.
     private var order: [String] = []
     private var entries: [String: Entry] = [:]
 
-    public init(configTTLSeconds: Int) {
-        self.configTTLSeconds = configTTLSeconds
+    public init(remoteConfig: RemoteConfigStore) {
+        self.remoteConfig = remoteConfig
     }
 
     public func get(_ videoId: String, now: Date) -> Resolved? {
@@ -35,12 +35,12 @@ public actor ManifestCache {
         return entry.resolved
     }
 
-    public func put(_ resolved: Resolved, videoId: String, now: Date) {
+    public func put(_ resolved: Resolved, videoId: String, now: Date) async {
         guard !isLive(resolved) else { return }
 
         // Clamp to the stream's real URL expiry: never serve past `resolved.expiresAt`, even if the
         // TTL is longer (a short googlevideo `expiresInSeconds` would otherwise cache a dead URL).
-        let expiresAt = min(now.addingTimeInterval(ttlSeconds()), resolved.expiresAt ?? .distantFuture)
+        let expiresAt = min(now.addingTimeInterval(await ttlSeconds()), resolved.expiresAt ?? .distantFuture)
         let isNewKey = entries[videoId] == nil
         entries[videoId] = Entry(resolved: resolved, expiresAt: expiresAt)
 
@@ -69,10 +69,12 @@ public actor ManifestCache {
         return false
     }
 
-    private func ttlSeconds() -> TimeInterval {
+    /// CF-B1-11: read live, per-`put`, so a published config change takes effect without a
+    /// relaunch (the TTL used to be pinned to the bundled default at construction).
+    private func ttlSeconds() async -> TimeInterval {
         // ponytail: `Resolved` carries no video duration yet, so the
         // expiresAt-minus-duration term from spec §9 is never computable
         // here; wire it in once PlayerResponseParser threads duration through.
-        min(TimeInterval(configTTLSeconds), Self.maxTTLSeconds)
+        min(TimeInterval(await remoteConfig.current().manifestCacheSeconds), Self.maxTTLSeconds)
     }
 }

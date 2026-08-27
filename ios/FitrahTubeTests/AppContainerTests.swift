@@ -65,4 +65,13 @@ struct AppContainerTests {
         #expect(AppConfig.validate("http:") == nil)
         #expect(AppConfig.validate("ftp://x") == nil)
     }
+
+    /// CF-B1-13: the remote-config refresh spacing, extracted out of the side-effecting method
+    /// so it is testable without a running scene.
+    @Test func remoteConfigRefreshIsDueOnFirstCallAndThenOnlyAfterTheSpacing() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(FitrahTubeApp.isRemoteConfigRefreshDue(now: now, last: nil, spacing: 900))
+        #expect(FitrahTubeApp.isRemoteConfigRefreshDue(now: now, last: now.addingTimeInterval(-60), spacing: 900) == false)
+        #expect(FitrahTubeApp.isRemoteConfigRefreshDue(now: now, last: now.addingTimeInterval(-901), spacing: 900))
+    }
 }
