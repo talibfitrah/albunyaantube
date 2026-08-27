@@ -286,6 +286,10 @@ final class ScreenshotTests: XCTestCase {
         button.tap()
         let pill = app.staticTexts["player.audioOnlyPill"]
         XCTAssertTrue(pill.waitForExistence(timeout: 10), "player-audio-only: the audio-only status surface never appeared")
+        // Fix round 1, C1: a PILL, not a fill. The status used to be a full-bleed opaque rectangle
+        // over AVKit's own transport, which left no way to pause while audio-only.
+        XCTAssertLessThan(pill.frame.width, content.frame.width / 2,
+                          "player-audio-only: the status must be a pill sized to its text, not a fill over the video surface")
         XCTAssertFalse(app.buttons["player.qualityMenu.button"].exists, "player-audio-only: the quality control must be hidden while audio-only")
         try write(named: "player-audio-only", into: directory)
     }

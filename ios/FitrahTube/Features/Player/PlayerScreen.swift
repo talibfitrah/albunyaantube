@@ -78,20 +78,6 @@ struct PlayerScreen: View {
                     ZStack(alignment: .topTrailing) {
                         PlayerHostView(state: state, quality: model.selectedQuality,
                                        audioOnly: model.audioOnly, model: model)
-                        if model.audioOnly {
-                            // Android shows `player_status_audio_only` as its status line
-                            // (`PlayerFragment.kt:2092`); on iOS the video surface is a black
-                            // rectangle while audio-only, so the same string fills it.
-                            // `allowsHitTesting(false)`: this is chrome, not a control -- a tap on
-                            // the surface still reaches the AVKit host underneath.
-                            Text(String(localized: "player_status_audio_only"))
-                                .font(.subheadline)
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .background(Color.black)
-                                .allowsHitTesting(false)
-                                .accessibilityIdentifier("player.audioOnlyPill")
-                        }
                         // I8 (B1 final review): a mid-play rung-2 demotion empties `tracks` and
                         // hides the captions menu -- but the selection survives (session-only
                         // state, deliberately), so the overlay used to keep rendering cues with no
@@ -105,7 +91,16 @@ struct PlayerScreen: View {
                             // track and no alternate audible group on an m4a item -- every one of
                             // these controls would be inert, so none of them is shown. The
                             // audio-only button itself stays, so the user can get back out.
-                            if !model.audioOnly {
+                            if model.audioOnly {
+                                // Fix round 1, C1: a status PILL, stacked with the rest of this
+                                // column, never a fill over the video surface. The surface is
+                                // AVKit's own -- an opaque full-bleed status sat on top of the
+                                // stock transport, so while audio-only there was no way to pause.
+                                // `allowsHitTesting(false)`: chrome, not a control.
+                                statusPill(String(localized: "player_status_audio_only"),
+                                           identifier: "player.audioOnlyPill")
+                                    .allowsHitTesting(false)
+                            } else {
                                 // Quality control on rung 1 only -- rung 2 (progressive, single
                                 // rendition) hides it entirely per spec §10 ("Rung 2 hides the
                                 // control") and shows the persistent pill instead.
@@ -308,13 +303,20 @@ struct PlayerScreen: View {
     /// which is also the visible half of "never silently swap a native stream" (the demotion is a
     /// distinct `StreamState`, and Task 9's state-view announcements read it out).
     private var rung2Pill: some View {
-        Text(String(localized: "player_standard_quality"))
+        statusPill(String(localized: "player_standard_quality"), identifier: "player.rung2Pill")
+    }
+
+    /// The shared status-pill chrome (rung-2 badge, audio-only status). Sized to its own text and
+    /// only translucent, so whatever it sits over -- here, AVKit's stock transport -- stays visible
+    /// and usable underneath (fix round 1, C1).
+    private func statusPill(_ text: String, identifier: String) -> some View {
+        Text(text)
             .font(.caption)
             .foregroundStyle(.white)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(.black.opacity(0.55), in: Capsule())
-            .accessibilityIdentifier("player.rung2Pill")
+            .accessibilityIdentifier(identifier)
     }
 
     /// `-fitrah-fake-player`: the UI-test/screenshot hook -- swaps the real InnerTubeKit-backed

@@ -104,19 +104,42 @@ struct PlayerHostView: UIViewControllerRepresentable {
         background.backgroundPlay = model.backgroundPlay
         background.userAudioOnly = model.audioOnly
         background.audioOnlyAvailable = PlayerViewModel.audioOnlyAvailable(for: state)
-        background.onPolicyAction = { [weak model] action in
-            // ponytail: an automatic background swap costs one re-buffer going in and one coming
-            // out (both are local URL swaps, no network). Accepted: spec §10 asks for the itag 140
-            // swap on background so the phone stops pulling video segments off-screen. Skipped: the
-            // "or when backgrounded on cellular" variant from plan §6.5 -- the setting already
-            // carries user intent.
-            switch action {
-            case .swapToAudioOnly: model?.audioOnly = true
-            case .restoreVideo: model?.audioOnly = false
-            default: break
-            }
+        // Fix round 1, C2: the `state`/`player` the handler swaps against are captured HERE, on the
+        // same pass that read them, and this closure is REASSIGNED on every pass -- so a re-resolve
+        // or an item swap can never leave the handler working from a stale pair.
+        let liveState = state
+        background.onPolicyAction = { [weak model, weak player] action in
+            Self.applyPolicyAction(action, state: liveState, player: player, model: model)
         }
         background.attach(player: player)
+    }
+
+    /// The `.swapToAudioOnly` / `.restoreVideo` half of the background policy, split out of the
+    /// closure above so `BackgroundPlaybackControllerTests` can drive the real wiring end to end
+    /// (T2-1) instead of only the pure decision table.
+    ///
+    /// ponytail: an automatic background swap costs one re-buffer going in and one coming out (both
+    /// are local URL swaps, no network). Accepted: spec §10 asks for the itag 140 swap on background
+    /// so the phone stops pulling video segments off-screen. Skipped: the "or when backgrounded on
+    /// cellular" variant from plan §6.5 -- the setting already carries user intent.
+    static func applyPolicyAction(_ action: PlaybackPolicyAction, state: StreamState,
+                                  player: AVPlayer?, model: PlayerViewModel?) {
+        let audioOnly: Bool
+        switch action {
+        case .swapToAudioOnly: audioOnly = true
+        case .restoreVideo: audioOnly = false
+        default: return
+        }
+        // Fix round 1, C2: `model.audioOnly` alone only SCHEDULES a SwiftUI update, and there is no
+        // guarantee `updateUIViewController` runs before the app suspends -- the phone could keep
+        // pulling video segments for the whole background stint, which is the one thing this swap
+        // exists to stop. So the swap happens here, synchronously, on the live player.
+        // `player(for:replacing:audioOnly:)` reuses that same `AVPlayer` (position and
+        // playWhenReady carried across by its own replace path); it never builds a second one.
+        if let player { _ = Self.player(for: state, replacing: player, audioOnly: audioOnly) }
+        // Still set, so the UI catches up. The url-match guard in `player(for:replacing:)` makes
+        // the update pass this schedules a no-op on the player itself.
+        model?.audioOnly = audioOnly
     }
 
     private static func isLive(_ state: StreamState) -> Bool {

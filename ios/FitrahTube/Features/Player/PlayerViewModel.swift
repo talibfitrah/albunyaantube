@@ -98,6 +98,9 @@ struct LiveStreamResolver: StreamResolving {
     /// the toggle is hidden there -- the same "hide the control that has no backing" rule spec §10
     /// applies to the quality control on rung 2.
     static func audioOnlyAvailable(for state: StreamState) -> Bool {
+        // ponytail: no `isLive` check -- a live HLS has never been seen carrying an itag 140 url, so
+        // the `audioOnlyURL != nil` test already excludes it. Add one here if a live stream ever
+        // resolves with one (the swap would then hand AVPlayer a non-live audio rendition).
         guard case .ready(let resolved) = state,
               case .hls(_, _, let audioOnlyURL, _) = resolved.stream else { return false }
         return audioOnlyURL != nil
