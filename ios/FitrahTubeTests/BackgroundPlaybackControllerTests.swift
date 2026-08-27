@@ -130,4 +130,56 @@ import UIKit
 
         #expect(actions.filter { $0 == .swapToAudioOnly }.count == 1)
     }
+
+    // MARK: - CF-B1-3 ordering (Task 6)
+
+    /// The pre-emptive re-resolve must SETTLE before the lifecycle policy runs, or `.restoreVideo`
+    /// rebuilds the item from the expiring URL the app backgrounded with and the fresh one lands a
+    /// second re-buffer later (Task 3's swap reads the state the hook just refreshed).
+    @Test func theForegroundReResolveRunsBeforeTheVideoRestore() async throws {
+        let fixture = try Self.fixture()
+        let player = try #require(PlayerHostView.player(for: fixture.state, replacing: nil, audioOnly: false))
+        let controller = BackgroundPlaybackController(backgroundPlay: true)
+        controller.audioOnlyAvailable = true
+        var log: [String] = []
+        controller.onWillEnterForeground = { log.append("re-resolve") }
+        controller.onPolicyAction = { [weak player] action in
+            log.append("\(action)")
+            PlayerHostView.applyPolicyAction(action, state: fixture.state, player: player, model: nil)
+        }
+        controller.attach(player: player)
+        defer { controller.detach() }
+
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        try await wait { log.contains("\(PlaybackPolicyAction.swapToAudioOnly)") }
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+        try await wait { log.contains("\(PlaybackPolicyAction.restoreVideo)") }
+
+        let restore = try #require(log.firstIndex(of: "\(PlaybackPolicyAction.restoreVideo)"))
+        let reResolve = try #require(log.firstIndex(of: "re-resolve"))
+        #expect(reResolve < restore)
+    }
+
+    /// Task 5: a live PiP window is playing the very item a re-resolve would replace, so the
+    /// window would re-buffer or blank. The unexpired stream keeps playing instead; the refresh
+    /// gets its next chance on the following foreground, once PiP has stopped.
+    @Test func theForegroundReResolveIsSuppressedWhileAPiPWindowIsLive() async throws {
+        let fixture = try Self.fixture()
+        let player = try #require(PlayerHostView.player(for: fixture.state, replacing: nil, audioOnly: false))
+        let controller = BackgroundPlaybackController(backgroundPlay: true)
+        controller.audioOnlyAvailable = true
+        var reResolves = 0
+        var actions: [PlaybackPolicyAction] = []
+        controller.onWillEnterForeground = { reResolves += 1 }
+        controller.onPolicyAction = { actions.append($0) }
+        controller.attach(player: player)
+        defer { controller.detach() }
+        controller.pictureInPictureActive = true
+
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+        try await wait { !actions.isEmpty }
+        try await Task.sleep(for: .milliseconds(200))   // a deferred hook would have fired by now
+
+        #expect(reResolves == 0)
+    }
 }

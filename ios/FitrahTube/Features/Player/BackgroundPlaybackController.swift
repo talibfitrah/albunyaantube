@@ -17,6 +17,9 @@ import UIKit
     /// `PlayerHostView` performs the swap itself (through the VM's `audioOnly`). Left nil, the swap
     /// actions only move this controller's own `autoSwappedToAudioOnly` flag.
     var onPolicyAction: ((PlaybackPolicyAction) -> Void)?
+    /// CF-B1-3: the pre-emptive TTL re-resolve (`PlayerViewModel.reResolveIfExpiring`). AWAITED
+    /// before the foreground lifecycle policy runs -- see `willEnterForeground()`.
+    var onWillEnterForeground: (() async -> Void)?
 
     private weak var player: AVPlayer?
     private var observers: [NSObjectProtocol] = []
@@ -66,7 +69,7 @@ import UIKit
                 MainActor.assumeIsolated { self?.handle(.enteredBackground) }
             },
             center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.handle(.willEnterForeground) }
+                MainActor.assumeIsolated { self?.willEnterForeground() }
             },
             // `Notification` is not `Sendable` on this toolchain, so the payload is decoded HERE,
             // in the nonisolated observer block, and only the resulting Sendable values cross into
@@ -133,6 +136,24 @@ import UIKit
             handle(.interruptionEnded(shouldResume: shouldResume))
         default:
             break   // nil (undecodable payload) and any future case: do nothing
+        }
+    }
+
+    /// CF-B1-3's ordering guarantee. The re-resolve is AWAITED before `.willEnterForeground` is
+    /// decided, because `.restoreVideo` rebuilds the item from whatever `Resolved` the state holds
+    /// at that moment: running the policy first would restore the expiring URL the app backgrounded
+    /// with, and the fresh one would then land a second re-buffer a round trip later.
+    ///
+    /// Skipped entirely while PiP is live: the floating window is playing the very item a
+    /// re-resolve replaces, so it would re-buffer or blank. The stream is unexpired by definition
+    /// (it is still playing), and the refresh gets its next chance on the following foreground.
+    private func willEnterForeground() {
+        guard let onWillEnterForeground, !pictureInPictureActive else {
+            return handle(.willEnterForeground)
+        }
+        Task { @MainActor in
+            await onWillEnterForeground()
+            handle(.willEnterForeground)
         }
     }
 

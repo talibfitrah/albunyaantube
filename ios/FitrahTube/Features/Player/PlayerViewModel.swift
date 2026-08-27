@@ -5,15 +5,72 @@ import InnerTubeKit
 /// Wraps InnerTubeKit's `StreamResolver` actor behind a protocol `PlayerViewModel` depends on --
 /// depending on the concrete actor directly would leave tests unable to script resolve outcomes.
 protocol StreamResolving: Sendable {
-    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved
 }
 
 /// Production `StreamResolving` -- thin pass-through to the real actor (`AppContainer.resolver`).
+/// `kind` is ignored here on purpose: `StreamResolver.resolve` takes no such argument, and its
+/// `purpose:` is documented as "reserved for caller-side rate-limiter lane coordination" -- which is
+/// exactly what `RateLimitedResolver` (the decorator wrapped around this) now performs.
 struct LiveStreamResolver: StreamResolving {
     let resolver: StreamResolver
 
-    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         try await resolver.resolve(videoId, purpose: purpose, sourceChannelId: sourceChannelId, forceRefresh: forceRefresh)
+    }
+}
+
+/// CF-B1-2. The limiter goes in a DECORATOR rather than inside `LiveStreamResolver`, so the gate is
+/// testable over a fake without standing up a real `StreamResolver` with a stub transport,
+/// remote-config store, session store, cache and availability gate.
+struct RateLimitedResolver: StreamResolving {
+    let wrapped: any StreamResolving
+    let rateLimiter: ExtractionRateLimiter
+    let clock: any MonotonicClock
+
+    init(wrapping wrapped: any StreamResolving, rateLimiter: ExtractionRateLimiter, clock: any MonotonicClock) {
+        self.wrapped = wrapped
+        self.rateLimiter = rateLimiter
+        self.clock = clock
+    }
+
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        // Scoped exactly as Android scopes it (`ui/player/PlayerViewModel.kt:1243/1256/1265` are its
+        // only three limiter call sites, all force-refreshes). A non-forced resolve may be served
+        // straight from `ManifestCache` with no network at all -- gating it would make the 30 s
+        // minimum interval refuse a replay of a video the user just watched.
+        if forceRefresh {
+            switch await rateLimiter.check(videoId, kind: kind, now: clock.now) {
+            case .allowed:
+                break
+            case .delayed(let delay, _):
+                throw ExtractionError.cooldown(until: Date().addingTimeInterval(Self.seconds(delay)))
+            case .blocked(_, let retryAfter):
+                throw ExtractionError.cooldown(until: Date().addingTimeInterval(Self.seconds(retryAfter)))
+            }
+        }
+        let resolved = try await wrapped.resolve(videoId, purpose: purpose, kind: kind,
+                                                 sourceChannelId: sourceChannelId, forceRefresh: forceRefresh)
+        await rateLimiter.onSuccess(videoId)   // clears the .player exponential backoff (Android :1551)
+        return resolved
+    }
+
+    private static func seconds(_ duration: Duration) -> TimeInterval {
+        let components = duration.components
+        return TimeInterval(components.seconds) + TimeInterval(components.attoseconds) / 1e18
+    }
+}
+
+extension StreamState {
+    /// True for the two states that share `PlayerScreen`'s single playable `switch` branch.
+    var isPlayable: Bool {
+        switch self {
+        case .ready, .rung2Progressive: return true
+        default: return false
+        }
     }
 }
 
@@ -107,7 +164,7 @@ struct LiveStreamResolver: StreamResolving {
     }
 
     func open() async {
-        await resolve(forceRefresh: false)
+        await resolve(forceRefresh: false, kind: .player)
     }
 
     /// CF-B1: `.cooldown` is terminal -- a manual retry while still inside the window must not
@@ -115,7 +172,7 @@ struct LiveStreamResolver: StreamResolving {
     /// `until` has passed this is a normal forced re-resolve.
     func retry() async {
         if case .cooldown(let until) = state, until > Date() { return }
-        await resolve(forceRefresh: true)
+        await resolve(forceRefresh: true, kind: .player)
     }
 
     /// Task 7: one recovery incident (`PlayerHostView`'s KVO/notification/stall observers feed this).
@@ -147,7 +204,10 @@ struct LiveStreamResolver: StreamResolving {
         case .exhausted:
             state = .recoveryExhausted(resolved)
         case .reResolveSameRung, .stepDownRung:
-            await resolve(forceRefresh: true, resetBudget: false, showLoading: false)
+            // `showLoading: false` but NOT `silent:` -- by the time this runs the stream has
+            // genuinely stopped working, so a failed re-resolve SHOULD surface as `.error` /
+            // `.contentUnavailable` / `.cooldown` rather than leaving a dead player on screen.
+            await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false, showLoading: false)
         }
     }
 
@@ -163,7 +223,31 @@ struct LiveStreamResolver: StreamResolving {
         }
     }
 
-    private func resolve(forceRefresh: Bool, resetBudget: Bool = true, showLoading: Bool = true) async {
+    /// §6.2 step 5: "On `willEnterForeground`, re-resolve pre-emptively if past
+    /// `resolvedAt + expires - margin`". Note this is NOT ruling 20's rejected 50-minute live timer --
+    /// that was a periodic timer against a self-refreshing HLS manifest; this fires once, only on
+    /// return to the foreground, only when the URL is genuinely near expiry.
+    static func shouldPreemptivelyReResolve(_ state: StreamState, now: Date, margin: TimeInterval = 60) -> Bool {
+        guard let resolved = playable(state), let expiresAt = resolved.expiresAt else { return false }
+        return now >= expiresAt.addingTimeInterval(-margin)
+    }
+
+    /// CF-B1-3. Re-resolves in place if the above says so. Never hops out of the playable branch --
+    /// on ANY outcome, success or failure.
+    func reResolveIfExpiring(now: Date = Date()) async {
+        guard Self.shouldPreemptivelyReResolve(state, now: now) else { return }
+        // `showLoading: false` + `silent: true` are both load-bearing and are NOT the same flag:
+        // `showLoading: false` holds the playable branch on the way IN (a `.loading` hop dismantles
+        // PlayerHostView and drops the AVPlayer whose `currentTime()` carries the position);
+        // `silent: true` holds it on the way OUT (see `performResolve`). `handleRecoveryEvent` passes
+        // the first and not the second, because a genuine playback failure SHOULD surface.
+        // `resetBudget: false` so a pre-emptive refresh cannot refill the recovery budget.
+        await resolve(forceRefresh: true, kind: .proactiveTTLRefresh,
+                      resetBudget: false, showLoading: false, silent: true)
+    }
+
+    private func resolve(forceRefresh: Bool, kind: RequestKind, resetBudget: Bool = true,
+                         showLoading: Bool = true, silent: Bool = false) async {
         generation += 1
         let myGeneration = generation
         resolveTask?.cancel()
@@ -171,16 +255,20 @@ struct LiveStreamResolver: StreamResolving {
         // one): hand it a full budget. Recovery's own re-resolves must not refill their own budget.
         if resetBudget { recoveryBudget = RecoveryBudget() }
         if showLoading { state = .loading }
-        let task = Task { await self.performResolve(generation: myGeneration, forceRefresh: forceRefresh) }
+        let task = Task {
+            await self.performResolve(generation: myGeneration, forceRefresh: forceRefresh,
+                                      kind: kind, silent: silent)
+        }
         resolveTask = task
         await task.value
     }
 
-    private func performResolve(generation: Int, forceRefresh: Bool) async {
+    private func performResolve(generation: Int, forceRefresh: Bool, kind: RequestKind, silent: Bool) async {
         let result: StreamState
         do {
             let resolved = try await resolver.resolve(
-                args.videoId, purpose: .player, sourceChannelId: args.channelId, forceRefresh: forceRefresh)
+                args.videoId, purpose: .player, kind: kind,
+                sourceChannelId: args.channelId, forceRefresh: forceRefresh)
             result = Self.map(resolved)
         } catch {
             result = Self.map(error)
@@ -189,6 +277,15 @@ struct LiveStreamResolver: StreamResolving {
         // own resolve starts -- either signal alone is enough to discard a late/stale completion,
         // matching `HomeViewModel.fetchFirstPage`'s belt-and-suspenders check.
         guard !Task.isCancelled, generation == self.generation else { return }
+        // A silent (proactive TTL) refresh runs WHILE a healthy stream is playing -- that is why it
+        // skips the `.loading` hop. It must therefore never apply a non-playable result: a
+        // `RateLimitedResolver` cooldown or a network blip on foreground would otherwise knock a
+        // working player out of `PlayerScreen`'s `.ready`/`.rung2Progressive` branch, dismantle
+        // `PlayerHostView` and drop the `AVPlayer` carrying the position -- for a stream that is
+        // still perfectly playable. Dropping the result leaves the unexpired stream playing;
+        // reactive recovery (`handleRecoveryEvent`, which never passes `silent`) owns real failures,
+        // because by then the stream has actually stopped working.
+        if silent, !result.isPlayable { return }
         state = result
     }
 

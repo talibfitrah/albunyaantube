@@ -42,7 +42,8 @@ struct PlayerViewModelTests {
 
         var callCount: Int { calls.count }
 
-        func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                     sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
             calls.append((purpose, sourceChannelId, forceRefresh))
             // The outcome is picked by *registration* order (this call's index), not removed off a
             // shared queue after the gate -- otherwise a later, ungated call racing past a blocked
@@ -208,5 +209,147 @@ struct PlayerViewModelTests {
         await firstOpen.value // let the stale first call drain
 
         #expect(vm.state == .ready(Self.hls)) // unchanged by the late first-call completion
+    }
+
+    // MARK: - CF-B1-2: the rate-limiter gate (Task 6)
+
+    private func makeViewModel(resolver: any StreamResolving) -> PlayerViewModel {
+        PlayerViewModel(resolver: resolver, settings: makeSettings(), args: makeArgs())
+    }
+
+    @Test func aBlockedForceRefreshBecomesACooldownState() async {
+        let clock = FixedMonotonicClock(now: .seconds(0))
+        let resolver = RateLimitedResolver(wrapping: RecordingResolver(.hls),
+                                           rateLimiter: ExtractionRateLimiter(), clock: clock)
+        // Burn the per-video .player budget: 3 attempts in the 5-minute window, spaced past the 30s
+        // minimum interval so the earlier ones are `.allowed`, not `.delayed`.
+        for offset in [0, 40, 80] {
+            clock.now = .seconds(offset)
+            _ = try? await resolver.resolve("abc", purpose: .player, kind: .player,
+                                            sourceChannelId: nil, forceRefresh: true)
+        }
+        clock.now = .seconds(120)
+        do {
+            _ = try await resolver.resolve("abc", purpose: .player, kind: .player,
+                                           sourceChannelId: nil, forceRefresh: true)
+            #expect(Bool(false), "expected a cooldown")
+        } catch let error as ExtractionError {
+            guard case .cooldown(let until) = error else { return #expect(Bool(false), "expected .cooldown") }
+            #expect(until > Date())
+        } catch { #expect(Bool(false), "wrong error type") }
+    }
+
+    @Test func anUngatedOpenIsNeverRateLimited() async throws {
+        // A non-forced resolve may be a pure ManifestCache hit -- gating it would refuse a replay of a
+        // video the user watched 10 seconds ago (Android gates only its three force-refresh sites).
+        let inner = RecordingResolver(.hls)
+        let resolver = RateLimitedResolver(wrapping: inner, rateLimiter: ExtractionRateLimiter(),
+                                           clock: FixedMonotonicClock(now: .seconds(0)))
+        for _ in 0..<5 {
+            _ = try await resolver.resolve("abc", purpose: .player, kind: .player,
+                                           sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(inner.calls.count == 5)   // all five reached the resolver; none was refused
+    }
+
+    /// The limiter's own cooldown lands in `StreamState.cooldown`, which is exactly the state
+    /// `retry()` already refuses to re-enter while `until` is in the future -- so the gate cannot
+    /// lock the retry button against itself, and needs no unlock path of its own.
+    @Test func aRateLimiterCooldownDoesNotSelfLockRetry() async {
+        let clock = FixedMonotonicClock(now: .seconds(0))
+        let inner = RecordingResolver(.hls)
+        let vm = makeViewModel(resolver: RateLimitedResolver(wrapping: inner,
+                                                             rateLimiter: ExtractionRateLimiter(), clock: clock))
+        await vm.open()                                     // ungated: reaches the resolver, records nothing
+        for offset in [0, 40, 80] {                         // three forced attempts: the whole per-video budget
+            clock.now = .seconds(offset)
+            await vm.retry()
+        }
+        #expect(inner.calls.count == 4)
+
+        clock.now = .seconds(120)
+        await vm.retry()                                    // refused by the limiter
+        guard case .cooldown = vm.state else { return #expect(Bool(false), "expected .cooldown") }
+        #expect(inner.calls.count == 4)
+
+        await vm.retry()                                    // and the VM's own guard stops the next one dead
+        #expect(inner.calls.count == 4)
+    }
+
+    @Test func recoveryReResolvesUseTheAutoRecoveryLane() async {
+        let resolver = RecordingResolver(.hls)   // records every (kind, forceRefresh) pair
+        let model = makeViewModel(resolver: resolver)
+        await model.open()
+        await model.handleRecoveryEvent(.playbackError)
+        #expect(resolver.calls.first?.kind == .player)
+        #expect(resolver.calls.last?.kind == .autoRecovery)
+        #expect(resolver.calls.last?.forceRefresh == true)
+    }
+
+    // MARK: - CF-B1-3: the pre-emptive foreground re-resolve (Task 6)
+
+    @Test func foregroundReResolvesOnlyWhenTheStreamIsAboutToExpire() async {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let fresh = Resolved(stream: .hls(url: URL(string: "https://x/y.m3u8")!, isLive: false,
+                                          audioOnlyURL: nil, captionTracks: []),
+                             client: .visionos, userAgent: "UA", resolvedAt: now,
+                             expiresAt: now.addingTimeInterval(600))
+        let stale = Resolved(stream: fresh.stream, client: .visionos, userAgent: "UA",
+                             resolvedAt: now, expiresAt: now.addingTimeInterval(30))
+        #expect(PlayerViewModel.shouldPreemptivelyReResolve(.ready(fresh), now: now) == false)
+        #expect(PlayerViewModel.shouldPreemptivelyReResolve(.ready(stale), now: now) == true)
+        #expect(PlayerViewModel.shouldPreemptivelyReResolve(.loading, now: now) == false)
+    }
+
+    @Test func aPreemptiveReResolveNeverLeavesThePlayableBranch() async {
+        // LOAD-BEARING: `.ready` and `.rung2Progressive` share one SwiftUI branch; a `.loading` hop
+        // would dismantle PlayerHostView and drop the AVPlayer carrying the position. `RecordingResolver`
+        // holds its answer until released, so the state can be observed WHILE the re-resolve is in
+        // flight -- the exact window a `.loading` hop would show in.
+        let resolver = RecordingResolver(.hls, holdsUntilReleased: true)
+        let model = makeViewModel(resolver: resolver)
+        resolver.release()
+        await model.open()
+        let task = Task { await model.reResolveIfExpiring(now: Date.distantFuture) }
+        await resolver.waitUntilCalled(count: 2)
+        #expect(model.state.isPlayable)          // mid-flight: still the playable branch
+        resolver.release()
+        await task.value
+        #expect(model.state.isPlayable)          // and after
+        #expect(resolver.calls.last?.kind == .proactiveTTLRefresh)
+    }
+
+    @Test func aFailedPreemptiveReResolveLeavesTheHealthyStreamPlaying() async {
+        // THE FAILURE PATH, and the reason `silent:` exists. A proactive refresh that throws (a
+        // RateLimitedResolver cooldown, or a network blip on foreground) must NOT demote a player
+        // that is still happily playing an unexpired stream: `state` is left exactly as it was, so
+        // PlayerScreen's playable branch keeps its view identity and PlayerHostView is not rebuilt.
+        for failure in [ExtractionError.cooldown(until: Date().addingTimeInterval(600)),
+                        ExtractionError.transport("blip"),
+                        ExtractionError.unavailable(videoId: "abc")] {
+            let resolver = RecordingResolver(.hls)
+            let model = makeViewModel(resolver: resolver)
+            await model.open()
+            guard case .ready(let opened) = model.state else { return #expect(Bool(false), "expected .ready") }
+
+            resolver.outcome = .failure(failure)
+            await model.reResolveIfExpiring(now: Date.distantFuture)
+
+            // Same state, same associated `Resolved` -- not merely "still playable".
+            guard case .ready(let after) = model.state else { return #expect(Bool(false), "state was demoted") }
+            #expect(after.resolvedAt == opened.resolvedAt)
+            #expect(resolver.calls.last?.kind == .proactiveTTLRefresh)
+        }
+    }
+
+    @Test func reactiveRecoveryStillSurfacesFailures() async {
+        // The other half of the rule: `silent:` must NOT leak into recovery. When the stream has
+        // genuinely stopped working, a failed re-resolve is still allowed to land a failure state.
+        let resolver = RecordingResolver(.hls)
+        let model = makeViewModel(resolver: resolver)
+        await model.open()
+        resolver.outcome = .failure(.unavailable(videoId: "abc"))
+        await model.handleRecoveryEvent(.playbackError)
+        #expect(model.state == .contentUnavailable)
     }
 }

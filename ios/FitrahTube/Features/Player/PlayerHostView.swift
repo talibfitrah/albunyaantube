@@ -105,12 +105,19 @@ struct PlayerHostView: UIViewControllerRepresentable {
         background.backgroundPlay = model.backgroundPlay
         background.userAudioOnly = model.audioOnly
         background.audioOnlyAvailable = PlayerViewModel.audioOnlyAvailable(for: state)
-        // Fix round 1, C2: the `state`/`player` the handler swaps against are captured HERE, on the
-        // same pass that read them, and this closure is REASSIGNED on every pass -- so a re-resolve
-        // or an item swap can never leave the handler working from a stale pair.
-        let liveState = state
+        // Fix round 1, C2: the handler must never swap against a stale `state`. It is REASSIGNED
+        // on every pass, and it reads `model.state` at ACTION time rather than capturing this
+        // pass's copy -- Task 6's pre-emptive re-resolve settles between the foreground
+        // notification and the `.restoreVideo` it produces, and SwiftUI has not re-run this method
+        // by then, so a captured copy would restore the very URL the refresh just replaced.
         background.onPolicyAction = { [weak model, weak player] action in
-            Self.applyPolicyAction(action, state: liveState, player: player, model: model)
+            guard let model else { return }
+            Self.applyPolicyAction(action, state: model.state, player: player, model: model)
+        }
+        // CF-B1-3: awaited by the controller BEFORE the foreground policy runs (and skipped while
+        // PiP is live), so the restore above builds its item from the freshly resolved stream.
+        background.onWillEnterForeground = { [weak model] in
+            await model?.reResolveIfExpiring()
         }
         background.attach(player: player)
     }

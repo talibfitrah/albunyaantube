@@ -347,7 +347,11 @@ struct PlayerScreen: View {
             return FixturePlayerResolver()
         }
         #endif
-        return LiveStreamResolver(resolver: container.resolver)
+        // The `#if DEBUG` fixture resolvers above are returned UNWRAPPED -- the screenshot rig must
+        // never be rate limited.
+        return RateLimitedResolver(wrapping: LiveStreamResolver(resolver: container.resolver),
+                                   rateLimiter: container.innerTube.rateLimiter,
+                                   clock: container.monotonicClock)
     }
 }
 
@@ -358,7 +362,8 @@ struct PlayerScreen: View {
 /// asset and no network. `AVPlayer` plays the local file identically either way; only this app's
 /// own state-mapping tag differs.
 private struct FixtureHLSPlayerResolver: StreamResolving {
-    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
@@ -372,7 +377,8 @@ private struct FixtureHLSPlayerResolver: StreamResolving {
 /// `PlayerViewModel.audioOnlyAvailable` gates the audio-only toggle on. No real itag 140 stream
 /// (and no network) is needed to capture the audio-only surface.
 private struct FixtureAudioOnlyResolver: StreamResolving {
-    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
@@ -387,7 +393,8 @@ private struct FixtureAudioOnlyResolver: StreamResolving {
 /// which AVPlayer plays natively without an HLS manifest -- `PlayerScreen` routes `.rung2Progressive`
 /// through the same `PlayerHostView` as `.ready`, so this still exercises the real playback path.
 private struct FixturePlayerResolver: StreamResolving {
-    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
@@ -399,7 +406,8 @@ private struct FixturePlayerResolver: StreamResolving {
 /// Task 9 screenshot rig: `.transport` maps to `.error(messageKey: "player_error_message")` --
 /// the real error path a network failure takes, exercised here with no network at all.
 private struct FixtureErrorResolver: StreamResolving {
-    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         throw ExtractionError.transport("fixture error")
     }
 }
@@ -407,7 +415,8 @@ private struct FixtureErrorResolver: StreamResolving {
 /// Task 9 screenshot rig: `.unavailable` maps to `.contentUnavailable` (ruling 14: one
 /// non-retryable "not playable" surface for every terminal not-available reason).
 private struct FixtureUnavailableResolver: StreamResolving {
-    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         throw ExtractionError.unavailable(videoId: videoId)
     }
 }
@@ -415,7 +424,8 @@ private struct FixtureUnavailableResolver: StreamResolving {
 /// Task 9 screenshot rig: `.cooldown(until:)` maps straight through to `StreamState.cooldown`.
 /// 45s out so the captured frame always shows a non-trivial countdown.
 private struct FixtureCooldownResolver: StreamResolving {
-    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         throw ExtractionError.cooldown(until: Date().addingTimeInterval(45))
     }
 }
