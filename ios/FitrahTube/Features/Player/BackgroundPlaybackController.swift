@@ -8,9 +8,13 @@ import UIKit
 @MainActor final class BackgroundPlaybackController {
     var backgroundPlay: Bool { didSet { applyBackgroundPolicy() } }
     var pictureInPictureActive = false { didSet { applyBackgroundPolicy() } }
-    /// Task 3 sets this; Task 2 only needs it to build the policy context.
+    /// The player's live audio-only toggle (`PlayerViewModel.audioOnly`), fed on every host update.
     var userAudioOnly = false
-    /// Task 3 owns the swap itself. Left nil here, the swap actions are no-ops.
+    /// Whether the resolved stream carries an itag 140 URL at all (`PlayerViewModel.audioOnlyAvailable`).
+    /// Defaults to false so a controller nobody has told yet never decides a swap it cannot honour.
+    var audioOnlyAvailable = false
+    /// `PlayerHostView` performs the swap itself (through the VM's `audioOnly`). Left nil, the swap
+    /// actions only move this controller's own `autoSwappedToAudioOnly` flag.
     var onPolicyAction: ((PlaybackPolicyAction) -> Void)?
 
     private weak var player: AVPlayer?
@@ -94,6 +98,7 @@ import UIKit
 
     private var context: PlaybackPolicyContext {
         PlaybackPolicyContext(backgroundPlay: backgroundPlay, userAudioOnly: userAudioOnly,
+                              audioOnlyAvailable: audioOnlyAvailable,
                               pictureInPictureActive: pictureInPictureActive,
                               wasPlayingBeforeInterruption: wasPlayingBeforeInterruption,
                               autoSwappedToAudioOnly: autoSwappedToAudioOnly)

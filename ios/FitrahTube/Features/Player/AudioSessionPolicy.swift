@@ -17,6 +17,12 @@ enum BackgroundPolicy: Equatable, Sendable { case continues, pauses }
 struct PlaybackPolicyContext: Equatable, Sendable {
     var backgroundPlay: Bool
     var userAudioOnly: Bool
+    /// Whether the live stream actually HAS a separate audio rendition (`Resolved.hls.audioOnlyURL`,
+    /// i.e. rung 1 only). The automatic swap is gated here, at the source, rather than declined by
+    /// the controller: `handle()` flips `autoSwappedToAudioOnly` the moment `.swapToAudioOnly` is
+    /// decided, so an action the player cannot honour would come back as a spurious `.restoreVideo`
+    /// on the next foreground.
+    var audioOnlyAvailable: Bool
     var pictureInPictureActive: Bool
     var wasPlayingBeforeInterruption: Bool
     var autoSwappedToAudioOnly: Bool
@@ -33,7 +39,8 @@ enum AudioSessionPolicy {
             // Ruling 34's "background-play OFF pauses" is delivered by `backgroundPolicy` below --
             // AVFoundation's own policy fires before app suspension and already exempts PiP and
             // AirPlay, which a hand-rolled `player.pause()` racing suspension would not.
-            guard context.backgroundPlay, !context.pictureInPictureActive, !context.userAudioOnly else { return .none }
+            guard context.backgroundPlay, context.audioOnlyAvailable,
+                  !context.pictureInPictureActive, !context.userAudioOnly else { return .none }
             return .swapToAudioOnly
         case .willEnterForeground:
             // Never `.resume`: a pause the user made before backgrounding must survive

@@ -1,6 +1,5 @@
 import Foundation
 import InnerTubeKit
-import SwiftData
 import Testing
 @testable import FitrahTube
 
@@ -19,18 +18,12 @@ struct PlayerViewModelTests {
 
     private func makeArgs() -> PlayerArgs { PlayerArgs(videoId: "abcdefghijk", channelId: "ch1") }
 
-    private func makeFavorites() -> SwiftDataFavoritesStore {
-        let container = try! ModelContainer(for: FavoriteVideo.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
-        return SwiftDataFavoritesStore(modelContainer: container)
-    }
-
     private func makeSettings() -> UserDefaultsSettingsStore {
         UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "PlayerViewModelTests.\(UUID().uuidString)")!)
     }
 
     private func makeViewModel(resolver: FakeResolver, args: PlayerArgs? = nil) -> PlayerViewModel {
-        PlayerViewModel(resolver: resolver, catalog: FakeCatalogClient(), favorites: makeFavorites(),
-                         settings: makeSettings(), args: args ?? makeArgs())
+        PlayerViewModel(resolver: resolver, settings: makeSettings(), args: args ?? makeArgs())
     }
 
     /// Scripts a queue of `resolve` outcomes and records each call's params. `gatedCallIndex`
@@ -121,6 +114,39 @@ struct PlayerViewModelTests {
         let vm = makeViewModel(resolver: FakeResolver(outcomes: [.failure(error)]))
         await vm.open()
         #expect(vm.state == .error(messageKey: "player_error_message"))
+    }
+
+    // MARK: - Ruling 34: the Settings "Audio only" value seeds a session-only toggle
+
+    @Test func audioOnlyIsSeededFromTheSettingAndIsSessionOnly() {
+        let settings = makeSettings()
+        settings.audioOnly = true
+        let model = PlayerViewModel(resolver: FakeResolver(outcomes: []), settings: settings, args: makeArgs())
+        #expect(model.audioOnly == true)
+
+        model.audioOnly = false
+
+        #expect(settings.audioOnly == true)   // ruling 34 seeds; it never writes back (player.md §5)
+    }
+
+    @Test func backgroundPlayIsReadLiveFromTheSetting() {
+        let settings = makeSettings()
+        let model = PlayerViewModel(resolver: FakeResolver(outcomes: []), settings: settings, args: makeArgs())
+        #expect(model.backgroundPlay == true)   // store default
+
+        settings.backgroundPlay = false
+
+        #expect(model.backgroundPlay == false)  // read live, not captured at init
+    }
+
+    @Test func audioOnlyIsOfferedOnlyWhenTheResolvedStreamHasAnAudioTrack() {
+        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
+        let withAudio = Self.resolved(.hls(url: video, isLive: false,
+                                           audioOnlyURL: URL(string: "https://r1.example.com/a140")!, captionTracks: []))
+        #expect(PlayerViewModel.audioOnlyAvailable(for: .ready(withAudio)) == true)
+        #expect(PlayerViewModel.audioOnlyAvailable(for: .ready(Self.hls)) == false)   // rung 1, no itag 140
+        #expect(PlayerViewModel.audioOnlyAvailable(for: .rung2Progressive(Self.progressive)) == false)
+        #expect(PlayerViewModel.audioOnlyAvailable(for: .loading) == false)
     }
 
     // MARK: - CF-B1: cooldown never retries into itself

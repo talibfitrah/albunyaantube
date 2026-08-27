@@ -117,6 +117,43 @@ struct PlayerHostTests {
         #expect(asset.url == secondURL)
     }
 
+    // MARK: - Task 3: audio-only URL selection and the same-player swap
+
+    @Test func audioOnlySelectsTheItag140URL() {
+        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
+        let audio = URL(string: "https://r1.googlevideo.com/a140")!
+        let stream = ResolvedStream.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])
+        #expect(PlayerHostView.streamURL(stream, audioOnly: false) == video)
+        #expect(PlayerHostView.streamURL(stream, audioOnly: true) == audio)
+    }
+
+    @Test func audioOnlyFallsBackToVideoWhenNoAudioTrackExists() {
+        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
+        let stream = ResolvedStream.hls(url: video, isLive: false, audioOnlyURL: nil, captionTracks: [])
+        #expect(PlayerHostView.streamURL(stream, audioOnly: true) == video)
+        let progressive = ResolvedStream.progressive(url: video, label: "360p")
+        #expect(PlayerHostView.streamURL(progressive, audioOnly: true) == video)
+    }
+
+    @Test func togglingAudioOnlyReplacesTheItemAndKeepsThePlayer() throws {
+        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
+        let audio = URL(string: "https://r1.googlevideo.com/a140")!
+        let resolved = Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: []))
+        let state = StreamState.ready(resolved)
+        let first = PlayerHostView.player(for: state, replacing: nil, audioOnly: false)
+
+        let second = PlayerHostView.player(for: state, replacing: first, audioOnly: true)
+
+        #expect(second === first)  // same AVPlayer -- position carries via replaceCurrentItem + seek
+        let asset = try #require(second?.currentItem?.asset as? AVURLAsset)
+        #expect(asset.url == audio)
+    }
+
+    @Test func audioOnlyAssetCarriesTheResolvedUserAgent() {
+        // The itag 140 URL is IP+UA-bound exactly like the manifest; a bare asset 403s.
+        #expect(PlayerHostView.assetOptions(userAgent: "UA")[AVURLAssetHTTPUserAgentKey] as? String == "UA")
+    }
+
     // MARK: - A non-playable state tears playback down instead of leaving a stale player
 
     @Test func transitioningToANonPlayableStatePausesTheExistingPlayer() {

@@ -27,8 +27,8 @@ struct PlayerScreen: View {
         }
         .task {
             guard model == nil else { return }
-            let vm = PlayerViewModel(resolver: Self.resolver(container: container), catalog: container.catalog,
-                                      favorites: container.favorites, settings: container.settings, args: args)
+            let vm = PlayerViewModel(resolver: Self.resolver(container: container),
+                                      settings: container.settings, args: args)
             model = vm
             await vm.open()
             #if DEBUG
@@ -76,7 +76,22 @@ struct PlayerScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ZStack(alignment: .topTrailing) {
-                        PlayerHostView(state: state, quality: model.selectedQuality, model: model)
+                        PlayerHostView(state: state, quality: model.selectedQuality,
+                                       audioOnly: model.audioOnly, model: model)
+                        if model.audioOnly {
+                            // Android shows `player_status_audio_only` as its status line
+                            // (`PlayerFragment.kt:2092`); on iOS the video surface is a black
+                            // rectangle while audio-only, so the same string fills it.
+                            // `allowsHitTesting(false)`: this is chrome, not a control -- a tap on
+                            // the surface still reaches the AVKit host underneath.
+                            Text(String(localized: "player_status_audio_only"))
+                                .font(.subheadline)
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(Color.black)
+                                .allowsHitTesting(false)
+                                .accessibilityIdentifier("player.audioOnlyPill")
+                        }
                         // I8 (B1 final review): a mid-play rung-2 demotion empties `tracks` and
                         // hides the captions menu -- but the selection survives (session-only
                         // state, deliberately), so the overlay used to keep rendering cues with no
@@ -86,16 +101,25 @@ struct PlayerScreen: View {
                             CaptionOverlay(model: model, track: selected, userAgent: resolved.userAgent)
                         }
                         VStack(alignment: .trailing, spacing: 8) {
-                            // Quality control on rung 1 only -- rung 2 (progressive, single
-                            // rendition) hides it entirely per spec §10 ("Rung 2 hides the
-                            // control") and shows the persistent pill instead.
-                            if isRung1 {
-                                qualityMenu(model)
-                            } else {
-                                rung2Pill
+                            // While audio-only there is no video rendition to cap, no subtitle
+                            // track and no alternate audible group on an m4a item -- every one of
+                            // these controls would be inert, so none of them is shown. The
+                            // audio-only button itself stays, so the user can get back out.
+                            if !model.audioOnly {
+                                // Quality control on rung 1 only -- rung 2 (progressive, single
+                                // rendition) hides it entirely per spec §10 ("Rung 2 hides the
+                                // control") and shows the persistent pill instead.
+                                if isRung1 {
+                                    qualityMenu(model)
+                                } else {
+                                    rung2Pill
+                                }
+                                AudioLanguageMenu(model: model)
+                                captionsMenu(model, tracks: tracks)
                             }
-                            AudioLanguageMenu(model: model)
-                            captionsMenu(model, tracks: tracks)
+                            if PlayerViewModel.audioOnlyAvailable(for: state) {
+                                audioOnlyButton(model)
+                            }
                         }
                         .padding()
                     }
@@ -166,6 +190,27 @@ struct PlayerScreen: View {
         // comment), matching the brief's own "Quality, Auto" example verbatim.
         .accessibilityLabel(String(localized: "player_quality_selector"))
         .accessibilityValue(model.selectedQuality.label)
+    }
+
+    /// The audio-only toggle (ruling 34, spec §10). Offered only while the resolved stream really
+    /// carries an itag 140 rendition (`PlayerViewModel.audioOnlyAvailable`) -- rung 2's muxed
+    /// progressive has no separate audio, and neither does `.embed`/live.
+    /// `.accessibilityAddTraits(.isSelected)`, not an `accessibilityValue`: no existing string key
+    /// carries generic on/off wording (the favorite button uses two DISTINCT labels because it
+    /// changes meaning; this one does not), and B2 adds no new keys. The selected trait is what
+    /// VoiceOver reads for a toggle button.
+    private func audioOnlyButton(_ model: PlayerViewModel) -> some View {
+        Button {
+            model.audioOnly.toggle()
+        } label: {
+            Image(systemName: model.audioOnly ? "headphones.circle.fill" : "headphones")
+                .foregroundStyle(.white)
+                .padding(10)
+                .background(.black.opacity(0.55), in: Circle())
+        }
+        .accessibilityIdentifier("player.audioOnly.button")
+        .accessibilityLabel(String(localized: "player_audio_only_label"))
+        .accessibilityAddTraits(model.audioOnly ? [.isSelected] : [])
     }
 
     /// The captions toggle (spec §10 Captions paragraph; plan §6.5) -- own SwiftUI control, same
@@ -278,6 +323,9 @@ struct PlayerScreen: View {
     /// other debug hook in this app (`FitrahTubeApp.swift`).
     private static func resolver(container: AppContainer) -> any StreamResolving {
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-audio-only") {
+            return FixtureAudioOnlyResolver()
+        }
         if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-hls") {
             return FixtureHLSPlayerResolver()
         }
@@ -313,6 +361,20 @@ private struct FixtureHLSPlayerResolver: StreamResolving {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
         return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []),
+                         client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+    }
+}
+
+/// B2 task 3 screenshot rig: the same bundled fixture as `FixtureHLSPlayerResolver`, but with a
+/// non-nil `audioOnlyURL` (the same local clip -- AVPlayer plays it either way), which is what
+/// `PlayerViewModel.audioOnlyAvailable` gates the audio-only toggle on. No real itag 140 stream
+/// (and no network) is needed to capture the audio-only surface.
+private struct FixtureAudioOnlyResolver: StreamResolving {
+    func resolve(_ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
+            throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
+        }
+        return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: url, captionTracks: []),
                          client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
 }

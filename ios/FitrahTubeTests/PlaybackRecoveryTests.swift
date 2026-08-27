@@ -1,6 +1,5 @@
 import Foundation
 import InnerTubeKit
-import SwiftData
 import Testing
 @testable import FitrahTube
 
@@ -259,12 +258,9 @@ struct PlaybackRecoveryTests {
     }
 
     @MainActor private func makeViewModel(_ resolver: FakeResolver) -> PlayerViewModel {
-        let container = try! ModelContainer(for: FavoriteVideo.self,
-                                            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
-        return PlayerViewModel(resolver: resolver, catalog: FakeCatalogClient(),
-                               favorites: SwiftDataFavoritesStore(modelContainer: container),
-                               settings: UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "PlaybackRecoveryTests.\(UUID().uuidString)")!),
-                               args: PlayerArgs(videoId: "abcdefghijk", channelId: "ch1"))
+        PlayerViewModel(resolver: resolver,
+                        settings: UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "PlaybackRecoveryTests.\(UUID().uuidString)")!),
+                        args: PlayerArgs(videoId: "abcdefghijk", channelId: "ch1"))
     }
 
     @Test @MainActor func recoveryReResolvesWithForceRefreshAndPublishesTheFreshStream() async {

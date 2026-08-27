@@ -56,14 +56,18 @@ struct LiveStreamResolver: StreamResolving {
     /// never persisted.
     var selectedCaptionTrack: CaptionTrack?
 
+    /// Ruling 34: the Settings "Audio only" value SEEDS this per-session toggle (Android's settings
+    /// value is written and never read -- player.md §15, defect). Session-only after seeding:
+    /// flipping it here never writes back to `SettingsStore`, matching Android's own non-persisted
+    /// toggle (player.md §5, "Not persisted; resets with the ViewModel").
+    var audioOnly: Bool
+
     /// Guards the one-time "auto-enable the first track when VoiceOver's closed-captioning
     /// setting is on" default (spec §10) so it never fights a later manual "Off" pick across
     /// re-renders of the same session.
     var captionsAutoEnableApplied = false
 
     private let resolver: any StreamResolving
-    private let catalog: any CatalogClient
-    private let favorites: any FavoritesStore
     private let settings: any SettingsStore
     private let args: PlayerArgs
 
@@ -72,13 +76,27 @@ struct LiveStreamResolver: StreamResolving {
     private var recoveryBudget = RecoveryBudget()
     private var isRecovering = false
 
-    init(resolver: any StreamResolving, catalog: any CatalogClient, favorites: any FavoritesStore,
-         settings: any SettingsStore, args: PlayerArgs) {
+    /// M4 (B1 final review): `catalog` and `favorites` were stored and never read -- `PlayerToolbar`
+    /// reaches favorites through the environment container on its own, and nothing in the player
+    /// touches the catalog.
+    init(resolver: any StreamResolving, settings: any SettingsStore, args: PlayerArgs) {
         self.resolver = resolver
-        self.catalog = catalog
-        self.favorites = favorites
         self.settings = settings
         self.args = args
+        self.audioOnly = settings.audioOnly
+    }
+
+    /// The Settings "Background play" value, read live so a change made in Settings while the player
+    /// is open takes effect on the next background transition (ruling 34).
+    var backgroundPlay: Bool { settings.backgroundPlay }
+
+    /// Audio-only needs a real itag 140 URL. Rung 2 (a single muxed 360p progressive) has none, so
+    /// the toggle is hidden there -- the same "hide the control that has no backing" rule spec §10
+    /// applies to the quality control on rung 2.
+    static func audioOnlyAvailable(for state: StreamState) -> Bool {
+        guard case .ready(let resolved) = state,
+              case .hls(_, _, let audioOnlyURL, _) = resolved.stream else { return false }
+        return audioOnlyURL != nil
     }
 
     func open() async {

@@ -175,6 +175,23 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$STATE_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 
+# Plan B2 task 3 (audio-only): the audio-only status surface with the quality/captions/language
+# controls gone -- `-fitrah-fake-player-audio-only` resolves the bundled fixture WITH an
+# `audioOnlyURL`, which is what gates the toggle.
+AUDIO_ONLY_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b2-background-audio/screenshots/b2-task3"
+echo "== player audio-only screenshot -> $AUDIO_ONLY_OUT =="
+rm -rf "${AUDIO_ONLY_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$AUDIO_ONLY_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerAudioOnly \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
 # Task 10 (iPad / RTL / Dynamic Type / VoiceOver pass): iPhone leg (en portrait, en landscape
 # with metadata hidden, ar portrait, en .accessibility3 portrait) then the iPad leg (en portrait,
 # en landscape, proving the content column stays capped at Size.playerMaxWidth). Both legs share

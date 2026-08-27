@@ -14,12 +14,17 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// applied to every item this view builds or reuses, per task 4's "on pick and on each new
     /// prepare" contract.
     let quality: QualityOption
+    /// `PlayerViewModel.audioOnly` (ruling 34): swaps the built item's URL to the resolved stream's
+    /// itag 140 rendition. A flip yields a DIFFERENT url, so `player(for:replacing:audioOnly:)`'s
+    /// existing identity check already gives Android's behaviour -- an audio-mode change counts as a
+    /// quality switch, position preserved (`PlayerFragment.kt:2841-2842`).
+    let audioOnly: Bool
     /// Task 5's hand-off target: every (re)build/update publishes the live item to
     /// `model.currentItem` so `AudioLanguageMenu` (a SwiftUI overlay with no view-hierarchy access
     /// to the AVKit-managed item) can read/select its audible options.
     let model: PlayerViewModel
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(backgroundPlay: model.backgroundPlay) }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
@@ -27,7 +32,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // ponytail: B1 never turns PiP on (App Review flags autoplay-into-PiP as a review risk);
         // B2 (plan §6.5 "Background audio"/"PiP") flips this to true.
         controller.allowsPictureInPicturePlayback = false
-        controller.player = Self.player(for: state, replacing: nil)
+        controller.player = Self.player(for: state, replacing: nil, audioOnly: audioOnly)
         applyBackgroundController(to: controller, context: context)
         applyQuality(to: controller, context: context)
         applyAudioLanguageHandoff(to: controller)
@@ -37,7 +42,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
-        controller.player = Self.player(for: state, replacing: controller.player)
+        controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly)
         applyBackgroundController(to: controller, context: context)
         applyQuality(to: controller, context: context)
         applyAudioLanguageHandoff(to: controller)
@@ -83,7 +88,25 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// live now. `attach` no-ops on an unchanged player, so this is safe on every update pass.
     private func applyBackgroundController(to controller: AVPlayerViewController, context: Context) {
         guard let player = controller.player else { return }
-        context.coordinator.background.attach(player: player)
+        let background = context.coordinator.background
+        // Read live on every pass (ruling 34): a Background-play flip made in Settings while the
+        // player is open must take effect on the next background transition, not on the next launch.
+        background.backgroundPlay = model.backgroundPlay
+        background.userAudioOnly = model.audioOnly
+        background.audioOnlyAvailable = PlayerViewModel.audioOnlyAvailable(for: state)
+        background.onPolicyAction = { [weak model] action in
+            // ponytail: an automatic background swap costs one re-buffer going in and one coming
+            // out (both are local URL swaps, no network). Accepted: spec §10 asks for the itag 140
+            // swap on background so the phone stops pulling video segments off-screen. Skipped: the
+            // "or when backgrounded on cellular" variant from plan §6.5 -- the setting already
+            // carries user intent.
+            switch action {
+            case .swapToAudioOnly: model?.audioOnly = true
+            case .restoreVideo: model?.audioOnly = false
+            default: break
+            }
+        }
+        background.attach(player: player)
     }
 
     private static func isLive(_ state: StreamState) -> Bool {
@@ -138,7 +161,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
         /// The audio session / background-playback owner (CF-B1-1). Lives here rather than in the
         /// representable struct because it must survive every `updateUIViewController` pass.
-        let background = BackgroundPlaybackController(backgroundPlay: true)   // Task 3 feeds the real setting
+        let background: BackgroundPlaybackController
 
         /// Strong, and deliberately so: `dismantleUIViewController` is `static` and gets only the
         /// controller + this coordinator, so this is the sole route back to the VM's hand-off slots
@@ -154,7 +177,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// All the watchdog's state and every decision it makes (fix round 1, C1).
         private var watchdog = StallWatchdog()
 
-        init() {
+        init(backgroundPlay: Bool) {
+            background = BackgroundPlaybackController(backgroundPlay: backgroundPlay)
             path = monitor.currentPath
             monitor.pathUpdateHandler = { [weak self] newPath in
                 MainActor.assumeIsolated {
@@ -254,8 +278,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// resolved URL (an unrelated state change -- e.g. a later task's recovery counters -- must not
     /// restart playback). Ruling 32 (session-only resume): `replacing`'s `currentTime()` carries into
     /// the replacement item; nothing here persists past this `AVPlayer`'s own lifetime.
-    static func player(for state: StreamState, replacing existing: AVPlayer?) -> AVPlayer? {
-        guard let resolved = resolvedStream(for: state), let url = streamURL(resolved.stream) else {
+    static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false) -> AVPlayer? {
+        guard let resolved = resolvedStream(for: state),
+              let url = streamURL(resolved.stream, audioOnly: audioOnly) else {
             existing?.pause()
             return nil
         }
@@ -311,11 +336,19 @@ struct PlayerHostView: UIViewControllerRepresentable {
         }
     }
 
-    private static func streamURL(_ stream: ResolvedStream) -> URL? {
+    /// Not private: `PlayerHostTests` pins the audio-only selection directly.
+    static func streamURL(_ stream: ResolvedStream, audioOnly: Bool = false) -> URL? {
         switch stream {
-        case .hls(let url, _, _, _): return url
-        case .progressive(let url, _): return url
-        case .embed, .openInYouTube: return nil // B3
+        case .hls(let url, _, let audioOnlyURL, _):
+            // The `?? url` fallback is belt-and-braces: `PlayerViewModel.audioOnlyAvailable` hides
+            // the toggle (and gates the automatic swap) when there is no itag 140 URL, so a true
+            // `audioOnly` with a nil rendition should be unreachable -- and if it ever is reached,
+            // video is the right thing to keep playing.
+            return audioOnly ? (audioOnlyURL ?? url) : url
+        case .progressive(let url, _):
+            return url   // rung 2 has no separate audio rendition; the toggle is hidden there anyway
+        case .embed, .openInYouTube:
+            return nil // B3
         }
     }
 }

@@ -4,9 +4,10 @@ import Testing
 
 @MainActor struct AudioSessionPolicyTests {
     private func context(backgroundPlay: Bool = true, userAudioOnly: Bool = false,
-                         pip: Bool = false, wasPlaying: Bool = true,
+                         audioOnlyAvailable: Bool = true, pip: Bool = false, wasPlaying: Bool = true,
                          autoSwapped: Bool = false) -> PlaybackPolicyContext {
         PlaybackPolicyContext(backgroundPlay: backgroundPlay, userAudioOnly: userAudioOnly,
+                              audioOnlyAvailable: audioOnlyAvailable,
                               pictureInPictureActive: pip, wasPlayingBeforeInterruption: wasPlaying,
                               autoSwappedToAudioOnly: autoSwapped)
     }
@@ -26,6 +27,14 @@ import Testing
 
     @Test func backgroundingDoesNotSwapWhenTheUserAlreadyChoseAudioOnly() {
         #expect(AudioSessionPolicy.decide(.enteredBackground, context(userAudioOnly: true)) == .none)
+    }
+
+    /// The swap is gated at the SOURCE, not declined at the receiver: `handle()` sets
+    /// `autoSwappedToAudioOnly` the moment `.swapToAudioOnly` is decided, so a swap the player
+    /// cannot honour (rung 2, or a rung-1 stream YouTube gave no itag 140 for) would come back as a
+    /// spurious `.restoreVideo` on the next foreground. The policy must never emit it.
+    @Test func backgroundingDoesNotSwapWhenTheStreamHasNoAudioOnlyURL() {
+        #expect(AudioSessionPolicy.decide(.enteredBackground, context(audioOnlyAvailable: false)) == .none)
     }
 
     @Test func foregroundRestoresVideoOnlyAfterAnAutomaticSwap() {

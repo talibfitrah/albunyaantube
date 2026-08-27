@@ -266,6 +266,30 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-rung2-pill", into: directory)
     }
 
+    /// Plan B2 task 3: the audio-only toggle (`player.audioOnly.button`, ruling 34). Offered only
+    /// when the resolved stream carries an itag 140 rendition, so this uses
+    /// `-fitrah-fake-player-audio-only` (the bundled fixture tagged `.hls` WITH a non-nil
+    /// `audioOnlyURL`). Tapping it must raise the audio-only status surface
+    /// (`player.audioOnlyPill`) and take the quality/captions/audio-language controls away -- on an
+    /// m4a item every one of them would be inert.
+    func testPlayerAudioOnly() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-audio-only",
+                            arguments: ["-fitrah-fake-player-audio-only", "-fitrah-route", "player", "fixture-video"],
+                            anchor: .element("Video"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let content = element(for: screen.anchor, in: app)
+        XCTAssertTrue(content.waitForExistence(timeout: 20), "player-audio-only: AVPlayerViewController's content view never appeared")
+        let button = app.buttons["player.audioOnly.button"]
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "player-audio-only: the audio-only button never appeared")
+        button.tap()
+        let pill = app.staticTexts["player.audioOnlyPill"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), "player-audio-only: the audio-only status surface never appeared")
+        XCTAssertFalse(app.buttons["player.qualityMenu.button"].exists, "player-audio-only: the quality control must be hidden while audio-only")
+        try write(named: "player-audio-only", into: directory)
+    }
+
     /// Plan B1 task 8: metadata panel + toolbar below the player. `-fitrah-route player` now seeds
     /// title/channel/description/views (`FitrahTubeApp.pushDebugRouteIfRequested`), so the
     /// screenshot shows real content, not an empty panel. Anchors on the favorite button (proves
