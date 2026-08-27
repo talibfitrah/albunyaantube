@@ -1,0 +1,30 @@
+ios/FitrahTubeTests/PlayerHostTests.swift
+  s_66ddb7c44de816::t_583edba07e3811 158-198
+ios/FitrahTube/Features/Player/BackgroundPlaybackController.swift
+  s_66ddb7c44de816::t_9f217c1527ddcf 191-203,278-284
+ios/FitrahTubeTests/BackgroundPlaybackControllerTests.swift
+  s_66ddb7c44de816::t_19a4bbaaee72b2 72-80,99-100
+  s_66ddb7c44de816::t_59c6735980fa61 2,149-190
+  s_66ddb7c44de816::t_20771fc94f6001 30-33,39
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_66ddb7c44de816::t_2895dc93746f2c 134-135,245,321-324
+  s_66ddb7c44de816::t_490bfff2c77532 137-167,279-282,420-425
+ios/FitrahTube/DesignSystem/Components.swift
+  s_66ddb7c44de816::t_20771fc94f6001 65-74,76-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ae7ce62a4a37bbb9f4932f5820b4584bc4cafc7e",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
