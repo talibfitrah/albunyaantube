@@ -1,0 +1,45 @@
+ios/FitrahTubeUITests/ScreenshotTests.swift
+  s_66ddb7c44de816::t_d49628a0fe61f4 351-360,367-368,370-373,375-387,389-393,395-423
+  s_66ddb7c44de816::t_f4067bc6748240 361-366,369,374,388,394
+ios/FitrahTube/Features/Player/PlayerStateView.swift
+  s_66ddb7c44de816::t_8881cd0530b390 98-102,106-115,119-124
+ios/scripts/convert-strings.py
+  s_66ddb7c44de816::t_ffae03a8e4b337 125-134
+ios/FitrahTube/Features/Player/PlayerToolbar.swift
+  s_66ddb7c44de816::t_c4d22a3b5d6a79 55-61
+ios/FitrahTube/DesignSystem/Tokens.swift
+  s_66ddb7c44de816::t_8a02e90c7d9add 191-199
+ios/FitrahTube/Features/Player/PlayerScreen.swift
+  s_66ddb7c44de816::t_c2cf2817dff3d2 13-17
+  s_66ddb7c44de816::t_699301a7f6ce6c 95-100,102-107
+  s_66ddb7c44de816::t_5a9e6fae7d705f 150-155
+  s_66ddb7c44de816::t_56ecdd1f59ff5a 202-204
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_66ddb7c44de816::t_153cfe34e0126c 9365-9386
+ios/scripts/screenshots.sh
+  s_66ddb7c44de816::t_c3077c7b121d7d 178-208
+ios/FitrahTube/Features/Player/PlayerMetadataView.swift
+  s_66ddb7c44de816::t_03d26ace58d00c 12-16,31
+ios/FitrahTube/DesignSystem/StateViews.swift
+  s_66ddb7c44de816::t_d729d9424e2d7b 12-25,47,49
+  s_66ddb7c44de816::t_8e0fcd026fc3c1 76,85,92,104
+  s_66ddb7c44de816::t_e61dd2ac57c8e0 31-38,45
+ios/FitrahTube/Features/Player/AudioLanguageMenu.swift
+  s_66ddb7c44de816::t_9d2d4faf13a50f 79-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "efa1a7acc2773046d750385389bbf716360e0c59",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
