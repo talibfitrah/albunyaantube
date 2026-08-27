@@ -379,10 +379,25 @@ struct PlayerHostView: UIViewControllerRepresentable {
             Task { await model.handleRecoveryEvent(event) }
         }
 
-        /// Only the path monitor: the observers are torn down in `dismantleUIViewController` (which
-        /// SwiftUI always calls) via `stopObserving`, and `deinit` is nonisolated so it can't touch
-        /// them anyway.
-        deinit { monitor.cancel() }
+        /// The path monitor, plus the backstop for the one teardown path that has no other exit
+        /// (Task 5 review, I2): a back-navigation out of the player while PiP is live dismantles
+        /// the host, defers the teardown to `…DidStopPictureInPicture`, and then SwiftUI releases
+        /// this coordinator with the `PlayerScreen` -- so that callback never arrives and the audio
+        /// session, the lock-screen dictionary and the remote-command handlers stay owned by a dead
+        /// object for the rest of the process's life.
+        ///
+        /// `deinit` is nonisolated in Swift 6, hence `assumeIsolated`: SwiftUI creates and releases
+        /// representable coordinators on the main actor (they are only ever reachable from
+        /// `makeUIViewController`/`updateUIViewController`/`dismantleUIViewController`, all
+        /// main-actor calls), so the last release lands on main. Same assumption the path monitor's
+        /// `pathUpdateHandler` above already makes.
+        deinit {
+            monitor.cancel()
+            MainActor.assumeIsolated {
+                guard dismantledWhilePiP else { return }
+                background.detach()
+            }
+        }
     }
 
     // MARK: - Builder (static so `PlayerHostTests` can call it directly, no view hierarchy needed)

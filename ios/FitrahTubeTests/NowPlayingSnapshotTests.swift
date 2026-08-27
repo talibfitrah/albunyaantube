@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import Foundation
 import InnerTubeKit
 import MediaPlayer
@@ -112,5 +113,28 @@ import Testing
         controller.update(args: PlayerArgs(videoId: "abc", title: "T"), state: .contentUnavailable)
         #expect(MPNowPlayingInfoCenter.default().nowPlayingInfo == nil)
         controller.detach()
+    }
+
+    /// I2 (Task 5 review): a back-navigation OUT of the player while PiP is live deallocates the
+    /// `Coordinator` before AVKit's `…DidStopPictureInPicture` can run the deferred teardown, so
+    /// the audio session, the lock-screen dictionary and the remote-command handlers would stay
+    /// owned by a dead object for the rest of the process's life. `deinit` is the backstop.
+    @Test func aCoordinatorDeallocatedWhileOwingATeardownStillHandsBackTheLockScreen() {
+        let player = AVPlayer()
+        let controller = AVPlayerViewController()
+        controller.player = player
+        do {
+            let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
+            coordinator.background.attach(player: player)
+            coordinator.background.update(args: PlayerArgs(videoId: "abc", title: "T"), state: ready())
+            coordinator.playerViewControllerWillStartPictureInPicture(controller)
+            PlayerHostView.dismantleUIViewController(controller, coordinator: coordinator)
+            // Still OWED, not yet done: a live PiP window needs the session and the lock screen.
+            #expect(MPNowPlayingInfoCenter.default().nowPlayingInfo != nil)
+            #expect(MPRemoteCommandCenter.shared().playCommand.isEnabled)
+        }
+        // Nothing holds the coordinator now and the delegate callback will never arrive.
+        #expect(MPNowPlayingInfoCenter.default().nowPlayingInfo == nil)
+        #expect(MPRemoteCommandCenter.shared().playCommand.isEnabled == false)
     }
 }

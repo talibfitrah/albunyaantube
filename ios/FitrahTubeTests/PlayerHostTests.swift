@@ -207,6 +207,19 @@ struct PlayerHostTests {
         #expect(coordinator.background.pictureInPictureActive == false)
     }
 
+    /// Task 5 review minor: AVKit BLOCKS the PiP-stop transition on this completion handler, so
+    /// an implementation that stashed it (or answered on a later run-loop turn) would leave the
+    /// floating window stuck mid-dismissal. The player screen is still mounted behind it, so the
+    /// only correct answer is `true`, now.
+    @Test func restoringTheInterfaceForAPiPStopAnswersTrueSynchronously() {
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
+        var answered: Bool?
+        coordinator.playerViewController(
+            AVPlayerViewController(),
+            restoreUserInterfaceForPictureInPictureStopWithCompletionHandler: { answered = $0 })
+        #expect(answered == true)
+    }
+
     @Test func dismantlingDuringPiPKeepsThePlayerUntilPiPStops() {
         let url = URL(string: "https://example.com/a.m3u8")!
         let resolved = Self.resolved(.hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []))
