@@ -14795,19 +14795,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "أبقِ التشغيل داخل التطبيق وأوقف التشغيل التلقائي"
+            "value": "أوقف التشغيل التلقائي"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep playback inside the app and turn off autoplay"
+            "value": "Turn off autoplay"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Houd afspelen in de app en schakel automatisch afspelen uit"
+            "value": "Schakel automatisch afspelen uit"
           }
         }
       }

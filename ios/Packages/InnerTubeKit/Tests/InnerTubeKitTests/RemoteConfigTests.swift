@@ -5,7 +5,9 @@ import Testing
 @Suite struct RemoteConfigTests {
     @Test func bundledDefaultDecodesWithConfirmedClientTable() {
         let config = RemoteConfig.bundledDefault
-        #expect(config.resolverOrder == ["visionosHLS", "androidItag18", "embed"])
+        // B3 embed ruling (2026-08-27): the embed rung ships DARK. The bundled default is exactly the
+        // two native rungs; `embed` stays a known strategy so a PUBLISHED config can turn it on.
+        #expect(config.resolverOrder == ["visionosHLS", "androidItag18"])
         #expect(config.schemaVersion == 1)
         #expect(config.minAppVersion == "1.0.0")
         #expect(config.manifestCacheSeconds == 3600)
@@ -30,6 +32,22 @@ import Testing
             transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
         await store.refresh()
         #expect(await store.current().resolverOrder == ["visionosHLS", "embed"])
+    }
+
+    /// The other half of "ship dark": `embed` is not in the bundled default, but `sanitized(_:)`
+    /// must still KEEP it, or the emergency lever (enable the rung from a published config) is gone.
+    @Test func refreshKeepsAPublishedEmbedRung() async {
+        let body = Data(
+            """
+            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS","androidItag18","embed"],"manifestCacheSeconds":3600,"clients":{}}
+            """.utf8)
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: body))
+        ])
+        let store = RemoteConfigStore(
+            transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
+        await store.refresh()
+        #expect(await store.current().resolverOrder == ["visionosHLS", "androidItag18", "embed"])
     }
 
     @Test func refreshDropsUnknownResolverStrategy() async {

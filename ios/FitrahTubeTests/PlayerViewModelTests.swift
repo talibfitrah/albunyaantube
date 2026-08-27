@@ -119,6 +119,9 @@ struct PlayerViewModelTests {
         #expect(vm.state == .error(messageKey: "player_embed_removed"))
         vm.applyEmbedAction(.fail(messageKey: "player_stream_unavailable"))
         #expect(vm.state == .error(messageKey: "player_stream_unavailable"))
+        // CF-B3-10: terminal embed errors land on `.unplayable` (no Retry), never on `.error`.
+        vm.applyEmbedAction(.unplayable(messageKey: "player_embed_removed"))
+        #expect(vm.state == .unplayable(messageKey: "player_embed_removed"))
     }
 
     @Test func unavailableMapsToContentUnavailable() async {

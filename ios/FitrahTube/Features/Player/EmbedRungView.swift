@@ -55,7 +55,7 @@ struct EmbedRungView: View {
                     .accessibilityIdentifier("player.embedCaption")
 
                 ZStack {
-                    EmbedWebView(videoId: Self.videoId(resolved), resolved: resolved,
+                    EmbedWebView(videoId: Self.videoId(resolved),
                                  model: model, locale: Self.embedLocale(container.settings.resolvedLocale),
                                  replayToken: replayToken,
                                  // `|| debugSeedEnded` makes the screenshot rig's seeded cover
@@ -174,14 +174,13 @@ struct EmbedWebView: UIViewRepresentable {
     /// nil is unreachable -- and a placeholder id would be a SECOND unreachable path to reason
     /// about. Nil takes the same "refused substitution" route a bad id already takes (`load`).
     let videoId: String?
-    let resolved: Resolved
     let model: PlayerViewModel
     let locale: String
     let replayToken: Int
     let onEnded: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(videoId: videoId, resolved: resolved, model: model, locale: locale)
+        Coordinator(videoId: videoId, model: model, locale: locale)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -243,7 +242,6 @@ struct EmbedWebView: UIViewRepresentable {
     /// live web content process's behaviour, which the unit target cannot produce.
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-        private let resolved: Resolved
         private let model: PlayerViewModel
         /// Built ONCE, at mount. `EmbedPage.html` reads the bundled page off disk synchronously, and
         /// the `.reloadOnce` path must not repeat that on the main thread -- it re-loads this string.
@@ -260,10 +258,16 @@ struct EmbedWebView: UIViewRepresentable {
         private var alreadyReloaded = false
         private var lastReplayToken = 0
         var onEnded: ((Bool) -> Void)?
+        /// I1 (B3 final review): `iframe_api` unreachable while the device is ONLINE is a hung
+        /// load, not an error code -- no bridge event ever arrives, and the offline gate does not
+        /// fire. Armed per load, disarmed by `.ready` and by teardown; fires the same generic
+        /// `.fail` a refused substitution takes, through the one deferred sink.
+        private let loadTimeout: Duration
+        private var loadWatchdog: Task<Void, Never>?
 
-        init(videoId: String?, resolved: Resolved, model: PlayerViewModel, locale: String) {
-            self.resolved = resolved
+        init(videoId: String?, model: PlayerViewModel, locale: String, loadTimeout: Duration = .seconds(15)) {
             self.model = model
+            self.loadTimeout = loadTimeout
             self.html = videoId.flatMap {
                 EmbedPage.html(videoId: $0, locale: locale,
                                captionsPreferred: UIAccessibility.isClosedCaptioningEnabled)
@@ -297,6 +301,8 @@ struct EmbedWebView: UIViewRepresentable {
         }
 
         func teardown(web: WKWebView) {
+            loadWatchdog?.cancel()
+            loadWatchdog = nil
             if let backgroundObserver {
                 NotificationCenter.default.removeObserver(backgroundObserver)
                 self.backgroundObserver = nil
@@ -327,12 +333,16 @@ struct EmbedWebView: UIViewRepresentable {
             }
         }
 
-        private func handle(_ event: EmbedMessage.Event, web: WKWebView?) {
+        /// Internal, not private, only so `PlayerScreenEmbedTests` can drive `.ready` into the
+        /// watchdog: a real `WKScriptMessage` cannot be constructed outside WebKit.
+        func handle(_ event: EmbedMessage.Event, web: WKWebView?) {
             #if DEBUG
             EmbedDebugLog.shared.append("\(event)")
             #endif
             switch event {
             case .ready:
+                loadWatchdog?.cancel()
+                loadWatchdog = nil
                 // Second activation, deliberately (CF-B2-8's ordering race -- see `start`). The
                 // cover is NOT cleared here: `.ready` says the player exists, not that it is
                 // playing, and only a state message moves the cover.
@@ -384,6 +394,18 @@ struct EmbedWebView: UIViewRepresentable {
             // `loadHTMLString(_:baseURL:)`, NEVER `loadFileURL`: the https base URL is what makes
             // WebKit send a Referer, without which the IFrame API answers error 153.
             web.loadHTMLString(html, baseURL: EmbedPage.baseURL)
+            armLoadWatchdog(web: web)
+        }
+
+        /// Internal, not private, so the test can arm it without a real (network-bound) load.
+        func armLoadWatchdog(web: WKWebView?) {
+            loadWatchdog?.cancel()
+            loadWatchdog = Task { [weak self] in
+                guard let timeout = self?.loadTimeout else { return }
+                try? await Task.sleep(for: timeout)
+                guard !Task.isCancelled, let self else { return }
+                self.apply(.fail(messageKey: "player_error_message"), web: web)
+            }
         }
 
         private func pause(web: WKWebView?) {
@@ -466,7 +488,9 @@ final class EmbedDebugLog {
         lines.append(line)
         // A bounded tail: a live IFrame emits a steady trickle of subframe navigations, and an
         // unbounded log would push the toolbar off screen inside a minute.
-        lines = lines.suffix(12)
+        // 60, not 12: the live nav-lock test asserts a positive `CANCEL` after five escape taps,
+        // and the subframe trickle between taps pushed those verdicts out of a 12-line tail.
+        lines = lines.suffix(60)
         text = lines.joined(separator: "\n")
     }
 }

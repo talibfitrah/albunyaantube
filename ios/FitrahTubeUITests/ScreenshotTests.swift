@@ -622,6 +622,9 @@ final class ScreenshotTests: XCTestCase {
 
         let log = embedLog(app)
         print("[EMBED_LIVE] navigationLock log:\n\(log)")
+        // Positive half (I3, B3 final review): five escape taps must produce at least one CANCEL
+        // verdict, or the loop below passes vacuously over a log with no main-frame lines at all.
+        XCTAssertTrue(log.contains("CANCEL"), "live nav lock: no escape was ever cancelled — log: \(log)")
         for line in log.split(separator: "\n").map(String.init) where line.hasPrefix("allow main ") {
             XCTAssertTrue(line.contains("https://app.fitrahtube.com") || line.contains("about:blank"),
                           "live nav lock: a main-frame navigation off the bundled page was ALLOWED: \(line)")

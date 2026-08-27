@@ -74,8 +74,7 @@ struct PlayerScreenEmbedTests {
             defaults: UserDefaults(suiteName: "PlayerScreenEmbedTests.\(UUID().uuidString)")!)
         let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings,
                                     args: PlayerArgs(videoId: "xc7keR2piUM", channelId: "ch1"))
-        let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", resolved: Self.embed(),
-                                                   model: model, locale: "en")
+        let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", model: model, locale: "en")
         #expect(coordinator.responds(to: Selector("webView:decidePolicyForNavigationAction:decisionHandler:")))
         // The other half of the lock: without this `window.open` / `target="_blank"` escapes it.
         #expect(coordinator.responds(
@@ -99,8 +98,7 @@ struct PlayerScreenEmbedTests {
             defaults: UserDefaults(suiteName: "PlayerScreenEmbedTests.\(UUID().uuidString)")!)
         let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings,
                                     args: PlayerArgs(videoId: "xc7keR2piUM", channelId: "ch1"))
-        let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", resolved: Self.embed(),
-                                                   model: model, locale: "en")
+        let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", model: model, locale: "en")
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         let controller = config.userContentController
@@ -119,6 +117,52 @@ struct PlayerScreenEmbedTests {
         web.loadHTMLString(Self.probePage, baseURL: EmbedPage.baseURL)
         #expect(await Self.waitForHandler(web, present: false),
                 "the handler namespace survived teardown -- the registration leaked with a dead target")
+    }
+
+    /// I1 (B3 final review): `iframe_api` unreachable while ONLINE produces no bridge event at all --
+    /// a black frame under a caption that says something is playing, forever. The watchdog turns a
+    /// hung load into the generic player error; `.ready` and teardown disarm it.
+    @Test(.timeLimit(.minutes(1))) func aHungLoadFailsAfterTheWatchdogFires() async {
+        let model = Self.makeModel()
+        let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", model: model, locale: "en",
+                                                   loadTimeout: .milliseconds(50))
+        coordinator.armLoadWatchdog(web: nil)
+        #expect(await Self.waitForState(model, .error(messageKey: "player_error_message")))
+    }
+
+    @Test(.timeLimit(.minutes(1))) func readyDisarmsTheLoadWatchdog() async {
+        let model = Self.makeModel()
+        let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", model: model, locale: "en",
+                                                   loadTimeout: .milliseconds(50))
+        coordinator.armLoadWatchdog(web: nil)
+        coordinator.handle(.ready, web: nil)
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(model.state == .idle)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func teardownDisarmsTheLoadWatchdog() async {
+        let model = Self.makeModel()
+        let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", model: model, locale: "en",
+                                                   loadTimeout: .milliseconds(50))
+        coordinator.armLoadWatchdog(web: nil)
+        coordinator.teardown(web: WKWebView(frame: .zero))
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(model.state == .idle)
+    }
+
+    private static func makeModel() -> PlayerViewModel {
+        let settings = UserDefaultsSettingsStore(
+            defaults: UserDefaults(suiteName: "PlayerScreenEmbedTests.\(UUID().uuidString)")!)
+        return PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings,
+                               args: PlayerArgs(videoId: "xc7keR2piUM", channelId: "ch1"))
+    }
+
+    private static func waitForState(_ model: PlayerViewModel, _ expected: StreamState) async -> Bool {
+        for _ in 0..<50 {
+            if model.state == expected { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return false
     }
 
     private static let probePage = "<html><head><title>fitrah-probe</title></head><body>probe</body></html>"

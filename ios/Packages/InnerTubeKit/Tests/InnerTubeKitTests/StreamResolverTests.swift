@@ -132,6 +132,18 @@ import Testing
             url: URL(string: "https://example.com/config.json")!)
     }
 
+    /// The bundled default with a different `resolverOrder`, seeded as last-good so `current()`
+    /// returns it without a refresh (the same route d7 below uses for a bad client table).
+    private func configStore(resolverOrder: [String]) -> RemoteConfigStore {
+        var config = RemoteConfig.bundledDefault
+        config.resolverOrder = resolverOrder
+        let keyValueStore = InMemoryKeyValueStore()
+        keyValueStore.set(RemoteConfigStore.lastGoodKey, try! JSONEncoder().encode(config))
+        return RemoteConfigStore(
+            transport: NoopTransport(), keyValueStore: keyValueStore,
+            url: URL(string: "https://example.com/config.json")!)
+    }
+
     private struct NoopTransport: HTTPTransport {
         func send(_ request: HTTPRequest) async throws -> HTTPResponse {
             HTTPResponse(status: 200, headers: [:], body: Data())
@@ -277,11 +289,13 @@ import Testing
     // MARK: - d4) fallback rungs are neither cached nor counted as a clean fetch
 
     @Test func embedFallbackIsNotCachedAndDoesNotRecordSuccess() async throws {
-        // Both player rungs answer UNPLAYABLE, so the ladder bottoms out on `embed`.
+        // Both player rungs answer UNPLAYABLE, so the ladder bottoms out on `embed` -- which ships
+        // DARK (not in the bundled default), so this is the published-config shape that enables it.
         let clock = ManualClock()
-        let cache = ManifestCache(remoteConfig: defaultConfigStore())
+        let configStore = configStore(resolverOrder: ["visionosHLS", "androidItag18", "embed"])
+        let cache = ManifestCache(remoteConfig: configStore)
         let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids")])
-        let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache)
+        let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache, configStore: configStore)
         await session.recordBotCheck()
         clock.advanceWall(by: .seconds(8 * 24 * 3600))  // past the 7-day clean-streak reset window
 
@@ -290,6 +304,19 @@ import Testing
 
         #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil)
         #expect(await session.loadCooldown().tripCount == 1)
+    }
+
+    /// B3 embed ruling (2026-08-27): the bundled default is visionosHLS -> androidItag18 and then
+    /// TERMINAL. Both rungs answering UNPLAYABLE must surface as `allRungsFailed` (which
+    /// `PlayerViewModel.map` renders as the generic player error), never silently resolve to `embed`.
+    @Test func defaultLadderIsTerminalAfterAndroidItag18() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids")])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        await expectThrows(.allRungsFailed) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 2)   // one POST per native rung, then nothing
     }
 
     @Test func nativeStreamIsCachedAndRecordsSuccess() async throws {

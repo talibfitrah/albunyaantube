@@ -104,9 +104,9 @@ EXTRA_KEYS = {
         "ar": "الإبلاغ قادم قريبًا",
         "nl": "Rapporteren komt binnenkort",
     },
-    # player_error_generic (B1 placeholder, re-purposed in B3 task 2): the reason line above the
-    # rung-4 "Open in YouTube" card, and the terminal copy when Safe Mode has removed that rung.
-    # No "yet" -- there is no later rung.
+    # player_error_generic (B1 placeholder, re-purposed in B3): the terminal copy when the embed
+    # rung's one reload is spent (`EmbedErrorPolicy`). There is no rung below it -- the owner
+    # directive of 2026-08-27 removed every hand-off to YouTube -- so no "yet".
     "player_error_generic": {
         "en": "This video can't be played in the app",
         "ar": "لا يمكن تشغيل هذا الفيديو داخل التطبيق",
@@ -117,14 +117,16 @@ EXTRA_KEYS = {
     # Android's switch gated nothing, so it went. iOS keeps the setting because ruling 58 gives it
     # a real effect, so the strings have to be authored here or the row renders its own key.
     # The subtitle is NOT Android's old "Show only family-friendly content": iOS Safe Mode does no
-    # content filtering (the catalog is admin-curated), it keeps playback inside the app and turns
-    # autoplay off. Promising filtering again would re-ship the placebo that got it deleted.
+    # content filtering (the catalog is admin-curated), it turns autoplay off. Playback is inside
+    # the app for everyone (owner directive 2026-08-27), so the subtitle no longer claims that as a
+    # Safe Mode effect. Promising filtering again would re-ship the placebo that got it deleted.
+    # CF-B3-14: the autoplay clause is a promise B5 must keep before any user build.
     "settings_content": {"en": "Content", "ar": "المحتوى", "nl": "Inhoud"},
     "settings_safe_mode": {"en": "Safe Mode", "ar": "الوضع الآمن", "nl": "Veilige modus"},
     "settings_safe_mode_desc": {
-        "en": "Keep playback inside the app and turn off autoplay",
-        "ar": "أبقِ التشغيل داخل التطبيق وأوقف التشغيل التلقائي",
-        "nl": "Houd afspelen in de app en schakel automatisch afspelen uit",
+        "en": "Turn off autoplay",
+        "ar": "أوقف التشغيل التلقائي",
+        "nl": "Schakel automatisch afspelen uit",
     },
     # Embed rung (B3 tasks 3-4). iOS-only: Android has no IFrame embed player at all (grep of
     # android/app/src/main: no embed.html, no youtube-nocookie, no IFrame error codes), so there is
