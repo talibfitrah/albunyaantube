@@ -1686,7 +1686,7 @@ This is the single consolidated list: the eight items this plan wrote up front, 
 
 **E — Picture in Picture (Task 5, ruling 43)**
 
-17. **Auto-PiP, Background play ON** — swipe home mid-playback. *Pass:* PiP starts (AVKit performs it; the app never calls `startPictureInPicture()`).
+17. **Auto-PiP, Background play ON** — swipe home mid-playback. *Pass:* **PiP starts showing VIDEO, not a black window** (AVKit performs the transition; the app never calls `startPictureInPicture()`). The black-window case is the auto-PiP / `didEnterBackgroundNotification` ordering race — the automatic itag 140 swap landing first, leaving the window an audio-only item to draw. `playerViewControllerWillStartPictureInPicture` undoes that swap (CF-B2-13, fixed `ae7ce62a`); this item is what confirms the undo actually beats AVKit's first frame on hardware.
 18. **Auto-PiP, Background play OFF** — same. *Pass:* PiP does NOT start and playback pauses (a user who turned background playback off must not get a floating video window).
 19. **Stock PiP button** — tap the PiP button in the AVKit transport with the setting in each position. *Pass:* it works in both — the setting gates only the automatic-from-inline transition, never the explicit button.
 20. **PiP restore** — tap the restore control on the PiP window. *Pass:* the player screen comes back with playback continuing (the completion handler answers `true` synchronously); no black frame, no restart from 0.
@@ -1702,6 +1702,10 @@ This is the single consolidated list: the eight items this plan wrote up front, 
 
 25. **AirPlay** (ruling 29, free from the stock transport) — route to an Apple TV. *Pass:* playback starts on the TV. Plan §6.5 flags an IP-binding risk: if the external device 403s the item, the documented remedy is `allowsExternalPlayback = false` so the video mirrors from the phone instead. Report the result; do not pre-emptively implement the remedy.
 26. **Swipe-to-dismiss** (player.md §24, iOS's narrower version of Android's task-removed contract) — swipe the app out of the App Switcher while audio plays. *Pass:* iOS terminates the process and audio stops, leaving no orphaned lock-screen entry. Confirm this is acceptable, or raise it.
+
+**H — Observations to record (no pass/fail)**
+
+27. **Background play ON, no itag 140** (CF-B2-15) — open a video that resolves to rung 2 progressive, the itag 18 fallback, or a live stream (any stream where the Audio only toggle is hidden), then background the app with Background play ON. There is nothing to swap to, so the player keeps running on the *video* URL. **Record, do not judge:** whether audio keeps playing, and roughly how much data the background stint costs (Settings → Cellular, or a proxy). This is the one background case the itag 140 swap cannot cover, and no test or policy rule pins it today — the observation is what decides between muting the video track, pausing, and accepting it (→ B5).
 
 ---
 
