@@ -155,6 +155,47 @@ struct PlayerHostTests {
         #expect(PlayerHostView.assetOptions(userAgent: "UA")[AVURLAssetHTTPUserAgentKey] as? String == "UA")
     }
 
+    // MARK: - Final review (IMP-1, MIN-4): what the background policy may and may not do synchronously
+
+    /// IMP-1: only the BACKGROUND half of the policy swaps the item here. `.restoreVideo` runs
+    /// against whatever `state` is live at action time -- and the pre-emptive TTL refresh can land
+    /// AFTER the 2 s foreground deadline, so a synchronous restore would replace the item once
+    /// against the stale `Resolved` and the foreground update pass would replace it a second time
+    /// against the fresh one, restarting playback from 0. One replace, owned by the update pass.
+    @Test func restoringVideoDoesNotReplaceTheItemSynchronously() throws {
+        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
+        let audio = URL(string: "https://r1.googlevideo.com/a140")!
+        let state = StreamState.ready(Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: true))
+        let audioItem = try #require(player.currentItem)
+
+        PlayerHostView.applyPolicyAction(.restoreVideo, state: state, player: player, model: nil)
+
+        #expect(player.currentItem === audioItem)
+        #expect((player.currentItem?.asset as? AVURLAsset)?.url == audio)
+    }
+
+    /// MIN-4: the synchronous background swap builds a NEW `AVPlayerItem`, and the recovery
+    /// observers (status KVO, failed-to-play-to-end, the periodic sampler) are per-item. Left on
+    /// the outgoing item, an audio-only stream that dies in the background would never fire the
+    /// recovery ladder.
+    @Test func theBackgroundSwapReArmsTheRecoveryObserversOnTheNewItem() throws {
+        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
+        let audio = URL(string: "https://r1.googlevideo.com/a140")!
+        let state = StreamState.ready(Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: false))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
+        let videoItem = try #require(player.currentItem)
+        coordinator.observe(item: videoItem, player: player, model: nil, isLive: false)
+        defer { coordinator.stopObserving() }
+
+        PlayerHostView.applyPolicyAction(.swapToAudioOnly, state: state, player: player,
+                                         model: nil, coordinator: coordinator)
+
+        #expect(player.currentItem !== videoItem)
+        #expect(coordinator.observedItem === player.currentItem)
+    }
+
     // MARK: - A non-playable state tears playback down instead of leaving a stale player
 
     // MARK: - Task 5: Picture in Picture

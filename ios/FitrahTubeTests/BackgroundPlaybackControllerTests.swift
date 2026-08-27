@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import Foundation
 import InnerTubeKit
 import Testing
@@ -26,11 +27,16 @@ import UIKit
 
     /// The observers are registered with `queue: .main`, so delivery is a run-loop hop away rather
     /// than synchronous with `post`. 2 s ceiling, and every one of these settles in one hop.
+    ///
+    /// MIN-1 (final review): the ceiling ASSERTS. Falling out of the loop silently meant a timed-out
+    /// wait ran the assertions anyway, where a `!actions.contains(…)` expectation would pass for the
+    /// wrong reason -- the event never arrived, rather than arriving and being correctly dropped.
     private func wait(until condition: () -> Bool) async throws {
         for _ in 0..<100 {
             if condition() { return }
             try await Task.sleep(for: .milliseconds(20))
         }
+        #expect(condition())
     }
 
     private static func assetURL(_ player: AVPlayer) -> URL? {
@@ -63,7 +69,15 @@ import UIKit
         #expect(player.currentItem !== videoItem)
     }
 
-    @Test func foregroundRestoresTheVideoURLOnTheSamePlayer() async throws {
+    /// IMP-1 (final review) changed this test's subject. It used to assert the video URL was back
+    /// on the player the moment `.restoreVideo` was emitted -- but the foreground policy runs on a
+    /// 2 s deadline with a TTL refresh possibly still in flight, so a synchronous restore here plus
+    /// the foreground `updateUIViewController` pass is TWO `replaceCurrentItem` calls, the second
+    /// of which restarts playback from 0. What this pins now is the half `applyPolicyAction` still
+    /// owns: the action is emitted, the auto-swap flag is cleared, and the live player is left
+    /// exactly where it is for the update pass to restore once, from the freshest `Resolved`. That
+    /// pass's own behaviour is `PlayerHostTests.togglingAudioOnlyReplacesTheItemAndKeepsThePlayer`.
+    @Test func foregroundEmitsRestoreVideoAndLeavesTheSwapToTheUpdatePass() async throws {
         let fixture = try Self.fixture()
         let player = try #require(PlayerHostView.player(for: fixture.state, replacing: nil, audioOnly: false))
         let controller = BackgroundPlaybackController(backgroundPlay: true)
@@ -82,7 +96,8 @@ import UIKit
         try await wait { actions.contains(.restoreVideo) }
 
         #expect(actions.filter { $0 != .none } == [.swapToAudioOnly, .restoreVideo])
-        #expect(Self.assetURL(player) == fixture.video)
+        #expect(controller.autoSwappedToAudioOnly == false)
+        #expect(Self.assetURL(player) == fixture.audio)   // untouched: the update pass owns the restore
     }
 
     @Test func backgroundingLeavesThePlayerAloneWhenTheStreamHasNoAudioRendition() async throws {
@@ -129,6 +144,50 @@ import UIKit
         try await Task.sleep(for: .milliseconds(200))
 
         #expect(actions.filter { $0 == .swapToAudioOnly }.count == 1)
+    }
+
+    // MARK: - IMP-2 (final review): auto-PiP racing the background swap
+
+    /// `didEnterBackgroundNotification` and AVKit's auto-PiP transition have no guaranteed order.
+    /// When the background half wins, the item is already the itag 140 audio rendition by the time
+    /// AVKit opens the floating window -- a video window with no video track, i.e. a black box.
+    /// `willStartPictureInPicture` therefore UNDOES the automatic swap it finds.
+    @Test func startingPictureInPictureUndoesAnAutomaticBackgroundSwap() async throws {
+        let fixture = try Self.fixture()
+        let player = try #require(PlayerHostView.player(for: fixture.state, replacing: nil, audioOnly: false))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
+        let controller = coordinator.background
+        controller.audioOnlyAvailable = true
+        var actions: [PlaybackPolicyAction] = []
+        controller.onPolicyAction = { [weak player] action in
+            actions.append(action)
+            PlayerHostView.applyPolicyAction(action, state: fixture.state, player: player, model: nil)
+        }
+        controller.attach(player: player)
+        defer { controller.detach() }
+
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        try await wait { actions.contains(.swapToAudioOnly) }
+        #expect(Self.assetURL(player) == fixture.audio)
+
+        coordinator.playerViewControllerWillStartPictureInPicture(AVPlayerViewController())
+
+        #expect(actions.filter { $0 != .none } == [.swapToAudioOnly, .restoreVideo])
+        #expect(controller.autoSwappedToAudioOnly == false)
+    }
+
+    /// The other half: the ordinary case (PiP started from the transport button with nothing
+    /// swapped) must not emit a spurious `.restoreVideo` -- that would rebuild the item under the
+    /// window AVKit is opening, which is the very defect this undo exists to prevent.
+    @Test func startingPictureInPictureWithNothingSwappedEmitsNoAction() {
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
+        var actions: [PlaybackPolicyAction] = []
+        coordinator.background.onPolicyAction = { actions.append($0) }
+
+        coordinator.playerViewControllerWillStartPictureInPicture(AVPlayerViewController())
+
+        #expect(actions.isEmpty)
+        #expect(coordinator.background.pictureInPictureActive)
     }
 
     // MARK: - CF-B1-3 ordering (Task 6)

@@ -131,23 +131,41 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// so the phone stops pulling video segments off-screen. Skipped: the "or when backgrounded on
     /// cellular" variant from plan §6.5 -- the setting already carries user intent.
     static func applyPolicyAction(_ action: PlaybackPolicyAction, state: StreamState,
-                                  player: AVPlayer?, model: PlayerViewModel?) {
-        let audioOnly: Bool
+                                  player: AVPlayer?, model: PlayerViewModel?,
+                                  coordinator: Coordinator? = nil) {
         switch action {
-        case .swapToAudioOnly: audioOnly = true
-        case .restoreVideo: audioOnly = false
-        default: return
+        case .swapToAudioOnly:
+            // Fix round 1, C2: `model.audioOnly` alone only SCHEDULES a SwiftUI update, and there
+            // is no guarantee `updateUIViewController` runs before the app suspends -- the phone
+            // could keep pulling video segments for the whole background stint, which is the one
+            // thing this swap exists to stop. So the BACKGROUND swap happens here, synchronously,
+            // on the live player. `player(for:replacing:audioOnly:)` reuses that same `AVPlayer`
+            // (position and playWhenReady carried across by its own replace path); it never builds
+            // a second one.
+            if let player {
+                _ = Self.player(for: state, replacing: player, audioOnly: true)
+                // MIN-4 (final review): that replace built a NEW `AVPlayerItem`, and every recovery
+                // observer (status KVO, failed-to-play-to-end, the periodic stall sampler) is
+                // per-item -- left on the outgoing one, an audio-only stream that dies in the
+                // background would never reach the recovery ladder. Same hook
+                // `updateUIViewController` uses; it no-ops if the pair is already the observed one.
+                if let item = player.currentItem {
+                    coordinator?.observe(item: item, player: player, model: model, isLive: Self.isLive(state))
+                }
+            }
+            model?.audioOnly = true
+        case .restoreVideo:
+            // IMP-1 (final review): NO synchronous replace on the way back. The foreground
+            // transition runs this on a 2 s deadline, so a TTL refresh can still be in flight --
+            // swapping here against the state of the moment and then letting the update pass swap
+            // again against the refreshed one is two `replaceCurrentItem` calls, and the second
+            // restarts playback from 0. One replace, owned by the foreground update pass, against
+            // whichever `Resolved` is current when it runs. Nothing is being pulled in the
+            // meantime that the user did not ask for: the player is still on the audio rendition.
+            model?.audioOnly = false
+        default:
+            return
         }
-        // Fix round 1, C2: `model.audioOnly` alone only SCHEDULES a SwiftUI update, and there is no
-        // guarantee `updateUIViewController` runs before the app suspends -- the phone could keep
-        // pulling video segments for the whole background stint, which is the one thing this swap
-        // exists to stop. So the swap happens here, synchronously, on the live player.
-        // `player(for:replacing:audioOnly:)` reuses that same `AVPlayer` (position and
-        // playWhenReady carried across by its own replace path); it never builds a second one.
-        if let player { _ = Self.player(for: state, replacing: player, audioOnly: audioOnly) }
-        // Still set, so the UI catches up. The url-match guard in `player(for:replacing:)` makes
-        // the update pass this schedules a no-op on the player itself.
-        model?.audioOnly = audioOnly
     }
 
     /// Ruling 43: platform-standard PiP via AVKit. `canStartPictureInPictureAutomaticallyFromInline`
@@ -224,7 +242,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// at teardown. No cycle -- the VM holds no reference to the host or coordinator.
         private(set) var model: PlayerViewModel?
 
-        private weak var observedItem: AVPlayerItem?
+        private(set) weak var observedItem: AVPlayerItem?
         private weak var observedPlayer: AVPlayer?
         private var statusCancellable: AnyCancellable?
         private var failedToEndObserver: NSObjectProtocol?
@@ -258,6 +276,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// item to audio-only, blanking the PiP window it just opened.
         func playerViewControllerWillStartPictureInPicture(_ controller: AVPlayerViewController) {
             background.pictureInPictureActive = true
+            // IMP-2 (final review): flipping the flag only stops a FUTURE swap. When
+            // `didEnterBackgroundNotification` won the race, the item is ALREADY the itag 140 audio
+            // rendition and the window AVKit is opening would have no video track to show.
+            background.undoAutoSwapIfAny()
         }
 
         func playerViewControllerDidStopPictureInPicture(_ controller: AVPlayerViewController) {
@@ -296,8 +318,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
             }
         }
 
-        func observe(item: AVPlayerItem, player: AVPlayer, model: PlayerViewModel, isLive: Bool) {
-            self.model = model
+        func observe(item: AVPlayerItem, player: AVPlayer, model: PlayerViewModel?, isLive: Bool) {
+            // Optional so the background swap's re-arm (MIN-4) can go through this one path without
+            // carrying a VM it has no reason to know about; a nil never CLEARS the live one.
+            if let model { self.model = model }
             guard item !== observedItem || player !== observedPlayer else { return }
             stopObserving()
             observedItem = item
@@ -393,10 +417,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// `pathUpdateHandler` above already makes.
         deinit {
             monitor.cancel()
-            MainActor.assumeIsolated {
-                guard dismantledWhilePiP else { return }
-                background.detach()
-            }
+            // MIN-2 (final review): unconditional. `detach()` is idempotent (it clears an already
+            // empty observer list, removes already removed command targets and hands back an
+            // already inactive session), and the `dismantledWhilePiP` guard only narrowed this to
+            // the ONE leak path the review happened to find -- a coordinator released on any other
+            // path with an attached controller leaked exactly the same session + lock screen.
+            MainActor.assumeIsolated { background.detach() }
         }
     }
 

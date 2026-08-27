@@ -62,9 +62,21 @@ struct RemoteImage: View {
         return cache
     }()
 
+    /// MIN-9 (B2 final review): ephemeral with cookies fully disabled, exactly like
+    /// `InnerTubeKit.URLSessionTransport`. Thumbnails come off `*.ggpht.com` / `*.ytimg.com`, so
+    /// the default configuration was handing Google's image hosts a persistent, on-disk cookie jar
+    /// that every later request replayed -- a per-install identifier the app has no use for and
+    /// (`i.ytimg.com` shares a registrable domain with the InnerTube calls) one the resolver's own
+    /// deliberately cookie-free session was trying not to create.
+    ///
+    /// The disk cache goes with it: an ephemeral session caches in RAM only. Thumbnails therefore
+    /// re-download once per launch instead of persisting across launches; within a launch the
+    /// decoded-image `NSCache` above already absorbs the repeats.
     private static let session: URLSession = {
-        let configuration = URLSessionConfiguration.default
-        configuration.urlCache = URLCache(memoryCapacity: 50 * 1024 * 1024, diskCapacity: 200 * 1024 * 1024)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpShouldSetCookies = false
+        configuration.urlCache = URLCache(memoryCapacity: 50 * 1024 * 1024, diskCapacity: 0)
         return URLSession(configuration: configuration)
     }()
 

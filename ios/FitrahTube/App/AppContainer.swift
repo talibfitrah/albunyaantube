@@ -82,7 +82,6 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     )
     var resolver: StreamResolver { innerTube.resolver }
 
-
     init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer, apiBaseURL: URL) {
         self.catalog = catalog
         self.userDefaults = userDefaults

@@ -188,6 +188,19 @@ import UIKit
         }
     }
 
+    /// IMP-2 (B2 final review): auto-PiP and `didEnterBackgroundNotification` have no defined
+    /// order. `AudioSessionPolicy` refuses the swap when `pictureInPictureActive` is already true,
+    /// but when the background notification lands FIRST the item is swapped to the itag 140 audio
+    /// rendition before AVKit tells anyone PiP is starting -- and a PiP window over an audio-only
+    /// item is a black box. Called from `playerViewControllerWillStartPictureInPicture`; a no-op
+    /// unless this controller performed an automatic swap, so an explicit PiP button press on a
+    /// foregrounded player emits nothing.
+    func undoAutoSwapIfAny() {
+        guard autoSwappedToAudioOnly else { return }
+        autoSwappedToAudioOnly = false
+        onPolicyAction?(.restoreVideo)
+    }
+
     private func handle(_ event: PlaybackLifecycleEvent) {
         let action = AudioSessionPolicy.decide(event, context)
         switch action {
@@ -262,6 +275,13 @@ import UIKit
 
     /// Every command republishes: the lock-screen scrubber is only honest if elapsed/rate go out
     /// the moment the transport moved, not on the next periodic tick.
+    ///
+    /// MIN-8 (final review): every handler below -- and this helper -- is `@MainActor` because the
+    /// whole controller is, so each one ASSUMES `MPRemoteCommand` delivers its target on the main
+    /// thread. That is what MediaPlayer does in practice and what every sample does, but Apple
+    /// documents no queue for it, so the assumption is unproven rather than guaranteed; an
+    /// off-main delivery would trap in the actor check, not corrupt state silently. Device
+    /// checklist item 16 (lock screen + Bluetooth remote, driven hard) is what confirms it.
     private func act(_ body: (AVPlayer) -> Void) -> MPRemoteCommandHandlerStatus {
         guard let player else { return .noActionableNowPlayingItem }
         body(player)
