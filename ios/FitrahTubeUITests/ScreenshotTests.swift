@@ -263,6 +263,10 @@ final class ScreenshotTests: XCTestCase {
         let pill = app.staticTexts["player.rung2Pill"]
         XCTAssertTrue(pill.waitForExistence(timeout: 10), "player-rung2: the standard-quality pill never appeared")
         XCTAssertFalse(app.buttons["player.qualityMenu.button"].exists, "player-rung2: the quality control must be hidden on rung 2")
+        // Plan B2 task 7: a muxed 360p progressive has no separate audio rendition, so the
+        // audio-only control has nothing to back it and must be absent -- not offered and inert.
+        XCTAssertFalse(app.buttons["player.audioOnly.button"].exists,
+                       "player-rung2: the audio-only control must be hidden on rung 2 (no itag 140 rendition)")
         try write(named: "player-rung2-pill", into: directory)
     }
 
@@ -291,7 +295,30 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertLessThan(pill.frame.width, content.frame.width / 2,
                           "player-audio-only: the status must be a pill sized to its text, not a fill over the video surface")
         XCTAssertFalse(app.buttons["player.qualityMenu.button"].exists, "player-audio-only: the quality control must be hidden while audio-only")
+        // VoiceOver state (plan task 7): the control reads its label AND its on/off state. It is
+        // `.isSelected`, not an `accessibilityValue` -- no catalog string exists for on/off and
+        // inventing one would ship an untranslated key.
+        XCTAssertTrue(button.isSelected, "player-audio-only: the toggle must expose its ON state to VoiceOver")
         try write(named: "player-audio-only", into: directory)
+
+        // ar portrait (RTL: the control mirrors with the rest of the overlay column) and en at
+        // Dynamic Type `.accessibility3` (the status string is the longest one on this surface and
+        // the pill is width-guarded, so this is where it would clip). Fresh launch each time --
+        // locale and content-size are launch arguments. Anchored on our OWN identifier, never
+        // AVKit's system-localized "Video" content-view label, which does not exist under ar.
+        for (name, locale, extra) in [("player-audio-only-ar-portrait", Self.locales[1], [String]()),
+                                      ("player-audio-only-en-a11y3-portrait", Self.locales[0], Self.accessibility3)] {
+            let app = launch(screen, locale: locale, extraArguments: extra)
+            let toggle = app.buttons["player.audioOnly.button"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 20), "\(name): the audio-only button never appeared")
+            toggle.tap()
+            let pill = app.staticTexts["player.audioOnlyPill"]
+            XCTAssertTrue(pill.waitForExistence(timeout: 10), "\(name): the audio-only status surface never appeared")
+            let window = app.windows.firstMatch.frame
+            XCTAssertTrue(window.contains(pill.frame),
+                          "\(name): the status pill (\(pill.frame)) must stay inside the screen (\(window))")
+            try write(named: name, into: directory)
+        }
     }
 
     /// Plan B1 task 8: metadata panel + toolbar below the player. `-fitrah-route player` now seeds
