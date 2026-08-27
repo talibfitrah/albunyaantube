@@ -80,6 +80,16 @@ extension StreamState {
     var isPlayable: Bool { resolved != nil }
 }
 
+/// What the embed rung does about one IFrame error (plan §6.6 "embed errors" row).
+/// **Temporary home**: B3 task 3 moves this to `EmbedPolicy.swift` alongside `EmbedErrorPolicy`,
+/// which is the pure truth table that produces it. It lives here for now because
+/// `PlayerViewModel.applyEmbedAction` is the only consumer that exists yet.
+enum EmbedErrorAction: Equatable, Sendable {
+    case reloadOnce
+    case fail(messageKey: String)
+    case offerYouTube(messageKey: String)
+}
+
 /// Android's `PlayerViewModel` resolve pipeline (`player.md` §2.2), the InnerTubeKit-backed slice
 /// of it: `open()`/`retry()` walk `StreamResolver`'s ladder and map the outcome onto `StreamState`.
 /// Same generation-guard discipline as `HomeViewModel`/`ContentListViewModel` (cancel the prior job,
@@ -156,6 +166,11 @@ extension StreamState {
     /// The Settings "Background play" value, read live so a change made in Settings while the player
     /// is open takes effect on the next background transition (ruling 34).
     var backgroundPlay: Bool { settings.backgroundPlay }
+
+    /// The Settings "Safe Mode" value, read live so a change made while the player is open takes
+    /// effect on the next resolve (same shape as `backgroundPlay`). Ruling 58 + spec §10: this is
+    /// also B5's auto-advance hook -- Up Next reads THIS, not `SettingsStore` directly.
+    var safeMode: Bool { settings.safeMode }
 
     /// Audio-only needs a real itag 140 URL. Rung 2 (a single muxed 360p progressive) has none, so
     /// the toggle is hidden there -- the same "hide the control that has no backing" rule spec §10
@@ -275,7 +290,7 @@ extension StreamState {
             let resolved = try await resolver.resolve(
                 args.videoId, purpose: .player, kind: kind,
                 sourceChannelId: args.channelId, forceRefresh: forceRefresh)
-            result = Self.map(resolved)
+            result = Self.map(resolved, safeMode: settings.safeMode)
         } catch {
             result = Self.map(error)
         }
@@ -295,16 +310,36 @@ extension StreamState {
         state = result
     }
 
-    private static func map(_ resolved: Resolved) -> StreamState {
+    private static func map(_ resolved: Resolved, safeMode: Bool) -> StreamState {
         switch resolved.stream {
         case .hls:
             return .ready(resolved)
         case .progressive:
             return .rung2Progressive(resolved)
-        case .embed, .openInYouTube:
-            // ponytail: B3 wires the real embed rung; B1 has no embed player yet, so both fall
-            // outcomes back to a generic error.
-            return .error(messageKey: "player_error_generic")
+        case .embed:
+            // Safe Mode deliberately does NOT suppress this rung: it keeps playback inside the app,
+            // which is the thing Safe Mode exists to preserve.
+            return .embed(resolved)
+        case .openInYouTube:
+            // Spec §10 / plan §6.10: Safe Mode removes rung 4 entirely -- and filtering the OUTCOME
+            // rather than `RemoteConfig.resolverOrder` is what also closes the age-gate route
+            // (`StreamResolver`'s `.jumpToOpenInYouTube` bypasses the order). Ruling 14: the
+            // suppressed rung lands on the one terminal "not playable" surface.
+            return safeMode ? .contentUnavailable
+                            : .openInYouTube(resolved, messageKey: "player_error_generic")
+        }
+    }
+
+    /// Task 4's bridge from an IFrame error to a `StreamState`. Split from `EmbedErrorPolicy`
+    /// (which is pure and knows nothing about `Resolved`) so the policy stays a truth table.
+    func applyEmbedAction(_ action: EmbedErrorAction, resolved: Resolved) {
+        switch action {
+        case .reloadOnce:
+            break                       // the view reloads its own web view; the state does not move
+        case .fail(let messageKey):
+            state = .error(messageKey: messageKey)
+        case .offerYouTube(let messageKey):
+            state = .openInYouTube(resolved, messageKey: messageKey)
         }
     }
 

@@ -16,14 +16,25 @@ struct PlayerViewModelTests {
     private static let embed = resolved(.embed(videoId: "abcdefghijk"))
     private static let openInYouTube = resolved(.openInYouTube(url: URL(string: "https://www.youtube.com/watch?v=abcdefghijk")!))
 
+    /// `Self.hls` carries `expiresAt: nil`, which `shouldPreemptivelyReResolve` reads as "never
+    /// expires" -- the silent-refresh test below needs a stream that actually does expire.
+    private static func expiringHLS(now: Date = Date()) -> Resolved {
+        Resolved(stream: .hls(url: URL(string: "https://example.com/a.m3u8")!, isLive: false,
+                              audioOnlyURL: nil, captionTracks: []),
+                 client: .visionos, userAgent: "ua", resolvedAt: now, expiresAt: now.addingTimeInterval(30))
+    }
+
     private func makeArgs() -> PlayerArgs { PlayerArgs(videoId: "abcdefghijk", channelId: "ch1") }
 
     private func makeSettings() -> UserDefaultsSettingsStore {
         UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "PlayerViewModelTests.\(UUID().uuidString)")!)
     }
 
-    private func makeViewModel(resolver: FakeResolver, args: PlayerArgs? = nil) -> PlayerViewModel {
-        PlayerViewModel(resolver: resolver, settings: makeSettings(), args: args ?? makeArgs())
+    private func makeViewModel(resolver: FakeResolver, args: PlayerArgs? = nil,
+                               safeMode: Bool = true) -> PlayerViewModel {
+        let settings = makeSettings()
+        settings.safeMode = safeMode     // the store's own default is already true (Android parity)
+        return PlayerViewModel(resolver: resolver, settings: settings, args: args ?? makeArgs())
     }
 
     /// Scripts a queue of `resolve` outcomes and records each call's params. `gatedCallIndex`
@@ -72,16 +83,52 @@ struct PlayerViewModelTests {
         #expect(vm.state == .rung2Progressive(Self.progressive))
     }
 
-    @Test func embedMapsToGenericErrorPendingB3() async {
+    @Test func embedMapsToTheEmbedState() async {
         let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.embed)]))
         await vm.open()
-        #expect(vm.state == .error(messageKey: "player_error_generic"))
+        #expect(vm.state == .embed(Self.embed))
     }
 
-    @Test func openInYouTubeMapsToGenericErrorPendingB3() async {
-        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.openInYouTube)]))
+    @Test func openInYouTubeIsOfferedWhenSafeModeIsOff() async {
+        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.openInYouTube)]), safeMode: false)
         await vm.open()
-        #expect(vm.state == .error(messageKey: "player_error_generic"))
+        #expect(vm.state == .openInYouTube(Self.openInYouTube, messageKey: "player_error_generic"))
+    }
+
+    @Test func safeModeRemovesTheOpenInYouTubeRung() async {
+        // Spec §10 / plan §6.10: rung 4 is hidden ENTIRELY in Safe Mode. Ruling 14's single terminal
+        // "not playable" surface is where it lands -- not an error with a Retry that can never succeed.
+        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.openInYouTube)]), safeMode: true)
+        await vm.open()
+        #expect(vm.state == .contentUnavailable)
+    }
+
+    @Test func safeModeDoesNotSuppressTheEmbedRung() async {
+        // The rung that keeps a child inside the app is the one Safe Mode must KEEP. Only rung 4 goes.
+        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.embed)]), safeMode: true)
+        await vm.open()
+        #expect(vm.state == .embed(Self.embed))
+    }
+
+    @Test func aSilentRefreshNeverSwapsAPlayingStreamIntoTheEmbed() async {
+        // CF-B2-3 + plan §6.6: `reResolveIfExpiring` shows the user nothing, so it must not be able to
+        // change the playback SURFACE. The near-expiry rung-1 stream keeps playing; reactive recovery
+        // (which never passes `silent:`) owns the demotion, loudly, once the stream actually fails.
+        let expiring = Self.expiringHLS()
+        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(expiring), .success(Self.embed)]),
+                               safeMode: false)
+        await vm.open()
+        #expect(vm.state == .ready(expiring))
+        await vm.reResolveIfExpiring(now: .distantFuture)   // well past `expiresAt - margin`, so it fires
+        #expect(vm.state == .ready(expiring))               // embed result dropped; rung 1 still playing
+    }
+
+    @Test func embedActionsMapOntoTerminalStates() {
+        let vm = makeViewModel(resolver: FakeResolver(outcomes: []), safeMode: false)
+        vm.applyEmbedAction(.fail(messageKey: "player_embed_removed"), resolved: Self.embed)
+        #expect(vm.state == .error(messageKey: "player_embed_removed"))
+        vm.applyEmbedAction(.offerYouTube(messageKey: "player_embed_owner_only"), resolved: Self.embed)
+        #expect(vm.state == .openInYouTube(Self.embed, messageKey: "player_embed_owner_only"))
     }
 
     @Test func unavailableMapsToContentUnavailable() async {

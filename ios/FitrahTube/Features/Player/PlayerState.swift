@@ -15,6 +15,15 @@ enum StreamState {
     case contentUnavailable
     case cooldown(until: Date)
     case recoveryExhausted(Resolved)
+    /// Rung 3 (plan §6.4 row 3): YouTube's own IFrame player in a navigation-locked `WKWebView`.
+    /// A DIFFERENT surface, not a degraded `AVPlayer` -- which is why it is its own state and its
+    /// own `PlayerScreen` branch, and why nothing promotes it back to rung 1/2 automatically.
+    case embed(Resolved)
+    /// Rung 4 (plan §6.4 row 4): terminal. The card carries a reason line and an "Open in YouTube"
+    /// button; the hand-off itself is behind a confirmation (spec §6.6: "never an automatic
+    /// hand-off"). `messageKey` is why we got here -- the ladder bottomed out
+    /// (`player_error_generic`) or the embed reported 101/150 (`player_embed_owner_only`).
+    case openInYouTube(Resolved, messageKey: String)
 }
 
 extension StreamState: Equatable {
@@ -27,6 +36,9 @@ extension StreamState: Equatable {
         case (.recoveryExhausted(let l), .recoveryExhausted(let r)): return l.comparisonKey == r.comparisonKey
         case (.error(let l), .error(let r)): return l == r
         case (.cooldown(let l), .cooldown(let r)): return l == r
+        case (.embed(let l), .embed(let r)): return l.comparisonKey == r.comparisonKey
+        case (.openInYouTube(let l, let lk), .openInYouTube(let r, let rk)):
+            return l.comparisonKey == r.comparisonKey && lk == rk
         default: return false
         }
     }

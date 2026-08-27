@@ -50,6 +50,15 @@ enum PlayerStateCopy {
             let remaining = until.timeIntervalSince(now)
             return Copy(message: cooldownText(remainingSeconds: max(0, remaining), locale: locale),
                        showsRetry: remaining <= 0, announces: remaining > 0)
+        case .embed:
+            // Replaced in B3 task 4 by `PlayerScreen`'s own embed branch; until then an embed
+            // resolve is honestly terminal rather than silently handed off (spec §6.6 rung 4).
+            return Copy(message: String(localized: "player_error_generic"), showsRetry: true, announces: true)
+        case .openInYouTube(_, let messageKey):
+            // No Retry: the ladder that produced this state will produce it again. The hand-off
+            // button (`PlayerScreen`'s secondary action) is the exit.
+            return Copy(message: String(localized: String.LocalizationValue(messageKey)),
+                        showsRetry: false, announces: true)
         case .recoveryExhausted:
             // T7-M3 (deferred-minors.md, MUST): the manual Retry escape hatch -- this used to be a
             // bare `ProgressView` dead end.
@@ -80,6 +89,10 @@ struct PlayerStateView: View {
     let state: StreamState
     let isOnline: Bool
     let thumbnailURL: URL?
+    /// B3 task 2: the rung-4 hand-off ("Open in YouTube"). Supplied by `PlayerScreen`, because the
+    /// hand-off itself sits behind a confirmation only that screen can present (spec §6.6: rung 4
+    /// is never an automatic hand-off).
+    var secondaryAction: (title: String, handler: () -> Void)? = nil
     let retry: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -110,14 +123,23 @@ struct PlayerStateView: View {
     @ViewBuilder
     private func content(now: Date) -> some View {
         let copy = PlayerStateCopy.map(state, isOnline: isOnline, locale: locale, now: now)
+        // ONE action slot, and `copy.showsRetry` decides who owns it: no `StreamState` offers a
+        // Retry and a hand-off at once (`.openInYouTube` is `showsRetry: false` by contract --
+        // pinned by `PlayerStateViewTests.rung4CopyOffersYouTubeAndNoRetry`). Riding the shared
+        // slot leaves `StateViews.swift` -- which every list in the app uses -- untouched, and
+        // renders the rung-4 button identically to Retry instead of hand-rolling a second control
+        // (`StateButton` is private to that file).
+        let action: (title: String, run: () -> Void)? = copy.showsRetry
+            ? (title: String(localized: "retry"), run: retry)
+            : secondaryAction.map { (title: $0.title, run: $0.handler) }
         EmptyStateView(
             systemImage: "exclamationmark.triangle.fill",
             iconColor: .accentRed,
             message: copy.message,
-            action: copy.showsRetry ? (String(localized: "retry"), retry) : nil,
+            action: action,
             customIcon: (Self.isLoadingLike(state) && isOnline) ? AnyView(loadingIcon) : nil,
             messageAccessibilityIdentifier: Self.isCooldown(state) ? "player.state.countdown" : "player.state.message",
-            actionAccessibilityIdentifier: "player.state.retryButton",
+            actionAccessibilityIdentifier: copy.showsRetry ? "player.state.retryButton" : "player.openInYouTube.button",
             combinesMessageWithIcon: false
         )
         .background(Color.background)

@@ -403,6 +403,55 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-recovery-exhausted-state", into: directory)
     }
 
+    /// Plan B3 task 2: rung 4 -- reason line + "Open in YouTube", NO Retry, and the hand-off behind
+    /// a confirmation (spec §6.6: "never an automatic hand-off"). Safe Mode defaults to ON, which
+    /// maps this outcome to `.contentUnavailable` instead, so `-safe_mode NO` turns it off through
+    /// the `NSArgumentDomain` route `-onboarding_completed YES` already uses. Two shots: the card,
+    /// then the confirmation dialog it presents.
+    func testPlayerOpenInYouTubeState() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-open-in-youtube",
+                            arguments: ["-fitrah-fake-player-open-in-youtube", "-safe_mode", "NO",
+                                        "-fitrah-route", "player", "fixture-video"],
+                            anchor: .button("unused"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let handoff = app.buttons["player.openInYouTube.button"]
+        XCTAssertTrue(handoff.waitForExistence(timeout: 20), "player-open-in-youtube: hand-off button never appeared")
+        XCTAssertFalse(app.buttons["player.state.retryButton"].exists,
+                       "player-open-in-youtube: rung 4 must not offer Retry")
+        try write(named: "player-open-in-youtube-state", into: directory)
+
+        handoff.tap()
+        // The dialog's own title, not an identifier: `confirmationDialog` renders a system sheet
+        // whose title is a plain static text. Nothing has opened YouTube at this point -- that is
+        // the whole assertion (spec §6.6, rung 4 is never automatic).
+        let confirmation = app.staticTexts["Open this video in YouTube?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 10),
+                      "player-open-in-youtube: confirmation never appeared")
+        try write(named: "player-open-in-youtube-confirmation", into: directory)
+    }
+
+    /// Plan B3 task 2: the same rung-4 outcome with Safe Mode at its DEFAULT (on) -- the rung is
+    /// removed entirely and lands on the one terminal "not playable" card, with no hand-off button
+    /// and no Retry (spec §10 / plan §6.10, ruling 14).
+    func testPlayerSafeModeRemovesOpenInYouTubeRung() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-safe-mode-rung4-removed",
+                            arguments: ["-fitrah-fake-player-open-in-youtube",
+                                        "-fitrah-route", "player", "fixture-video"],
+                            anchor: .button("unused"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let message = app.staticTexts["player.state.message"]
+        XCTAssertTrue(message.waitForExistence(timeout: 20), "player-safe-mode: message never appeared")
+        XCTAssertFalse(app.buttons["player.openInYouTube.button"].exists,
+                       "player-safe-mode: Safe Mode must remove the hand-off entirely")
+        XCTAssertFalse(app.buttons["player.state.retryButton"].exists,
+                       "player-safe-mode: terminal state must not offer Retry")
+        try write(named: "player-safe-mode-rung4-removed", into: directory)
+    }
+
     // MARK: - B1 task 10: iPad / RTL / Dynamic Type / VoiceOver pass
     // (docs/superpowers/plans/2026-08-24-ios-phase2b1-player-core.md, spec §6.11)
 
