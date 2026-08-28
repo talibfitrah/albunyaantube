@@ -404,6 +404,8 @@ struct EmbedWebView: UIViewRepresentable {
                 guard let timeout = self?.loadTimeout else { return }
                 try? await Task.sleep(for: timeout)
                 guard !Task.isCancelled, let self else { return }
+                // M5: deliberately NOT through `EmbedErrorPolicy.decide` / `alreadyReloaded` -- a
+                // hung network is not a transient player code, and a reload would just hang again.
                 self.apply(.fail(messageKey: "player_error_message"), web: web)
             }
         }

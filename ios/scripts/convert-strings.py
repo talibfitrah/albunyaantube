@@ -125,7 +125,7 @@ EXTRA_KEYS = {
     "settings_safe_mode": {"en": "Safe Mode", "ar": "الوضع الآمن", "nl": "Veilige modus"},
     "settings_safe_mode_desc": {
         "en": "Turn off autoplay",
-        "ar": "أوقف التشغيل التلقائي",
+        "ar": "إيقاف التشغيل التلقائي",
         "nl": "Schakel automatisch afspelen uit",
     },
     # Embed rung (B3 tasks 3-4). iOS-only: Android has no IFrame embed player at all (grep of

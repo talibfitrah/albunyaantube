@@ -130,6 +130,20 @@ struct PlayerScreenEmbedTests {
         #expect(await Self.waitForState(model, .error(messageKey: "player_error_message")))
     }
 
+    /// I3 (B3 re-check): the three watchdog tests above arm it by hand, so deleting the arm from
+    /// `load` keeps them green. This one goes through `start(web:)` -- the production entry -- on a
+    /// bare web view with no message handler, so no `.ready` can ever disarm it: only the arm in
+    /// `load` can put the model into `.error`.
+    @Test(.timeLimit(.minutes(1))) func startArmsTheLoadWatchdog() async {
+        let model = Self.makeModel()
+        let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", model: model, locale: "en",
+                                                   loadTimeout: .milliseconds(50))
+        let web = WKWebView(frame: .zero)
+        coordinator.start(web: web)
+        #expect(await Self.waitForState(model, .error(messageKey: "player_error_message")))
+        coordinator.teardown(web: web)
+    }
+
     @Test(.timeLimit(.minutes(1))) func readyDisarmsTheLoadWatchdog() async {
         let model = Self.makeModel()
         let coordinator = EmbedWebView.Coordinator(videoId: "xc7keR2piUM", model: model, locale: "en",
