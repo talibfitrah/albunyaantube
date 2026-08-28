@@ -32,6 +32,7 @@ nonisolated struct PlayerQueue: Equatable, Sendable {
     ) -> PlayerQueue {
         let clampedIndex = items.isEmpty ? 0 : min(max(startIndex, 0), items.count - 1)
         let start = targetVideoId.flatMap { id in items.firstIndex { $0.id == id } } ?? clampedIndex
+        let cursor = shuffled ? nil : cursor   // shuffle always disables paging, even on an empty page
         guard shuffled, !items.isEmpty else {
             return PlayerQueue(items: items, index: start, cursor: cursor)
         }
@@ -69,9 +70,9 @@ nonisolated struct PlayerQueue: Equatable, Sendable {
         if !pagingFailed { self.cursor = cursor }
     }
 
+    /// Keeps the continuation token; the latch alone gates `hasMorePages`.
     mutating func markPagingFailed() {
         pagingFailed = true
-        cursor = nil
     }
 }
 

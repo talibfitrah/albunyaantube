@@ -51,9 +51,34 @@ private func items(_ ids: [String]) -> [ContentItem] {
                               startIndex: 0, shuffled: true, cursor: "PAGE2",
                               using: &generator)
     #expect(q.current?.id == "d")
-    #expect(Set(q.upcoming.map(\.id)) == Set(["a", "b", "c", "e"]))
+    // Exact order under SeededGenerator(seed: 7) -- differs from the input order, so an
+    // unshuffled queue fails here (a Set assertion passed without shuffling).
+    #expect(q.upcoming.map(\.id) == ["b", "a", "e", "c"])
     #expect(q.hasMorePages == false)          // paging disabled when shuffled
     #expect(q.needsPage == false)
+}
+
+@Test func shuffleOfAnEmptyFirstPageStillDisablesPaging() {
+    // Shuffle always disables paging: an empty first page must not keep the cursor and later
+    // append an unshuffled tail.
+    let q = PlayerQueue.start(items: [], targetVideoId: nil, startIndex: 0, shuffled: true,
+                              cursor: "c")
+    #expect(q.hasMorePages == false)
+}
+
+@Test func anEmptyQueueHasNoCurrentAndDoesNotAdvance() {
+    var q = PlayerQueue.start(items: [], targetVideoId: nil, startIndex: 3, shuffled: false,
+                              cursor: nil)
+    #expect(q.current == nil)
+    #expect(q.advance() == nil)
+    #expect(q.index == 0)
+}
+
+@Test func hasNextIsTrueWhenNothingIsQueuedButAPageRemains() {
+    let q = PlayerQueue.start(items: items(["a"]), targetVideoId: nil, startIndex: 0,
+                              shuffled: false, cursor: "P2")
+    #expect(q.upcoming.isEmpty)
+    #expect(q.hasNext)
 }
 
 @Test func advanceWalksForwardAndStopsAtTheEnd() {
@@ -98,6 +123,7 @@ private func items(_ ids: [String]) -> [ContentItem] {
     var q = PlayerQueue.start(items: items(["a"]), targetVideoId: nil, startIndex: 0,
                               shuffled: false, cursor: "P2")
     q.markPagingFailed()
+    #expect(q.cursor == "P2")                 // the continuation token is kept; the latch gates
     #expect(q.hasMorePages == false)
     #expect(q.needsPage == false)
     q.append(items(["b"]), cursor: "P3")      // a late success must not un-latch it
