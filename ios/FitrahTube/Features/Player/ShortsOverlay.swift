@@ -117,6 +117,9 @@ struct ShortsOverlay: View {
         .onChange(of: model.currentPlayer, initial: true) { _, player in
             observer.stop()
             guard let player else { return }
+            // ponytail: this closure captures the view value (hence `model` and its `currentPlayer`);
+            // `observer.stop()` on disappear is what breaks the retention. If B5's holder makes the
+            // player outlive this view, revisit with CF-B4-6 / CF-B4-13.
             observer.start(player: player) { time in
                 guard !editing else { return }
                 currentSeconds = time.seconds
@@ -255,10 +258,12 @@ struct ShortsOverlay: View {
             }
         }
         .tint(.white)
-        // Task 4: the stock slider measures 31 pt; 44 is the floor for a tap target (spec §6.11).
-        // Declined the plan's `.scaleEffect(y:)` 3 pt track for the same reason -- it halves the
-        // hit area along with the picture.
+        // Task 4 / final review I1: the stock slider measures 31 pt; the 44 pt frame alone did not
+        // change that (spec §6.11 floor). `contentShape` makes the whole row the hit/a11y area --
+        // measured 44 pt on en/ar/a11y3 (CF-B4-7). Declined the plan's `.scaleEffect(y:)` 3 pt
+        // track: it halves the hit area along with the picture.
         .frame(height: 44)
+        .contentShape(Rectangle())
         .accessibilityIdentifier("shorts.scrubber")
         .accessibilityLabel(String(localized: "shorts_seek_cd"))
         .accessibilityValue(ShortsScrub.clock(currentSeconds))

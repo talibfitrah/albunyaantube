@@ -896,10 +896,15 @@ final class ScreenshotTests: XCTestCase {
         notes.append("iphone-en indicator frame=\(indicator.frame)")
         try write(named: "shorts-b4t4-iphone-en-paused", into: directory)
         stage.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
-        let flashed = indicator.waitForExistence(timeout: 1)
+        // I2 (final review): `waitForExistence` polls too slowly to catch a 600 ms element; a tight
+        // `.exists` loop straight after the tap is the fastest observation XCUITest offers.
+        var flashed = false
+        let flashDeadline = Date().addingTimeInterval(1.2)
+        repeat { flashed = indicator.exists } while !flashed && Date() < flashDeadline
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertFalse(indicator.exists, "b4t4 en tap: the play glyph must fade after ~600 ms")
         notes.append("iphone-en play glyph flashed=\(flashed) gone-after-1.5s=\(!indicator.exists)")
+        XCTAssertTrue(flashed, "b4t4 en tap: the play glyph never appeared within 1.2 s of the resume tap")
 
         // M5: a tap on the channel/title scrim must still reach the play/pause target.
         app.staticTexts["shorts.title"].coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
@@ -908,9 +913,14 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(scrimTapPaused, "b4t4 en M5: the title scrim swallowed the stage tap")
         if !scrimTapPaused { stage.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap() }
 
-        // Scrub (paused): a real finger drag of the thumb to 75 % (1.5 s -> "0:01"), then past the
-        // end. The value string is the accessibility value ("m:ss") -- the observer only rewrites it
-        // once the seek lands, so a stale value here means the release did not seek.
+        // Scrub (paused): a real finger drag of the thumb to 75 % (1.5 s -> "0:01"). The value
+        // string is the accessibility value ("m:ss") -- the observer only rewrites it once the seek
+        // lands, so a stale value here means the release did not seek. M9 (final review): the
+        // past-the-end drag is RECORDED, not asserted. Diagnosed 2026-08-28 (six drag variants,
+        // thumb-located and raw, forward and back): only the FIRST drag on this 2 s fixture yields
+        // a value matching its target; every later one reports a time inconsistent with where the
+        // thumb was released, so the string is not an oracle for a second seek. The clamp itself is
+        // pinned by `ShortsScreenTests.scrubMathsRoundTripsAndSurvivesADegenerateDuration`.
         let slider = app.sliders["shorts.scrubber"]
         let thumbStart = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.0, dy: 0.5))
         thumbStart.press(forDuration: 0.3, thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)))
@@ -920,9 +930,8 @@ final class ScreenshotTests: XCTestCase {
             .press(forDuration: 0.3, thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 1.4, dy: 0.5)))
         Thread.sleep(forTimeInterval: 1)
         let end = slider.value as? String ?? ""
-        notes.append("iphone-en scrub: after drag to 0.75 value=\(mid); after drag past the end value=\(end)")
+        notes.append("iphone-en scrub: after drag to 0.75 value=\(mid); after drag past the end value=\(end) (recorded only, see M9 note)")
         XCTAssertEqual(mid, "0:01", "b4t4 en scrub: expected 0:01 after a drag to 75 % of the 2 s fixture, got \(mid)")
-        XCTAssertTrue(["0:02", "0:00", "0:01"].contains(end), "b4t4 en scrub: end-drag produced \(end)")
 
         // Rail: Like x10 (ruling 52) -- the audio-language and CC buttons stay absent throughout.
         let audio = app.buttons["player.audioLanguageMenu.button"]
@@ -1124,9 +1133,9 @@ final class ScreenshotTests: XCTestCase {
         }
         let slider = app.sliders["shorts.scrubber"]
         notes.append("\(label) shorts.scrubber frame=\(slider.frame) label=\(slider.label.debugDescription) value=\(String(describing: slider.value))")
-        // The stock slider's own element stays 31 pt tall whatever frame it is given; the 44 pt row
-        // around it is layout, not hit area. Recorded as a deviation, not asserted away.
-        XCTAssertGreaterThanOrEqual(slider.frame.height, 31, "\(label): scrubber height \(slider.frame.height) < 31 pt")
+        // I1 (final review): the element was 31 pt until `.contentShape(Rectangle())` joined the
+        // 44 pt row -- measured 44 on en/ar/a11y3 after that, so the floor is asserted like the rest.
+        XCTAssertGreaterThanOrEqual(slider.frame.height, 44, "\(label): scrubber height \(slider.frame.height) < 44 pt")
         let title = app.staticTexts["shorts.title"]
         if title.exists { notes.append("\(label) shorts.title frame=\(title.frame) label=\(title.label.debugDescription)") }
         // Accessibility order: every identified element as XCUITest enumerates it.
@@ -1174,6 +1183,28 @@ final class ScreenshotTests: XCTestCase {
     private func requireShortsLive() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["SHORTS_LIVE"] == "1",
                           "live Shorts checks are opt-in: SHORTS_LIVE=1")
+    }
+
+    /// I3 (B4 final review): `.shortsGlyph()` resized the MAIN player's audio-language / captions
+    /// menus too (40 -> 44 pt, Dynamic Type capped). No fixture carries a caption track or a second
+    /// audible group, so only a live resolve renders them there. Opt-in like the rest (SHORTS_LIVE=1);
+    /// asserts the CC glyph is 44 pt and inside the window in en and at .accessibility3.
+    func testPlayerLiveCaptionsGlyphAfterShortsGlyph() throws {
+        try requireShortsLive()
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "player-live-glyph", arguments: ["-fitrah-route", "player", Self.liveEmbeddableId],
+                            anchor: .button("unused"))
+        XCUIDevice.shared.orientation = .portrait
+        for (name, extra) in [("en", [String]()), ("en-a11y3", Self.accessibility3)] {
+            let app = launch(screen, locale: Self.locales[0], extraArguments: extra)
+            let cc = app.buttons["player.captionsMenu.button"]
+            XCTAssertTrue(cc.waitForExistence(timeout: 60), "live glyph \(name): CC button never appeared (resolve failed?)")
+            let frame = cc.frame, window = app.windows.firstMatch.frame
+            XCTAssertEqual(frame.width, 44, accuracy: 1, "live glyph \(name): CC glyph width \(frame.width)")
+            XCTAssertEqual(frame.height, 44, accuracy: 1, "live glyph \(name): CC glyph height \(frame.height)")
+            XCTAssertTrue(window.contains(frame), "live glyph \(name): CC glyph \(frame) outside window \(window)")
+            try write(named: "player-live-cc-glyph-\(name)", into: directory)
+        }
     }
 
     /// Step 2 items 1, 3, 4, 6 on a real 9:16 Short; item 2 on the 16:9 clip through the deep link.

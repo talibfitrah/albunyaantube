@@ -110,7 +110,8 @@ struct ShortsScreen: View {
         }
         .accessibilityIdentifier("shorts.back")
         .accessibilityLabel(String(localized: "back"))
-        // M8: VoiceOver reads Back, then the kebab, before the stage -- the order the eye takes.
+        // M8: Back before the kebab WITHIN this row. Relative to the stage the order is unverified --
+        // sort priority does not cross ZStack layers and XCUITest enumeration ignores it (CF-B4-10).
         .accessibilitySortPriority(2)
     }
 
@@ -172,6 +173,14 @@ private struct PopGestureEnabler: UIViewControllerRepresentable {
 
         override func viewDidDisappear(_ animated: Bool) {
             super.viewDidDisappear(animated)
+            restore()
+        }
+
+        /// M8 (final review): a controller torn down without `viewDidDisappear` (a stack reset)
+        /// must not leave the pop gesture delegated to a dead object.
+        deinit { MainActor.assumeIsolated { restore() } }
+
+        private func restore() {
             recognizer?.delegate = originalDelegate
             recognizer = nil
         }

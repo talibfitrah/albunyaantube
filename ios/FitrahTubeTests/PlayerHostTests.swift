@@ -358,6 +358,25 @@ struct PlayerHostTests {
             autoSwappedToAudioOnly: false)) == .none)
     }
 
+    /// I4 (B4 final review): the ONE read of the setting, `PlayerHostView.effectiveBackgroundPlay`,
+    /// wired into the coordinator it builds. Coordinator half only: `makeUIViewController` needs a
+    /// `UIViewControllerRepresentableContext`, which cannot be built outside a SwiftUI host, so the
+    /// controller's `showsPlaybackControls` / `videoGravity` stay pinned via `PlayerPresentation`
+    /// above and the UI matrix (`ScreenshotTests.testShortsB4Task4IPhone`: no transport, 9:16 fill).
+    @Test func shortsCoordinatorForcesBackgroundPlayOffEvenWhenTheSettingIsOn() {
+        let settings = UserDefaultsSettingsStore(
+            defaults: UserDefaults(suiteName: "PlayerPresentationTests.\(UUID().uuidString)")!)
+        settings.backgroundPlay = true
+        let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings,
+                                    args: PlayerArgs(videoId: "xc7keR2piUM"))
+        #expect(model.backgroundPlay)
+
+        let shorts = PlayerHostView(state: .idle, quality: .auto, audioOnly: false, model: model, presentation: .shorts)
+        #expect(shorts.makeCoordinator().background.backgroundPlay == false)
+        let standard = PlayerHostView(state: .idle, quality: .auto, audioOnly: false, model: model, presentation: .standard)
+        #expect(standard.makeCoordinator().background.backgroundPlay)
+    }
+
     @Test func theLoopRestartsFromZeroRatherThanAdvancing() {
         // Android REPEAT_MODE_ONE (PlayerBinder.kt:154). The decision is pure so the notification glue
         // has nothing to decide: an ended item under .shorts seeks to zero and plays; under .standard

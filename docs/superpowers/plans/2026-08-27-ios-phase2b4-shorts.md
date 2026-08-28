@@ -659,7 +659,7 @@ Then check, on iPhone 17 and iPad Pro 13-inch (M5), portrait, en and ar:
   - The channel row: present with a fixture that has a channel name, absent with one that does not.
   - Chrome: status bar hidden, **tab bar still visible on iPhone** (ruling 57), Back works, **swipe-from-edge back works** — if it does not, fix it here (Task 3's note).
   - Rotation (iPhone only): the device rotates, the screen does not. Navigate away and confirm the rest of the app rotates again. On iPad the screen rotates with the device (no `UIRequiresFullScreen`; the mask is ignored under multitasking) — that is expected, not a failure.
-  - RTL (ar): the rail is on the **leading** edge (mirrored), the channel row on the trailing; the `@handle` renders with its LRM mark and does not reorder; the scrub bar fills from the correct side.
+  - RTL (ar): the rail sits on the **trailing** edge, so in ar it **mirrors to the left** (Android `alignParentEnd`), the channel row to the right; the `@handle` renders with its LRM mark and does not reorder; the scrub bar fills from the correct side.
   - Dynamic Type `.accessibility3`: the title truncates at 2 lines without pushing the rail off screen; the rail glyphs do not grow.
   - VoiceOver: the stage, indicator, scrubber (as an adjustable), each rail button with label **and** value, the kebab, the Back button, the title and handle are all reachable and correctly ordered; a rung-2 or embed transition is announced.
   - Every tap target measured ≥44×44 pt (Accessibility Inspector, not eyeballed).

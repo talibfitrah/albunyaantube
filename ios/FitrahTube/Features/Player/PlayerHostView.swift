@@ -53,7 +53,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly)
         controller.showsPlaybackControls = presentation.showsPlaybackControls
-        controller.videoGravity = presentation.videoGravity
+        // M6 (B4 final review): write only on change. B5's fullscreen will let the user pick a
+        // gravity on this controller, and an unconditional write here would undo it every pass.
+        if controller.videoGravity != presentation.videoGravity { controller.videoGravity = presentation.videoGravity }
         // Live on every pass, exactly like `background.backgroundPlay` below: a Background-play flip
         // made in Settings while the player is open must change auto-PiP now, not on the next launch.
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
