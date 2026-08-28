@@ -15,11 +15,7 @@ final class FixedMonotonicClock: MonotonicClock, @unchecked Sendable {
 final class RecordingResolver: StreamResolving, @unchecked Sendable {
     // B4: `purpose` was dropped on the floor. It is the lane CF-B2-2 reserves (.prefetch is B5's),
     // so a test that means "Shorts never resolve a neighbour" has to be able to see it.
-    // `Equatable` comes off `Call` because `InnerTubeKit.Purpose` does not conform and this plan is
-    // read-only in that package -- nothing in the suite compares whole `Call` values (verified
-    // 2026-08-27: every assertion is on `.kind`, `.forceRefresh` or `calls.count`), so the
-    // synthesised conformance was unused.
-    struct Call { var videoId: String; var kind: RequestKind; var purpose: Purpose; var forceRefresh: Bool }
+    struct Call: Equatable { var videoId: String; var kind: RequestKind; var purpose: Purpose; var forceRefresh: Bool }
 
     enum Outcome { case hls, progressive, failure(ExtractionError) }
 

@@ -9,7 +9,13 @@ import UIKit
 /// B5 note: ruling 42's fullscreen orientation behaviour wants this same hook -- `mask` is the one
 /// writable seam; do not add a second mechanism.
 @MainActor enum OrientationLock {
-    private(set) static var mask: UIInterfaceOrientationMask = .allButUpsideDown
+    /// iPad keeps `.all` -- Info.plist declares upside-down for `~ipad` (M4, fix round 2). Note the
+    /// lock is effectively iPhone-only: without `UIRequiresFullScreen` (deliberately absent), iPad
+    /// multitasking ignores the mask entirely.
+    private static var unlocked: UIInterfaceOrientationMask {
+        UIDevice.current.userInterfaceIdiom == .pad ? .all : .allButUpsideDown
+    }
+    private(set) static var mask: UIInterfaceOrientationMask = unlocked
 
     static func lockPortrait() {
         mask = .portrait
@@ -17,12 +23,15 @@ import UIKit
     }
 
     static func release() {
-        mask = .allButUpsideDown
-        request(.allButUpsideDown)   // hands control back to the device; does not force a rotation
+        mask = unlocked
+        request(unlocked)   // hands control back to the device; does not force a rotation
     }
 
     private static func request(_ orientations: UIInterfaceOrientationMask) {
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+        // The foreground-active scene, not `.first` (M5): with more than one connected scene the
+        // first is not necessarily the one on screen.
+        guard let scene = UIApplication.shared.connectedScenes
+            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else { return }
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientations))
         // ponytail: no error handler. A refused geometry request means the device stays where it is,
         // which is the pre-B4 behaviour -- degrading to "not locked" is correct, crashing is not.

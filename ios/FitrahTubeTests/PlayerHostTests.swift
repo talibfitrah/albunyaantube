@@ -206,6 +206,33 @@ struct PlayerHostTests {
         #expect(coordinator.observedItem === player.currentItem)
     }
 
+    /// I2 (B4 T2 fix round 2): the repeat-one loop. Real clip (`player-fixture.mp4`, the fake-player
+    /// fixture) so the seek lands on a loaded item; the end notification is posted by hand because
+    /// waiting for a 2 s clip to play out is what the wall clock is for, not this test.
+    @Test(.timeLimit(.minutes(1))) func restartLoopSeeksToZeroOnPlayToEndAndOnlyWhileObserving() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        let item = try #require(player.currentItem)
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.observe(item: item, player: player, model: nil, isLive: false, playToEnd: .restart)
+
+        let one = CMTime(seconds: 1, preferredTimescale: 600)
+        await player.seek(to: one, toleranceBefore: .zero, toleranceAfter: .zero)
+        #expect(player.currentTime().seconds > 0.5)
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: item)
+        await Task.yield()   // the observer runs on `.main`; one turn is all it needs
+        for _ in 0..<200 where player.currentTime().seconds > 0.1 { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(player.currentTime().seconds < 0.1)
+
+        coordinator.stopObserving()
+        player.pause()
+        await player.seek(to: one, toleranceBefore: .zero, toleranceAfter: .zero)
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: item)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(player.currentTime().seconds > 0.5)
+    }
+
     // MARK: - A non-playable state tears playback down instead of leaving a stale player
 
     // MARK: - Task 5: Picture in Picture

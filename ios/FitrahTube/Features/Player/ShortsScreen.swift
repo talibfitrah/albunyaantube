@@ -30,12 +30,24 @@ struct ShortsScreen: View {
         }
     }
 
+    /// Which surface a state renders. Pure so the routing is testable without a live view: an online
+    /// `.embed` MUST reach `EmbedRungView` -- `PlayerStateCopy.map` `preconditionFailure`s on it
+    /// (C1, fix round 2). Same three-way split as `PlayerScreen.stateView`.
+    enum Branch: Equatable { case player, embed, status }
+    static func branch(for state: StreamState, isOnline: Bool) -> Branch {
+        switch state {
+        case .ready, .rung2Progressive: .player
+        case .embed where isOnline: .embed
+        default: .status
+        }
+    }
+
     @ViewBuilder
     private func stage(_ state: StreamState, model: PlayerViewModel) -> some View {
-        switch state {
+        switch Self.branch(for: state, isOnline: container.network.isOnline) {
         // ONE branch for both playable rungs -- Global Constraints, and the same identity rule
         // PlayerScreen.stateView carries. Rung-specific chrome differs INSIDE it (Task 3).
-        case .ready, .rung2Progressive:
+        case .player:
             // `.aspectRatio(.fit)` letterboxes the 9:16 box (iPad: spec §14); `videoGravity =
             // .resizeAspectFill` crops a non-9:16 source INSIDE it (Android resize_mode="zoom").
             // Two different levers, both needed.
@@ -45,7 +57,13 @@ struct ShortsScreen: View {
                 .aspectRatio(9.0 / 16.0, contentMode: .fit)
                 .frame(maxWidth: Size.playerMaxWidth(widthClass))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        default:
+        // Rung 3, mirroring PlayerScreen: its own surface, no AVPlayer. Still 16:9 here -- the
+        // 9:16 aspect parameter is Task 3 (CF-B3-1).
+        case .embed:
+            if case .embed(let resolved) = state {
+                EmbedRungView(resolved: resolved, model: model, args: args)
+            }
+        case .status:
             PlayerStateView(state: state, isOnline: container.network.isOnline,
                             thumbnailURL: args.thumbnailURL) { Task { await model.retry() } }
         }
