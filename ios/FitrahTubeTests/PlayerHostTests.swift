@@ -196,7 +196,7 @@ struct PlayerHostTests {
         let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: false))
         let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
         let videoItem = try #require(player.currentItem)
-        coordinator.observe(item: videoItem, player: player, model: nil, isLive: false)
+        coordinator.observe(item: videoItem, player: player, model: nil, isLive: false, playToEnd: .none)
         defer { coordinator.stopObserving() }
 
         PlayerHostView.applyPolicyAction(.swapToAudioOnly, state: state, player: player,
@@ -297,5 +297,45 @@ struct PlayerHostTests {
 
         #expect(result == nil)
         #expect(player?.rate == 0) // paused, not left running detached from any view
+    }
+}
+
+// MARK: - B4 Task 2: `PlayerPresentation` -- the pure knob table behind `PlayerHostView.presentation`
+
+@Suite struct PlayerPresentationTests {
+    @Test func shortsPresentationSwitchesOffEveryMainPlayerAffordance() {
+        // Spec 10 Shorts: no stock transport, fill-and-crop (Android resize_mode="zoom"), repeat-one.
+        // Ruling 43 + CF-B2-15: no background playback => backgroundPolicy .pauses AND
+        // canStartPictureInPictureAutomaticallyFromInline false, both of which key off this one flag.
+        #expect(PlayerPresentation.shorts.showsPlaybackControls == false)
+        #expect(PlayerPresentation.shorts.videoGravity == .resizeAspectFill)
+        #expect(PlayerPresentation.shorts.loops)
+        #expect(PlayerPresentation.shorts.allowsBackgroundPlayback == false)
+    }
+
+    @Test func standardPresentationIsUnchangedFromB1AndB2() {
+        // The regression guard for the defaulted parameter: nothing about the main player moved.
+        #expect(PlayerPresentation.standard.showsPlaybackControls)
+        #expect(PlayerPresentation.standard.videoGravity == .resizeAspect)
+        #expect(PlayerPresentation.standard.loops == false)
+        #expect(PlayerPresentation.standard.allowsBackgroundPlayback)
+    }
+
+    @Test func shortsNeverAskAVFoundationToKeepPlayingInTheBackground() {
+        // CF-B2-15's cost cannot arise on this screen: with backgroundPlay false the policy is .pauses
+        // for EVERY stream shape, itag 140 or not, so nothing pulls video for a screen nobody sees.
+        #expect(AudioSessionPolicy.backgroundPolicy(backgroundPlay: false, pictureInPictureActive: false) == .pauses)
+        #expect(AudioSessionPolicy.decide(.enteredBackground, PlaybackPolicyContext(
+            backgroundPlay: false, userAudioOnly: false, audioOnlyAvailable: true,
+            pictureInPictureActive: false, wasPlayingBeforeInterruption: false,
+            autoSwappedToAudioOnly: false)) == .none)
+    }
+
+    @Test func theLoopRestartsFromZeroRatherThanAdvancing() {
+        // Android REPEAT_MODE_ONE (PlayerBinder.kt:154). The decision is pure so the notification glue
+        // has nothing to decide: an ended item under .shorts seeks to zero and plays; under .standard
+        // it does nothing (B5's auto-advance is the only thing allowed to react there).
+        #expect(PlayerPresentation.shorts.actionOnPlayToEnd == .restart)
+        #expect(PlayerPresentation.standard.actionOnPlayToEnd == .none)
     }
 }

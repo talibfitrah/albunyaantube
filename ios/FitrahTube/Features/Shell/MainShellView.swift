@@ -139,6 +139,8 @@ struct MainShellView: View {
         switch route {
         case .player(let args):
             PlayerScreen(args: args)
+        case .shorts(let args):
+            ShortsScreen(args: args)
         case .featured(let categoryId, let categoryName):
             FeaturedView(categoryId: categoryId, categoryName: categoryName)
         case .search:

@@ -366,7 +366,9 @@ struct PlayerScreen: View {
     /// resolver for `FixturePlayerResolver` (below), which resolves to the bundled local fixture
     /// clip, so the screenshot rig never touches the network. Compiled out of Release with every
     /// other debug hook in this app (`FitrahTubeApp.swift`).
-    private static func resolver(container: AppContainer) -> any StreamResolving {
+    /// Not private (B4): `ShortsScreen` walks the same ladder -- one copy, so a future fixture hook
+    /// lands on both screens.
+    static func resolver(container: AppContainer) -> any StreamResolving {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-audio-only") {
             return FixtureAudioOnlyResolver()

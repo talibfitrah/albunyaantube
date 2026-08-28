@@ -3,6 +3,9 @@ import SwiftUI
 
 @main
 struct FitrahTubeApp: App {
+    // B4 (fork C): exists solely for `supportedInterfaceOrientationsFor` -- see `OrientationLock`.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     // Release must always build the live container -- a Release binary should never be able to
     // serve fake data even if `-fitrah-fake-container` somehow ended up in its arguments.
     #if DEBUG

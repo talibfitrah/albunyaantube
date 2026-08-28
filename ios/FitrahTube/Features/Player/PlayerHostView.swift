@@ -23,15 +23,24 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// `model.currentItem` so `AudioLanguageMenu` (a SwiftUI overlay with no view-hierarchy access
     /// to the AVKit-managed item) can read/select its audible options.
     let model: PlayerViewModel
+    /// B4: which surface this host is. Defaulted so `PlayerScreen`'s call site is untouched.
+    var presentation: PlayerPresentation = .standard
 
-    func makeCoordinator() -> Coordinator { Coordinator(backgroundPlay: model.backgroundPlay) }
+    /// B4: the ONE read of the Background play setting this host makes. `.shorts` forces it off
+    /// (Android parity, brief 9.5), and every consumer -- the coordinator's initial policy, auto-PiP,
+    /// the live `background.backgroundPlay` -- goes through here. Miss one and Shorts get a floating
+    /// PiP window from a home-swipe.
+    private var effectiveBackgroundPlay: Bool { presentation.allowsBackgroundPlayback && model.backgroundPlay }
+
+    func makeCoordinator() -> Coordinator { Coordinator(backgroundPlay: effectiveBackgroundPlay) }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
-        controller.showsPlaybackControls = true
+        controller.showsPlaybackControls = presentation.showsPlaybackControls
+        controller.videoGravity = presentation.videoGravity
         controller.delegate = context.coordinator
         controller.player = Self.player(for: state, replacing: nil, audioOnly: audioOnly)
-        Self.configurePictureInPicture(controller, backgroundPlay: model.backgroundPlay)
+        Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
         applyBackgroundController(to: controller, context: context)
         applyNowPlaying(context: context)
         applyQuality(to: controller, context: context)
@@ -43,9 +52,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly)
+        controller.showsPlaybackControls = presentation.showsPlaybackControls
+        controller.videoGravity = presentation.videoGravity
         // Live on every pass, exactly like `background.backgroundPlay` below: a Background-play flip
         // made in Settings while the player is open must change auto-PiP now, not on the next launch.
-        Self.configurePictureInPicture(controller, backgroundPlay: model.backgroundPlay)
+        Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
         applyBackgroundController(to: controller, context: context)
         applyNowPlaying(context: context)
         applyQuality(to: controller, context: context)
@@ -83,7 +94,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
             context.coordinator.stopObserving()
             return
         }
-        context.coordinator.observe(item: item, player: player, model: model, isLive: Self.isLive(state))
+        context.coordinator.observe(item: item, player: player, model: model, isLive: Self.isLive(state),
+                                    playToEnd: presentation.actionOnPlayToEnd)
     }
 
     /// Task 4: republish the lock-screen surface on every pass -- which is every item replacement
@@ -102,7 +114,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         let background = context.coordinator.background
         // Read live on every pass (ruling 34): a Background-play flip made in Settings while the
         // player is open must take effect on the next background transition, not on the next launch.
-        background.backgroundPlay = model.backgroundPlay
+        background.backgroundPlay = effectiveBackgroundPlay
         background.userAudioOnly = model.audioOnly
         background.audioOnlyAvailable = PlayerViewModel.audioOnlyAvailable(for: state)
         background.onPolicyAction = Self.policyHandler(model: model, player: player,
@@ -171,8 +183,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 // per-item -- left on the outgoing one, an audio-only stream that dies in the
                 // background would never reach the recovery ladder. Same hook
                 // `updateUIViewController` uses; it no-ops if the pair is already the observed one.
+                // B4: `.none` is right here -- this path only runs on `.swapToAudioOnly` /
+                // `.restoreVideoNow`, which `AudioSessionPolicy.decide(.enteredBackground, …)`
+                // never emits with backgroundPlay false, so `.shorts` can never reach it.
                 if let item = player.currentItem {
-                    coordinator?.observe(item: item, player: player, model: model, isLive: Self.isLive(state))
+                    coordinator?.observe(item: item, player: player, model: model, isLive: Self.isLive(state),
+                                         playToEnd: .none)
                 }
             }
             model?.audioOnly = audioOnly
@@ -271,6 +287,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private weak var observedPlayer: AVPlayer?
         private var statusCancellable: AnyCancellable?
         private var failedToEndObserver: NSObjectProtocol?
+        /// B4: the repeat-one loop (`PlayerPresentation.actionOnPlayToEnd == .restart`).
+        private var endObserver: NSObjectProtocol?
         private var timeObserverToken: Any?
         private var isLive = false
         /// All the watchdog's state and every decision it makes (fix round 1, C1).
@@ -343,7 +361,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
             }
         }
 
-        func observe(item: AVPlayerItem, player: AVPlayer, model: PlayerViewModel?, isLive: Bool) {
+        func observe(item: AVPlayerItem, player: AVPlayer, model: PlayerViewModel?, isLive: Bool,
+                     playToEnd: PlayToEndAction) {
             // Optional so the background swap's re-arm (MIN-4) can go through this one path without
             // carrying a VM it has no reason to know about; a nil never CLEARS the live one.
             if let model { self.model = model }
@@ -381,6 +400,20 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 }
             }
 
+            // B4: Android REPEAT_MODE_ONE (PlayerBinder.kt:154). Per-ITEM, like every other observer
+            // here, so a recovery replaceCurrentItem re-arms it against the new item rather than
+            // looping a dead one. AVPlayerLooper/AVQueuePlayer would mean a second player type on
+            // this screen; one notification and a seek is the whole feature.
+            if playToEnd == .restart {
+                endObserver = NotificationCenter.default.addObserver(
+                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak player] _ in
+                    MainActor.assumeIsolated {
+                        player?.seek(to: .zero)
+                        player?.play()
+                    }
+                }
+            }
+
             timeObserverToken = player.addPeriodicTimeObserver(
                 forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
                 MainActor.assumeIsolated {
@@ -403,6 +436,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
             statusCancellable = nil
             if let failedToEndObserver { NotificationCenter.default.removeObserver(failedToEndObserver) }
             failedToEndObserver = nil
+            if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+            endObserver = nil
             if let timeObserverToken, let observedPlayer { observedPlayer.removeTimeObserver(timeObserverToken) }
             timeObserverToken = nil
             observedItem = nil
@@ -524,6 +559,25 @@ struct PlayerHostView: UIViewControllerRepresentable {
         }
     }
 }
+
+/// The two playback surfaces this app has. Not a feature flag and not a style: each case is a set
+/// of four AVKit properties that must move together, and naming the surface is what stops them
+/// drifting apart. Spec 10's Shorts paragraph is the whole right-hand column.
+enum PlayerPresentation: Sendable, Equatable {
+    case standard, shorts
+
+    var showsPlaybackControls: Bool { self == .standard }
+    var videoGravity: AVLayerVideoGravity { self == .shorts ? .resizeAspectFill : .resizeAspect }
+    var loops: Bool { self == .shorts }
+    /// Ruling 34 gives the Background play SETTING a real effect -- for the main player. Shorts
+    /// override it to off (Android parity, brief 9.5: onStop pauses, onStart resumes iff it was
+    /// playing). A 60-second clip on repeat-one is not a background-audio use case, and leaving it
+    /// on would loop audio out of a screen the user has walked away from, indefinitely.
+    var allowsBackgroundPlayback: Bool { self == .standard }
+    var actionOnPlayToEnd: PlayToEndAction { loops ? .restart : .none }
+}
+
+enum PlayToEndAction: Sendable, Equatable { case restart, none }
 
 /// What `PlayerHostView`'s teardown still owes, given whether a PiP window is holding the player.
 struct PiPTeardownActions: Equatable, Sendable {

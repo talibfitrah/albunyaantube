@@ -175,7 +175,7 @@ import UIKit
         let controller = coordinator.background
         controller.audioOnlyAvailable = true
         let videoItem = try #require(player.currentItem)
-        coordinator.observe(item: videoItem, player: player, model: nil, isLive: false)
+        coordinator.observe(item: videoItem, player: player, model: nil, isLive: false, playToEnd: .none)
         defer { coordinator.stopObserving() }
         var actions: [PlaybackPolicyAction] = []
         controller.onPolicyAction = { [weak player, weak coordinator] action in
@@ -219,7 +219,7 @@ import UIKit
         let player = try #require(PlayerHostView.player(for: model.state, replacing: nil, audioOnly: false))
         let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
         let videoItem = try #require(player.currentItem)
-        coordinator.observe(item: videoItem, player: player, model: model, isLive: false)
+        coordinator.observe(item: videoItem, player: player, model: model, isLive: false, playToEnd: .none)
         defer { coordinator.stopObserving() }
         let controller = coordinator.background
         controller.audioOnlyAvailable = true
