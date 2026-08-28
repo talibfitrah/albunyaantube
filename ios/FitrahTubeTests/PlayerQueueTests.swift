@@ -157,3 +157,11 @@ private struct SeededGenerator: RandomNumberGenerator {
         return z ^ (z >> 31)
     }
 }
+
+@Test func autoSkipStopsAfterThreeConsecutiveFailures() {
+    // `PlayerViewModel.kt:1352-1357`, MAX_CONSECUTIVE_SKIPS = 3 (`:1787`). The 4th failure
+    // must NOT skip -- it shows the real error state (spec §10 "auto-skip unplayable max 3").
+    #expect(AutoSkipPolicy.decide(consecutive: 0, limit: 3))
+    #expect(AutoSkipPolicy.decide(consecutive: 2, limit: 3))
+    #expect(AutoSkipPolicy.decide(consecutive: 3, limit: 3) == false)
+}

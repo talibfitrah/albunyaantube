@@ -24,12 +24,25 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     private var _outcome: Outcome
     private var _calls: [Call] = []
     private var _permits = 0
+    /// B5: per-video overrides of `outcome` (the auto-skip tests script dead items by id).
+    private var _outcomes: [String: Outcome] = [:]
+    /// B5: ids the `.prefetch` lane refuses with `.cooldown` while the `.player` lane still serves
+    /// them -- CF-B2-2 rule (a), "a refusal is skipped silently and never blocks the advance".
+    private var _prefetchRefusals: Set<String> = []
 
     var outcome: Outcome {
         get { lock.withLock { _outcome } }
         set { lock.withLock { _outcome = newValue } }
     }
     var calls: [Call] { lock.withLock { _calls } }
+    var outcomes: [String: Outcome] {
+        get { lock.withLock { _outcomes } }
+        set { lock.withLock { _outcomes = newValue } }
+    }
+    var prefetchRefusals: Set<String> {
+        get { lock.withLock { _prefetchRefusals } }
+        set { lock.withLock { _prefetchRefusals = newValue } }
+    }
 
     init(_ outcome: Outcome, holdsUntilReleased: Bool = false) {
         self._outcome = outcome
@@ -57,7 +70,10 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         // still held is describing the NEXT call's outcome, not retroactively this one's.
         let outcome = lock.withLock { () -> Outcome in
             _calls.append(Call(videoId: videoId, kind: kind, purpose: purpose, forceRefresh: forceRefresh))
-            return _outcome
+            if kind == .prefetch, _prefetchRefusals.contains(videoId) {
+                return .failure(.cooldown(until: Date().addingTimeInterval(30)))
+            }
+            return _outcomes[videoId] ?? _outcome
         }
         // ponytail: a 1 ms poll, same as `waitUntilCalled` above -- a continuation registry would
         // be more code than the whole helper for a test-only gate. Ceiling: the test must call
@@ -81,5 +97,35 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         case .failure(let error):
             throw error
         }
+    }
+}
+
+/// B5: scripted playlist pages, served in call order. `failFrom` (0-based call index) makes that
+/// call and every later one throw, so the paging latch can be exercised.
+final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
+    private let lock = NSLock()
+    private let pages: [(ids: [String], next: String?)]
+    private let failFrom: Int?
+    private var _pageCalls = 0
+
+    var pageCalls: Int { lock.withLock { _pageCalls } }
+
+    init(pages: [(ids: [String], next: String?)], failFrom: Int? = nil) {
+        self.pages = pages
+        self.failFrom = failFrom
+    }
+
+    func page(playlistId: String, continuation: String?) async throws
+        -> (items: [ContentItem], continuation: String?) {
+        let index = lock.withLock { () -> Int in
+            defer { _pageCalls += 1 }
+            return _pageCalls
+        }
+        if let failFrom, index >= failFrom { throw ExtractionError.transport("fake page failure") }
+        guard index < pages.count else { return ([], nil) }
+        let page = pages[index]
+        return (page.ids.map { ContentItem(video: VideoItem(id: $0, title: "T-\($0)", channelName: "Ch",
+                                                             durationSeconds: 120, thumbnailURL: nil)) },
+                page.next)
     }
 }

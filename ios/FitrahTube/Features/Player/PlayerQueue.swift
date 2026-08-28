@@ -76,6 +76,12 @@ nonisolated struct PlayerQueue: Equatable, Sendable {
     }
 }
 
+/// `PlayerViewModel.kt:1352-1357`, MAX_CONSECUTIVE_SKIPS = 3 (`:1787`): a named, tested constant,
+/// not an inline `< 3`. `consecutive` is the number of dead items already skipped in a row.
+nonisolated enum AutoSkipPolicy {
+    static func decide(consecutive: Int, limit: Int) -> Bool { consecutive < limit }
+}
+
 /// Side B of the Plan C contract: B5 defines it and ships `LivePlaylistQueueSource`; Plan C may
 /// provide a different implementation.
 protocol PlaylistQueueSource: Sendable {

@@ -23,6 +23,14 @@ enum StreamState {
     /// A DIFFERENT surface, not a degraded `AVPlayer` -- which is why it is its own state and its
     /// own `PlayerScreen` branch, and why nothing promotes it back to rung 1/2 automatically.
     case embed(Resolved)
+    /// Ruling 33's terminus, and the reason it is NOT `.idle`: `.idle` is the pre-open value and
+    /// `PlayerStateCopy` renders it as "Loading..." with no Retry (`PlayerStateView.swift:28-32`),
+    /// so ending a playlist on it is a permanent spinner. This is a real terminal state with real
+    /// copy. NO Retry -- there is nothing to retry; the queue is genuinely finished and Back (or an
+    /// Up Next tap, if any item remains) is the exit. Announced, because a playlist ending while
+    /// the user is not looking at the screen is exactly the kind of transition spec 6.6's
+    /// "Transitions" row exists for.
+    case queueEnded
     // There is no hand-off state. Owner directive 2026-08-27: the app never redirects or hands off
     // to YouTube, in any Safe Mode setting -- so the ladder's floor is `.embed`, and everything
     // below it lands on `.error`/`.contentUnavailable` like any other terminal outcome.
@@ -31,7 +39,8 @@ enum StreamState {
 extension StreamState: Equatable {
     static func == (lhs: StreamState, rhs: StreamState) -> Bool {
         switch (lhs, rhs) {
-        case (.idle, .idle), (.loading, .loading), (.contentUnavailable, .contentUnavailable):
+        case (.idle, .idle), (.loading, .loading), (.contentUnavailable, .contentUnavailable),
+             (.queueEnded, .queueEnded):
             return true
         case (.ready(let l), .ready(let r)): return l.comparisonKey == r.comparisonKey
         case (.rung2Progressive(let l), .rung2Progressive(let r)): return l.comparisonKey == r.comparisonKey

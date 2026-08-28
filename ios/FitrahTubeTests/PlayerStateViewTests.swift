@@ -122,4 +122,17 @@ struct PlayerStateViewTests {
         #expect(copy.showsRetry == true)
         #expect(copy.message == "Try again in 0:00")
     }
+
+    @Test func theQueueEndedStateHasRealCopyAndNoRetry() {
+        // B5 task 2. No Retry: there is nothing to retry -- the queue is finished, and Back (or a
+        // remaining Up Next row) is the exit. Announced, because a playlist ending is exactly spec
+        // 6.6's "Transitions" case. Offline must not hijack it: a finished queue is finished with or
+        // without a network.
+        for online in [true, false] {
+            let copy = PlayerStateCopy.map(.queueEnded, isOnline: online)
+            #expect(copy.message == String(localized: "player_queue_ended"))
+            #expect(copy.showsRetry == false)
+            #expect(copy.announces)
+        }
+    }
 }

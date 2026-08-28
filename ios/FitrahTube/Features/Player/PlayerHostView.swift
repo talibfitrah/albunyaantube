@@ -39,7 +39,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.showsPlaybackControls = presentation.showsPlaybackControls
         controller.videoGravity = presentation.videoGravity
         controller.delegate = context.coordinator
-        controller.player = Self.player(for: state, replacing: nil, audioOnly: audioOnly)
+        controller.player = Self.player(for: state, replacing: nil, audioOnly: audioOnly,
+                                        continuesCurrentVideo: continuesCurrentVideo(context),
+                                        resumeFallback: model.currentTime)
+        context.coordinator.lastVideoId = model.args.videoId
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
         applyBackgroundController(to: controller, context: context)
         applyNowPlaying(context: context)
@@ -51,7 +54,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
-        controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly)
+        controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly,
+                                        continuesCurrentVideo: continuesCurrentVideo(context),
+                                        resumeFallback: model.currentTime)
+        context.coordinator.lastVideoId = model.args.videoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
         // M6 (B4 final review): write only on change. B5's fullscreen will let the user pick a
         // gravity on this controller, and an unconditional write here would undo it every pass.
@@ -65,6 +71,17 @@ struct PlayerHostView: UIViewControllerRepresentable {
         applyAudioLanguageHandoff(to: controller)
         applyCaptionsHandoff(to: controller)
         applyRecoveryObservers(to: controller, context: context)
+    }
+
+    /// B5: whether this pass is still the same video the coordinator last built for. False on an
+    /// auto-advance or an Up Next tap, so the next video starts at 0 instead of the previous clock.
+    private func continuesCurrentVideo(_ context: Context) -> Bool {
+        Self.shouldPreservePosition(previous: context.coordinator.lastVideoId, next: model.args.videoId)
+    }
+
+    /// Pure half of the above (`PlayerHostTests`). `nil` is the first build.
+    static func shouldPreservePosition(previous: String?, next: String) -> Bool {
+        previous == nil || previous == next
     }
 
     /// Task 7 (known family gap, fixed here): the hand-off slots below are the VM's only reference
@@ -97,7 +114,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             return
         }
         context.coordinator.observe(item: item, player: player, model: model, isLive: Self.isLive(state),
-                                    playToEnd: presentation.actionOnPlayToEnd)
+                                    playToEnd: presentation.actionOnPlayToEnd(hasQueue: !model.queue.items.isEmpty))
     }
 
     /// Task 4: republish the lock-screen surface on every pass -- which is every item replacement
@@ -289,8 +306,13 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private weak var observedPlayer: AVPlayer?
         private var statusCancellable: AnyCancellable?
         private var failedToEndObserver: NSObjectProtocol?
-        /// B4: the repeat-one loop (`PlayerPresentation.actionOnPlayToEnd == .restart`).
+        /// B4: the repeat-one loop (`.restart`); B5: the auto-advance (`.advance`). Per item, and
+        /// re-armed on the SAME item when the action changes -- the queue loads after the first
+        /// resolve (`PlayerViewModel.open`), so the first item is always built before there is one.
         private var endObserver: NSObjectProtocol?
+        private var armedPlayToEnd: PlayToEndAction = .none
+        /// B5: the video the last build/update pass was for (`shouldPreservePosition`).
+        var lastVideoId: String?
         private var timeObserverToken: Any?
         private var isLive = false
         /// All the watchdog's state and every decision it makes (fix round 1, C1).
@@ -368,7 +390,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // Optional so the background swap's re-arm (MIN-4) can go through this one path without
             // carrying a VM it has no reason to know about; a nil never CLEARS the live one.
             if let model { self.model = model }
-            guard item !== observedItem || player !== observedPlayer else { return }
+            if item === observedItem, player === observedPlayer {
+                if playToEnd != armedPlayToEnd { armEndObserver(item: item, player: player, playToEnd: playToEnd) }
+                return
+            }
             stopObserving()
             observedItem = item
             observedPlayer = player
@@ -402,11 +427,36 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 }
             }
 
-            // B4: Android REPEAT_MODE_ONE (PlayerBinder.kt:154). Per-ITEM, like every other observer
-            // here, so a recovery replaceCurrentItem re-arms it against the new item rather than
-            // looping a dead one. AVPlayerLooper/AVQueuePlayer would mean a second player type on
-            // this screen; one notification and a seek is the whole feature.
-            if playToEnd == .restart {
+            armEndObserver(item: item, player: player, playToEnd: playToEnd)
+
+            timeObserverToken = player.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
+                MainActor.assumeIsolated {
+                    self?.sample(time: time.seconds)
+                    // B5 (CF-B1-8): the hoisted position, ~1 s coarse -- the host prefers a live
+                    // `currentTime()` and reads this only when rebuilding from no player.
+                    self?.model?.currentTime = time.seconds
+                    // Task 4: the ONE periodic observer feeds both the stall watchdog and the lock
+                    // screen's elapsed/rate. AVFoundation fires it on rate changes and time jumps
+                    // as well as on the interval, so a play/pause/seek made in the stock AVKit
+                    // chrome republishes here without a second observer.
+                    self?.background.refreshNowPlaying()
+                }
+            }
+        }
+
+        /// Per-ITEM, like every other observer here, so a recovery replaceCurrentItem re-arms it
+        /// against the new item rather than looping/advancing a dead one. AVPlayerLooper/
+        /// AVQueuePlayer would mean a second player type on this screen; one notification is the
+        /// whole feature. Always tears down first: missing that is the classic bug where every
+        /// recovery swap adds an observer and one end-of-item fires N advances.
+        private func armEndObserver(item: AVPlayerItem, player: AVPlayer, playToEnd: PlayToEndAction) {
+            if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+            endObserver = nil
+            armedPlayToEnd = playToEnd
+            switch playToEnd {
+            case .restart:
+                // B4: Android REPEAT_MODE_ONE (PlayerBinder.kt:154).
                 endObserver = NotificationCenter.default.addObserver(
                     forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak player] _ in
                     MainActor.assumeIsolated {
@@ -414,18 +464,18 @@ struct PlayerHostView: UIViewControllerRepresentable {
                         player?.play()
                     }
                 }
-            }
-
-            timeObserverToken = player.addPeriodicTimeObserver(
-                forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
-                MainActor.assumeIsolated {
-                    self?.sample(time: time.seconds)
-                    // Task 4: the ONE periodic observer feeds both the stall watchdog and the lock
-                    // screen's elapsed/rate. AVFoundation fires it on rate changes and time jumps
-                    // as well as on the interval, so a play/pause/seek made in the stock AVKit
-                    // chrome republishes here without a second observer.
-                    self?.background.refreshNowPlaying()
+            case .advance:
+                // B5: `PlayerFragment.kt:1247-1249` -> `PlayerViewModel.playToEnd` decides (Safe Mode,
+                // queue end, auto-skip); this is only the notification.
+                endObserver = NotificationCenter.default.addObserver(
+                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let model = self?.model else { return }
+                        Task { await model.playToEnd() }
+                    }
                 }
+            case .none:
+                break
             }
         }
 
@@ -440,6 +490,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             failedToEndObserver = nil
             if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
             endObserver = nil
+            armedPlayToEnd = .none
             if let timeObserverToken, let observedPlayer { observedPlayer.removeTimeObserver(timeObserverToken) }
             timeObserverToken = nil
             observedItem = nil
@@ -494,7 +545,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// resolved URL (an unrelated state change -- e.g. a later task's recovery counters -- must not
     /// restart playback). Ruling 32 (session-only resume): `replacing`'s `currentTime()` carries into
     /// the replacement item; nothing here persists past this `AVPlayer`'s own lifetime.
-    static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false) -> AVPlayer? {
+    /// B5: `continuesCurrentVideo == false` (an auto-advance or an Up Next tap) starts the
+    /// replacement at 0; `resumeFallback` is the VM's hoisted `currentTime` (CF-B1-8) for a fresh
+    /// player built after a non-playable state dismantled the host. Both defaulted, so every
+    /// existing call site is unchanged.
+    static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false,
+                       continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0) -> AVPlayer? {
         guard let resolved = state.resolved,
               let url = streamURL(resolved.stream, audioOnly: audioOnly) else {
             existing?.pause()
@@ -510,20 +566,25 @@ struct PlayerHostView: UIViewControllerRepresentable {
             return existing
         }
         let item = AVPlayerItem(asset: asset(url: url, userAgent: resolved.userAgent))
+        // A live player's own clock is authoritative when we have one; `resumeFallback` (the VM's
+        // hoisted currentTime, CF-B1-8) covers the case where a non-playable state dismantled the
+        // host and a fresh AVPlayer is being built. `continuesCurrentVideo == false` (an
+        // auto-advance or an Up Next tap) means neither applies -- the next video starts at 0.
+        let live = existing?.currentTime().seconds
+        let resume = continuesCurrentVideo ? ((live?.isFinite == true ? live : nil) ?? resumeFallback) : 0
+        let resumeTime = CMTime(seconds: resume, preferredTimescale: 600)
         guard let existing else {
             let player = AVPlayer(playerItem: item)
+            if resume > 0 { player.seek(to: resumeTime) }
             player.play()
             return player
         }
-        let resumeTime = existing.currentTime()
         // I5 (player.md §3.2: a re-resolve saves position AND playWhenReady): resuming a stream the
         // user had deliberately paused is a real behaviour bug -- recovery replaces the item under a
         // paused player just as readily as under a playing one.
         let wasPlaying = existing.timeControlStatus != .paused
         existing.replaceCurrentItem(with: item)
-        if resumeTime.isValid, resumeTime.seconds.isFinite, resumeTime.seconds > 0 {
-            existing.seek(to: resumeTime)
-        }
+        if resume > 0 { existing.seek(to: resumeTime) }
         if wasPlaying { existing.play() }
         return existing
     }
@@ -576,10 +637,15 @@ enum PlayerPresentation: Sendable, Equatable {
     /// playing). A 60-second clip on repeat-one is not a background-audio use case, and leaving it
     /// on would loop audio out of a screen the user has walked away from, indefinitely.
     var allowsBackgroundPlayback: Bool { self == .standard }
-    var actionOnPlayToEnd: PlayToEndAction { loops ? .restart : .none }
+    /// B5: the main player advances through its queue at end-of-item (`PlayerViewModel.playToEnd`
+    /// still owns Safe Mode / queue-end / auto-skip); Shorts always loop, never advance.
+    func actionOnPlayToEnd(hasQueue: Bool) -> PlayToEndAction {
+        if loops { return .restart }
+        return hasQueue ? .advance : .none
+    }
 }
 
-enum PlayToEndAction: Sendable, Equatable { case restart, none }
+enum PlayToEndAction: Sendable, Equatable { case restart, advance, none }
 
 /// What `PlayerHostView`'s teardown still owes, given whether a PiP window is holding the player.
 struct PiPTeardownActions: Equatable, Sendable {

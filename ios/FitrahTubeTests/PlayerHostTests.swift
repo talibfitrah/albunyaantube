@@ -381,7 +381,33 @@ struct PlayerHostTests {
         // Android REPEAT_MODE_ONE (PlayerBinder.kt:154). The decision is pure so the notification glue
         // has nothing to decide: an ended item under .shorts seeks to zero and plays; under .standard
         // it does nothing (B5's auto-advance is the only thing allowed to react there).
-        #expect(PlayerPresentation.shorts.actionOnPlayToEnd == .restart)
-        #expect(PlayerPresentation.standard.actionOnPlayToEnd == .none)
+        #expect(PlayerPresentation.shorts.actionOnPlayToEnd(hasQueue: false) == .restart)
+        #expect(PlayerPresentation.shorts.actionOnPlayToEnd(hasQueue: true) == .restart)   // never advances
+        #expect(PlayerPresentation.standard.actionOnPlayToEnd(hasQueue: false) == .none)
+        #expect(PlayerPresentation.standard.actionOnPlayToEnd(hasQueue: true) == .advance)
+    }
+
+    @Test func positionIsPreservedOnlyWhileTheVideoIsTheSameOne() {
+        // The host seeks a replacement item back to the outgoing item's time. That is right for a
+        // re-resolve or an audio-only swap and WRONG for an auto-advance -- it would start the next
+        // video at the previous one's position.
+        #expect(PlayerHostView.shouldPreservePosition(previous: "a", next: "a"))
+        #expect(PlayerHostView.shouldPreservePosition(previous: nil, next: "a"))  // first build
+        #expect(PlayerHostView.shouldPreservePosition(previous: "a", next: "b") == false)
+    }
+
+    @Test func anAdvanceBuildsTheNextItemAtZeroAndAResolveKeepsThePosition() throws {
+        // B5: `continuesCurrentVideo == false` (an advance or an Up Next tap) must not carry the
+        // outgoing item's clock into the next video; the same-video replace path still does.
+        func resolved(_ name: String) -> Resolved {
+            Resolved(stream: .progressive(url: URL(string: "https://example.com/\(name)")!, label: "360p"),
+                     client: .visionos, userAgent: "ua", resolvedAt: Date(), expiresAt: nil)
+        }
+        let a = resolved("a.mp4"), b = resolved("b.mp4")
+        let player = try #require(PlayerHostView.player(for: .rung2Progressive(a), replacing: nil))
+        let advanced = PlayerHostView.player(for: .rung2Progressive(b), replacing: player,
+                                             continuesCurrentVideo: false, resumeFallback: 42)
+        #expect(advanced === player)
+        #expect((advanced?.currentItem?.asset as? AVURLAsset)?.url.lastPathComponent == "b.mp4")
     }
 }

@@ -60,6 +60,15 @@ EXTRA_KEYS = {
         "ar": "إغلاق",
         "nl": "Sluiten",
     },
+    # player_queue_ended (B5 task 2): the terminal card when a playlist runs out. iOS-only --
+    # Android's empty-queue terminus is `StreamState.Idle`, a silent stop with no copy at all
+    # (`PlayerViewModel.kt:1920-1923`), so there is no source string to port. Deliberately says
+    # what happened, never why, and never offers a next step we do not have.
+    "player_queue_ended": {
+        "en": "You've reached the end of the playlist",
+        "ar": "لقد وصلت إلى نهاية قائمة التشغيل",
+        "nl": "Je hebt het einde van de afspeellijst bereikt",
+    },
     "me_guest_title": {
         "en": "Sign in to sync your favorites",
         "ar": "سجّل الدخول لمزامنة مفضلاتك",

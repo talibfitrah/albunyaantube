@@ -294,6 +294,20 @@ struct PlayerViewModelTests {
         #expect(inner.calls.count == 5)   // all five reached the resolver; none was refused
     }
 
+    @Test func theLimiterGatesThePrefetchLaneEvenWithoutForceRefresh() async throws {
+        // Reconciliation note 7: a prefetch is the non-forced resolve most likely to hit the network,
+        // and it is the one lane the limiter exists to keep behind the interactive one.
+        let clock = FixedMonotonicClock(now: .seconds(0))
+        let limited = RateLimitedResolver(wrapping: RecordingResolver(.hls),
+                                          rateLimiter: ExtractionRateLimiter(), clock: clock)
+        _ = try await limited.resolve("v", purpose: .prefetch, kind: .prefetch,
+                                      sourceChannelId: nil, forceRefresh: false)
+        await #expect(throws: ExtractionError.self) {
+            _ = try await limited.resolve("v", purpose: .prefetch, kind: .prefetch,
+                                          sourceChannelId: nil, forceRefresh: false)
+        }
+    }
+
     /// The limiter's own cooldown lands in `StreamState.cooldown`, which is exactly the state
     /// `retry()` already refuses to re-enter while `until` is in the future -- so the gate cannot
     /// lock the retry button against itself, and needs no unlock path of its own.

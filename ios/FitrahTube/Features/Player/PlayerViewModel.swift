@@ -41,8 +41,11 @@ struct RateLimitedResolver: StreamResolving {
         // Scoped exactly as Android scopes it (`ui/player/PlayerViewModel.kt:1243/1256/1265` are its
         // only three limiter call sites, all force-refreshes). A non-forced resolve may be served
         // straight from `ManifestCache` with no network at all -- gating it would make the 30 s
-        // minimum interval refuse a replay of a video the user just watched.
-        if forceRefresh {
+        // minimum interval refuse a replay of a video the user just watched. The `.prefetch` lane
+        // is gated even though it is never forced (B5, reconciliation note 7): a prefetch is the
+        // non-forced resolve most likely to hit the network, and it is the one lane the limiter
+        // exists to keep behind the interactive one.
+        if forceRefresh || kind == .prefetch {
             switch await rateLimiter.check(videoId, kind: kind, now: clock.now) {
             case .allowed:
                 break
@@ -135,8 +138,25 @@ extension StreamState {
     /// Task 4: `PlayerHostView` reads this for the Now Playing metadata (title / channel /
     /// thumbnail / seed duration). Readable rather than passed to the host as a second stored
     /// property -- the host already holds this VM, so a parallel `args` parameter would mean the
-    /// same value arriving twice by two routes.
-    let args: PlayerArgs
+    /// same value arriving twice by two routes. Mutable since B5: an advance / Up Next tap swaps
+    /// it, so `PlayerScreen` reads THIS, never its own initial `args`.
+    private(set) var args: PlayerArgs
+
+    /// Ruling 33 / spec §10. Empty in single-video mode; populated from `args.playlistId`.
+    private(set) var queue = PlayerQueue.start(items: [], targetVideoId: nil, startIndex: 0,
+                                               shuffled: false, cursor: nil)
+
+    /// CF-B1-8's hoist. Session-only (ruling 32 -- nothing persists this). Three consumers:
+    /// `PlayerHostView` reads it to restore position after a state hop dismantled the host,
+    /// Task 3's double-tap seek reads it as the seek origin, and `advance()` resets it to 0.
+    /// Written by the host's existing 1 s periodic observer, so it is ~1 s coarse -- which is
+    /// why the host still prefers a LIVE `AVPlayer.currentTime()` when it has one, and falls
+    /// back to this only when there is no live player left to ask.
+    var currentTime: TimeInterval = 0
+
+    private let queueSource: (any PlaylistQueueSource)?
+    private var consecutiveSkips = 0
+    private var isPaging = false
 
     private var generation = 0
     private var resolveTask: Task<Void, Never>?
@@ -146,10 +166,12 @@ extension StreamState {
     /// M4 (B1 final review): `catalog` and `favorites` were stored and never read -- `PlayerToolbar`
     /// reaches favorites through the environment container on its own, and nothing in the player
     /// touches the catalog.
-    init(resolver: any StreamResolving, settings: any SettingsStore, args: PlayerArgs) {
+    init(resolver: any StreamResolving, settings: any SettingsStore, args: PlayerArgs,
+         queueSource: (any PlaylistQueueSource)? = nil) {
         self.resolver = resolver
         self.settings = settings
         self.args = args
+        self.queueSource = queueSource
         self.audioOnly = settings.audioOnly
     }
 
@@ -176,6 +198,126 @@ extension StreamState {
 
     func open() async {
         await resolve(forceRefresh: false, kind: .player)
+        // ponytail: sequential, deliberately. Android defers its prefetch to the first `isPlaying`
+        // (`PlayerFragment.kt:1167-1168`) to keep it off the critical path; awaiting the player's
+        // own resolve first achieves the same with no observer and no timer. Ceiling: the queue
+        // (and Up Next) appears only after the current video resolved, never before.
+        await loadQueue()
+        await prefetchUpcoming()
+    }
+
+    // MARK: - Queue (B5 task 2)
+
+    /// Page 1, then the bounded deep scan for `targetVideoId` (`PlayerViewModel.kt:904-1031`,
+    /// bounds `:1782-1785`: 250 items / 3 s). Any throw leaves the queue empty and the state
+    /// untouched -- a failed queue load must never kill a playing video.
+    private func loadQueue() async {
+        guard let playlistId = args.playlistId, let queueSource else { return }
+        let deadline = Date().addingTimeInterval(3)
+        let target = args.targetVideoId
+        var items: [ContentItem] = []
+        var cursor: String? = nil
+        do {
+            repeat {
+                let page = try await queueSource.page(playlistId: playlistId, continuation: cursor)
+                items.append(contentsOf: page.items)
+                cursor = page.continuation
+            } while target != nil && !items.contains { $0.id == target }
+                && cursor != nil && items.count < 250 && Date() < deadline
+        } catch {
+            return
+        }
+        queue = PlayerQueue.start(items: items, targetVideoId: args.targetVideoId,
+                                  startIndex: args.startIndex, shuffled: args.shuffled, cursor: cursor)
+    }
+
+    /// `AVPlayerItemDidPlayToEndTime` (`PlayerFragment.kt:1247-1249` -> `PlayerViewModel.kt:389`).
+    /// Ruling 58 / spec §10 / plan §6.10: Safe Mode disables AUTO-advance only. `safeMode` is the
+    /// VM property, never `SettingsStore` (CF-B3-2) -- one Safe Mode reader in the player.
+    /// Single-video mode (no queue) does nothing: AVKit sits on the last frame with its own replay.
+    func playToEnd() async {
+        guard !safeMode, !queue.items.isEmpty else { return }
+        await advance()
+    }
+
+    private func advance() async {
+        await pageIfNeeded()
+        guard let next = queue.advance() else {
+            // `PlayerViewModel.kt:1920-1923`: no next item and no more pages -- playback stops.
+            // NOT `.idle` (reconciliation note 9): that is the pre-open value and renders as a
+            // Retry-less "Loading..." spinner forever. A finished playlist is a real terminal
+            // state with real copy.
+            state = .queueEnded
+            return
+        }
+        swapArgs(to: next)
+        // `showLoading: false` is LOAD-BEARING (reconciliation note 2): a `.loading` hop
+        // dismantles PlayerHostView, detaches the audio session and kills background
+        // auto-advance. NOT `silent:` -- a failed advance MUST surface, because that is what
+        // drives auto-skip and, past the cap, the terminal state the user sees.
+        // `forceRefresh: false` is CF-B2-2 rule (b): land on the warmed ManifestCache entry.
+        await resolve(forceRefresh: false, kind: .player, showLoading: false)
+        if state.isPlayable {
+            consecutiveSkips = 0             // `PlayerViewModel.kt:1916`
+            await prefetchUpcoming()
+            await pageIfNeeded()
+        } else if queue.hasNext, AutoSkipPolicy.decide(consecutive: consecutiveSkips, limit: 3) {
+            consecutiveSkips += 1
+            await advance()                  // bounded by the policy above; max depth 3
+        }
+        // else: leave the non-playable state on screen. Ruling 14's one terminal surface, with
+        // PlayerStateView's Retry -- exactly what Android shows past MAX_CONSECUTIVE_SKIPS.
+    }
+
+    /// The Up Next tap (`PlayerViewModel.kt:355-387`). A deliberate user action, so this one DOES
+    /// show the loading card with the new thumbnail.
+    func play(id: String) async {
+        guard let item = queue.select(id: id) else { return }
+        swapArgs(to: item)
+        consecutiveSkips = 0
+        await resolve(forceRefresh: false, kind: .player)
+        await prefetchUpcoming()
+        await pageIfNeeded()
+    }
+
+    /// The queue context rides along: playlistId/shuffled keep the queue alive across the hop;
+    /// targetVideoId/startIndex are consumed and must NOT be re-applied to the next video.
+    private func swapArgs(to item: ContentItem) {
+        var next = PlayerArgs(item: item)
+        next.playlistId = args.playlistId
+        next.shuffled = args.shuffled
+        args = next
+        currentTime = 0                      // a new video starts at the beginning
+    }
+
+    /// Ruling 16's prefetch lane, first and only call site in the app. Six lines because
+    /// InnerTubeKit's ManifestCache already IS the prefetch cache (`StreamResolver.swift:73-74`):
+    /// a non-forced resolve populates it, and the advance's own non-forced resolve reads it back.
+    /// Android needs 70 lines here only because its extractor has no shared cache
+    /// (`PlayerViewModel.kt:1703-1770`) -- do not port that dictionary, its TTL or its eviction.
+    /// `sourceChannelId: nil`: the availability gate's channel hint belongs to the LAUNCHED video,
+    /// not to a playlist member that may come from another channel.
+    func prefetchUpcoming() async {
+        for item in queue.streamPrefetchTargets {          // <=2, reconciliation note 8
+            // CF-B2-2 rule (a): a refusal is skipped SILENTLY. `try?` is that rule -- never a
+            // state write, never a retry, never a log line the user can reach.
+            _ = try? await resolver.resolve(item.id, purpose: .prefetch, kind: .prefetch,
+                                            sourceChannelId: nil, forceRefresh: false)
+        }
+    }
+
+    /// Playlist paging at <=5 remaining (`PlayerViewModel.kt:1786,1911`); single-flight; a throw
+    /// latches `pagingFailed` (`:1946-1978`). Browse paging is not rate-limited.
+    private func pageIfNeeded() async {
+        guard queue.needsPage, !isPaging, let queueSource, let playlistId = args.playlistId else { return }
+        isPaging = true
+        defer { isPaging = false }
+        do {
+            let page = try await queueSource.page(playlistId: playlistId, continuation: queue.cursor)
+            queue.append(page.items, cursor: page.continuation)
+        } catch {
+            queue.markPagingFailed()
+        }
     }
 
     /// CF-B1: `.cooldown` is terminal -- a manual retry while still inside the window must not

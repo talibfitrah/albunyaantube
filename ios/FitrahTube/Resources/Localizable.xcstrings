@@ -10968,6 +10968,28 @@
         }
       }
     },
+    "player_queue_ended": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لقد وصلت إلى نهاية قائمة التشغيل"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've reached the end of the playlist"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je hebt het einde van de afspeellijst bereikt"
+          }
+        }
+      }
+    },
     "player_rate_limited": {
       "localizations": {
         "ar": {

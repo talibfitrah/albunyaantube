@@ -15,6 +15,7 @@ struct PlayerScreen: View {
     /// hides the metadata panel below the player. iPad landscape stays `.regular` (a much taller
     /// window even in landscape), so this never fires there.
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model: PlayerViewModel?
 
     var body: some View {
@@ -28,7 +29,8 @@ struct PlayerScreen: View {
         .task {
             guard model == nil else { return }
             let vm = PlayerViewModel(resolver: Self.resolver(container: container),
-                                      settings: container.settings, args: args)
+                                      settings: container.settings, args: args,
+                                      queueSource: Self.queueSource(container: container))
             model = vm
             await vm.open()
             #if DEBUG
@@ -145,9 +147,23 @@ struct PlayerScreen: View {
                     // which is what the comment always claimed and I1 (B1 final review) found the
                     // code never did. Favorite is the one action with no other route in from the
                     // player, so hiding it in landscape lost it entirely.
-                    PlayerToolbar(args: args)
+                    // B5: `model.args`, never this screen's own `args` -- after an advance the
+                    // screen's value is only the INITIAL video.
+                    PlayerToolbar(args: model.args)
                     if verticalSizeClass != .compact {
-                        PlayerMetadataView(args: args)
+                        PlayerMetadataView(args: model.args)
+                    }
+                    // Ruling 33: the whole section, header included, is absent when there is nothing
+                    // queued. Android renders the header over nothing (`fragment_player.xml:608-625`,
+                    // defect-adjacent). Below the toolbar, outside the metadata guard, so the
+                    // non-fullscreen landscape column keeps it.
+                    if !model.queue.upcoming.isEmpty {
+                        Text(String(localized: "player_up_next_header"))
+                            .font(TypeScale.sectionTitle).fontWeight(.bold)
+                            .foregroundStyle(Color.textPrimary)
+                            .padding(.horizontal, Spacing.md(widthClass)).padding(.top, Spacing.md(widthClass))
+                            .accessibilityIdentifier("player.upNext.header")
+                        upNextList(model)
                     }
                 }
                 // Task 10 (`ios-app-design.md` §11 `content_max_width`): the ONE screen where a
@@ -168,9 +184,9 @@ struct PlayerScreen: View {
             // a Retry, not a lie plus a spinner. `PlayerStateCopy.map` answers the offline copy for
             // `.embed` and `preconditionFailure`s for it online, where this branch owns the screen.
             if container.network.isOnline {
-                EmbedRungView(resolved: resolved, model: model, args: args)
+                EmbedRungView(resolved: resolved, model: model, args: model.args)
             } else {
-                PlayerStateView(state: state, isOnline: false, thumbnailURL: args.thumbnailURL) {
+                PlayerStateView(state: state, isOnline: false, thumbnailURL: model.args.thumbnailURL) {
                     Task { await model.retry() }
                 }
             }
@@ -183,9 +199,33 @@ struct PlayerScreen: View {
             // redirect and hand-off to YouTube, so a terminal state offers Retry or nothing. Nothing
             // in this app calls `UIApplication.open` with a YouTube URL, in any Safe Mode setting.
             PlayerStateView(state: state, isOnline: container.network.isOnline,
-                            thumbnailURL: args.thumbnailURL) {
+                            thumbnailURL: model.args.thumbnailURL) {
                 Task { await model.retry() }
             }
+        }
+    }
+
+    /// Up Next (B5): one column on compact, two on regular/large (`PlayerFragment.kt:895-908`),
+    /// collapsing to one at `.accessibility1+`. `VideoRow`/`VideoGridCell` unmodified -- they
+    /// already carry `videoAccessibilityLabel`, `DurationChip` and `Format` (rulings 37/48).
+    /// `subtitle: channelTitle` is the same override Favorites uses.
+    @ViewBuilder
+    private func upNextList(_ model: PlayerViewModel) -> some View {
+        let columns = GridRules.columns(widthClass == .compact ? 1 : 2, dynamicTypeSize: dynamicTypeSize)
+        if columns == 1 {
+            ForEach(Array(model.queue.upcoming), id: \.id) { item in
+                VideoRow(item: item, subtitle: item.channelTitle) { Task { await model.play(id: item.id) } }
+                    .accessibilityIdentifier("player.upNext.row.\(item.id)")
+            }
+        } else {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: GridRules.cardGap(widthClass)),
+                                     count: columns), spacing: GridRules.cardGap(widthClass)) {
+                ForEach(Array(model.queue.upcoming), id: \.id) { item in
+                    VideoGridCell(item: item, subtitle: item.channelTitle) { Task { await model.play(id: item.id) } }
+                        .accessibilityIdentifier("player.upNext.row.\(item.id)")
+                }
+            }
+            .padding(.horizontal, Spacing.md(widthClass))
         }
     }
 
@@ -333,6 +373,21 @@ struct PlayerScreen: View {
                                    rateLimiter: container.innerTube.rateLimiter,
                                    clock: container.innerTube.clock)
     }
+
+    /// B5: the playlist queue behind Up Next -- same `#if DEBUG` ladder shape as `resolver(container:)`.
+    /// `-fitrah-fake-player-queue` serves ~8 fixture items; `-dead` makes three of them unplayable
+    /// under `FixturePlayerResolver`'s dead-id rule (the auto-skip capture).
+    static func queueSource(container: AppContainer) -> any PlaylistQueueSource {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-queue-dead") {
+            return FixtureQueueSource(deadItems: true)
+        }
+        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-queue") {
+            return FixtureQueueSource(deadItems: false)
+        }
+        #endif
+        return LivePlaylistQueueSource(client: container.innerTube.browse)
+    }
 }
 
 #if DEBUG
@@ -375,6 +430,8 @@ private struct FixtureAudioOnlyResolver: StreamResolving {
 private struct FixturePlayerResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        // B5: `-fitrah-fake-player-queue-dead`'s unplayable ids.
+        if videoId.hasPrefix("dead-") { throw ExtractionError.unavailable(videoId: videoId) }
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
@@ -417,6 +474,24 @@ private struct FixtureEmbedResolver: StreamResolving {
                  sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         Resolved(stream: .embed(videoId: videoId), client: .web,
                  userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+    }
+}
+
+/// B5 screenshot rig: one page of eight fixture items. With `deadItems`, three ids carry the
+/// `dead-` prefix that `FixturePlayerResolver` refuses, so the walk skips them.
+private struct FixtureQueueSource: PlaylistQueueSource {
+    let deadItems: Bool
+
+    func page(playlistId: String, continuation: String?) async throws
+        -> (items: [ContentItem], continuation: String?) {
+        let ids = deadItems
+            ? ["fixture-1", "dead-2", "dead-3", "dead-4", "fixture-5", "fixture-6", "fixture-7", "fixture-8"]
+            : (1...8).map { "fixture-\($0)" }
+        return (ids.enumerated().map { i, id in
+            ContentItem(video: VideoItem(id: id, title: "Lecture \(i + 1): Tafsir of Surah Al-Kahf",
+                                         channelName: "Fixture Channel", durationSeconds: 600 + i * 90,
+                                         thumbnailURL: nil))
+        }, nil)
     }
 }
 

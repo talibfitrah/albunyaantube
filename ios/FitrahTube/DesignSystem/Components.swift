@@ -360,6 +360,10 @@ struct VideoRow: View {
 /// lines' worth of space), category chip below the block (content-lists.md §5.4).
 struct VideoGridCell: View {
     let item: ContentItem
+    /// Same override `VideoRow` carries (B5 reconciliation note 5): the player's Up Next grid passes
+    /// the channel name, because a queue item has no view count for `videoMeta` to render and the
+    /// cell would otherwise reserve an empty meta band.
+    let subtitle: String?
     let onTap: () -> Void
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
@@ -368,8 +372,9 @@ struct VideoGridCell: View {
     /// clipped to a single truncated "0 views • …").
     @ScaledMetric(relativeTo: .subheadline) private var contentHeight: CGFloat = 100
 
-    init(item: ContentItem, onTap: @escaping () -> Void) {
+    init(item: ContentItem, subtitle: String? = nil, onTap: @escaping () -> Void) {
         self.item = item
+        self.subtitle = subtitle
         self.onTap = onTap
     }
 
@@ -386,8 +391,12 @@ struct VideoGridCell: View {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text(item.title).font(TypeScale.itemTitle).fontWeight(.bold)
                         .foregroundStyle(Color.textPrimary).lineLimit(2, reservesSpace: true) // content-lists.md:429-430 -- minLines 2 and maxLines 2, always occupies two lines
-                    Text(videoMeta(item, locale: locale, includeCategory: false))
-                        .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(2)
+                    if let subtitle {
+                        Text(subtitle).font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(1)
+                    } else {
+                        Text(videoMeta(item, locale: locale, includeCategory: false))
+                            .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(2)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .frame(height: contentHeight, alignment: .topLeading) // home_card_content_height, fixed so grid rows align

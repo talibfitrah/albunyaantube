@@ -67,6 +67,11 @@ enum PlayerStateCopy {
             }
             preconditionFailure("PlayerStateCopy never maps the online embed rung -- PlayerScreen " +
                                  "mounts EmbedRungView for it (B3 task 4)")
+        case .queueEnded:
+            // Ruling 33's terminus. No Retry (nothing to retry -- the queue is finished; Back or a
+            // remaining Up Next row is the exit), and it is deliberately OUTSIDE the offline gate
+            // above: a finished playlist is finished whether or not there is a network.
+            return Copy(message: String(localized: "player_queue_ended"), showsRetry: false, announces: true)
         case .recoveryExhausted:
             // T7-M3 (deferred-minors.md, MUST): the manual Retry escape hatch -- this used to be a
             // bare `ProgressView` dead end.
