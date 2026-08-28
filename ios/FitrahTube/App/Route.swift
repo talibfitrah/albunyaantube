@@ -82,6 +82,14 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     /// every `.player` route -- and nil is also the honest value for a Short opened from a deep link,
     /// where the sender supplies nothing but an id.
     var channelAvatarURL: URL? = nil
+    /// Index hint from the caller's list (`PlayerFragment.kt:402-417`). NOT authoritative --
+    /// `targetVideoId` wins; this is the fallback when the deep scan is exhausted.
+    var startIndex: Int = 0
+    /// Randomize the queue, pinning the launched video first; paging is disabled while shuffled
+    /// ("can't prefetch shuffle since we don't know the order", `PlaylistDetailFragment.kt:300-303`).
+    var shuffled: Bool = false
+    /// The authoritative start video when the caller knows it (`PlaylistDetailFragment.kt:747`).
+    var targetVideoId: String? = nil
 }
 
 extension PlayerArgs {
