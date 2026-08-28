@@ -10,7 +10,7 @@ Build a native SwiftUI app (iOS 18+, iPhone + iPad) that:
 
 1. Uses the existing backend (`/api/v1/*`, `/api/account/*`) for the curated catalog, accounts and sync. No server-side stream resolution, no media proxy.
 2. Resolves streams **on the phone** with the **VISIONOS** InnerTube client → YouTube's own HLS manifest → `AVPlayer`. No poToken, no JS-player deciphering, one POST per play. Works for lectures, nasheeds and **live streams**; does not work for made-for-kids videos.
-3. Ships a **fallback ladder** ordered by remote config: VISIONOS HLS → ANDROID itag 18 (360p, verified on all 18 kids videos in the sample) → official YouTube embed in `WKWebView` (navigation-locked). *(Owner directive 2026-08-27: the ladder ends here — no "Open in YouTube" hand-off, ever.)* The embed is the only path YouTube's Terms authorize (§9); `resolverOrder: ["embed"]` makes the app a fully compliant embed client without a release.
+3. Ships a **fallback ladder** ordered by remote config: VISIONOS HLS → ANDROID itag 18 (360p, verified on all 18 kids videos in the sample) → terminal "not available" state. *(Owner directive 2026-08-27: the ladder ends here — no "Open in YouTube" hand-off, ever.)* **Ship-dark decision (controller 2026-08-27):** the official YouTube embed rung (`WKWebView`, navigation-locked) ships in the binary but is removed from the bundled `resolverOrder`; `RemoteConfig.sanitize` still accepts `embed`, so a published config can enable it as disaster recovery. The embed is the only path YouTube's Terms authorize (§9); `resolverOrder: ["embed"]` stays one remote-config edit away.
 4. Lists **channel and playlist pages on the phone** with InnerTube `browse`, exactly as Android does with NewPipeExtractor today (§6.7) — the catalog is 845 channels and 452 playlists; the 245 standalone videos are the small part.
 5. Ships **every Android feature** (§7) in two releases: v1 = everything usable without an account; v1.1 = accounts, Me tab, sync, submissions, import. Downloads and in-app update do not port (App Store rules); Chromecast becomes AirPlay.
 6. Keeps every YouTube-facing parameter as **remote-config data**; ships **no over-the-air code** and **no dormant poToken minter** (the minter is kept built and tested on a branch, §6.12).
@@ -220,7 +220,7 @@ The harness in Appendix A.2/A.3 (bgutils-js in a `WKWebView` at a youtube.com or
 {
   "schemaVersion": 1,
   "minAppVersion": "1.0.0",
-  "resolverOrder": ["visionosHLS", "androidItag18", "embed"],
+  "resolverOrder": ["visionosHLS", "androidItag18"],
   "manifestCacheSeconds": 3600,
   "clients": {
     "visionos": {
@@ -240,6 +240,8 @@ The harness in Appendix A.2/A.3 (bgutils-js in a `WKWebView` at a youtube.com or
 ```
 
 *(Owner directive 2026-08-27: `openInYouTube` is no longer a valid `resolverOrder` entry. `RemoteConfig.sanitize` drops any `openInYouTube` entry it finds, so a published config can never re-enable it.)*
+
+*(Ship-dark decision (controller 2026-08-27): `embed` is removed from the bundled `resolverOrder` above (default ladder = `visionosHLS → androidItag18 → terminal`); `RemoteConfig.sanitize` still accepts `embed`, so a published config can enable it as disaster recovery.)*
 
 Every field above is something YouTube has changed in the last 12 months; keeping them as data is the difference between a JSON edit and a 1–3 day App Review cycle. Rules: data only (strings and orderings consumed by bundled code — nothing is fetched and executed); unknown strategy names are dropped; a bundled default and the last-known-good copy cover unreachable or malformed config; body capped at 64 KiB; fetched on launch and `willEnterForeground` with ≥ 15 min spacing (raw.githubusercontent serves `max-age=300`). Not signed in v1: the config contains no code, the damage model is availability only, and TLS + repository ACLs cover it; add an Ed25519 signature if the repo gains more writers. 2.3.1 line: parameter tweaks (versions, UA, order among shipped strategies) are config; a new strategy or client family is an App Store submission.
 
@@ -401,6 +403,8 @@ Run from a real iPhone on **cellular** and on **Wi-Fi** (IPv6-enabled), plus one
 | itag 18 403s (yt-dlp already lists `android` as token-required) | selective enforcement ended | kids videos → embed; kids ∧ `embeddable=false` → terminal "not available" (Owner directive 2026-08-27: no `openInYouTube` fallback). That set's size (§10 item 7) is the true unsolved gap |
 | `browse` bot-checked | channel pages empty | degraded mode (Atom + approved playlists) is automatic; then the backend-proxy alternative (§6.7) |
 | Everything fails | — | `resolverOrder: ["embed"]` keeps the app functional while you work (Owner directive 2026-08-27: no `openInYouTube` rung remains to append) |
+
+Note: the embed rung ships in the binary but dormant by default (excluded from the bundled `resolverOrder`, §6.13) — every "add `embed`" action above is this same lever, a published `resolverOrder` change, not a release. A dormant-but-present subsystem is a known App Store 2.3.1 ("hidden, dormant, or undocumented features") talking point; the ship-dark rationale is §1.
 
 ---
 

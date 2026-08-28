@@ -1119,7 +1119,7 @@ git commit -m "[FEAT]: iOS featured category id from remote config"
 
 The app already fetches `https://raw.githubusercontent.com/talibfitrah/albunyaantube/main/ios-remote-config.json` (`AppContainer.swift:36`) on launch and on `.active` with ≥15 min spacing (`FitrahTubeApp.swift:43-61`) — the URL and the call site are both correct and neither changes. **The file simply does not exist**, so `refresh()` silently returns and `current()` serves `RemoteConfig.bundledDefault` forever (`RemoteConfig.swift:139`). Until it lands on `main`, every row of `ios-app-plan.md` §11's runbook whose action is "change the remote config" is a lie.
 
-Write it to be **byte-compatible with the bundled default** (`ios/Packages/InnerTubeKit/Sources/InnerTubeKit/Resources/remote-config-default.json`) — same `schemaVersion`, `minAppVersion`, `resolverOrder`, `manifestCacheSeconds`, and the same three `clients` entries with identical `clientName` values. Two hard rules from the sanitizer and the plan:
+Write it to be **byte-compatible with the bundled default** (`ios/Packages/InnerTubeKit/Sources/InnerTubeKit/Resources/remote-config-default.json`) — same `schemaVersion`, `minAppVersion`, `resolverOrder`, `manifestCacheSeconds`, and the same three `clients` entries with identical `clientName` values. `resolverOrder` is `["visionosHLS", "androidItag18"]` — embed ships dark, do not add it to the published config; `sanitize` still accepts it for DR. Two hard rules from the sanitizer and the plan:
 
 - `RemoteConfigStore.sanitized` (`RemoteConfig.swift:164-175`) drops any `resolverOrder` entry outside `{visionosHLS, androidItag18, embed}` and drops any known client key whose `clientName` does not match `{visionos: VISIONOS, android: ANDROID, web: WEB}`. A typo in either place silently removes a rung. *(Owner directive 2026-08-27: `openInYouTube` is no longer in the allow-list — the sanitizer drops it unconditionally, so a published config can never re-enable a YouTube hand-off. See RULINGS.md Q75.)*
 - **Data only** (`ios-app-plan.md:241`): strings and orderings consumed by bundled code. No URLs to code, no new strategy names. "Parameter tweaks are config; a new strategy or client family is an App Store submission."
@@ -1147,7 +1147,7 @@ func thePublishedRepoRootConfigSurvivesSanitizing() throws {
     store.set(RemoteConfigStore.lastGoodKey, try Data(contentsOf: URL(filePath: path)))
     let config = RemoteConfigStore(transport: FixtureTransport(routes: []), keyValueStore: store,
                                    url: URL(string: "https://example.invalid/none")!).current()
-    #expect(config.resolverOrder.count == 4)      // nothing dropped as an unknown strategy
+    #expect(config.resolverOrder.count == 2)      // nothing dropped as an unknown strategy (embed ships dark)
     #expect(config.clients.count == 3)            // no clientName mismatch dropped a family
     #expect(config.featuredCategoryId != nil)     // ruling 63's key is present
 }
