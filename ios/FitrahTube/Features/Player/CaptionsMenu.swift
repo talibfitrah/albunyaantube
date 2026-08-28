@@ -45,10 +45,7 @@ struct CaptionsMenu: View {
                     }
                 }
             } label: {
-                Image(systemName: "captions.bubble")
-                    .foregroundStyle(.white)
-                    .padding(10)
-                    .background(.black.opacity(0.55), in: Circle())
+                Image(systemName: "captions.bubble").shortsGlyph()
             }
             .accessibilityIdentifier("player.captionsMenu.button")
             .accessibilityLabel(String(localized: "player_action_captions"))

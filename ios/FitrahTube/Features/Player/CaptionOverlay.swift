@@ -14,6 +14,10 @@ struct CaptionOverlay: View {
     /// `timedtext` fetch so it doesn't go out under CFNetwork's default (which names the app build
     /// and the iOS version).
     let userAgent: String
+    /// Distance from the bottom of the stage to the cue. 72 clears AVKit's transport on the main
+    /// player; `ShortsScreen` passes Android's 200 (`shorts_caption_bottom_clearance`) to clear its
+    /// own channel/title/scrub block.
+    var bottomClearance: CGFloat = 72
 
     @State private var observer = TimeObserver()
     @State private var activeCue: CaptionsProvider.Cue?
@@ -29,7 +33,7 @@ struct CaptionOverlay: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 6))
-                    .padding(.bottom, 72) // above the transport area
+                    .padding(.bottom, bottomClearance)
                     .accessibilityIdentifier("player.captionOverlay.text")
             }
         }

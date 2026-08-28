@@ -97,6 +97,9 @@ struct PlayerStateView: View {
     let state: StreamState
     let isOnline: Bool
     let thumbnailURL: URL?
+    /// B4 Task 4: `ShortsScreen` passes `.black` so the card sits on its stage, not on the app's
+    /// light background. Defaulted, so every other call site is untouched.
+    var background: Color = .background
     let retry: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -143,7 +146,7 @@ struct PlayerStateView: View {
             actionAccessibilityIdentifier: "player.state.retryButton",
             combinesMessageWithIcon: false
         )
-        .background(Color.background)
+        .background(background)
     }
 
     private var loadingIcon: some View {

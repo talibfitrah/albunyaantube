@@ -69,10 +69,7 @@ struct AudioLanguageMenu: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "waveform")
-                        .foregroundStyle(.white)
-                        .padding(10)
-                        .background(.black.opacity(0.55), in: Circle())
+                    Image(systemName: "waveform").shortsGlyph()
                 }
                 .accessibilityIdentifier("player.audioLanguageMenu.button")
                 .accessibilityLabel(String(localized: "shorts_audio_track_title"))

@@ -14,6 +14,30 @@ enum ShortsScrub {
         guard duration.isFinite, duration > 0 else { return 0 }
         return min(max(progress, 0), 1) * duration
     }
+
+    /// The scrubber's spoken value. I3 (Task 3 review): a live item reports NaN/inf before its
+    /// duration is known and `Int64(nan)` traps -- guard, then the one m:ss formatter.
+    static func clock(_ seconds: Double) -> String {
+        Format.duration(seconds.isFinite ? Int(seconds.clamped) : 0)
+    }
+}
+
+private extension Double {
+    /// `Int(_:)` traps above `Int.max` as surely as on NaN; no clip is a billion seconds long.
+    var clamped: Double { min(max(self, 0), 1_000_000_000) }
+}
+
+/// The 44 pt circular glyph every Shorts control shares (rail, Back, kebab, and the
+/// audio-language / captions menus the main player also draws). I1/I2 (Task 3 review): the SF
+/// symbol scaled with Dynamic Type and burst its circle at `.accessibility3`, and the two shared
+/// menus measured ~40 pt. One place, one size.
+extension View {
+    func shortsGlyph() -> some View {
+        foregroundStyle(.white)
+            .dynamicTypeSize(...DynamicTypeSize.large)
+            .frame(width: 44, height: 44)
+            .background(.black.opacity(0.55), in: Circle())
+    }
 }
 
 /// The Shorts chrome over the Task 2 stage (Android `item_shorts_page.xml`, brief §9.2-§9.3): the
@@ -47,7 +71,7 @@ struct ShortsOverlay: View {
     /// Android `ShortsPageViewHolder.kt:44-60`: no channel row for a blank/nil channel -- an "@"
     /// with nothing after it is worse than no row.
     static func showsChannelRow(channelName: String?) -> Bool {
-        !(channelName ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+        !(channelName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -74,15 +98,17 @@ struct ShortsOverlay: View {
             VStack(spacing: Spacing.sm) {
                 Spacer()
                 HStack(alignment: .bottom, spacing: Spacing.md(widthClass)) {
-                    channelAndTitle
+                    // Task 4 live check 2: the id-only deep link has neither, and an empty scrim
+                    // is a grey bar over the video.
+                    if Self.showsChannelRow(channelName: args.channelName) || args.title != nil {
+                        channelAndTitle
+                    }
                     Spacer(minLength: 0)
                     rail
                 }
                 scrubBar
             }
             .padding(Spacing.md(widthClass))
-            // Reserve the top row for `ShortsScreen`'s Back / kebab.
-            .padding(.top, 44)
         }
         .transientBanner($bannerMessage)
         .task { isFavorite = container.favorites.isFavorite(args.videoId) }
@@ -139,6 +165,9 @@ struct ShortsOverlay: View {
                             .font(TypeScale.itemMeta.weight(.semibold))
                             .foregroundStyle(.white)
                     }
+                    // Task 4: measured 36 pt (the avatar); spec §6.11 wants 44 on every tap target.
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("shorts.channelHandle")
@@ -175,7 +204,10 @@ struct ShortsOverlay: View {
                 railGlyph(isFavorite ? "heart.fill" : "heart")
             }
             .accessibilityIdentifier("shorts.likeButton")
-            .accessibilityLabel(String(localized: "shorts_like_cd"))
+            // M9: the same role label + value pair `PlayerToolbar.favoriteButton` reads ("Favorite,
+            // Not favorited") -- one favorites store, one vocabulary. `shorts_like_cd` is Android's
+            // visible-glyph description and stays orphaned like `shorts_subscribe`.
+            .accessibilityLabel(String(localized: "player_action_favorite"))
             .accessibilityValue(String(localized: isFavorite ? "player_action_favorited" : "player_action_not_favorited"))
             .accessibilityAddTraits(isFavorite ? [.isSelected] : [])
 
@@ -192,10 +224,7 @@ struct ShortsOverlay: View {
     }
 
     private func railGlyph(_ systemImage: String) -> some View {
-        Image(systemName: systemImage)
-            .foregroundStyle(.white)
-            .frame(width: 44, height: 44)
-            .background(.black.opacity(0.55), in: Circle())
+        Image(systemName: systemImage).shortsGlyph()
     }
 
     private func toggleFavorite() {
@@ -208,16 +237,30 @@ struct ShortsOverlay: View {
 
     private var scrubBar: some View {
         Slider(value: $progress, in: 0...1) { isEditing in
-            editing = isEditing
-            // Seek only on release; while dragging the observer stops writing `progress`.
-            guard !isEditing, let player = model.currentPlayer else { return }
+            // Seek only on release; while dragging the observer stops writing `progress`. M4: the
+            // observer stays muted until the seek LANDS, or one pre-seek tick snaps the thumb back.
+            guard !isEditing else { editing = true; return }
+            guard let player = model.currentPlayer else { editing = false; return }
             let seconds = ShortsScrub.time(progress: progress, duration: duration)
-            player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
+            // The completion runs on AVFoundation's queue, not main -- hop, never assume. Paused,
+            // the observer will not tick again, so the landed time is published here or the
+            // spoken value stays stale until play.
+            player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600)) { [weak player] _ in
+                let landed = player?.currentTime().seconds ?? seconds
+                Task { @MainActor in
+                    editing = false
+                    currentSeconds = landed
+                    progress = ShortsScrub.progress(current: landed, duration: duration)
+                }
+            }
         }
         .tint(.white)
+        // Task 4: the stock slider measures 31 pt; 44 is the floor for a tap target (spec §6.11).
+        // Declined the plan's `.scaleEffect(y:)` 3 pt track for the same reason -- it halves the
+        // hit area along with the picture.
+        .frame(height: 44)
         .accessibilityIdentifier("shorts.scrubber")
         .accessibilityLabel(String(localized: "shorts_seek_cd"))
-        .accessibilityValue(String(format: String(localized: "player_duration_minutes_seconds"),
-                                   Int64(currentSeconds) / 60, Int64(currentSeconds) % 60))
+        .accessibilityValue(ShortsScrub.clock(currentSeconds))
     }
 }

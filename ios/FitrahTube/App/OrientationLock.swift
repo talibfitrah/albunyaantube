@@ -33,6 +33,9 @@ import UIKit
         guard let scene = UIApplication.shared.connectedScenes
             .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else { return }
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientations))
+        // Task 4: the geometry request alone left the app portrait after Back with the device
+        // still sideways; this is the API that makes UIKit re-read the mask and follow the device.
+        scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
         // ponytail: no error handler. A refused geometry request means the device stays where it is,
         // which is the pre-B4 behaviour -- degrading to "not locked" is correct, crashing is not.
     }

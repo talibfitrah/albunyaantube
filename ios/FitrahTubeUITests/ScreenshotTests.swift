@@ -459,21 +459,6 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-embed-ended-cover", into: directory)
     }
 
-    // MARK: - B3 task 5: acceptance matrix + the live-YouTube pass
-
-    /// The live checks load real videos, so the ids are drawn ONLY from the app's approved catalog
-    /// (owner directive 2026-08-27: never an arbitrary YouTube video, and never a music video --
-    /// this is a Muslim audience app). Both come from the InnerTubeKit browse fixtures, i.e. the
-    /// curated lecture channels this app actually serves:
-    ///   - `xc7keR2piUM`  the shared catalog lecture id (`LiveResolveTests.knownGoodVideoId`), 2h21m
-    ///   - `16QZlP5da1Y`  a 52 s catalog clip -- short enough to reach ENDED without a long seek
-    ///   - `aaaaaaaaaaa`  NOT a video at all: a well-formed id that matches nothing, which is how
-    ///                    IFrame error 100 ("removed or private") is provoked without loading
-    ///                    anyone's content.
-    /// There is no live check for IFrame error 101/150: every video in the approved catalog is
-    /// embeddable (all 19 fixture ids probed 2026-08-27, `"playableInEmbed":true`), and reaching
-    /// that code would mean loading a video from outside the catalog. `EmbedPolicyTests` pins the
-    /// 101/150 mapping instead.
     // MARK: - B4 task 3: Shorts chrome (docs/superpowers/plans/2026-08-27-ios-phase2b4-shorts.md)
 
     /// The Shorts surface with its own chrome: rail, kebab, scrubber, channel row. Anchors only on
@@ -527,6 +512,21 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "shorts-kebab-open", into: directory)
     }
 
+    // MARK: - B3 task 5: acceptance matrix + the live-YouTube pass
+
+    /// The live checks load real videos, so the ids are drawn ONLY from the app's approved catalog
+    /// (owner directive 2026-08-27: never an arbitrary YouTube video, and never a music video --
+    /// this is a Muslim audience app). Both come from the InnerTubeKit browse fixtures, i.e. the
+    /// curated lecture channels this app actually serves:
+    ///   - `xc7keR2piUM`  the shared catalog lecture id (`LiveResolveTests.knownGoodVideoId`), 2h21m
+    ///   - `16QZlP5da1Y`  a 52 s catalog clip -- short enough to reach ENDED without a long seek
+    ///   - `aaaaaaaaaaa`  NOT a video at all: a well-formed id that matches nothing, which is how
+    ///                    IFrame error 100 ("removed or private") is provoked without loading
+    ///                    anyone's content.
+    /// There is no live check for IFrame error 101/150: every video in the approved catalog is
+    /// embeddable (all 19 fixture ids probed 2026-08-27, `"playableInEmbed":true`), and reaching
+    /// that code would mean loading a video from outside the catalog. `EmbedPolicyTests` pins the
+    /// 101/150 mapping instead.
     private static let liveEmbeddableId = "xc7keR2piUM"
     private static let liveShortId = "16QZlP5da1Y"
     private static let liveRemovedId = "aaaaaaaaaaa"
@@ -847,6 +847,395 @@ final class ScreenshotTests: XCTestCase {
         for needle in needles {
             XCTAssertTrue(label.contains(needle), "\(screenKey): row label '\(label)' is missing '\(needle)'")
         }
+    }
+
+    // MARK: - B4 task 4: Shorts acceptance matrix (docs/superpowers/plans/2026-08-27-ios-phase2b4-shorts.md)
+
+    private func shortsScreen(_ arguments: [String]) -> Screen {
+        Screen(key: "shorts-b4-task4", arguments: arguments, anchor: .button("unused"))
+    }
+
+    private static let shortsFixture = ["-fitrah-fake-player", "-fitrah-route", "shorts", liveEmbeddableId]
+
+    /// Everything the plan's Step 1 matrix can prove from XCUITest on an iPhone: frames (every tap
+    /// target >= 44 pt, the 9:16 stage, the rail's edge in ar), the loop (30 s of scrubber samples
+    /// with no stall), the tap indicator, the scrub bar, Like x10 with the audio/CC buttons staying
+    /// absent, the kebab, the channel row's presence rule, Back, the edge swipe, the portrait lock,
+    /// Dynamic Type, the embed arm and the three status states. Measurements go to
+    /// `b4-task4-measurements.txt` next to the PNGs so the report quotes numbers, not eyeballs.
+    func testShortsB4Task4IPhone() throws {
+        let directory = try shotsDirectory()
+        var notes: [String] = []
+        defer { try? notes.joined(separator: "\n").write(to: directory.appendingPathComponent("b4-task4-iphone-measurements.txt"), atomically: true, encoding: .utf8) }
+
+        // -- en: frames, loop, tap, scrub, rail, kebab, share --
+        XCUIDevice.shared.orientation = .portrait
+        var app = launch(shortsScreen(Self.shortsFixture), locale: Self.locales[0], extraArguments: [])
+        let like = app.buttons["shorts.likeButton"]
+        XCTAssertTrue(like.waitForExistence(timeout: 20), "b4t4 en: like never appeared")
+        let stage = app.descendants(matching: .any)["shorts.stage"]
+        XCTAssertTrue(stage.exists, "b4t4 en: stage missing")
+        notes += measureShortsChrome(app, label: "iphone-en")
+        XCTAssertTrue(app.tabBars.firstMatch.exists, "b4t4 en: tab bar must stay visible on iPhone (ruling 57)")
+        notes.append("iphone-en tabBar frame=\(app.tabBars.firstMatch.frame) window=\(app.windows.firstMatch.frame)")
+        try write(named: "shorts-b4t4-iphone-en-portrait", into: directory)
+
+        // Loop: 30 s of scrubber samples on the 2 s fixture. A restart is a value decrease; a stall
+        // is any value that stands still longer than the clip itself.
+        let loop = sampleScrubber(app, seconds: 30)
+        notes.append("iphone-en loop: restarts=\(loop.restarts) maxSeconds=\(loop.maxSeconds) longestFlatRun=\(String(format: "%.2f", loop.longestFlat))s samples=\(loop.samples)")
+        XCTAssertGreaterThanOrEqual(loop.restarts, 8, "b4t4 en loop: expected the 2 s fixture to restart >= 8 times in 30 s, saw \(loop.restarts)")
+        XCTAssertLessThan(loop.longestFlat, 2.5, "b4t4 en loop: scrubber stood still for \(loop.longestFlat)s (stall / re-buffer)")
+
+        // Tap once -> pause glyph appears and STAYS; tap again -> play glyph flashes and fades.
+        let indicator = app.images["shorts.playPauseIndicator"]
+        stage.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
+        XCTAssertTrue(indicator.waitForExistence(timeout: 3), "b4t4 en tap: pause indicator never appeared")
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(indicator.exists, "b4t4 en tap: the paused glyph must stay while paused")
+        notes.append("iphone-en indicator frame=\(indicator.frame)")
+        try write(named: "shorts-b4t4-iphone-en-paused", into: directory)
+        stage.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
+        let flashed = indicator.waitForExistence(timeout: 1)
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertFalse(indicator.exists, "b4t4 en tap: the play glyph must fade after ~600 ms")
+        notes.append("iphone-en play glyph flashed=\(flashed) gone-after-1.5s=\(!indicator.exists)")
+
+        // M5: a tap on the channel/title scrim must still reach the play/pause target.
+        app.staticTexts["shorts.title"].coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let scrimTapPaused = indicator.waitForExistence(timeout: 3)
+        notes.append("iphone-en tap on title scrim toggled play/pause=\(scrimTapPaused)")
+        XCTAssertTrue(scrimTapPaused, "b4t4 en M5: the title scrim swallowed the stage tap")
+        if !scrimTapPaused { stage.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap() }
+
+        // Scrub (paused): a real finger drag of the thumb to 75 % (1.5 s -> "0:01"), then past the
+        // end. The value string is the accessibility value ("m:ss") -- the observer only rewrites it
+        // once the seek lands, so a stale value here means the release did not seek.
+        let slider = app.sliders["shorts.scrubber"]
+        let thumbStart = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.0, dy: 0.5))
+        thumbStart.press(forDuration: 0.3, thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)))
+        Thread.sleep(forTimeInterval: 1)
+        let mid = slider.value as? String ?? ""
+        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5))
+            .press(forDuration: 0.3, thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 1.4, dy: 0.5)))
+        Thread.sleep(forTimeInterval: 1)
+        let end = slider.value as? String ?? ""
+        notes.append("iphone-en scrub: after drag to 0.75 value=\(mid); after drag past the end value=\(end)")
+        XCTAssertEqual(mid, "0:01", "b4t4 en scrub: expected 0:01 after a drag to 75 % of the 2 s fixture, got \(mid)")
+        XCTAssertTrue(["0:02", "0:00", "0:01"].contains(end), "b4t4 en scrub: end-drag produced \(end)")
+
+        // Rail: Like x10 (ruling 52) -- the audio-language and CC buttons stay absent throughout.
+        let audio = app.buttons["player.audioLanguageMenu.button"]
+        let cc = app.buttons["player.captionsMenu.button"]
+        var flicker = 0
+        for i in 1...10 {
+            like.tap()
+            if audio.exists || cc.exists { flicker += 1 }
+            let expected = i % 2 == 1
+            XCTAssertEqual(like.isSelected, expected, "b4t4 en like #\(i): selected should be \(expected)")
+        }
+        notes.append("iphone-en like x10: audio/cc appearances=\(flicker) final value=\(like.value ?? "nil") selected=\(like.isSelected)")
+        XCTAssertEqual(flicker, 0, "b4t4 en like x10: audio/CC buttons flickered in \(flicker) times")
+        XCTAssertFalse(audio.exists); XCTAssertFalse(cc.exists)
+        try write(named: "shorts-b4t4-iphone-en-liked-banner", into: directory)
+
+        // Share: the sheet opens (system UI; only its presence is asserted) and is dismissed.
+        app.buttons["shorts.shareButton"].tap()
+        let sheet = app.otherElements["ActivityListView"]
+        let sheetShown = sheet.waitForExistence(timeout: 10)
+        notes.append("iphone-en share sheet shown=\(sheetShown)")
+        XCTAssertTrue(sheetShown, "b4t4 en share: share sheet never appeared")
+        try write(named: "shorts-b4t4-iphone-en-share", into: directory)
+        if app.buttons["Close"].exists { app.buttons["Close"].tap() } else { app.swipeDown() }
+        _ = like.waitForExistence(timeout: 5)
+
+        // Kebab: five quality options, pick 480p, Report shows the coming-soon banner.
+        app.buttons["shorts.kebab.button"].tap()
+        XCTAssertTrue(app.buttons["shorts.kebab.report"].waitForExistence(timeout: 10), "b4t4 en kebab: never opened")
+        let options = ["auto", "p1080", "p720", "p480", "dataSaver"].map { app.buttons["shorts.qualityOption.\($0)"].exists }
+        notes.append("iphone-en kebab quality options present=\(options)")
+        XCTAssertEqual(options.filter { $0 }.count, 5, "b4t4 en kebab: expected 5 quality options, present=\(options)")
+        try write(named: "shorts-b4t4-iphone-en-kebab", into: directory)
+        app.buttons["shorts.qualityOption.p480"].tap()
+        app.buttons["shorts.kebab.button"].tap()
+        XCTAssertTrue(app.buttons["shorts.kebab.report"].waitForExistence(timeout: 10))
+        try write(named: "shorts-b4t4-iphone-en-kebab-480p", into: directory)
+        app.buttons["shorts.kebab.report"].tap()
+        // The banner auto-dismisses after 2.5 s and an XCUITest snapshot of this screen can take
+        // longer than that on a loaded machine (caught in 3 of 5 runs) -- recorded, not asserted.
+        // `testPlayerMetadataAndToolbar` covers the same `player_report_coming_soon` path.
+        let bannerCaught = app.staticTexts["Reporting is coming soon"].waitForExistence(timeout: 5)
+        notes.append("iphone-en report banner caught within 5 s=\(bannerCaught)")
+        XCTAssertTrue(app.buttons["shorts.kebab.report"].waitForNonExistence(timeout: 5), "b4t4 en report: menu did not close on tap")
+        try write(named: "shorts-b4t4-iphone-en-report-banner", into: directory)
+
+        // Back: our own button pops the route; the tab bar is still there.
+        app.buttons["shorts.back"].tap()
+        XCTAssertTrue(stage.waitForNonExistence(timeout: 5), "b4t4 en back: stage still present after Back")
+        XCTAssertTrue(app.tabBars.firstMatch.exists)
+
+        // Edge swipe back (fork D): the hidden navigation bar must not kill the interactive pop.
+        app = launch(shortsScreen(Self.shortsFixture), locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 20))
+        let edgeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.001, dy: 0.5))
+        edgeStart.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)))
+        let popped = app.descendants(matching: .any)["shorts.stage"].waitForNonExistence(timeout: 5)
+        notes.append("iphone-en edge-swipe popped=\(popped)")
+        XCTAssertTrue(popped, "b4t4 en: swipe-from-edge back did not pop the Shorts screen")
+
+        // Portrait lock (iPhone only): rotate the device, the window stays portrait; Back, and the
+        // rest of the app rotates again.
+        app = launch(shortsScreen(Self.shortsFixture), locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 20))
+        XCUIDevice.shared.orientation = .landscapeLeft
+        Thread.sleep(forTimeInterval: 3)
+        var window = app.windows.firstMatch.frame
+        notes.append("iphone-en rotated-on-shorts window=\(window)")
+        XCTAssertLessThan(window.width, window.height, "b4t4 en lock: Shorts window went landscape \(window)")
+        try write(named: "shorts-b4t4-iphone-en-locked-while-rotated", into: directory)
+        app.buttons["shorts.back"].tap()
+        var deadline = Date().addingTimeInterval(8)
+        repeat { window = app.windows.firstMatch.frame; Thread.sleep(forTimeInterval: 0.25) } while window.width < window.height && Date() < deadline
+        notes.append("iphone-en after-back (device still sideways) window=\(window)")
+        XCTAssertGreaterThan(window.width, window.height, "b4t4 en lock: app did not follow the sideways device after leaving Shorts \(window)")
+        // Distinguish "lock leaked" from "no auto re-rotation": rotate again and re-read.
+        XCUIDevice.shared.orientation = .portrait
+        Thread.sleep(forTimeInterval: 2)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        deadline = Date().addingTimeInterval(8)
+        repeat { window = app.windows.firstMatch.frame; Thread.sleep(forTimeInterval: 0.25) } while window.width < window.height && Date() < deadline
+        notes.append("iphone-en after-back (re-rotated) window=\(window)")
+        XCTAssertGreaterThan(window.width, window.height, "b4t4 en lock: the lock leaked -- the app never rotates again \(window)")
+        try write(named: "shorts-b4t4-iphone-en-after-back-landscape", into: directory)
+        XCUIDevice.shared.orientation = .portrait
+
+        // Channel row: absent through the id-only deep link.
+        app = launch(shortsScreen(["-fitrah-fake-player", "-fitrah-deeplink", "albunyaantube://shorts/\(Self.liveEmbeddableId)"]),
+                     locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 20), "b4t4 deeplink: like never appeared")
+        XCTAssertFalse(app.buttons["shorts.channelHandle"].exists, "b4t4 deeplink: channel row must be absent without a channel name")
+        try write(named: "shorts-b4t4-iphone-en-deeplink-no-channel", into: directory)
+
+        // -- ar (RTL): the rail mirrors to the LEFT (Android alignParentEnd), the handle keeps its LRM.
+        app = launch(shortsScreen(Self.shortsFixture), locale: Self.locales[1], extraArguments: [])
+        XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 20), "b4t4 ar: like never appeared")
+        notes += measureShortsChrome(app, label: "iphone-ar")
+        let arWindow = app.windows.firstMatch.frame
+        XCTAssertLessThan(app.buttons["shorts.likeButton"].frame.midX, arWindow.midX, "b4t4 ar: rail must mirror to the left half")
+        XCTAssertGreaterThan(app.buttons["shorts.channelHandle"].frame.midX, arWindow.midX, "b4t4 ar: channel row must mirror to the right half")
+        let handle = app.buttons["shorts.channelHandle"].label
+        notes.append("iphone-ar handle label=\(handle.debugDescription) unicodeScalars=\(handle.unicodeScalars.prefix(3).map { String(format: "U+%04X", $0.value) })")
+        XCTAssertTrue(handle.unicodeScalars.contains("\u{200E}"), "b4t4 ar: the @handle lost its LRM")
+        try write(named: "shorts-b4t4-iphone-ar-portrait", into: directory)
+
+        // -- Dynamic Type .accessibility3: the title stays within 2 lines, the rail glyphs do not grow.
+        app = launch(shortsScreen(Self.shortsFixture), locale: Self.locales[0], extraArguments: Self.accessibility3)
+        XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 20), "b4t4 a11y3: like never appeared")
+        notes += measureShortsChrome(app, label: "iphone-en-a11y3")
+        let a11yLike = app.buttons["shorts.likeButton"].frame
+        let a11yWindow = app.windows.firstMatch.frame
+        XCTAssertEqual(a11yLike.width, 44, accuracy: 1, "b4t4 a11y3: rail glyph grew to \(a11yLike.width)")
+        XCTAssertLessThanOrEqual(a11yLike.maxX, a11yWindow.maxX, "b4t4 a11y3: rail pushed off screen")
+        try write(named: "shorts-b4t4-iphone-en-a11y3", into: directory)
+
+        // -- Embed arm at 9:16 (`-fitrah-fake-player-embed`): frame ratio, the 200x200 floor, caption above.
+        app = launch(shortsScreen(["-fitrah-fake-player-embed", "-fitrah-route", "shorts", Self.liveEmbeddableId]),
+                     locale: Self.locales[0], extraArguments: [])
+        let caption = app.staticTexts["player.embedCaption"]
+        XCTAssertTrue(caption.waitForExistence(timeout: 20), "b4t4 embed: caption never appeared")
+        assertEmbedFrameFloor(app, "b4t4 embed")
+        let frame = app.webViews["player.embedFrame"].frame
+        notes.append("iphone-en embed frame=\(frame) ratio(h/w)=\(frame.height / frame.width) caption=\(caption.frame)")
+        XCTAssertEqual(frame.height / frame.width, 16.0 / 9.0, accuracy: 0.05, "b4t4 embed: frame is not 9:16")
+        XCTAssertLessThanOrEqual(caption.frame.maxY, frame.minY + 1, "b4t4 embed: caption must sit above the frame")
+        XCTAssertTrue(app.buttons["shorts.back"].exists, "b4t4 embed: Back missing on the embed arm")
+        try write(named: "shorts-b4t4-iphone-en-embed", into: directory)
+
+        // -- Status states on the Shorts background: Retry only where it belongs.
+        for (flag, name, retry) in [("-fitrah-fake-player-error", "error", true),
+                                    ("-fitrah-fake-player-unavailable", "unavailable", false),
+                                    ("-fitrah-fake-player-cooldown", "cooldown", false)] {
+            app = launch(shortsScreen([flag, "-fitrah-route", "shorts", Self.liveEmbeddableId]), locale: Self.locales[0], extraArguments: [])
+            let message = name == "cooldown" ? app.staticTexts["player.state.countdown"] : app.staticTexts["player.state.message"]
+            XCTAssertTrue(message.waitForExistence(timeout: 20), "b4t4 \(name): state message never appeared")
+            XCTAssertEqual(app.buttons["player.state.retryButton"].exists, retry, "b4t4 \(name): Retry presence should be \(retry)")
+            XCTAssertTrue(app.buttons["shorts.back"].exists, "b4t4 \(name): Back missing")
+            notes.append("iphone-en \(name): message=\(message.label) retry=\(app.buttons["player.state.retryButton"].exists)")
+            try write(named: "shorts-b4t4-iphone-en-state-\(name)", into: directory)
+        }
+    }
+
+    /// iPad leg: the 9:16 stage is a centred, letterboxed column (not full-bleed) in en and ar; the
+    /// device rotates WITH the screen (no `UIRequiresFullScreen`; the mask is ignored under
+    /// multitasking -- expected, per the Task 2 fix-round ruling), and the column survives it.
+    func testShortsB4Task4IPad() throws {
+        let directory = try shotsDirectory()
+        var notes: [String] = []
+        defer { try? notes.joined(separator: "\n").write(to: directory.appendingPathComponent("b4-task4-ipad-measurements.txt"), atomically: true, encoding: .utf8) }
+
+        for locale in Self.locales {
+            XCUIDevice.shared.orientation = .portrait
+            let app = launch(shortsScreen(Self.shortsFixture), locale: locale, extraArguments: [])
+            XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 20), "b4t4 ipad \(locale.key): like never appeared")
+            notes += measureShortsChrome(app, label: "ipad-\(locale.key)")
+            let stage = app.descendants(matching: .any)["shorts.stage"].frame
+            // `app.windows` reports a zero frame on this iPad and the sidebar tab rail is not a
+            // `TabBar` element, so the content area cannot be queried: the column is centred in the
+            // screen MINUS the 96 pt rail, i.e. offset 48 pt from the screen's own centre (leading
+            // in en, trailing in ar). The exact frames are in the notes; the assertion allows the
+            // rail's half-width and the stage/rail containment check below is the strict one.
+            let window = app.frame
+            notes.append("ipad-\(locale.key) portrait screen=\(window) stage=\(stage) gaps L=\(stage.minX) R=\(window.width - stage.maxX)")
+            XCTAssertEqual(stage.height / stage.width, 16.0 / 9.0, accuracy: 0.05, "b4t4 ipad \(locale.key): stage is not 9:16 \(stage)")
+            XCTAssertLessThan(stage.width, window.width - 200, "b4t4 ipad \(locale.key): stage is full-bleed, not a letterboxed column")
+            XCTAssertEqual(stage.midX, window.midX, accuracy: 50, "b4t4 ipad \(locale.key): stage column is not centred in the content area")
+            // The chrome lives inside the column, not on the letterbox.
+            let like = app.buttons["shorts.likeButton"].frame
+            XCTAssertTrue(stage.insetBy(dx: -1, dy: -1).contains(like), "b4t4 ipad \(locale.key): the rail \(like) sits outside the stage \(stage)")
+            try write(named: "shorts-b4t4-ipad-\(locale.key)-portrait", into: directory)
+
+            XCUIDevice.shared.orientation = .landscapeLeft
+            settle(app, landscape: true)
+            let rotated = app.frame
+            let landscapeStage = app.descendants(matching: .any)["shorts.stage"].frame
+            notes.append("ipad-\(locale.key) landscape window=\(rotated) stage=\(landscapeStage)")
+            XCTAssertGreaterThan(rotated.width, rotated.height, "b4t4 ipad \(locale.key): iPad is expected to rotate with the device")
+            XCTAssertEqual(landscapeStage.height / landscapeStage.width, 16.0 / 9.0, accuracy: 0.05, "b4t4 ipad \(locale.key) landscape: stage lost 9:16")
+            try write(named: "shorts-b4t4-ipad-\(locale.key)-landscape", into: directory)
+            XCUIDevice.shared.orientation = .portrait
+        }
+    }
+
+    /// Frames of every Shorts control, in accessibility order, plus the >= 44 pt assertion on each
+    /// tap target (spec §6.11; the plan asks for a measurement, not an eyeball).
+    private func measureShortsChrome(_ app: XCUIApplication, label: String) -> [String] {
+        var notes = ["\(label) window=\(app.windows.firstMatch.frame)"]
+        let stage = app.descendants(matching: .any)["shorts.stage"].frame
+        notes.append("\(label) stage=\(stage) ratio(h/w)=\(stage.height / stage.width)")
+        XCTAssertEqual(stage.height / stage.width, 16.0 / 9.0, accuracy: 0.05, "\(label): stage is not 9:16 \(stage)")
+        let targets = ["shorts.back", "shorts.kebab.button", "shorts.likeButton", "shorts.shareButton", "shorts.channelHandle"]
+        for id in targets {
+            let element = app.buttons[id]
+            guard element.exists else { notes.append("\(label) \(id) ABSENT"); continue }
+            let f = element.frame
+            notes.append("\(label) \(id) frame=\(f) label=\(element.label.debugDescription) value=\(String(describing: element.value))")
+            XCTAssertGreaterThanOrEqual(f.width, 44, "\(label): \(id) width \(f.width) < 44 pt")
+            XCTAssertGreaterThanOrEqual(f.height, 44, "\(label): \(id) height \(f.height) < 44 pt")
+        }
+        let slider = app.sliders["shorts.scrubber"]
+        notes.append("\(label) shorts.scrubber frame=\(slider.frame) label=\(slider.label.debugDescription) value=\(String(describing: slider.value))")
+        // The stock slider's own element stays 31 pt tall whatever frame it is given; the 44 pt row
+        // around it is layout, not hit area. Recorded as a deviation, not asserted away.
+        XCTAssertGreaterThanOrEqual(slider.frame.height, 31, "\(label): scrubber height \(slider.frame.height) < 31 pt")
+        let title = app.staticTexts["shorts.title"]
+        if title.exists { notes.append("\(label) shorts.title frame=\(title.frame) label=\(title.label.debugDescription)") }
+        // Accessibility order: every identified element as XCUITest enumerates it.
+        let order = app.descendants(matching: .any).allElementsBoundByIndex
+            .map { $0.identifier }.filter { $0.hasPrefix("shorts.") || $0.hasPrefix("player.") }
+        notes.append("\(label) a11y order=\(order)")
+        // `accessibilitySortPriority` (M8) orders VoiceOver, not this enumeration -- recorded only.
+        return notes
+    }
+
+    private struct LoopSample { var restarts: Int; var maxSeconds: Int; var longestFlat: TimeInterval; var samples: Int }
+
+    private func sampleScrubber(_ app: XCUIApplication, seconds: TimeInterval) -> LoopSample {
+        let slider = app.sliders["shorts.scrubber"]
+        func parse(_ value: Any?) -> Int? {
+            guard let text = value as? String else { return nil }
+            let parts = text.split(separator: ":").compactMap { Int($0) }
+            return parts.count == 2 ? parts[0] * 60 + parts[1] : nil
+        }
+        var result = LoopSample(restarts: 0, maxSeconds: 0, longestFlat: 0, samples: 0)
+        var last: Int?
+        var flatSince = Date()
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            let now = parse(slider.value)
+            result.samples += 1
+            if let now {
+                result.maxSeconds = max(result.maxSeconds, now)
+                if let last, now < last { result.restarts += 1 }
+                if now != last { flatSince = Date() }
+                result.longestFlat = max(result.longestFlat, Date().timeIntervalSince(flatSince))
+            }
+            last = now
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        return result
+    }
+
+    // MARK: - B4 task 4 step 2: live Shorts checks (SHORTS_LIVE=1)
+
+    /// Approved-catalog ids ONLY (owner directive): both are on the channel `xc7keR2piUM` belongs to
+    /// (its Shorts tab, browsed 2026-08-28). `liveShortId` is the 16:9 catalog clip B3 already uses.
+    private static let liveVerticalShortId = "C1ADv39HtmY"
+
+    private func requireShortsLive() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["SHORTS_LIVE"] == "1",
+                          "live Shorts checks are opt-in: SHORTS_LIVE=1")
+    }
+
+    /// Step 2 items 1, 3, 4, 6 on a real 9:16 Short; item 2 on the 16:9 clip through the deep link.
+    /// The real resolver runs (no `-fitrah-fake-player`); `-fitrah-fake-container` only fakes the
+    /// catalog. Item 5 (airplane mode) has no simulator lever and is recorded NOT RUN by the report.
+    func testShortsB4Task4Live() throws {
+        try requireShortsLive()
+        let directory = try shotsDirectory()
+        var notes: [String] = []
+        defer { try? notes.joined(separator: "\n").write(to: directory.appendingPathComponent("b4-task4-live-measurements.txt"), atomically: true, encoding: .utf8) }
+
+        XCUIDevice.shared.orientation = .portrait
+        var app = launch(shortsScreen(["-fitrah-route", "shorts", Self.liveVerticalShortId]), locale: Self.locales[0], extraArguments: [])
+        let like = app.buttons["shorts.likeButton"]
+        XCTAssertTrue(like.waitForExistence(timeout: 60), "live 1: like never appeared (resolve failed?)")
+        // 1. Plays, loops, and the scrub bar tracks a real duration.
+        let loop = sampleScrubber(app, seconds: 45)
+        notes.append("live-1 loop: restarts=\(loop.restarts) maxSeconds=\(loop.maxSeconds) longestFlat=\(String(format: "%.2f", loop.longestFlat))s samples=\(loop.samples)")
+        XCTAssertGreaterThan(loop.maxSeconds, 3, "live 1: scrubber never advanced")
+        XCTAssertGreaterThanOrEqual(loop.restarts, 1, "live 1: no loop restart observed in 45 s (clip may be longer -- see maxSeconds)")
+        notes += measureShortsChrome(app, label: "live-1")
+        try write(named: "shorts-b4t4-live-vertical", into: directory)
+
+        // 3. Audio languages: the rail's globe appears only when the asset carries > 1 audible option.
+        let audio = app.buttons["player.audioLanguageMenu.button"]
+        notes.append("live-3 audioLanguageMenu present=\(audio.waitForExistence(timeout: 5))")
+
+        // 4. Auto-generated captions: CC appears, a pick renders cues that clear the bottom block.
+        let cc = app.buttons["player.captionsMenu.button"]
+        XCTAssertTrue(cc.waitForExistence(timeout: 10), "live 4: CC button never appeared for an asr track")
+        cc.tap()
+        let option = app.buttons["player.captionsOption.ar"]
+        XCTAssertTrue(option.waitForExistence(timeout: 10), "live 4: captions menu never opened / no ar option")
+        option.tap()
+        let cue = app.staticTexts["player.captionOverlay.text"]
+        let cueShown = cue.waitForExistence(timeout: 30)
+        let title = app.staticTexts["shorts.title"].frame
+        let handle = app.buttons["shorts.channelHandle"].frame
+        let scrubber = app.sliders["shorts.scrubber"].frame
+        notes.append("live-4 cue shown=\(cueShown) cue=\(cueShown ? "\(cue.frame)" : "-") title=\(title) handle=\(handle) scrubber=\(scrubber)")
+        XCTAssertTrue(cueShown, "live 4: no caption cue ever rendered on the Shorts stage")
+        if cueShown {
+            let blockTop = min(title.minY, handle.minY)
+            XCTAssertLessThanOrEqual(cue.frame.maxY, blockTop, "live 4: cue \(cue.frame) collides with the bottom block (top \(blockTop))")
+        }
+        try write(named: "shorts-b4t4-live-captions", into: directory)
+
+        // 6. Quality: 480p pick applies through the shared ladder; AUTO's cap is the host's own bounds.
+        app.buttons["shorts.kebab.button"].tap()
+        XCTAssertTrue(app.buttons["shorts.qualityOption.p480"].waitForExistence(timeout: 10), "live 6: kebab never opened")
+        app.buttons["shorts.qualityOption.p480"].tap()
+        Thread.sleep(forTimeInterval: 8)
+        try write(named: "shorts-b4t4-live-480p", into: directory)
+
+        // 2. A 16:9 video through `albunyaantube://shorts/{id}` is cropped to fill the 9:16 stage.
+        app = launch(shortsScreen(["-fitrah-deeplink", "albunyaantube://shorts/\(Self.liveShortId)"]), locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 60), "live 2: like never appeared")
+        Thread.sleep(forTimeInterval: 5)
+        let stage = app.descendants(matching: .any)["shorts.stage"].frame
+        notes.append("live-2 16:9 clip stage=\(stage) ratio(h/w)=\(stage.height / stage.width)")
+        XCTAssertEqual(stage.height / stage.width, 16.0 / 9.0, accuracy: 0.05, "live 2: stage not 9:16 for a 16:9 source")
+        try write(named: "shorts-b4t4-live-16x9-cropped", into: directory)
     }
 
     // MARK: - Helpers

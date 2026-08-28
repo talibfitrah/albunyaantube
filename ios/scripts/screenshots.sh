@@ -299,4 +299,59 @@ if [ "${EMBED_LIVE:-0}" = "1" ]; then
     xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 fi
 
+# ---------------------------------------------------------------------------------------------
+# Plan B4 (docs/superpowers/plans/2026-08-27-ios-phase2b4-shorts.md): the Shorts surface. One
+# block per leg, each naming its own destination -- the device argument above does NOT scope
+# anything down here.
+
+# Task 3 (chrome) + Task 4 (acceptance matrix): iPhone leg -- en/ar/a11y3, loop, tap, scrub, rail,
+# kebab, Back, edge swipe, portrait lock, embed arm, status states. The iPad leg follows and shares
+# the directory, so only the iPhone leg clears it. Frame measurements land in
+# `b4-task4-*-measurements.txt` beside the PNGs.
+B4_TASK4_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b4-shorts/screenshots/b4-task4"
+echo "== B4 task 4 shorts matrix (iPhone) -> $B4_TASK4_OUT =="
+rm -rf "${B4_TASK4_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$B4_TASK4_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testShortsScreen \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testShortsKebab \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testShortsB4Task4IPhone \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
+echo "== B4 task 4 shorts matrix (iPad) -> $B4_TASK4_OUT =="
+TEST_RUNNER_FITRAH_SHOTS_DIR="$B4_TASK4_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testShortsB4Task4IPad \
+    -destination "platform=iOS Simulator,name=iPad Pro 13-inch (M5)" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
+
+# Task 4 step 2 (live Shorts): OPT-IN, same contract as EMBED_LIVE -- approved-catalog ids only.
+# Run with:  SHORTS_LIVE=1 ios/scripts/screenshots.sh
+if [ "${SHORTS_LIVE:-0}" = "1" ]; then
+    B4_LIVE_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b4-shorts/screenshots/b4-task4-live"
+    echo "== B4 task 4 LIVE shorts checks -> $B4_LIVE_OUT =="
+    rm -rf "${B4_LIVE_OUT:?}"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$B4_LIVE_OUT" TEST_RUNNER_SHORTS_LIVE=1 xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testShortsB4Task4Live \
+        -destination "platform=iOS Simulator,name=iPhone 17" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|SHORTS_LIVE|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+fi
+
 exit "$status"

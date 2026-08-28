@@ -51,6 +51,16 @@ struct ShortsScreenTests {
         #expect(ShortsScrub.time(progress: 2.0, duration: 60) == 60)   // clamped, never seeks past end
     }
 
+    @Test func theScrubberClockNeverTrapsOnANonFiniteTime() {
+        // I3 (Task 3 review): `Int64(time.seconds)` traps on NaN/inf, and a live AVPlayerItem hands
+        // the periodic observer exactly that before its duration is known. `Format.duration` is the
+        // one m:ss formatter (rung 2 of the ladder); the guard here is the only new logic.
+        #expect(ShortsScrub.clock(.nan) == "0:00")
+        #expect(ShortsScrub.clock(.infinity) == "0:00")
+        #expect(ShortsScrub.clock(-.infinity) == "0:00")
+        #expect(ShortsScrub.clock(90.9) == "1:30")
+    }
+
     @Test func theChannelRowHidesItselfWhenTheShortCarriesNoChannel() {
         // ShortsPageViewHolder.kt:44-60 -- feed/deep-link mode "often lacks channelName", and an "@"
         // with nothing after it is worse than no row. Blank, not just nil: Android checks isBlank.
