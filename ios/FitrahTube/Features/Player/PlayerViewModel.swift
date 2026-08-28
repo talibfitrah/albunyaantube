@@ -155,6 +155,11 @@ extension StreamState {
     var currentTime: TimeInterval = 0
 
     private let queueSource: (any PlaylistQueueSource)?
+    /// Ids the `.prefetch` lane already warmed. A repeat resolve of one is a `ManifestCache` hit
+    /// that still spends the per-video retry budget and the global prefetch lane, so the window
+    /// only resolves what it has not resolved before. Success-only: a refusal leaves the id
+    /// eligible for the next window (CF-B2-2 rule (a) says skip silently, not give up).
+    private var prefetchedIds: Set<String> = []
     private var consecutiveSkips = 0
     private var isPaging = false
 
@@ -298,11 +303,13 @@ extension StreamState {
     /// `sourceChannelId: nil`: the availability gate's channel hint belongs to the LAUNCHED video,
     /// not to a playlist member that may come from another channel.
     func prefetchUpcoming() async {
-        for item in queue.streamPrefetchTargets {          // <=2, reconciliation note 8
+        for item in queue.streamPrefetchTargets where !prefetchedIds.contains(item.id) {   // <=2, note 8
             // CF-B2-2 rule (a): a refusal is skipped SILENTLY. `try?` is that rule -- never a
             // state write, never a retry, never a log line the user can reach.
-            _ = try? await resolver.resolve(item.id, purpose: .prefetch, kind: .prefetch,
-                                            sourceChannelId: nil, forceRefresh: false)
+            if (try? await resolver.resolve(item.id, purpose: .prefetch, kind: .prefetch,
+                                            sourceChannelId: nil, forceRefresh: false)) != nil {
+                prefetchedIds.insert(item.id)
+            }
         }
     }
 

@@ -7,7 +7,7 @@ import Testing
 
 @Suite(.perTest)
 struct PlayerHostTests {
-    private static func resolved(_ stream: ResolvedStream, userAgent: String = "TestUA") -> Resolved {
+    static func resolved(_ stream: ResolvedStream, userAgent: String = "TestUA") -> Resolved {
         Resolved(stream: stream, client: .visionos, userAgent: userAgent, resolvedAt: Date(), expiresAt: nil)
     }
 
@@ -380,11 +380,9 @@ struct PlayerHostTests {
     @Test func theLoopRestartsFromZeroRatherThanAdvancing() {
         // Android REPEAT_MODE_ONE (PlayerBinder.kt:154). The decision is pure so the notification glue
         // has nothing to decide: an ended item under .shorts seeks to zero and plays; under .standard
-        // it does nothing (B5's auto-advance is the only thing allowed to react there).
-        #expect(PlayerPresentation.shorts.actionOnPlayToEnd(hasQueue: false) == .restart)
-        #expect(PlayerPresentation.shorts.actionOnPlayToEnd(hasQueue: true) == .restart)   // never advances
-        #expect(PlayerPresentation.standard.actionOnPlayToEnd(hasQueue: false) == .none)
-        #expect(PlayerPresentation.standard.actionOnPlayToEnd(hasQueue: true) == .advance)
+        // it asks the VM to advance (`playToEnd` owns Safe Mode / empty queue / queue end).
+        #expect(PlayerPresentation.shorts.actionOnPlayToEnd == .restart)     // never advances
+        #expect(PlayerPresentation.standard.actionOnPlayToEnd == .advance)   // playToEnd() no-ops on an empty queue
     }
 
     @Test func positionIsPreservedOnlyWhileTheVideoIsTheSameOne() {
@@ -396,18 +394,69 @@ struct PlayerHostTests {
         #expect(PlayerHostView.shouldPreservePosition(previous: "a", next: "b") == false)
     }
 
-    @Test func anAdvanceBuildsTheNextItemAtZeroAndAResolveKeepsThePosition() throws {
+    @Test(.timeLimit(.minutes(1))) func anAdvanceBuildsTheNextItemAtZeroAndAResolveKeepsThePosition() async throws {
         // B5: `continuesCurrentVideo == false` (an advance or an Up Next tap) must not carry the
-        // outgoing item's clock into the next video; the same-video replace path still does.
-        func resolved(_ name: String) -> Resolved {
-            Resolved(stream: .progressive(url: URL(string: "https://example.com/\(name)")!, label: "360p"),
-                     client: .visionos, userAgent: "ua", resolvedAt: Date(), expiresAt: nil)
-        }
-        let a = resolved("a.mp4"), b = resolved("b.mp4")
-        let player = try #require(PlayerHostView.player(for: .rung2Progressive(a), replacing: nil))
-        let advanced = PlayerHostView.player(for: .rung2Progressive(b), replacing: player,
-                                             continuesCurrentVideo: false, resumeFallback: 42)
+        // outgoing item's clock OR the hoisted `resumeFallback` into the next video; a fresh player
+        // for the same video (host rebuilt after a state hop, CF-B1-8) still seeks to the fallback.
+        // Real clip so the seeks land on a loaded item (2 s long, hence 1 s not 42 for the resume).
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(PlayerHostTests.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        player.pause()
+        await player.seek(to: CMTime(seconds: 1, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        #expect(player.currentTime().seconds > 0.5)
+
+        // A DIFFERENT url (a temp copy of the clip): the same url would hit the builder's reuse path.
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        try FileManager.default.copyItem(at: url, to: copy)
+        defer { try? FileManager.default.removeItem(at: copy) }
+        let next = StreamState.rung2Progressive(PlayerHostTests.resolved(.progressive(url: copy, label: "360p")))
+        let advanced = try #require(PlayerHostView.player(for: next, replacing: player,
+                                                          continuesCurrentVideo: false, resumeFallback: 1))
         #expect(advanced === player)
-        #expect((advanced?.currentItem?.asset as? AVURLAsset)?.url.lastPathComponent == "b.mp4")
+        try await Self.settle(advanced) { $0 < 0.1 }
+        #expect(advanced.currentTime().seconds < 0.1)
+
+        let rebuilt = try #require(PlayerHostView.player(for: state, replacing: nil,
+                                                         continuesCurrentVideo: true, resumeFallback: 1))
+        try await Self.settle(rebuilt) { $0 > 0.9 }
+        #expect(abs(rebuilt.currentTime().seconds - 1) < 0.1)
+    }
+
+    /// C1 (B5 T2 review): the periodic observer hoists `currentTime` into the VM. Between an
+    /// advance's `swapArgs` (which zeroes it for the NEXT video) and the update pass that swaps the
+    /// item, the OLD item is still ticking -- and a fresh coordinator after a dismantle would read
+    /// that stale clock back as the new video's resume point. The write is gated on the
+    /// coordinator's last-built video still being the VM's current one.
+    @Test(.timeLimit(.minutes(1))) func theHoistedPositionIsNotWrittenWhileTheViewModelIsOnAnotherVideo() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(PlayerHostTests.resolved(.progressive(url: url, label: "360p")))
+        let settings = UserDefaultsSettingsStore(
+            defaults: UserDefaults(suiteName: "PlayerHostTests.\(UUID().uuidString)")!)
+        let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings,
+                                    args: PlayerArgs(videoId: "fixture-1"))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        let item = try #require(player.currentItem)
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.lastVideoId = "fixture-0"   // the coordinator last built the PREVIOUS video
+        coordinator.observe(item: item, player: player, model: model, isLive: false, playToEnd: .none)
+
+        // Playing (the builder called `play()`): >1 s of wall clock past a 1 s seek guarantees at
+        // least one 1 s-interval tick carrying a time >= 1 -- the stale write this test pins.
+        await player.seek(to: CMTime(seconds: 1, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        try await Task.sleep(for: .milliseconds(1200))
+        #expect(model.currentTime == 0)
+
+        coordinator.lastVideoId = "fixture-1"
+        await player.seek(to: CMTime(seconds: 1, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.play()
+        try await Task.sleep(for: .milliseconds(1200))
+        #expect(model.currentTime > 0.5)
+        coordinator.stopObserving()
+    }
+
+    /// Polls the live clock until `done` holds (seeks without a completion handler are async).
+    private static func settle(_ player: AVPlayer, until done: (Double) -> Bool) async throws {
+        for _ in 0..<400 where !done(player.currentTime().seconds) { try await Task.sleep(for: .milliseconds(5)) }
     }
 }

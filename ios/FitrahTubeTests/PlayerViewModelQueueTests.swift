@@ -148,7 +148,7 @@ struct PlayerViewModelQueueTests {
         let before = vm.state
         await vm.prefetchUpcoming()
         #expect(vm.state == before)                                        // state untouched
-        #expect(resolver.calls.filter { $0.videoId == "b" }.count == 2)    // open + explicit; never retried
+        #expect(resolver.calls.filter { $0.videoId == "b" && $0.kind == .prefetch }.count == 2)   // open + explicit
         await vm.playToEnd()
         #expect(vm.args.videoId == "b")                                    // and it did not block
         #expect(vm.state.isPlayable)
@@ -190,15 +190,27 @@ struct PlayerViewModelQueueTests {
         #expect(vm.queue.current?.id == "v3")     // the startIndex hint
     }
 
-    @Test func advanceResetsTheHoistedPositionAndKeepsItAcrossASameVideoRetry() async {
+    @Test func advanceResetsTheHoistedPosition() async {
         // CF-B1-8: currentTime is session-only (ruling 32), hoisted so a host rebuild can restore it.
         let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
         await vm.open()
         vm.currentTime = 42
-        await vm.retry()
-        #expect(vm.currentTime == 42)             // same video: position survives
         await vm.playToEnd()
         #expect(vm.currentTime == 0)              // new video: starts at the beginning
+    }
+
+    @Test func aPrefetchedVideoIsNotResolvedAgainOnTheNextAdvance() async {
+        // I2 (B5 T2 review): a second `.prefetch` resolve of an already-warmed id is a cache hit
+        // that still spends the per-video retry budget and the global prefetch lane. b->c->d:
+        // `d` enters the window at b (targets c,d) and stays in it at c (targets d,e) -- once.
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"),
+                                       queue: ["a", "b", "c", "d", "e", "f"])
+        await vm.open()
+        await vm.playToEnd()
+        await vm.playToEnd()
+        #expect(vm.args.videoId == "c")
+        let pre = resolver.calls.filter { $0.kind == .prefetch }.map(\.videoId)
+        #expect(pre == ["b", "c", "d", "e"])
     }
 
     @Test func aFailedQueueLoadNeverKillsThePlayingVideo() async {
