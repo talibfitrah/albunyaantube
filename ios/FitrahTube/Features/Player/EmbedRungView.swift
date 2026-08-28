@@ -23,6 +23,9 @@ struct EmbedRungView: View {
     let resolved: Resolved
     let model: PlayerViewModel
     let args: PlayerArgs
+    /// CF-B3-1: the ONE thing `ShortsScreen` changes about this rung (9:16). Every other call site
+    /// keeps the default. The ≥ 200x200 pt floor for both ratios is `fittedSize`'s test.
+    var aspectRatio: CGFloat = EmbedRungView.defaultAspectRatio
 
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
@@ -68,9 +71,10 @@ struct EmbedRungView: View {
                 // Plan §6.4 row 3's ≥ 200x200 pt floor is satisfied by CONSTRUCTION, not by a
                 // `minHeight`: the frame is the full content column at 16:9, i.e. ≥ 320x180 on the
                 // narrowest supported device and ≥ 200 tall from any column ≥ 356 pt. Nothing in
-                // this app produces a narrower player column. CF-B3-1: re-check this when B4
-                // parameterises the ratio -- 9:16 makes width the tight dimension, not height.
-                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                // this app produces a narrower player column. At 9:16 (B4) height binds on a
+                // portrait-locked phone and width is ≥ 320 pt on the narrowest one -- pinned by
+                // `ShortsScreenTests.theEmbedRungIsTheOnlyThingThatChangesShapeForShorts`.
+                .aspectRatio(aspectRatio, contentMode: .fit)
                 .background(Color.black)
                 .animation(reduceMotion ? nil : .easeInOut, value: ended)
                 // Task 5 ruling: the cover is a silent screen change for a VoiceOver user -- the
@@ -131,6 +135,15 @@ struct EmbedRungView: View {
     }
 
     // MARK: - Pure decisions (called from the view above, pinned by `PlayerScreenEmbedTests`)
+
+    static let defaultAspectRatio: CGFloat = 16.0 / 9.0
+
+    /// What `.aspectRatio(_, contentMode: .fit)` yields inside `container` -- the 200x200 pt floor
+    /// as a test rather than a comment.
+    static func fittedSize(container: CGSize, aspectRatio: CGFloat) -> CGSize {
+        let width = min(container.width, container.height * aspectRatio)
+        return CGSize(width: width, height: width / aspectRatio)
+    }
 
     /// IFrame API player states: -1 unstarted, 0 ENDED, 1 playing, 2 paused, 3 buffering, 5 cued.
     /// Only 0 raises the cover; `.ready`/`.error` never do (an error is a `StreamState` change, not

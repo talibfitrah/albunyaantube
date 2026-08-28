@@ -13,25 +13,11 @@ struct PlayerToolbar: View {
     @State private var isFavorite = false
     @State private var bannerMessage: BannerMessage?
 
-    private var shareURL: URL {
-        // Spec §10 / plan global constraints: no "ad-free" in the shared text (OG publish is
-        // Phase 4 -- CF). `!` is safe: videoId is always URL-path-safe (YouTube's fixed 11-char
-        // alphabet), same assumption `DeepLinkParser`/`Route` already make elsewhere.
-        URL(string: "https://app.fitrahtube.com/api/watch/\(args.videoId)")!
-    }
-
-    private var contentItem: ContentItem {
-        ContentItem(id: args.videoId, type: .video, title: args.title ?? args.videoId, category: nil,
-                    description: args.description, thumbnailURL: args.thumbnailURL,
-                    durationSeconds: args.durationSeconds, uploadedDaysAgo: nil, viewCount: args.viewCount,
-                    channelTitle: args.channelName, subscribers: nil, videoCount: nil, itemCount: nil)
-    }
-
     var body: some View {
         HStack {
             favoriteButton
             Spacer()
-            ShareLink(item: shareURL, subject: Text(args.title ?? args.videoId)) {
+            ShareLink(item: args.shareURL, subject: Text(args.title ?? args.videoId)) {
                 toolbarLabel(systemImage: "square.and.arrow.up", title: String(localized: "player_action_share"))
             }
             .accessibilityIdentifier("player.shareButton")
@@ -69,7 +55,7 @@ struct PlayerToolbar: View {
     /// inside `SwiftDataFavoritesStore.toggle`; `FavoriteToggle.perform` only has to keep this
     /// view's own `@State` in sync with whichever outcome actually happened.
     private func toggleFavorite() {
-        let result = FavoriteToggle.perform(item: contentItem, wasFavorite: isFavorite, store: container.favorites)
+        let result = FavoriteToggle.perform(item: args.contentItem, wasFavorite: isFavorite, store: container.favorites)
         isFavorite = result.isFavorite
         bannerMessage = result.banner
     }
@@ -93,6 +79,25 @@ struct PlayerToolbar: View {
             Text(title).font(TypeScale.caption)
         }
         .foregroundStyle(Color.textPrimary)
+    }
+}
+
+extension PlayerArgs {
+    /// B4 task 3: shared by `PlayerToolbar` and `ShortsOverlay`'s rail -- ONE share URL, always the
+    /// app's own (owner directive 2026-08-27: never a youtube.com / youtu.be link).
+    /// Spec §10 / plan global constraints: no "ad-free" in the shared text (OG publish is Phase 4
+    /// -- CF). `!` is safe: videoId is always URL-path-safe (YouTube's fixed 11-char alphabet),
+    /// same assumption `DeepLinkParser`/`Route` already make elsewhere.
+    var shareURL: URL {
+        URL(string: "https://app.fitrahtube.com/api/watch/\(videoId)")!
+    }
+
+    /// The favorites-store shape of this video, for `FavoriteToggle.perform`.
+    var contentItem: ContentItem {
+        ContentItem(id: videoId, type: .video, title: title ?? videoId, category: nil,
+                    description: description, thumbnailURL: thumbnailURL,
+                    durationSeconds: durationSeconds, uploadedDaysAgo: nil, viewCount: viewCount,
+                    channelTitle: channelName, subscribers: nil, videoCount: nil, itemCount: nil)
     }
 }
 

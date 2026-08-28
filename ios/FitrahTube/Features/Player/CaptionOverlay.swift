@@ -53,31 +53,28 @@ struct CaptionOverlay: View {
         // cancellation of the old task isn't a reliable stop on its own).
         guard item === model.currentItem, model.selectedCaptionTrack == track,
               let player = model.currentPlayer else { return }
-        observer.start(player: player, cues: fetched) { activeCue = $0 }
+        observer.start(player: player) { activeCue = CaptionsProvider.activeCue(fetched, at: $0.seconds) }
     }
 }
 
 /// Same `MainActor.assumeIsolated` shape as `PlayerHostView.Coordinator` (`queue: .main` on
 /// `addPeriodicTimeObserver` guarantees the callback fires on the main thread) -- a small
-/// reference-type holder so `CaptionOverlay`'s `@State` keeps one stable observer across its own
-/// body re-evaluations, and so the `@Sendable` observer closure never needs to capture the
-/// (non-Sendable) `View` struct itself.
+/// reference-type holder so a view's `@State` keeps one stable observer across its own body
+/// re-evaluations, and so the `@Sendable` observer closure never needs to capture the
+/// (non-Sendable) `View` struct itself. Start/store/cancel: ONE owner per player.
 @MainActor
 final class TimeObserver {
-    private var cues: [CaptionsProvider.Cue] = []
     private var token: Any?
     private weak var player: AVPlayer?
 
-    func start(player: AVPlayer, cues: [CaptionsProvider.Cue], onChange: @escaping (CaptionsProvider.Cue?) -> Void) {
+    /// 250 ms ticks (Android's Shorts ticker rate too, `ShortsPageViewHolder.kt:857-879`). B4
+    /// task 3 made this cue-agnostic so `ShortsOverlay`'s scrubber shares the one owner.
+    func start(player: AVPlayer, onTick: @escaping (CMTime) -> Void) {
         stop()
         self.player = player
-        self.cues = cues
         let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
-        token = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                onChange(CaptionsProvider.activeCue(self.cues, at: time.seconds))
-            }
+        token = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+            MainActor.assumeIsolated { onTick(time) }
         }
     }
 

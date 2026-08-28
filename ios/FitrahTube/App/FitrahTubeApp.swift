@@ -107,7 +107,7 @@ struct FitrahTubeApp: App {
     /// deep-link URL (`DeepLinkParser` only covers video/channel/playlist/shorts) and no
     /// `simctl` tap-gesture equivalent exists, so this pushes the route directly onto the
     /// currently-selected tab's stack -- same technique as `-fitrah-tab`.
-    /// `-fitrah-route player [videoId]|search|categories|subcategories <parentId> <parentName>|featured [categoryId] [categoryName]`
+    /// `-fitrah-route player [videoId]|shorts [videoId]|search|categories|subcategories <parentId> <parentName>|featured [categoryId] [categoryName]`
     /// (`-` for a nil `featured` arg). `player` is also reachable via `-fitrah-deeplink`, but this is
     /// the one-token form the screenshot rig's other routes already use.
     private func pushDebugRouteIfRequested() {
@@ -131,6 +131,15 @@ struct FitrahTubeApp: App {
                 description: "A short reminder on tawakkul, with a link for further reading: "
                     + "https://example.com/tawakkul and a second note after it.",
                 durationSeconds: 754, viewCount: 12_700_000
+            )))
+        case "shorts":
+            // B4 task 3 screenshot rig: a channel-attributed short (the deep-link form carries an
+            // id only, which hides the channel row by design -- `ShortsOverlay.showsChannelRow`).
+            router.push(.shorts(PlayerArgs(
+                videoId: arg(2) ?? "fixture-video",
+                title: "A short reminder on tawakkul",
+                channelName: "Sample Channel",
+                channelId: "UCsample"
             )))
         case "search":
             router.push(.search)

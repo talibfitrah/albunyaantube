@@ -183,3 +183,18 @@ struct PlayerStateView: View {
     PlayerStateView(state: .cooldown(until: Date().addingTimeInterval(45)), isOnline: true, thumbnailURL: nil) {}
 }
 #endif
+
+extension View {
+    /// Task 9 + B3 task 4 + B4 task 3: the two announcements `PlayerStateView` can't make itself,
+    /// since neither `.rung2Progressive` nor `.embed` mounts it. ONE site, applied by both
+    /// `PlayerScreen` and `ShortsScreen` (plan §6.11 "every rung transition announced") --
+    /// `EmbedRungView` deliberately posts nothing of its own. `.onChange` fires only on a real
+    /// transition, so entering `.embed` announces exactly once.
+    func rungAnnouncements(state: StreamState?, isOnline: Bool) -> some View {
+        onChange(of: state) { _, newValue in
+            if let text = PlayerScreen.transitionAnnouncement(for: newValue, isOnline: isOnline) {
+                AccessibilityNotification.Announcement(text).post()
+            }
+        }
+    }
+}

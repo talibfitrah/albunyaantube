@@ -474,6 +474,59 @@ final class ScreenshotTests: XCTestCase {
     /// embeddable (all 19 fixture ids probed 2026-08-27, `"playableInEmbed":true`), and reaching
     /// that code would mean loading a video from outside the catalog. `EmbedPolicyTests` pins the
     /// 101/150 mapping instead.
+    // MARK: - B4 task 3: Shorts chrome (docs/superpowers/plans/2026-08-27-ios-phase2b4-shorts.md)
+
+    /// The Shorts surface with its own chrome: rail, kebab, scrubber, channel row. Anchors only on
+    /// `shorts.*` / `player.*` identifiers -- the stock transport is OFF on this presentation, so
+    /// there is no AVKit chrome even in principle. The fixture clip is single-track, so the
+    /// audio-language menu must stay hidden (ruling 52 -- the same proof
+    /// `testPlayerAudioLanguageMenuHiddenForSingleTrackFixture` uses). en + ar, portrait only:
+    /// the screen is portrait-locked on iPhone.
+    func testShortsScreen() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "shorts",
+                            arguments: ["-fitrah-fake-player", "-fitrah-route", "shorts", Self.liveEmbeddableId],
+                            anchor: .button("unused"))
+        for locale in Self.locales {
+            XCUIDevice.shared.orientation = .portrait
+            let app = launch(screen, locale: locale, extraArguments: [])
+            let like = app.buttons["shorts.likeButton"]
+            XCTAssertTrue(like.waitForExistence(timeout: 20), "shorts/\(locale.key): like button never appeared")
+            XCTAssertTrue(app.descendants(matching: .any)["shorts.stage"].exists, "shorts/\(locale.key): stage missing")
+            XCTAssertTrue(app.buttons["shorts.kebab.button"].exists, "shorts/\(locale.key): kebab missing")
+            XCTAssertTrue(app.sliders["shorts.scrubber"].exists, "shorts/\(locale.key): scrubber missing")
+            XCTAssertTrue(app.buttons["shorts.shareButton"].exists, "shorts/\(locale.key): share missing")
+            XCTAssertTrue(app.buttons["shorts.back"].exists, "shorts/\(locale.key): back missing")
+            XCTAssertTrue(app.buttons["shorts.channelHandle"].exists, "shorts/\(locale.key): channel handle missing")
+            XCTAssertFalse(app.buttons["player.audioLanguageMenu.button"].waitForExistence(timeout: 3),
+                           "shorts/\(locale.key): audio-language menu must hide for a single-track asset")
+            XCTAssertFalse(app.buttons["player.captionsMenu.button"].exists,
+                           "shorts/\(locale.key): captions menu must hide with no tracks")
+            try write(named: "shorts-\(locale.key)-\(locale.theme)", into: directory)
+        }
+        // Accessibility 3 (spec §6.11: title/handle scale, glyphs do not).
+        let app = launch(screen, locale: Self.locales[0], extraArguments: Self.accessibility3)
+        XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 20), "shorts a11y3: like never appeared")
+        try write(named: "shorts-en-a11y3", into: directory)
+    }
+
+    /// The kebab open: Quality submenu + Report (ruling 53). Report is the coming-soon banner
+    /// `PlayerToolbar.reportButton` shows (CF-B1-9: one report path).
+    func testShortsKebab() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "shorts-kebab",
+                            arguments: ["-fitrah-fake-player", "-fitrah-route", "shorts", Self.liveEmbeddableId],
+                            anchor: .button("unused"))
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let kebab = app.buttons["shorts.kebab.button"]
+        XCTAssertTrue(kebab.waitForExistence(timeout: 20), "shorts-kebab: kebab never appeared")
+        kebab.tap()
+        let report = app.buttons["shorts.kebab.report"]
+        XCTAssertTrue(report.waitForExistence(timeout: 10), "shorts-kebab: menu never opened")
+        try write(named: "shorts-kebab-open", into: directory)
+    }
+
     private static let liveEmbeddableId = "xc7keR2piUM"
     private static let liveShortId = "16QZlP5da1Y"
     private static let liveRemovedId = "aaaaaaaaaaa"
