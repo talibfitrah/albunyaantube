@@ -70,6 +70,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var favorites: any FavoritesStore = SwiftDataFavoritesStore(modelContainer: modelContainer)
     /// Plan C Task 4: the playlist screen's Save toggle, same container/schema as favorites.
     private(set) lazy var savedPlaylists: any SavedPlaylistsStore = SwiftDataSavedPlaylistsStore(modelContainer: modelContainer)
+    /// Plan C Task 5: the channel screen's Subscribe toggle (RULING 27, 30-channel guest cap).
+    private(set) lazy var subscriptions: any SubscriptionsStore = SwiftDataSubscriptionsStore(modelContainer: modelContainer)
     private(set) lazy var categories: any CategoriesCache = LiveCategoriesCache(client: catalog)
     private(set) lazy var network = NetworkMonitor()
 
@@ -178,7 +180,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// `storeURL` exists so `AppContainerTests` can point the recovery path at a deliberately
     /// corrupt file; production always takes the default location.
     static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil) -> ModelContainer {
-        let schema = Schema(versionedSchema: FavoritesSchemaV2.self)
+        let schema = Schema(versionedSchema: FavoritesSchemaV3.self)
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         func build() throws -> ModelContainer {

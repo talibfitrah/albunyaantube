@@ -132,12 +132,14 @@ struct MainShellView: View {
         Binding(get: { router.pendingBanner }, set: { router.pendingBanner = $0 })
     }
 
-    // task-13: `.settings`/`.about` replace their placeholders. Plan C Task 4: `.playlist` too.
-    // Internal, not private: `MainShellRoutingTests` pins each real arm, because the `default:`
-    // below turns a missing case into a silent placeholder instead of a compile error.
+    // task-13: `.settings`/`.about` replace their placeholders. Plan C Tasks 4/5: `.playlist` and
+    // `.channel` too -- the last placeholder, so the `default:` arm is gone and this switch is
+    // exhaustive again. Internal, not private: `MainShellRoutingTests` pins the Plan C arms.
     @ViewBuilder
     func destination(for route: Route) -> some View {
         switch route {
+        case .channel(let id, let name, let avatarURL):
+            ChannelDetailScreen(id: id, name: name, avatarURL: avatarURL)
         case .playlist(let id, let title, let category, let count):
             PlaylistDetailScreen(id: id, title: title, category: category, count: count)
         case .player(let args):
@@ -158,8 +160,6 @@ struct MainShellView: View {
             SettingsView()
         case .about:
             AboutView()
-        default:
-            PhaseTwoPlaceholderView(route: route)
         }
     }
 

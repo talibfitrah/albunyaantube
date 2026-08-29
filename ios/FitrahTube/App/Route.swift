@@ -90,6 +90,9 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     var shuffled: Bool = false
     /// The authoritative start video when the caller knows it (`PlaylistDetailFragment.kt:747`).
     var targetVideoId: String? = nil
+    /// Opened from a channel's Live tab (`ChannelLiveTabFragment.kt:62-69`): the report carries
+    /// `contentSubType = LIVESTREAM`. Nothing else reads it.
+    var isLive: Bool = false
 }
 
 extension PlayerArgs {

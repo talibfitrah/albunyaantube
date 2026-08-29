@@ -33,9 +33,18 @@ enum FavoritesSchemaV2: VersionedSchema {
     static var models: [any PersistentModel.Type] { [FavoriteVideo.self, SavedPlaylist.self] }
 }
 
+/// Plan C Task 5 adds `SubscribedChannel`, the same way.
+enum FavoritesSchemaV3: VersionedSchema {
+    static let versionIdentifier = Schema.Version(3, 0, 0)
+    static var models: [any PersistentModel.Type] { [FavoriteVideo.self, SavedPlaylist.self, SubscribedChannel.self] }
+}
+
 enum FavoritesMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self] }
-    static var stages: [MigrationStage] { [.lightweight(fromVersion: FavoritesSchemaV1.self, toVersion: FavoritesSchemaV2.self)] }
+    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self] }
+    static var stages: [MigrationStage] {
+        [.lightweight(fromVersion: FavoritesSchemaV1.self, toVersion: FavoritesSchemaV2.self),
+         .lightweight(fromVersion: FavoritesSchemaV2.self, toVersion: FavoritesSchemaV3.self)]
+    }
 }
 
 @Model final class FavoriteVideo {

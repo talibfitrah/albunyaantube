@@ -524,12 +524,16 @@ struct HomeChannelItem: View {
 /// `"\(count) items"`).
 struct PlaylistRow: View {
     let item: ContentItem
+    /// Same override `VideoRow` carries: a channel's Playlists tab has YouTube's own localized
+    /// "12 videos" text (`PlaylistTile.itemCountText`), rendered verbatim (reconciliation note 4).
+    let subtitle: String?
     let onTap: () -> Void
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
 
-    init(item: ContentItem, onTap: @escaping () -> Void) {
+    init(item: ContentItem, subtitle: String? = nil, onTap: @escaping () -> Void) {
         self.item = item
+        self.subtitle = subtitle
         self.onTap = onTap
     }
 
@@ -544,7 +548,9 @@ struct PlaylistRow: View {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text(item.title).font(TypeScale.subtitle).fontWeight(.bold)
                         .foregroundStyle(Color.textPrimary).lineLimit(2)
-                    if let count = item.itemCount {
+                    if let subtitle {
+                        Text(subtitle).font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(1)
+                    } else if let count = item.itemCount {
                         Text(Format.localizedFormat("playlist_item_count", locale: locale, Int64(count)))
                             .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(1)
                     }
@@ -560,7 +566,8 @@ struct PlaylistRow: View {
     }
 
     private var accessibilityLabel: String {
-        item.itemCount.map { Format.localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) } ?? item.title
+        if let subtitle { return "\(item.title), \(subtitle)" }
+        return item.itemCount.map { Format.localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) } ?? item.title
     }
 }
 
@@ -909,11 +916,14 @@ struct Shimmer<Content: View>: View {
 struct SkeletonGrid: View {
     let columns: Int
     let rows: Int
+    /// 16:9 for video cells; `SkeletonShorts` passes 9:16.
+    var aspectRatio: CGFloat = 16.0 / 9.0
     @Environment(\.widthClass) private var widthClass
 
-    init(columns: Int, rows: Int) {
+    init(columns: Int, rows: Int, aspectRatio: CGFloat = 16.0 / 9.0) {
         self.columns = columns
         self.rows = rows
+        self.aspectRatio = aspectRatio
     }
 
     var body: some View {
@@ -922,7 +932,7 @@ struct SkeletonGrid: View {
                       spacing: Spacing.md(widthClass)) {
                 ForEach(0..<max(0, columns * rows), id: \.self) { _ in
                     VStack(alignment: .leading, spacing: Spacing.xs) {
-                        RoundedRectangle(cornerRadius: Radius.homeThumbnail).fill(fill).aspectRatio(16.0 / 9.0, contentMode: .fit)
+                        RoundedRectangle(cornerRadius: Radius.homeThumbnail).fill(fill).aspectRatio(aspectRatio, contentMode: .fit)
                         RoundedRectangle(cornerRadius: Radius.chip).fill(fill).frame(height: 14)
                         RoundedRectangle(cornerRadius: Radius.chip).fill(fill).frame(width: 100, height: 12)
                     }
@@ -933,6 +943,15 @@ struct SkeletonGrid: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "loading"))
     }
+}
+
+/// RULING 11 (defect 1): the Shorts tab's loading state -- a 9:16 `SkeletonGrid`, never a blank
+/// rectangle like Android's adapter-less skeleton RecyclerView.
+struct SkeletonShorts: View {
+    let columns: Int
+    let rows: Int
+
+    var body: some View { SkeletonGrid(columns: columns, rows: rows, aspectRatio: 9.0 / 16.0) }
 }
 
 /// Mirrors a `MediaCard` carousel -- `cards` placeholder cards in a horizontal row.

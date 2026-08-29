@@ -30,10 +30,17 @@ struct MainShellRoutingTests {
         #expect(leaf != "PhaseTwoPlaceholderView")
     }
 
-    @Test func theWalkerItselfStillSeesThePlaceholderForAnUnbuiltRoute() {
-        // Guards the helper: a route that has no screen yet must still resolve to the placeholder,
-        // otherwise the assertion above could pass by never reaching a leaf.
-        #expect(leafTypeName(for: .channel(id: "UC1", name: nil, avatarURL: nil)) == "PhaseTwoPlaceholderView")
+    @Test func theChannelRouteRendersTheRealScreenNotThePlaceholder() {
+        let leaf = leafTypeName(for: .channel(id: "UC1", name: nil, avatarURL: nil))
+        #expect(leaf == "ChannelDetailScreen")
+        #expect(leaf != "PhaseTwoPlaceholderView")
+    }
+
+    @Test func theWalkerReachesADistinctLeafPerRoute() {
+        // Guards the helper: Plan C Task 5 gave the last route its screen, so no placeholder route is
+        // left to pin; two different routes resolving to two different leaves proves the walker
+        // still descends to the chosen branch rather than stopping at the outer conditional.
         #expect(leafTypeName(for: .settings) == "SettingsView")
+        #expect(leafTypeName(for: .about) == "AboutView")
     }
 }

@@ -101,7 +101,7 @@ extension PlayerArgs {
     var reportContext: ReportContext {
         ReportContext(targetType: .video, targetId: videoId,
                       parentType: playlistId != nil ? .playlist : (channelId != nil ? .channel : nil),
-                      parentId: playlistId ?? channelId, contentSubType: nil)
+                      parentId: playlistId ?? channelId, contentSubType: isLive ? .livestream : nil)
     }
 
     /// The favorites-store shape of this video, for `FavoriteToggle.perform`.
