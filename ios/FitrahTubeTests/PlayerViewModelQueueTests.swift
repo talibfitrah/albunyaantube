@@ -155,13 +155,31 @@ struct PlayerViewModelQueueTests {
     }
 
     @Test func pagingFetchesTheNextPageAtFiveRemainingAndLatchesOnFailure() async {
-        let source = FakeQueueSource(pages: [(ids: ["a", "b", "c", "d", "e", "f"], next: "P2"),
-                                             (ids: ["g", "h"], next: nil)])
+        // Seven on page 1: six upcoming at open (above the threshold, so `open()` does NOT page --
+        // see `openPagesImmediatelyWhenTheLaunchLandsNearAPageEnd` for the other side).
+        let source = FakeQueueSource(pages: [(ids: ["a", "b", "c", "d", "e", "f", "g"], next: "P2"),
+                                             (ids: ["h", "i"], next: nil)])
         let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), source: source)
         await vm.open()
-        #expect(vm.queue.upcoming.count == 5)
-        await vm.playToEnd()                     // now 4 remaining -> needsPage fired at 5
+        #expect(vm.queue.upcoming.count == 6)
+        #expect(source.pageCalls == 1)
+        await vm.playToEnd()                     // now 5 remaining -> needsPage fires
+        #expect(vm.queue.items.count == 9)
+        #expect(source.pageCalls == 2)
+    }
+
+    /// B5 Task 4 finding: a launch that lands within `pageThreshold` of a page end (a Plan C row tap
+    /// near the bottom of page 1, or a `targetVideoId` there) used to show a truncated Up Next --
+    /// `open()` loaded page 1 and never asked `pageIfNeeded`, so the section listed 1 row (or none:
+    /// ruling 33 hides it) while a whole second page existed. The first ADVANCE paged, so playback
+    /// was never wrong; the list was.
+    @Test func openPagesImmediatelyWhenTheLaunchLandsNearAPageEnd() async {
+        let source = FakeQueueSource(pages: [(ids: ["a", "b", "c", "d", "e", "f"], next: "P2"),
+                                             (ids: ["g", "h"], next: nil)])
+        let (vm, _) = makeModel(args: .init(videoId: "e", playlistId: "PL", targetVideoId: "e"), source: source)
+        await vm.open()
         #expect(vm.queue.items.count == 8)
+        #expect(vm.queue.upcoming.map(\.id) == ["f", "g", "h"])
         #expect(source.pageCalls == 2)
     }
 

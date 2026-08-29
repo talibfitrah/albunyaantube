@@ -237,12 +237,13 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 // per-item -- left on the outgoing one, an audio-only stream that dies in the
                 // background would never reach the recovery ladder. Same hook
                 // `updateUIViewController` uses; it no-ops if the pair is already the observed one.
-                // B4: `.none` is right here -- this path only runs on `.swapToAudioOnly` /
-                // `.restoreVideoNow`, which `AudioSessionPolicy.decide(.enteredBackground, …)`
-                // never emits with backgroundPlay false, so `.shorts` can never reach it.
-                if let item = player.currentItem {
-                    coordinator?.observe(item: item, player: player, model: model, isLive: Self.isLive(state),
-                                         playToEnd: .none)
+                // B5 Task 4: re-arm with the action the outgoing item HAD (`.advance` on the main
+                // player) -- `.none` here silently lost background auto-advance, the very thing
+                // reconciliation note 2 promises. `.shorts` never reaches this path anyway
+                // (`AudioSessionPolicy.decide(.enteredBackground, …)` needs backgroundPlay true).
+                if let item = player.currentItem, let coordinator {
+                    coordinator.observe(item: item, player: player, model: model, isLive: Self.isLive(state),
+                                        playToEnd: coordinator.playToEnd)
                 }
             }
             model?.audioOnly = audioOnly
@@ -348,8 +349,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private var failedToEndObserver: NSObjectProtocol?
         /// B4: the repeat-one loop (`.restart`); B5: the auto-advance (`.advance`). Per item.
         private var endObserver: NSObjectProtocol?
+        /// The action the current item was armed with, so the background audio-only swap re-arms
+        /// the replacement item with the SAME one (B5 Task 4: `.none` there lost background
+        /// auto-advance).
+        private(set) var playToEnd: PlayToEndAction = .none
         /// B5: the video the last build/update pass was for (`shouldPreservePosition`).
         var lastVideoId: String?
+        #if DEBUG
+        static var debugSeekNearEndConsumed = false
+        #endif
         private var timeObserverToken: Any?
         private var isLive = false
         /// All the watchdog's state and every decision it makes (fix round 1, C1).
@@ -480,6 +488,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             observedItem = item
             observedPlayer = player
             self.isLive = isLive
+            self.playToEnd = playToEnd
             // I4: seeded from the live position, not 0 -- a replacement item is seeked back to the
             // outgoing item's time, which a 0 seed would misread as a full item's worth of progress.
             watchdog = StallWatchdog(playbackTime: player.currentTime().seconds)
@@ -493,7 +502,21 @@ struct PlayerHostView: UIViewControllerRepresentable {
                     MainActor.assumeIsolated {
                         guard let self, item === self.observedItem else { return }
                         switch status {
-                        case .readyToPlay: self.watchdog.armed = true
+                        case .readyToPlay:
+                            self.watchdog.armed = true
+                            #if DEBUG
+                            // B5 Task 4 live rig (`-fitrah-player-seek-near-end`, same shape as B3's
+                            // `-fitrah-embed-seek-to-end`): the FIRST ready item of the process jumps
+                            // to 5 s before its end, so a real end-of-item / auto-advance is reachable
+                            // without sitting through a whole lecture. Once per process, so the
+                            // advanced-to video plays from 0 -- that is the thing under test.
+                            if !Self.debugSeekNearEndConsumed,
+                               ProcessInfo.processInfo.arguments.contains("-fitrah-player-seek-near-end"),
+                               item.duration.seconds.isFinite, item.duration.seconds > 5 {
+                                Self.debugSeekNearEndConsumed = true
+                                player.seek(to: CMTime(seconds: item.duration.seconds - 5, preferredTimescale: 600))
+                            }
+                            #endif
                         // Unarmed == this rung never produced a first frame (spec §10 -> next rung);
                         // armed == it played and then died, which is the 403-class incident.
                         case .failed: self.fire(self.watchdog.armed ? .playbackError : .failedBeforeFirstFrame)
@@ -646,7 +669,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // re-resolve (exactly what manual Retry and the recovery ladder do) froze the player on a
         // retry that looked like it had done something. A failed item falls through to the replace
         // path below, which builds a fresh item on the SAME `AVPlayer` (position carried over).
-        if let existing, (existing.currentItem?.asset as? AVURLAsset)?.url == url,
+        // B5 Task 4: a DIFFERENT video (`continuesCurrentVideo == false`) never reuses the item
+        // either -- a same-URL advance handed the ended item back and the queue stalled one short
+        // of its terminus.
+        if continuesCurrentVideo, let existing, (existing.currentItem?.asset as? AVURLAsset)?.url == url,
            existing.currentItem?.status != .failed {
             return existing
         }
@@ -667,7 +693,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // I5 (player.md §3.2: a re-resolve saves position AND playWhenReady): resuming a stream the
         // user had deliberately paused is a real behaviour bug -- recovery replaces the item under a
         // paused player just as readily as under a playing one.
-        let wasPlaying = existing.timeControlStatus != .paused
+        // B5 Task 4: a DIFFERENT video always starts -- an ended item leaves the player `.paused`,
+        // so an auto-advance under this rule alone swapped the item in and never played it.
+        let wasPlaying = existing.timeControlStatus != .paused || !continuesCurrentVideo
         existing.replaceCurrentItem(with: item)
         if resume > 0 { existing.seek(to: resumeTime) }
         if wasPlaying { existing.play() }

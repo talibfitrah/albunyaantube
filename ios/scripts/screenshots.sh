@@ -354,4 +354,52 @@ if [ "${SHORTS_LIVE:-0}" = "1" ]; then
     xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 fi
 
+# ---------------------------------------------------------------------------------------------
+# Plan B5 (docs/superpowers/plans/2026-08-27-ios-phase2b5-fullscreen-queue.md): fullscreen + the
+# queue. Same shape as the B4 blocks: one leg per destination, the device argument above does NOT
+# scope these. Measurements land in `b5-task4-*-measurements.txt` beside the PNGs.
+B5_TASK4_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b5-fullscreen-queue/screenshots/b5-task4"
+echo "== B5 task 4 fullscreen/queue matrix (iPhone) -> $B5_TASK4_OUT =="
+rm -rf "${B5_TASK4_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$B5_TASK4_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerB5Task4IPhone \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
+echo "== B5 task 4 fullscreen/queue matrix (iPad) -> $B5_TASK4_OUT =="
+TEST_RUNNER_FITRAH_SHOTS_DIR="$B5_TASK4_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerB5Task4IPad \
+    -destination "platform=iOS Simulator,name=iPad Pro 13-inch (M5)" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
+
+# Task 4 step 2 (live playlist): OPT-IN, same contract as EMBED_LIVE/SHORTS_LIVE -- the approved
+# catalog playlist only. Run with:  B5_LIVE=1 ios/scripts/screenshots.sh
+if [ "${B5_LIVE:-0}" = "1" ]; then
+    B5_LIVE_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b5-fullscreen-queue/screenshots/b5-task4-live"
+    echo "== B5 task 4 LIVE playlist checks -> $B5_LIVE_OUT =="
+    rm -rf "${B5_LIVE_OUT:?}"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$B5_LIVE_OUT" TEST_RUNNER_B5_LIVE=1 xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerB5Task4Live \
+        -destination "platform=iOS Simulator,name=iPhone 17" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|B5_LIVE|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+fi
+
 exit "$status"

@@ -114,6 +114,27 @@ struct PlayerHostTests {
 
     // MARK: - A state update to a DIFFERENT URL replaces the item, carrying `currentTime` over
 
+    /// B5 Task 4 finding: an advance (or Up Next tap) to a video whose stream URL equals the
+    /// current one handed the ENDED item back untouched -- no restart, no second end-of-item, so
+    /// the queue silently stalled one short of `.queueEnded`. Same URL only ever happens with the
+    /// fixture resolver today, but the rule is the right one regardless: `continuesCurrentVideo`
+    /// already says "this is a different video", and a different video is never the same item.
+    @Test func aDifferentVideoNeverReusesTheItemEvenOnTheSameURL() throws {
+        let url = URL(string: "https://example.com/stream.m3u8")!
+        let resolved = Self.resolved(.hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []))
+        let player = try #require(PlayerHostView.player(for: .ready(resolved), replacing: nil))
+        let firstItem = try #require(player.currentItem)
+        // An ended item leaves the player `.paused` (actionAtItemEnd). I5's "never resume a stream
+        // the user paused" is about the SAME video; a different one must always start.
+        player.pause()
+
+        let advanced = PlayerHostView.player(for: .ready(resolved), replacing: player, continuesCurrentVideo: false)
+
+        #expect(advanced === player)
+        #expect(advanced?.currentItem !== firstItem)
+        #expect(advanced?.timeControlStatus != .paused, "the advanced-to video must play")
+    }
+
     @Test func differentURLReplacesTheItemOnTheSamePlayer() throws {
         let firstURL = URL(string: "https://example.com/a.m3u8")!
         let secondURL = URL(string: "https://example.com/b.m3u8")!
@@ -196,7 +217,7 @@ struct PlayerHostTests {
         let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: false))
         let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
         let videoItem = try #require(player.currentItem)
-        coordinator.observe(item: videoItem, player: player, model: nil, isLive: false, playToEnd: .none)
+        coordinator.observe(item: videoItem, player: player, model: nil, isLive: false, playToEnd: .advance)
         defer { coordinator.stopObserving() }
 
         PlayerHostView.applyPolicyAction(.swapToAudioOnly, state: state, player: player,
@@ -204,6 +225,10 @@ struct PlayerHostTests {
 
         #expect(player.currentItem !== videoItem)
         #expect(coordinator.observedItem === player.currentItem)
+        // B5 Task 4 (live step 2 item 8 FAILED): the re-arm used `.none`, so an end-of-item that
+        // landed while backgrounded never advanced -- the audio-only item must keep the action the
+        // video item had, or background auto-advance (reconciliation note 2) is fiction.
+        #expect(coordinator.playToEnd == .advance)
     }
 
     /// I2 (B4 T2 fix round 2): the repeat-one loop. Real clip (`player-fixture.mp4`, the fake-player

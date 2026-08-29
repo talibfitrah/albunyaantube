@@ -2,6 +2,7 @@ import AVFoundation
 import AVKit
 import Foundation
 import InnerTubeKit
+import MediaPlayer
 import Testing
 import UIKit
 @testable import FitrahTube
@@ -50,6 +51,15 @@ import UIKit
 
     private static func assetURL(_ player: AVPlayer) -> URL? {
         (player.currentItem?.asset as? AVURLAsset)?.url
+    }
+
+    /// B5 Task 4: MediaPlayer invokes the artwork request handler on its own queue. Off-main here,
+    /// exactly as `_onQueue_pushNowPlayingInfoAndRetry:` does -- a main-actor-bound handler traps.
+    @Test func artworkRequestHandlerIsCallableOffTheMainActor() async {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2)).image { _ in }
+        let artwork = BackgroundPlaybackController.artwork(for: image)
+        let rendered = await Task.detached { artwork.image(at: CGSize(width: 2, height: 2)) }.value
+        #expect(rendered != nil)
     }
 
     @Test func backgroundingSwapsTheLivePlayerToTheAudioOnlyURL() async throws {

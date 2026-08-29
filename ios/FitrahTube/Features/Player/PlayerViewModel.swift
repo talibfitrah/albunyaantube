@@ -226,6 +226,11 @@ extension StreamState {
         // own resolve first achieves the same with no observer and no timer. Ceiling: the queue
         // (and Up Next) appears only after the current video resolved, never before.
         await loadQueue()
+        // A launch that already lands within `pageThreshold` of the page end (a row tap near the
+        // bottom of a page, a `targetVideoId` there) needs its next page NOW, not on the first
+        // advance -- otherwise Up Next lists a truncated tail, or nothing at all (ruling 33 hides
+        // an empty section) while a whole page is still unfetched.
+        await pageIfNeeded()
         await prefetchUpcoming()
     }
 

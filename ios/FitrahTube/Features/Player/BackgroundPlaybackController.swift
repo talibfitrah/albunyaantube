@@ -273,9 +273,19 @@ import UIKit
         guard let url else { return }
         artworkTask = Task { [weak self] in
             guard let image = await RemoteImage.cachedImage(for: url), !Task.isCancelled else { return }
-            self?.artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            self?.artwork = Self.artwork(for: image)
             self?.publishNowPlaying()
         }
+    }
+
+    /// B5 Task 4 finding (live auto-advance crashed with SIGILL in `dispatch_assert_queue`):
+    /// MediaPlayer calls the request handler on ITS queue when it pushes the Now Playing dictionary
+    /// (`-[MPMediaItemArtwork jpegDataWithSize:]` off `_onQueue_pushNowPlayingInfoAndRetry:`), and
+    /// under this target's default MainActor isolation a plain closure literal is main-actor-bound,
+    /// so the first real artwork (the first playlist advance -- the debug route carries no
+    /// thumbnail) trapped. `@Sendable` is the whole fix; `UIImage` is Sendable.
+    nonisolated static func artwork(for image: UIImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 
     // MARK: - Remote command centre (Task 4)

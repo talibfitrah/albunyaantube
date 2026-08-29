@@ -3,6 +3,7 @@ import AVKit
 import Foundation
 import InnerTubeKit
 import MediaPlayer
+import UIKit
 import Testing
 @testable import FitrahTube
 
@@ -62,6 +63,9 @@ import Testing
                                         elapsed: 0, duration: nil, rate: 0) == nil)
         #expect(NowPlayingSnapshot.make(args: PlayerArgs(videoId: "abc"), state: .contentUnavailable,
                                         elapsed: 0, duration: nil, rate: 0) == nil)
+        // B5 Task 4: a finished playlist must not leave the last video's entry on the lock screen.
+        #expect(NowPlayingSnapshot.make(args: PlayerArgs(videoId: "abc", title: "Last"), state: .queueEnded,
+                                        elapsed: 30, duration: 60, rate: 0) == nil)
     }
 
     /// CF-B2-9: `make` already returns nil for the embed rung; what this pins is that it STAYS nil,

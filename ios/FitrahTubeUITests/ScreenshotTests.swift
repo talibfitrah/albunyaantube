@@ -1278,6 +1278,516 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "shorts-b4t4-live-16x9-cropped", into: directory)
     }
 
+    // MARK: - B5 task 4: fullscreen + queue acceptance matrix
+    // (docs/superpowers/plans/2026-08-27-ios-phase2b5-fullscreen-queue.md)
+
+    /// `-fitrah-route player <videoId> <playlistId> [targetVideoId]` is the queue launch contract
+    /// (B5 Task 4 rig hook); `-fitrah-fake-player-queue` serves eight fixture items
+    /// (`fixture-1`…`fixture-8`) with no network. `-fitrah-fake-player` (rung 2) rather than `-hls`
+    /// because the dead-id rule that drives the auto-skip walk lives on that resolver.
+    private static let queueFixture = ["-fitrah-fake-player", "-fitrah-fake-player-queue",
+                                       "-fitrah-route", "player", "fixture-video", "fixture-playlist"]
+
+    private func playerScreen(_ arguments: [String]) -> Screen {
+        Screen(key: "player-b5-task4", arguments: arguments, anchor: .button("unused"))
+    }
+
+    private func upNextRows(_ app: XCUIApplication) -> [XCUIElement] {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'player.upNext.row.'"))
+            .allElementsBoundByIndex
+    }
+
+    private func row(_ app: XCUIApplication, _ id: String) -> XCUIElement {
+        app.descendants(matching: .any)["player.upNext.row.\(id)"]
+    }
+
+    /// The `player.*` identifiers in enumeration order (the VoiceOver-order record, as B4 does).
+    private func playerA11yOrder(_ app: XCUIApplication) -> [String] {
+        app.descendants(matching: .any).allElementsBoundByIndex
+            .map { $0.identifier }.filter { $0.hasPrefix("player.") }
+    }
+
+    private func doubleTap(_ element: XCUIElement, at offset: CGVector) {
+        element.coordinate(withNormalizedOffset: offset).doubleTap()
+    }
+
+    /// iPhone leg. Every Step 1 row XCUITest can prove with the fixture queue: Up Next (one
+    /// column, tap-to-play, the played row leaves), Safe Mode ON/OFF at end-of-clip, the auto-skip
+    /// walk, the queue-ended terminus (en + ar), fullscreen on rotation (no tab/nav bar, no
+    /// toolbar, no metadata, no Up Next; full-bleed box; >= 44 pt exit control), ruling 45's
+    /// two-step back, the latch, the zoom hint, the gestures (seek flash captured as PNG, zoom
+    /// banner asserted), the single-video launch, RTL, Dynamic Type and the a11y order. Notes go
+    /// to `b5-task4-iphone-measurements.txt`.
+    func testPlayerB5Task4IPhone() throws {
+        let directory = try shotsDirectory()
+        var notes: [String] = []
+        defer { try? notes.joined(separator: "\n").write(to: directory.appendingPathComponent("b5-task4-iphone-measurements.txt"), atomically: true, encoding: .utf8) }
+        let hintCopy = "Double-tap to toggle fit/zoom"
+
+        // -- A. en, Safe Mode ON (default): Up Next, no advance at end-of-clip, tap-to-play.
+        XCUIDevice.shared.orientation = .portrait
+        // `-fullscreen_zoom_hint_shown NO` (NSArgumentDomain) makes this launch the "first ever"
+        // fullscreen regardless of what earlier runs left in the install -- the plan's "delete the
+        // app" step, without the uninstall.
+        var app = launch(playerScreen(Self.queueFixture), locale: Self.locales[0],
+                         extraArguments: ["-fullscreen_zoom_hint_shown", "NO"])
+        let header = app.staticTexts["player.upNext.header"]
+        XCTAssertTrue(header.waitForExistence(timeout: 20), "b5t4 en: Up Next header never appeared")
+        XCTAssertEqual(header.label, "Up next")
+        var rows = upNextRows(app)
+        notes.append("iphone-en rows=\(rows.map { $0.identifier })")
+        XCTAssertEqual(rows.count, 7, "b5t4 en: expected fixture-2…8 queued, got \(rows.count)")
+        XCTAssertEqual(rows.first?.identifier, "player.upNext.row.fixture-2")
+        if rows.count >= 2 {
+            notes.append("iphone-en row0=\(rows[0].frame) row1=\(rows[1].frame)")
+            XCTAssertEqual(rows[0].frame.minX, rows[1].frame.minX, accuracy: 1, "b5t4 en: Up Next must be ONE column on iPhone")
+            XCTAssertGreaterThanOrEqual(rows[1].frame.minY, rows[0].frame.maxY - 1, "b5t4 en: rows must stack vertically")
+        }
+        XCTAssertTrue(app.tabBars.firstMatch.exists, "b5t4 en portrait: tab bar missing")
+        XCTAssertTrue(app.navigationBars.firstMatch.exists, "b5t4 en portrait: navigation bar missing")
+        XCTAssertFalse(app.buttons["player.fullscreenExit"].exists, "b5t4 en portrait: no fullscreen exit outside fullscreen")
+        let order = playerA11yOrder(app)
+        notes.append("iphone-en a11y order=\(order)")
+        XCTAssertFalse(order.contains("player.seekFeedback"), "b5t4 en: the seek-feedback layer must be absent from the accessibility tree")
+        if let h = order.firstIndex(of: "player.upNext.header"), let r = order.firstIndex(of: "player.upNext.row.fixture-2") {
+            XCTAssertLessThan(h, r, "b5t4 en: header must precede the rows in VoiceOver order")
+        } else { XCTFail("b5t4 en: header/row missing from the a11y order \(order)") }
+        try write(named: "player-b5t4-iphone-en-portrait", into: directory)
+
+        // Safe Mode ON: the 2 s fixture ends, nothing advances, the queue stays listed.
+        let title = app.staticTexts["player.metadata.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        let titleBefore = title.exists ? title.label : ""
+        Thread.sleep(forTimeInterval: 6)
+        XCTAssertTrue(row(app, "fixture-2").exists, "b5t4 safe-mode ON: the queue must stay listed after end-of-clip")
+        let titleAfter = title.exists ? title.label : ""
+        XCTAssertEqual(titleAfter, titleBefore, "b5t4 safe-mode ON: playback must NOT auto-advance")
+        notes.append("iphone-en safe-mode-on: title after 6 s=\(titleAfter.debugDescription) rows=\(upNextRows(app).count)")
+
+        // Up Next tap: the row plays, leaves the list and does not come back.
+        let third = row(app, "fixture-3")
+        if !third.isHittable { app.swipeUp() }
+        third.tap()
+        XCTAssertTrue(third.waitForNonExistence(timeout: 10), "b5t4 en tap: the tapped row must leave the list")
+        XCTAssertTrue(app.staticTexts["player.metadata.title"].waitForExistence(timeout: 10))
+        XCTAssertEqual(title.exists ? title.label : "-", "Lecture 3: Tafsir of Surah Al-Kahf")
+        XCTAssertFalse(row(app, "fixture-2").exists, "b5t4 en tap: items before the played one are not 'up next'")
+        XCTAssertTrue(row(app, "fixture-4").exists)
+        Thread.sleep(forTimeInterval: 4)
+        XCTAssertFalse(third.exists, "b5t4 en tap: the played row must not reappear")
+        notes.append("iphone-en after tap rows=\(upNextRows(app).map { $0.identifier })")
+        try write(named: "player-b5t4-iphone-en-after-tap", into: directory)
+
+        // Centre double-tap OUTSIDE fullscreen: nothing (no zoom banner).
+        let box = app.otherElements["player.videoBox"]
+        XCTAssertTrue(box.exists)
+        doubleTap(box, at: CGVector(dx: 0.5, dy: 0.25))
+        XCTAssertFalse(app.staticTexts["Fill screen"].waitForExistence(timeout: 2), "b5t4 en: centre double-tap must be inert outside fullscreen")
+
+        // -- Fullscreen on rotation.
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let exit = app.buttons["player.fullscreenExit"]
+        // The hint is a 2.5 s transient banner raised at the instant of the transition, so it is
+        // polled tightly from the rotation itself -- a `waitForExistence` after the exit control's
+        // own wait lands past its lifetime (run 1: rotation at 38.8 s, first hint query at 41.8 s).
+        var hintShown = false
+        let hintDeadline = Date().addingTimeInterval(6)
+        repeat { hintShown = app.staticTexts[hintCopy].exists } while !hintShown && Date() < hintDeadline
+        XCTAssertTrue(exit.waitForExistence(timeout: 10), "b5t4 en landscape: fullscreen never engaged")
+        notes.append("iphone-en first-ever fullscreen: zoom hint shown=\(hintShown)")
+        XCTAssertTrue(hintShown, "b5t4 en: the first fullscreen must show the zoom hint")
+        settle(app, landscape: true)
+        let window = app.windows.firstMatch.frame
+        notes.append("iphone-en fullscreen window=\(window) videoBox=\(box.frame) exit=\(exit.frame) label=\(exit.label.debugDescription)")
+        XCTAssertGreaterThanOrEqual(exit.frame.width, 44, "b5t4: exit control narrower than 44 pt")
+        XCTAssertGreaterThanOrEqual(exit.frame.height, 44, "b5t4: exit control shorter than 44 pt")
+        XCTAssertEqual(exit.label, "Toggle fullscreen")
+        XCTAssertGreaterThan(exit.frame.midX, window.midX, "b5t4 en: exit control belongs on the trailing (right) edge")
+        XCTAssertEqual(box.frame.width, window.width, accuracy: 1, "b5t4 en fullscreen: video box must be full-bleed (width)")
+        XCTAssertEqual(box.frame.height, window.height, accuracy: 1, "b5t4 en fullscreen: video box must be full-bleed (height)")
+        XCTAssertFalse(app.tabBars.firstMatch.exists, "b5t4 en fullscreen: tab bar must be gone")
+        XCTAssertFalse(app.navigationBars.firstMatch.exists, "b5t4 en fullscreen: navigation bar must be gone")
+        XCTAssertFalse(app.buttons["player.favoriteButton"].exists, "b5t4 en fullscreen: toolbar must be gone")
+        XCTAssertFalse(app.staticTexts["player.metadata.title"].exists, "b5t4 en fullscreen: metadata must be gone")
+        XCTAssertFalse(header.exists, "b5t4 en fullscreen: Up Next must be gone")
+        notes.append("iphone-en fullscreen a11y order=\(playerA11yOrder(app))")
+        try write(named: "player-b5t4-iphone-en-fullscreen", into: directory)
+
+        // Gestures in fullscreen. The seek flash is accessibility-hidden by design, so its evidence
+        // is the PNG taken straight after the tap (600 ms window). The zoom banner is a real
+        // staticText and is asserted.
+        doubleTap(box, at: CGVector(dx: 0.12, dy: 0.5))
+        try write(named: "player-b5t4-iphone-en-seek-back-flash", into: directory)
+        Thread.sleep(forTimeInterval: 1)
+        doubleTap(box, at: CGVector(dx: 0.88, dy: 0.5))
+        try write(named: "player-b5t4-iphone-en-seek-forward-flash", into: directory)
+        Thread.sleep(forTimeInterval: 1)
+        doubleTap(box, at: CGVector(dx: 0.5, dy: 0.25))
+        let fill = app.staticTexts["Fill screen"].waitForExistence(timeout: 3)
+        notes.append("iphone-en centre double-tap in fullscreen: 'Fill screen' banner=\(fill)")
+        XCTAssertTrue(fill, "b5t4 en: centre double-tap in fullscreen must toggle to fill with its banner")
+        try write(named: "player-b5t4-iphone-en-zoom-fill", into: directory)
+        Thread.sleep(forTimeInterval: 3)
+        doubleTap(box, at: CGVector(dx: 0.5, dy: 0.25))
+        let fit = app.staticTexts["Fit to screen"].waitForExistence(timeout: 3)
+        notes.append("iphone-en second centre double-tap: 'Fit to screen' banner=\(fit)")
+        XCTAssertTrue(fit, "b5t4 en: the second centre double-tap must toggle back to fit")
+
+        // Rotate back: everything returns, and the tab bar is really back (hittable, on screen).
+        XCUIDevice.shared.orientation = .portrait
+        settle(app, landscape: false)
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 5), "b5t4 en: tab bar did not return after rotating back")
+        let tabBar = app.tabBars.firstMatch.frame, portraitWindow = app.windows.firstMatch.frame
+        notes.append("iphone-en after rotate-back tabBar=\(tabBar) window=\(portraitWindow) hittable=\(app.tabBars.firstMatch.isHittable)")
+        XCTAssertTrue(app.tabBars.firstMatch.isHittable, "b5t4 en: tab bar is back but not hittable")
+        XCTAssertLessThanOrEqual(tabBar.maxY, portraitWindow.maxY + 1, "b5t4 en: tab bar is off-screen")
+        XCTAssertTrue(app.navigationBars.firstMatch.exists)
+        XCTAssertTrue(header.waitForExistence(timeout: 5), "b5t4 en: Up Next did not return")
+        XCTAssertFalse(exit.exists)
+
+        // Second fullscreen in the same install: no hint (the flag persisted).
+        XCUIDevice.shared.orientation = .landscapeLeft
+        var hintAgain = false
+        let againDeadline = Date().addingTimeInterval(4)
+        repeat { hintAgain = app.staticTexts[hintCopy].exists } while !hintAgain && Date() < againDeadline
+        XCTAssertTrue(exit.waitForExistence(timeout: 10))
+        notes.append("iphone-en second fullscreen: zoom hint shown=\(hintAgain)")
+        XCTAssertFalse(hintAgain, "b5t4 en: the zoom hint must show once only")
+
+        // Ruling 45: the edge swipe must NOT pop while fullscreen.
+        let edgeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.001, dy: 0.5))
+        edgeStart.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)))
+        Thread.sleep(forTimeInterval: 2)
+        let stayed = exit.exists && box.exists
+        notes.append("iphone-en edge swipe in fullscreen: stayed on player=\(stayed)")
+        XCTAssertTrue(stayed, "b5t4 ruling 45: the edge swipe popped the player while fullscreen")
+        // Step one: the exit control drops to the normal landscape column, bar back, no orientation forced.
+        exit.tap()
+        XCTAssertTrue(exit.waitForNonExistence(timeout: 5), "b5t4 ruling 45: exit control did not leave")
+        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 5), "b5t4 ruling 45: navigation bar did not return on exit")
+        XCTAssertTrue(app.buttons["player.favoriteButton"].waitForExistence(timeout: 5), "b5t4 ruling 45: toolbar missing in the landscape column")
+        XCTAssertFalse(app.staticTexts["player.metadata.title"].exists, "b5t4: metadata stays hidden at compact height (B1 rule)")
+        var w = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(w.width, w.height, "b5t4 ruling 45: exit must not force portrait")
+        notes.append("iphone-en after exit: window=\(w) tabBar exists=\(app.tabBars.firstMatch.exists) header exists=\(header.exists)")
+        try write(named: "player-b5t4-iphone-en-landscape-exited", into: directory)
+        // The latch: stays exited while landscape.
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertFalse(exit.exists, "b5t4 latch: fullscreen re-entered while still landscape")
+        // Rotate to portrait and back: re-armed.
+        XCUIDevice.shared.orientation = .portrait
+        settle(app, landscape: false)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let rearmed = exit.waitForExistence(timeout: 10)
+        notes.append("iphone-en latch: re-armed after portrait->landscape=\(rearmed)")
+        XCTAssertTrue(rearmed, "b5t4 latch: rotating out and back must re-enter fullscreen")
+        // Step two: exit, then the edge swipe pops.
+        exit.tap()
+        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 5))
+        edgeStart.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)))
+        let popped = box.waitForNonExistence(timeout: 5)
+        notes.append("iphone-en edge swipe after exit: popped=\(popped)")
+        XCTAssertTrue(popped, "b5t4 ruling 45 step two: the edge swipe must pop once out of fullscreen")
+        XCUIDevice.shared.orientation = .portrait
+
+        // -- B. Safe Mode OFF: end-of-clip auto-advances.
+        app = launch(playerScreen(Self.queueFixture + ["-safe_mode", "NO"]), locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.staticTexts["player.upNext.header"].waitForExistence(timeout: 20), "b5t4 safe-mode OFF: header never appeared")
+        let advanced = row(app, "fixture-2").waitForNonExistence(timeout: 15)
+        let offTitle = app.staticTexts["player.metadata.title"]
+        notes.append("iphone-en safe-mode OFF: auto-advanced (fixture-2 left the list)=\(advanced) title=\(offTitle.exists ? offTitle.label.debugDescription : "-")")
+        XCTAssertTrue(advanced, "b5t4 safe-mode OFF: end-of-clip must auto-advance (ruling 58)")
+        try write(named: "player-b5t4-iphone-en-auto-advanced", into: directory)
+
+        // -- C. Auto-skip: fixture-1, dead-2, dead-3, dead-4, fixture-5… -- the walk crosses exactly
+        // three dead items and lands on Lecture 5 (MAX_CONSECUTIVE_SKIPS = 3, pinned by
+        // PlayerViewModelQueueTests.autoSkipWalksPastUnplayableItemsAndStopsAfterThree).
+        app = launch(playerScreen(["-fitrah-fake-player", "-fitrah-fake-player-queue-dead", "-safe_mode", "NO",
+                                   "-fitrah-route", "player", "fixture-video", "fixture-playlist"]),
+                     locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.staticTexts["player.upNext.header"].waitForExistence(timeout: 20), "b5t4 auto-skip: header never appeared")
+        XCTAssertTrue(row(app, "dead-2").exists, "b5t4 auto-skip: the dead rows must be listed before the walk")
+        var cardSamples = 0, samples = 0
+        let walkDeadline = Date().addingTimeInterval(20)
+        let metaTitle = app.staticTexts["player.metadata.title"]
+        while Date() < walkDeadline {
+            samples += 1
+            if app.staticTexts["player.state.message"].exists { cardSamples += 1 }
+            if metaTitle.exists, metaTitle.label.hasPrefix("Lecture 5") { break }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        let landed = metaTitle.exists ? metaTitle.label : "(no metadata title)"
+        notes.append("iphone-en auto-skip: landed on \(landed.debugDescription) after \(samples) samples; error-card visible in \(cardSamples) samples; rows=\(upNextRows(app).map { $0.identifier })")
+        XCTAssertTrue(landed.hasPrefix("Lecture 5"), "b5t4 auto-skip: expected to land on Lecture 5, got \(landed)")
+        XCTAssertFalse(row(app, "dead-2").exists); XCTAssertFalse(row(app, "dead-4").exists)
+        XCTAssertTrue(row(app, "fixture-6").exists)
+        try write(named: "player-b5t4-iphone-en-auto-skipped", into: directory)
+
+        // -- D. Queue ended (en + ar): deep start on fixture-7 so two advances reach the terminus.
+        let ended = ["You've reached the end of the playlist", "لقد وصلت إلى نهاية قائمة التشغيل"]
+        for (locale, expected) in zip(Self.locales, ended) {
+            app = launch(playerScreen(Self.queueFixture + ["fixture-7", "-safe_mode", "NO"]), locale: locale, extraArguments: [])
+            let message = app.staticTexts["player.state.message"]
+            let appeared = message.waitForExistence(timeout: 30)
+            XCTAssertTrue(appeared, "b5t4 queue-ended \(locale.key): terminus never appeared (title=\(app.staticTexts["player.metadata.title"].exists ? app.staticTexts["player.metadata.title"].label : "-"))")
+            guard appeared else { continue }
+            XCTAssertEqual(message.label, expected, "b5t4 queue-ended \(locale.key): wrong copy")
+            XCTAssertFalse(app.buttons["player.state.retryButton"].exists, "b5t4 queue-ended \(locale.key): must offer no Retry")
+            XCTAssertEqual(app.activityIndicators.count, 0, "b5t4 queue-ended \(locale.key): no spinner")
+            let win = app.windows.firstMatch.frame
+            notes.append("iphone-\(locale.key) queue-ended message=\(message.frame) window=\(win) label=\(message.label.debugDescription)")
+            XCTAssertTrue(win.contains(message.frame), "b5t4 queue-ended \(locale.key): copy clips the window")
+            XCTAssertTrue(app.navigationBars.buttons.firstMatch.exists, "b5t4 queue-ended \(locale.key): Back missing")
+            try write(named: "player-b5t4-iphone-\(locale.key)-queue-ended", into: directory)
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(message.waitForNonExistence(timeout: 5), "b5t4 queue-ended \(locale.key): Back did not pop")
+        }
+
+        // -- E. Single-video launch: no header, no section at all (ruling 33).
+        app = launch(playerScreen(["-fitrah-fake-player", "-fitrah-route", "player", "fixture-video"]), locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.staticTexts["player.metadata.title"].waitForExistence(timeout: 20))
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertFalse(app.staticTexts["player.upNext.header"].exists, "b5t4 single video: Up Next header must be absent")
+        XCTAssertEqual(upNextRows(app).count, 0, "b5t4 single video: no Up Next rows")
+        try write(named: "player-b5t4-iphone-en-single-video", into: directory)
+
+        // -- F. Short -> player rotation: B4's portrait lock must have released.
+        app = launch(shortsScreen(Self.shortsFixture), locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 20), "b5t4 short->player: Short never appeared")
+        app.buttons["shorts.back"].tap()
+        let homeRow = app.buttons.matching(NSPredicate(format: "label CONTAINS 's1-0'")).firstMatch
+        XCTAssertTrue(homeRow.waitForExistence(timeout: 10), "b5t4 short->player: Home row never appeared after Back")
+        homeRow.tap()
+        XCTAssertTrue(app.otherElements["player.videoBox"].waitForExistence(timeout: 20), "b5t4 short->player: player never opened")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let fsAfterShort = app.buttons["player.fullscreenExit"].waitForExistence(timeout: 10)
+        w = app.windows.firstMatch.frame
+        notes.append("iphone-en short->player: window=\(w) fullscreen engaged=\(fsAfterShort)")
+        XCTAssertTrue(fsAfterShort, "b5t4 short->player: fullscreen did not engage after leaving a Short (OrientationLock leak?)")
+        try write(named: "player-b5t4-iphone-en-after-short-fullscreen", into: directory)
+        XCUIDevice.shared.orientation = .portrait
+
+        // -- G. ar (RTL): rows mirror, the exit control sits on the trailing (LEFT) edge, the seek
+        // zones do not mirror (the left third still flashes `gobackward` -- PNG evidence).
+        app = launch(playerScreen(Self.queueFixture), locale: Self.locales[1], extraArguments: [])
+        let arHeader = app.staticTexts["player.upNext.header"]
+        XCTAssertTrue(arHeader.waitForExistence(timeout: 20), "b5t4 ar: header never appeared")
+        let arWindow = app.windows.firstMatch.frame
+        rows = upNextRows(app)
+        notes.append("iphone-ar header=\(arHeader.frame) label=\(arHeader.label.debugDescription) window=\(arWindow) row0=\(rows.first.map { "\($0.frame)" } ?? "-")")
+        XCTAssertGreaterThan(arHeader.frame.midX, arWindow.midX, "b5t4 ar: the header must lead from the right")
+        try write(named: "player-b5t4-iphone-ar-portrait", into: directory)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let arExit = app.buttons["player.fullscreenExit"]
+        XCTAssertTrue(arExit.waitForExistence(timeout: 10), "b5t4 ar: fullscreen never engaged")
+        settle(app, landscape: true)
+        let arLandscape = app.windows.firstMatch.frame
+        notes.append("iphone-ar fullscreen exit=\(arExit.frame) window=\(arLandscape)")
+        XCTAssertLessThan(arExit.frame.midX, arLandscape.midX, "b5t4 ar: exit control must sit on the trailing (left) edge")
+        let arBox = app.otherElements["player.videoBox"]
+        doubleTap(arBox, at: CGVector(dx: 0.12, dy: 0.5))
+        try write(named: "player-b5t4-iphone-ar-seek-back-flash", into: directory)
+        try write(named: "player-b5t4-iphone-ar-fullscreen", into: directory)
+        XCUIDevice.shared.orientation = .portrait
+
+        // -- H. Dynamic Type .accessibility3: header intact, rows inside the window.
+        app = launch(playerScreen(Self.queueFixture), locale: Self.locales[0], extraArguments: Self.accessibility3)
+        let a11yHeader = app.staticTexts["player.upNext.header"]
+        XCTAssertTrue(a11yHeader.waitForExistence(timeout: 20), "b5t4 a11y3: header never appeared")
+        XCTAssertEqual(a11yHeader.label, "Up next")
+        rows = upNextRows(app)
+        let a11yWindow = app.windows.firstMatch.frame
+        notes.append("iphone-en-a11y3 header=\(a11yHeader.frame) row0=\(rows.first.map { "\($0.frame)" } ?? "-") window=\(a11yWindow)")
+        if let first = rows.first {
+            XCTAssertGreaterThanOrEqual(first.frame.minX, a11yWindow.minX - 1)
+            XCTAssertLessThanOrEqual(first.frame.maxX, a11yWindow.maxX + 1, "b5t4 a11y3: row clips the window")
+        }
+        try write(named: "player-b5t4-iphone-en-a11y3", into: directory)
+    }
+
+    /// iPad leg: rotating never auto-fullscreens (ruling 42); Up Next is TWO columns in en and ar
+    /// (mirrored), collapsing to one at `.accessibility3`. AVKit's stock fullscreen button is not
+    /// XCUITest-accessible, so the rail-hides-under-AVKit-fullscreen half is recorded NOT RUN.
+    func testPlayerB5Task4IPad() throws {
+        let directory = try shotsDirectory()
+        var notes: [String] = []
+        defer { try? notes.joined(separator: "\n").write(to: directory.appendingPathComponent("b5-task4-ipad-measurements.txt"), atomically: true, encoding: .utf8) }
+
+        for locale in Self.locales {
+            XCUIDevice.shared.orientation = .portrait
+            let app = launch(playerScreen(Self.queueFixture), locale: locale, extraArguments: [])
+            XCTAssertTrue(app.staticTexts["player.upNext.header"].waitForExistence(timeout: 20), "b5t4 ipad \(locale.key): header never appeared")
+            let rows = upNextRows(app)
+            notes.append("ipad-\(locale.key) rows=\(rows.count) row0=\(rows.first.map { "\($0.frame)" } ?? "-") row1=\(rows.dropFirst().first.map { "\($0.frame)" } ?? "-") screen=\(app.frame)")
+            XCTAssertEqual(rows.count, 7)
+            if rows.count >= 2 {
+                XCTAssertEqual(rows[0].frame.minY, rows[1].frame.minY, accuracy: 2, "b5t4 ipad \(locale.key): Up Next must be TWO columns")
+                if locale.key == "ar" {
+                    XCTAssertGreaterThan(rows[0].frame.minX, rows[1].frame.minX, "b5t4 ipad ar: the grid must mirror (first cell on the right)")
+                } else {
+                    XCTAssertLessThan(rows[0].frame.minX, rows[1].frame.minX)
+                }
+            }
+            try write(named: "player-b5t4-ipad-\(locale.key)-portrait", into: directory)
+
+            XCUIDevice.shared.orientation = .landscapeLeft
+            settle(app, landscape: true)
+            let autoFullscreen = app.buttons["player.fullscreenExit"].waitForExistence(timeout: 3)
+            notes.append("ipad-\(locale.key) landscape: auto-fullscreen=\(autoFullscreen) metadata=\(app.staticTexts["player.metadata.title"].exists) header=\(app.staticTexts["player.upNext.header"].exists)")
+            XCTAssertFalse(autoFullscreen, "b5t4 ipad \(locale.key): rotation must never auto-fullscreen (ruling 42)")
+            XCTAssertTrue(app.staticTexts["player.metadata.title"].exists, "b5t4 ipad \(locale.key) landscape: metadata must stay")
+            XCTAssertTrue(app.staticTexts["player.upNext.header"].exists, "b5t4 ipad \(locale.key) landscape: Up Next must stay")
+            try write(named: "player-b5t4-ipad-\(locale.key)-landscape", into: directory)
+            XCUIDevice.shared.orientation = .portrait
+        }
+
+        // .accessibility3: one column, header intact.
+        let app = launch(playerScreen(Self.queueFixture), locale: Self.locales[0], extraArguments: Self.accessibility3)
+        let header = app.staticTexts["player.upNext.header"]
+        XCTAssertTrue(header.waitForExistence(timeout: 20), "b5t4 ipad a11y3: header never appeared")
+        XCTAssertEqual(header.label, "Up next")
+        let rows = upNextRows(app)
+        notes.append("ipad-en-a11y3 rows=\(rows.count) row0=\(rows.first.map { "\($0.frame)" } ?? "-") row1=\(rows.dropFirst().first.map { "\($0.frame)" } ?? "-")")
+        if rows.count >= 2 {
+            XCTAssertEqual(rows[0].frame.minX, rows[1].frame.minX, accuracy: 1, "b5t4 ipad a11y3: the grid must collapse to ONE column")
+            XCTAssertGreaterThanOrEqual(rows[1].frame.minY, rows[0].frame.maxY - 1)
+        }
+        try write(named: "player-b5t4-ipad-en-a11y3", into: directory)
+    }
+
+    // MARK: - B5 task 4 step 2: live playlist checks (B5_LIVE=1)
+
+    /// Approved-catalog playlist ONLY: `PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc` is the playlist
+    /// InnerTubeKit's `browse-playlist.json` fixture was recorded from (the "Alafasy" catalog
+    /// channel, `BrowseClientTests`). Probed 2026-08-29: 200 items on 2 pages of 100, no
+    /// unplayable member. The ids below are page 1 #0, page 1 #97 and page 2 #0/#1.
+    private static let livePlaylistId = "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc"
+    private static let livePlaylistFirst = "5ZMMARhgvsw"
+    private static let livePlaylistPage1Index97 = "Q_kEjwhNThc"
+    private static let livePlaylistPage2First = "uhewocUEY6U"
+    private static let livePlaylistPage2Second = "wJK4fnvep0o"
+
+    private func requireB5Live() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["B5_LIVE"] == "1",
+                          "live playlist checks are opt-in: B5_LIVE=1")
+    }
+
+    private func livePlayer(_ videoId: String, target: String? = nil, extra: [String] = []) -> Screen {
+        playerScreen(extra + ["-fitrah-route", "player", videoId, Self.livePlaylistId] + (target.map { [$0] } ?? []))
+    }
+
+    /// Step 2 items 1, 2, 3 (page 2 -- the playlist has no page 3), 4, 5, 8, 9. Item 6 is measured
+    /// at the resolver level by the report; item 7 has no lever (no unplayable member in the
+    /// catalog playlist); item 10 needs a rung-2 stream on demand, which nothing provides.
+    func testPlayerB5Task4Live() throws {
+        try requireB5Live()
+        let directory = try shotsDirectory()
+        var notes: [String] = []
+        defer { try? notes.joined(separator: "\n").write(to: directory.appendingPathComponent("b5-task4-live-measurements.txt"), atomically: true, encoding: .utf8) }
+        let seededTitle = "Understanding Tawakkul: Trusting Allah in Every Situation"
+        let duration = try NSRegularExpression(pattern: "\\d+:\\d\\d")
+
+        // 1. Real siblings: title + channel + duration, no view count. 9. Rotate mid-playback.
+        XCUIDevice.shared.orientation = .portrait
+        var app = launch(livePlayer(Self.livePlaylistFirst, target: Self.livePlaylistFirst), locale: Self.locales[0], extraArguments: [])
+        let header = app.staticTexts["player.upNext.header"]
+        XCTAssertTrue(header.waitForExistence(timeout: 90), "live 1: Up Next never appeared (resolve or browse failed?)")
+        var rows = upNextRows(app)
+        let labels = rows.prefix(3).map { $0.label }
+        notes.append("live-1 rows=\(rows.count) first3 ids=\(rows.prefix(3).map { $0.identifier }) labels=\(labels)")
+        XCTAssertEqual(rows.count, 99, "live 1: page 1 minus the launched video")
+        for label in labels {
+            XCTAssertFalse(label.lowercased().contains("view"), "live 1: a queue row must carry NO view count: \(label)")
+            XCTAssertNotNil(duration.firstMatch(in: label, range: NSRange(label.startIndex..., in: label)), "live 1: row label lacks a duration: \(label)")
+        }
+        try write(named: "player-b5t4-live-up-next", into: directory)
+        XCTAssertTrue(app.otherElements["player.videoBox"].exists)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let t9 = Date()
+        let fs = app.buttons["player.fullscreenExit"].waitForExistence(timeout: 10)
+        notes.append("live-9 rotate: fullscreen in \(String(format: "%.2f", Date().timeIntervalSince(t9)))s=\(fs) state card=\(app.staticTexts["player.state.message"].exists)")
+        XCTAssertTrue(fs, "live 9: fullscreen did not engage on a real HLS stream")
+        XCTAssertFalse(app.staticTexts["player.state.message"].exists, "live 9: rotation must not surface a state card (host rebuilt?)")
+        try write(named: "player-b5t4-live-fullscreen", into: directory)
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(app.staticTexts["player.metadata.title"].waitForExistence(timeout: 10), "live 9: metadata did not return")
+        XCTAssertFalse(app.staticTexts["player.state.message"].exists)
+
+        // 2. A real end-of-item advances; the next video does NOT inherit the position (it would
+        // end again within seconds if it started near the previous item's end).
+        app = launch(livePlayer(Self.livePlaylistFirst, target: Self.livePlaylistFirst,
+                                extra: ["-fitrah-player-seek-near-end", "-safe_mode", "NO"]),
+                     locale: Self.locales[0], extraArguments: [])
+        let title = app.staticTexts["player.metadata.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 90), "live 2: player never opened")
+        let t0 = Date()
+        var deadline = Date().addingTimeInterval(120)
+        while Date() < deadline, title.exists, title.label == seededTitle { Thread.sleep(forTimeInterval: 0.5) }
+        let advancedTitle = title.exists ? title.label : "(no title)"
+        let advanceAfter = Date().timeIntervalSince(t0)
+        notes.append("live-2 advanced after \(String(format: "%.1f", advanceAfter))s to \(advancedTitle.debugDescription); first row now=\(upNextRows(app).first?.identifier ?? "-")")
+        XCTAssertNotEqual(advancedTitle, seededTitle, "live 2: no auto-advance within 120 s")
+        XCTAssertFalse(row(app, Self.livePlaylistFirst).exists)
+        Thread.sleep(forTimeInterval: 20)
+        let laterTitle = title.exists ? title.label : "(no title)"
+        notes.append("live-2 20 s later title=\(laterTitle.debugDescription) state card=\(app.staticTexts["player.state.message"].exists)")
+        XCTAssertEqual(laterTitle, advancedTitle, "live 2: the next video ended again within 20 s -- it inherited the previous position")
+        XCTAssertFalse(app.staticTexts["player.state.message"].exists)
+        try write(named: "player-b5t4-live-advanced", into: directory)
+
+        // 8. Background auto-advance: background the app across the end-of-item.
+        app = launch(livePlayer(Self.livePlaylistFirst, target: Self.livePlaylistFirst,
+                                extra: ["-fitrah-player-seek-near-end", "-safe_mode", "NO", "-background_play", "YES"]),
+                     locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(title.waitForExistence(timeout: 90), "live 8: player never opened")
+        XCTAssertTrue(app.staticTexts["player.upNext.header"].waitForExistence(timeout: 30))
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 30)
+        app.activate()
+        XCTAssertTrue(title.waitForExistence(timeout: 10), "live 8: player gone after foregrounding")
+        let bgTitle = title.exists ? title.label : "(no title)"
+        notes.append("live-8 after 30 s in background: title=\(bgTitle.debugDescription) state card=\(app.staticTexts["player.state.message"].exists)")
+        XCTAssertNotEqual(bgTitle, seededTitle, "live 8: the queue did not advance while backgrounded")
+        try write(named: "player-b5t4-live-background-advanced", into: directory)
+
+        // 3. Deep start on page 2 (the playlist has two pages): the scan must page and land there.
+        let t3 = Date()
+        app = launch(livePlayer(Self.livePlaylistPage2First, target: Self.livePlaylistPage2First), locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.staticTexts["player.upNext.header"].waitForExistence(timeout: 90), "live 3: Up Next never appeared")
+        rows = upNextRows(app)
+        notes.append("live-3 deep start: header after \(String(format: "%.1f", Date().timeIntervalSince(t3)))s (incl. launch); rows=\(rows.count) first=\(rows.first?.identifier ?? "-")")
+        XCTAssertEqual(rows.first?.identifier, "player.upNext.row.\(Self.livePlaylistPage2Second)", "live 3: deep start did not land on the page-2 target")
+        XCTAssertEqual(rows.count, 99)
+        try write(named: "player-b5t4-live-deep-start", into: directory)
+
+        // 4. Shuffle: the launched video is pinned first (never listed as up next), the order
+        // differs across two launches, and only page 1 is ever loaded (paging disabled).
+        var shuffleOrders: [[String]] = []
+        for i in 1...2 {
+            app = launch(livePlayer(Self.livePlaylistFirst, target: Self.livePlaylistFirst, extra: ["-fitrah-shuffled"]), locale: Self.locales[0], extraArguments: [])
+            XCTAssertTrue(app.staticTexts["player.upNext.header"].waitForExistence(timeout: 90), "live 4 launch \(i): Up Next never appeared")
+            rows = upNextRows(app)
+            shuffleOrders.append(rows.prefix(5).map { $0.identifier })
+            notes.append("live-4 launch \(i): rows=\(rows.count) first5=\(shuffleOrders[i - 1])")
+            XCTAssertFalse(row(app, Self.livePlaylistFirst).exists, "live 4: the launched video must be pinned first, not queued")
+            XCTAssertEqual(rows.count, 99, "live 4: shuffle must not page")
+        }
+        XCTAssertNotEqual(shuffleOrders[0], shuffleOrders[1], "live 4: two shuffled launches produced the same order")
+        try write(named: "player-b5t4-live-shuffled", into: directory)
+
+        // 5. Paging: a start within five of the page end pages at once (Task 4 fix), no stall.
+        let t5 = Date()
+        app = launch(livePlayer(Self.livePlaylistPage1Index97, target: Self.livePlaylistPage1Index97), locale: Self.locales[0], extraArguments: [])
+        XCTAssertTrue(app.staticTexts["player.upNext.header"].waitForExistence(timeout: 90), "live 5: Up Next never appeared")
+        deadline = Date().addingTimeInterval(20)
+        repeat { rows = upNextRows(app); if rows.count > 2 { break }; Thread.sleep(forTimeInterval: 0.5) } while Date() < deadline
+        notes.append("live-5 paging: rows=\(rows.count) after \(String(format: "%.1f", Date().timeIntervalSince(t5)))s (incl. launch); first=\(rows.first?.identifier ?? "-") state card=\(app.staticTexts["player.state.message"].exists)")
+        XCTAssertEqual(rows.count, 102, "live 5: expected 2 remaining + 100 paged rows")
+        XCTAssertFalse(app.staticTexts["player.state.message"].exists, "live 5: paging must not touch the playing video")
+        try write(named: "player-b5t4-live-paged", into: directory)
+    }
+
     // MARK: - Helpers
 
     private func launch(_ screen: Screen, locale: LocaleCase, extraArguments: [String]) -> XCUIApplication {

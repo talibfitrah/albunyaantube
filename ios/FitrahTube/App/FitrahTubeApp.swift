@@ -107,9 +107,11 @@ struct FitrahTubeApp: App {
     /// deep-link URL (`DeepLinkParser` only covers video/channel/playlist/shorts) and no
     /// `simctl` tap-gesture equivalent exists, so this pushes the route directly onto the
     /// currently-selected tab's stack -- same technique as `-fitrah-tab`.
-    /// `-fitrah-route player [videoId]|shorts [videoId]|search|categories|subcategories <parentId> <parentName>|featured [categoryId] [categoryName]`
-    /// (`-` for a nil `featured` arg). `player` is also reachable via `-fitrah-deeplink`, but this is
-    /// the one-token form the screenshot rig's other routes already use.
+    /// `-fitrah-route player [videoId] [playlistId] [targetVideoId]|shorts [videoId]|search|categories|subcategories <parentId> <parentName>|featured [categoryId] [categoryName]`
+    /// (`-` for a nil arg). `player` is also reachable via `-fitrah-deeplink`, but this is
+    /// the one-token form the screenshot rig's other routes already use. B5 Task 4: the optional
+    /// `playlistId`/`targetVideoId` (plus the `-fitrah-shuffled` flag) are the queue launch
+    /// contract, so the rig can reach Up Next, deep start and shuffle with no Plan C screen.
     private func pushDebugRouteIfRequested() {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
@@ -126,11 +128,13 @@ struct FitrahTubeApp: App {
             // panel empty.
             router.push(.player(PlayerArgs(
                 videoId: arg(2) ?? "fixture-video",
+                playlistId: arg(3),
                 title: "Understanding Tawakkul: Trusting Allah in Every Situation",
                 channelName: "Sample Channel",
                 description: "A short reminder on tawakkul, with a link for further reading: "
                     + "https://example.com/tawakkul and a second note after it.",
-                durationSeconds: 754, viewCount: 12_700_000
+                durationSeconds: 754, viewCount: 12_700_000,
+                shuffled: args.contains("-fitrah-shuffled"), targetVideoId: arg(4)
             )))
         case "shorts":
             // B4 task 3 screenshot rig: a channel-attributed short (the deep-link form carries an
