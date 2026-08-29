@@ -200,7 +200,7 @@ struct PlaylistDetailViewModelTests {
     @Test func aRowTapPassesTargetVideoIdAndTheIndexAsAHint() async {
         let vm = makeVM()
         await vm.load()
-        let args = vm.playerArgs(forRowAt: 3)
+        let args = vm.playerArgs(for: vm.rows[3])
         #expect(args.targetVideoId == "0-3")     // authoritative
         #expect(args.videoId == "0-3")
         #expect(args.startIndex == 3)            // hint only
@@ -257,6 +257,25 @@ struct PlaylistDetailViewModelTests {
         #expect(deepLink.metadataLine(locale: en) == nil)
         await deepLink.load()
         #expect(deepLink.metadataLine(locale: en) == "5 videos")  // first page's own count
+    }
+
+    @Test func aDeepLinkFetchesTheHeaderAndTheFirstPageInParallel() async {
+        // Task 4 review: the two were serial. Hold the header fetch open; the first page must land
+        // (and the list must be populated) before the header is released.
+        let gate = FakeSource.Gate()
+        let source = FakeSource()
+        let vm = makeVM(source: source, title: nil, count: nil) { id in
+            await gate.wait()
+            return PlaylistHeader(title: "From \(id)", count: 40)
+        }
+        let load = Task { await vm.load() }
+        while source.calls.isEmpty { await Task.yield() }
+        for _ in 0..<50 where vm.items.items.isEmpty { await Task.yield() }
+        #expect(vm.header.title == nil)
+        gate.release()
+        await load.value
+        #expect(vm.header.title == "From PL1")
+        #expect(vm.items.items.count == 5)
     }
 
     @Test func aDeepLinkFillsTheHeaderFromTheBackend() async {

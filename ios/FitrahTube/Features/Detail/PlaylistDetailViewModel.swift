@@ -54,12 +54,21 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
 
     // MARK: - Derived
 
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     /// What the list renders: the loaded state, or its search-filtered view (no continuation while
     /// filtering, so neither trigger fires mid-search -- `PlaylistDetailFragment.kt:326-346`).
-    var visible: TabState<VideoItem> { items.filtered(query: query) }
+    /// Derived from `rows` -- the one filter pass -- so a zero-match search is
+    /// `.empty("search_no_results")` (RULING 5) and `.loaded` never carries `[]` (CF-C-7).
+    var visible: TabState<VideoItem> {
+        guard !trimmedQuery.isEmpty, !items.items.isEmpty else { return items }
+        let hits = rows.map(\.item)
+        guard !hits.isEmpty else { return .empty(messageKey: "search_no_results") }
+        return .loaded(items: hits, continuation: nil, isAppending: false, showsLoadMore: false)
+    }
 
     var rows: [Row] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = trimmedQuery
         return items.items.enumerated().compactMap { index, item in
             trimmed.isEmpty || SearchFilter.matches(item, trimmed) ? Row(index: index, item: item) : nil
         }
@@ -87,11 +96,14 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
         let g = generation
         isUnavailable = false
         items = .loadingInitial
-        if header.title == nil, let fetchHeader, let fetched = try? await fetchHeader(playlistId), g == generation {
-            header = fetched
-        }
+        // Deep link: header and first page in parallel (`ChannelDetailViewModel.kt:109-124`'s reason).
+        let headerFetch = header.title == nil ? fetchHeader : nil
+        async let fetched = Self.fetchIfNeeded(headerFetch, playlistId)
+        let result: Result<BrowsePage<VideoItem>, any Error>
+        do { result = .success(try await browse.playlistItems(playlistId, continuation: nil)) } catch { result = .failure(error) }
+        if let fetched = await fetched, g == generation { header = fetched }
         do {
-            let page = try await browse.playlistItems(playlistId, continuation: nil)
+            let page = try result.get()
             guard g == generation else { return }
             if page.items.isEmpty {
                 items = .empty(messageKey: "playlist_empty_state")
@@ -105,6 +117,11 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
             items = .errorInitial(messageKey: Self.errorKey(error))
             isUnavailable = Self.isUnavailable(error)
         }
+    }
+
+    private nonisolated static func fetchIfNeeded(_ fetch: (@Sendable (String) async throws -> PlaylistHeader)?, _ id: String) async -> PlaylistHeader? {
+        guard let fetch else { return nil }
+        return try? await fetch(id)
     }
 
     /// Next page from the surviving cursor. Returns whether a fetch actually started (the
@@ -135,9 +152,10 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
     }
 
     /// Row tap: `targetVideoId` authoritative, `startIndex` a hint (`PlaylistDetailFragment.kt:747`).
-    func playerArgs(forRowAt index: Int) -> PlayerArgs {
-        let item = items.items[index]
-        return args(for: item, startIndex: index, shuffled: false, target: item.id)
+    /// Takes the row itself -- it already carries the item, so nothing indexes into a list that a
+    /// reload may have shrunk under the tap.
+    func playerArgs(for row: Row) -> PlayerArgs {
+        args(for: row.item, startIndex: row.index, shuffled: false, target: row.item.id)
     }
 
     private func args(for item: VideoItem, startIndex: Int, shuffled: Bool, target: String?) -> PlayerArgs {
