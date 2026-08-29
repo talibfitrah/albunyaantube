@@ -1,0 +1,32 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/BrowseClientTests.swift
+  s_66ddb7c44de816::t_cec7a12ba57675 12-18,20,34-37,43,46,201-317
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-channel-header.json
+  s_66ddb7c44de816::t_3882857edcfe0b 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-botcheck.json
+  s_66ddb7c44de816::t_f5d2a1f9aaf887 2
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/LiveBrowseTests.swift
+  s_66ddb7c44de816::t_a97f22cdf89b6b 1-50
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-channel-playlists.json
+  s_66ddb7c44de816::t_f5d2a1f9aaf887 1-727
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/BrowseClient.swift
+  s_66ddb7c44de816::t_8b0120f730b771 85-87,286-288
+  s_66ddb7c44de816::t_02d8c0341136ce 47-67,177-181,189-193,196-200,204-209,222-238,243-250,259-283,316-335,365-369,386-388,401-402,405-406,414,451-476
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-channel-shorts.json
+  s_66ddb7c44de816::t_f5d2a1f9aaf887 1-400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "dc592322054c2f4678c804ade4934549025a2e0e",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
