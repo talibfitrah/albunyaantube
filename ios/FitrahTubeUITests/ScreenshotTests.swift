@@ -659,7 +659,7 @@ final class ScreenshotTests: XCTestCase {
         // avatar + "Watch on YouTube"/share at the top of the frame) and the YouTube logo in the
         // bottom-right of the control bar.
         let targets: [(String, CGVector)] = [
-            ("center/controls", CGVector(dx: 0.5, dy: 0.5)),
+            ("center/controls", CGVector(dx: 0.5, dy: 0.25)),
             ("title", CGVector(dx: 0.25, dy: 0.12)),
             ("watch-on-youtube/share", CGVector(dx: 0.92, dy: 0.12)),
             ("channel avatar", CGVector(dx: 0.06, dy: 0.12)),
@@ -816,6 +816,15 @@ final class ScreenshotTests: XCTestCase {
         settle(app, landscape: true)
         XCTAssertTrue(app.staticTexts["player.metadata.title"].exists,
                       "b1-task10 ipad en landscape: metadata must stay visible (regular vertical size class)")
+        // CF-B2-11: the old assertion proved nothing -- it only checked the title existed, which it
+        // does at any width. The constraint under test is Size.playerMaxWidth (1600 pt on `.large`),
+        // so assert the video box's own frame against it AND against the window, which is what a
+        // regression (an unconstrained full-width column) would actually break.
+        let box = app.otherElements["player.videoBox"]
+        XCTAssertTrue(box.waitForExistence(timeout: 10), "ipad: player.videoBox never appeared")
+        XCTAssertLessThanOrEqual(box.frame.width, 1600, "ipad: player column exceeds playerMaxWidth")
+        XCTAssertLessThan(box.frame.width, app.frame.width,
+                          "ipad landscape: the player column must be narrower than the window")
         try write(named: "player-b1task10-ipad-en-landscape", into: directory)
         XCUIDevice.shared.orientation = .portrait
     }
@@ -1345,3 +1354,4 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 }
+

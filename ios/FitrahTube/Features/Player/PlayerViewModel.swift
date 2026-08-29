@@ -154,6 +154,24 @@ extension StreamState {
     /// back to this only when there is no live player left to ask.
     var currentTime: TimeInterval = 0
 
+    /// B5 Task 3. Set from `AVPlayerItem.presentationSize` by the host's periodic observer.
+    /// Defaults FALSE: until an item is ready the size is `.zero`, and "unknown" must read as
+    /// landscape or a 16:9 video would briefly fullscreen itself in portrait on open.
+    var videoIsPortrait = false
+    /// The centre-double-tap fill/fit override, sticky per stream (`PlayerFragment.kt:3525-3547`).
+    /// Reset in `swapArgs` alongside `currentTime` -- "per stream", not per session.
+    var videoZoomed = false
+    /// Transient ±10 s feedback for the gesture overlay; cleared ~600 ms after it is set.
+    var seekFeedback: PlayerGestures.SeekFeedback?
+    /// True while AVKit owns the screen with its OWN fullscreen presentation (the iPad path,
+    /// ruling 42). Our gesture recognizer is disabled while it is true, because AVKit's fullscreen
+    /// already has its own double-tap gravity toggle -- two would double-fire.
+    var avKitFullscreen = false
+    /// The player's one transient banner slot (`PlayerScreen.transientBanner`): the fit/zoom
+    /// toggle's "Fill screen"/"Fit to screen" (written by the host's double-tap handler, which has
+    /// no SwiftUI binding) and the one-time fullscreen zoom hint. Same shape as `Router.pendingBanner`.
+    var banner: BannerMessage?
+
     private let queueSource: (any PlaylistQueueSource)?
     /// Ids the `.prefetch` lane already warmed. A repeat resolve of one is a `ManifestCache` hit
     /// that still spends the per-video retry budget and the global prefetch lane, so the window
@@ -293,6 +311,7 @@ extension StreamState {
         next.shuffled = args.shuffled
         args = next
         currentTime = 0                      // a new video starts at the beginning
+        videoZoomed = false                  // B5 Task 3: the fit/zoom override is per stream
     }
 
     /// Ruling 16's prefetch lane, first and only call site in the app. Six lines because

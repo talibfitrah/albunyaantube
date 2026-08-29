@@ -25,6 +25,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
     let model: PlayerViewModel
     /// B4: which surface this host is. Defaulted so `PlayerScreen`'s call site is untouched.
     var presentation: PlayerPresentation = .standard
+    /// B5 Task 3: whether `PlayerScreen` is laying the host out fullscreen. The coordinator reads its
+    /// copy of this in the double-tap handler (the centre zone only acts in fullscreen); it never
+    /// re-derives size classes itself. Defaulted so `ShortsScreen`'s call site is untouched.
+    var isFullscreen = false
 
     /// B4: the ONE read of the Background play setting this host makes. `.shorts` forces it off
     /// (Android parity, brief 9.5), and every consumer -- the coordinator's initial policy, auto-PiP,
@@ -37,7 +41,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.showsPlaybackControls = presentation.showsPlaybackControls
-        controller.videoGravity = presentation.videoGravity
+        controller.videoGravity = Self.videoGravity(zoomed: model.videoZoomed, presentation: presentation)
         controller.delegate = context.coordinator
         controller.player = Self.player(for: state, replacing: nil, audioOnly: audioOnly,
                                         continuesCurrentVideo: continuesCurrentVideo(context),
@@ -50,7 +54,30 @@ struct PlayerHostView: UIViewControllerRepresentable {
         applyAudioLanguageHandoff(to: controller)
         applyCaptionsHandoff(to: controller)
         applyRecoveryObservers(to: controller, context: context)
+        // Reconciliation note 1 / spec §10 "implemented as an overlay on the content view".
+        // The delegate's `shouldRecognizeSimultaneouslyWith` returning true is what keeps plan §6.5's
+        // rule true: AVKit's single tap still toggles its controls, because our recognizer neither
+        // requires its failure nor blocks it. A double tap therefore ALSO flashes the controls once;
+        // that is accepted (Android does the same) and is NOT worth reaching into
+        // `controller.view.gestureRecognizers` to suppress.
+        // `controller.view`, not `contentOverlayView` (the plan's sanctioned fallback): on this SDK
+        // (Xcode 26.3 / iOS 26.3 sim) the overlay sits BELOW AVKit's controls layer, which swallows
+        // every touch, so a recognizer on it never fires -- verified B5 Task 3 Step 4 by XCUITest
+        // (controls toggled, no seek flash, no zoom). Same delegate, same rule; nothing else changes.
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator,
+                                               action: #selector(Coordinator.handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.delegate = context.coordinator
+        controller.view.addGestureRecognizer(doubleTap)
+        context.coordinator.doubleTap = doubleTap
+        context.coordinator.isFullscreen = isFullscreen
         return controller
+    }
+
+    /// B5 Task 3: the centre-double-tap zoom OVERRIDES the presentation's gravity; it does not
+    /// replace the property (reconciliation note 4), so `.shorts` keeps its fill when not zoomed.
+    static func videoGravity(zoomed: Bool, presentation: PlayerPresentation) -> AVLayerVideoGravity {
+        zoomed ? .resizeAspectFill : presentation.videoGravity
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
@@ -59,9 +86,13 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         resumeFallback: model.currentTime)
         context.coordinator.lastVideoId = model.args.videoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
-        // M6 (B4 final review): write only on change. B5's fullscreen will let the user pick a
-        // gravity on this controller, and an unconditional write here would undo it every pass.
-        if controller.videoGravity != presentation.videoGravity { controller.videoGravity = presentation.videoGravity }
+        // M6 (B4 final review): write only on change -- an unconditional write would churn AVKit's
+        // layer every pass. B5: the user's zoom override is folded into the computed value.
+        let gravity = Self.videoGravity(zoomed: model.videoZoomed, presentation: presentation)
+        if controller.videoGravity != gravity { controller.videoGravity = gravity }
+        // AVKit's own fullscreen (the iPad path) has its own double-tap gravity toggle.
+        context.coordinator.doubleTap?.isEnabled = !model.avKitFullscreen
+        context.coordinator.isFullscreen = isFullscreen
         // Live on every pass, exactly like `background.backgroundPlay` below: a Background-play flip
         // made in Settings while the player is open must change auto-PiP now, not on the next launch.
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
@@ -92,6 +123,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// safe precisely because a dismantled host owns nothing any more.
     static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
         coordinator.stopObserving()
+        if let doubleTap = coordinator.doubleTap { doubleTap.view?.removeGestureRecognizer(doubleTap) }
+        coordinator.doubleTap = nil
+        coordinator.seekFeedbackTask?.cancel()
         // M6 (B1 final review): the coordinator can outlive this call (SwiftUI holds it until the
         // representable's own storage goes), and a live `NWPathMonitor` keeps a queue callback
         // firing for a host that owns nothing any more. `deinit`'s cancel stays as the backstop --
@@ -289,8 +323,13 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// status, the failed-to-play-to-end notification, `loadedTimeRanges` growth), which the unit
     /// target can't produce. All the *decisions* live in `PlaybackRecovery`, which is tested
     /// exhaustively.
-    @MainActor final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+    @MainActor final class Coordinator: NSObject, AVPlayerViewControllerDelegate, UIGestureRecognizerDelegate {
         private(set) var path: NWPath
+        /// B5 Task 3: the double-tap overlay recognizer (`makeUIViewController`) and the screen's
+        /// fullscreen flag, written on every update pass.
+        var doubleTap: UITapGestureRecognizer?
+        var isFullscreen = false
+        var seekFeedbackTask: Task<Void, Never>?
         private let monitor = NWPathMonitor()
 
         /// The audio session / background-playback owner (CF-B1-1). Lives here rather than in the
@@ -329,6 +368,54 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 }
             }
             monitor.start(queue: .main)
+        }
+
+        // MARK: - Double-tap overlay (B5 Task 3, spec §10)
+
+        @objc func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
+            guard let view = recognizer.view, let player = observedPlayer, let item = observedItem,
+                  let model else { return }
+            let zone = PlayerGestures.zone(x: recognizer.location(in: view).x, width: view.bounds.width)
+            switch zone {
+            case .centre:
+                // Android's "no dead zone" (`PlayerGestureDetector.kt:58-62`): outside fullscreen a
+                // centre double tap is not consumed by this overlay.
+                guard isFullscreen else { return }
+                model.videoZoomed.toggle()
+                model.banner = BannerMessage(text: String(localized: model.videoZoomed
+                    ? "player_resize_mode_zoom" : "player_resize_mode_fit"))
+            case .back, .forward:
+                guard let target = PlayerGestures.seek(from: player.currentTime().seconds, zone: zone,
+                                                       duration: item.duration.seconds, step: 10) else { return }
+                player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+                model.currentTime = target
+                model.seekFeedback = PlayerGestures.SeekFeedback(zone: zone, seconds: 10)
+                seekFeedbackTask?.cancel()
+                seekFeedbackTask = Task { [weak model] in
+                    try? await Task.sleep(for: .milliseconds(600))
+                    guard !Task.isCancelled else { return }
+                    model?.seekFeedback = nil
+                }
+            }
+        }
+
+        /// Nonisolated by protocol; touches nothing actor-confined -- the whole point is to say
+        /// "yes" so AVKit's own tap recognizers keep working alongside ours.
+        nonisolated func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            true
+        }
+
+        // MARK: - AVKit's own fullscreen (ruling 42's iPad path)
+
+        func playerViewController(_ playerViewController: AVPlayerViewController,
+                                  willBeginFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator) {
+            model?.avKitFullscreen = true      // also disables our recognizer (`updateUIViewController`)
+        }
+
+        func playerViewController(_ playerViewController: AVPlayerViewController,
+                                  willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator) {
+            model?.avKitFullscreen = false
         }
 
         // MARK: - AVPlayerViewControllerDelegate (Task 5)
@@ -459,7 +546,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
                     // advance's `swapArgs` (which zeroes it for the next video) and the update pass
                     // that swaps the item, the OLD item is still ticking here, and a fresh
                     // coordinator after a dismantle would read that clock back as the resume point.
-                    if let self, self.lastVideoId == self.model?.args.videoId { self.model?.currentTime = time.seconds }
+                    if let self, self.lastVideoId == self.model?.args.videoId {
+                        self.model?.currentTime = time.seconds
+                        // B5 Task 3: `PlayerFullscreen.isActive`'s video-orientation input, same
+                        // observer, same guard -- a portrait Short must never leak into the next video.
+                        if let size = self.observedItem?.presentationSize, size.width > 0, size.height > 0 {
+                            let portrait = size.height > size.width
+                            if self.model?.videoIsPortrait != portrait { self.model?.videoIsPortrait = portrait }
+                        }
+                    }
                     // Task 4: the ONE periodic observer feeds both the stall watchdog and the lock
                     // screen's elapsed/rate. AVFoundation fires it on rate changes and time jumps
                     // as well as on the interval, so a play/pause/seek made in the stock AVKit

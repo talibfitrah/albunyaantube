@@ -16,15 +16,46 @@ struct PlayerScreen: View {
     /// window even in landscape), so this never fires there.
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.router) private var router
     @State private var model: PlayerViewModel?
+    /// B5 Task 3 (reconciliation note 3): the fullscreen exit control's latch. Suppresses the
+    /// auto-enter until the device rotates out of the fullscreen orientation; no timers.
+    @State private var userExitedFullscreen = false
+    /// Same flag name Android uses (`PlayerFragment.kt:3473-3484`).
+    @AppStorage("fullscreen_zoom_hint_shown") private var zoomHintShown = false
 
     var body: some View {
+        let fullscreen = model.map(isFullscreen) ?? false
         Group {
             if let model {
                 stateView(model.state, model: model)
             } else {
                 ProgressView()
             }
+        }
+        .statusBarHidden(fullscreen)
+        // `.tabBar` here, not (only) in the shell: a tab-bar hide takes effect on the PUSHED view
+        // inside the tab's `NavigationStack`; the shell's `.toolbar(.hidden, for: .tabBar)` outside
+        // the `TabView` is inert on this SDK (verified on iPhone 17 / iOS 26.3, B5 Task 3).
+        .toolbar(fullscreen ? .hidden : .visible, for: .navigationBar, .tabBar)
+        // Ruling 42/CF-B2-10: the shell already reads this and hides the tab bar (compact) and the
+        // navigation rail (regular) -- `Router.swift:33-34`, `MainShellView.swift:58,62`. B5 is the
+        // plan its doc comment was waiting for. `avKitFullscreen` is folded in so the iPad's stock
+        // AVKit fullscreen also clears the rail.
+        .onChange(of: fullscreen || model?.avKitFullscreen == true, initial: true) { _, isFS in
+            router.isFullscreen = isFS
+        }
+        // Not optional: Android restores system UI unconditionally in `onDestroyView`
+        // (`PlayerFragment.kt:822-829`); without this, popping the player while fullscreen leaves
+        // the app with no tab bar.
+        .onDisappear { router.isFullscreen = false }
+        // Reconciliation note 3: rotating out of the fullscreen orientation re-arms the auto-enter.
+        .onChange(of: verticalSizeClass) { _, new in if new != .compact { userExitedFullscreen = false } }
+        .onChange(of: fullscreen, initial: true) { _, isFS in
+            guard isFS, !zoomHintShown else { return }
+            zoomHintShown = true
+            model?.banner = BannerMessage(text: String(localized: "player_fullscreen_zoom_hint"))
         }
         .task {
             guard model == nil else { return }
@@ -76,6 +107,13 @@ struct PlayerScreen: View {
         }
     }
 
+    /// Ruling 42's rule with this screen's inputs (`PlayerFullscreen.isActive`). Compact HEIGHT is
+    /// the iPhone-landscape signal (Task 10's existing rule); iPad landscape stays regular.
+    private func isFullscreen(_ model: PlayerViewModel) -> Bool {
+        PlayerFullscreen.isActive(widthClass: widthClass, deviceIsLandscape: verticalSizeClass == .compact,
+                                  videoIsPortrait: model.videoIsPortrait, userExited: userExitedFullscreen)
+    }
+
     @ViewBuilder
     private func stateView(_ state: StreamState, model: PlayerViewModel) -> some View {
         switch state {
@@ -88,17 +126,25 @@ struct PlayerScreen: View {
         case .ready(let resolved), .rung2Progressive(let resolved):
             let isRung1 = Self.isRung1(state)
             let tracks = Self.captionTracks(state)
+            // B5 Task 3 / ruling C: fullscreen is a MODIFIER change on this one tree, never a second
+            // `PlayerHostView` placement and never a `.fullScreenCover` -- both would be a second
+            // view identity, which drops the `AVPlayer` (Task 7's note above).
+            let fullscreen = isFullscreen(model)
             // Task 8: metadata panel below the player, toolbar between the two (Android's
             // action-row placement) -- ONE branch still, per Task 7's identity note above: the
             // `PlayerHostView` call below is unconditional in both cases, so its view identity
             // (and the live `AVPlayer` it wraps) survives a `.ready` <-> `.rung2Progressive`
             // demotion exactly as before. Only the surrounding layout (full-bleed ZStack -> video
             // box + scrolling content below) changed.
+            // B5 Task 3: the reader is a PERMANENT wrapper (no conditional tree), only there to hand
+            // the fullscreen box the container's own aspect ratio -- `aspectRatio(nil)` would fit
+            // the HOST's ideal ratio, not the screen's, and a `ScrollView` proposes no height.
+            GeometryReader { geo in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ZStack(alignment: .topTrailing) {
                         PlayerHostView(state: state, quality: model.selectedQuality,
-                                       audioOnly: model.audioOnly, model: model)
+                                       audioOnly: model.audioOnly, model: model, isFullscreen: fullscreen)
                         // I8 (B1 final review): a mid-play rung-2 demotion empties `tracks` and
                         // hides the captions menu -- but the selection survives (session-only
                         // state, deliberately), so the overlay used to keep rendering cues with no
@@ -108,6 +154,12 @@ struct PlayerScreen: View {
                             CaptionOverlay(model: model, track: selected, userAgent: resolved.userAgent)
                         }
                         VStack(alignment: .trailing, spacing: 8) {
+                            // B5 Task 3: FIRST in this same column so it never overlaps the
+                            // controls below, which stay available in fullscreen. Ruling 45's first
+                            // step; forces no orientation (reconciliation note 3).
+                            if fullscreen {
+                                fullscreenExitButton
+                            }
                             // While audio-only there is no video rendition to cap, no subtitle
                             // track and no alternate audible group on an m4a item -- every one of
                             // these controls would be inert, so none of them is shown. The
@@ -139,8 +191,20 @@ struct PlayerScreen: View {
                         }
                         .padding()
                     }
-                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .aspectRatio(fullscreen && geo.size.height > 0 ? geo.size.width / geo.size.height : 16.0 / 9.0,
+                                 contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: fullscreen ? geo.size.height : nil)
                     .background(Color.black)
+                    .overlay { seekFeedback(model) }
+                    // Reduce Motion: an instant show/hide, not a fade (spec §14).
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: model.seekFeedback)
+                    // `.contain` first: an identifier on a bare container is inherited by every child
+                    // element and would overwrite `player.fullscreenExit` / the quality menu's.
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("player.videoBox")
+
+                    if !fullscreen {
 
                     // Task 10 (spec §6.11): compact-height landscape (iPhone landscape) hides the
                     // METADATA panel only -- the toolbar (favorite/share/report) stays available,
@@ -165,15 +229,20 @@ struct PlayerScreen: View {
                             .accessibilityIdentifier("player.upNext.header")
                         upNextList(model)
                     }
+                    }   // !fullscreen
                 }
                 // Task 10 (`ios-app-design.md` §11 `content_max_width`): the ONE screen where a
                 // tablet content column isn't full width -- nil below the sw600 threshold, 1200/
                 // 1600 pt above it (`Size.playerMaxWidth`). The outer `.frame(maxWidth: .infinity)`
                 // centers this narrower column within the full scroll width.
-                .frame(maxWidth: Size.playerMaxWidth(widthClass))
+                .frame(maxWidth: fullscreen ? nil : Size.playerMaxWidth(widthClass))
                 .frame(maxWidth: .infinity)
             }
+            .scrollDisabled(fullscreen)
             .background(Color.background.ignoresSafeArea())
+            }   // GeometryReader
+            .ignoresSafeArea(edges: fullscreen ? .all : [])
+            .transientBanner(Bindable(model).banner)
         // B3 task 4: rung 3 gets its OWN branch -- legitimately, because it is a different playback
         // surface with no `AVPlayer` to preserve across a transition, which is the only thing the
         // shared branch above exists to protect. It never mounts `PlayerHostView`.
@@ -311,6 +380,43 @@ struct PlayerScreen: View {
     private static func isRung1(_ state: StreamState) -> Bool {
         if case .ready = state { return true }
         return false
+    }
+
+    /// B5 Task 3: the fullscreen exit control -- ≥44 pt tap target on the same scrim chrome as
+    /// `qualityMenu`, never on bare video (spec §14). Action: the latch only.
+    private var fullscreenExitButton: some View {
+        Button {
+            userExitedFullscreen = true
+        } label: {
+            Image(systemName: "arrow.down.right.and.arrow.up.left")
+                .foregroundStyle(.white)
+                .frame(minWidth: 44, minHeight: 44)
+                .background(.black.opacity(0.55), in: Circle())
+        }
+        .accessibilityIdentifier("player.fullscreenExit")
+        .accessibilityLabel(String(localized: "player_action_fullscreen"))
+    }
+
+    /// B5 Task 3: the ±10 s flash. Chrome for a gesture VoiceOver users do not perform (they use
+    /// AVKit's ±10 s buttons), so hidden from both hit-testing and accessibility. The SF Symbols
+    /// carry the "10" and mirror themselves; the HStack is pinned LTR because the zones are spatial.
+    @ViewBuilder
+    private func seekFeedback(_ model: PlayerViewModel) -> some View {
+        if let feedback = model.seekFeedback {
+            HStack {
+                if feedback.zone == .forward { Spacer() }
+                Image(systemName: feedback.zone == .back ? "gobackward.10" : "goforward.10")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.white)
+                    .padding(Spacing.lg(widthClass))
+                if feedback.zone == .back { Spacer() }
+            }
+            .environment(\.layoutDirection, .leftToRight)
+            .transition(.opacity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .accessibilityIdentifier("player.seekFeedback")
+        }
     }
 
     /// The persistent rung-2 badge (spec §10): rung 2 is a single 360p progressive rendition, so
