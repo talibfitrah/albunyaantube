@@ -15,15 +15,16 @@ import Foundation
 
     /// A production Firestore document id compiled into the app (`content-lists.md:612`, RULINGS
     /// #19) -- the pseudo-category Home's generic "See all featured" entry resolves to when no
-    /// specific `categoryId` was passed.
-    static let featuredCategoryId = "itirf9pGpAvoBT5VSkEc"
+    /// specific `categoryId` was passed. RULING 63: the fallback only; `FeaturedView` prefers
+    /// `RemoteConfig.featuredCategoryId` when the published config carries one.
+    static let bundledFeaturedCategoryId = "itirf9pGpAvoBT5VSkEc"
 
-    /// Empty/nil `categoryId` falls back to `featuredCategoryId`. `static` so `FeaturedView`'s
-    /// own `navTitle` can resolve the same way before `.task` creates the ViewModel, without a
-    /// second copy of the ternary itself (task-12 fold-in).
-    static func resolvedCategoryId(_ raw: String?) -> String {
+    /// Empty/nil `categoryId` falls back to `fallback` (the remote-config id, else the bundled one).
+    /// `static` so `FeaturedView`'s own `navTitle` can resolve the same way before `.task` creates
+    /// the ViewModel, without a second copy of the ternary itself (task-12 fold-in).
+    static func resolvedCategoryId(_ raw: String?, fallback: String = bundledFeaturedCategoryId) -> String {
         if let raw, !raw.isEmpty { return raw }
-        return featuredCategoryId
+        return fallback
     }
 
     private(set) var state: State = .loading
@@ -68,8 +69,9 @@ import Foundation
     private static let contentPerSection = 20 // contentLimit, content-lists.md:617
     private static let flatPageSize = 50 // FLAT_PAGE_SIZE, content-lists.md:627
 
-    init(categoryId: String?, categoryName: String?, catalog: any CatalogClient) {
-        self.categoryId = Self.resolvedCategoryId(categoryId)
+    init(categoryId: String?, categoryName: String?, catalog: any CatalogClient,
+         fallbackCategoryId: String = bundledFeaturedCategoryId) {
+        self.categoryId = Self.resolvedCategoryId(categoryId, fallback: fallbackCategoryId)
         self.categoryName = categoryName
         self.catalog = catalog
     }

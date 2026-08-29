@@ -45,7 +45,11 @@ struct FeaturedView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
         .task {
             if viewModel == nil {
-                viewModel = FeaturedViewModel(categoryId: categoryId, categoryName: categoryName, catalog: container.catalog)
+                // RULING 63: the published config names the Featured id; the bundled id is the fallback.
+                let fallback = await container.innerTube.remoteConfig.current().featuredCategoryId
+                    ?? FeaturedViewModel.bundledFeaturedCategoryId
+                viewModel = FeaturedViewModel(categoryId: categoryId, categoryName: categoryName, catalog: container.catalog,
+                                              fallbackCategoryId: fallback)
             }
             await container.categories.loadIfNeeded() // best-effort, for the localized title
             await viewModel?.loadIfNeeded()

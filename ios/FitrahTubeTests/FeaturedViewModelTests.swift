@@ -192,7 +192,7 @@ struct FeaturedViewModelTests {
 
         await vm.load()
 
-        #expect(await client.homeCalls.first?.category == FeaturedViewModel.featuredCategoryId)
+        #expect(await client.homeCalls.first?.category == FeaturedViewModel.bundledFeaturedCategoryId)
     }
 
     @Test func emptyCategoryIdFallsBackToFeaturedConstant() async {
@@ -202,7 +202,7 @@ struct FeaturedViewModelTests {
 
         await vm.load()
 
-        #expect(await client.homeCalls.first?.category == FeaturedViewModel.featuredCategoryId)
+        #expect(await client.homeCalls.first?.category == FeaturedViewModel.bundledFeaturedCategoryId)
     }
 
     // MARK: - Empty state (RULINGS #20 -- an iOS addition, Android has none)

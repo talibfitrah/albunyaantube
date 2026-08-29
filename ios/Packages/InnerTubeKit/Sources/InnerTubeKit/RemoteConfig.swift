@@ -45,19 +45,25 @@ public struct RemoteConfig: Sendable, Codable, Equatable {
     public var resolverOrder: [String]
     public var manifestCacheSeconds: Int
     public var clients: [String: ClientContext]
+    /// RULING 63: the Featured pseudo-category's Firestore id, published rather than compiled in.
+    /// Optional on purpose -- a persisted last-known-good config from before this field must still
+    /// decode (`bundledDefault` fatalErrors on a decode failure); nil means the app's bundled id.
+    public var featuredCategoryId: String?
 
     public init(
         schemaVersion: Int,
         minAppVersion: String,
         resolverOrder: [String],
         manifestCacheSeconds: Int,
-        clients: [String: ClientContext]
+        clients: [String: ClientContext],
+        featuredCategoryId: String? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.minAppVersion = minAppVersion
         self.resolverOrder = resolverOrder
         self.manifestCacheSeconds = manifestCacheSeconds
         self.clients = clients
+        self.featuredCategoryId = featuredCategoryId
     }
 }
 

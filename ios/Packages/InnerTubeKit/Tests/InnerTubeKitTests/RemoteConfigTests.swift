@@ -14,6 +14,19 @@ import Testing
         #expect(config.clients["visionos"]?.clientNameId == 101)
         #expect(config.clients["android"]?.userAgent == "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip")
         #expect(config.clients["web"]?.userAgent == nil)
+        #expect(config.featuredCategoryId == "itirf9pGpAvoBT5VSkEc")
+    }
+
+    /// RULING 63: `featuredCategoryId` is optional so a config persisted before the field existed
+    /// (or a published one that omits it) still decodes, leaving the bundled default untouched.
+    @Test func aDocumentWithoutFeaturedCategoryIdDecodesWithNil() throws {
+        let body = Data(
+            """
+            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS"],"manifestCacheSeconds":3600,"clients":{}}
+            """.utf8)
+        let decoded = try JSONDecoder().decode(RemoteConfig.self, from: body)
+        #expect(decoded.featuredCategoryId == nil)
+        #expect(RemoteConfig.bundledDefault.featuredCategoryId == "itirf9pGpAvoBT5VSkEc")
     }
 
     /// OWNER DIRECTIVE 2026-08-27: the app never hands off to YouTube. `openInYouTube` is no longer
