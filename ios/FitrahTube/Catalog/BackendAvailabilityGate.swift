@@ -31,7 +31,14 @@ struct BackendAvailabilityGate: AvailabilityGate {
     /// unavailable (admin-blocked/rejected/archived, a hard stop); a thrown transport/HTTP error
     /// fails open so offline users can still play a cached manifest.
     func verify(videoId: String, sourceChannelId: String?) async throws -> Bool {
-        let path = sourceChannelId.map { "api/v1/channels/\($0)" } ?? "api/v1/videos/\(videoId)"
+        await probe(sourceChannelId.map { "api/v1/channels/\($0)" } ?? "api/v1/videos/\(videoId)")
+    }
+
+    /// Plan C Task 2 (RULING 15): the detail screens' own gates, same semantics as above.
+    func verify(channelId: String) async -> Bool { await probe("api/v1/channels/\(channelId)") }
+    func verify(playlistId: String) async -> Bool { await probe("api/v1/playlists/\(playlistId)") }
+
+    private func probe(_ path: String) async -> Bool {
         let request = HTTPRequest(method: "HEAD", url: baseURL.appending(path: path), headers: [:], body: nil)
         guard let response = try? await send(request) else { return true }
         return response.status != 410

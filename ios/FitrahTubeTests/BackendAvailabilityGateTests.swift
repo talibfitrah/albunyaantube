@@ -84,3 +84,30 @@ struct BackendAvailabilityGateTests {
         #expect(box.request?.url.path == "/api/v1/channels/UCabc123")
     }
 }
+
+// MARK: - Plan C Task 2: the playlist path (RULING 15)
+
+extension BackendAvailabilityGateTests {
+    @Test func aPlaylistReturning410IsBlocked() async throws {
+        // RULING 15 + PlaylistDetailViewModel.kt:112-124. The gate had channels and videos only
+        // (BackendAvailabilityGate.swift:34); the playlist screen needs the third path.
+        let box = RequestBox()
+        let gate = BackendAvailabilityGate(transport: StubTransport(status: 410, box: box), baseURL: Self.baseURL)
+        #expect(await gate.verify(playlistId: "PLabc123") == false)
+        #expect(box.request?.method == "HEAD")
+        #expect(box.request?.url.path == "/api/v1/playlists/PLabc123")
+    }
+
+    @Test func aPlaylistTransportFailureFailsOpen() async throws {
+        let gate = BackendAvailabilityGate(
+            transport: StubTransport(status: nil, error: URLError(.timedOut), box: RequestBox()), baseURL: Self.baseURL)
+        #expect(await gate.verify(playlistId: "PLabc123") == true)
+    }
+
+    @Test func aChannelReturning410IsBlockedOnItsOwnPath() async throws {
+        let box = RequestBox()
+        let gate = BackendAvailabilityGate(transport: StubTransport(status: 410, box: box), baseURL: Self.baseURL)
+        #expect(await gate.verify(channelId: "UCabc123") == false)
+        #expect(box.request?.url.path == "/api/v1/channels/UCabc123")
+    }
+}

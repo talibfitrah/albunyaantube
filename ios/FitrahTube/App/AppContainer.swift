@@ -82,17 +82,43 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     )
     var resolver: StreamResolver { innerTube.resolver }
 
-    init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer, apiBaseURL: URL) {
+    /// Plan C Task 2: the detail screens' browse seam and the fire-and-forget index push. `browse`
+    /// is injectable (`fake(browse:)`) so previews/UI tests drive the screens from fixtures; the
+    /// live one shares InnerTubeKit's `BrowseClient`/`AtomFeedFetcher` and the same
+    /// UserDefaults-backed `KeyValueStore` for its 1 h degraded latch.
+    private(set) lazy var index = IndexClient(baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+    private(set) lazy var browse: any BrowseSource = injectedBrowse ?? LiveBrowseSource(
+        client: innerTube.browse,
+        atom: innerTube.atom,
+        latch: DegradedLatch(store: UserDefaultsKeyValueStore(defaults: userDefaults)),
+        index: index,
+        gate: BackendAvailabilityGate(baseURL: apiBaseURL),
+        degradedHeader: degradedHeader
+    )
+    private let injectedBrowse: (any BrowseSource)?
+    private let degradedHeader: (@Sendable (String) async throws -> ChannelHeader)?
+
+    init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer, apiBaseURL: URL,
+         browse: (any BrowseSource)? = nil, degradedHeader: (@Sendable (String) async throws -> ChannelHeader)? = nil) {
         self.catalog = catalog
         self.userDefaults = userDefaults
         self.modelContainer = modelContainer
         self.apiBaseURL = apiBaseURL
+        self.injectedBrowse = browse
+        self.degradedHeader = degradedHeader
     }
 
     static func live(baseURL: URL = AppConfig.apiBaseURL) -> AppContainer {
         let api = FitrahAPIClient.make(baseURL: baseURL, deviceId: .persisted())
         return AppContainer(
-            catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false), apiBaseURL: baseURL)
+            catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false), apiBaseURL: baseURL,
+            // Degraded-mode header (plan Task 2 table): the backend's own `Channel` DTO stands in
+            // for a bot-checked `channelHeader` -- name and avatar only; banner, subscriber line
+            // and verified badge are lost, which the screen renders as their placeholders.
+            degradedHeader: { id in
+                let dto = try await api.getPublicChannel(.init(path: .init(channelId: id))).ok.body.json
+                return ChannelHeader(id: dto.youtubeId, name: dto.name, avatarURL: dto.thumbnailUrl.flatMap(URL.init(string:)))
+            })
     }
 
     /// Device language/region for InnerTube requests (`hl`/`gl`) -- ruling 19: the engine itself
@@ -110,7 +136,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // `?? .standard`: `UserDefaults(suiteName:)` returns nil for a suite name equal to the
         // bundle identifier or a reserved domain -- a trap in a default-argument position, far
         // from any call site (gate A-M15). "fitrahtube.fake" is safe today; this keeps it latent.
-        defaults: UserDefaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard
+        defaults: UserDefaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard,
+        browse: any BrowseSource = FakeBrowseSource()
     ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
         // defaults domain. Does NOT wipe the suite -- callers that write through the returned
@@ -122,7 +149,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // InnerTubeKit actors here (the package has no fake variant) -- previews/tests that never
         // touch them pay nothing (`lazy`); one that does gets `BackendAvailabilityGate`'s fail-open
         // behaviour against an unreachable host instead of a crash.
-        AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true), apiBaseURL: AppConfig.apiBaseURL)
+        AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true),
+                     apiBaseURL: AppConfig.apiBaseURL, browse: browse)
     }
     #endif
 

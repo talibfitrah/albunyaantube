@@ -1762,6 +1762,28 @@
         }
       }
     },
+    "browse_degraded_notice": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عرض أحدث المقاطع فقط"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Showing recent uploads only"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alleen recente uploads worden getoond"
+          }
+        }
+      }
+    },
     "cancel": {
       "localizations": {
         "ar": {

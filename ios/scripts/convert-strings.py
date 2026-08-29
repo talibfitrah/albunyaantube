@@ -69,6 +69,15 @@ EXTRA_KEYS = {
         "ar": "لقد وصلت إلى نهاية قائمة التشغيل",
         "nl": "Je hebt het einde van de afspeellijst bereikt",
     },
+    # Degraded browse (Plan C task 2, CF-C3). iOS-only: Android has no degraded mode at all --
+    # a bot-checked NewPipe call just surfaces an error -- so there is no source string to port.
+    # Copy rule (plan Global Constraints): say WHAT is shown, never why. "Blocked by YouTube"
+    # would be both jargon and an invitation to retry into a block.
+    "browse_degraded_notice": {
+        "en": "Showing recent uploads only",
+        "ar": "عرض أحدث المقاطع فقط",
+        "nl": "Alleen recente uploads worden getoond",
+    },
     "me_guest_title": {
         "en": "Sign in to sync your favorites",
         "ar": "سجّل الدخول لمزامنة مفضلاتك",
