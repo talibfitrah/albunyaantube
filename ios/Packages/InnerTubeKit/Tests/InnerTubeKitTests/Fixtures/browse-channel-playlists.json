@@ -1,0 +1,727 @@
+{
+ "responseContext": {
+  "visitorData": "CgtGSVhUVVJFXzAwMSiFAA%3D%3D"
+ },
+ "contents": {
+  "twoColumnBrowseResultsRenderer": {
+   "tabs": [
+    {
+     "tabRenderer": {
+      "title": "Playlists",
+      "selected": true,
+      "content": {
+       "sectionListRenderer": {
+        "contents": [
+         {
+          "itemSectionRenderer": {
+           "contents": [
+            {
+             "gridRenderer": {
+              "items": [
+               {
+                "lockupViewModel": {
+                 "contentImage": {
+                  "collectionThumbnailViewModel": {
+                   "primaryThumbnail": {
+                    "thumbnailViewModel": {
+                     "image": {
+                      "sources": [
+                       {
+                        "url": "https://i.ytimg.com/vi/SIiu4ItV8UU/hqdefault.jpg?sqp=-oaymwEXCOADEI4CSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLAqClsPbor4cIx9ysKkTV8RB_NWaw",
+                        "width": 480,
+                        "height": 270
+                       }
+                      ]
+                     },
+                     "overlays": [
+                      {
+                       "thumbnailOverlayBadgeViewModel": {
+                        "thumbnailBadges": [
+                         {
+                          "thumbnailBadgeViewModel": {
+                           "icon": {
+                            "sources": [
+                             {
+                              "clientResource": {
+                               "imageName": "PLAYLISTS"
+                              }
+                             }
+                            ]
+                           },
+                           "text": "99 videos",
+                           "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                           "backgroundColor": {
+                            "lightTheme": 3350285,
+                            "darkTheme": 3350285
+                           }
+                          }
+                         }
+                        ],
+                        "position": "THUMBNAIL_OVERLAY_BADGE_POSITION_BOTTOM_END"
+                       }
+                      },
+                      {
+                       "thumbnailHoverOverlayViewModel": {
+                        "icon": {
+                         "sources": [
+                          {
+                           "clientResource": {
+                            "imageName": "PLAY_ALL"
+                           }
+                          }
+                         ]
+                        },
+                        "text": {
+                         "content": "Play all",
+                         "styleRuns": [
+                          {
+                           "startIndex": 0,
+                           "length": 8
+                          }
+                         ]
+                        },
+                        "style": "THUMBNAIL_HOVER_OVERLAY_STYLE_COVER"
+                       }
+                      }
+                     ],
+                     "backgroundColor": {
+                      "lightTheme": 5846551,
+                      "darkTheme": 5846551
+                     }
+                    }
+                   },
+                   "stackColor": {
+                    "lightTheme": 10059883,
+                    "darkTheme": 9667702
+                   }
+                  }
+                 },
+                 "metadata": {
+                  "lockupMetadataViewModel": {
+                   "title": {
+                    "content": "أجمل 100 قصيدة للشيخ مشاري راشد العفاسي"
+                   },
+                   "metadata": {
+                    "contentMetadataViewModel": {
+                     "metadataRows": [
+                      {
+                       "metadataParts": [
+                        {
+                         "text": {
+                          "content": "View full playlist",
+                          "commandRuns": [
+                           {
+                            "startIndex": 0,
+                            "length": 18,
+                            "onTap": {
+                             "innertubeCommand": {
+                              "commandMetadata": {
+                               "webCommandMetadata": {
+                                "url": "/playlist?list=PL2hoGhz2jBSrgZ1tWp0_HVjkrkdd-Bo8f",
+                                "webPageType": "WEB_PAGE_TYPE_PLAYLIST",
+                                "rootVe": 5754,
+                                "apiUrl": "/youtubei/v1/browse"
+                               }
+                              },
+                              "browseEndpoint": {
+                               "browseId": "VLPL2hoGhz2jBSrgZ1tWp0_HVjkrkdd-Bo8f"
+                              }
+                             }
+                            }
+                           }
+                          ],
+                          "styleRuns": [
+                           {
+                            "startIndex": 0,
+                            "length": 18,
+                            "weightLabel": "FONT_WEIGHT_MEDIUM"
+                           }
+                          ]
+                         }
+                        }
+                       ]
+                      }
+                     ],
+                     "delimiter": " • "
+                    }
+                   }
+                  }
+                 },
+                 "contentId": "PL2hoGhz2jBSrgZ1tWp0_HVjkrkdd-Bo8f",
+                 "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+                }
+               },
+               {
+                "lockupViewModel": {
+                 "contentImage": {
+                  "collectionThumbnailViewModel": {
+                   "primaryThumbnail": {
+                    "thumbnailViewModel": {
+                     "image": {
+                      "sources": [
+                       {
+                        "url": "https://i.ytimg.com/vi/dPKeClpbg2g/hqdefault.jpg?sqp=-oaymwEXCOADEI4CSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLDBykM8Gy6Vn9jZ4GtxPo5JMjzKvg",
+                        "width": 480,
+                        "height": 270
+                       }
+                      ]
+                     },
+                     "overlays": [
+                      {
+                       "thumbnailOverlayBadgeViewModel": {
+                        "thumbnailBadges": [
+                         {
+                          "thumbnailBadgeViewModel": {
+                           "icon": {
+                            "sources": [
+                             {
+                              "clientResource": {
+                               "imageName": "PLAYLISTS"
+                              }
+                             }
+                            ]
+                           },
+                           "text": "38 videos",
+                           "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                           "backgroundColor": {
+                            "lightTheme": 2172467,
+                            "darkTheme": 2172467
+                           }
+                          }
+                         }
+                        ],
+                        "position": "THUMBNAIL_OVERLAY_BADGE_POSITION_BOTTOM_END"
+                       }
+                      },
+                      {
+                       "thumbnailHoverOverlayViewModel": {
+                        "icon": {
+                         "sources": [
+                          {
+                           "clientResource": {
+                            "imageName": "PLAY_ALL"
+                           }
+                          }
+                         ]
+                        },
+                        "text": {
+                         "content": "Play all",
+                         "styleRuns": [
+                          {
+                           "startIndex": 0,
+                           "length": 8
+                          }
+                         ]
+                        },
+                        "style": "THUMBNAIL_HOVER_OVERLAY_STYLE_COVER"
+                       }
+                      }
+                     ],
+                     "backgroundColor": {
+                      "lightTheme": 2764863,
+                      "darkTheme": 2764863
+                     }
+                    }
+                   },
+                   "stackColor": {
+                    "lightTheme": 7043225,
+                    "darkTheme": 7765651
+                   }
+                  }
+                 },
+                 "metadata": {
+                  "lockupMetadataViewModel": {
+                   "title": {
+                    "content": "تلاوات مشاري راشد العفاسي 1445هـ - 2024م"
+                   },
+                   "metadata": {
+                    "contentMetadataViewModel": {
+                     "metadataRows": [
+                      {
+                       "metadataParts": [
+                        {
+                         "text": {
+                          "content": "View full playlist",
+                          "commandRuns": [
+                           {
+                            "startIndex": 0,
+                            "length": 18,
+                            "onTap": {
+                             "innertubeCommand": {
+                              "commandMetadata": {
+                               "webCommandMetadata": {
+                                "url": "/playlist?list=PL2hoGhz2jBSphztpKoGq73YPYCQcPPlXz",
+                                "webPageType": "WEB_PAGE_TYPE_PLAYLIST",
+                                "rootVe": 5754,
+                                "apiUrl": "/youtubei/v1/browse"
+                               }
+                              },
+                              "browseEndpoint": {
+                               "browseId": "VLPL2hoGhz2jBSphztpKoGq73YPYCQcPPlXz"
+                              }
+                             }
+                            }
+                           }
+                          ],
+                          "styleRuns": [
+                           {
+                            "startIndex": 0,
+                            "length": 18,
+                            "weightLabel": "FONT_WEIGHT_MEDIUM"
+                           }
+                          ]
+                         }
+                        }
+                       ]
+                      }
+                     ],
+                     "delimiter": " • "
+                    }
+                   }
+                  }
+                 },
+                 "contentId": "PL2hoGhz2jBSphztpKoGq73YPYCQcPPlXz",
+                 "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+                }
+               },
+               {
+                "lockupViewModel": {
+                 "contentImage": {
+                  "collectionThumbnailViewModel": {
+                   "primaryThumbnail": {
+                    "thumbnailViewModel": {
+                     "image": {
+                      "sources": [
+                       {
+                        "url": "https://i.ytimg.com/pl_c/PL2hoGhz2jBSqc3yePg5cstFT3lpStFUb1/studio_square_thumbnail.jpg?sqp=CN_Ny9QG-oaymwEICKoDEPABSFqi85f_AwYIkqLHwAY=&rs=AOn4CLBku2T649T4MQaJybxKwq1-kFQQfA",
+                        "width": 426,
+                        "height": 240
+                       },
+                       {
+                        "url": "https://i.ytimg.com/pl_c/PL2hoGhz2jBSqc3yePg5cstFT3lpStFUb1/studio_square_thumbnail.jpg?sqp=CPjjy9QG-oaymwEICNYGEOADSFqi85f_AwYIkqLHwAY=&rs=AOn4CLDdctmUguVj92e1s7-_HAIz1vb4hg",
+                        "width": 854,
+                        "height": 480
+                       },
+                       {
+                        "url": "https://i.ytimg.com/pl_c/PL2hoGhz2jBSqc3yePg5cstFT3lpStFUb1/studio_square_thumbnail.jpg?sqp=CNT7y9QG-oaymwEICIAKENAFSFqi85f_AwYIkqLHwAY=&rs=AOn4CLAb5KsP-eNp5ZZBsSsmmZOKdb2hpA",
+                        "width": 1280,
+                        "height": 720
+                       }
+                      ]
+                     },
+                     "overlays": [
+                      {
+                       "thumbnailOverlayBadgeViewModel": {
+                        "thumbnailBadges": [
+                         {
+                          "thumbnailBadgeViewModel": {
+                           "icon": {
+                            "sources": [
+                             {
+                              "clientResource": {
+                               "imageName": "PLAYLISTS"
+                              }
+                             }
+                            ]
+                           },
+                           "text": "61 videos",
+                           "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                           "backgroundColor": {
+                            "lightTheme": 1974835,
+                            "darkTheme": 1974835
+                           }
+                          }
+                         }
+                        ],
+                        "position": "THUMBNAIL_OVERLAY_BADGE_POSITION_BOTTOM_END"
+                       }
+                      },
+                      {
+                       "thumbnailHoverOverlayViewModel": {
+                        "icon": {
+                         "sources": [
+                          {
+                           "clientResource": {
+                            "imageName": "PLAY_ALL"
+                           }
+                          }
+                         ]
+                        },
+                        "text": {
+                         "content": "Play all",
+                         "styleRuns": [
+                          {
+                           "startIndex": 0,
+                           "length": 8
+                          }
+                         ]
+                        },
+                        "style": "THUMBNAIL_HOVER_OVERLAY_STYLE_COVER"
+                       }
+                      }
+                     ],
+                     "backgroundColor": {
+                      "lightTheme": 2962252,
+                      "darkTheme": 2962252
+                     }
+                    }
+                   },
+                   "stackColor": {
+                    "lightTheme": 7041945,
+                    "darkTheme": 7764883
+                   }
+                  }
+                 },
+                 "metadata": {
+                  "lockupMetadataViewModel": {
+                   "title": {
+                    "content": "مصحف قديم الشيخ مشاري راشد العفاسي"
+                   },
+                   "metadata": {
+                    "contentMetadataViewModel": {
+                     "metadataRows": [
+                      {
+                       "metadataParts": [
+                        {
+                         "text": {
+                          "content": "View full playlist",
+                          "commandRuns": [
+                           {
+                            "startIndex": 0,
+                            "length": 18,
+                            "onTap": {
+                             "innertubeCommand": {
+                              "commandMetadata": {
+                               "webCommandMetadata": {
+                                "url": "/playlist?list=PL2hoGhz2jBSqc3yePg5cstFT3lpStFUb1",
+                                "webPageType": "WEB_PAGE_TYPE_PLAYLIST",
+                                "rootVe": 5754,
+                                "apiUrl": "/youtubei/v1/browse"
+                               }
+                              },
+                              "browseEndpoint": {
+                               "browseId": "VLPL2hoGhz2jBSqc3yePg5cstFT3lpStFUb1"
+                              }
+                             }
+                            }
+                           }
+                          ],
+                          "styleRuns": [
+                           {
+                            "startIndex": 0,
+                            "length": 18,
+                            "weightLabel": "FONT_WEIGHT_MEDIUM"
+                           }
+                          ]
+                         }
+                        }
+                       ]
+                      }
+                     ],
+                     "delimiter": " • "
+                    }
+                   }
+                  }
+                 },
+                 "contentId": "PL2hoGhz2jBSqc3yePg5cstFT3lpStFUb1",
+                 "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+                }
+               },
+               {
+                "lockupViewModel": {
+                 "contentImage": {
+                  "collectionThumbnailViewModel": {
+                   "primaryThumbnail": {
+                    "thumbnailViewModel": {
+                     "image": {
+                      "sources": [
+                       {
+                        "url": "https://i.ytimg.com/vi/rrrEXELoUTU/hqdefault.jpg?sqp=-oaymwEXCOADEI4CSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLB7iydERcvB4UgrJOv9CKEwJoSeqg",
+                        "width": 480,
+                        "height": 270
+                       }
+                      ]
+                     },
+                     "overlays": [
+                      {
+                       "thumbnailOverlayBadgeViewModel": {
+                        "thumbnailBadges": [
+                         {
+                          "thumbnailBadgeViewModel": {
+                           "icon": {
+                            "sources": [
+                             {
+                              "clientResource": {
+                               "imageName": "PLAYLISTS"
+                              }
+                             }
+                            ]
+                           },
+                           "text": "21 videos",
+                           "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                           "backgroundColor": {
+                            "lightTheme": 3355443,
+                            "darkTheme": 3355443
+                           }
+                          }
+                         }
+                        ],
+                        "position": "THUMBNAIL_OVERLAY_BADGE_POSITION_BOTTOM_END"
+                       }
+                      },
+                      {
+                       "thumbnailHoverOverlayViewModel": {
+                        "icon": {
+                         "sources": [
+                          {
+                           "clientResource": {
+                            "imageName": "PLAY_ALL"
+                           }
+                          }
+                         ]
+                        },
+                        "text": {
+                         "content": "Play all",
+                         "styleRuns": [
+                          {
+                           "startIndex": 0,
+                           "length": 8
+                          }
+                         ]
+                        },
+                        "style": "THUMBNAIL_HOVER_OVERLAY_STYLE_COVER"
+                       }
+                      }
+                     ],
+                     "backgroundColor": {
+                      "lightTheme": 4144959,
+                      "darkTheme": 4144959
+                     }
+                    }
+                   },
+                   "stackColor": {
+                    "lightTheme": 10066329,
+                    "darkTheme": 9211020
+                   }
+                  }
+                 },
+                 "metadata": {
+                  "lockupMetadataViewModel": {
+                   "title": {
+                    "content": "فلسطين - مشاري راشد العفاسي"
+                   },
+                   "metadata": {
+                    "contentMetadataViewModel": {
+                     "metadataRows": [
+                      {
+                       "metadataParts": [
+                        {
+                         "text": {
+                          "content": "View full playlist",
+                          "commandRuns": [
+                           {
+                            "startIndex": 0,
+                            "length": 18,
+                            "onTap": {
+                             "innertubeCommand": {
+                              "commandMetadata": {
+                               "webCommandMetadata": {
+                                "url": "/playlist?list=PL2hoGhz2jBSrLKdu6yGfTq65mpgMgNNL6",
+                                "webPageType": "WEB_PAGE_TYPE_PLAYLIST",
+                                "rootVe": 5754,
+                                "apiUrl": "/youtubei/v1/browse"
+                               }
+                              },
+                              "browseEndpoint": {
+                               "browseId": "VLPL2hoGhz2jBSrLKdu6yGfTq65mpgMgNNL6"
+                              }
+                             }
+                            }
+                           }
+                          ],
+                          "styleRuns": [
+                           {
+                            "startIndex": 0,
+                            "length": 18,
+                            "weightLabel": "FONT_WEIGHT_MEDIUM"
+                           }
+                          ]
+                         }
+                        }
+                       ]
+                      }
+                     ],
+                     "delimiter": " • "
+                    }
+                   }
+                  }
+                 },
+                 "contentId": "PL2hoGhz2jBSrLKdu6yGfTq65mpgMgNNL6",
+                 "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+                }
+               },
+               {
+                "lockupViewModel": {
+                 "contentImage": {
+                  "collectionThumbnailViewModel": {
+                   "primaryThumbnail": {
+                    "thumbnailViewModel": {
+                     "image": {
+                      "sources": [
+                       {
+                        "url": "https://i.ytimg.com/vi/UA6Ik8nxcO0/hqdefault.jpg?sqp=-oaymwEXCOADEI4CSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLBbuyQk60Mth1MX_srwjwgxzMKmqQ",
+                        "width": 480,
+                        "height": 270
+                       }
+                      ]
+                     },
+                     "overlays": [
+                      {
+                       "thumbnailOverlayBadgeViewModel": {
+                        "thumbnailBadges": [
+                         {
+                          "thumbnailBadgeViewModel": {
+                           "icon": {
+                            "sources": [
+                             {
+                              "clientResource": {
+                               "imageName": "PLAYLISTS"
+                              }
+                             }
+                            ]
+                           },
+                           "text": "116 videos",
+                           "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                           "backgroundColor": {
+                            "lightTheme": 2630421,
+                            "darkTheme": 2630421
+                           }
+                          }
+                         }
+                        ],
+                        "position": "THUMBNAIL_OVERLAY_BADGE_POSITION_BOTTOM_END"
+                       }
+                      },
+                      {
+                       "thumbnailHoverOverlayViewModel": {
+                        "icon": {
+                         "sources": [
+                          {
+                           "clientResource": {
+                            "imageName": "PLAY_ALL"
+                           }
+                          }
+                         ]
+                        },
+                        "text": {
+                         "content": "Play all",
+                         "styleRuns": [
+                          {
+                           "startIndex": 0,
+                           "length": 8
+                          }
+                         ]
+                        },
+                        "style": "THUMBNAIL_HOVER_OVERLAY_STYLE_COVER"
+                       }
+                      }
+                     ],
+                     "backgroundColor": {
+                      "lightTheme": 4997929,
+                      "darkTheme": 4997929
+                     }
+                    }
+                   },
+                   "stackColor": {
+                    "lightTheme": 12562565,
+                    "darkTheme": 9209200
+                   }
+                  }
+                 },
+                 "metadata": {
+                  "lockupMetadataViewModel": {
+                   "title": {
+                    "content": "القرآن الكريم كاملاً جديد الشيخ مشاري راشد العفاسي بقراءة خلف العاشر 1445هـ - 2024م"
+                   },
+                   "metadata": {
+                    "contentMetadataViewModel": {
+                     "metadataRows": [
+                      {
+                       "metadataParts": [
+                        {
+                         "text": {
+                          "content": "View full playlist",
+                          "commandRuns": [
+                           {
+                            "startIndex": 0,
+                            "length": 18,
+                            "onTap": {
+                             "innertubeCommand": {
+                              "commandMetadata": {
+                               "webCommandMetadata": {
+                                "url": "/playlist?list=PL2hoGhz2jBSpPszJvwHere78oGZJqpB_l",
+                                "webPageType": "WEB_PAGE_TYPE_PLAYLIST",
+                                "rootVe": 5754,
+                                "apiUrl": "/youtubei/v1/browse"
+                               }
+                              },
+                              "browseEndpoint": {
+                               "browseId": "VLPL2hoGhz2jBSpPszJvwHere78oGZJqpB_l"
+                              }
+                             }
+                            }
+                           }
+                          ],
+                          "styleRuns": [
+                           {
+                            "startIndex": 0,
+                            "length": 18,
+                            "weightLabel": "FONT_WEIGHT_MEDIUM"
+                           }
+                          ]
+                         }
+                        }
+                       ]
+                      }
+                     ],
+                     "delimiter": " • "
+                    }
+                   }
+                  }
+                 },
+                 "contentId": "PL2hoGhz2jBSpPszJvwHere78oGZJqpB_l",
+                 "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+                }
+               },
+               {
+                "continuationItemRenderer": {
+                 "trigger": "CONTINUATION_TRIGGER_ON_ITEM_SHOWN",
+                 "continuationEndpoint": {
+                  "commandMetadata": {
+                   "webCommandMetadata": {
+                    "sendPost": true,
+                    "apiUrl": "/youtubei/v1/browse"
+                   }
+                  },
+                  "continuationCommand": {
+                   "token": "4qmFsgJ4EhhVQ21NY09qc1ZlaFZsRU90ZXlyaGpJMlEaKkVnbHdiR0Y1YkdsemRITVlBeUFBTUFFNEFlb0RCME5uVGtSUmFsRSUzRJoCL2Jyb3dzZS1mZWVkVUNtTWNPanNWZWhWbEVPdGV5cmhqSTJRcGxheWxpc3RzMTA0",
+                   "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+                  }
+                 }
+                }
+               }
+              ]
+             }
+            }
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}

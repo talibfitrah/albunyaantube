@@ -44,6 +44,27 @@ public struct VideoItem: Sendable, Equatable {
     }
 }
 
+/// A playlist tile as it appears on a channel's Playlists tab. Captured live 2026-08-29
+/// (`browse-channel-playlists.json`): a plain `lockupViewModel` with
+/// `contentType: LOCKUP_CONTENT_TYPE_PLAYLIST`, whose thumbnail badge is an item count
+/// ("99 videos"), not a duration. `channelName` is nil on a channel's own tab (the channel is
+/// implicit) and reserved for playlist listings that carry a byline.
+public struct PlaylistTile: Sendable, Equatable {
+    public var id: String
+    public var title: String
+    public var thumbnailURL: URL?
+    public var itemCountText: String?
+    public var channelName: String?
+
+    public init(id: String, title: String, thumbnailURL: URL? = nil, itemCountText: String? = nil, channelName: String? = nil) {
+        self.id = id
+        self.title = title
+        self.thumbnailURL = thumbnailURL
+        self.itemCountText = itemCountText
+        self.channelName = channelName
+    }
+}
+
 /// A channel's header (spec §9: "channel header, ... About from the header").
 public struct ChannelHeader: Sendable, Equatable {
     public var id: String
@@ -61,12 +82,12 @@ public struct ChannelHeader: Sendable, Equatable {
     }
 }
 
-/// The three channel tabs served by `channel(id).browse(params:)`, distinct from `channelVideos`
-/// (which uses the `VLUU…` uploads-playlist trick instead — `ios-app-plan.md` §6.7).
+/// The two video-shaped channel tabs served by `channel(id).browse(params:)`, distinct from
+/// `channelVideos` (which uses the `VLUU…` uploads-playlist trick instead — `ios-app-plan.md`
+/// §6.7) and from `channelPlaylists` (a different item type, so its own method).
 public enum ChannelTab: Sendable {
     case live
     case shorts
-    case playlists
 
     /// Opaque per-tab `params` tokens, captured live 2026-08-24 from a real channel's tab
     /// endpoints (`channel-detail.md`). Forwarded verbatim — nothing in this app decodes them.
@@ -74,7 +95,6 @@ public enum ChannelTab: Sendable {
         switch self {
         case .live: return "EgdzdHJlYW1z8gYECgJ6AA%3D%3D"
         case .shorts: return "EgZzaG9ydHPyBgUKA5oBAA%3D%3D"
-        case .playlists: return "EglwbGF5bGlzdHPyBgQKAkIA"
         }
     }
 }
@@ -154,8 +174,11 @@ public actor BrowseClient {
     }
 
     public func channelHeader(_ id: String) async throws -> ChannelHeader {
-        let body = try await send(browseId: id, params: nil, continuation: nil)
-        return try Self.parseHeader(body)
+        let sent = try await send(browseId: id, params: nil, continuation: nil)
+        do { return try Self.parseHeader(sent.body) } catch BrowseError.botCheck {
+            await rotateIfStale(sent)
+            throw BrowseError.botCheck
+        }
     }
 
     /// Uploads via the `VLUU…` uploads-playlist browseId (stable across pages — the trick
@@ -163,20 +186,27 @@ public actor BrowseClient {
     /// `channel-detail.md`). Each item already carries its own channel byline in this shape.
     public func channelVideos(_ id: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
         let browseId = continuation == nil ? Self.uploadsPlaylistBrowseId(for: id) : nil
-        let body = try await send(browseId: browseId, params: nil, continuation: continuation)
-        return try Self.parsePage(body)
+        let sent = try await send(browseId: browseId, params: nil, continuation: continuation)
+        do { return try Self.parsePage(sent.body) } catch BrowseError.botCheck {
+            await rotateIfStale(sent)
+            throw BrowseError.botCheck
+        }
     }
 
-    // ponytail: `.shorts` (`shortsLockupViewModel`) and `.playlists` (`gridRenderer`-wrapped
-    // tiles with an item-count badge, not a duration) use wire shapes `VideoItem` doesn't model;
-    // this returns an empty page for them today rather than mis-parsing. `.live` (plain
-    // `lockupViewModel`, same as channelVideos) is fully supported. Upgrade: dedicated
-    // ShortsItem/PlaylistTile parsing once a consumer needs those two tabs.
+    /// `.live` is a plain `lockupViewModel` grid (same as `channelVideos`); `.shorts` is a
+    /// `shortsLockupViewModel` grid (captured live 2026-08-29, `browse-channel-shorts.json`) that
+    /// `videoItem(_:)` maps onto the same `VideoItem` — a Short has an id, title, thumbnail and a
+    /// view-count line and no duration badge. Still unmodelled: community/posts tabs, which
+    /// NewPipe cannot extract either (brief §0.2).
     public func channelTab(_ id: String, tab: ChannelTab, continuation: String?) async throws -> BrowsePage<VideoItem> {
         let browseId = continuation == nil ? id : nil
         let params = continuation == nil ? tab.params : nil
-        let body = try await send(browseId: browseId, params: params, continuation: continuation)
-        var page = try Self.parsePage(body)
+        let sent = try await send(browseId: browseId, params: params, continuation: continuation)
+        var page: BrowsePage<VideoItem>
+        do { page = try Self.parsePage(sent.body) } catch BrowseError.botCheck {
+            await rotateIfStale(sent)
+            throw BrowseError.botCheck
+        }
         // Channel-tab items carry no byline (the channel is implicit); backfill from the known id.
         page.items = page.items.map { item in
             guard item.channelId == nil else { return item }
@@ -189,13 +219,35 @@ public actor BrowseClient {
 
     public func playlistItems(_ playlistId: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
         let browseId = continuation == nil ? "VL" + playlistId : nil
-        let body = try await send(browseId: browseId, params: nil, continuation: continuation)
-        return try Self.parsePage(body)
+        let sent = try await send(browseId: browseId, params: nil, continuation: continuation)
+        do { return try Self.parsePage(sent.body) } catch BrowseError.botCheck {
+            await rotateIfStale(sent)
+            throw BrowseError.botCheck
+        }
+    }
+
+    /// The channel's Playlists tab: `gridRenderer`-wrapped playlist lockups with an item-count
+    /// badge. Its own method because a `PlaylistTile` is not a `VideoItem`.
+    public func channelPlaylists(_ id: String, continuation: String?) async throws -> BrowsePage<PlaylistTile> {
+        let browseId = continuation == nil ? id : nil
+        let params = continuation == nil ? Self.playlistsTabParams : nil
+        let sent = try await send(browseId: browseId, params: params, continuation: continuation)
+        do { return try Self.parsePlaylistPage(sent.body) } catch BrowseError.botCheck {
+            await rotateIfStale(sent)
+            throw BrowseError.botCheck
+        }
     }
 
     // MARK: - network
 
-    private func send(browseId: String?, params: String?, continuation: String?) async throws -> Data {
+    /// A response body together with the visitorData that was attached to its request (nil when
+    /// the call went out tokenless), so the caller can tell a bootstrap bot-check from a stale one.
+    private struct Sent {
+        var body: Data
+        var visitorData: String?
+    }
+
+    private func send(browseId: String?, params: String?, continuation: String?) async throws -> Sent {
         guard let context = await remoteConfigStore.current().clients["web"] else {
             throw BrowseError.malformed
         }
@@ -204,8 +256,36 @@ public actor BrowseClient {
             browseId: browseId, params: params, continuation: continuation,
             context: context, visitorData: visitorData, locale: locale)
         let response = try await transport.send(request)
-        return response.body
+        // Adopt `responseContext.visitorData` from EVERY response that carries one — including a
+        // bot-check interstitial, which is the bootstrap trip (Plan A: the first tokenless call is
+        // bot-checked and THAT response carries the token the next call succeeds with). This runs
+        // before the parser gets to throw, which is what makes the interstitial's token stick.
+        if let json = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
+            let visitor = Self.dig(json, "responseContext", "visitorData") as? String, !visitor.isEmpty
+        {
+            await sessionStore.setVisitorData(visitor, for: .web)
+        }
+        return Sent(body: response.body, visitorData: visitorData)
     }
+
+    /// Rotate the WEB family iff a token was attached and the response was still bot-checked: that
+    /// token is burnt, `rotate` clears it (throttled 1/10 min by `SessionStore`) and the next call
+    /// re-bootstraps. A tokenless bot-check is the bootstrap trip and must NOT rotate — `send` has
+    /// just adopted the interstitial's own token and rotating would discard it (C3).
+    ///
+    /// Deliberately no `recordBotCheck()`: the shared cooldown ladder is consulted by
+    /// `StreamResolver` before every resolve, so escalating it from browse would let one
+    /// bot-checked listing page silence playback for an hour (24 h on the fourth trip). Android's
+    /// cooldown exempts the player for the same reason; a bot-checked browse goes degraded
+    /// instead (reconciliation note 3, CF-C2).
+    private func rotateIfStale(_ sent: Sent) async {
+        guard sent.visitorData != nil else { return }
+        _ = await sessionStore.rotate(.web)
+    }
+
+    /// The Playlists tab's opaque `params` token, captured live 2026-08-24 (`channel-detail.md`).
+    /// Forwarded verbatim — nothing in this app decodes it.
+    static let playlistsTabParams = "EglwbGF5bGlzdHPyBgQKAkIA"
 
     private static func uploadsPlaylistBrowseId(for channelId: String) -> String {
         "VLUU" + channelId.dropFirst(2)
@@ -228,6 +308,26 @@ public actor BrowseClient {
             }
             if let lockup = lockupViewModel(raw), let item = videoItem(lockup) {
                 items.append(item)
+            }
+        }
+        return BrowsePage(items: items, nextContinuation: nextContinuation)
+    }
+
+    private static func parsePlaylistPage(_ data: Data) throws -> BrowsePage<PlaylistTile> {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            throw BrowseError.malformed
+        }
+        if detectBotCheck(json) { throw BrowseError.botCheck }
+
+        var items: [PlaylistTile] = []
+        var nextContinuation: String?
+        for raw in itemsArray(json) {
+            if let token = continuationToken(raw) {
+                nextContinuation = token
+                continue
+            }
+            if let lockup = lockupViewModel(raw), let tile = playlistTile(lockup) {
+                items.append(tile)
             }
         }
         return BrowsePage(items: items, nextContinuation: nextContinuation)
@@ -262,10 +362,11 @@ public actor BrowseClient {
         return ChannelHeader(id: id, name: name, subscriberText: subscriberText, avatarURL: avatarURL, bannerURL: bannerURL)
     }
 
-    /// Finds the flat array of content items in a browse response, whichever of the two shapes
-    /// it is: a continuation append (`onResponseReceivedActions`), a playlist-style initial page
-    /// (`sectionListRenderer.itemSectionRenderer`), or a channel-tab grid initial page
-    /// (`richGridRenderer`).
+    /// Finds the flat array of content items in a browse response, whichever of the shapes it
+    /// is: a continuation append (`onResponseReceivedActions`), a playlist-style initial page
+    /// (`sectionListRenderer.itemSectionRenderer`), a channel-tab grid initial page
+    /// (`richGridRenderer`), or the Playlists tab (captured 2026-08-29), whose `itemSectionRenderer`
+    /// holds a single `gridRenderer` wrapping the tiles.
     private static func itemsArray(_ json: [String: Any]) -> [[String: Any]] {
         if let actions = json["onResponseReceivedActions"] as? [[String: Any]] {
             for action in actions {
@@ -282,6 +383,9 @@ public actor BrowseClient {
             if let sections = dig(content, "sectionListRenderer", "contents") as? [[String: Any]] {
                 for section in sections {
                     if let items = dig(section, "itemSectionRenderer", "contents") as? [[String: Any]] {
+                        if let grid = items.first.flatMap({ dig($0, "gridRenderer", "items") as? [[String: Any]] }) {
+                            return grid
+                        }
                         return items
                     }
                 }
@@ -294,10 +398,12 @@ public actor BrowseClient {
     }
 
     /// A playlist-style item is `{"lockupViewModel": {...}}` directly; a channel-tab grid item
-    /// is `{"richItemRenderer": {"content": {"lockupViewModel": {...}}}}`.
+    /// is `{"richItemRenderer": {"content": {"lockupViewModel": {...}}}}`, and a Shorts-tab grid
+    /// item wraps `shortsLockupViewModel` the same way.
     private static func lockupViewModel(_ item: [String: Any]) -> [String: Any]? {
         if let lockup = item["lockupViewModel"] as? [String: Any] { return lockup }
-        return dig(item, "richItemRenderer", "content", "lockupViewModel") as? [String: Any]
+        if let lockup = dig(item, "richItemRenderer", "content", "lockupViewModel") as? [String: Any] { return lockup }
+        return dig(item, "richItemRenderer", "content", "shortsLockupViewModel") as? [String: Any]
     }
 
     private static func continuationToken(_ item: [String: Any]) -> String? {
@@ -305,6 +411,7 @@ public actor BrowseClient {
     }
 
     private static func videoItem(_ lockup: [String: Any]) -> VideoItem? {
+        if let short = shortsItem(lockup) { return short }
         guard let id = lockup["contentId"] as? String else { return nil }
         let title = dig(lockup, "metadata", "lockupMetadataViewModel", "title", "content") as? String ?? ""
         let rows =
@@ -339,6 +446,34 @@ public actor BrowseClient {
             id: id, title: title, channelName: channelName, channelId: channelId,
             durationSeconds: durationSeconds(lockup), viewCountText: viewCountText,
             publishedText: publishedText, thumbnailURL: thumbnailURL)
+    }
+
+    /// The `shortsLockupViewModel` variant (captured 2026-08-29): id and thumbnail live under the
+    /// tap endpoint, title and view count under `overlayMetadata`; there is no duration badge.
+    private static func shortsItem(_ lockup: [String: Any]) -> VideoItem? {
+        let reel = dig(lockup, "onTap", "innertubeCommand", "reelWatchEndpoint")
+        guard let id = dig(reel, "videoId") as? String else { return nil }
+        return VideoItem(
+            id: id,
+            title: dig(lockup, "overlayMetadata", "primaryText", "content") as? String ?? "",
+            viewCountText: dig(lockup, "overlayMetadata", "secondaryText", "content") as? String,
+            thumbnailURL: largestImageURL(dig(reel, "thumbnail", "thumbnails") as? [[String: Any]]))
+    }
+
+    private static func playlistTile(_ lockup: [String: Any]) -> PlaylistTile? {
+        guard let id = lockup["contentId"] as? String else { return nil }
+        let thumbnail = dig(lockup, "contentImage", "collectionThumbnailViewModel", "primaryThumbnail", "thumbnailViewModel")
+        var itemCountText: String?
+        for overlay in (dig(thumbnail, "overlays") as? [[String: Any]]) ?? [] {
+            for badge in (dig(overlay, "thumbnailOverlayBadgeViewModel", "thumbnailBadges") as? [[String: Any]]) ?? [] {
+                if let text = dig(badge, "thumbnailBadgeViewModel", "text") as? String { itemCountText = text }
+            }
+        }
+        return PlaylistTile(
+            id: id,
+            title: dig(lockup, "metadata", "lockupMetadataViewModel", "title", "content") as? String ?? "",
+            thumbnailURL: largestImageURL(dig(thumbnail, "image", "sources") as? [[String: Any]]),
+            itemCountText: itemCountText)
     }
 
     /// Reads the thumbnail's bottom-overlay badge text (e.g. "11:08") — the only place a

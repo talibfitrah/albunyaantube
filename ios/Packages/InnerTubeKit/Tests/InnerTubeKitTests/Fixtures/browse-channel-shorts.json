@@ -1,0 +1,400 @@
+{
+ "responseContext": {
+  "visitorData": "CgtGSVhUVVJFXzAwMSiFAA%3D%3D"
+ },
+ "contents": {
+  "twoColumnBrowseResultsRenderer": {
+   "tabs": [
+    {
+     "tabRenderer": {
+      "title": "Shorts",
+      "selected": true,
+      "content": {
+       "richGridRenderer": {
+        "contents": [
+         {
+          "richItemRenderer": {
+           "content": {
+            "shortsLockupViewModel": {
+             "entityId": "shorts-shelf-item-DRGRsBC8bOU",
+             "accessibilityText": "غرة سبتمبر .. الموعد مع معلقة عنتر⚔️, 424 views - play Short",
+             "onTap": {
+              "innertubeCommand": {
+               "commandMetadata": {
+                "webCommandMetadata": {
+                 "url": "/shorts/DRGRsBC8bOU",
+                 "webPageType": "WEB_PAGE_TYPE_SHORTS",
+                 "rootVe": 37414
+                }
+               },
+               "reelWatchEndpoint": {
+                "videoId": "DRGRsBC8bOU",
+                "playerParams": "8AEByAMkuAQ0ogYVAa3-M4_uBPnRSeAwoHVgdQ8j0tHnkAcC",
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://i.ytimg.com/vi/DRGRsBC8bOU/frame0.jpg",
+                   "width": 1080,
+                   "height": 1920
+                  }
+                 ],
+                 "isOriginalAspectRatio": true
+                },
+                "overlay": {
+                 "reelPlayerOverlayRenderer": {
+                  "style": "REEL_PLAYER_OVERLAY_STYLE_SHORTS",
+                  "reelPlayerNavigationModel": "REEL_PLAYER_NAVIGATION_MODEL_UNSPECIFIED"
+                 }
+                },
+                "params": "CDMwAroBGFVDbU1jT2pzVmVoVmxFT3RleXJoakkyUQ%3D%3D",
+                "sequenceProvider": "REEL_WATCH_SEQUENCE_PROVIDER_RPC"
+               }
+              }
+             },
+             "indexInCollection": 0,
+             "menuOnTapA11yLabel": "More actions",
+             "overlayMetadata": {
+              "primaryText": {
+               "content": "غرة سبتمبر .. الموعد مع معلقة عنتر⚔️"
+              },
+              "secondaryText": {
+               "content": "424 views"
+              }
+             },
+             "thumbnailViewModel": {
+              "thumbnailViewModel": {
+               "image": {
+                "sources": [
+                 {
+                  "url": "https://i.ytimg.com/vi/DRGRsBC8bOU/oar2.jpg?sqp=-oaymwEkCJUDENAFSFqQAgHyq4qpAxMIARUAAAAAJQAAyEI9AICiQ3gB&rs=AOn4CLAlpBUsr1ZHMyTEl8E4e9KLaNWa8w&usqp=CCk",
+                  "width": 405,
+                  "height": 720
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/DRGRsBC8bOU/oar2.jpg?sqp=-oaymwEnCJUDEOAESFqQAgHyq4qpAxYIARUAAAAAJQAAyEI9AICiQ3gByAEB&rs=AOn4CLASdbvpBKwz4WRyqWJKPJ_3LnjIFA&usqp=CCk",
+                  "width": 405,
+                  "height": 608
+                 }
+                ]
+               }
+              }
+             },
+             "stackedFrameData": {},
+             "titleTruncationStyle": "SHORTS_LOCKUP_TITLE_TRUNCATION_STYLE_UNKNOWN"
+            }
+           }
+          }
+         },
+         {
+          "richItemRenderer": {
+           "content": {
+            "shortsLockupViewModel": {
+             "entityId": "shorts-shelf-item-I3_g5Ukw1Ec",
+             "accessibilityText": "27 أغسطس، 2026, 17 thousand views - play Short",
+             "onTap": {
+              "innertubeCommand": {
+               "commandMetadata": {
+                "webCommandMetadata": {
+                 "url": "/shorts/I3_g5Ukw1Ec",
+                 "webPageType": "WEB_PAGE_TYPE_SHORTS",
+                 "rootVe": 37414
+                }
+               },
+               "reelWatchEndpoint": {
+                "videoId": "I3_g5Ukw1Ec",
+                "playerParams": "8AEByAMkuAQ0ogYVAa3-M49cxyTa4iIFq1Io2i46vVMFkAcC",
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://i.ytimg.com/vi/I3_g5Ukw1Ec/frame0.jpg",
+                   "width": 1080,
+                   "height": 1920
+                  }
+                 ],
+                 "isOriginalAspectRatio": true
+                },
+                "overlay": {
+                 "reelPlayerOverlayRenderer": {
+                  "style": "REEL_PLAYER_OVERLAY_STYLE_SHORTS",
+                  "reelPlayerNavigationModel": "REEL_PLAYER_NAVIGATION_MODEL_UNSPECIFIED"
+                 }
+                },
+                "params": "CDMwAroBGFVDbU1jT2pzVmVoVmxFT3RleXJoakkyUQ%3D%3D",
+                "sequenceProvider": "REEL_WATCH_SEQUENCE_PROVIDER_RPC"
+               }
+              }
+             },
+             "indexInCollection": 0,
+             "menuOnTapA11yLabel": "More actions",
+             "overlayMetadata": {
+              "primaryText": {
+               "content": "27 أغسطس، 2026"
+              },
+              "secondaryText": {
+               "content": "17K views"
+              }
+             },
+             "thumbnailViewModel": {
+              "thumbnailViewModel": {
+               "image": {
+                "sources": [
+                 {
+                  "url": "https://i.ytimg.com/vi/I3_g5Ukw1Ec/oar1.jpg?sqp=-oaymwEkCJUDENAFSFqQAgHyq4qpAxMIARUAAAAAJQAAyEI9AICiQ3gB&rs=AOn4CLAbqwxfKdRzjKyklOcFnJeZsd-guQ&usqp=CCk",
+                  "width": 405,
+                  "height": 720
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/I3_g5Ukw1Ec/oar1.jpg?sqp=-oaymwEnCJUDEOAESFqQAgHyq4qpAxYIARUAAAAAJQAAyEI9AICiQ3gByAEB&rs=AOn4CLA80z-ojQ39cgaOVm6jXwVxoCcvVg&usqp=CCk",
+                  "width": 405,
+                  "height": 608
+                 }
+                ]
+               }
+              }
+             },
+             "stackedFrameData": {},
+             "titleTruncationStyle": "SHORTS_LOCKUP_TITLE_TRUNCATION_STYLE_UNKNOWN"
+            }
+           }
+          }
+         },
+         {
+          "richItemRenderer": {
+           "content": {
+            "shortsLockupViewModel": {
+             "entityId": "shorts-shelf-item-MzWtDxAH784",
+             "accessibilityText": "العفاسي حبيب إسلام ❤️, 34 thousand views - play Short",
+             "onTap": {
+              "innertubeCommand": {
+               "commandMetadata": {
+                "webCommandMetadata": {
+                 "url": "/shorts/MzWtDxAH784",
+                 "webPageType": "WEB_PAGE_TYPE_SHORTS",
+                 "rootVe": 37414
+                }
+               },
+               "reelWatchEndpoint": {
+                "videoId": "MzWtDxAH784",
+                "playerParams": "8AEByAMkuAQ0ogYVAa3-M48iErdoDOUz7XovXJEtgWb3kAcC",
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://i.ytimg.com/vi/MzWtDxAH784/frame0.jpg",
+                   "width": 1080,
+                   "height": 1440
+                  }
+                 ],
+                 "isOriginalAspectRatio": true
+                },
+                "overlay": {
+                 "reelPlayerOverlayRenderer": {
+                  "style": "REEL_PLAYER_OVERLAY_STYLE_SHORTS",
+                  "reelPlayerNavigationModel": "REEL_PLAYER_NAVIGATION_MODEL_UNSPECIFIED"
+                 }
+                },
+                "params": "CDMwAroBGFVDbU1jT2pzVmVoVmxFT3RleXJoakkyUQ%3D%3D",
+                "sequenceProvider": "REEL_WATCH_SEQUENCE_PROVIDER_RPC"
+               }
+              }
+             },
+             "indexInCollection": 0,
+             "menuOnTapA11yLabel": "More actions",
+             "overlayMetadata": {
+              "primaryText": {
+               "content": "العفاسي حبيب إسلام ❤️"
+              },
+              "secondaryText": {
+               "content": "34K views"
+              }
+             },
+             "thumbnailViewModel": {
+              "thumbnailViewModel": {
+               "image": {
+                "sources": [
+                 {
+                  "url": "https://i.ytimg.com/vi/MzWtDxAH784/oar1.jpg?sqp=-oaymwEYCJwEENAFSFqQAgHyq4qpAwcIARUAAIhC&rs=AOn4CLA8WFgJbuQiohYGvuSDHu1n3N5wUw&usqp=CCk",
+                  "width": 540,
+                  "height": 720
+                 }
+                ]
+               }
+              }
+             },
+             "stackedFrameData": {},
+             "titleTruncationStyle": "SHORTS_LOCKUP_TITLE_TRUNCATION_STYLE_UNKNOWN"
+            }
+           }
+          }
+         },
+         {
+          "richItemRenderer": {
+           "content": {
+            "shortsLockupViewModel": {
+             "entityId": "shorts-shelf-item-_ql9LGKShiw",
+             "accessibilityText": "جائزة دبي الدولية للقرآن الكريم, 49 thousand views - play Short",
+             "onTap": {
+              "innertubeCommand": {
+               "commandMetadata": {
+                "webCommandMetadata": {
+                 "url": "/shorts/_ql9LGKShiw",
+                 "webPageType": "WEB_PAGE_TYPE_SHORTS",
+                 "rootVe": 37414
+                }
+               },
+               "reelWatchEndpoint": {
+                "videoId": "_ql9LGKShiw",
+                "playerParams": "8AEByAMkuAQ0ogYVAa3-M495UzJtEw5QJ2LrDQSp49takAcC",
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://i.ytimg.com/vi/_ql9LGKShiw/frame0.jpg",
+                   "width": 1080,
+                   "height": 1920
+                  }
+                 ],
+                 "isOriginalAspectRatio": true
+                },
+                "overlay": {
+                 "reelPlayerOverlayRenderer": {
+                  "style": "REEL_PLAYER_OVERLAY_STYLE_SHORTS",
+                  "reelPlayerNavigationModel": "REEL_PLAYER_NAVIGATION_MODEL_UNSPECIFIED"
+                 }
+                },
+                "params": "CDMwAroBGFVDbU1jT2pzVmVoVmxFT3RleXJoakkyUQ%3D%3D",
+                "sequenceProvider": "REEL_WATCH_SEQUENCE_PROVIDER_RPC"
+               }
+              }
+             },
+             "indexInCollection": 0,
+             "menuOnTapA11yLabel": "More actions",
+             "overlayMetadata": {
+              "primaryText": {
+               "content": "جائزة دبي الدولية للقرآن الكريم"
+              },
+              "secondaryText": {
+               "content": "49K views"
+              }
+             },
+             "thumbnailViewModel": {
+              "thumbnailViewModel": {
+               "image": {
+                "sources": [
+                 {
+                  "url": "https://i.ytimg.com/vi/_ql9LGKShiw/oar2.jpg?sqp=-oaymwEkCJUDENAFSFqQAgHyq4qpAxMIARUAAAAAJQAAyEI9AICiQ3gB&rs=AOn4CLBU_WUooyFbyWD5bvF7UWWY17coqg&usqp=CCk",
+                  "width": 405,
+                  "height": 720
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/_ql9LGKShiw/oar2.jpg?sqp=-oaymwEnCJUDEOAESFqQAgHyq4qpAxYIARUAAAAAJQAAyEI9AICiQ3gByAEB&rs=AOn4CLCL9F2Ejz6ii3uzKou4IaCA_lzGpQ&usqp=CCk",
+                  "width": 405,
+                  "height": 608
+                 }
+                ]
+               }
+              }
+             },
+             "stackedFrameData": {},
+             "titleTruncationStyle": "SHORTS_LOCKUP_TITLE_TRUNCATION_STYLE_UNKNOWN"
+            }
+           }
+          }
+         },
+         {
+          "richItemRenderer": {
+           "content": {
+            "shortsLockupViewModel": {
+             "entityId": "shorts-shelf-item-qIwVJAKd1Zw",
+             "accessibilityText": "‏غار حراء موقع تاريخي مبعث الرسالة ولحظة الوحي الأولى اكتشفها في معرض الوحي واستشعر عظمة الأمانة, 42 thousand views - play Short",
+             "onTap": {
+              "innertubeCommand": {
+               "commandMetadata": {
+                "webCommandMetadata": {
+                 "url": "/shorts/qIwVJAKd1Zw",
+                 "webPageType": "WEB_PAGE_TYPE_SHORTS",
+                 "rootVe": 37414
+                }
+               },
+               "reelWatchEndpoint": {
+                "videoId": "qIwVJAKd1Zw",
+                "playerParams": "8AEByAMkuAQ0ogYVAa3-M4-t8dTLHh9eFaxuQE_nfdNokAcC",
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://i.ytimg.com/vi/qIwVJAKd1Zw/frame0.jpg",
+                   "width": 1080,
+                   "height": 1920
+                  }
+                 ],
+                 "isOriginalAspectRatio": true
+                },
+                "overlay": {
+                 "reelPlayerOverlayRenderer": {
+                  "style": "REEL_PLAYER_OVERLAY_STYLE_SHORTS",
+                  "reelPlayerNavigationModel": "REEL_PLAYER_NAVIGATION_MODEL_UNSPECIFIED"
+                 }
+                },
+                "params": "CDMwAroBGFVDbU1jT2pzVmVoVmxFT3RleXJoakkyUQ%3D%3D",
+                "sequenceProvider": "REEL_WATCH_SEQUENCE_PROVIDER_RPC"
+               }
+              }
+             },
+             "indexInCollection": 0,
+             "menuOnTapA11yLabel": "More actions",
+             "overlayMetadata": {
+              "primaryText": {
+               "content": "‏غار حراء موقع تاريخي مبعث الرسالة ولحظة الوحي الأولى اكتشفها في معرض الوحي واستشعر عظمة الأمانة"
+              },
+              "secondaryText": {
+               "content": "42K views"
+              }
+             },
+             "thumbnailViewModel": {
+              "thumbnailViewModel": {
+               "image": {
+                "sources": [
+                 {
+                  "url": "https://i.ytimg.com/vi/qIwVJAKd1Zw/oardefault.jpg?sqp=-oaymwEkCJUDENAFSFqQAgHyq4qpAxMIARUAAAAAJQAAyEI9AICiQ3gB&rs=AOn4CLDRH_ubMrmMUxUFPJNiyRuFmf7JEQ&usqp=CCk",
+                  "width": 405,
+                  "height": 720
+                 },
+                 {
+                  "url": "https://i.ytimg.com/vi/qIwVJAKd1Zw/oardefault.jpg?sqp=-oaymwEnCJUDEOAESFqQAgHyq4qpAxYIARUAAAAAJQAAyEI9AICiQ3gByAEB&rs=AOn4CLD_Km7boq3I6HHlJ84x2ZkpzYtOGQ&usqp=CCk",
+                  "width": 405,
+                  "height": 608
+                 }
+                ]
+               }
+              }
+             },
+             "stackedFrameData": {},
+             "titleTruncationStyle": "SHORTS_LOCKUP_TITLE_TRUNCATION_STYLE_UNKNOWN"
+            }
+           }
+          }
+         },
+         {
+          "continuationItemRenderer": {
+           "trigger": "CONTINUATION_TRIGGER_ON_ITEM_SHOWN",
+           "continuationEndpoint": {
+            "commandMetadata": {
+             "webCommandMetadata": {
+              "sendPost": true,
+              "apiUrl": "/youtubei/v1/browse"
+             }
+            },
+            "continuationCommand": {
+             "token": "4qmFsgK_DBIYVUNtTWNPanNWZWhWbEVPdGV5cmhqSTJRGqIMOGdhVENScVFDVktOQ1RLS0NRb2tObVF6WW1VNE5ETXRNREF3TUMweU1UTmhMVGt5TkRndE1UUmpNVFJsWmpOaFlUQTBFdDhJUVdWUFdWTkxURmcyUzFac1dqRlRhbDlDWjBKR1NGRTBaMlJGV2w4d2FYZFhXR3RrYTJGSlVXRTJRVzU2VTBWdk1EbDZNRUp0U1RGVlYybzJVR1JGWldwWkxXRkpOblZuUVVGWWRtNVJORFp0YkhaU1VrRXhWRk42Ym14QmREaDFURlZWTWtwRVNrMWhhRXd4TlhoSFEwRk9VMDVpVUVRMFZIZHFjalZaYjFrMFUyNW9iV0Y1ZEcxaVZYaDZNRFpPUW1vd01IQlhaRzA0ZFhCd1VUSTJZV0o1UmpGellqWTBibVZpUVZaQ1dHWkNNbGhXVUVFMFdrUnNSR2MwYTFKbFZHRXdlbVV4ZFVOT1pHcHNOMWx0ZUVReWQyRlhiWE0wUTNaV1EzbDFkbWhGTW5oRWNHSmZhRW95ZW5CRVJISlVkRkkwZDIxemExOHlkRGhpY1VseldXaHliMEZoWjJKT1JFNXFNbXBSVXpSSGNtdFNiMjQyUm05bGIwbHBXV0pVY1dKdVgxTnNZMk5uV2tVeFNtMVVkMWcwTmw5RVJUYzBXVUpNUVZneWVVWktiRlkwZFV0bGFEZEpNRFJxT1RkRFRXOXdTVk52TVhGSVQwWnJhbG94ZW5oT1kxSnNSQzA0WVV3d1dsOVpTMnRvTVZSTFIydHdjM1F4UlZKNlIwdDRka2xVWmtrMVNFMDFVR1ZmVUZSbmNreHlPSFZHYmt3NU0xbHBhVGhmUlZsamNFaG5kMlJ5YVc5VlQxUllZVTFCWW1oUFVXMUhSMkpOZVZaQ1ZHUm9WVFk0VEVVelJWVjNkbGhuWldGVFJrRkdOVFZJVjNOS1dreEdiekJVYzB4VlJreEhUVmxuYld4cGRUUjFiRUprV21WZlJqWlNOMmRDWkdkdFkyTnRjMU5pYVZsclpXSmFZbmRZYmpGYU4wY3dWWE5QYlcxbFZHSTVRemwyY21oUk5qZ3hVRUpwYlRSUFJIUmhkVGxUUlVjd1pVeFJSRU52V1d4Vk4weDJVMnBDWnpkelNUVjJTMjVHWTJ0SFozQmlSVkZ5VW01VFYxODBSMDVqYzBWWFlVSnFlRUoyUVRWbGQwRnBhbGRDZEcxc2FGcDFSMDB4VGkxdGJ5MHlXak5oTFhSaFFWSk5VRGh0YmxkRlpsUnFNV3d0YzA1Q05tMXdPVUpXUzFRMlNrSlRaSGxwT1hoMlJIUnhjVzVHWVhsT05WZGtVbGRJTm5sQ1YyVkJhMjVPWVZSeWFXOTVORkZDUVVOQ1IxOVdWazVOVUVWZlpVWllWbU5zVFROaGMwNHhVMjVXZG1wUVJYWlpXRkJwTm1WemNWcHpUakJtZUdGYVJXb3paRXRDUkRBMWF6Rk9jV281UkZKNE5UUlNlRXhOYVV4TGJ6QkhhVE5KU1Y4NVh6STVlbVJSY3psalpYcE1SRzF5TFRkNUxYWkplbkJxVmpKVWVHbG5ZekJ5ZDBoVmQzUjBTMnhJYWtZNVZXbEZMVU5LTFVkdE5raFVXbGR2ZDI5YU0zSkRWa3Q0UTFOTVFXcFplV05OVUVKcGFqRlRNamh4VTFaWE0wOXlMWFkyUkhkUFNtcHdOMmRpUkhkRFNEVmlaSFJvYkRablJVWXhlbWRpUTBOSlpXNWtUekl3U2tKc2VVNDRhWEJWTkRZMlpFZENlRVp0YUV4clRtUm5NbEJXTmtGUlJFdFlZMXBzZW5SdmVUTXdSMDVTTkRCSE9XRktZM2c0V0haUVpqTjJOVXczYVdaT1FYWlVhWEppYWpJMlduZzFlVGhCYVZsMGIyRmhNMjEwVDFsU2JYVm5WSE5zWWxjMWJTMHlURFoxUkhoQlN6a3pPRUYzVDNrd2RUaE9VakJUTVVzME0wd3lUblpDWTI1V01HRXlPR1pVYld4TmVHaHBWalUwTm1FMU1VVk5jemxqVGxJd2FsbElSVkF5ZEVjeWEzZGZZMGQwV0RNNFlVeDVTRFpqYlVOckdBUSUzRA%3D%3D",
+             "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+            }
+           }
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}

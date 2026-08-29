@@ -9,7 +9,15 @@ import Testing
 /// (dropping unused per-item action-menu JSON and unrelated top-level keys) — every kept field
 /// value is real. `browse-botcheck.json` is SYNTHETIC (no live bot-check was reproducible within
 /// this task's budget): it models InnerTube's documented `alerts[]` interstitial convention.
+/// `browse-channel-shorts.json` / `browse-channel-playlists.json` are LIVE, recorded 2026-08-29
+/// from the same channel's Shorts and Playlists tabs (both populated: 49 Shorts, 31 playlists at
+/// capture time) via `LiveBrowseTests`, trimmed to 5 items + the continuation item, with every
+/// `trackingParams`/`clickTrackingParams` and per-item action-menu JSON stripped.
+///
+/// Every `responseContext.visitorData` in these fixtures is SYNTHETIC (`CgtGSVhUVVJFXzAwMSiFAA%3D%3D`):
+/// a real one is a session identifier for the machine that captured it and must never be committed.
 @Suite struct BrowseClientTests {
+    private static let syntheticVisitorData = "CgtGSVhUVVJFXzAwMSiFAA%3D%3D"
     private static let channelId = "UCmMcOjsVehVlEOteyrhjI2Q"
     private static let playlistId = "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc"
 
@@ -23,14 +31,19 @@ import Testing
     }
 
     private func makeClient(_ transport: HTTPTransport) -> BrowseClient {
+        makeClientAndSession(transport).client
+    }
+
+    private func makeClientAndSession(_ transport: HTTPTransport) -> (client: BrowseClient, session: SessionStore) {
         let configStore = RemoteConfigStore(
             transport: NoopTransport(), keyValueStore: InMemoryKeyValueStore(),
             url: URL(string: "https://example.com/config.json")!)
         let session = SessionStore(
             monotonicClock: ManualClock(), wallClock: ManualClock(), keyValueStore: InMemoryKeyValueStore())
-        return BrowseClient(
+        let client = BrowseClient(
             transport: transport, remoteConfigStore: configStore, sessionStore: session,
             locale: InnerTubeLocale(hl: "en", gl: "US"))
+        return (client, session)
     }
 
     private struct NoopTransport: HTTPTransport {
@@ -184,5 +197,123 @@ import Testing
         let body = transport.capturedBodies[0]
         #expect(body.contains("\"browseId\":\"\(Self.channelId)\""))
         #expect(body.contains("\"params\""))
+    }
+
+    // MARK: - g) channelTab(.shorts) and channelPlaylists — CF-C1 (Plan C Task 1)
+
+    @Test func shortsTabParsesIntoVideoItemsWithNoDuration() async throws {
+        // CF-C1: `channelTab(.shorts)` returned an EMPTY page (BrowseClient.swift ponytail note)
+        // because `shortsLockupViewModel` is not the plain `lockupViewModel` the video parser reads.
+        // Assert the real ids from the capture, and that the 9:16 grid's fields are all populated.
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: try fixtureResponse("browse-channel-shorts"))
+        ])
+        let client = makeClient(transport)
+
+        let page = try await client.channelTab(Self.channelId, tab: .shorts, continuation: nil)
+
+        #expect(page.items.count == 5)
+        let first = try #require(page.items.first)
+        #expect(first.id == "DRGRsBC8bOU")
+        #expect(!first.title.isEmpty)
+        #expect(first.thumbnailURL != nil)
+        #expect(first.viewCountText == "424 views")
+        #expect(first.durationSeconds == nil)  // Shorts tiles carry no duration badge
+        #expect(first.channelId == Self.channelId)  // backfill, as .live already does
+        #expect(page.nextContinuation != nil)
+    }
+
+    @Test func playlistsTabParsesIntoPlaylistTilesWithAnItemCount() async throws {
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: try fixtureResponse("browse-channel-playlists"))
+        ])
+        let client = makeClient(transport)
+
+        let page = try await client.channelPlaylists(Self.channelId, continuation: nil)
+
+        #expect(page.items.count == 5)
+        let first = try #require(page.items.first)
+        #expect(first.id == "PL2hoGhz2jBSrgZ1tWp0_HVjkrkdd-Bo8f")
+        #expect(!first.title.isEmpty)
+        #expect(first.thumbnailURL != nil)
+        #expect(first.itemCountText == "99 videos")  // the badge is a count, not a duration
+        #expect(page.nextContinuation != nil)
+    }
+
+    @Test func channelPlaylistsSendsChannelIdAsBrowseIdWithPlaylistsParams() async throws {
+        let transport = RecordingTransport([try fixtureResponse("browse-channel-playlists")])
+        let client = makeClient(transport)
+
+        _ = try await client.channelPlaylists(Self.channelId, continuation: nil)
+
+        let body = transport.capturedBodies[0]
+        #expect(body.contains("\"browseId\":\"\(Self.channelId)\""))
+        #expect(body.contains("\"params\":\"EglwbGF5bGlzdHPyBgQKAkIA\""))
+    }
+
+    // MARK: - h) WEB visitorData adoption and stale-token rotation (reconciliation note 3, C3)
+
+    @Test func aBrowseResponseCarryingVisitorDataIsAdopted() async throws {
+        // Nothing wrote `.web` visitorData before this task -- `setVisitorData` is called only by
+        // StreamResolver, for visionos/android -- so every browse request has gone out tokenless,
+        // which is exactly what Plan A's "the first tokenless call is always bot-checked" finding
+        // predicts will keep happening.
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: try fixtureResponse("browse-channel-header"))
+        ])
+        let (client, session) = makeClientAndSession(transport)
+
+        _ = try await client.channelHeader(Self.channelId)
+
+        #expect(await session.visitorData(for: .web) == Self.syntheticVisitorData)
+    }
+
+    @Test func aBootstrapBotCheckStillAdoptsItsTokenAndDoesNotRotateItAway() async throws {
+        // THE ordering test (C3). Adoption happens on EVERY response that carries a token --
+        // including the interstitial, which is the whole point of Plan A's finding -- and
+        // `rotate(.web)` CLEARS the family. So rotating on a bootstrap bot-check would throw away
+        // the very token that makes the next call succeed, and the client would bootstrap forever.
+        // No token was attached here, so nothing is stale.
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: try fixtureResponse("browse-botcheck"))
+        ])
+        let (client, session) = makeClientAndSession(transport)
+
+        await #expect(throws: BrowseError.botCheck) { _ = try await client.channelVideos(Self.channelId, continuation: nil) }
+
+        #expect(await session.visitorData(for: .web) == Self.syntheticVisitorData)  // SURVIVES
+        #expect(await session.cooldownRemaining(now: .now) == nil)  // CF-C2: never escalate
+    }
+
+    @Test func aBotCheckWithATokenAlreadyAttachedRotatesItAsStale() async throws {
+        // The other half: we sent a token and were bot-checked anyway, so the token is burnt.
+        // rotate() clears it (throttled to 1/10 min by SessionStore itself) and the next call
+        // re-bootstraps. The interstitial's own token is adopted first, then rotate clears the
+        // family -- the net effect is "no token", the correct state for a session YouTube rejected.
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: try fixtureResponse("browse-botcheck"))
+        ])
+        let (client, session) = makeClientAndSession(transport)
+        await session.setVisitorData("STALE", for: .web)
+
+        await #expect(throws: BrowseError.botCheck) { _ = try await client.channelVideos(Self.channelId, continuation: nil) }
+
+        #expect(await session.visitorData(for: .web) == nil)
+        #expect(await session.cooldownRemaining(now: .now) == nil)  // CF-C2
+    }
+
+    @Test func theSecondPageSendsTheAdoptedVisitorDataAsAHeader() async throws {
+        // Page 1's fixture carries the synthetic token; the continuation call must send it back.
+        let transport = RecordingTransport([
+            try fixtureResponse("browse-channel-playlists"), try fixtureResponse("browse-channel-playlists"),
+        ])
+        let client = makeClient(transport)
+
+        let page1 = try await client.channelPlaylists(Self.channelId, continuation: nil)
+        _ = try await client.channelPlaylists(Self.channelId, continuation: try #require(page1.nextContinuation))
+
+        let requests = transport.recorded
+        #expect(requests[0].headers["X-Goog-Visitor-Id"] == nil)
+        #expect(requests[1].headers["X-Goog-Visitor-Id"] == Self.syntheticVisitorData)
     }
 }
