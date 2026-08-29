@@ -76,6 +76,21 @@ struct ChannelTabPaginationTests {
         #expect(r11 == 1.1)
     }
 
+    @Test func aFiredRecheckReleasesTheSlotForTheNextRejection() {
+        // Review I1: the recheck fires 1.1 s later and re-evaluates; if that evaluation is rejected too
+        // (a Load-more append landed 0.4 s earlier) the slot must be free again or the list stalls
+        // forever -- Android nulls the job in `finally` (BaseChannelListTabFragment.kt:76-112).
+        var a = ChannelTabAutofill()
+        let t0 = Date(timeIntervalSince1970: 0)
+        a.recordAppend(accepted: true, at: t0)
+        #expect(a.recordAppend(accepted: false, at: t0.addingTimeInterval(0.5)) == 1.1)
+        var stalled = a
+        #expect(stalled.recordAppend(accepted: false, at: t0.addingTimeInterval(1.6)) == nil) // without recheckFired()
+        a.recheckFired()
+        let r13 = a.recordAppend(accepted: false, at: t0.addingTimeInterval(1.6))
+        #expect(r13 == 1.1)
+    }
+
     @Test func loadMoreTapResetsTheAutofillBudget() {
         // BaseChannelListTabFragment.kt:216-225,240-243 -- an explicit tap renews the counter, so a
         // second screenful can autofill again. Without this the button appears once and then the list
@@ -154,5 +169,8 @@ struct ChannelTabPaginationTests {
         let tiles = [PlaylistTile(id: "p", title: "Ramadān series", channelName: "Masjid")]
         #expect(SearchFilter.apply(tiles, query: "ramadan").map(\.id) == ["p"])
         #expect(SearchFilter.apply(tiles, query: "nothing").isEmpty)
+        // Arabic harakat are combining marks: a bare query must match a vowelled title.
+        let arabic = [VideoItem(id: "q", title: "تفسير القُرْآن", channelName: nil)]
+        #expect(SearchFilter.apply(arabic, query: "القرآن").map(\.id) == ["q"])
     }
 }

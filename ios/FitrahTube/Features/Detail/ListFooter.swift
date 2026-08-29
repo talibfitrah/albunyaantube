@@ -23,18 +23,20 @@ struct ListFooter<Item: Sendable & Equatable>: View {
                         .foregroundStyle(Color.textSecondary)
                         .multilineTextAlignment(.center)
                     Button(String(localized: "retry"), action: retry)
+                        .frame(minHeight: 44)
                         .buttonStyle(.bordered)
                         .tint(.brand)
                         .accessibilityIdentifier("listFooter.retry")
                 }
             } else if state.showsLoadMore {
                 Button(String(localized: "load_more"), action: loadMore)
+                    .frame(minHeight: 44)
                     .buttonStyle(.bordered)
                     .tint(.brand)
                     .accessibilityIdentifier("listFooter.loadMore")
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 44)
+        .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.sm)
     }
 }

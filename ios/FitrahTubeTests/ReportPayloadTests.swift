@@ -167,5 +167,9 @@ struct ReportPayloadTests {
         await #expect(throws: CancellationError.self) {
             try await Self.client(StubTransport(error: CancellationError()) { _ in }).submit(Self.body())
         }
+        // URLSession reports a cancelled task as URLError(.cancelled), not CancellationError.
+        await #expect(throws: CancellationError.self) {
+            try await Self.client(StubTransport(error: URLError(.cancelled)) { _ in }).submit(Self.body())
+        }
     }
 }

@@ -34,6 +34,8 @@ struct ReportClient: Sendable {
             }
         } catch is CancellationError {
             throw CancellationError()
+        } catch let e as URLError where e.code == .cancelled {
+            throw CancellationError()
         } catch {
             return .failed(messageKey: "report_error")
         }

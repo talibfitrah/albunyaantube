@@ -495,8 +495,8 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "shorts-en-a11y3", into: directory)
     }
 
-    /// The kebab open: Quality submenu + Report (ruling 53). Report is the coming-soon banner
-    /// `PlayerToolbar.reportButton` shows (CF-B1-9: one report path).
+    /// The kebab open: Quality submenu + Report (ruling 53). Report presents `ReportSheet`
+    /// (C Task 3), the same sheet `PlayerToolbar.reportButton` presents (CF-B1-9: one report path).
     func testShortsKebab() throws {
         let directory = try shotsDirectory()
         let screen = Screen(key: "shorts-kebab",
@@ -967,7 +967,7 @@ final class ScreenshotTests: XCTestCase {
         if app.buttons["Close"].exists { app.buttons["Close"].tap() } else { app.swipeDown() }
         _ = like.waitForExistence(timeout: 5)
 
-        // Kebab: five quality options, pick 480p, Report shows the coming-soon banner.
+        // Kebab: five quality options, pick 480p, Report presents the ReportSheet.
         app.buttons["shorts.kebab.button"].tap()
         XCTAssertTrue(app.buttons["shorts.kebab.report"].waitForExistence(timeout: 10), "b4t4 en kebab: never opened")
         let options = ["auto", "p1080", "p720", "p480", "dataSaver"].map { app.buttons["shorts.qualityOption.\($0)"].exists }
@@ -979,13 +979,11 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.buttons["shorts.kebab.report"].waitForExistence(timeout: 10))
         try write(named: "shorts-b4t4-iphone-en-kebab-480p", into: directory)
         app.buttons["shorts.kebab.report"].tap()
-        // The banner auto-dismisses after 2.5 s and an XCUITest snapshot of this screen can take
-        // longer than that on a loaded machine (caught in 3 of 5 runs) -- recorded, not asserted.
-        // `testPlayerMetadataAndToolbar` covers the same `player_report_coming_soon` path.
-        let bannerCaught = app.staticTexts["Reporting is coming soon"].waitForExistence(timeout: 5)
-        notes.append("iphone-en report banner caught within 5 s=\(bannerCaught)")
-        XCTAssertTrue(app.buttons["shorts.kebab.report"].waitForNonExistence(timeout: 5), "b4t4 en report: menu did not close on tap")
-        try write(named: "shorts-b4t4-iphone-en-report-banner", into: directory)
+        // The ReportSheet presents over the stage; dismiss it or the Back tap below hits the dimming layer.
+        XCTAssertTrue(app.buttons["report.cancel"].waitForExistence(timeout: 5), "b4t4 en report: sheet never presented")
+        try write(named: "shorts-b4t4-iphone-en-report-sheet", into: directory)
+        app.buttons["report.cancel"].tap()
+        XCTAssertTrue(app.buttons["report.cancel"].waitForNonExistence(timeout: 5), "b4t4 en report: sheet did not dismiss")
 
         // Back: our own button pops the route; the tab bar is still there.
         app.buttons["shorts.back"].tap()

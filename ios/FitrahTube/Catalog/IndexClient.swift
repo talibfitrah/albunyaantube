@@ -53,15 +53,15 @@ struct IndexClient: Sendable {
         let url = baseURL.appending(path: "api/v1/index/streams")
         for start in stride(from: 0, to: items.count, by: Self.batchSize) {
             let batch = items[start..<min(start + Self.batchSize, items.count)].map { item in
-                // ponytail: streamType is always VIDEO -- a Short is a VideoItem with a nil duration
-                // and so is an Atom item, so the tile cannot tell them apart; the backend accepts
-                // VIDEO for every row. Thread ChannelTab through if the index ever needs SHORT.
+                // streamType is flat "VIDEO" for every row, as Android's IndexRepository sends it; the
+                // backend accepts it and nothing reads a SHORT distinction. `channelTab` has the tab
+                // in scope if the index ever wants one.
                 Request.Item(id: item.id, name: item.title, thumbnailUrl: item.thumbnailURL?.absoluteString,
                              uploaderName: item.channelName, channelId: item.channelId,
                              duration: item.durationSeconds, viewCount: nil, streamType: "VIDEO")
             }
             guard let body = try? JSONEncoder().encode(Request(sourceType: sourceType.rawValue, sourceId: sourceId, items: batch))
-            else { return }
+            else { continue }
             let request = HTTPRequest(
                 method: "POST", url: url,
                 headers: ["Content-Type": "application/json", "X-Device-Id": deviceId.value], body: body)

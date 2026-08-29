@@ -8,6 +8,9 @@ import InnerTubeKit
 nonisolated enum TabState<Item: Sendable & Equatable>: Sendable, Equatable {
     case idle
     case loadingInitial
+    /// Contract (CF-C-7): never construct with empty `items` -- an empty tab is `.empty(messageKey:)`
+    /// with its own copy. The only zero-item state this file produces is `filtered(query:)`'s
+    /// `.empty(messageKey: "search_no_results")`; a `.loaded([])` renders nothing at all.
     case loaded(items: [Item], continuation: String?, isAppending: Bool, showsLoadMore: Bool)
     /// `messageKey` is the tab's own empty copy (`channel_videos_empty`, `channel_live_empty`, …),
     /// distinct from a zero-match search, which `emptyMessageKey` answers with `search_no_results`
@@ -42,25 +45,24 @@ nonisolated enum TabState<Item: Sendable & Equatable>: Sendable, Equatable {
         }
     }
 
-    /// `search_no_results` for a filtered list with no matches, the tab's own key for `.empty`,
-    /// nil while there is something to show.
+    /// The `.empty` key (a tab's own copy, or `search_no_results` from `filtered`), nil otherwise.
     var emptyMessageKey: String? {
-        switch self {
-        case .empty(let key): key
-        case .loaded(let items, _, _, _) where items.isEmpty: "search_no_results"
-        default: nil
-        }
+        if case .empty(let key) = self { return key }
+        return nil
     }
 
     /// `BaseChannelListTabFragment.kt:269-294` / `PlaylistDetailFragment.kt:336`: the filtered state
     /// carries no continuation, so the near-end trigger cannot fire mid-search, and no Load-more
-    /// button either. An empty query is the identity.
+    /// button either. An empty query is the identity; zero matches is `.empty("search_no_results")`
+    /// (RULING 5), so `.loaded` never carries an empty list.
     func filtered(query: String, matches: (Item, String) -> Bool) -> TabState {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return self }
         switch self {
         case .loaded(let items, _, _, _), .errorAppend(_, let items, _, _):
-            return .loaded(items: items.filter { matches($0, trimmed) }, continuation: nil, isAppending: false, showsLoadMore: false)
+            let hits = items.filter { matches($0, trimmed) }
+            guard !hits.isEmpty else { return .empty(messageKey: "search_no_results") }
+            return .loaded(items: hits, continuation: nil, isAppending: false, showsLoadMore: false)
         default:
             return self
         }
@@ -119,6 +121,8 @@ nonisolated struct ChannelTabAutofill: Sendable, Equatable {
 
     /// An accepted append spends one autofill page and clears any pending re-check. A rejected one
     /// returns the delay for the single re-check it schedules, or nil if one is already pending.
+    /// Caller contract: the timer calls `recheckFired()` BEFORE re-evaluating, so a rejection of the
+    /// re-check itself can schedule another (Android nulls the job in `finally`).
     @discardableResult
     mutating func recordAppend(accepted: Bool, at now: Date) -> TimeInterval? {
         if accepted {
@@ -130,6 +134,11 @@ nonisolated struct ChannelTabAutofill: Sendable, Equatable {
         guard !recheckPending else { return nil }
         recheckPending = true
         return Self.recheckDelay
+    }
+
+    /// The scheduled re-check has fired: release the slot whatever the re-evaluation decides.
+    mutating func recheckFired() {
+        recheckPending = false
     }
 
     /// Renews the autofill budget without invalidating in-flight copies (generation kept).
@@ -166,7 +175,11 @@ nonisolated enum SearchFilter {
         return fields.contains { $0.map { fold($0).contains(needle) } ?? false }
     }
 
+    /// Lowercase + drop every combining mark: `.diacriticInsensitive` handles Latin accents but
+    /// leaves Arabic harakat (U+064B..U+0652) in place, so a bare query would miss a vowelled title.
     private static func fold(_ s: String) -> String {
-        s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        let scalars = s.lowercased().decomposedStringWithCanonicalMapping.unicodeScalars
+            .filter { $0.properties.generalCategory != .nonspacingMark }
+        return String(String.UnicodeScalarView(scalars))
     }
 }
