@@ -208,3 +208,6 @@ __pycache__/
 **/GoogleService-Info.plist
 /ios/Packages/*/Sources/*/openapi.yaml
 /ios/Config/Local.xcconfig
+
+# InnerTubeKit live-test raw captures (contain IP + real visitorData)
+*.raw.json

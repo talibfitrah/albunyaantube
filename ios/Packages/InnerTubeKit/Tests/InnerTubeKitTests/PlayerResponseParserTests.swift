@@ -79,7 +79,7 @@ import Testing
     // responseContext (the parser must not invent one).
     @Test func parseSurfacesResponseContextVisitorData() throws {
         let ok = try parser.parse(try loadFixture("player-ok-hls"))
-        #expect(ok.visitorData?.hasPrefix("CgtIdEVOUkk0ZHIwVSi") == true)
+        #expect(ok.visitorData == "CgtGSVhUVVJFXzAwMSiFAA%3D%3D")
         let synthetic = try parser.parse(Data(#"{"playabilityStatus": {"status": "OK"}}"#.utf8))
         #expect(synthetic.visitorData == nil)
     }
