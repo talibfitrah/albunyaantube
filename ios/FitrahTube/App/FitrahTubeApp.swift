@@ -107,7 +107,7 @@ struct FitrahTubeApp: App {
     /// deep-link URL (`DeepLinkParser` only covers video/channel/playlist/shorts) and no
     /// `simctl` tap-gesture equivalent exists, so this pushes the route directly onto the
     /// currently-selected tab's stack -- same technique as `-fitrah-tab`.
-    /// `-fitrah-route player [videoId] [playlistId] [targetVideoId]|shorts [videoId]|search|categories|subcategories <parentId> <parentName>|featured [categoryId] [categoryName]`
+    /// `-fitrah-route player [videoId] [playlistId] [targetVideoId]|shorts [videoId]|playlist [playlistId] [title]|search|categories|subcategories <parentId> <parentName>|featured [categoryId] [categoryName]`
     /// (`-` for a nil arg). `player` is also reachable via `-fitrah-deeplink`, but this is
     /// the one-token form the screenshot rig's other routes already use. B5 Task 4: the optional
     /// `playlistId`/`targetVideoId` (plus the `-fitrah-shuffled` flag) are the queue launch
@@ -145,6 +145,10 @@ struct FitrahTubeApp: App {
                 channelName: "Sample Channel",
                 channelId: "UCsample"
             )))
+        case "playlist":
+            // Plan C Task 4: `-fitrah-route playlist [playlistId] [title]` -- the fake catalog's
+            // lists are all videos, so this is the rig's only way onto PlaylistDetailScreen.
+            router.push(.playlist(id: arg(2) ?? "fixture-playlist", title: arg(3), category: nil, count: nil))
         case "search":
             router.push(.search)
         case "categories":

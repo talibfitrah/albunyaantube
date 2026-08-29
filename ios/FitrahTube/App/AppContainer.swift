@@ -68,6 +68,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var filters: any FilterStore = UserDefaultsFilterStore(defaults: userDefaults)
     private(set) lazy var searchHistory: any SearchHistoryStore = UserDefaultsSearchHistoryStore(defaults: userDefaults)
     private(set) lazy var favorites: any FavoritesStore = SwiftDataFavoritesStore(modelContainer: modelContainer)
+    /// Plan C Task 4: the playlist screen's Save toggle, same container/schema as favorites.
+    private(set) lazy var savedPlaylists: any SavedPlaylistsStore = SwiftDataSavedPlaylistsStore(modelContainer: modelContainer)
     private(set) lazy var categories: any CategoriesCache = LiveCategoriesCache(client: catalog)
     private(set) lazy var network = NetworkMonitor()
 
@@ -99,15 +101,21 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     )
     private let injectedBrowse: (any BrowseSource)?
     private let degradedHeader: (@Sendable (String) async throws -> ChannelHeader)?
+    /// Plan C Task 4: a deep-linked `Route.playlist` carries no title/count, so the header falls back
+    /// to `getPublicPlaylist` -- same closure shape as `degradedHeader` (the container never holds the
+    /// generated `Client`); nil in fake containers means the header stays whatever the route carried.
+    let playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)?
 
     init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer, apiBaseURL: URL,
-         browse: (any BrowseSource)? = nil, degradedHeader: (@Sendable (String) async throws -> ChannelHeader)? = nil) {
+         browse: (any BrowseSource)? = nil, degradedHeader: (@Sendable (String) async throws -> ChannelHeader)? = nil,
+         playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)? = nil) {
         self.catalog = catalog
         self.userDefaults = userDefaults
         self.modelContainer = modelContainer
         self.apiBaseURL = apiBaseURL
         self.injectedBrowse = browse
         self.degradedHeader = degradedHeader
+        self.playlistHeader = playlistHeader
     }
 
     static func live(baseURL: URL = AppConfig.apiBaseURL) -> AppContainer {
@@ -120,6 +128,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             degradedHeader: { id in
                 let dto = try await api.getPublicChannel(.init(path: .init(channelId: id))).ok.body.json
                 return ChannelHeader(id: dto.youtubeId, name: dto.name, avatarURL: dto.thumbnailUrl.flatMap(URL.init(string:)))
+            },
+            playlistHeader: { id in
+                let dto = try await api.getPublicPlaylist(.init(path: .init(playlistId: id))).ok.body.json
+                return PlaylistHeader(title: dto.title, thumbnailURL: dto.thumbnailUrl.flatMap(URL.init(string:)), count: dto.itemCount)
             })
     }
 
@@ -166,7 +178,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// `storeURL` exists so `AppContainerTests` can point the recovery path at a deliberately
     /// corrupt file; production always takes the default location.
     static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil) -> ModelContainer {
-        let schema = Schema(versionedSchema: FavoritesSchemaV1.self)
+        let schema = Schema(versionedSchema: FavoritesSchemaV2.self)
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         func build() throws -> ModelContainer {

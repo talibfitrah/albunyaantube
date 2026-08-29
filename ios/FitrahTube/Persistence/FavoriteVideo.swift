@@ -26,9 +26,16 @@ enum FavoritesSchemaV1: VersionedSchema {
     static var models: [any PersistentModel.Type] { [FavoriteVideo.self] }
 }
 
+/// Plan C Task 4 adds `SavedPlaylist` (a new entity, nothing else changes) -- the lightweight
+/// stage below is exactly the migration the V1 doc comment promised.
+enum FavoritesSchemaV2: VersionedSchema {
+    static let versionIdentifier = Schema.Version(2, 0, 0)
+    static var models: [any PersistentModel.Type] { [FavoriteVideo.self, SavedPlaylist.self] }
+}
+
 enum FavoritesMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self] }
-    static var stages: [MigrationStage] { [] }
+    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self] }
+    static var stages: [MigrationStage] { [.lightweight(fromVersion: FavoritesSchemaV1.self, toVersion: FavoritesSchemaV2.self)] }
 }
 
 @Model final class FavoriteVideo {
