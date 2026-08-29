@@ -1,0 +1,41 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-age-gated.json
+  s_66ddb7c44de816::t_0ccb799361a084 3
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-channel-header.json
+  s_66ddb7c44de816::t_7a6e4a6258b629 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-playlist.json
+  s_66ddb7c44de816::t_0ccb799361a084 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-ok-hls.json
+  s_66ddb7c44de816::t_0ccb799361a084 3,19,44,70,100,125,151,178,203,205
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-channel-videos-page2.json
+  s_66ddb7c44de816::t_0ccb799361a084 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-unplayable-kids.json
+  s_66ddb7c44de816::t_0ccb799361a084 3
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-live.json
+  s_66ddb7c44de816::t_0ccb799361a084 3,26,41,56,71,87,102,117,131,145,147
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-channel-videos-page1.json
+  s_66ddb7c44de816::t_0ccb799361a084 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/PlayerResponseParserTests.swift
+  s_66ddb7c44de816::t_1a5a99f8ce4490 82
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-botcheck.json
+  s_66ddb7c44de816::t_0ccb799361a084 3
+.gitignore
+  s_66ddb7c44de816::t_1a5a99f8ce4490 211-213
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-channel-live.json
+  s_66ddb7c44de816::t_0ccb799361a084 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "dc9c413184521605ed27597dc56da97d6a0aa383",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
