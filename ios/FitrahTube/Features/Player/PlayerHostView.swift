@@ -46,7 +46,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.player = Self.player(for: state, replacing: nil, audioOnly: audioOnly,
                                         continuesCurrentVideo: continuesCurrentVideo(context),
                                         resumeFallback: model.currentTime)
-        context.coordinator.lastVideoId = model.args.videoId
+        context.coordinator.lastVideoId = model.hostVideoId
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
         applyBackgroundController(to: controller, context: context)
         applyNowPlaying(context: context)
@@ -84,7 +84,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly,
                                         continuesCurrentVideo: continuesCurrentVideo(context),
                                         resumeFallback: model.currentTime)
-        context.coordinator.lastVideoId = model.args.videoId
+        context.coordinator.lastVideoId = model.hostVideoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
         // M6 (B4 final review): write only on change -- an unconditional write would churn AVKit's
         // layer every pass. B5: the user's zoom override is folded into the computed value.
@@ -107,7 +107,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// B5: whether this pass is still the same video the coordinator last built for. False on an
     /// auto-advance or an Up Next tap, so the next video starts at 0 instead of the previous clock.
     private func continuesCurrentVideo(_ context: Context) -> Bool {
-        Self.shouldPreservePosition(previous: context.coordinator.lastVideoId, next: model.args.videoId)
+        Self.shouldPreservePosition(previous: context.coordinator.lastVideoId, next: model.hostVideoId)
     }
 
     /// Pure half of the above (`PlayerHostTests`). `nil` is the first build.
@@ -519,7 +519,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
                             #endif
                         // Unarmed == this rung never produced a first frame (spec §10 -> next rung);
                         // armed == it played and then died, which is the 403-class incident.
-                        case .failed: self.fire(self.watchdog.armed ? .playbackError : .failedBeforeFirstFrame)
+                        case .failed:
+                            #if DEBUG
+                            print("PlayerHostView: item failed: \(String(describing: item.error))")
+                            #endif
+                            self.fire(self.watchdog.armed ? .playbackError : .failedBeforeFirstFrame)
                         default: break
                         }
                     }

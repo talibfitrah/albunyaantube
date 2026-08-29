@@ -448,6 +448,34 @@ struct PlayerHostTests {
         #expect(abs(rebuilt.currentTime().seconds - 1) < 0.1)
     }
 
+    /// B5 final review, IMPORTANT-1 (host half): the two passes an advance produces, in order. The
+    /// intermediate pass (old url, still the same video per `hostVideoId`) must REUSE -- same
+    /// player, same item, no restart; the resolved pass (new url, different video) builds at 0
+    /// and plays.
+    @Test(.timeLimit(.minutes(1))) func anIntermediatePassReusesTheItemAndTheResolvedPassStartsAtZero() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let old = StreamState.rung2Progressive(PlayerHostTests.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: old, replacing: nil))
+        let item = try #require(player.currentItem)
+        await player.seek(to: CMTime(seconds: 1, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+
+        let intermediate = PlayerHostView.player(for: old, replacing: player, continuesCurrentVideo: true)
+        #expect(intermediate === player)
+        #expect(intermediate?.currentItem === item)
+        #expect(player.currentTime().seconds > 0.5)     // not restarted
+
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        try FileManager.default.copyItem(at: url, to: copy)
+        defer { try? FileManager.default.removeItem(at: copy) }
+        let next = StreamState.rung2Progressive(PlayerHostTests.resolved(.progressive(url: copy, label: "360p")))
+        let resolved = try #require(PlayerHostView.player(for: next, replacing: player, continuesCurrentVideo: false))
+        #expect(resolved === player)
+        #expect(resolved.currentItem !== item)
+        try await Self.settle(resolved) { $0 < 0.1 }
+        #expect(resolved.currentTime().seconds < 0.1)
+        #expect(resolved.timeControlStatus != .paused)
+    }
+
     /// C1 (B5 T2 review): the periodic observer hoists `currentTime` into the VM. Between an
     /// advance's `swapArgs` (which zeroes it for the NEXT video) and the update pass that swaps the
     /// item, the OLD item is still ticking -- and a fresh coordinator after a dismantle would read

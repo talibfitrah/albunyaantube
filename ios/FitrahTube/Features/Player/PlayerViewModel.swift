@@ -142,6 +142,26 @@ extension StreamState {
     /// it, so `PlayerScreen` reads THIS, never its own initial `args`.
     private(set) var args: PlayerArgs
 
+    /// The video `state` currently describes: written next to every `state = result` in
+    /// `performResolve`, and nowhere else. `args` moves in `swapArgs` BEFORE the advance's resolve
+    /// lands, so between the two `args.videoId` is the NEXT video while `state` still carries the
+    /// OLD stream -- a host keyed on `args` read that as a video change, rebuilt the old url at 0,
+    /// and then resumed the next video from that restarted clock (B5 final review, IMPORTANT-1).
+    private(set) var resolvedVideoId: String?
+
+    /// `PlayerHostView`'s position-carry key (`continuesCurrentVideo` / `lastVideoId`): the video
+    /// the stream on screen belongs to. NOT the periodic observer's guard -- that one asks whether
+    /// the VM still WANTS this video (`args`), so an outgoing item's ticking clock cannot land in
+    /// the `currentTime` `swapArgs` just zeroed for the next one.
+    var hostVideoId: String { resolvedVideoId ?? args.videoId }
+
+    #if DEBUG
+    /// CF-B5-h: an in-app signal for the "no background auto-advance on the simulator" item --
+    /// read off `player.upNext.header`'s accessibilityValue. Debug builds only.
+    private(set) var playToEndCalls = 0
+    private(set) var advanceCalls = 0
+    #endif
+
     /// Ruling 33 / spec §10. Empty in single-video mode; populated from `args.playlistId`.
     private(set) var queue = PlayerQueue.start(items: [], targetVideoId: nil, startIndex: 0,
                                                shuffled: false, cursor: nil)
@@ -264,11 +284,17 @@ extension StreamState {
     /// VM property, never `SettingsStore` (CF-B3-2) -- one Safe Mode reader in the player.
     /// Single-video mode (no queue) does nothing: AVKit sits on the last frame with its own replay.
     func playToEnd() async {
+        #if DEBUG
+        playToEndCalls += 1
+        #endif
         guard !safeMode, !queue.items.isEmpty else { return }
         await advance()
     }
 
     private func advance() async {
+        #if DEBUG
+        advanceCalls += 1
+        #endif
         await pageIfNeeded()
         guard let next = queue.advance() else {
             // `PlayerViewModel.kt:1920-1923`: no next item and no more pages -- playback stops.
@@ -449,10 +475,11 @@ extension StreamState {
     }
 
     private func performResolve(generation: Int, forceRefresh: Bool, kind: RequestKind, silent: Bool) async {
+        let videoId = args.videoId
         let result: StreamState
         do {
             let resolved = try await resolver.resolve(
-                args.videoId, purpose: .player, kind: kind,
+                videoId, purpose: .player, kind: kind,
                 sourceChannelId: args.channelId, forceRefresh: forceRefresh)
             result = Self.map(resolved)
         } catch {
@@ -471,6 +498,9 @@ extension StreamState {
         // reactive recovery (`handleRecoveryEvent`, which never passes `silent`) owns real failures,
         // because by then the stream has actually stopped working.
         if silent, !result.isPlayable { return }
+        // Together, always: `.unplayable`/`.error`/`.contentUnavailable` results move it too --
+        // the state on screen is now THIS video's, whatever it says.
+        resolvedVideoId = videoId
         state = result
     }
 

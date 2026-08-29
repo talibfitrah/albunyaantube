@@ -229,6 +229,10 @@ struct PlayerScreen: View {
                             .foregroundStyle(Color.textPrimary)
                             .padding(.horizontal, Spacing.md(widthClass)).padding(.top, Spacing.md(widthClass))
                             .accessibilityIdentifier("player.upNext.header")
+                            #if DEBUG
+                            // CF-B5-h: the VM's end-of-item / advance counters, readable by XCUITest.
+                            .accessibilityValue("playToEnd=\(model.playToEndCalls) advance=\(model.advanceCalls)")
+                            #endif
                         upNextList(model)
                     }
                     }   // !fullscreen

@@ -154,7 +154,7 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state.isPlayable)
     }
 
-    @Test func pagingFetchesTheNextPageAtFiveRemainingAndLatchesOnFailure() async {
+    @Test func pagingFetchesTheNextPageAtFiveRemaining() async {
         // Seven on page 1: six upcoming at open (above the threshold, so `open()` does NOT page --
         // see `openPagesImmediatelyWhenTheLaunchLandsNearAPageEnd` for the other side).
         let source = FakeQueueSource(pages: [(ids: ["a", "b", "c", "d", "e", "f", "g"], next: "P2"),
@@ -242,6 +242,31 @@ struct PlayerViewModelQueueTests {
         #expect(vm.args.videoId == "c")
         let pre = resolver.calls.filter { $0.kind == .prefetch }.map(\.videoId)
         #expect(pre == ["b", "c", "d", "e"])
+    }
+
+    /// B5 final review, IMPORTANT-1: `advance()` swaps `args` BEFORE its resolve lands. A SwiftUI
+    /// pass in that window sees `args.videoId` = next while `state` is still the OLD `.ready`; a
+    /// host keyed on `args` read that as "different video" and rebuilt the OLD url at 0 -- the
+    /// outgoing video restarted, and the real resolved pass then resumed the next video off-zero.
+    /// The host's key must be the video `state` describes, which only moves when a resolve lands.
+    @Test(.timeLimit(.minutes(1))) func theHostKeyStaysOnTheOldVideoUntilTheAdvanceResolves() async {
+        let resolver = RecordingResolver(.hls, holdsUntilReleased: true)
+        let vm = PlayerViewModel(resolver: resolver, settings: makeSettings(safeMode: false),
+                                 args: .init(videoId: "a", playlistId: "PL"),
+                                 queueSource: FakeQueueSource(pages: [(ids: ["a", "b"], next: nil)]))
+        resolver.release(); resolver.release()          // open(): a on .player, b on .prefetch
+        await vm.open()
+        #expect(vm.hostVideoId == "a")
+
+        let advance = Task { await vm.playToEnd() }
+        await resolver.waitUntilCalled(count: 3)        // b on .player, held
+        #expect(vm.args.videoId == "b")
+        #expect(vm.state.isPlayable)                    // still the OLD stream
+        #expect(vm.hostVideoId == "a")                  // so the host must still key on it
+
+        resolver.release()
+        await advance.value
+        #expect(vm.hostVideoId == "b")
     }
 
     @Test func aFailedQueueLoadNeverKillsThePlayingVideo() async {
