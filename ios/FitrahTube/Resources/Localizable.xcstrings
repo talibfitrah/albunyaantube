@@ -13052,6 +13052,28 @@
         }
       }
     },
+    "report_reason_limit": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يمكنك اختيار ١٠ أسباب كحد أقصى"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can select up to 10 reasons"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je kunt maximaal 10 redenen selecteren"
+          }
+        }
+      }
+    },
     "report_reason_misinformation": {
       "localizations": {
         "ar": {
@@ -15389,19 +15411,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "حمّل فطرة تيوب للمحتوى الإسلامي بدون إعلانات!"
+            "value": "حمّل فطرة تيوب لمحتوى إسلامي منتقى!"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Get FitrahTube for ad-free Islamic content!"
+            "value": "Get FitrahTube for curated Islamic content!"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download FitrahTube voor advertentievrije islamitische content!"
+            "value": "Download FitrahTube voor geselecteerde islamitische content!"
           }
         }
       }

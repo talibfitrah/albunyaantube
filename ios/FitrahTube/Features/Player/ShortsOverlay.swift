@@ -54,6 +54,7 @@ struct ShortsOverlay: View {
     @Environment(\.router) private var router
     @Environment(\.widthClass) private var widthClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
 
     @State private var observer = TimeObserver()
     @State private var progress = 0.0
@@ -214,7 +215,8 @@ struct ShortsOverlay: View {
             .accessibilityValue(String(localized: isFavorite ? "player_action_favorited" : "player_action_not_favorited"))
             .accessibilityAddTraits(isFavorite ? [.isSelected] : [])
 
-            ShareLink(item: args.shareURL, subject: Text(args.title ?? args.videoId)) {
+            ShareLink(item: args.shareURL, subject: Text(args.title ?? args.videoId),
+                      message: Text(args.shareMessage(locale: locale))) {
                 railGlyph("square.and.arrow.up")
             }
             .accessibilityIdentifier("shorts.shareButton")

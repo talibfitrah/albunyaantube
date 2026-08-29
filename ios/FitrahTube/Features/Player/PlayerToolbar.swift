@@ -10,14 +10,17 @@ struct PlayerToolbar: View {
 
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
+    @Environment(\.locale) private var locale
     @State private var isFavorite = false
     @State private var bannerMessage: BannerMessage?
+    @State private var showReport = false
 
     var body: some View {
         HStack {
             favoriteButton
             Spacer()
-            ShareLink(item: args.shareURL, subject: Text(args.title ?? args.videoId)) {
+            ShareLink(item: args.shareURL, subject: Text(args.title ?? args.videoId),
+                      message: Text(args.shareMessage(locale: locale))) {
                 toolbarLabel(systemImage: "square.and.arrow.up", title: String(localized: "player_action_share"))
             }
             .accessibilityIdentifier("player.shareButton")
@@ -27,6 +30,11 @@ struct PlayerToolbar: View {
         .padding(.horizontal, Spacing.md(widthClass))
         .padding(.vertical, Spacing.sm)
         .transientBanner($bannerMessage)
+        .sheet(isPresented: $showReport) {
+            ReportSheet(context: args.reportContext) {
+                bannerMessage = BannerMessage(text: String(localized: "report_success"))
+            }
+        }
         .task {
             isFavorite = container.favorites.isFavorite(args.videoId)
         }
@@ -62,11 +70,7 @@ struct PlayerToolbar: View {
 
     private var reportButton: some View {
         Button {
-            // ponytail: Plan C replaces this banner with the real report flow (VIDEO, with parent
-            // PLAYLIST/CHANNEL + subtype, per spec §10). B1 only needs the button to do something
-            // honest -- a silent no-op is a VoiceOver dead-end -- so it shows the same
-            // `transientBanner` mechanism the favorite toast above already uses.
-            bannerMessage = BannerMessage(text: String(localized: "player_report_coming_soon"))
+            showReport = true
         } label: {
             toolbarLabel(systemImage: "flag", title: String(localized: "player_action_report"))
         }
@@ -84,12 +88,20 @@ struct PlayerToolbar: View {
 
 extension PlayerArgs {
     /// B4 task 3: shared by `PlayerToolbar` and `ShortsOverlay`'s rail -- ONE share URL, always the
-    /// app's own (owner directive 2026-08-27: never a youtube.com / youtu.be link).
-    /// Spec §10 / plan global constraints: no "ad-free" in the shared text (OG publish is Phase 4
-    /// -- CF). `!` is safe: videoId is always URL-path-safe (YouTube's fixed 11-char alphabet),
-    /// same assumption `DeepLinkParser`/`Route` already make elsewhere.
-    var shareURL: URL {
-        URL(string: "https://app.fitrahtube.com/api/watch/\(videoId)")!
+    /// app's own via `ShareLinks` (owner directive 2026-08-27: never a youtube.com / youtu.be link).
+    var shareURL: URL { ShareLinks.video(videoId) }
+
+    /// The share body (title + "Watch in FitrahTube" + promo; the URL is its own activity item).
+    func shareMessage(locale: Locale) -> String {
+        ShareLinks.message(for: .video(videoId), title: title ?? videoId, locale: locale)
+    }
+
+    /// Plan C task 3: the player's report context. Parent precedence is Android's kebab path
+    /// (`PlayerFragment.kt:1832-1838`): playlist over channel over none.
+    var reportContext: ReportContext {
+        ReportContext(targetType: .video, targetId: videoId,
+                      parentType: playlistId != nil ? .playlist : (channelId != nil ? .channel : nil),
+                      parentId: playlistId ?? channelId, contentSubType: nil)
     }
 
     /// The favorites-store shape of this video, for `FavoriteToggle.perform`.

@@ -15,11 +15,11 @@ struct PlayerMetadataView: View {
     // `GridRules.columns` already uses (`Layout.swift`), applied here instead of a second token.
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var isDescriptionExpanded = false
+    /// CF-B1-10: the collapsed and the full text heights, measured; `DescriptionTruncation`
+    /// decides whether the toggle is shown from the two.
+    @State private var collapsedHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
 
-    // ponytail: fixed collapsed line count rather than measuring actual text-wrap truncation
-    // (SwiftUI has no truncation callback) -- the toggle is shown whenever a description exists,
-    // even one short enough that expanding changes nothing visible. Upgrade path if that reads as
-    // broken in practice: a `ViewThatFits`-based "does this truncate at N lines" probe.
     private static let collapsedLineLimit = 3
 
     var body: some View {
@@ -62,16 +62,32 @@ struct PlayerMetadataView: View {
                 .foregroundStyle(Color.textPrimary)
                 .lineLimit(isDescriptionExpanded ? nil : Self.collapsedLineLimit)
                 .accessibilityIdentifier("player.metadata.description")
+                .onGeometryChange(for: CGFloat.self, of: \.size.height) { collapsedHeight = $0 }
+                // The same text laid out unlimited at the same width, hidden: its height against
+                // the visible one says whether the line limit actually cut anything.
+                .background {
+                    Text(attributedDescription(raw))
+                        .font(TypeScale.body(widthClass))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .hidden()
+                        .onGeometryChange(for: CGFloat.self, of: \.size.height) { fullHeight = $0 }
+                }
 
-            Button {
-                isDescriptionExpanded.toggle()
-            } label: {
-                Text(String(localized: isDescriptionExpanded ? "player_description_less" : "player_description_more"))
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Color.brand)
+            if DescriptionTruncation.needsToggle(fits: fullHeight <= collapsedHeight + 1, isExpanded: isDescriptionExpanded) {
+                descriptionToggle
             }
-            .accessibilityIdentifier("player.metadata.descriptionToggle")
         }
+    }
+
+    private var descriptionToggle: some View {
+        Button {
+            isDescriptionExpanded.toggle()
+        } label: {
+            Text(String(localized: isDescriptionExpanded ? "player_description_less" : "player_description_more"))
+                .font(TypeScale.caption)
+                .foregroundStyle(Color.brand)
+        }
+        .accessibilityIdentifier("player.metadata.descriptionToggle")
     }
 
     /// Ruling 37 (ONE formatter): routed through the Phase-1 `Format`/`video_views` plural, same
@@ -85,6 +101,14 @@ struct PlayerMetadataView: View {
             "video_views", locale: locale,
             Format.compactCount(viewCount, locale: locale), Int64(Format.pluralQuantity(viewCount))
         )
+    }
+}
+
+/// CF-B1-10: the toggle is offered when the collapsed text is actually cut, or is expanded (so
+/// "Show less" remains). Pure so `PlayerMetadataViewTests` pins it without the geometry.
+nonisolated enum DescriptionTruncation {
+    static func needsToggle(fits: Bool, isExpanded: Bool) -> Bool {
+        !fits || isExpanded
     }
 }
 

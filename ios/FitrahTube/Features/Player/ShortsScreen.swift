@@ -14,6 +14,7 @@ struct ShortsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: PlayerViewModel?
     @State private var bannerMessage: BannerMessage?
+    @State private var showReport = false
 
     var body: some View {
         ZStack {
@@ -31,6 +32,15 @@ struct ShortsScreen: View {
             .padding(Spacing.md(widthClass))
         }
         .transientBanner($bannerMessage)
+        // B4 CF-B1-9 / Plan C task 3: `contentSubType = SHORT`, `parentType = CHANNEL` when the
+        // short carries its channel id (`ChannelShortsTabFragment.kt:89-101`).
+        .sheet(isPresented: $showReport) {
+            ReportSheet(context: ReportContext(
+                targetType: .video, targetId: args.videoId,
+                parentType: args.channelId.map { _ in .channel }, parentId: args.channelId, contentSubType: .short)) {
+                bannerMessage = BannerMessage(text: String(localized: "report_success"))
+            }
+        }
         .statusBarHidden(true)                              // ruling 57
         .toolbar(.hidden, for: .navigationBar)              // fork D; Back is `backButton` below
         .onAppear { OrientationLock.lockPortrait() }
@@ -116,8 +126,7 @@ struct ShortsScreen: View {
     }
 
     /// `menu_shorts_kebab.xml` (ruling 53): Quality -- the ONE ladder, `QualityOption` (CF-B1-5)
-    /// -- and Report, which shows the same coming-soon banner `PlayerToolbar.reportButton` shows
-    /// (CF-B1-9: Plan C wires one report flow, not two).
+    /// -- and Report: the one `ReportSheet` (Plan C task 3), as a SHORT with its channel parent.
     private func kebab(_ model: PlayerViewModel) -> some View {
         Menu {
             Section(String(localized: "player_quality_dialog_title")) {
@@ -135,7 +144,7 @@ struct ShortsScreen: View {
                 }
             }
             Button {
-                bannerMessage = BannerMessage(text: String(localized: "player_report_coming_soon"))
+                showReport = true
             } label: {
                 Label(String(localized: "report_content"), systemImage: "flag")
             }

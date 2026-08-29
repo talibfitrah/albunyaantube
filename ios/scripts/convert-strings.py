@@ -13,7 +13,9 @@ PLURAL_CATEGORIES = ("zero", "one", "two", "few", "many", "other")
 # R8 / §7: keys that cannot convert mechanically -- refused (reported), not silently dropped.
 # The only three real hazards: %.1f abbreviated-count strings, superseded by CountFormat.kt and
 # already dead on Android (strings-assets.md §4, §7.3).
-REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands"}
+# share_app_promo: Android's value says "ad-free" (spec D10 / §12 require dropping it; the embed
+# rung plays YouTube's own player, ads included). Refused here, re-authored under EXTRA_KEYS.
+REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands", "share_app_promo"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -53,6 +55,22 @@ SPECIFIER_OVERRIDES = {
 # source since Android always forces sign-in and has no guest state for this screen.
 EXTRA_KEYS = {
     "filter_label_parent_child": "⁨%1$@⁩ › ⁨%2$@⁩",
+    # share_app_promo: REFUSED above and re-authored here. Android's value claims "ad-free",
+    # which spec D10 / 12 require dropping and which the embed rung (B3) makes false -- rung 3
+    # plays YouTube's own player, ads included.
+    "share_app_promo": {
+        "en": "Get FitrahTube for curated Islamic content!",
+        "ar": "حمّل فطرة تيوب لمحتوى إسلامي منتقى!",
+        "nl": "Download FitrahTube voor geselecteerde islamitische content!",
+    },
+    # report_reason_limit (Plan C task 3): the disabled-row hint once 10 reasons are selected.
+    # iOS-only -- Android has no cap and eats the backend's 400 (ContentReportController.java:161
+    # validates @Size(max = 10) against an 11-value enum).
+    "report_reason_limit": {
+        "en": "You can select up to 10 reasons",
+        "ar": "يمكنك اختيار ١٠ أسباب كحد أقصى",
+        "nl": "Je kunt maximaal 10 redenen selecteren",
+    },
     # banner_dismiss (gate wave-2 W5): the dismiss affordance on `TransientBanner`. iOS-only --
     # Android's Snackbar always auto-dismisses, so there is no source string for it.
     "banner_dismiss": {
@@ -671,8 +689,10 @@ def verify(out):
     for key, entry in out["strings"].items():
         assert set(entry["localizations"]) == {"en", "ar", "nl"}, f"{key}: {sorted(entry['localizations'])}"
 
-    for key in REFUSE:
+    # A refused key re-authored under EXTRA_KEYS (share_app_promo) is emitted from there, not Android.
+    for key in REFUSE - set(EXTRA_KEYS):
         assert key not in out["strings"], f"{key} should have been refused, not emitted"
+    assert out["strings"]["share_app_promo"]["localizations"]["en"]["stringUnit"]["value"] == EXTRA_KEYS["share_app_promo"]["en"]
 
     # EXTRA_KEYS: all three locales present and identical, with the FSI/PDI isolates intact.
     plc = out["strings"]["filter_label_parent_child"]["localizations"]

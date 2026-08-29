@@ -87,6 +87,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// live one shares InnerTubeKit's `BrowseClient`/`AtomFeedFetcher` and the same
     /// UserDefaults-backed `KeyValueStore` for its 1 h degraded latch.
     private(set) lazy var index = IndexClient(baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+    /// Plan C Task 3: the hand-written `POST /api/v1/reports` (same seam, awaited by `ReportSheet`).
+    private(set) lazy var report = ReportClient(baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
     private(set) lazy var browse: any BrowseSource = injectedBrowse ?? LiveBrowseSource(
         client: innerTube.browse,
         atom: innerTube.atom,
