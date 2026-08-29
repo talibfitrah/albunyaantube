@@ -55,7 +55,6 @@ struct MainShellView: View {
         switch shellLayout {
         case .bottomBar:
             tabView
-                .toolbar(router.isFullscreen ? .hidden : .visible, for: .tabBar)
                 .overlay(alignment: .top) { offlineBannerOverlay }
         case .rail:
             HStack(spacing: 0) {

@@ -162,7 +162,7 @@ extension StreamState {
     /// Reset in `swapArgs` alongside `currentTime` -- "per stream", not per session.
     var videoZoomed = false
     /// Transient ±10 s feedback for the gesture overlay; cleared ~600 ms after it is set.
-    var seekFeedback: PlayerGestures.SeekFeedback?
+    var seekFeedback: PlayerGestures.Zone?
     /// True while AVKit owns the screen with its OWN fullscreen presentation (the iPad path,
     /// ruling 42). Our gesture recognizer is disabled while it is true, because AVKit's fullscreen
     /// already has its own double-tap gravity toggle -- two would double-fire.
@@ -312,6 +312,7 @@ extension StreamState {
         args = next
         currentTime = 0                      // a new video starts at the beginning
         videoZoomed = false                  // B5 Task 3: the fit/zoom override is per stream
+        videoIsPortrait = false              // unknown reads as landscape until the new item is ready
     }
 
     /// Ruling 16's prefetch lane, first and only call site in the app. Six lines because

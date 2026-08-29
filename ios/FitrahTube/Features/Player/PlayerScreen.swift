@@ -29,7 +29,7 @@ struct PlayerScreen: View {
         let fullscreen = model.map(isFullscreen) ?? false
         Group {
             if let model {
-                stateView(model.state, model: model)
+                stateView(model.state, model: model, fullscreen: fullscreen)
             } else {
                 ProgressView()
             }
@@ -39,9 +39,9 @@ struct PlayerScreen: View {
         // inside the tab's `NavigationStack`; the shell's `.toolbar(.hidden, for: .tabBar)` outside
         // the `TabView` is inert on this SDK (verified on iPhone 17 / iOS 26.3, B5 Task 3).
         .toolbar(fullscreen ? .hidden : .visible, for: .navigationBar, .tabBar)
-        // Ruling 42/CF-B2-10: the shell already reads this and hides the tab bar (compact) and the
-        // navigation rail (regular) -- `Router.swift:33-34`, `MainShellView.swift:58,62`. B5 is the
-        // plan its doc comment was waiting for. `avKitFullscreen` is folded in so the iPad's stock
+        // Ruling 42/CF-B2-10: the shell reads this to hide the navigation rail (regular) --
+        // `Router.swift:33-34`, `MainShellView.swift:62`. B5 is the plan its doc comment was
+        // waiting for. `avKitFullscreen` is folded in so the iPad's stock
         // AVKit fullscreen also clears the rail.
         .onChange(of: fullscreen || model?.avKitFullscreen == true, initial: true) { _, isFS in
             router.isFullscreen = isFS
@@ -115,7 +115,7 @@ struct PlayerScreen: View {
     }
 
     @ViewBuilder
-    private func stateView(_ state: StreamState, model: PlayerViewModel) -> some View {
+    private func stateView(_ state: StreamState, model: PlayerViewModel, fullscreen: Bool) -> some View {
         switch state {
         // Task 7: ONE branch for both playable rungs, deliberately. Two `case`s each building their
         // own `PlayerHostView` gave SwiftUI two different view identities, so a mid-play demotion
@@ -129,7 +129,6 @@ struct PlayerScreen: View {
             // B5 Task 3 / ruling C: fullscreen is a MODIFIER change on this one tree, never a second
             // `PlayerHostView` placement and never a `.fullScreenCover` -- both would be a second
             // view identity, which drops the `AVPlayer` (Task 7's note above).
-            let fullscreen = isFullscreen(model)
             // Task 8: metadata panel below the player, toolbar between the two (Android's
             // action-row placement) -- ONE branch still, per Task 7's identity note above: the
             // `PlayerHostView` call below is unconditional in both cases, so its view identity
@@ -190,6 +189,9 @@ struct PlayerScreen: View {
                             }
                         }
                         .padding()
+                        // The reader below ignores the safe area in fullscreen, so this column
+                        // (exit control first) re-applies the insets to clear the island/corners.
+                        .padding(fullscreen ? geo.safeAreaInsets : EdgeInsets())
                     }
                     .aspectRatio(fullscreen && geo.size.height > 0 ? geo.size.width / geo.size.height : 16.0 / 9.0,
                                  contentMode: .fit)
@@ -402,14 +404,14 @@ struct PlayerScreen: View {
     /// carry the "10" and mirror themselves; the HStack is pinned LTR because the zones are spatial.
     @ViewBuilder
     private func seekFeedback(_ model: PlayerViewModel) -> some View {
-        if let feedback = model.seekFeedback {
+        if let zone = model.seekFeedback {
             HStack {
-                if feedback.zone == .forward { Spacer() }
-                Image(systemName: feedback.zone == .back ? "gobackward.10" : "goforward.10")
+                if zone == .forward { Spacer() }
+                Image(systemName: zone == .back ? "gobackward.10" : "goforward.10")
                     .font(.system(size: 44))
                     .foregroundStyle(.white)
                     .padding(Spacing.lg(widthClass))
-                if feedback.zone == .back { Spacer() }
+                if zone == .back { Spacer() }
             }
             .environment(\.layoutDirection, .leftToRight)
             .transition(.opacity)

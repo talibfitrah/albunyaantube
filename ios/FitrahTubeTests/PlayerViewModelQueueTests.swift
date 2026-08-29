@@ -199,6 +199,19 @@ struct PlayerViewModelQueueTests {
         #expect(vm.currentTime == 0)              // new video: starts at the beginning
     }
 
+    @Test func advanceResetsThePerStreamOrientationAndZoomFlags() async {
+        // B5 Task 3 fix round: `videoIsPortrait` is set from the OLD item's presentationSize; left
+        // standing, a 9:16 -> 16:9 advance would keep a portrait-fullscreen layout on a landscape
+        // video until the host's next observer tick. Unknown must read as landscape (doc comment).
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
+        await vm.open()
+        vm.videoIsPortrait = true
+        vm.videoZoomed = true
+        await vm.playToEnd()
+        #expect(vm.videoIsPortrait == false)
+        #expect(vm.videoZoomed == false)
+    }
+
     @Test func aPrefetchedVideoIsNotResolvedAgainOnTheNextAdvance() async {
         // I2 (B5 T2 review): a second `.prefetch` resolve of an already-warmed id is a cache hit
         // that still spends the per-video retry budget and the global prefetch lane. b->c->d:

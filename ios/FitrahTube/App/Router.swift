@@ -30,7 +30,8 @@ nonisolated enum ReselectAction: Equatable {
     /// `SubcategoriesView` set this, then immediately `popToRoot`) -- so it lives on the shell,
     /// shown by `MainShellView.transientBanner`, not on the screen that's about to disappear.
     var pendingBanner: BannerMessage?
-    /// Set by the player screen on entering/exiting fullscreen (phase 2); hides the tab bar while true.
+    /// Set by the player screen on entering/exiting fullscreen (B5); hides the iPad rail while true
+    /// (the compact tab bar is hidden by `PlayerScreen`'s own `.toolbar` -- see its comment).
     var isFullscreen = false
     /// Bumped by `reselect(_:)` when it returns `.scrollToTop` -- carries which tab so only that
     /// tab's own root view reacts (`.onChange(of:)` needs a value that actually changes, which a

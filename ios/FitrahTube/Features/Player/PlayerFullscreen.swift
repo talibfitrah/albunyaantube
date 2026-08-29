@@ -25,11 +25,6 @@ nonisolated enum PlayerFullscreen {
 nonisolated enum PlayerGestures {
     enum Zone: Equatable { case back, centre, forward }
 
-    struct SeekFeedback: Equatable {
-        let zone: Zone
-        let seconds: TimeInterval
-    }
-
     /// Thirds of the PASSED width (never `UIScreen`: split-screen / multi-window safe).
     /// `layoutDirection` is accepted only to document that it is deliberately ignored: the zones
     /// are spatial. AVKit mirrors its own scrubber under RTL, so the left third of the view is

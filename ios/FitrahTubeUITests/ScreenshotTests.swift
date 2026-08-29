@@ -659,7 +659,7 @@ final class ScreenshotTests: XCTestCase {
         // avatar + "Watch on YouTube"/share at the top of the frame) and the YouTube logo in the
         // bottom-right of the control bar.
         let targets: [(String, CGVector)] = [
-            ("center/controls", CGVector(dx: 0.5, dy: 0.25)),
+            ("center/controls", CGVector(dx: 0.5, dy: 0.5)),
             ("title", CGVector(dx: 0.25, dy: 0.12)),
             ("watch-on-youtube/share", CGVector(dx: 0.92, dy: 0.12)),
             ("channel avatar", CGVector(dx: 0.06, dy: 0.12)),
@@ -1354,4 +1354,3 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 }
-

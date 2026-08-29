@@ -126,6 +126,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         if let doubleTap = coordinator.doubleTap { doubleTap.view?.removeGestureRecognizer(doubleTap) }
         coordinator.doubleTap = nil
         coordinator.seekFeedbackTask?.cancel()
+        coordinator.model?.seekFeedback = nil    // the cancelled task above would have cleared it
         // M6 (B1 final review): the coordinator can outlive this call (SwiftUI holds it until the
         // representable's own storage goes), and a live `NWPathMonitor` keeps a queue callback
         // firing for a host that owns nothing any more. `deinit`'s cancel stays as the backstop --
@@ -389,7 +390,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                                        duration: item.duration.seconds, step: 10) else { return }
                 player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
                 model.currentTime = target
-                model.seekFeedback = PlayerGestures.SeekFeedback(zone: zone, seconds: 10)
+                model.seekFeedback = zone
                 seekFeedbackTask?.cancel()
                 seekFeedbackTask = Task { [weak model] in
                     try? await Task.sleep(for: .milliseconds(600))
