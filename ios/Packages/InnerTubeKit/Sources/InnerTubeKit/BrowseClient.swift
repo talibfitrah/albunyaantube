@@ -18,6 +18,13 @@ public struct BrowsePage<T: Sendable>: Sendable {
 /// `videoRenderer` shape) actually exposes: `channelName`/`channelId` are present on
 /// playlist-style listings (each item carries its uploader) but not on a channel's own tabs
 /// (the channel is already known there — `BrowseClient` backfills `channelId` in that case).
+/// The thumbnail's non-duration badge: an in-progress stream (`THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE`)
+/// or a scheduled premiere/stream ("UPCOMING"). A finished stream carries a duration instead, so
+/// `durationSeconds == nil` alone cannot tell live from upcoming (C T5 fix I2).
+public enum VideoBadge: Sendable, Equatable {
+    case live, upcoming
+}
+
 public struct VideoItem: Sendable, Equatable {
     public var id: String
     public var title: String
@@ -27,11 +34,12 @@ public struct VideoItem: Sendable, Equatable {
     public var viewCountText: String?
     public var publishedText: String?
     public var thumbnailURL: URL?
+    public var badge: VideoBadge?
 
     public init(
         id: String, title: String, channelName: String? = nil, channelId: String? = nil,
         durationSeconds: Int? = nil, viewCountText: String? = nil, publishedText: String? = nil,
-        thumbnailURL: URL? = nil
+        thumbnailURL: URL? = nil, badge: VideoBadge? = nil
     ) {
         self.id = id
         self.title = title
@@ -41,6 +49,7 @@ public struct VideoItem: Sendable, Equatable {
         self.viewCountText = viewCountText
         self.publishedText = publishedText
         self.thumbnailURL = thumbnailURL
+        self.badge = badge
     }
 }
 
@@ -445,7 +454,7 @@ public actor BrowseClient {
         return VideoItem(
             id: id, title: title, channelName: channelName, channelId: channelId,
             durationSeconds: durationSeconds(lockup), viewCountText: viewCountText,
-            publishedText: publishedText, thumbnailURL: thumbnailURL)
+            publishedText: publishedText, thumbnailURL: thumbnailURL, badge: badge(lockup))
     }
 
     /// The `shortsLockupViewModel` variant (captured 2026-08-29): id and thumbnail live under the
@@ -480,16 +489,31 @@ public actor BrowseClient {
     /// duration appears on this renderer. Non-timestamp badges ("LIVE", "Members only") don't
     /// parse as `mm:ss`/`hh:mm:ss` and are skipped rather than mis-read.
     private static func durationSeconds(_ lockup: [String: Any]) -> Int? {
-        let overlays = (dig(lockup, "contentImage", "thumbnailViewModel", "overlays") as? [[String: Any]]) ?? []
-        for overlay in overlays {
-            guard let badges = dig(overlay, "thumbnailBottomOverlayViewModel", "badges") as? [[String: Any]] else { continue }
-            for badge in badges {
-                if let text = dig(badge, "thumbnailBadgeViewModel", "text") as? String, let seconds = parseDurationText(text) {
-                    return seconds
-                }
-            }
+        for badge in thumbnailBadges(lockup) {
+            if let text = badge["text"] as? String, let seconds = parseDurationText(text) { return seconds }
         }
         return nil
+    }
+
+    /// Same badge walk as `durationSeconds`: the live style is locale-independent; "UPCOMING" is
+    /// the `hl=en` text (CF-C-13: confirm the scheduled variant's style/text against a live channel).
+    private static func badge(_ lockup: [String: Any]) -> VideoBadge? {
+        for badge in thumbnailBadges(lockup) {
+            let style = badge["badgeStyle"] as? String ?? ""
+            let text = (badge["text"] as? String ?? "").uppercased()
+            if style.hasSuffix("_LIVE") || text == "LIVE" { return .live }
+            if text == "UPCOMING" { return .upcoming }
+        }
+        return nil
+    }
+
+    /// Every `thumbnailBadgeViewModel` under the thumbnail's bottom overlay.
+    private static func thumbnailBadges(_ lockup: [String: Any]) -> [[String: Any]] {
+        let overlays = (dig(lockup, "contentImage", "thumbnailViewModel", "overlays") as? [[String: Any]]) ?? []
+        return overlays.flatMap { overlay in
+            ((dig(overlay, "thumbnailBottomOverlayViewModel", "badges") as? [[String: Any]]) ?? [])
+                .compactMap { $0["thumbnailBadgeViewModel"] as? [String: Any] }
+        }
     }
 
     private static func parseDurationText(_ text: String) -> Int? {

@@ -114,7 +114,7 @@ struct ChannelDetailScreen: View {
                 .font(TypeScale.itemMeta).foregroundStyle(Color.brand)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("channel.subscribers")
-            Button {
+            let button = Button {
                 if let key = viewModel.toggleSubscribed() {
                     banner = BannerMessage(text: String(localized: String.LocalizationValue(key)))
                 }
@@ -126,10 +126,16 @@ struct ChannelDetailScreen: View {
                     .frame(minHeight: 44)
                     .padding(.horizontal, Spacing.sm)
             }
-            .buttonStyle(.bordered)
+            // Filled brand while unsubscribed, outlined once subscribed -- the system styles, not a
+            // hand-painted background over `.bordered`.
+            Group {
+                if subscribed {
+                    button.buttonStyle(.bordered)
+                } else {
+                    button.buttonStyle(.borderedProminent)
+                }
+            }
             .tint(.brand)
-            .background(subscribed ? Color.clear : Color.brand, in: RoundedRectangle(cornerRadius: Radius.chip))
-            .foregroundStyle(subscribed ? Color.brand : Color.onBrand)
             .accessibilityValue(String(localized: subscribed ? "channel_unsubscribe" : "channel_subscribe"))
             .accessibilityAddTraits(subscribed ? [.isSelected] : [])
             .accessibilityIdentifier("channel.subscribe")

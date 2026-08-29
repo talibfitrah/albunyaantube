@@ -84,7 +84,7 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
     /// RULING 7: only rows that can hold data. `ChannelHeader` carries subscriber text alone --
     /// location / joined / total views / verified never arrive upstream.
     var aboutRows: [AboutRow] {
-        [AboutRow(key: "channel_subscribers_format", text: subscriberLine(for: header.subscriberText))]
+        [AboutRow(key: "subscribers", text: subscriberLine(for: header.subscriberText))]
     }
 
     /// The search-filtered view of a video tab (About has nothing to filter; Playlists is
@@ -119,6 +119,9 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
     /// Header and Videos in parallel (`ChannelDetailViewModel.kt:109-124`: 300-600 ms off cold open).
     func load() async {
         isUnavailable = false
+        // Synchronously, before the first suspension: `ChannelTabsView`'s `onChange(initial: true)`
+        // runs `ensureTabLoaded(.videos)` on the same tick and must see a non-idle tab, not fetch twice.
+        videos = .loadingInitial
         async let videosDone: Void = loadInitial(.videos)
         do {
             let fetched = try await browse.channelHeader(channelId)
@@ -250,19 +253,16 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
 
     // MARK: - Subscribe
 
-    /// Optimistic flip, reverted on throw. Returns the message key to show on failure, nil on success.
+    /// The store is synchronous, so the flag is simply re-read after the toggle. Returns the
+    /// message key to show on failure, nil on success.
     func toggleSubscribed() -> String? {
-        let was = isSubscribed
-        isSubscribed.toggle()
+        defer { isSubscribed = subscriptions.isSubscribed(channelId) }
         do {
             try subscriptions.toggle(id: channelId, name: header.name, avatarURL: header.avatarURL)
-            isSubscribed = subscriptions.isSubscribed(channelId)
             return nil
         } catch SubscriptionsError.capReached {
-            isSubscribed = was
             return "me_subscription_cap_reached"
         } catch {
-            isSubscribed = was
             return "error_state_generic_headline"
         }
     }

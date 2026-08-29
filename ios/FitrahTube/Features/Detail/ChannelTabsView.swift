@@ -172,12 +172,11 @@ private struct ChannelVideoTab: View {
         return VideoRow(item: contentItem, subtitle: subtitle) {
             router.push(.player(viewModel.playerArgs(for: item, tab: tab)))
         }
-        // ponytail: `VideoItem` carries no live/upcoming flag; on the Live tab a stream with no
-        // duration is the one in progress (a finished stream has one). Upcoming is not distinguishable
-        // until BrowseClient parses the badge -- then `Badge(.upcoming)` gets its own branch here.
+        // C T5 fix I2: the badge is parsed from the thumbnail overlay, so an UPCOMING premiere
+        // (also duration-less) is no longer labelled LIVE.
         .overlay(alignment: .topLeading) {
-            if tab == .live, item.durationSeconds == nil {
-                Badge(.live).padding(Spacing.md(widthClass) + Spacing.xs)
+            if let badge = item.badge {
+                Badge(badge == .live ? .live : .upcoming).padding(Spacing.md(widthClass) + Spacing.xs)
             }
         }
         .accessibilityIdentifier("channel.\(tab).row.\(item.id)")

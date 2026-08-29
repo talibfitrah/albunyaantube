@@ -213,19 +213,8 @@ struct PlaylistDetailScreen: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(rowAccessibilityLabel(item, position: position))
+        .accessibilityLabel(videoAccessibilityLabel(contentItem, locale: locale, position: position))
         .accessibilityIdentifier("playlist.row.\(row.position)")
-    }
-
-    /// A degraded/Atom row has no duration; "Duration: ," is not a sentence, so the segment is
-    /// omitted rather than spoken empty (both keys already exist in the catalog).
-    private func rowAccessibilityLabel(_ item: VideoItem, position: Int64) -> String {
-        if let seconds = item.durationSeconds {
-            return Format.localizedFormat("a11y_playlist_video", locale: locale, position, item.title,
-                                          Format.duration(seconds), item.channelName ?? "")
-        }
-        return [Format.localizedFormat("playlist_video_position", locale: locale, position), item.title, item.channelName]
-            .compactMap { $0 }.joined(separator: ", ")
     }
 
     // MARK: - Pagination (ContentListView.swift:570-618, verbatim wiring)

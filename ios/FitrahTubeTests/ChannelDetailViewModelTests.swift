@@ -284,7 +284,7 @@ struct ChannelDetailViewModelTests {
         // (NewPipeChannelDetailRepository.kt:740-746). `ChannelHeader` carries no verified flag either.
         let vm = makeVM()
         await vm.load()
-        #expect(vm.aboutRows.map(\.key) == ["channel_subscribers_format"])
+        #expect(vm.aboutRows.map(\.key) == ["subscribers"])
         #expect(vm.aboutRows.map(\.text) == ["1.2M subscribers"])
     }
 

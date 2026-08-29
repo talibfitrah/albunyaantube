@@ -199,6 +199,44 @@ import Testing
         #expect(body.contains("\"params\""))
     }
 
+    // MARK: - f2) VideoItem.badge (C T5 fix I2: LIVE vs UPCOMING is the badge, not `durationSeconds == nil`)
+
+    /// The live capture holds one FINISHED stream (badge "3:53:36"); the in-progress and scheduled
+    /// variants swap that one badge for YouTube's own `THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE` / "UPCOMING"
+    /// (`browse-channel-live.json` is otherwise untouched). CF-C-13: confirm both against a live channel.
+    private func liveFixture(badge: (text: String, style: String)?) throws -> HTTPResponse {
+        var body = try #require(String(data: fixtureResponse("browse-channel-live").body, encoding: .utf8))
+        let recorded = "\"text\": \"3:53:36\", \"badgeStyle\": \"THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT\""
+        #expect(body.contains(recorded))
+        if let badge {
+            body = body.replacingOccurrences(of: recorded, with: "\"text\": \"\(badge.text)\", \"badgeStyle\": \"\(badge.style)\"")
+        }
+        return HTTPResponse(status: 200, headers: [:], body: Data(body.utf8))
+    }
+
+    private func firstLiveItem(_ response: HTTPResponse) async throws -> VideoItem {
+        let client = makeClient(FixtureTransport(routes: [.init(match: { _ in true }, response: response)]))
+        return try #require(try await client.channelTab(Self.channelId, tab: .live, continuation: nil).items.first)
+    }
+
+    @Test func finishedStreamHasDurationAndNoBadge() async throws {
+        let item = try await firstLiveItem(try liveFixture(badge: nil))
+        #expect(item.durationSeconds == 3 * 3600 + 53 * 60 + 36)
+        #expect(item.badge == nil)
+    }
+
+    @Test func liveBadgeStyleParsesAsLive() async throws {
+        let item = try await firstLiveItem(try liveFixture(badge: ("LIVE", "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE")))
+        #expect(item.badge == .live)
+        #expect(item.durationSeconds == nil)
+    }
+
+    @Test func upcomingBadgeParsesAsUpcomingNotLive() async throws {
+        let item = try await firstLiveItem(try liveFixture(badge: ("UPCOMING", "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT")))
+        #expect(item.badge == .upcoming)
+        #expect(item.durationSeconds == nil)
+    }
+
     // MARK: - g) channelTab(.shorts) and channelPlaylists — CF-C1 (Plan C Task 1)
 
     @Test func shortsTabParsesIntoVideoItemsWithNoDuration() async throws {

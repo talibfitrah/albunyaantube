@@ -23,13 +23,21 @@ private func videoMeta(_ item: ContentItem, locale: Locale, includeCategory: Boo
     return parts.joined(separator: " • ")
 }
 
-private func videoAccessibilityLabel(_ item: ContentItem, locale: Locale) -> String {
-    let duration = item.durationSeconds.map(Format.duration) ?? ""
-    let views = item.viewCount.map {
-        Format.localizedFormat("video_views", locale: locale, Format.compactCount($0, locale: locale), Int64(Format.pluralQuantity($0)))
-    } ?? ""
-    let uploaded = item.uploadedDaysAgo.map { Format.timeAgo(days: $0, locale: locale) } ?? ""
-    return Format.localizedFormat("a11y_video_item", locale: locale, item.title, duration, views, uploaded)
+/// Spoken label for a video row/cell: `[Position N, ]title[, Duration: D][, views][, uploaded][, channel]`,
+/// each segment omitted when its value is nil -- never "Duration: , ," (C T5 fix I1). `position` is
+/// the playlist row's 1-based index (`PlaylistDetailScreen`); every other caller leaves it nil.
+func videoAccessibilityLabel(_ item: ContentItem, locale: Locale, position: Int64? = nil) -> String {
+    let segments: [String?] = [
+        position.map { Format.localizedFormat("playlist_video_position", locale: locale, $0) },
+        item.title,
+        item.durationSeconds.map { Format.localizedFormat("a11y_duration_format", locale: locale, Format.duration($0)) },
+        item.viewCount.map {
+            Format.localizedFormat("video_views", locale: locale, Format.compactCount($0, locale: locale), Int64(Format.pluralQuantity($0)))
+        },
+        item.uploadedDaysAgo.map { Format.timeAgo(days: $0, locale: locale) },
+        item.channelTitle,
+    ]
+    return segments.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
 }
 
 // MARK: - RemoteImage

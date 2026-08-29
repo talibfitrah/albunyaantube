@@ -152,4 +152,29 @@ struct FormattingTests {
         #expect(Format.sectionSeeAllLabel(section, locale: Locale(identifier: "en")).contains("Quran"))
         #expect(Format.sectionSeeAllLabel(section, locale: Locale(identifier: "ar")).contains("قرآن"))
     }
+    // MARK: - videoAccessibilityLabel (C T5 fix I1: nil segments are omitted, never spoken empty)
+
+    private func item(duration: Int? = nil, views: Int64? = nil, days: Int? = nil, channel: String? = nil) -> ContentItem {
+        ContentItem(id: "v1", type: .video, title: "Tafsir 1", category: nil, description: nil, thumbnailURL: nil,
+                    durationSeconds: duration, uploadedDaysAgo: days, viewCount: views, channelTitle: channel,
+                    subscribers: nil, videoCount: nil, itemCount: nil)
+    }
+
+    @Test func videoLabelOmitsEverySegmentWithNoValue() {
+        let label = videoAccessibilityLabel(item(), locale: Locale(identifier: "en_US"))
+        #expect(label == "Tafsir 1")
+        #expect(!label.contains(", ,"))
+        #expect(!label.contains("Duration:"))
+    }
+
+    @Test func videoLabelJoinsPresentSegments() {
+        let label = videoAccessibilityLabel(item(duration: 725, views: 1200, days: 3, channel: "Alafasy"),
+                                            locale: Locale(identifier: "en_US"))
+        #expect(label == "Tafsir 1, Duration: 12:05, 1.2K views, 3 days ago, Alafasy")
+    }
+
+    @Test func videoLabelLeadsWithPlaylistPosition() {
+        let label = videoAccessibilityLabel(item(channel: "Alafasy"), locale: Locale(identifier: "en_US"), position: 3)
+        #expect(label == "Position 3, Tafsir 1, Alafasy")
+    }
 }

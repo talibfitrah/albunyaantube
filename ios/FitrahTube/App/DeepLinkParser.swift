@@ -51,10 +51,10 @@ nonisolated enum DeepLinkParser {
     /// `^[A-Za-z0-9_-]{1,64}$`, applied at the trust boundary where all four kinds converge
     /// (gate A-I4 / cso-F1). Any web page or installed app can navigate to `albunyaantube://…`,
     /// and the ids reach `Route` verbatim: `..`, an embedded NUL, a `?`, or a 64 KB string are all
-    /// accepted today only because every destination is still `PhaseTwoPlaceholderView`. The
-    /// moment phase 2 interpolates `PlayerArgs.videoId` into a playback URL they become
-    /// path-traversal / C-string-truncation / query-injection primitives, and that change will not
-    /// naturally revisit this file. Covers every real YouTube and Firestore document id.
+    /// interpolated into InnerTube request bodies and `PlayerArgs.videoId` into playback URLs, so
+    /// an unchecked id is a path-traversal / C-string-truncation / query-injection primitive and
+    /// the screens that consume it never revisit this file. Covers every real YouTube and
+    /// Firestore document id.
     private static func isValidID(_ id: String) -> Bool {
         !id.isEmpty && id.count <= 64 && id.allSatisfy(allowedIDCharacters.contains)
     }

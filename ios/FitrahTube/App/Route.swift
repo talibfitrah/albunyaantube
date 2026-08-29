@@ -31,9 +31,8 @@ extension Tab {
     }
 }
 
-/// One destination pushed onto a tab's `NavigationStack` (spec §6). Phase 1 only implements the
-/// tab roots and this routing layer -- every destination renders `PhaseTwoPlaceholderView` until
-/// its real screen lands in a later task.
+/// One destination pushed onto a tab's `NavigationStack` (spec §6); `MainShellView.destination(for:)`
+/// maps each case to its screen exhaustively (the Phase 1 placeholder is gone since Plan C Task 5).
 nonisolated enum Route: Hashable, Sendable {
     case player(PlayerArgs)
     case shorts(PlayerArgs)

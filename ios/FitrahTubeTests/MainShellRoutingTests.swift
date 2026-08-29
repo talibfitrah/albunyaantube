@@ -3,8 +3,8 @@ import SwiftUI
 import Testing
 @testable import FitrahTube
 
-/// Plan C Global Constraints: `MainShellView.destination(for:)` has a `default:` arm, so a missing
-/// `case` is a silent `PhaseTwoPlaceholderView` rather than a compile error. These tests walk the
+/// `MainShellView.destination(for:)` is an exhaustive switch since Plan C Task 5, so a missing arm is
+/// a compile error; these tests pin that each Plan C route resolves to its real screen. They walk the
 /// `_ConditionalContent` chain the `@ViewBuilder` switch produces down to the leaf view that was
 /// actually chosen for the route.
 @Suite(.perTest)
@@ -22,18 +22,14 @@ struct MainShellRoutingTests {
         return String(describing: mirror.subjectType)
     }
 
-    @Test func thePlaylistRouteRendersTheRealScreenNotThePlaceholder() {
-        // Global Constraints: MainShellView.destination(for:) has a `default:` at :156, so a missing
-        // arm is a silent placeholder rather than a compile error. This is the test that notices.
+    @Test func thePlaylistRouteRendersTheRealScreen() {
         let leaf = leafTypeName(for: .playlist(id: "PL1", title: "T", category: nil, count: 3))
         #expect(leaf == "PlaylistDetailScreen")
-        #expect(leaf != "PhaseTwoPlaceholderView")
     }
 
-    @Test func theChannelRouteRendersTheRealScreenNotThePlaceholder() {
+    @Test func theChannelRouteRendersTheRealScreen() {
         let leaf = leafTypeName(for: .channel(id: "UC1", name: nil, avatarURL: nil))
         #expect(leaf == "ChannelDetailScreen")
-        #expect(leaf != "PhaseTwoPlaceholderView")
     }
 
     @Test func theWalkerReachesADistinctLeafPerRoute() {
