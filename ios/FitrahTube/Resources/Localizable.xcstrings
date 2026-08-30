@@ -89,28 +89,6 @@
         }
       }
     },
-    "a11y_playlist_video": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الموضع %1$lld، %2$@، المدة: %3$@، %4$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Position %1$lld, %2$@, Duration: %3$@, %4$@"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Positie %1$lld, %2$@, Duur: %3$@, %4$@"
-          }
-        }
-      }
-    },
     "a11y_search_history": {
       "localizations": {
         "ar": {
@@ -129,28 +107,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recente zoekopdracht: %1$@"
-          }
-        }
-      }
-    },
-    "a11y_video_item": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "فيديو: %1$@، المدة: %2$@، %3$@، %4$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Video: %1$@, Duration: %2$@, %3$@, %4$@"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Video: %1$@, Duur: %2$@, %3$@, %4$@"
           }
         }
       }
@@ -11166,28 +11122,6 @@
         }
       }
     },
-    "player_report_coming_soon": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الإبلاغ قادم قريبًا"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reporting is coming soon"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rapporteren komt binnenkort"
-          }
-        }
-      }
-    },
     "player_resize_mode_fit": {
       "localizations": {
         "ar": {
@@ -11970,28 +11904,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "playlist_metadata_duration_format": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld فيديو • %2$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld videos • %2$@"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld video's • %2$@"
           }
         }
       }
@@ -17750,28 +17662,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "video_views_format": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@ مشاهدة"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@ views"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@ weergaven"
           }
         }
       }

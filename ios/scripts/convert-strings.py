@@ -15,7 +15,10 @@ PLURAL_CATEGORIES = ("zero", "one", "two", "few", "many", "other")
 # already dead on Android (strings-assets.md §4, §7.3).
 # share_app_promo: Android's value says "ad-free" (spec D10 / §12 require dropping it; the embed
 # rung plays YouTube's own player, ads included). Refused here, re-authored under EXTRA_KEYS.
-REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands", "share_app_promo"}
+REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands", "share_app_promo",
+          # Orphaned on iOS (Phase 2 gate, 2026-08-30): no Swift reader. `videoAccessibilityLabel` and
+          # `CountFormat`-style formatting replaced them; drop rather than ship dead catalog entries.
+          "a11y_video_item", "a11y_playlist_video", "video_views_format", "playlist_metadata_duration_format"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -131,14 +134,6 @@ EXTRA_KEYS = {
         "en": "Show less",
         "ar": "عرض أقل",
         "nl": "Minder weergeven",
-    },
-    # player_report_coming_soon (B1 task 8 fix round 1): the Report button's `transientBanner`
-    # until Plan C wires the real report flow. iOS-only -- Android's Report is fully wired, so
-    # there is no Android source string for a "coming soon" placeholder to port.
-    "player_report_coming_soon": {
-        "en": "Reporting is coming soon",
-        "ar": "الإبلاغ قادم قريبًا",
-        "nl": "Rapporteren komt binnenkort",
     },
     # player_error_generic (B1 placeholder, re-purposed in B3): the terminal copy when the embed
     # rung's one reload is spent (`EmbedErrorPolicy`). There is no rung below it -- the owner
