@@ -19,6 +19,8 @@ struct PlaylistDetailViewModelTests {
         var perPage = 5
         var failWith: (any Error)?
         var gate: Gate?
+        /// When set, every item carries this id -- a playlist that lists the same video repeatedly.
+        var repeatedId: String?
         private(set) var calls: [String?] = []
 
         final class Gate: @unchecked Sendable {
@@ -39,7 +41,7 @@ struct PlaylistDetailViewModelTests {
             if let failWith { self.failWith = nil; throw failWith }
             let n = continuation.flatMap { Int($0) } ?? 0
             let items = (0..<perPage).map { i in
-                VideoItem(id: "\(n)-\(i)", title: "Item \(n * perPage + i)", durationSeconds: 60, viewCountText: "1.2K views")
+                VideoItem(id: repeatedId ?? "\(n)-\(i)", title: "Item \(n * perPage + i)", durationSeconds: 60, viewCountText: "1.2K views")
             }
             return BrowsePage(items: items, nextContinuation: n + 1 < pages ? "\(n + 1)" : nil)
         }
@@ -135,6 +137,19 @@ struct PlaylistDetailViewModelTests {
         #expect(vm.rows.count == 10)
         #expect(vm.rows[5].position == 6)
         #expect(vm.rows[5].item.id == "1-0")
+    }
+
+    @Test func rowsStayDistinctWhenAPlaylistRepeatsAVideo() async {
+        // Cubic P2: a YouTube playlist may list the same video twice. Keying the SwiftUI list on the
+        // video id would collapse those rows; `Row.id` is the row's position, and only the tap
+        // payload keeps the video id.
+        let source = FakeSource()
+        source.repeatedId = "xc7keR2piUM"
+        let vm = makeVM(source: source)
+        await vm.load()
+        #expect(vm.rows.count == 5)
+        #expect(Set(vm.rows.map(\.id)).count == 5)
+        #expect(vm.playerArgs(for: vm.rows[3]).videoId == "xc7keR2piUM")
     }
 
     @Test func appendingShowsTheFooterSpinner() async {

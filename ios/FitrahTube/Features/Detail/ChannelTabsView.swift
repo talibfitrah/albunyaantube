@@ -234,7 +234,7 @@ private struct ChannelVideoTab: View {
             if tab == .shorts {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Spacing.sm), count: shortsColumns),
                           spacing: Spacing.md(widthClass)) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { offset, item in
+                    ForEach(Array(items.enumerated()), id: \.offset) { offset, item in
                         shortCell(item).onAppear { nearEnd(offset) }
                     }
                 }
@@ -242,7 +242,7 @@ private struct ChannelVideoTab: View {
                 .padding(.top, Spacing.sm)
             } else {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { offset, item in
+                    ForEach(Array(items.enumerated()), id: \.offset) { offset, item in
                         row(item).onAppear { nearEnd(offset) }
                     }
                 }
@@ -309,7 +309,7 @@ private struct ChannelPlaylistsTab: View {
             SkeletonListView().padding(Spacing.md(widthClass))
         } rows: { tiles, nearEnd in
             LazyVStack(spacing: 0) {
-                ForEach(Array(tiles.enumerated()), id: \.element.id) { offset, tile in
+                ForEach(Array(tiles.enumerated()), id: \.offset) { offset, tile in
                     PlaylistRow(item: ContentItem(id: tile.id, type: .playlist, title: tile.title, category: nil, description: nil,
                                                   thumbnailURL: tile.thumbnailURL, durationSeconds: nil, uploadedDaysAgo: nil,
                                                   viewCount: nil, channelTitle: tile.channelName, subscribers: nil,

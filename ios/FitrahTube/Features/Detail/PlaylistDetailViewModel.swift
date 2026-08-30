@@ -18,7 +18,9 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
     nonisolated struct Row: Identifiable, Sendable {
         let index: Int
         let item: VideoItem
-        var id: String { item.id }
+        /// Position, not `item.id`: a playlist can list the same video twice (Cubic P2), and two rows
+        /// sharing a SwiftUI identity get dropped/duplicated. The tap payload still carries `item.id`.
+        var id: Int { index }
         /// One-based place in the playlist, not in the page (`NewPipePlaylistDetailRepository.kt:175-177,211`).
         var position: Int { index + 1 }
     }
