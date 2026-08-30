@@ -19,6 +19,11 @@ set -m
 # while its sibling script succeeds.
 PATH="$HOME/.local/bin:$PATH"
 
+# Plan C: validates the published ios-remote-config.json through the real decoder + sanitizer
+# (RemoteConfigTests.thePublishedRepoRootConfigSurvivesSanitizing). Absent -> the test skips, so a
+# checkout without the file (or before the merge to main) is green.
+export IOS_REMOTE_CONFIG_PATH="$(cd "$(dirname "$0")/../.." && pwd)/ios-remote-config.json"
+
 IPHONE_SIM="${IPHONE_SIM:-iPhone 17}"
 IPAD_SIM="${IPAD_SIM:-iPad Pro 13-inch (M5)}"
 

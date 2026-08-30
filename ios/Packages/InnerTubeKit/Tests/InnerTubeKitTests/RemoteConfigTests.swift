@@ -146,6 +146,25 @@ import Testing
         #expect(config == RemoteConfig.bundledDefault)
     }
 
+    /// Plan C Task 6: the published repo-root `ios-remote-config.json` through the REAL decoder +
+    /// sanitizer. The file is inert until it reaches `main`, but a typo in it is silent at runtime --
+    /// `refresh()` swallows a decode failure and `current()` falls back to the bundled default, so
+    /// the app looks fine and the runbook's "remote config first" rows quietly do nothing. Seeding
+    /// lastGood is what runs the private `sanitized` (`RemoteConfig.swift:110-117`) without exposing
+    /// it. Gated on `IOS_REMOTE_CONFIG_PATH` (set by `ios/scripts/test.sh`) AND the file existing, so
+    /// a checkout without the file skips rather than fails.
+    @Test(.enabled(if: publishedConfigPath != nil))
+    func thePublishedRepoRootConfigSurvivesSanitizing() async throws {
+        let path = try #require(publishedConfigPath)
+        let store = RemoteConfigStore(
+            transport: FixtureTransport(routes: []), keyValueStore: keyValueStoreWithLastGood(try Data(contentsOf: URL(filePath: path))),
+            url: URL(string: "https://example.invalid/none")!)
+        let config = await store.current()
+        #expect(config.resolverOrder.count == 2)      // nothing dropped as an unknown strategy (embed ships dark)
+        #expect(config.clients.count == 3)            // no clientName mismatch dropped a family
+        #expect(config.featuredCategoryId != nil)     // ruling 63's key is present
+    }
+
     @Test func semVerComparesNumericSegmentsNotLexicographically() {
         #expect(SemVer.compare("1.0.0", "1.0.10") == .orderedAscending)
         #expect(SemVer.compare("1.2.0", "1.10.0") == .orderedAscending)
@@ -164,6 +183,10 @@ import Testing
         #expect(config.requiresUpdate(appVersion: "1.5.1") == false)
     }
 }
+
+/// `IOS_REMOTE_CONFIG_PATH` when it names an existing file, else nil (the test above skips).
+private let publishedConfigPath: String? = ProcessInfo.processInfo.environment["IOS_REMOTE_CONFIG_PATH"]
+    .flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
 
 private func keyValueStoreWithLastGood(_ data: Data) -> InMemoryKeyValueStore {
     let store = InMemoryKeyValueStore()
