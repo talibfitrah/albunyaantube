@@ -147,20 +147,43 @@ struct FakeBrowseSource: BrowseSource {
     var pages = 2
     var perPage = 12
     var degraded = false
+    /// RULING 14/15 capture: the gate answered 410 -- header and playlist items throw `.unavailable`.
+    var unavailable = false
+    /// The footer's error trio capture: every continuation request fails.
+    var failAppend = false
+
+    /// Plan C Task 6 screenshot rig (`ScreenshotTests`): `-fitrah-fake-browse-botcheck` (degraded),
+    /// `-fitrah-fake-browse-unavailable` (410), `-fitrah-fake-browse-fail-append`, and
+    /// `-fitrah-fake-browse-pages <pages> <perPage>` (perPage 0 = every tab empty). Same launch-argument
+    /// ladder as `PlayerScreen.resolver(container:)`.
+    static func fromLaunchArguments() -> FakeBrowseSource {
+        let args = ProcessInfo.processInfo.arguments
+        var source = FakeBrowseSource()
+        source.degraded = args.contains("-fitrah-fake-browse-botcheck")
+        source.unavailable = args.contains("-fitrah-fake-browse-unavailable")
+        source.failAppend = args.contains("-fitrah-fake-browse-fail-append")
+        if let i = args.firstIndex(of: "-fitrah-fake-browse-pages"), args.indices.contains(i + 2),
+           let pages = Int(args[i + 1]), let perPage = Int(args[i + 2]) {
+            source.pages = pages
+            source.perPage = perPage
+        }
+        return source
+    }
 
     func isDegraded() async -> Bool { degraded }
 
     func channelHeader(_ id: String) async throws -> ChannelHeader {
-        ChannelHeader(id: id, name: "Fixture Channel", subscriberText: degraded ? nil : "1.2M subscribers")
+        if unavailable { throw BrowseSourceError.unavailable }
+        return ChannelHeader(id: id, name: "Fixture Channel", subscriberText: degraded ? nil : "1.2M subscribers")
     }
 
     func channelVideos(_ id: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
-        page(prefix: "video", continuation: continuation)
+        try page(prefix: "video", continuation: continuation)
     }
 
     func channelTab(_ id: String, tab: ChannelTab, continuation: String?) async throws -> BrowsePage<VideoItem> {
         if degraded { throw BrowseError.botCheck }
-        return page(prefix: "\(tab)", continuation: continuation)
+        return try page(prefix: "\(tab)", continuation: continuation)
     }
 
     func channelPlaylists(_ id: String, continuation: String?) async throws -> BrowsePage<PlaylistTile> {
@@ -171,10 +194,12 @@ struct FakeBrowseSource: BrowseSource {
 
     func playlistItems(_ playlistId: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
         if degraded { throw BrowseError.botCheck }
-        return page(prefix: "item", continuation: continuation)
+        if unavailable { throw BrowseSourceError.unavailable }
+        return try page(prefix: "item", continuation: continuation)
     }
 
-    private func page(prefix: String, continuation: String?) -> BrowsePage<VideoItem> {
+    private func page(prefix: String, continuation: String?) throws -> BrowsePage<VideoItem> {
+        if failAppend, continuation != nil { throw URLError(.timedOut) }
         let n = continuation.flatMap { Int($0) } ?? 0
         let items = (0..<perPage).map { i in
             VideoItem(id: "\(prefix)-\(n)-\(i)", title: "\(prefix.capitalized) \(n * perPage + i)",

@@ -1786,6 +1786,630 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-b5t4-live-paged", into: directory)
     }
 
+    // MARK: - Plan C task 6: channel / playlist / report matrix
+
+    /// Approved-catalog ids only (the plan's Task 6 list); the fake browse source ignores them, so
+    /// they matter for the share URL and the deep-link shape, not for the data.
+    private static let cChannelId = "UCmMcOjsVehVlEOteyrhjI2Q"
+    private static let cPlaylistId = "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc"
+
+    private func channelScreen(_ extra: [String] = []) -> Screen {
+        Screen(key: "channel-c-task6", arguments: ["-fitrah-route", "channel", Self.cChannelId, "Fixture Channel"] + extra,
+               anchor: .button("unused"))
+    }
+
+    /// `-fitrah-fake-player(-queue)` so Play All / Shuffle / a row tap land on a player that
+    /// resolves the bundled clip and lists the fixture queue (no network).
+    private func playlistScreen(_ extra: [String] = []) -> Screen {
+        Screen(key: "playlist-c-task6",
+               arguments: ["-fitrah-fake-player", "-fitrah-fake-player-queue", "-fitrah-route", "playlist", Self.cPlaylistId, "Fixture Playlist"] + extra,
+               anchor: .button("unused"))
+    }
+
+    private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
+
+    private func ids(_ app: XCUIApplication, prefix: String) -> [XCUIElement] {
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix)).allElementsBoundByIndex
+    }
+
+    /// The plan's "≥44×44 pt, measured": frame + label + value into the notes, and the floor asserted.
+    private func measure(_ element: XCUIElement, _ name: String, into notes: Notes, barItem: Bool = false) {
+        guard element.exists else {
+            notes.append("\(name): MISSING")
+            XCTFail("\(name): element missing, nothing to measure")
+            return
+        }
+        let f = element.frame
+        notes.append("\(name) frame=\(f) label=\(element.label.debugDescription) value=\((element.value as? String).debugDescription) selected=\(element.isSelected)")
+        // A navigation-bar item's frame is the system's glass capsule (44x36 on this SDK), not the
+        // 44x44 label inside it; UIKit owns that chrome, so bar items are recorded, not asserted.
+        guard !barItem else { return }
+        XCTAssertGreaterThanOrEqual(f.width, 44, "\(name): narrower than 44 pt (\(f.width))")
+        XCTAssertGreaterThanOrEqual(f.height, 44, "\(name): shorter than 44 pt (\(f.height))")
+    }
+
+    /// Append-and-flush note taker for the measurement files.
+    private final class Notes {
+        private let file: URL
+        private var lines: [String] = []
+        init(file: URL, append: Bool = false) {
+            self.file = file
+            if append, let existing = try? String(contentsOf: file, encoding: .utf8) { lines = [existing] }
+        }
+        func append(_ line: String) {
+            lines.append(line)
+            try? lines.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
+        }
+    }
+
+    private func typeSearch(_ app: XCUIApplication, _ text: String) {
+        let field = app.textFields.firstMatch
+        field.tap()
+        if let current = field.value as? String, !current.isEmpty, current != "Search…" {
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
+        }
+        field.typeText(text)
+    }
+
+    /// Swipes the paged tab body (below the strip, above the tab bar) -- not the strip itself.
+    private func swipeTabs(_ app: XCUIApplication, left: Bool) {
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.85 : 0.15, dy: 0.7))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.15 : 0.85, dy: 0.7))
+        from.press(forDuration: 0.05, thenDragTo: to)
+    }
+
+    /// Scrolls the report Form until `element` sits clear of the sheet's bar and its bottom edge
+    /// (controlled ~200 pt drags, not flings: a fling at the top would collapse the sheet's detent).
+    private func reveal(_ app: XCUIApplication, _ element: XCUIElement, missingIsBelow: Bool = true) {
+        let window = app.windows.firstMatch.frame
+        for _ in 0..<8 {
+            settleFrame(element)
+            guard element.exists else { drag(app, up: missingIsBelow); continue }
+            let f = element.frame
+            if f.minY < 140 { drag(app, up: false) } else if f.maxY > window.maxY - 24 { drag(app, up: true) } else { return }
+        }
+    }
+
+    /// A tap right after a drag (scroll deceleration, a detent animation, the sheet's own
+    /// presentation) lands where the row WAS. Poll until two consecutive frame reads agree.
+    private func settleFrame(_ element: XCUIElement) {
+        var previous: CGRect?
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            let current = element.exists ? element.frame : .null
+            if current == previous { return }
+            previous = current
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+    }
+
+    private func drag(_ app: XCUIApplication, up: Bool) {
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.7 : 0.45))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.45 : 0.7))
+        from.press(forDuration: 0.1, thenDragTo: to)
+    }
+
+    private func reasonRows(_ app: XCUIApplication) -> [XCUIElement] {
+        app.switches.matching(NSPredicate(format: "identifier BEGINSWITH 'report.reason.'")).allElementsBoundByIndex
+    }
+
+    private func openReport(_ app: XCUIApplication) {
+        app.buttons["detail.kebab.button"].tap()
+        let report = app.buttons["detail.kebab.report"]
+        XCTAssertTrue(report.waitForExistence(timeout: 10), "c6: kebab menu never opened")
+        report.tap()
+        XCTAssertTrue(app.buttons["report.submit"].waitForExistence(timeout: 10), "c6: report sheet never opened")
+        // The sheet opens at `.medium`; nothing is dragged here -- `reveal` scrolls each row into
+        // view on demand (a drag inside the Form expands the detent before it scrolls the content).
+        _ = app.switches["report.reason.MUSIC"].waitForExistence(timeout: 5)
+        settleFrame(app.switches["report.reason.MUSIC"])
+    }
+
+    private func popToDetail(_ app: XCUIApplication, anchor: String) {
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(any(app, anchor).waitForExistence(timeout: 10), "c6: Back did not return to the detail screen")
+    }
+
+    /// iPhone leg. Channel: header, five tabs, strip metrics, swipe, per-tab bodies, selection
+    /// surviving rotation, search + `search_no_results`, Subscribe flip + the cap, autofill + Load
+    /// more, the footer error, empty copy, degraded mode, 410. Playlist: hero, three cells (no
+    /// Download), 1-based positions across page 2, search, Save/Saved, Play All / Shuffle / row
+    /// tap into the player, kebab Share/Report, the report sheet's rules, 201 and 429. Then ar-dark,
+    /// en-dark, ar-light and `.accessibility3`. Notes go to `c-task6-iphone-measurements.txt`.
+    func testDetailCTask6IPhone() throws {
+        let directory = try shotsDirectory()
+        // Written on every append (not in a `defer`): an XCUITest "not hittable" failure aborts the
+        // method through an ObjC exception, which skips Swift's defer -- run 1 lost every note.
+        let notes = Notes(file: directory.appendingPathComponent("c-task6-iphone-measurements.txt"))
+        let en = Self.locales[0]
+
+        // -- A. Channel, en light: header, tabs, kebab, share, subscribe.
+        XCUIDevice.shared.orientation = .portrait
+        var app = launch(channelScreen(), locale: en, extraArguments: [])
+        let title = app.staticTexts["channel.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 20), "c6 channel: title never appeared")
+        XCTAssertEqual(title.label, "Fixture Channel")
+        XCTAssertEqual(app.staticTexts["channel.subscribers"].label, "1.2M subscribers")
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 10), "c6 channel: Videos never loaded")
+        let window = app.windows.firstMatch.frame
+        let tabs = ["videos", "live", "shorts", "playlists", "about"]
+        for tab in tabs {
+            let button = app.buttons["channel.tab.\(tab)"]
+            XCTAssertTrue(button.exists, "c6 channel: tab \(tab) missing")
+            measure(button, "iphone-en tab.\(tab)", into: notes)
+        }
+        XCTAssertTrue(app.buttons["channel.tab.videos"].isSelected)
+        notes.append("iphone-en strip: about.maxX=\(app.buttons["channel.tab.about"].frame.maxX) window.width=\(window.width) (compact strip scrolls when about.maxX > width)")
+        measure(app.buttons["channel.subscribe"], "iphone-en subscribe", into: notes)
+        measure(app.buttons["detail.kebab.button"], "iphone-en kebab", into: notes, barItem: true)
+        measure(app.navigationBars.buttons.firstMatch, "iphone-en back", into: notes, barItem: true)
+        let firstRow = any(app, "channel.videos.row.video-0-0")
+        notes.append("iphone-en videos row0 frame=\(firstRow.frame) label=\(firstRow.label.debugDescription)")
+        XCTAssertGreaterThanOrEqual(firstRow.frame.height, 44)
+        try write(named: "detail-c6-iphone-en-light-channel-videos", into: directory)
+
+        app.buttons["detail.kebab.button"].tap()
+        let share = app.buttons["detail.kebab.share"]
+        XCTAssertTrue(share.waitForExistence(timeout: 10), "c6 channel: kebab menu never opened")
+        XCTAssertTrue(app.buttons["detail.kebab.report"].exists)
+        XCTAssertEqual(share.label, "Share"); XCTAssertEqual(app.buttons["detail.kebab.report"].label, "Report")
+        try write(named: "detail-c6-iphone-en-light-channel-kebab", into: directory)
+        share.tap()
+        let shareSheet = app.otherElements["ActivityListView"]
+        let shareShown = shareSheet.waitForExistence(timeout: 10)
+        notes.append("iphone-en share sheet shown=\(shareShown) texts=\(app.staticTexts.allElementsBoundByIndex.prefix(6).map { $0.label })")
+        XCTAssertTrue(shareShown, "c6 channel: Share did not open the share sheet")
+        try write(named: "detail-c6-iphone-en-light-channel-share", into: directory)
+        // iOS 26's compact share sheet has no Close button: tap the dimmed area beneath it.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).tap()
+        if !shareSheet.waitForNonExistence(timeout: 5) { app.swipeDown() }
+        XCTAssertTrue(shareSheet.waitForNonExistence(timeout: 10), "c6 channel: share sheet did not dismiss")
+
+        let subscribe = app.buttons["channel.subscribe"]
+        XCTAssertEqual(subscribe.label, "Subscribe")
+        subscribe.tap()
+        XCTAssertTrue(app.buttons["channel.subscribe"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["channel.subscribe"].label, "Subscribed", "c6 subscribe: label must flip")
+        XCTAssertTrue(app.buttons["channel.subscribe"].isSelected)
+        try write(named: "detail-c6-iphone-en-light-channel-subscribed", into: directory)
+        app.buttons["channel.subscribe"].tap()
+        XCTAssertEqual(app.buttons["channel.subscribe"].label, "Subscribe", "c6 subscribe: label must flip back")
+
+        // -- B. Tabs: tap Live / Shorts, swipe Shorts -> Playlists -> Shorts, Playlists, About, rotation.
+        app.buttons["channel.tab.live"].tap()
+        XCTAssertTrue(any(app, "channel.live.row.live-0-0").waitForExistence(timeout: 10), "c6 live: rows never appeared")
+        try write(named: "detail-c6-iphone-en-light-channel-live", into: directory)
+        app.buttons["channel.tab.shorts"].tap()
+        let cell0 = app.buttons["channel.shorts.cell.shorts-0-0"], cell1 = app.buttons["channel.shorts.cell.shorts-0-1"]
+        XCTAssertTrue(cell0.waitForExistence(timeout: 10), "c6 shorts: cells never appeared")
+        notes.append("iphone-en shorts cell0=\(cell0.frame) cell1=\(cell1.frame)")
+        XCTAssertEqual(cell0.frame.minY, cell1.frame.minY, accuracy: 2, "c6 shorts: two columns on iPhone")
+        XCTAssertEqual(cell0.frame.height / cell0.frame.width, 16.0 / 9.0, accuracy: 0.05, "c6 shorts: cells are 9:16")
+        try write(named: "detail-c6-iphone-en-light-channel-shorts", into: directory)
+        swipeTabs(app, left: true)
+        XCTAssertTrue(any(app, "channel.playlists.row.PL0").waitForExistence(timeout: 10), "c6 swipe: Shorts -> Playlists did not page")
+        XCTAssertTrue(app.buttons["channel.tab.playlists"].isSelected, "c6 swipe: strip did not follow the page")
+        notes.append("iphone-en swipe left: playlists selected=\(app.buttons["channel.tab.playlists"].isSelected)")
+        try write(named: "detail-c6-iphone-en-light-channel-playlists", into: directory)
+        swipeTabs(app, left: false)
+        XCTAssertTrue(cell0.waitForExistence(timeout: 10), "c6 swipe: Playlists -> Shorts did not page back")
+        XCTAssertTrue(app.buttons["channel.tab.shorts"].isSelected)
+        app.buttons["channel.tab.about"].tap()
+        let aboutSubs = app.staticTexts["channel.about.subscribers"]
+        XCTAssertTrue(aboutSubs.waitForExistence(timeout: 10), "c6 about: rows never appeared")
+        XCTAssertEqual(aboutSubs.label, "1.2M subscribers")
+        XCTAssertTrue(app.staticTexts["channel.about.description"].exists)
+        try write(named: "detail-c6-iphone-en-light-channel-about", into: directory)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        settle(app, landscape: true)
+        XCTAssertTrue(app.buttons["channel.tab.about"].isSelected, "c6 rotation: the selection must survive")
+        XCTAssertTrue(aboutSubs.exists)
+        try write(named: "detail-c6-iphone-en-light-channel-about-landscape", into: directory)
+        XCUIDevice.shared.orientation = .portrait
+        settle(app, landscape: false)
+
+        // -- C. Search: per-tab filter, About ignores it, zero matches -> search_no_results.
+        app.buttons["channel.tab.videos"].tap()
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 10))
+        typeSearch(app, "Video 3")
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-3").waitForExistence(timeout: 10), "c6 search: the match never appeared")
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForNonExistence(timeout: 5), "c6 search: non-matching rows must go")
+        XCTAssertFalse(app.buttons["listFooter.loadMore"].exists, "c6 search: no Load more while filtered")
+        notes.append("iphone-en search 'Video 3': rows=\(ids(app, prefix: "channel.videos.row.").map { $0.identifier })")
+        try write(named: "detail-c6-iphone-en-light-channel-search-match", into: directory)
+        typeSearch(app, "zzz")
+        let noResults = app.staticTexts["No results found"]
+        XCTAssertTrue(noResults.waitForExistence(timeout: 10), "c6 search: zero matches must show search_no_results")
+        try write(named: "detail-c6-iphone-en-light-channel-search-none", into: directory)
+        app.buttons["channel.tab.live"].tap()
+        XCTAssertTrue(noResults.waitForExistence(timeout: 10), "c6 search: the filter is per tab (Live has no 'zzz' either)")
+        app.buttons["channel.tab.about"].tap()
+        XCTAssertTrue(aboutSubs.waitForExistence(timeout: 10), "c6 search: About must ignore the query")
+
+        // -- D. Subscribe cap: 30 seeded, the 31st shows me_subscription_cap_reached.
+        app = launch(channelScreen(["-fitrah-seed-subscriptions"]), locale: en, extraArguments: [])
+        XCTAssertTrue(app.buttons["channel.subscribe"].waitForExistence(timeout: 20))
+        app.buttons["channel.subscribe"].tap()
+        let cap = app.staticTexts["You're following 30 channels (the limit). Unsubscribe one to follow this channel."]
+        XCTAssertTrue(cap.waitForExistence(timeout: 5), "c6 subscribe cap: banner never appeared")
+        XCTAssertEqual(app.buttons["channel.subscribe"].label, "Subscribe", "c6 subscribe cap: the 31st must not flip")
+        try write(named: "detail-c6-iphone-en-light-channel-subscribe-cap", into: directory)
+
+        // -- E. Pagination (ruling 10, compact): two-row pages -> one autofill, then Load more; tap renews.
+        // One row per page: the pinned header leaves ~320 pt for the tab body on an iPhone 17, so
+        // only a 1-row page still fits after its autofill (2 rows); a 2-row page would not, and the
+        // near-end scroll trigger would then legitimately keep paging.
+        app = launch(channelScreen(["-fitrah-fake-browse-pages", "4", "1"]), locale: en, extraArguments: [])
+        let loadMore = app.buttons["listFooter.loadMore"]
+        XCTAssertTrue(loadMore.waitForExistence(timeout: 20), "c6 pagination: Load more never appeared after the single autofill")
+        var rows = ids(app, prefix: "channel.videos.row.")
+        notes.append("iphone-en pagination before tap rows=\(rows.count) \(rows.map { $0.identifier })")
+        XCTAssertEqual(rows.count, 2, "c6 pagination: one page + one autofill = 2 rows on compact")
+        measure(loadMore, "iphone-en loadMore", into: notes)
+        try write(named: "detail-c6-iphone-en-light-channel-loadmore", into: directory)
+        if loadMore.exists {
+            loadMore.tap()
+            XCTAssertTrue(any(app, "channel.videos.row.video-2-0").waitForExistence(timeout: 10), "c6 pagination: the tap must fetch page 3")
+            rows = ids(app, prefix: "channel.videos.row.")
+            notes.append("iphone-en pagination after tap rows=\(rows.count)")
+            XCTAssertGreaterThanOrEqual(rows.count, 3)
+        }
+
+        // Footer error: the append fails -> message + Retry, rows kept.
+        app = launch(channelScreen(["-fitrah-fake-browse-pages", "4", "1", "-fitrah-fake-browse-fail-append"]), locale: en, extraArguments: [])
+        let retry = app.buttons["listFooter.retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 20), "c6 footer: the append error never appeared")
+        XCTAssertTrue(app.staticTexts["Failed to load more. Tap to retry."].exists)
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").exists, "c6 footer: rows must survive an append failure")
+        measure(retry, "iphone-en footer.retry", into: notes)
+        try write(named: "detail-c6-iphone-en-light-channel-footer-error", into: directory)
+
+        // -- F. Empty copy per tab (perPage 0).
+        app = launch(channelScreen(["-fitrah-fake-browse-pages", "1", "0"]), locale: en, extraArguments: [])
+        XCTAssertTrue(app.staticTexts["This channel has no videos yet"].waitForExistence(timeout: 20), "c6 empty: Videos copy")
+        try write(named: "detail-c6-iphone-en-light-channel-empty-videos", into: directory)
+        app.buttons["channel.tab.live"].tap()
+        XCTAssertTrue(app.staticTexts["No live or upcoming streams"].waitForExistence(timeout: 10), "c6 empty: Live copy")
+        app.buttons["channel.tab.shorts"].tap()
+        XCTAssertTrue(app.staticTexts["No Shorts available"].waitForExistence(timeout: 10), "c6 empty: Shorts copy")
+        try write(named: "detail-c6-iphone-en-light-channel-empty-shorts", into: directory)
+
+        // -- G. Degraded mode: notice + Videos rows, Live/Shorts/Playlists error + Retry, About renders.
+        app = launch(channelScreen(["-fitrah-fake-browse-botcheck"]), locale: en, extraArguments: [])
+        XCTAssertTrue(app.staticTexts["channel.degradedNotice"].waitForExistence(timeout: 20), "c6 degraded: notice never appeared")
+        XCTAssertEqual(app.staticTexts["channel.degradedNotice"].label, "Showing recent uploads only")
+        XCTAssertEqual(app.staticTexts["channel.subscribers"].label, "–", "c6 degraded: no subscriber text -> the placeholder")
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 10), "c6 degraded: Videos must still list")
+        XCTAssertFalse(app.buttons["listFooter.loadMore"].exists, "c6 degraded: no footer on the feed")
+        try write(named: "detail-c6-iphone-en-light-channel-degraded-videos", into: directory)
+        for tab in ["live", "shorts", "playlists"] {
+            app.buttons["channel.tab.\(tab)"].tap()
+            XCTAssertTrue(any(app, "channel.\(tab).error").waitForExistence(timeout: 10), "c6 degraded: \(tab) must show the error state")
+            XCTAssertTrue(app.buttons["Retry"].exists, "c6 degraded: \(tab) must offer Retry")
+            XCTAssertTrue(app.staticTexts["Couldn't load this tab. Please check your connection and try again."].exists)
+            try write(named: "detail-c6-iphone-en-light-channel-degraded-\(tab)", into: directory)
+        }
+        app.buttons["channel.tab.about"].tap()
+        XCTAssertTrue(app.staticTexts["channel.about.subscribers"].waitForExistence(timeout: 10), "c6 degraded: About must render")
+
+        // -- H. 410: content_unavailable, no Retry -- channel and playlist.
+        app = launch(channelScreen(["-fitrah-fake-browse-unavailable"]), locale: en, extraArguments: [])
+        XCTAssertTrue(any(app, "channel.unavailable").waitForExistence(timeout: 20), "c6 410 channel: state never appeared")
+        XCTAssertTrue(app.staticTexts["Content not available"].exists)
+        XCTAssertFalse(app.buttons["Retry"].exists, "c6 410 channel: no Retry (ruling 14)")
+        try write(named: "detail-c6-iphone-en-light-channel-unavailable", into: directory)
+        app = launch(playlistScreen(["-fitrah-fake-browse-unavailable"]), locale: en, extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.unavailable").waitForExistence(timeout: 20), "c6 410 playlist: state never appeared")
+        XCTAssertFalse(app.buttons["Retry"].exists, "c6 410 playlist: no Retry (ruling 14)")
+        XCTAssertFalse(app.buttons["playlist.playAll"].isEnabled, "c6 410 playlist: nothing to play")
+        try write(named: "detail-c6-iphone-en-light-playlist-unavailable", into: directory)
+
+    }
+
+    /// iPhone leg, playlist + report: hero, three cells (no Download), 1-based positions across
+    /// page 2, search, Save/Saved, Play All / Shuffle / row tap into the player, the kebab, the
+    /// report sheet's rules, 201 and 429. Split from the channel leg so each run stays inside a
+    /// foreground watchdog. Notes append to `c-task6-iphone-measurements.txt`.
+    func testDetailCTask6IPhonePlaylist() throws {
+        let directory = try shotsDirectory()
+        let notes = Notes(file: directory.appendingPathComponent("c-task6-iphone-measurements.txt"), append: true)
+        let en = Self.locales[0]
+        var app: XCUIApplication
+        XCUIDevice.shared.orientation = .portrait
+
+        // -- I. Playlist, en light: hero, three cells, positions, Save, page 2, search.
+        app = launch(playlistScreen(), locale: en, extraArguments: [])
+        let pTitle = app.staticTexts["playlist.title"]
+        XCTAssertTrue(pTitle.waitForExistence(timeout: 20), "c6 playlist: title never appeared")
+        XCTAssertEqual(pTitle.label, "Fixture Playlist")
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 10), "c6 playlist: rows never appeared")
+        notes.append("iphone-en playlist metadata=\(app.staticTexts["playlist.metadata"].exists ? app.staticTexts["playlist.metadata"].label.debugDescription : "-")")
+        for id in ["playlist.playAll", "playlist.shuffle", "playlist.save"] { measure(app.buttons[id], "iphone-en \(id)", into: notes) }
+        XCTAssertFalse(app.buttons["Download"].exists, "c6 playlist: no Download anywhere (rulings 28/56)")
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier IN {'playlist.playAll','playlist.shuffle','playlist.save'}")).count, 3, "c6 playlist: exactly three action cells")
+        XCTAssertEqual(app.buttons["playlist.playAll"].label, "Play all"); XCTAssertEqual(app.buttons["playlist.shuffle"].label, "Shuffle")
+        XCTAssertEqual(app.buttons["playlist.save"].label, "Save")
+        let row1 = any(app, "playlist.row.1")
+        notes.append("iphone-en playlist row1 frame=\(row1.frame) label=\(row1.label.debugDescription)")
+        XCTAssertTrue(row1.label.contains("Position 1") || row1.label.contains("1"), "c6 playlist: the row label must carry its position")
+        measure(app.buttons["detail.kebab.button"], "iphone-en playlist kebab", into: notes, barItem: true)
+        try write(named: "detail-c6-iphone-en-light-playlist", into: directory)
+        app.buttons["playlist.save"].tap()
+        XCTAssertEqual(app.buttons["playlist.save"].label, "Saved", "c6 save: label must flip")
+        XCTAssertTrue(app.buttons["playlist.save"].isSelected)
+        try write(named: "detail-c6-iphone-en-light-playlist-saved", into: directory)
+        app.buttons["playlist.save"].tap()
+        XCTAssertEqual(app.buttons["playlist.save"].label, "Save")
+        // Collapse: the inline title crosses into the bar.
+        app.swipeUp(); app.swipeUp(); app.swipeUp()
+        let barTitle = app.navigationBars.staticTexts["Fixture Playlist"]
+        notes.append("iphone-en playlist collapsed: bar title=\(barTitle.exists)")
+        XCTAssertTrue(barTitle.waitForExistence(timeout: 5), "c6 playlist: the title must crossfade into the bar once collapsed")
+        try write(named: "detail-c6-iphone-en-light-playlist-collapsed", into: directory)
+        let deadline = Date().addingTimeInterval(15)
+        while !any(app, "playlist.row.13").exists && Date() < deadline { app.swipeUp() }
+        XCTAssertTrue(any(app, "playlist.row.13").exists, "c6 playlist: page 2 must continue the 1-based positions")
+        try write(named: "detail-c6-iphone-en-light-playlist-page2", into: directory)
+        app.swipeDown(); app.swipeDown(); app.swipeDown(); app.swipeDown()
+        typeSearch(app, "Item 3")
+        XCTAssertTrue(any(app, "playlist.row.4").waitForExistence(timeout: 10), "c6 playlist search: Item 3 is position 4")
+        XCTAssertFalse(any(app, "playlist.row.1").exists, "c6 playlist search: non-matching rows must go")
+        try write(named: "detail-c6-iphone-en-light-playlist-search-match", into: directory)
+        typeSearch(app, "zzz")
+        XCTAssertTrue(app.staticTexts["No results found"].waitForExistence(timeout: 10), "c6 playlist search: zero matches -> search_no_results (ruling 46)")
+        try write(named: "detail-c6-iphone-en-light-playlist-search-none", into: directory)
+        app = launch(playlistScreen(["-fitrah-fake-browse-pages", "1", "0"]), locale: en, extraArguments: [])
+        XCTAssertTrue(app.staticTexts["This playlist has no videos yet"].waitForExistence(timeout: 20), "c6 playlist: playlist_empty_state")
+        XCTAssertFalse(app.buttons["playlist.playAll"].isEnabled, "c6 empty playlist: Play All disabled")
+        try write(named: "detail-c6-iphone-en-light-playlist-empty", into: directory)
+
+        // -- J. Play All / Shuffle / row tap open the player with the queue.
+        app = launch(playlistScreen(), locale: en, extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20))
+        app.buttons["playlist.playAll"].tap()
+        XCTAssertTrue(app.otherElements["player.videoBox"].waitForExistence(timeout: 20), "c6 Play All: player never opened")
+        XCTAssertTrue(app.staticTexts["player.upNext.header"].waitForExistence(timeout: 10), "c6 Play All: queue never listed")
+        let playAllTitle = app.staticTexts["player.metadata.title"].label
+        let playAllRows = upNextRows(app).map { $0.identifier }
+        notes.append("iphone-en playAll title=\(playAllTitle.debugDescription) upNext=\(playAllRows)")
+        XCTAssertEqual(playAllTitle, "Item 0", "c6 Play All: starts at item 1")
+        try write(named: "detail-c6-iphone-en-light-playlist-playall", into: directory)
+        popToDetail(app, anchor: "playlist.row.1")
+        app.buttons["playlist.shuffle"].tap()
+        XCTAssertTrue(app.staticTexts["player.upNext.header"].waitForExistence(timeout: 20), "c6 Shuffle: queue never listed")
+        let shuffledRows = upNextRows(app).map { $0.identifier }
+        notes.append("iphone-en shuffle title=\(app.staticTexts["player.metadata.title"].label.debugDescription) upNext=\(shuffledRows)")
+        XCTAssertNotEqual(shuffledRows, playAllRows, "c6 Shuffle: Up Next must be shuffled")
+        try write(named: "detail-c6-iphone-en-light-playlist-shuffle", into: directory)
+        popToDetail(app, anchor: "playlist.row.1")
+        any(app, "playlist.row.3").tap()
+        XCTAssertTrue(app.otherElements["player.videoBox"].waitForExistence(timeout: 20), "c6 row tap: player never opened")
+        XCTAssertTrue(app.staticTexts["player.metadata.title"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["player.metadata.title"].label, "Item 2", "c6 row tap: starts on that row")
+        try write(named: "detail-c6-iphone-en-light-playlist-rowtap", into: directory)
+        popToDetail(app, anchor: "playlist.row.1")
+
+        // -- K. Report sheet: 11 rows, the cap, Other, zero reasons (no network), cancel.
+        openReport(app)
+        notes.append("iphone-en report at rest: bar=\(app.buttons["report.submit"].frame) music=\(app.switches["report.reason.MUSIC"].frame) nudity=\(app.switches["report.reason.NUDITY"].frame) window=\(app.windows.firstMatch.frame)")
+        // The Form is lazy: rows past the fold are not in the snapshot until scrolled to, so the
+        // eleven are collected across the top and the bottom of the list.
+        var seen = reasonRows(app).map { $0.identifier }
+        let reasons = reasonRows(app)
+        reveal(app, app.switches["report.reason.OTHER"])
+        seen += reasonRows(app).map { $0.identifier }.filter { !seen.contains($0) }
+        reveal(app, app.switches["report.reason.MUSIC"])
+        notes.append("iphone-en report rows=\(seen)")
+        XCTAssertEqual(seen.count, 11, "c6 report: 11 rows")
+        for row in reasons.prefix(3) { measure(row, "iphone-en \(row.identifier)", into: notes) }
+        measure(app.buttons["report.cancel"], "iphone-en report.cancel", into: notes, barItem: true)
+        measure(app.buttons["report.submit"], "iphone-en report.submit", into: notes, barItem: true)
+        app.buttons["report.submit"].tap()
+        reveal(app, app.staticTexts["report.message"])
+        XCTAssertTrue(app.staticTexts["report.message"].waitForExistence(timeout: 5), "c6 report: zero reasons must show the validation message")
+        XCTAssertEqual(app.staticTexts["report.message"].label, "Please select at least one reason")
+        try write(named: "detail-c6-iphone-en-light-report-zero", into: directory)
+        app.buttons["report.cancel"].tap()
+        XCTAssertTrue(app.buttons["report.submit"].waitForNonExistence(timeout: 5), "c6 report: Cancel must dismiss")
+
+        // The cap, Other's field, 201 and 429 open the sheet with reasons pre-checked
+        // (`-fitrah-report-preselect`, ReportSheet.swift): XCUITest taps on this Form's Toggle rows
+        // flip the wrong row or none on the iOS 26 simulator (run 1-4 evidence in the notes), so the
+        // rig seeds the state and proves what the sheet does with it.
+        app = launch(playlistScreen(["-fitrah-report-preselect", "10"]), locale: en, extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20))
+        openReport(app)
+        var checked = Set(reasonRows(app).filter { ($0.value as? String) == "1" }.map { $0.identifier })
+        let other = app.switches["report.reason.OTHER"]
+        reveal(app, other)
+        checked.formUnion(reasonRows(app).filter { ($0.value as? String) == "1" }.map { $0.identifier })
+        notes.append("iphone-en report preselect 10: checked=\(checked.count) other exists=\(other.exists) enabled=\(other.exists ? other.isEnabled : false) value=\((other.value as? String) ?? "?")")
+        XCTAssertEqual(checked.count, 10, "c6 report: ten checked")
+        XCTAssertTrue(other.exists, "c6 report: the Other row must be reachable")
+        if other.exists { XCTAssertFalse(other.isEnabled, "c6 report: the 11th row must disable at 10 (report_reason_limit)") }
+        try write(named: "detail-c6-iphone-en-light-report-capped", into: directory)
+        app.buttons["report.cancel"].tap()
+        XCTAssertTrue(app.buttons["report.submit"].waitForNonExistence(timeout: 5))
+
+        app = launch(playlistScreen(["-fitrah-report-preselect", "11"]), locale: en, extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20))
+        openReport(app)
+        let otherField = app.textViews["report.otherText"].exists ? app.textViews["report.otherText"] : app.textFields["report.otherText"]
+        reveal(app, otherField)
+        XCTAssertTrue(otherField.waitForExistence(timeout: 5), "c6 report: Other must reveal the field")
+        if otherField.exists { otherField.tap(); otherField.typeText("Test note") }
+        notes.append("iphone-en report other field=\(otherField.exists ? "\(otherField.frame)" : "missing") value=\((otherField.value as? String).debugDescription)")
+        try write(named: "detail-c6-iphone-en-light-report-other", into: directory)
+        app.buttons["report.cancel"].tap()
+        XCTAssertTrue(app.buttons["report.submit"].waitForNonExistence(timeout: 5))
+
+        // 201 -> dismiss + report_success banner; 429 -> the sheet and the checks stay.
+        app = launch(playlistScreen(["-fitrah-fake-report", "201", "-fitrah-report-preselect", "1"]), locale: en, extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20))
+        openReport(app)
+        XCTAssertEqual(app.switches["report.reason.MUSIC"].value as? String, "1")
+        app.buttons["report.submit"].tap()
+        let thanks = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Thank you'")).firstMatch
+        let thanked = thanks.waitForExistence(timeout: 5)
+        try write(named: "detail-c6-iphone-en-light-report-success", into: directory)
+        notes.append("iphone-en report 201: banner=\(thanked) label=\(thanked ? thanks.label.debugDescription : "-") sheet gone=\(!app.buttons["report.submit"].exists)")
+        XCTAssertTrue(thanked, "c6 report 201: report_success banner")
+        XCTAssertTrue(app.buttons["report.submit"].waitForNonExistence(timeout: 10), "c6 report 201: the sheet must dismiss")
+        app = launch(playlistScreen(["-fitrah-fake-report", "429", "-fitrah-report-preselect", "1"]), locale: en, extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20))
+        openReport(app)
+        app.buttons["report.submit"].tap()
+        reveal(app, app.staticTexts["report.message"])
+        XCTAssertTrue(app.staticTexts["report.message"].waitForExistence(timeout: 10), "c6 report 429: inline message")
+        XCTAssertEqual(app.staticTexts["report.message"].label, "You've sent too many reports recently. Please try again later.")
+        XCTAssertTrue(app.buttons["report.submit"].exists, "c6 report 429: the sheet stays (ruling 72)")
+        reveal(app, app.switches["report.reason.MUSIC"], missingIsBelow: false)
+        XCTAssertEqual(app.switches["report.reason.MUSIC"].exists ? app.switches["report.reason.MUSIC"].value as? String : "missing", "1", "c6 report 429: the check stays")
+        try write(named: "detail-c6-iphone-en-light-report-429", into: directory)
+    }
+
+    /// iPhone leg, the other matrix cells: ar-dark, en-dark, ar-light and `.accessibility3` for
+    /// both screens (plus the report sheet in ar).
+    func testDetailCTask6IPhoneLocales() throws {
+        let directory = try shotsDirectory()
+        let notes = Notes(file: directory.appendingPathComponent("c-task6-iphone-measurements.txt"), append: true)
+        let en = Self.locales[0], ar = Self.locales[1]
+        var app: XCUIApplication
+        XCUIDevice.shared.orientation = .portrait
+
+        // -- L. ar dark: strip from the trailing edge, mirrored action bar, position column trailing.
+        app = launch(channelScreen(), locale: ar, extraArguments: [])
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 20), "c6 ar channel: never loaded")
+        let arVideos = app.buttons["channel.tab.videos"].frame, arAbout = app.buttons["channel.tab.about"].frame
+        notes.append("iphone-ar strip videos=\(arVideos) about=\(arAbout) subscribe=\(app.buttons["channel.subscribe"].frame) subscribers=\(app.staticTexts["channel.subscribers"].label.debugDescription)")
+        XCTAssertGreaterThan(arVideos.minX, arAbout.minX, "c6 ar: the strip must lead from the trailing (right) edge")
+        try write(named: "detail-c6-iphone-ar-dark-channel-videos", into: directory)
+        app.buttons["channel.tab.shorts"].tap()
+        XCTAssertTrue(app.buttons["channel.shorts.cell.shorts-0-0"].waitForExistence(timeout: 10))
+        try write(named: "detail-c6-iphone-ar-dark-channel-shorts", into: directory)
+        app = launch(playlistScreen(), locale: ar, extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20), "c6 ar playlist: never loaded")
+        let arPlay = app.buttons["playlist.playAll"].frame, arSave = app.buttons["playlist.save"].frame
+        notes.append("iphone-ar playlist playAll=\(arPlay) save=\(arSave) row1=\(any(app, "playlist.row.1").frame)")
+        XCTAssertGreaterThan(arPlay.minX, arSave.minX, "c6 ar: the action bar must mirror")
+        try write(named: "detail-c6-iphone-ar-dark-playlist", into: directory)
+        openReport(app)
+        try write(named: "detail-c6-iphone-ar-dark-report", into: directory)
+        app.buttons["report.cancel"].tap()
+
+        // -- M. The other two theme cells: en dark, ar light.
+        app = launch(channelScreen(), locale: LocaleCase(key: "en", theme: "dark", arguments: []), extraArguments: [])
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 20))
+        try write(named: "detail-c6-iphone-en-dark-channel-videos", into: directory)
+        app = launch(playlistScreen(), locale: LocaleCase(key: "en", theme: "dark", arguments: []), extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20))
+        try write(named: "detail-c6-iphone-en-dark-playlist", into: directory)
+        app = launch(channelScreen(), locale: LocaleCase(key: "ar", theme: "light", arguments: ar.arguments), extraArguments: [])
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 20))
+        try write(named: "detail-c6-iphone-ar-light-channel-videos", into: directory)
+        app = launch(playlistScreen(), locale: LocaleCase(key: "ar", theme: "light", arguments: ar.arguments), extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20))
+        try write(named: "detail-c6-iphone-ar-light-playlist", into: directory)
+
+        // -- N. Dynamic Type .accessibility3: strip reachable, subscribe row + action bar wrap.
+        app = launch(channelScreen(), locale: en, extraArguments: Self.accessibility3)
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 20), "c6 a11y3 channel: never loaded")
+        let a11ySubs = app.staticTexts["channel.subscribers"].frame, a11ySubscribe = app.buttons["channel.subscribe"].frame
+        notes.append("iphone-en-a11y3 subscribers=\(a11ySubs) subscribe=\(a11ySubscribe) tab.about=\(app.buttons["channel.tab.about"].frame) window=\(app.windows.firstMatch.frame)")
+        XCTAssertGreaterThanOrEqual(a11ySubscribe.minY, a11ySubs.maxY - 1, "c6 a11y3: the subscribe row must go single column")
+        XCTAssertTrue(app.buttons["channel.tab.videos"].isHittable, "c6 a11y3: the strip must stay reachable")
+        try write(named: "detail-c6-iphone-en-light-channel-a11y3", into: directory)
+        app = launch(playlistScreen(), locale: en, extraArguments: Self.accessibility3)
+        XCTAssertTrue(app.buttons["playlist.playAll"].waitForExistence(timeout: 20), "c6 a11y3 playlist: never loaded")
+        let a11yPlay = app.buttons["playlist.playAll"].frame, a11yShuffle = app.buttons["playlist.shuffle"].frame
+        notes.append("iphone-en-a11y3 playAll=\(a11yPlay) shuffle=\(a11yShuffle) save=\(app.buttons["playlist.save"].frame)")
+        XCTAssertEqual(a11yPlay.minX, a11yShuffle.minX, accuracy: 1, "c6 a11y3: the action bar must wrap to one column")
+        XCTAssertGreaterThanOrEqual(a11yShuffle.minY, a11yPlay.maxY - 1)
+        XCTAssertLessThanOrEqual(a11yPlay.maxX, app.windows.firstMatch.frame.maxX + 1, "c6 a11y3: cells must not clip")
+        try write(named: "detail-c6-iphone-en-light-playlist-a11y3", into: directory)
+    }
+
+    /// iPad leg: the strip fills the width, two autofills then Load more (ruling 10), the
+    /// selection survives rotation, playlist positions, ar mirroring, `.accessibility3`.
+    func testDetailCTask6IPad() throws {
+        let directory = try shotsDirectory()
+        let notes = Notes(file: directory.appendingPathComponent("c-task6-ipad-measurements.txt"))
+        let en = Self.locales[0], ar = Self.locales[1]
+
+        XCUIDevice.shared.orientation = .portrait
+        var app = launch(channelScreen(), locale: en, extraArguments: [])
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 20), "c6 ipad channel: never loaded")
+        let window = app.windows.firstMatch.frame
+        let tabs = ["videos", "live", "shorts", "playlists", "about"].map { app.buttons["channel.tab.\($0)"] }
+        for tab in tabs { measure(tab, "ipad-en tab.\(tab.identifier)", into: notes) }
+        XCTAssertEqual(tabs.last!.frame.maxX, window.maxX, accuracy: 2, "c6 ipad: the strip must fill the width")
+        XCTAssertEqual(tabs[0].frame.width, tabs[4].frame.width, accuracy: 2, "c6 ipad: equal tab widths")
+        measure(app.buttons["channel.subscribe"], "ipad-en subscribe", into: notes)
+        measure(app.buttons["detail.kebab.button"], "ipad-en kebab", into: notes, barItem: true)
+        try write(named: "detail-c6-ipad-en-light-channel-videos", into: directory)
+        app.buttons["channel.tab.shorts"].tap()
+        let cells = ids(app, prefix: "channel.shorts.cell.")
+        XCTAssertTrue(app.buttons["channel.shorts.cell.shorts-0-0"].waitForExistence(timeout: 10))
+        let firstRowCells = cells.filter { abs($0.frame.minY - cells[0].frame.minY) < 2 }.count
+        notes.append("ipad-en shorts columns=\(firstRowCells)")
+        XCTAssertEqual(firstRowCells, 5, "c6 ipad: Shorts grid is 5 columns at large width")
+        try write(named: "detail-c6-ipad-en-light-channel-shorts", into: directory)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        settle(app, landscape: true)
+        XCTAssertTrue(app.buttons["channel.tab.shorts"].isSelected, "c6 ipad rotation: the selection must survive")
+        try write(named: "detail-c6-ipad-en-light-channel-shorts-landscape", into: directory)
+        XCUIDevice.shared.orientation = .portrait
+        settle(app, landscape: false)
+
+        // Ruling 10 on regular width: first page fits -> second automatically -> stop at two with Load
+        // more. Two-row pages: 6 rows (~480 pt) still fit the ~800 pt tab body; 9 rows of 79 pt plus
+        // the footer did not, and the near-end scroll trigger then legitimately paged on.
+        app = launch(channelScreen(["-fitrah-fake-browse-pages", "6", "2"]), locale: en, extraArguments: [])
+        let loadMore = app.buttons["listFooter.loadMore"]
+        XCTAssertTrue(loadMore.waitForExistence(timeout: 20), "c6 ipad pagination: Load more never appeared after two autofills")
+        var rows = ids(app, prefix: "channel.videos.row.")
+        notes.append("ipad-en pagination rows=\(rows.count) \(rows.map { $0.identifier })")
+        XCTAssertEqual(rows.count, 6, "c6 ipad pagination: one page + two autofills = 6 rows")
+        measure(loadMore, "ipad-en loadMore", into: notes)
+        try write(named: "detail-c6-ipad-en-light-channel-loadmore", into: directory)
+        if loadMore.exists {
+            loadMore.tap()
+            XCTAssertTrue(any(app, "channel.videos.row.video-3-0").waitForExistence(timeout: 10), "c6 ipad pagination: the tap renews the budget")
+            rows = ids(app, prefix: "channel.videos.row.")
+            notes.append("ipad-en pagination after tap rows=\(rows.count)")
+            XCTAssertGreaterThanOrEqual(rows.count, 8)
+        }
+
+        app = launch(playlistScreen(), locale: en, extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20), "c6 ipad playlist: never loaded")
+        for id in ["playlist.playAll", "playlist.shuffle", "playlist.save"] { measure(app.buttons[id], "ipad-en \(id)", into: notes) }
+        XCTAssertFalse(app.buttons["Download"].exists)
+        try write(named: "detail-c6-ipad-en-light-playlist", into: directory)
+        openReport(app)
+        XCTAssertTrue(app.switches["report.reason.MUSIC"].exists)
+        try write(named: "detail-c6-ipad-en-light-report", into: directory)
+        app.buttons["report.cancel"].tap()
+
+        app = launch(channelScreen(), locale: ar, extraArguments: [])
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 20), "c6 ipad ar channel: never loaded")
+        XCTAssertGreaterThan(app.buttons["channel.tab.videos"].frame.minX, app.buttons["channel.tab.about"].frame.minX, "c6 ipad ar: the strip must mirror")
+        try write(named: "detail-c6-ipad-ar-dark-channel-videos", into: directory)
+        app = launch(playlistScreen(), locale: ar, extraArguments: [])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20), "c6 ipad ar playlist: never loaded")
+        XCTAssertGreaterThan(app.buttons["playlist.playAll"].frame.minX, app.buttons["playlist.save"].frame.minX, "c6 ipad ar: the action bar must mirror")
+        try write(named: "detail-c6-ipad-ar-dark-playlist", into: directory)
+
+        app = launch(channelScreen(), locale: en, extraArguments: Self.accessibility3)
+        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 20), "c6 ipad a11y3: never loaded")
+        notes.append("ipad-en-a11y3 tab.about=\(app.buttons["channel.tab.about"].frame) subscribe=\(app.buttons["channel.subscribe"].frame)")
+        XCTAssertTrue(app.buttons["channel.tab.about"].isHittable)
+        try write(named: "detail-c6-ipad-en-light-channel-a11y3", into: directory)
+        app = launch(playlistScreen(), locale: en, extraArguments: Self.accessibility3)
+        XCTAssertTrue(app.buttons["playlist.playAll"].waitForExistence(timeout: 20))
+        XCTAssertEqual(app.buttons["playlist.playAll"].frame.minX, app.buttons["playlist.shuffle"].frame.minX, accuracy: 1, "c6 ipad a11y3: one column")
+        try write(named: "detail-c6-ipad-en-light-playlist-a11y3", into: directory)
+    }
+
     // MARK: - Helpers
 
     private func launch(_ screen: Screen, locale: LocaleCase, extraArguments: [String]) -> XCUIApplication {

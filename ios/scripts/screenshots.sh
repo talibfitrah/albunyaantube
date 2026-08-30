@@ -402,4 +402,37 @@ if [ "${B5_LIVE:-0}" = "1" ]; then
     xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 fi
 
+# ---------------------------------------------------------------------------------------------
+# Plan C (docs/superpowers/plans/2026-08-27-ios-phase2c-detail-report-share.md): the channel and
+# playlist detail screens, the kebab and the report sheet. Same shape as the B4/B5 blocks: one leg
+# per destination, the device argument above does NOT scope these. Measurements land in
+# `c-task6-*-measurements.txt` beside the PNGs.
+C_TASK6_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2c-detail-report-share/screenshots/c-task6"
+echo "== C task 6 detail/report matrix (iPhone) -> $C_TASK6_OUT =="
+rm -rf "${C_TASK6_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$C_TASK6_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testDetailCTask6IPhone \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testDetailCTask6IPhonePlaylist \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testDetailCTask6IPhoneLocales \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
+echo "== C task 6 detail/report matrix (iPad) -> $C_TASK6_OUT =="
+TEST_RUNNER_FITRAH_SHOTS_DIR="$C_TASK6_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testDetailCTask6IPad \
+    -destination "platform=iOS Simulator,name=iPad Pro 13-inch (M5)" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
+
 exit "$status"

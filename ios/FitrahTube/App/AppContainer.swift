@@ -92,7 +92,17 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// UserDefaults-backed `KeyValueStore` for its 1 h degraded latch.
     private(set) lazy var index = IndexClient(baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
     /// Plan C Task 3: the hand-written `POST /api/v1/reports` (same seam, awaited by `ReportSheet`).
-    private(set) lazy var report = ReportClient(baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+    private(set) lazy var report: ReportClient = {
+        #if DEBUG
+        // Plan C Task 6 screenshot rig: `-fitrah-fake-report <status>` answers every report POST
+        // with that status and no network (201 -> thank-you, 429 -> the sheet stays).
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-fitrah-fake-report"), args.indices.contains(i + 1), let status = Int(args[i + 1]) {
+            return ReportClient(transport: FixedStatusTransport(status: status), baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+        }
+        #endif
+        return ReportClient(baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+    }()
     private(set) lazy var browse: any BrowseSource = injectedBrowse ?? LiveBrowseSource(
         client: innerTube.browse,
         atom: innerTube.atom,
@@ -222,10 +232,19 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     @MainActor static let sharedFake: AppContainer = {
         let defaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard
         defaults.removePersistentDomain(forName: "fitrahtube.fake")
-        return fake(defaults: defaults)
+        // Plan C Task 6: the detail screens' fake reads its own `-fitrah-fake-browse-*` launch arguments.
+        return fake(defaults: defaults, browse: FakeBrowseSource.fromLaunchArguments())
     }()
     #endif
 }
+
+#if DEBUG
+/// `-fitrah-fake-report <status>`: one canned status for every request, no network.
+private struct FixedStatusTransport: HTTPTransport {
+    let status: Int
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse { HTTPResponse(status: status, headers: [:], body: Data()) }
+}
+#endif
 
 extension EnvironmentValues {
     // Release must not ship the fake default silently -- an un-injected .container in Release

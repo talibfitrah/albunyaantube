@@ -43,6 +43,7 @@ struct FitrahTubeApp: App {
                     pushDebugRouteIfRequested()
                     showDebugBannerIfRequested()
                     seedDebugFavoritesIfRequested()
+                    seedDebugSubscriptionsIfRequested()
                     refreshRemoteConfigIfDue()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
@@ -203,6 +204,21 @@ struct FitrahTubeApp: App {
             // screenshot run showed an empty Favorites screen.
             guard !container.favorites.isFavorite(item.id) else { continue }
             try? container.favorites.toggle(item)
+        }
+        #endif
+    }
+
+    /// Plan C Task 6 screenshot rig: `-fitrah-seed-subscriptions` fills the guest cap (RULING 27,
+    /// `SwiftDataSubscriptionsStore.cap`) with seeded channels, so the channel screen's Subscribe
+    /// tap is the 31st and shows `me_subscription_cap_reached`. Seed, not toggle -- same reason
+    /// as `seedDebugFavoritesIfRequested`.
+    private func seedDebugSubscriptionsIfRequested() {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("-fitrah-seed-subscriptions") else { return }
+        for index in 1...SwiftDataSubscriptionsStore.cap {
+            let id = "UCseed\(index)"
+            guard !container.subscriptions.isSubscribed(id) else { continue }
+            try? container.subscriptions.toggle(id: id, name: "Seeded Channel \(index)", avatarURL: nil)
         }
         #endif
     }

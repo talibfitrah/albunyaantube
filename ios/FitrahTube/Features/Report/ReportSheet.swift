@@ -10,8 +10,22 @@ struct ReportSheet: View {
 
     @Environment(\.container) private var container
     @Environment(\.dismiss) private var dismiss
-    @State private var selected: [ReportReason] = []
+    @State private var selected: [ReportReason] = Self.debugPreselected()
     @State private var otherText = ""
+
+    /// Plan C Task 6 screenshot rig: `-fitrah-report-preselect <n>` opens the sheet with the first
+    /// `n` reasons checked (10 = the cap, 11 = Other's field showing). XCUITest taps on this Form's
+    /// `Toggle` rows land unreliably on the iOS 26 simulator, so the rig seeds the state it needs --
+    /// same technique as `EmbedRungView`'s `-fitrah-fake-embed-ended`. Empty in Release.
+    private static func debugPreselected() -> [ReportReason] {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-fitrah-report-preselect"), args.indices.contains(i + 1), let n = Int(args[i + 1]) {
+            return Array(ReportReason.allCases.prefix(n))
+        }
+        #endif
+        return []
+    }
     @State private var state: ReportState = .idle
     @State private var validationKey: String?
 
