@@ -214,7 +214,7 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
 
     private func videoPage(_ tab: ChannelTabKind, continuation: String?) async throws -> BrowsePage<VideoItem> {
         switch tab {
-        case .videos: try await browse.channelVideos(channelId, continuation: continuation)   // VLUU…, ruling 3
+        case .videos: try await browse.channelVideos(channelId, continuation: continuation)   // the Videos tab, ruling 3
         case .live: try await browse.channelTab(channelId, tab: .live, continuation: continuation)
         case .shorts: try await browse.channelTab(channelId, tab: .shorts, continuation: continuation)
         case .playlists, .about: BrowsePage(items: [], nextContinuation: nil)

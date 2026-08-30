@@ -91,10 +91,14 @@ public struct ChannelHeader: Sendable, Equatable {
     }
 }
 
-/// The two video-shaped channel tabs served by `channel(id).browse(params:)`, distinct from
-/// `channelVideos` (which uses the `VLUU…` uploads-playlist trick instead — `ios-app-plan.md`
-/// §6.7) and from `channelPlaylists` (a different item type, so its own method).
+/// The three video-shaped channel tabs served by `channel(id).browse(params:)`, distinct from
+/// `channelPlaylists` (a different item type, so its own method). `.videos` replaced the `VLUU…`
+/// uploads-playlist browseId (`ios-app-plan.md` §6.7, ruling 3) on 2026-08-30: live, that
+/// playlist stopped at 200 rows (100 + 100, then no continuation) on a 3.1K-video channel, while
+/// this tab's `richGridRenderer` continuation kept paging 30/page past 300. The tab lists
+/// long-form uploads only -- Shorts and streams live on their own tabs, as on YouTube.
 public enum ChannelTab: Sendable {
+    case videos
     case live
     case shorts
 
@@ -102,6 +106,7 @@ public enum ChannelTab: Sendable {
     /// endpoints (`channel-detail.md`). Forwarded verbatim — nothing in this app decodes them.
     var params: String {
         switch self {
+        case .videos: return "EgZ2aWRlb3PyBgQKAjoA"
         case .live: return "EgdzdHJlYW1z8gYECgJ6AA%3D%3D"
         case .shorts: return "EgZzaG9ydHPyBgUKA5oBAA%3D%3D"
         }
@@ -190,19 +195,13 @@ public actor BrowseClient {
         }
     }
 
-    /// Uploads via the `VLUU…` uploads-playlist browseId (stable across pages — the trick
-    /// Android uses because channel-tab continuations are unreliable past 1-2 pages,
-    /// `channel-detail.md`). Each item already carries its own channel byline in this shape.
+    /// The Videos tab -- the one uploads path (ruling 3), kept as its own entry point so the app
+    /// has a single call site whatever the tab mechanics behind it.
     public func channelVideos(_ id: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
-        let browseId = continuation == nil ? Self.uploadsPlaylistBrowseId(for: id) : nil
-        let sent = try await send(browseId: browseId, params: nil, continuation: continuation)
-        do { return try Self.parsePage(sent.body) } catch BrowseError.botCheck {
-            await rotateIfStale(sent)
-            throw BrowseError.botCheck
-        }
+        try await channelTab(id, tab: .videos, continuation: continuation)
     }
 
-    /// `.live` is a plain `lockupViewModel` grid (same as `channelVideos`); `.shorts` is a
+    /// `.videos` and `.live` are plain `lockupViewModel` grids; `.shorts` is a
     /// `shortsLockupViewModel` grid (captured live 2026-08-29, `browse-channel-shorts.json`) that
     /// `videoItem(_:)` maps onto the same `VideoItem` — a Short has an id, title, thumbnail and a
     /// view-count line and no duration badge. Still unmodelled: community/posts tabs, which
@@ -299,10 +298,6 @@ public actor BrowseClient {
     /// The Playlists tab's opaque `params` token, captured live 2026-08-24 (`channel-detail.md`).
     /// Forwarded verbatim — nothing in this app decodes it.
     static let playlistsTabParams = "EglwbGF5bGlzdHPyBgQKAkIA"
-
-    private static func uploadsPlaylistBrowseId(for channelId: String) -> String {
-        "VLUU" + channelId.dropFirst(2)
-    }
 
     // MARK: - parsing
 

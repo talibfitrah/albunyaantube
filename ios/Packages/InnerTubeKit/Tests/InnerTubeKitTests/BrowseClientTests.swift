@@ -2,12 +2,15 @@ import Foundation
 import Testing
 @testable import InnerTubeKit
 
-/// Fixtures `browse-channel-videos-page1.json` / `-page2.json`, `browse-playlist.json`,
-/// `browse-channel-header.json`, `browse-channel-live.json` are LIVE, recorded 2026-08-24 from
-/// `youtubei.googleapis.com/youtubei/v1/browse` (WEB context) against a real public channel
-/// (`UCmMcOjsVehVlEOteyrhjI2Q`, "Alafasy") and playlist, then trimmed to a handful of items each
-/// (dropping unused per-item action-menu JSON and unrelated top-level keys) — every kept field
-/// value is real. `browse-botcheck.json` is SYNTHETIC (no live bot-check was reproducible within
+/// Fixtures `browse-playlist.json`, `browse-channel-header.json`, `browse-channel-live.json` are
+/// LIVE, recorded 2026-08-24 from `youtubei.googleapis.com/youtubei/v1/browse` (WEB context)
+/// against a real public channel (`UCmMcOjsVehVlEOteyrhjI2Q`, "Alafasy") and playlist, then
+/// trimmed to a handful of items each (dropping unused per-item action-menu JSON and unrelated
+/// top-level keys) — every kept field value is real. `browse-channel-videos-page1.json` /
+/// `-page2.json` are LIVE, recorded 2026-08-30 (C T6 fix, Part B) from the same channel's Videos
+/// tab (`richGridRenderer`, 30/page) and its first continuation, trimmed to 5 items + the
+/// continuation item; they replaced the `VLUU…` uploads-playlist captures once that path proved
+/// to stop at 200 rows (100 + 100, then no continuation) on a 3.1K-video channel. `browse-botcheck.json` is SYNTHETIC (no live bot-check was reproducible within
 /// this task's budget): it models InnerTube's documented `alerts[]` interstitial convention.
 /// `browse-channel-shorts.json` / `browse-channel-playlists.json` are LIVE, recorded 2026-08-29
 /// from the same channel's Shorts and Playlists tabs (both populated: 49 Shorts, 31 playlists at
@@ -69,11 +72,14 @@ import Testing
         let first = try #require(page.items.first)
         #expect(first.id == "R6YoAYNxAcE")
         #expect(!first.title.isEmpty)
-        #expect(first.channelName == "Alafasy")
+        // A channel's own tab carries no byline: the id is backfilled, the name is the header's.
+        #expect(first.channelName == nil)
         #expect(first.channelId == Self.channelId)
-        #expect(first.viewCountText != nil)
-        #expect(first.publishedText != nil)
+        #expect(first.durationSeconds == 11 * 60 + 8)
+        #expect(first.viewCountText == "66K views")
+        #expect(first.publishedText == "7 days ago")
         #expect(first.thumbnailURL != nil)
+        #expect(first.badge == nil)
     }
 
     // MARK: - b) feeding the continuation yields page 2
@@ -95,10 +101,11 @@ import Testing
         #expect(page2.items.map(\.id) != page1.items.map(\.id))
     }
 
-    // The uploads-playlist (`VLUU…`) browseId is sent on page 1 and omitted (continuation-only
-    // body) on page 2 — this is the trick's whole point (channel-detail.md: channel-tab
-    // continuations are unreliable past 1-2 pages, the uploads-playlist one is stable).
-    @Test func channelVideosPage1UsesUploadsPlaylistBrowseIdAndOmitsItOnContinuation() async throws {
+    // C T6 fix (Part B): the Videos TAB (channel id + its `params`), not the `VLUU…` uploads
+    // playlist -- live on 2026-08-30 the playlist returned 100 + 100 rows and then no continuation
+    // on a 3.1K-video channel, while the tab's `richGridRenderer` continuation kept paging 30/page
+    // past 300. Page 2 is a continuation-only body, like every other tab.
+    @Test func channelVideosSendsChannelIdWithVideosTabParamsAndOmitsBothOnContinuation() async throws {
         let transport = RecordingTransport([
             try fixtureResponse("browse-channel-videos-page1"), try fixtureResponse("browse-channel-videos-page2"),
         ])
@@ -109,9 +116,32 @@ import Testing
         _ = try await client.channelVideos(Self.channelId, continuation: token)
 
         let bodies = transport.capturedBodies
-        #expect(bodies[0].contains("\"browseId\":\"VLUU\(Self.channelId.dropFirst(2))\""))
+        #expect(bodies[0].contains("\"browseId\":\"\(Self.channelId)\""))
+        #expect(bodies[0].contains("\"params\":\"\(ChannelTab.videos.params)\""))
+        #expect(!bodies[0].contains("VLUU"))
         #expect(!bodies[1].contains("\"browseId\""))
+        #expect(!bodies[1].contains("\"params\""))
         #expect(bodies[1].contains("\"continuation\""))
+    }
+
+    // The end of a channel is a continuation page with no continuation item -- nil, not a token
+    // to a fourth empty call.
+    @Test func channelVideosLastPageHasNoContinuation() async throws {
+        let url = try #require(Bundle.module.url(forResource: "browse-channel-videos-page2", withExtension: "json", subdirectory: "Fixtures"))
+        var json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var actions = try #require(json["onResponseReceivedActions"] as? [[String: Any]])
+        var append = try #require(actions[0]["appendContinuationItemsAction"] as? [String: Any])
+        let items = try #require(append["continuationItems"] as? [[String: Any]])
+        append["continuationItems"] = items.filter { $0["continuationItemRenderer"] == nil }
+        actions[0]["appendContinuationItemsAction"] = append
+        json["onResponseReceivedActions"] = actions
+        let body = try JSONSerialization.data(withJSONObject: json)
+        let client = makeClient(FixtureTransport(routes: [.init(match: { _ in true }, response: HTTPResponse(status: 200, headers: [:], body: body))]))
+
+        let page = try await client.channelVideos(Self.channelId, continuation: "last")
+
+        #expect(page.items.count == 5)
+        #expect(page.nextContinuation == nil)
     }
 
     // MARK: - c) playlistItems parses title/uploader/count-bearing fields

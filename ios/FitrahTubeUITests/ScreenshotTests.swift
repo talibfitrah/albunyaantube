@@ -2471,15 +2471,16 @@ final class ScreenshotTests: XCTestCase {
         notes.append("live-1 about subscribers=\(app.staticTexts["channel.about.subscribers"].label.debugDescription)")
         try write(named: "detail-c6-live-channel-about", into: directory)
 
-        // 2. Deep pagination on Videos (VLUU…): keep paging until the continuation runs out. A
-        // fresh open: the compact strip has scrolled Videos out of reach after About.
+        // 2. Deep pagination on Videos: past 200, where the `VLUU…` uploads playlist used to stop
+        // (100 + 100, then no continuation); the Videos tab pages 30 at a time. A fresh open: the
+        // compact strip has scrolled Videos out of reach after About.
         app = channel()
         XCTAssertTrue(firstWithPrefix(app, "channel.videos.row.").waitForExistence(timeout: 60))
         let t2 = Date()
-        let videoIds = scrollCollecting(app, prefix: "channel.videos.row.", target: 600)
+        let videoIds = scrollCollecting(app, prefix: "channel.videos.row.", target: 250)
         let pushed = logLines(log, prefix: "IndexClient: CHANNEL").map { Int($0.split(separator: " ").last { $0.hasPrefix("items=") }?.dropFirst(6) ?? "") ?? 0 }
         notes.append("live-2 deep pagination: distinct rows seen=\(videoIds.count) in \(Int(Date().timeIntervalSince(t2)))s; index pushes (items per batch, all opens)=\(pushed); footer loadMore=\(app.buttons["listFooter.loadMore"].exists) loading=\(app.otherElements["listFooter.loading"].exists || app.activityIndicators["listFooter.loading"].exists) retry=\(app.buttons["listFooter.retry"].exists)")
-        XCTAssertGreaterThan(videoIds.count, 100, "live 2: the VLUU continuation never yielded a second page")
+        XCTAssertGreaterThan(videoIds.count, 200, "live 2: the Videos tab stopped at the old VLUU cap (\(videoIds.count) rows)")
         try write(named: "detail-c6-live-channel-videos-end", into: directory)
 
         // 3. Real playlist: opens, pages onto page 2, Play All reaches the player.

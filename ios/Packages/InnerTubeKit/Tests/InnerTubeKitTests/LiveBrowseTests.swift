@@ -82,6 +82,14 @@ import Testing
                           continuationTo: "browse-channel-playlists-page2.raw.json")
     }
 
+    /// C T6 fix (Part B): the Videos tab (`richGridRenderer`) page 1 + its first continuation --
+    /// the fixture source for `channelVideos` once the `VLUU…` uploads playlist proved to cap at 200.
+    @Test(.tags(.live), .enabled(if: ProcessInfo.processInfo.environment["INNERTUBE_LIVE"] == "1"))
+    func captureChannelVideosTab() async throws {
+        try await capture(params: ChannelTab.videos.params, to: "browse-channel-videos-tab.raw.json",
+                          continuationTo: "browse-channel-videos-tab-page2.raw.json")
+    }
+
     /// CF-C-13: the Live tab as it is today, for an UPCOMING badge check against real data.
     @Test(.tags(.live), .enabled(if: ProcessInfo.processInfo.environment["INNERTUBE_LIVE"] == "1"))
     func captureChannelLiveTab() async throws {
