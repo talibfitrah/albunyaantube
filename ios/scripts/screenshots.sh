@@ -417,6 +417,7 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$C_TASK6_OUT" xcodebuild test \
     -only-testing:FitrahTubeUITests/ScreenshotTests/testDetailCTask6IPhone \
     -only-testing:FitrahTubeUITests/ScreenshotTests/testDetailCTask6IPhonePlaylist \
     -only-testing:FitrahTubeUITests/ScreenshotTests/testDetailCTask6IPhoneLocales \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testDetailCTask6PaginationPastTheFold \
     -destination "platform=iOS Simulator,name=iPhone 17" \
     -derivedDataPath DerivedData \
     2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
@@ -452,6 +453,8 @@ json.dump(config, open(sys.argv[2], "w"))
 EOF
     python3 -m http.server "$C_LIVE_PORT" --bind 127.0.0.1 --directory "$C_LIVE_SERVE" >/dev/null 2>&1 &
     C_LIVE_SERVER=$!
+    # A Ctrl-C mid-xcodebuild otherwise orphans the server (next run's bind fails silently) and the dir.
+    trap 'kill "$C_LIVE_SERVER" 2>/dev/null; rm -rf "$C_LIVE_SERVE"' EXIT
     echo "== C task 6 LIVE acceptance checks -> $C_LIVE_OUT =="
     rm -rf "${C_LIVE_OUT:?}"
     TEST_RUNNER_FITRAH_SHOTS_DIR="$C_LIVE_OUT" TEST_RUNNER_C_LIVE=1 \

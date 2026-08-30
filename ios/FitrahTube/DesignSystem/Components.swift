@@ -90,8 +90,15 @@ struct RemoteImage: View {
 
     var body: some View {
         Group {
-            if let image {
-                Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
+            if let image, contentMode == .fill {
+                // C T6 fix C1: a `.fill` image reports the size that COVERS its proposal, so a wide
+                // banner under a height-only frame made the whole header column height x aspect wide
+                // (centred + clipped: avatar off-screen, "Subscribe" -> "+ Sub"). Sizing off
+                // `Color.clear` -- exactly what `Color.skeleton` already does before the image lands,
+                // so every caller's layout is unchanged -- keeps the cover inside the proposal.
+                Color.clear.overlay(Image(uiImage: image).resizable().aspectRatio(contentMode: .fill))
+            } else if let image {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
             } else {
                 Color.skeleton
             }

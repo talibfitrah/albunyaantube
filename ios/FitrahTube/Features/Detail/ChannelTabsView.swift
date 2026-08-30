@@ -107,6 +107,10 @@ private struct ChannelListTab<Item: Sendable & Equatable, Skeleton: View, Rows: 
     @State private var autofill = ChannelTabAutofill()
     @State private var contentFits = false
     @State private var isLoadingMore = false
+    /// A near-end row appeared while the layout still fit (C T6 fix I1): the row appears BEFORE
+    /// `onContentFits` reports the layout that includes it, so the answer is held until that report
+    /// lands rather than re-read one turn later (a `Task` hop races the geometry callback).
+    @State private var nearEndPending = false
 
     var body: some View {
         ScrollView {
@@ -114,7 +118,10 @@ private struct ChannelListTab<Item: Sendable & Equatable, Skeleton: View, Rows: 
         }
         .onContentFits { fits in
             contentFits = fits
-            triggerAutoFill()
+            // Consumed either way: a near-end signal from a layout that still fits is autofill's case.
+            let pending = nearEndPending
+            nearEndPending = false
+            if !fits, pending { triggerScrollLoadMore() } else { triggerAutoFill() }
         }
         .onChange(of: state().items.count) { _, _ in triggerAutoFill() }
         .onChange(of: viewModel.query) { _, _ in
@@ -152,13 +159,10 @@ private struct ChannelListTab<Item: Sendable & Equatable, Skeleton: View, Rows: 
         guard offset >= max(0, count - 5) else { return }
         // C T6 finding: while the whole list fits, every row's `onAppear` is "near the end", so this
         // trigger paged through the entire channel and the ruling-10 cap / Load-more button never
-        // showed. A scroll trigger needs something to scroll; autofill owns the fitting case. The
-        // row appears BEFORE `onContentFits` reports the layout that includes it, so the check is
-        // deferred one turn -- read synchronously, `contentFits` is still the previous page's answer.
-        Task { @MainActor in
-            guard !contentFits else { return }
-            triggerScrollLoadMore()
-        }
+        // showed. A scroll trigger needs something to scroll; autofill owns the fitting case. While
+        // the layout fits, `contentFits` is still the previous page's answer -- hold the signal for
+        // `onContentFits` to settle instead of guessing (fix I1).
+        if contentFits { nearEndPending = true } else { triggerScrollLoadMore() }
     }
 
     private func triggerScrollLoadMore() {

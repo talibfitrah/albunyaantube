@@ -2047,13 +2047,11 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(rows.count, 2, "c6 pagination: one page + one autofill = 2 rows on compact")
         measure(loadMore, "iphone-en loadMore", into: notes)
         try write(named: "detail-c6-iphone-en-light-channel-loadmore", into: directory)
-        if loadMore.exists {
-            loadMore.tap()
-            XCTAssertTrue(any(app, "channel.videos.row.video-2-0").waitForExistence(timeout: 10), "c6 pagination: the tap must fetch page 3")
-            rows = ids(app, prefix: "channel.videos.row.")
-            notes.append("iphone-en pagination after tap rows=\(rows.count)")
-            XCTAssertGreaterThanOrEqual(rows.count, 3)
-        }
+        loadMore.tap()
+        XCTAssertTrue(any(app, "channel.videos.row.video-2-0").waitForExistence(timeout: 10), "c6 pagination: the tap must fetch page 3")
+        rows = ids(app, prefix: "channel.videos.row.")
+        notes.append("iphone-en pagination after tap rows=\(rows.count)")
+        XCTAssertGreaterThanOrEqual(rows.count, 3)
 
         // Footer error: the append fails -> message + Retry, rows kept.
         app = launch(channelScreen(["-fitrah-fake-browse-pages", "4", "1", "-fitrah-fake-browse-fail-append"]), locale: en, extraArguments: [])
@@ -2131,7 +2129,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(app.buttons["playlist.save"].label, "Save")
         let row1 = any(app, "playlist.row.1")
         notes.append("iphone-en playlist row1 frame=\(row1.frame) label=\(row1.label.debugDescription)")
-        XCTAssertTrue(row1.label.contains("Position 1") || row1.label.contains("1"), "c6 playlist: the row label must carry its position")
+        XCTAssertTrue(row1.label.contains("Position 1"), "c6 playlist: the row label must carry its position")
         measure(app.buttons["detail.kebab.button"], "iphone-en playlist kebab", into: notes, barItem: true)
         try write(named: "detail-c6-iphone-en-light-playlist", into: directory)
         app.buttons["playlist.save"].tap()
@@ -2231,7 +2229,8 @@ final class ScreenshotTests: XCTestCase {
         app.buttons["report.cancel"].tap()
         XCTAssertTrue(app.buttons["report.submit"].waitForNonExistence(timeout: 5))
 
-        app = launch(playlistScreen(["-fitrah-report-preselect", "11"]), locale: en, extraArguments: [])
+        // Other alone (a legal one-reason state; 11 checked is unreachable past the cap of 10) reveals the field.
+        app = launch(playlistScreen(["-fitrah-report-preselect", "OTHER"]), locale: en, extraArguments: [])
         XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20))
         openReport(app)
         let otherField = app.textViews["report.otherText"].exists ? app.textViews["report.otherText"] : app.textFields["report.otherText"]
@@ -2266,6 +2265,27 @@ final class ScreenshotTests: XCTestCase {
         reveal(app, app.switches["report.reason.MUSIC"], missingIsBelow: false)
         XCTAssertEqual(app.switches["report.reason.MUSIC"].exists ? app.switches["report.reason.MUSIC"].value as? String : "missing", "1", "c6 report 429: the check stays")
         try write(named: "detail-c6-iphone-en-light-report-429", into: directory)
+    }
+
+    /// C T6 fix I1: a list that fits, whose Load-more tap appends past the fold. The new rows'
+    /// `onAppear` fires before `onContentFits` reports the overflow, so a near-end check that reads
+    /// `contentFits` on its own schedule skips them and the list stops with no button and no way to
+    /// page. Six 1-row pages: 1 + autofill = 2 (fit, Load more), tap -> 3, renewed autofill -> 4
+    /// (overflows), and the near-end trigger must carry the rest: every page appears.
+    func testDetailCTask6PaginationPastTheFold() throws {
+        let directory = try shotsDirectory()
+        let notes = Notes(file: directory.appendingPathComponent("c-task6-iphone-measurements.txt"), append: true)
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(channelScreen(["-fitrah-fake-browse-pages", "6", "1"]), locale: Self.locales[0], extraArguments: [])
+        let loadMore = app.buttons["listFooter.loadMore"]
+        XCTAssertTrue(loadMore.waitForExistence(timeout: 20), "c6 fold: Load more never appeared after the single autofill")
+        XCTAssertEqual(ids(app, prefix: "channel.videos.row.").count, 2, "c6 fold: one page + one autofill = 2 rows")
+        loadMore.tap()
+        // Scrolls (rows below the fold materialise on the way) and taps Load more if it ever shows.
+        let rows = scrollCollecting(app, prefix: "channel.videos.row.", target: 6)
+        notes.append("iphone-en fold after tap rows=\(rows.count) \(rows) loadMore=\(loadMore.exists)")
+        try write(named: "detail-c6-iphone-en-light-channel-fold", into: directory)
+        XCTAssertEqual(rows.count, 6, "c6 fold: the list stopped at \(rows.count) rows past the fold with no Load more (near-end trigger lost)")
     }
 
     /// iPhone leg, the other matrix cells: ar-dark, en-dark, ar-light and `.accessibility3` for
@@ -2338,6 +2358,18 @@ final class ScreenshotTests: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix)).firstMatch
     }
 
+    /// C T6 fix C1: with a REAL banner the header column grew to the image's covering width and was
+    /// centred + clipped (avatar off the left edge, Subscribe cut at the right). The fakes carry no
+    /// banner (`RemoteImage` is https-only), so only a live header can prove the bound holds.
+    private func assertHeaderFits(_ app: XCUIApplication, _ tag: String, into notes: Notes) {
+        let window = app.windows.firstMatch.frame
+        let subscribe = app.buttons["channel.subscribe"]
+        let avatar = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Channel avatar")).firstMatch
+        notes.append("\(tag) header fit: subscribe=\(subscribe.frame) avatar exists=\(avatar.exists) frame=\(avatar.exists ? "\(avatar.frame)" : "-") window=\(window)")
+        XCTAssertLessThanOrEqual(subscribe.frame.maxX, window.maxX + 1, "\(tag) (C1): the header overflowed the screen (banner width unbounded)")
+        XCTAssertTrue(avatar.exists && avatar.frame.minX >= window.minX - 1, "\(tag) (C1): the avatar is off-screen or missing")
+    }
+
     /// Scrolls a lazily-materialised list, accumulating every distinct row id seen, tapping Load
     /// more when it shows; stops at `target` ids, or after `idle` swipes with nothing new and no
     /// footer in sight. Returns the ids in first-seen order.
@@ -2402,6 +2434,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertNotEqual(title.label, Self.cLiveChannelId, "live 1: the header never replaced the route's id")
         XCTAssertTrue(subscribers.lowercased().contains("subscriber"), "live 1: subscriber line not populated: \(subscribers)")
         XCTAssertFalse(app.staticTexts["channel.degradedNotice"].exists, "live 1: degraded on a fresh open (bot-check?)")
+        assertHeaderFits(app, "live 1", into: notes)
         try write(named: "detail-c6-live-channel-videos", into: directory)
         Thread.sleep(forTimeInterval: 3)  // let the second open's push land before reading the log
         let secondOpenPush = Array(logLines(log, prefix: "IndexClient:").dropFirst(firstOpenPush.count))
@@ -2409,7 +2442,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertFalse(firstOpenPush.isEmpty, "live 4: no index push logged on the first open")
         XCTAssertTrue(secondOpenPush.contains { $0.contains("status=429") }, "live 4: the fast second open did not 429 (30 s dedupe)")
         for line in firstOpenPush + secondOpenPush {
-            let items = Int(line.split(separator: " ").last { $0.hasPrefix("items=") }?.dropFirst(6) ?? "") ?? -1
+            let items = try XCTUnwrap(Int(line.split(separator: " ").last { $0.hasPrefix("items=") }?.dropFirst(6) ?? ""), "live 4: unparsable push line: \(line)")
             XCTAssertLessThanOrEqual(items, 50, "live 4: a batch over 50: \(line)")
         }
 
@@ -2418,6 +2451,8 @@ final class ScreenshotTests: XCTestCase {
         let liveRow = firstWithPrefix(app, "channel.live.row.")
         let liveShown = liveRow.waitForExistence(timeout: 30)
         notes.append("live-1 live tab rows=\(liveShown ? ids(app, prefix: "channel.live.row.").count : 0) error=\(any(app, "channel.live.error").exists) badges(upcoming)=\(app.staticTexts["Upcoming"].exists) first label=\(liveShown ? liveRow.label.debugDescription : "-")")
+        // A channel with no stream today legitimately shows the empty copy; an error state never is.
+        XCTAssertTrue(liveShown || !any(app, "channel.live.error").exists, "live 1: the Live tab errored")
         try write(named: "detail-c6-live-channel-live", into: directory)
         app.buttons["channel.tab.shorts"].tap()
         XCTAssertTrue(firstWithPrefix(app, "channel.shorts.cell.").waitForExistence(timeout: 30), "live 1: Shorts empty against a channel that has them (stale fixtures?)")
@@ -2455,6 +2490,9 @@ final class ScreenshotTests: XCTestCase {
         notes.append("live-3 playlist title=\(pTitle.label.debugDescription) metadata=\(app.staticTexts["playlist.metadata"].exists ? app.staticTexts["playlist.metadata"].label.debugDescription : "-")")
         // The route carries no title (CF-C-9): the backend's `Playlist` must replace the id.
         XCTAssertNotEqual(pTitle.label, Self.livePlaylistId, "live 3: the deep-link header fetch never replaced the id")
+        let save = app.buttons["playlist.save"], window = app.windows.firstMatch.frame
+        notes.append("live-3 hero fit: save=\(save.frame) window=\(window)")
+        XCTAssertLessThanOrEqual(save.frame.maxX, window.maxX + 1, "live 3 (C1): the playlist header overflowed the screen (hero width unbounded)")
         try write(named: "detail-c6-live-playlist", into: directory)
         let positions = scrollCollecting(app, prefix: "playlist.row.", target: 101)
         notes.append("live-3 playlist paged: distinct rows=\(positions.count) last=\(positions.last ?? "-")")
@@ -2476,7 +2514,6 @@ final class ScreenshotTests: XCTestCase {
         if FileManager.default.fileExists(atPath: filed) {
             notes.append("live-5 report: SKIPPED, already filed by an earlier run into this directory")
         } else {
-        FileManager.default.createFile(atPath: filed, contents: nil)
         app = playlist(["-fitrah-report-preselect", "OTHER"])
         XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 60))
         openReport(app)
@@ -2490,6 +2527,7 @@ final class ScreenshotTests: XCTestCase {
         let thanked = thanks.waitForExistence(timeout: 30)
         notes.append("live-5 report: banner=\(thanked) label=\(thanked ? thanks.label.debugDescription : "-") sheet gone=\(!app.buttons["report.submit"].exists) message=\(app.staticTexts["report.message"].exists ? app.staticTexts["report.message"].label.debugDescription : "-")")
         XCTAssertTrue(thanked, "live 5: the real backend did not answer 201 (see message in the notes)")
+        if thanked { FileManager.default.createFile(atPath: filed, contents: nil) }
         try write(named: "detail-c6-live-report-success", into: directory)
         }
 
@@ -2544,8 +2582,8 @@ final class ScreenshotTests: XCTestCase {
         measure(app.buttons["detail.kebab.button"], "ipad-en kebab", into: notes, barItem: true)
         try write(named: "detail-c6-ipad-en-light-channel-videos", into: directory)
         app.buttons["channel.tab.shorts"].tap()
-        let cells = ids(app, prefix: "channel.shorts.cell.")
         XCTAssertTrue(app.buttons["channel.shorts.cell.shorts-0-0"].waitForExistence(timeout: 10))
+        let cells = ids(app, prefix: "channel.shorts.cell.")
         let firstRowCells = cells.filter { abs($0.frame.minY - cells[0].frame.minY) < 2 }.count
         notes.append("ipad-en shorts columns=\(firstRowCells)")
         XCTAssertEqual(firstRowCells, 5, "c6 ipad: Shorts grid is 5 columns at large width")
@@ -2568,13 +2606,11 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(rows.count, 6, "c6 ipad pagination: one page + two autofills = 6 rows")
         measure(loadMore, "ipad-en loadMore", into: notes)
         try write(named: "detail-c6-ipad-en-light-channel-loadmore", into: directory)
-        if loadMore.exists {
-            loadMore.tap()
-            XCTAssertTrue(any(app, "channel.videos.row.video-3-0").waitForExistence(timeout: 10), "c6 ipad pagination: the tap renews the budget")
-            rows = ids(app, prefix: "channel.videos.row.")
-            notes.append("ipad-en pagination after tap rows=\(rows.count)")
-            XCTAssertGreaterThanOrEqual(rows.count, 8)
-        }
+        loadMore.tap()
+        XCTAssertTrue(any(app, "channel.videos.row.video-3-0").waitForExistence(timeout: 10), "c6 ipad pagination: the tap renews the budget")
+        rows = ids(app, prefix: "channel.videos.row.")
+        notes.append("ipad-en pagination after tap rows=\(rows.count)")
+        XCTAssertGreaterThanOrEqual(rows.count, 8)
 
         app = launch(playlistScreen(), locale: en, extraArguments: [])
         XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 20), "c6 ipad playlist: never loaded")

@@ -143,13 +143,14 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     }
 
     static func live(baseURL: URL = AppConfig.apiBaseURL) -> AppContainer {
-        let api = FitrahAPIClient.make(baseURL: baseURL, deviceId: .persisted())
+        let deviceId = DeviceId.persisted()
+        let api = FitrahAPIClient.make(baseURL: baseURL, deviceId: deviceId)
         // Degraded-mode header (plan Task 2 table): the backend's own `Channel` stands in for a
         // bot-checked `channelHeader` -- name and avatar only; banner, subscriber line and verified
         // badge are lost, which the screen renders as their placeholders. Hand-written (C T6):
         // the generated `getPublicChannel`/`getPublicPlaylist` cannot decode production's
         // Timestamp objects, see `PublicHeaders`.
-        let headers = PublicHeaders(baseURL: baseURL, deviceId: .persisted())
+        let headers = PublicHeaders(baseURL: baseURL, deviceId: deviceId)
         return AppContainer(
             catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false), apiBaseURL: baseURL,
             degradedHeader: { try await headers.channel($0) },
