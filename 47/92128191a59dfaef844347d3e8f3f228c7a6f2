@@ -1,0 +1,24 @@
+ios/FitrahTube/Features/Detail/ListFooter.swift
+  s_66ddb7c44de816::t_5b93f3b3af4beb 25-27,33
+ios/FitrahTube/Features/Detail/ChannelTabsView.swift
+  s_66ddb7c44de816::t_5faa757173b531 215-223
+ios/FitrahTube/Features/Detail/ChannelDetailScreen.swift
+  s_66ddb7c44de816::t_f6f39a934822d5 66-87,89
+  s_66ddb7c44de816::t_8e214433cdb8c6 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4792128191a59dfaef844347d3e8f3f228c7a6f2",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
