@@ -89,19 +89,21 @@ struct ChannelTabsView: View {
     }
 }
 
-// MARK: - Video-shaped tabs (Videos / Live / Shorts)
+// MARK: - Paged tab body (Videos / Live / Shorts / Playlists)
 
-/// One list body for the three `VideoItem` tabs; Shorts swaps the rows for the 2/4/5 grid
-/// (spec §11) and the skeleton for `SkeletonShorts`. Pagination is `ChannelTabAutofill`
-/// (ruling 10; reconciliation note 2) -- NOT `PaginationGuard`.
-private struct ChannelVideoTab: View {
+/// The one paged list body under the four item tabs: skeleton / empty / error / `rows` + the
+/// footer trio, paginated by `ChannelTabAutofill` (ruling 10; reconciliation note 2) -- NOT
+/// `PaginationGuard`. `rows` renders the loaded items and hands each row's `onAppear` offset back
+/// as the near-end trigger. `Item` is `VideoItem` for three tabs and `PlaylistTile` for the fourth
+/// (C T6, CF-C-15: the Playlists tab pages through the same machine, not a footer with a no-op).
+private struct ChannelListTab<Item: Sendable & Equatable, Skeleton: View, Rows: View>: View {
     let viewModel: ChannelDetailViewModel
     let tab: ChannelTabKind
+    let state: () -> TabState<Item>
+    @ViewBuilder let skeleton: () -> Skeleton
+    @ViewBuilder let rows: (_ items: [Item], _ nearEnd: @escaping (Int) -> Void) -> Rows
 
-    @Environment(\.router) private var router
     @Environment(\.widthClass) private var widthClass
-    @Environment(\.locale) private var locale
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var autofill = ChannelTabAutofill()
     @State private var contentFits = false
     @State private var isLoadingMore = false
@@ -114,7 +116,7 @@ private struct ChannelVideoTab: View {
             contentFits = fits
             triggerAutoFill()
         }
-        .onChange(of: viewModel.visible(tab).items.count) { _, _ in triggerAutoFill() }
+        .onChange(of: state().items.count) { _, _ in triggerAutoFill() }
         .onChange(of: viewModel.query) { _, _ in
             autofill.reset()
             triggerAutoFill()
@@ -123,25 +125,113 @@ private struct ChannelVideoTab: View {
 
     @ViewBuilder
     private var content: some View {
-        let state = viewModel.visible(tab)
+        let state = state()
         switch state {
         case .idle, .loadingInitial:
-            if tab.skeletonKind == .shortsGrid {
-                SkeletonShorts(columns: shortsColumns, rows: 2)
-            } else {
-                SkeletonListView().padding(Spacing.md(widthClass))
-            }
+            skeleton()
         case .empty(let key):
             ChannelTabStates.empty(key: key, widthClass: widthClass)
         case .errorInitial(let key):
             ChannelTabStates.error(key: key, viewModel: viewModel, tab: tab, widthClass: widthClass)
         case .loaded, .errorAppend:
             let items = state.items
+            rows(items) { offset in nearEnd(offset, of: items.count) }
+            ListFooter(state: footerState(state), loadMore: loadMoreTapped, retry: triggerScrollLoadMore)
+        }
+    }
+
+    // MARK: Pagination (ChannelTabAutofill, ruling 10)
+
+    private func footerState(_ state: TabState<Item>) -> TabState<Item> {
+        guard autofill.showsLoadMore, case .loaded(let items, let c, let appending, _) = state else { return state }
+        return .loaded(items: items, continuation: c, isAppending: appending, showsLoadMore: true)
+    }
+
+    private func nearEnd(_ offset: Int, of count: Int) {
+        // `>=`, not `==` (gate B1-I2): a failed load-more must stay recoverable.
+        guard offset >= max(0, count - 5) else { return }
+        // C T6 finding: while the whole list fits, every row's `onAppear` is "near the end", so this
+        // trigger paged through the entire channel and the ruling-10 cap / Load-more button never
+        // showed. A scroll trigger needs something to scroll; autofill owns the fitting case. The
+        // row appears BEFORE `onContentFits` reports the layout that includes it, so the check is
+        // deferred one turn -- read synchronously, `contentFits` is still the previous page's answer.
+        Task { @MainActor in
+            guard !contentFits else { return }
+            triggerScrollLoadMore()
+        }
+    }
+
+    private func triggerScrollLoadMore() {
+        guard state().continuation != nil, !isLoadingMore else { return }
+        isLoadingMore = true
+        Task { await runLoadMore() }
+    }
+
+    private func loadMoreTapped() {
+        autofill.loadMoreTapped()
+        triggerScrollLoadMore()
+    }
+
+    private func triggerAutoFill() {
+        guard !isLoadingMore else { return }
+        let state = state()
+        var attempt = autofill
+        guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: state.continuation != nil,
+                                     isAppending: state.isAppending, contentFits: contentFits) else {
+            autofill = attempt
+            return
+        }
+        let now = Date()
+        if attempt.accepts(at: now) {
+            attempt.recordAppend(accepted: true, at: now)
+            autofill = attempt
+            isLoadingMore = true
+            Task { await runLoadMore() }
+        } else if let delay = attempt.recordAppend(accepted: false, at: now) {
+            autofill = attempt
+            let generation = attempt.generation
+            Task {
+                try? await Task.sleep(for: .seconds(delay))
+                guard autofill.generation == generation else { return }
+                autofill.recheckFired()
+                triggerAutoFill()
+            }
+        } else {
+            autofill = attempt
+        }
+    }
+
+    private func runLoadMore() async {
+        _ = await viewModel.loadMore(tab)
+        isLoadingMore = false
+    }
+}
+
+// MARK: - Video-shaped tabs (Videos / Live / Shorts)
+
+/// The three `VideoItem` tabs over `ChannelListTab`; Shorts swaps the rows for the 2/4/5 grid
+/// (spec §11) and the skeleton for `SkeletonShorts`.
+private struct ChannelVideoTab: View {
+    let viewModel: ChannelDetailViewModel
+    let tab: ChannelTabKind
+
+    @Environment(\.router) private var router
+    @Environment(\.widthClass) private var widthClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        ChannelListTab(viewModel: viewModel, tab: tab, state: { viewModel.visible(tab) }) {
+            if tab.skeletonKind == .shortsGrid {
+                SkeletonShorts(columns: shortsColumns, rows: 2)
+            } else {
+                SkeletonListView().padding(Spacing.md(widthClass))
+            }
+        } rows: { items, nearEnd in
             if tab == .shorts {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Spacing.sm), count: shortsColumns),
                           spacing: Spacing.md(widthClass)) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { offset, item in
-                        shortCell(item).onAppear { nearEnd(offset, of: items.count) }
+                        shortCell(item).onAppear { nearEnd(offset) }
                     }
                 }
                 .padding(.horizontal, Spacing.md(widthClass))
@@ -149,11 +239,10 @@ private struct ChannelVideoTab: View {
             } else {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { offset, item in
-                        row(item).onAppear { nearEnd(offset, of: items.count) }
+                        row(item).onAppear { nearEnd(offset) }
                     }
                 }
             }
-            ListFooter(state: footerState(state), loadMore: loadMoreTapped, retry: triggerScrollLoadMore)
         }
     }
 
@@ -201,72 +290,6 @@ private struct ChannelVideoTab: View {
         .accessibilityLabel(item.title)
         .accessibilityIdentifier("channel.shorts.cell.\(item.id)")
     }
-
-    // MARK: Pagination (ChannelTabAutofill, ruling 10)
-
-    private func footerState(_ state: TabState<VideoItem>) -> TabState<VideoItem> {
-        guard autofill.showsLoadMore, case .loaded(let items, let c, let appending, _) = state else { return state }
-        return .loaded(items: items, continuation: c, isAppending: appending, showsLoadMore: true)
-    }
-
-    private func nearEnd(_ offset: Int, of count: Int) {
-        // `>=`, not `==` (gate B1-I2): a failed load-more must stay recoverable.
-        guard offset >= max(0, count - 5) else { return }
-        // C T6 finding: while the whole list fits, every row's `onAppear` is "near the end", so this
-        // trigger paged through the entire channel and the ruling-10 cap / Load-more button never
-        // showed. A scroll trigger needs something to scroll; autofill owns the fitting case. The
-        // row appears BEFORE `onContentFits` reports the layout that includes it, so the check is
-        // deferred one turn -- read synchronously, `contentFits` is still the previous page's answer.
-        Task { @MainActor in
-            guard !contentFits else { return }
-            triggerScrollLoadMore()
-        }
-    }
-
-    private func triggerScrollLoadMore() {
-        guard viewModel.visible(tab).continuation != nil, !isLoadingMore else { return }
-        isLoadingMore = true
-        Task { await runLoadMore() }
-    }
-
-    private func loadMoreTapped() {
-        autofill.loadMoreTapped()
-        triggerScrollLoadMore()
-    }
-
-    private func triggerAutoFill() {
-        guard !isLoadingMore else { return }
-        let state = viewModel.visible(tab)
-        var attempt = autofill
-        guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: state.continuation != nil,
-                                     isAppending: state.isAppending, contentFits: contentFits) else {
-            autofill = attempt
-            return
-        }
-        let now = Date()
-        if attempt.accepts(at: now) {
-            attempt.recordAppend(accepted: true, at: now)
-            autofill = attempt
-            isLoadingMore = true
-            Task { await runLoadMore() }
-        } else if let delay = attempt.recordAppend(accepted: false, at: now) {
-            autofill = attempt
-            let generation = attempt.generation
-            Task {
-                try? await Task.sleep(for: .seconds(delay))
-                guard autofill.generation == generation else { return }
-                autofill.recheckFired()
-                triggerAutoFill()
-            }
-        } else {
-            autofill = attempt
-        }
-    }
-
-    private func runLoadMore() async {
-        _ = await viewModel.loadMore(tab)
-        isLoadingMore = false
-    }
 }
 
 // MARK: - Playlists tab
@@ -278,31 +301,21 @@ private struct ChannelPlaylistsTab: View {
     @Environment(\.widthClass) private var widthClass
 
     var body: some View {
-        ScrollView {
-            let state = viewModel.visiblePlaylists
-            switch state {
-            case .idle, .loadingInitial:
-                SkeletonListView().padding(Spacing.md(widthClass))
-            case .empty(let key):
-                ChannelTabStates.empty(key: key, widthClass: widthClass)
-            case .errorInitial(let key):
-                ChannelTabStates.error(key: key, viewModel: viewModel, tab: .playlists, widthClass: widthClass)
-            case .loaded, .errorAppend:
-                LazyVStack(spacing: 0) {
-                    ForEach(state.items, id: \.id) { tile in
-                        PlaylistRow(item: ContentItem(id: tile.id, type: .playlist, title: tile.title, category: nil, description: nil,
-                                                      thumbnailURL: tile.thumbnailURL, durationSeconds: nil, uploadedDaysAgo: nil,
-                                                      viewCount: nil, channelTitle: tile.channelName, subscribers: nil,
-                                                      videoCount: nil, itemCount: nil),
-                                    subtitle: tile.itemCountText) {
-                            router.push(.playlist(id: tile.id, title: tile.title, category: nil, count: nil))
-                        }
-                        .accessibilityIdentifier("channel.playlists.row.\(tile.id)")
+        ChannelListTab(viewModel: viewModel, tab: .playlists, state: { viewModel.visiblePlaylists }) {
+            SkeletonListView().padding(Spacing.md(widthClass))
+        } rows: { tiles, nearEnd in
+            LazyVStack(spacing: 0) {
+                ForEach(Array(tiles.enumerated()), id: \.element.id) { offset, tile in
+                    PlaylistRow(item: ContentItem(id: tile.id, type: .playlist, title: tile.title, category: nil, description: nil,
+                                                  thumbnailURL: tile.thumbnailURL, durationSeconds: nil, uploadedDaysAgo: nil,
+                                                  viewCount: nil, channelTitle: tile.channelName, subscribers: nil,
+                                                  videoCount: nil, itemCount: nil),
+                                subtitle: tile.itemCountText) {
+                        router.push(.playlist(id: tile.id, title: tile.title, category: nil, count: nil))
                     }
+                    .accessibilityIdentifier("channel.playlists.row.\(tile.id)")
+                    .onAppear { nearEnd(offset) }
                 }
-                // ponytail: the Playlists tab's continuation shape is uncaptured (Task 1 ledger,
-                // CF-C-3); the footer Retry/Load-more path lights up once Task 6 proves it pages.
-                ListFooter(state: state, loadMore: {}, retry: { Task { _ = await viewModel.loadMore(.playlists) } })
             }
         }
     }

@@ -1,0 +1,696 @@
+{
+ "responseContext": {
+  "visitorData": "CgtGSVhUVVJFXzAwMSiFAA%3D%3D"
+ },
+ "onResponseReceivedActions": [
+  {
+   "appendContinuationItemsAction": {
+    "continuationItems": [
+     {
+      "lockupViewModel": {
+       "contentImage": {
+        "collectionThumbnailViewModel": {
+         "primaryThumbnail": {
+          "thumbnailViewModel": {
+           "image": {
+            "sources": [
+             {
+              "url": "https://i.ytimg.com/vi/9s_BkWTuqNU/hqdefault.jpg?sqp=-oaymwEXCOADEI4CSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLDXz5VOPZL1LFBVJ5-0ZU5E5DGYpQ",
+              "width": 480,
+              "height": 270
+             }
+            ]
+           },
+           "overlays": [
+            {
+             "thumbnailOverlayBadgeViewModel": {
+              "thumbnailBadges": [
+               {
+                "thumbnailBadgeViewModel": {
+                 "icon": {
+                  "sources": [
+                   {
+                    "clientResource": {
+                     "imageName": "PLAYLISTS"
+                    }
+                   }
+                  ]
+                 },
+                 "text": "7 videos",
+                 "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                 "backgroundColor": {
+                  "lightTheme": 3354153,
+                  "darkTheme": 3354153
+                 }
+                }
+               }
+              ],
+              "position": "THUMBNAIL_OVERLAY_BADGE_POSITION_BOTTOM_END"
+             }
+            },
+            {
+             "thumbnailHoverOverlayViewModel": {
+              "icon": {
+               "sources": [
+                {
+                 "clientResource": {
+                  "imageName": "PLAY_ALL"
+                 }
+                }
+               ]
+              },
+              "text": {
+               "content": "Play all",
+               "styleRuns": [
+                {
+                 "startIndex": 0,
+                 "length": 8
+                }
+               ]
+              },
+              "style": "THUMBNAIL_HOVER_OVERLAY_STYLE_COVER"
+             }
+            }
+           ],
+           "backgroundColor": {
+            "lightTheme": 4143411,
+            "darkTheme": 4143411
+           }
+          }
+         },
+         "stackColor": {
+          "lightTheme": 10062460,
+          "darkTheme": 9668216
+         }
+        }
+       },
+       "metadata": {
+        "lockupMetadataViewModel": {
+         "title": {
+          "content": "سورة الفيل مشاري راشد العفاسي"
+         },
+         "metadata": {
+          "contentMetadataViewModel": {
+           "metadataRows": [
+            {
+             "metadataParts": [
+              {
+               "text": {
+                "content": "View full playlist",
+                "commandRuns": [
+                 {
+                  "startIndex": 0,
+                  "length": 18,
+                  "onTap": {
+                   "innertubeCommand": {
+                    "commandMetadata": {
+                     "webCommandMetadata": {
+                      "url": "/playlist?list=PL2hoGhz2jBSodBamILCK9GlWqDfjK8Wyz",
+                      "webPageType": "WEB_PAGE_TYPE_PLAYLIST",
+                      "rootVe": 5754,
+                      "apiUrl": "/youtubei/v1/browse"
+                     }
+                    },
+                    "browseEndpoint": {
+                     "browseId": "VLPL2hoGhz2jBSodBamILCK9GlWqDfjK8Wyz"
+                    }
+                   }
+                  }
+                 }
+                ],
+                "styleRuns": [
+                 {
+                  "startIndex": 0,
+                  "length": 18,
+                  "weightLabel": "FONT_WEIGHT_MEDIUM"
+                 }
+                ]
+               }
+              }
+             ]
+            }
+           ],
+           "delimiter": " • "
+          }
+         }
+        }
+       },
+       "contentId": "PL2hoGhz2jBSodBamILCK9GlWqDfjK8Wyz",
+       "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+      }
+     },
+     {
+      "lockupViewModel": {
+       "contentImage": {
+        "collectionThumbnailViewModel": {
+         "primaryThumbnail": {
+          "thumbnailViewModel": {
+           "image": {
+            "sources": [
+             {
+              "url": "https://i.ytimg.com/vi/7_x7R7aJUG4/hqdefault.jpg?sqp=-oaymwEXCOADEI4CSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLAQaRUjLoYij6W1mPFbPQ9XMocOIw",
+              "width": 480,
+              "height": 270
+             }
+            ]
+           },
+           "overlays": [
+            {
+             "thumbnailOverlayBadgeViewModel": {
+              "thumbnailBadges": [
+               {
+                "thumbnailBadgeViewModel": {
+                 "icon": {
+                  "sources": [
+                   {
+                    "clientResource": {
+                     "imageName": "PLAYLISTS"
+                    }
+                   }
+                  ]
+                 },
+                 "text": "7 videos",
+                 "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                 "backgroundColor": {
+                  "lightTheme": 2630944,
+                  "darkTheme": 2630944
+                 }
+                }
+               }
+              ],
+              "position": "THUMBNAIL_OVERLAY_BADGE_POSITION_BOTTOM_END"
+             }
+            },
+            {
+             "thumbnailHoverOverlayViewModel": {
+              "icon": {
+               "sources": [
+                {
+                 "clientResource": {
+                  "imageName": "PLAY_ALL"
+                 }
+                }
+               ]
+              },
+              "text": {
+               "content": "Play all",
+               "styleRuns": [
+                {
+                 "startIndex": 0,
+                 "length": 8
+                }
+               ]
+              },
+              "style": "THUMBNAIL_HOVER_OVERLAY_STYLE_COVER"
+             }
+            }
+           ],
+           "backgroundColor": {
+            "lightTheme": 4143411,
+            "darkTheme": 4143411
+           }
+          }
+         },
+         "stackColor": {
+          "lightTheme": 12561818,
+          "darkTheme": 9668215
+         }
+        }
+       },
+       "metadata": {
+        "lockupMetadataViewModel": {
+         "title": {
+          "content": "سورة الهمزة مشاري راشد العفاسي"
+         },
+         "metadata": {
+          "contentMetadataViewModel": {
+           "metadataRows": [
+            {
+             "metadataParts": [
+              {
+               "text": {
+                "content": "View full playlist",
+                "commandRuns": [
+                 {
+                  "startIndex": 0,
+                  "length": 18,
+                  "onTap": {
+                   "innertubeCommand": {
+                    "commandMetadata": {
+                     "webCommandMetadata": {
+                      "url": "/playlist?list=PL2hoGhz2jBSo8F4MtDRs4Q29FZG3JKl55",
+                      "webPageType": "WEB_PAGE_TYPE_PLAYLIST",
+                      "rootVe": 5754,
+                      "apiUrl": "/youtubei/v1/browse"
+                     }
+                    },
+                    "browseEndpoint": {
+                     "browseId": "VLPL2hoGhz2jBSo8F4MtDRs4Q29FZG3JKl55"
+                    }
+                   }
+                  }
+                 }
+                ],
+                "styleRuns": [
+                 {
+                  "startIndex": 0,
+                  "length": 18,
+                  "weightLabel": "FONT_WEIGHT_MEDIUM"
+                 }
+                ]
+               }
+              }
+             ]
+            }
+           ],
+           "delimiter": " • "
+          }
+         }
+        }
+       },
+       "contentId": "PL2hoGhz2jBSo8F4MtDRs4Q29FZG3JKl55",
+       "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+      }
+     },
+     {
+      "lockupViewModel": {
+       "contentImage": {
+        "collectionThumbnailViewModel": {
+         "primaryThumbnail": {
+          "thumbnailViewModel": {
+           "image": {
+            "sources": [
+             {
+              "url": "https://i.ytimg.com/vi/NUbXgtogrxk/hqdefault.jpg?sqp=-oaymwEXCOADEI4CSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLD_NVXgT8wdtidvAW5ox-hEB7n7xA",
+              "width": 480,
+              "height": 270
+             }
+            ]
+           },
+           "overlays": [
+            {
+             "thumbnailOverlayBadgeViewModel": {
+              "thumbnailBadges": [
+               {
+                "thumbnailBadgeViewModel": {
+                 "icon": {
+                  "sources": [
+                   {
+                    "clientResource": {
+                     "imageName": "PLAYLISTS"
+                    }
+                   }
+                  ]
+                 },
+                 "text": "8 videos",
+                 "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                 "backgroundColor": {
+                  "lightTheme": 3353897,
+                  "darkTheme": 3353897
+                 }
+                }
+               }
+              ],
+              "position": "THUMBNAIL_OVERLAY_BADGE_POSITION_BOTTOM_END"
+             }
+            },
+            {
+             "thumbnailHoverOverlayViewModel": {
+              "icon": {
+               "sources": [
+                {
+                 "clientResource": {
+                  "imageName": "PLAY_ALL"
+                 }
+                }
+               ]
+              },
+              "text": {
+               "content": "Play all",
+               "styleRuns": [
+                {
+                 "startIndex": 0,
+                 "length": 8
+                }
+               ]
+              },
+              "style": "THUMBNAIL_HOVER_OVERLAY_STYLE_COVER"
+             }
+            }
+           ],
+           "backgroundColor": {
+            "lightTheme": 4143411,
+            "darkTheme": 4143411
+           }
+          }
+         },
+         "stackColor": {
+          "lightTheme": 10062203,
+          "darkTheme": 9667959
+         }
+        }
+       },
+       "metadata": {
+        "lockupMetadataViewModel": {
+         "title": {
+          "content": "سورة العصر مشاري راشد العفاسي"
+         },
+         "metadata": {
+          "contentMetadataViewModel": {
+           "metadataRows": [
+            {
+             "metadataParts": [
+              {
+               "text": {
+                "content": "View full playlist",
+                "commandRuns": [
+                 {
+                  "startIndex": 0,
+                  "length": 18,
+                  "onTap": {
+                   "innertubeCommand": {
+                    "commandMetadata": {
+                     "webCommandMetadata": {
+                      "url": "/playlist?list=PL2hoGhz2jBSpMQlBtwClmHksM8k-23L7B",
+                      "webPageType": "WEB_PAGE_TYPE_PLAYLIST",
+                      "rootVe": 5754,
+                      "apiUrl": "/youtubei/v1/browse"
+                     }
+                    },
+                    "browseEndpoint": {
+                     "browseId": "VLPL2hoGhz2jBSpMQlBtwClmHksM8k-23L7B"
+                    }
+                   }
+                  }
+                 }
+                ],
+                "styleRuns": [
+                 {
+                  "startIndex": 0,
+                  "length": 18,
+                  "weightLabel": "FONT_WEIGHT_MEDIUM"
+                 }
+                ]
+               }
+              }
+             ]
+            }
+           ],
+           "delimiter": " • "
+          }
+         }
+        }
+       },
+       "contentId": "PL2hoGhz2jBSpMQlBtwClmHksM8k-23L7B",
+       "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+      }
+     },
+     {
+      "lockupViewModel": {
+       "contentImage": {
+        "collectionThumbnailViewModel": {
+         "primaryThumbnail": {
+          "thumbnailViewModel": {
+           "image": {
+            "sources": [
+             {
+              "url": "https://i.ytimg.com/vi/ZZYd5vaBhCI/hqdefault.jpg?sqp=-oaymwEXCOADEI4CSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLBtMCyFizFO-_O9xqNqPIzRztCgmw",
+              "width": 480,
+              "height": 270
+             }
+            ]
+           },
+           "overlays": [
+            {
+             "thumbnailOverlayBadgeViewModel": {
+              "thumbnailBadges": [
+               {
+                "thumbnailBadgeViewModel": {
+                 "icon": {
+                  "sources": [
+                   {
+                    "clientResource": {
+                     "imageName": "PLAYLISTS"
+                    }
+                   }
+                  ]
+                 },
+                 "text": "7 videos",
+                 "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                 "backgroundColor": {
+                  "lightTheme": 3354153,
+                  "darkTheme": 3354153
+                 }
+                }
+               }
+              ],
+              "position": "THUMBNAIL_OVERLAY_BADGE_POSITION_BOTTOM_END"
+             }
+            },
+            {
+             "thumbnailHoverOverlayViewModel": {
+              "icon": {
+               "sources": [
+                {
+                 "clientResource": {
+                  "imageName": "PLAY_ALL"
+                 }
+                }
+               ]
+              },
+              "text": {
+               "content": "Play all",
+               "styleRuns": [
+                {
+                 "startIndex": 0,
+                 "length": 8
+                }
+               ]
+              },
+              "style": "THUMBNAIL_HOVER_OVERLAY_STYLE_COVER"
+             }
+            }
+           ],
+           "backgroundColor": {
+            "lightTheme": 4143412,
+            "darkTheme": 4143412
+           }
+          }
+         },
+         "stackColor": {
+          "lightTheme": 10062460,
+          "darkTheme": 9668216
+         }
+        }
+       },
+       "metadata": {
+        "lockupMetadataViewModel": {
+         "title": {
+          "content": "سورة التكاثر مشاري راشد العفاسي"
+         },
+         "metadata": {
+          "contentMetadataViewModel": {
+           "metadataRows": [
+            {
+             "metadataParts": [
+              {
+               "text": {
+                "content": "View full playlist",
+                "commandRuns": [
+                 {
+                  "startIndex": 0,
+                  "length": 18,
+                  "onTap": {
+                   "innertubeCommand": {
+                    "commandMetadata": {
+                     "webCommandMetadata": {
+                      "url": "/playlist?list=PL2hoGhz2jBSrTRxXS35gyNwE1NQ7ielrs",
+                      "webPageType": "WEB_PAGE_TYPE_PLAYLIST",
+                      "rootVe": 5754,
+                      "apiUrl": "/youtubei/v1/browse"
+                     }
+                    },
+                    "browseEndpoint": {
+                     "browseId": "VLPL2hoGhz2jBSrTRxXS35gyNwE1NQ7ielrs"
+                    }
+                   }
+                  }
+                 }
+                ],
+                "styleRuns": [
+                 {
+                  "startIndex": 0,
+                  "length": 18,
+                  "weightLabel": "FONT_WEIGHT_MEDIUM"
+                 }
+                ]
+               }
+              }
+             ]
+            }
+           ],
+           "delimiter": " • "
+          }
+         }
+        }
+       },
+       "contentId": "PL2hoGhz2jBSrTRxXS35gyNwE1NQ7ielrs",
+       "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+      }
+     },
+     {
+      "lockupViewModel": {
+       "contentImage": {
+        "collectionThumbnailViewModel": {
+         "primaryThumbnail": {
+          "thumbnailViewModel": {
+           "image": {
+            "sources": [
+             {
+              "url": "https://i.ytimg.com/vi/nz-I0_NHmGg/hqdefault.jpg?sqp=-oaymwEXCOADEI4CSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLCNKh1b6tUEXCm1HXsODXNhFhjWgg",
+              "width": 480,
+              "height": 270
+             }
+            ]
+           },
+           "overlays": [
+            {
+             "thumbnailOverlayBadgeViewModel": {
+              "thumbnailBadges": [
+               {
+                "thumbnailBadgeViewModel": {
+                 "icon": {
+                  "sources": [
+                   {
+                    "clientResource": {
+                     "imageName": "PLAYLISTS"
+                    }
+                   }
+                  ]
+                 },
+                 "text": "9 videos",
+                 "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                 "backgroundColor": {
+                  "lightTheme": 3353897,
+                  "darkTheme": 3353897
+                 }
+                }
+               }
+              ],
+              "position": "THUMBNAIL_OVERLAY_BADGE_POSITION_BOTTOM_END"
+             }
+            },
+            {
+             "thumbnailHoverOverlayViewModel": {
+              "icon": {
+               "sources": [
+                {
+                 "clientResource": {
+                  "imageName": "PLAY_ALL"
+                 }
+                }
+               ]
+              },
+              "text": {
+               "content": "Play all",
+               "styleRuns": [
+                {
+                 "startIndex": 0,
+                 "length": 8
+                }
+               ]
+              },
+              "style": "THUMBNAIL_HOVER_OVERLAY_STYLE_COVER"
+             }
+            }
+           ],
+           "backgroundColor": {
+            "lightTheme": 4143411,
+            "darkTheme": 4143411
+           }
+          }
+         },
+         "stackColor": {
+          "lightTheme": 10062204,
+          "darkTheme": 9667703
+         }
+        }
+       },
+       "metadata": {
+        "lockupMetadataViewModel": {
+         "title": {
+          "content": "سورة القارعة مشاري راشد العفاسي"
+         },
+         "metadata": {
+          "contentMetadataViewModel": {
+           "metadataRows": [
+            {
+             "metadataParts": [
+              {
+               "text": {
+                "content": "View full playlist",
+                "commandRuns": [
+                 {
+                  "startIndex": 0,
+                  "length": 18,
+                  "onTap": {
+                   "innertubeCommand": {
+                    "commandMetadata": {
+                     "webCommandMetadata": {
+                      "url": "/playlist?list=PL2hoGhz2jBSouacqKYkGJ-EkXN5MjU8qg",
+                      "webPageType": "WEB_PAGE_TYPE_PLAYLIST",
+                      "rootVe": 5754,
+                      "apiUrl": "/youtubei/v1/browse"
+                     }
+                    },
+                    "browseEndpoint": {
+                     "browseId": "VLPL2hoGhz2jBSouacqKYkGJ-EkXN5MjU8qg"
+                    }
+                   }
+                  }
+                 }
+                ],
+                "styleRuns": [
+                 {
+                  "startIndex": 0,
+                  "length": 18,
+                  "weightLabel": "FONT_WEIGHT_MEDIUM"
+                 }
+                ]
+               }
+              }
+             ]
+            }
+           ],
+           "delimiter": " • "
+          }
+         }
+        }
+       },
+       "contentId": "PL2hoGhz2jBSouacqKYkGJ-EkXN5MjU8qg",
+       "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+      }
+     },
+     {
+      "continuationItemRenderer": {
+       "trigger": "CONTINUATION_TRIGGER_ON_ITEM_SHOWN",
+       "continuationEndpoint": {
+        "commandMetadata": {
+         "webCommandMetadata": {
+          "sendPost": true,
+          "apiUrl": "/youtubei/v1/browse"
+         }
+        },
+        "continuationCommand": {
+         "token": "4qmFsgJ4EhhVQ21NY09qc1ZlaFZsRU90ZXlyaGpJMlEaKkVnbHdiR0Y1YkdsemRITVlBeUFBTUFFNEFlb0RCME5uVGtSU1NHTSUzRJoCL2Jyb3dzZS1mZWVkVUNtTWNPanNWZWhWbEVPdGV5cmhqSTJRcGxheWxpc3RzMTA0",
+         "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+        }
+       }
+      }
+     }
+    ],
+    "targetId": "browse-feedUCmMcOjsVehVlEOteyrhjI2Qplaylists104"
+   }
+  }
+ ]
+}

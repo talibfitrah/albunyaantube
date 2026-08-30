@@ -13,6 +13,8 @@ import Testing
 /// from the same channel's Shorts and Playlists tabs (both populated: 49 Shorts, 31 playlists at
 /// capture time) via `LiveBrowseTests`, trimmed to 5 items + the continuation item, with every
 /// `trackingParams`/`clickTrackingParams` and per-item action-menu JSON stripped.
+/// `browse-channel-playlists-page2.json` is LIVE, recorded 2026-08-30 (Task 6, CF-C-3): the Playlists
+/// tab's first continuation, trimmed the same way.
 ///
 /// Every `responseContext.visitorData` in these fixtures is SYNTHETIC (`CgtGSVhUVVJFXzAwMSiFAA%3D%3D`):
 /// a real one is a session identifier for the machine that captured it and must never be committed.
@@ -276,6 +278,28 @@ import Testing
         #expect(first.thumbnailURL != nil)
         #expect(first.itemCountText == "99 videos")  // the badge is a count, not a duration
         #expect(page.nextContinuation != nil)
+    }
+
+    /// CF-C-3 / CF-C-15 (Plan C Task 6, captured 2026-08-30): the Playlists tab's continuation is
+    /// a plain `appendContinuationItemsAction` of `lockupViewModel`s plus the next
+    /// `continuationItemRenderer` -- the same append shape as the video tabs.
+    @Test func playlistsTabContinuationYieldsPage2() async throws {
+        let transport = RecordingTransport([
+            try fixtureResponse("browse-channel-playlists"), try fixtureResponse("browse-channel-playlists-page2"),
+        ])
+        let client = makeClient(transport)
+
+        let page1 = try await client.channelPlaylists(Self.channelId, continuation: nil)
+        let page2 = try await client.channelPlaylists(Self.channelId, continuation: try #require(page1.nextContinuation))
+
+        #expect(page2.items.count == 5)
+        let first = try #require(page2.items.first)
+        #expect(first.id == "PL2hoGhz2jBSodBamILCK9GlWqDfjK8Wyz")
+        #expect(first.itemCountText == "7 videos")
+        #expect(page2.nextContinuation != nil)
+        let body = transport.capturedBodies[1]
+        #expect(body.contains("\"continuation\":\"\(try #require(page1.nextContinuation))\""))
+        #expect(!body.contains("browseId"))
     }
 
     @Test func channelPlaylistsSendsChannelIdAsBrowseIdWithPlaylistsParams() async throws {
