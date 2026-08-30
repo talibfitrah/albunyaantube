@@ -22,15 +22,15 @@ struct ListFooter<Item: Sendable & Equatable>: View {
                         .font(.subheadline)
                         .foregroundStyle(Color.textSecondary)
                         .multilineTextAlignment(.center)
-                    Button(String(localized: "retry"), action: retry)
-                        .frame(minHeight: 44)
+                    // C T6 measurement: a `.frame` OUTSIDE `.bordered` pads the button's slot, not
+                    // its hit area (34 pt measured); the floor has to be on the label.
+                    Button(action: retry) { Text(String(localized: "retry")).frame(minHeight: 44) }
                         .buttonStyle(.bordered)
                         .tint(.brand)
                         .accessibilityIdentifier("listFooter.retry")
                 }
             } else if state.showsLoadMore {
-                Button(String(localized: "load_more"), action: loadMore)
-                    .frame(minHeight: 44)
+                Button(action: loadMore) { Text(String(localized: "load_more")).frame(minHeight: 44) }
                     .buttonStyle(.bordered)
                     .tint(.brand)
                     .accessibilityIdentifier("listFooter.loadMore")

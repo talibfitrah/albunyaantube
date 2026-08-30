@@ -12,6 +12,7 @@ struct ChannelDetailScreen: View {
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @State private var viewModel: ChannelDetailViewModel?
     @State private var banner: BannerMessage?
@@ -62,23 +63,31 @@ struct ChannelDetailScreen: View {
 
     private func header(_ viewModel: ChannelDetailViewModel) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            ZStack(alignment: .bottomLeading) {
-                ZStack {
-                    RemoteImage(url: viewModel.header.bannerURL)
-                    LinearGradient(colors: [.clear, Color.heroOverlay], startPoint: .top, endPoint: .bottom)
+            // C T6 finding: the header pins (ruling F), so at compact height (iPhone landscape) the
+            // banner + avatar block alone pushed the strip under the tab bar and left the tab body
+            // with no height at all. Drop that block there; name, Subscribe, search and the strip stay.
+            if verticalSizeClass != .compact {
+                ZStack(alignment: .bottomLeading) {
+                    ZStack {
+                        RemoteImage(url: viewModel.header.bannerURL)
+                        // C T6 finding: no banner -> the placeholder alone, no gradient over it.
+                        if viewModel.header.bannerURL != nil {
+                            LinearGradient(colors: [.clear, Color.heroOverlay], startPoint: .top, endPoint: .bottom)
+                        }
+                    }
+                    .frame(height: widthClass.pick(96, 140, 160))
+                    .clipped()
+                    .accessibilityHidden(true)
+                    RemoteImage(url: viewModel.header.avatarURL)
+                        .frame(width: avatarSize, height: avatarSize)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.background, lineWidth: 3))
+                        .padding(.leading, Spacing.md(widthClass))
+                        .offset(y: avatarSize / 2)
+                        .accessibilityLabel(String(localized: "cd_channel_avatar"))
                 }
-                .frame(height: widthClass.pick(96, 140, 160))
-                .clipped()
-                .accessibilityHidden(true)
-                RemoteImage(url: viewModel.header.avatarURL)
-                    .frame(width: avatarSize, height: avatarSize)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(Color.background, lineWidth: 3))
-                    .padding(.leading, Spacing.md(widthClass))
-                    .offset(y: avatarSize / 2)
-                    .accessibilityLabel(String(localized: "cd_channel_avatar"))
+                .padding(.bottom, avatarSize / 2)
             }
-            .padding(.bottom, avatarSize / 2)
 
             Text(viewModel.header.name)
                 .font(TypeScale.headline(widthClass)).foregroundStyle(Color.textPrimary)

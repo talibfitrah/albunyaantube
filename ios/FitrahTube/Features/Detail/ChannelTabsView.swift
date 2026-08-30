@@ -212,7 +212,15 @@ private struct ChannelVideoTab: View {
     private func nearEnd(_ offset: Int, of count: Int) {
         // `>=`, not `==` (gate B1-I2): a failed load-more must stay recoverable.
         guard offset >= max(0, count - 5) else { return }
-        triggerScrollLoadMore()
+        // C T6 finding: while the whole list fits, every row's `onAppear` is "near the end", so this
+        // trigger paged through the entire channel and the ruling-10 cap / Load-more button never
+        // showed. A scroll trigger needs something to scroll; autofill owns the fitting case. The
+        // row appears BEFORE `onContentFits` reports the layout that includes it, so the check is
+        // deferred one turn -- read synchronously, `contentFits` is still the previous page's answer.
+        Task { @MainActor in
+            guard !contentFits else { return }
+            triggerScrollLoadMore()
+        }
     }
 
     private func triggerScrollLoadMore() {
