@@ -82,9 +82,21 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         keyValueStore: UserDefaultsKeyValueStore(defaults: userDefaults),
         availabilityGate: BackendAvailabilityGate(baseURL: apiBaseURL),
         locale: Self.deviceLocale(),
-        remoteConfigURL: AppConfig.innerTubeRemoteConfigURL
+        remoteConfigURL: Self.debugRemoteConfigURL ?? AppConfig.innerTubeRemoteConfigURL
     )
     var resolver: StreamResolver { innerTube.resolver }
+
+    /// Plan C Task 6 step 8: `-fitrah-remote-config-url <url>` (DEBUG) lets the live rig serve a
+    /// document itself and prove `refresh()` adopts it, without editing the production URL.
+    private static var debugRemoteConfigURL: URL? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-fitrah-remote-config-url"), args.indices.contains(i + 1) else { return nil }
+        return AppConfig.validate(args[i + 1])
+        #else
+        return nil
+        #endif
+    }
 
     /// Plan C Task 2: the detail screens' browse seam and the fire-and-forget index push. `browse`
     /// is injectable (`fake(browse:)`) so previews/UI tests drive the screens from fixtures; the

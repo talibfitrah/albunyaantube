@@ -288,6 +288,10 @@ public actor BrowseClient {
     /// cooldown exempts the player for the same reason; a bot-checked browse goes degraded
     /// instead (reconciliation note 3, CF-C2).
     private func rotateIfStale(_ sent: Sent) async {
+        #if DEBUG
+        // CF-C-2 measurement (Plan C Task 6): how often the stale-token branch fires at all.
+        print("BrowseClient: bot-check tokenless=\(sent.visitorData == nil) rotate=\(sent.visitorData != nil)")
+        #endif
         guard sent.visitorData != nil else { return }
         _ = await sessionStore.rotate(.web)
     }

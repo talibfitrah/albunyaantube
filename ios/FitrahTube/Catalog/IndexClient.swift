@@ -68,9 +68,9 @@ struct IndexClient: Sendable {
             do {
                 let response = try await transport.send(request)
                 #if DEBUG
-                if !(200..<300).contains(response.status) {
-                    print("IndexClient: \(sourceType.rawValue) \(sourceId) status=\(response.status) items=\(batch.count)")
-                }
+                // Every status, not just failures: the live rig (`-fitrah-stdout`) reads the batch
+                // size and the 30 s-repeat 429 off this line.
+                print("IndexClient: \(sourceType.rawValue) \(sourceId) status=\(response.status) items=\(batch.count)")
                 #endif
             } catch {
                 #if DEBUG

@@ -435,4 +435,39 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$C_TASK6_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
 
+# Task 6 step 5 (live acceptance): OPT-IN, same contract as B5_LIVE -- talks to youtube.com AND the
+# backend named by C_LIVE_API_BASE_URL (default: production), and files exactly ONE real content
+# report per run (reason OTHER, "iOS Plan C acceptance test - safe to dismiss"). Step 8 needs a real
+# remote-config document the branch cannot publish, so a marked copy of ios-remote-config.json is
+# served from a temp dir on localhost for the run. Run with:  C_LIVE=1 ios/scripts/screenshots.sh
+if [ "${C_LIVE:-0}" = "1" ]; then
+    C_LIVE_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2c-detail-report-share/screenshots/c-task6-live"
+    C_LIVE_PORT="${C_LIVE_PORT:-8765}"
+    C_LIVE_SERVE=$(mktemp -d)
+    python3 - "$ROOT/ios-remote-config.json" "$C_LIVE_SERVE/ios-remote-config.json" <<'EOF'
+import json, sys
+config = json.load(open(sys.argv[1]))
+config["featuredCategoryId"] = "c-task6-live-marker"
+json.dump(config, open(sys.argv[2], "w"))
+EOF
+    python3 -m http.server "$C_LIVE_PORT" --bind 127.0.0.1 --directory "$C_LIVE_SERVE" >/dev/null 2>&1 &
+    C_LIVE_SERVER=$!
+    echo "== C task 6 LIVE acceptance checks -> $C_LIVE_OUT =="
+    rm -rf "${C_LIVE_OUT:?}"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$C_LIVE_OUT" TEST_RUNNER_C_LIVE=1 \
+        TEST_RUNNER_C_LIVE_API_BASE_URL="${C_LIVE_API_BASE_URL:-https://app.fitrahtube.com/}" \
+        TEST_RUNNER_C_LIVE_CONFIG_URL="http://localhost:$C_LIVE_PORT/ios-remote-config.json" xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testDetailCTask6Live \
+        -destination "platform=iOS Simulator,name=iPhone 17" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|C_LIVE|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    kill "$C_LIVE_SERVER" 2>/dev/null
+    rm -rf "$C_LIVE_SERVE"
+    xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+fi
+
 exit "$status"

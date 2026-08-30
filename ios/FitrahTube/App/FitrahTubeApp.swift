@@ -15,7 +15,26 @@ struct FitrahTubeApp: App {
     // or screenshot run into the next. `sharedFake` wipes the suite once, at creation.
     @State private var container = ProcessInfo.processInfo.arguments.contains("-fitrah-fake-container")
         ? AppContainer.sharedFake
-        : AppContainer.live()
+        : AppContainer.live(baseURL: debugAPIBaseURL ?? AppConfig.apiBaseURL)
+
+    /// Plan C Task 6 live rig: `-fitrah-api-base-url <url>` points the LIVE container at a backend
+    /// other than the xcconfig's (Debug is `localhost:8080`; the acceptance leg needs production).
+    private static var debugAPIBaseURL: URL? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-fitrah-api-base-url"), args.indices.contains(i + 1) else { return nil }
+        return AppConfig.validate(args[i + 1])
+    }
+
+    /// `-fitrah-stdout <path>`: every DEBUG `print` (IndexClient statuses, the remote-config
+    /// refresh, InnerTubeKit's bot-check trips) lands in a file the live XCUITest can read -- the
+    /// app's own stdout is invisible from a UI-test run and `simctl spawn … log` needs approval.
+    init() {
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-fitrah-stdout"), args.indices.contains(i + 1),
+           freopen(args[i + 1], "a", stdout) != nil {
+            setvbuf(stdout, nil, _IOLBF, 0)
+        }
+    }
     #else
     @State private var container = AppContainer.live()
     #endif
@@ -62,7 +81,13 @@ struct FitrahTubeApp: App {
         guard Self.isRemoteConfigRefreshDue(
             now: now, last: lastRemoteConfigRefresh, spacing: Self.remoteConfigRefreshSpacing) else { return }
         lastRemoteConfigRefresh = now
-        Task { await container.innerTube.remoteConfig.refresh() }
+        Task {
+            await container.innerTube.remoteConfig.refresh()
+            #if DEBUG
+            let config = await container.innerTube.remoteConfig.current()
+            print("RemoteConfig: refreshed featuredCategoryId=\(config.featuredCategoryId ?? "nil") resolverOrder=\(config.resolverOrder)")
+            #endif
+        }
     }
 
     /// CF-B1-13: the spacing decision, extracted so it is testable without a running scene.

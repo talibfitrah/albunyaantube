@@ -2329,6 +2329,202 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "detail-c6-iphone-en-light-playlist-a11y3", into: directory)
     }
 
+    // MARK: - Plan C Task 6 step 5: live YouTube + live backend (opt-in, C_LIVE=1)
+
+    private static let cLiveChannelId = "UCmMcOjsVehVlEOteyrhjI2Q"
+    private static let cLiveVideoId = "xc7keR2piUM"
+
+    private func firstWithPrefix(_ app: XCUIApplication, _ prefix: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix)).firstMatch
+    }
+
+    /// Scrolls a lazily-materialised list, accumulating every distinct row id seen, tapping Load
+    /// more when it shows; stops at `target` ids, or after `idle` swipes with nothing new and no
+    /// footer in sight. Returns the ids in first-seen order.
+    private func scrollCollecting(_ app: XCUIApplication, prefix: String, target: Int, idle: Int = 6, maxSwipes: Int = 150) -> [String] {
+        var seen: [String] = []
+        var quiet = 0
+        for _ in 0..<maxSwipes {
+            var grew = false
+            for id in ids(app, prefix: prefix).map({ $0.identifier }) where !seen.contains(id) { seen.append(id); grew = true }
+            if seen.count >= target { break }
+            if app.buttons["listFooter.loadMore"].exists { app.buttons["listFooter.loadMore"].tap(); quiet = 0; continue }
+            let footer = app.otherElements["listFooter.loading"].exists || app.buttons["listFooter.retry"].exists
+                || app.activityIndicators["listFooter.loading"].exists
+            quiet = grew || footer ? 0 : quiet + 1
+            if quiet >= idle { break }
+            app.swipeUp()
+        }
+        return seen
+    }
+
+    /// Every line of the app's redirected stdout (`-fitrah-stdout`) matching `prefix`.
+    private func logLines(_ path: String, prefix: String) -> [String] {
+        ((try? String(contentsOfFile: path, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init).filter { $0.hasPrefix(prefix) }
+    }
+
+    /// Step 5 items 1-8 + CF-C-2/3/13/15 against the real `LiveBrowseSource`, the real backend
+    /// (`C_LIVE_API_BASE_URL`, default production) and a locally served remote config
+    /// (`C_LIVE_CONFIG_URL`). Files exactly ONE real content report per run. Notes go to
+    /// `c-task6-live-measurements.txt`; the app's DEBUG prints to `c-task6-live-app.log`.
+    func testDetailCTask6Live() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["C_LIVE"] == "1", "live detail checks are opt-in: C_LIVE=1")
+        let directory = try shotsDirectory()
+        let notes = Notes(file: directory.appendingPathComponent("c-task6-live-measurements.txt"))
+        let log = directory.appendingPathComponent("c-task6-live-app.log").path
+        try? FileManager.default.removeItem(atPath: log)
+        let base = ProcessInfo.processInfo.environment["C_LIVE_API_BASE_URL"] ?? "https://app.fitrahtube.com/"
+        let en = Self.locales[0]
+        func live(_ arguments: [String]) -> Screen {
+            Screen(key: "c-live", arguments: ["-fitrah-api-base-url", base, "-fitrah-stdout", log] + arguments, anchor: .button("unused"))
+        }
+        func channel(_ extra: [String] = []) -> XCUIApplication {
+            launch(live(["-fitrah-route", "channel", Self.cLiveChannelId, "-"] + extra), locale: en, extraArguments: [], fakeContainer: false)
+        }
+        func playlist(_ extra: [String] = []) -> XCUIApplication {
+            launch(live(["-fitrah-route", "playlist", Self.livePlaylistId, "-"] + extra), locale: en, extraArguments: [], fakeContainer: false)
+        }
+        XCUIDevice.shared.orientation = .portrait
+
+        // 1 + 4. Real channel; a fast second open repeats page 1's index push byte-for-byte -> 429.
+        var app = channel()
+        var title = app.staticTexts["channel.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 60), "live 1: channel title never appeared")
+        XCTAssertTrue(firstWithPrefix(app, "channel.videos.row.").waitForExistence(timeout: 60), "live 1: Videos never loaded")
+        let firstOpenPush = logLines(log, prefix: "IndexClient:")
+        app = channel()
+        XCTAssertTrue(firstWithPrefix(app, "channel.videos.row.").waitForExistence(timeout: 60), "live 4: Videos never loaded on the second open")
+        title = app.staticTexts["channel.title"]
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline, title.label == Self.cLiveChannelId { Thread.sleep(forTimeInterval: 0.5) }
+        let subscribers = app.staticTexts["channel.subscribers"].label
+        notes.append("live-1 header title=\(title.label.debugDescription) subscribers=\(subscribers.debugDescription) degraded=\(app.staticTexts["channel.degradedNotice"].exists) videos first=\(firstWithPrefix(app, "channel.videos.row.").identifier)")
+        XCTAssertNotEqual(title.label, Self.cLiveChannelId, "live 1: the header never replaced the route's id")
+        XCTAssertTrue(subscribers.lowercased().contains("subscriber"), "live 1: subscriber line not populated: \(subscribers)")
+        XCTAssertFalse(app.staticTexts["channel.degradedNotice"].exists, "live 1: degraded on a fresh open (bot-check?)")
+        try write(named: "detail-c6-live-channel-videos", into: directory)
+        Thread.sleep(forTimeInterval: 3)  // let the second open's push land before reading the log
+        let secondOpenPush = Array(logLines(log, prefix: "IndexClient:").dropFirst(firstOpenPush.count))
+        notes.append("live-4 index first open=\(firstOpenPush) second open=\(secondOpenPush)")
+        XCTAssertFalse(firstOpenPush.isEmpty, "live 4: no index push logged on the first open")
+        XCTAssertTrue(secondOpenPush.contains { $0.contains("status=429") }, "live 4: the fast second open did not 429 (30 s dedupe)")
+        for line in firstOpenPush + secondOpenPush {
+            let items = Int(line.split(separator: " ").last { $0.hasPrefix("items=") }?.dropFirst(6) ?? "") ?? -1
+            XCTAssertLessThanOrEqual(items, 50, "live 4: a batch over 50: \(line)")
+        }
+
+        // 1 (cont.) + CF-C-13: Live, Shorts, Playlists, About populate.
+        app.buttons["channel.tab.live"].tap()
+        let liveRow = firstWithPrefix(app, "channel.live.row.")
+        let liveShown = liveRow.waitForExistence(timeout: 30)
+        notes.append("live-1 live tab rows=\(liveShown ? ids(app, prefix: "channel.live.row.").count : 0) error=\(any(app, "channel.live.error").exists) badges(upcoming)=\(app.staticTexts["Upcoming"].exists) first label=\(liveShown ? liveRow.label.debugDescription : "-")")
+        try write(named: "detail-c6-live-channel-live", into: directory)
+        app.buttons["channel.tab.shorts"].tap()
+        XCTAssertTrue(firstWithPrefix(app, "channel.shorts.cell.").waitForExistence(timeout: 30), "live 1: Shorts empty against a channel that has them (stale fixtures?)")
+        notes.append("live-1 shorts cells visible=\(ids(app, prefix: "channel.shorts.cell.").count)")
+        try write(named: "detail-c6-live-channel-shorts", into: directory)
+        app.buttons["channel.tab.playlists"].tap()
+        XCTAssertTrue(firstWithPrefix(app, "channel.playlists.row.").waitForExistence(timeout: 30), "live 1: Playlists empty against a channel that has them (stale fixtures?)")
+        try write(named: "detail-c6-live-channel-playlists", into: directory)
+        // 9 / CF-C-15: the Playlists tab pages (30 per page live).
+        let playlistIds = scrollCollecting(app, prefix: "channel.playlists.row.", target: 31)
+        notes.append("live-9 playlists paged: distinct rows=\(playlistIds.count) last=\(playlistIds.last ?? "-")")
+        XCTAssertGreaterThan(playlistIds.count, 30, "live 9: the Playlists tab did not page past its first 30")
+        try write(named: "detail-c6-live-channel-playlists-page2", into: directory)
+        app.buttons["channel.tab.about"].tap()
+        XCTAssertTrue(app.staticTexts["channel.about.subscribers"].waitForExistence(timeout: 10), "live 1: About never rendered")
+        notes.append("live-1 about subscribers=\(app.staticTexts["channel.about.subscribers"].label.debugDescription)")
+        try write(named: "detail-c6-live-channel-about", into: directory)
+
+        // 2. Deep pagination on Videos (VLUU…): keep paging until the continuation runs out. A
+        // fresh open: the compact strip has scrolled Videos out of reach after About.
+        app = channel()
+        XCTAssertTrue(firstWithPrefix(app, "channel.videos.row.").waitForExistence(timeout: 60))
+        let t2 = Date()
+        let videoIds = scrollCollecting(app, prefix: "channel.videos.row.", target: 600)
+        let pushed = logLines(log, prefix: "IndexClient: CHANNEL").map { Int($0.split(separator: " ").last { $0.hasPrefix("items=") }?.dropFirst(6) ?? "") ?? 0 }
+        notes.append("live-2 deep pagination: distinct rows seen=\(videoIds.count) in \(Int(Date().timeIntervalSince(t2)))s; index pushes (items per batch, all opens)=\(pushed); footer loadMore=\(app.buttons["listFooter.loadMore"].exists) loading=\(app.otherElements["listFooter.loading"].exists || app.activityIndicators["listFooter.loading"].exists) retry=\(app.buttons["listFooter.retry"].exists)")
+        XCTAssertGreaterThan(videoIds.count, 100, "live 2: the VLUU continuation never yielded a second page")
+        try write(named: "detail-c6-live-channel-videos-end", into: directory)
+
+        // 3. Real playlist: opens, pages onto page 2, Play All reaches the player.
+        app = playlist()
+        let pTitle = app.staticTexts["playlist.title"]
+        XCTAssertTrue(pTitle.waitForExistence(timeout: 60), "live 3: playlist title never appeared")
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 60), "live 3: rows never appeared")
+        notes.append("live-3 playlist title=\(pTitle.label.debugDescription) metadata=\(app.staticTexts["playlist.metadata"].exists ? app.staticTexts["playlist.metadata"].label.debugDescription : "-")")
+        // The route carries no title (CF-C-9): the backend's `Playlist` must replace the id.
+        XCTAssertNotEqual(pTitle.label, Self.livePlaylistId, "live 3: the deep-link header fetch never replaced the id")
+        try write(named: "detail-c6-live-playlist", into: directory)
+        let positions = scrollCollecting(app, prefix: "playlist.row.", target: 101)
+        notes.append("live-3 playlist paged: distinct rows=\(positions.count) last=\(positions.last ?? "-")")
+        XCTAssertTrue(positions.contains("playlist.row.101"), "live 3: page 2 never appended (position 101)")
+        try write(named: "detail-c6-live-playlist-page2", into: directory)
+        app = playlist()
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 60))
+        app.buttons["playlist.playAll"].tap()
+        XCTAssertTrue(app.otherElements["player.videoBox"].waitForExistence(timeout: 60), "live 3: Play All never opened the player")
+        let upNext = app.staticTexts["player.upNext.header"].waitForExistence(timeout: 60)
+        notes.append("live-3 playAll title=\(app.staticTexts["player.metadata.title"].label.debugDescription) upNext=\(upNext) rows=\(upNextRows(app).count) state card=\(app.staticTexts["player.state.message"].exists ? app.staticTexts["player.state.message"].label.debugDescription : "-")")
+        XCTAssertTrue(upNext, "live 3: Play All listed no queue")
+        try write(named: "detail-c6-live-playlist-playall", into: directory)
+
+        // 5. ONE real report (reason OTHER) -> 201 -> report_success. The 429 leg is NOT run here.
+        // A marker file keeps a re-run of this method in the same output directory from filing a
+        // second one (the script clears the directory per run).
+        let filed = directory.appendingPathComponent("c-task6-live-report-filed").path
+        if FileManager.default.fileExists(atPath: filed) {
+            notes.append("live-5 report: SKIPPED, already filed by an earlier run into this directory")
+        } else {
+        FileManager.default.createFile(atPath: filed, contents: nil)
+        app = playlist(["-fitrah-report-preselect", "OTHER"])
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 60))
+        openReport(app)
+        let otherField = app.textViews["report.otherText"].exists ? app.textViews["report.otherText"] : app.textFields["report.otherText"]
+        reveal(app, otherField)
+        XCTAssertTrue(otherField.waitForExistence(timeout: 5), "live 5: Other's field never showed")
+        otherField.tap()
+        otherField.typeText("iOS Plan C acceptance test - safe to dismiss")
+        app.buttons["report.submit"].tap()
+        let thanks = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Thank you'")).firstMatch
+        let thanked = thanks.waitForExistence(timeout: 30)
+        notes.append("live-5 report: banner=\(thanked) label=\(thanked ? thanks.label.debugDescription : "-") sheet gone=\(!app.buttons["report.submit"].exists) message=\(app.staticTexts["report.message"].exists ? app.staticTexts["report.message"].label.debugDescription : "-")")
+        XCTAssertTrue(thanked, "live 5: the real backend did not answer 201 (see message in the notes)")
+        try write(named: "detail-c6-live-report-success", into: directory)
+        }
+
+        // 7. Deep links through the same `Router.open(URL)` as `.onOpenURL` (`-fitrah-deeplink`).
+        app = launch(live(["-fitrah-deeplink", "albunyaantube://channel/\(Self.cLiveChannelId)"]), locale: en, extraArguments: [], fakeContainer: false)
+        XCTAssertTrue(app.staticTexts["channel.title"].waitForExistence(timeout: 60), "live 7: channel deep link did not land")
+        XCTAssertTrue(firstWithPrefix(app, "channel.videos.row.").waitForExistence(timeout: 60))
+        try write(named: "detail-c6-live-deeplink-channel", into: directory)
+        app = launch(live(["-fitrah-deeplink", "albunyaantube://playlist/\(Self.livePlaylistId)"]), locale: en, extraArguments: [], fakeContainer: false)
+        XCTAssertTrue(app.staticTexts["playlist.title"].waitForExistence(timeout: 60), "live 7: playlist deep link did not land")
+        XCTAssertTrue(any(app, "playlist.row.1").waitForExistence(timeout: 60))
+        notes.append("live-7 deep-linked playlist title=\(app.staticTexts["playlist.title"].label.debugDescription) (route carried no title: CF-C-9)")
+        XCTAssertNotEqual(app.staticTexts["playlist.title"].label, Self.livePlaylistId, "live 7: the deep-link header fetch never replaced the id")
+        try write(named: "detail-c6-live-deeplink-playlist", into: directory)
+        app = launch(live(["-fitrah-deeplink", "albunyaantube://video/\(Self.cLiveVideoId)"]), locale: en, extraArguments: [], fakeContainer: false)
+        XCTAssertTrue(app.otherElements["player.videoBox"].waitForExistence(timeout: 60), "live 7: video deep link did not land")
+        try write(named: "detail-c6-live-deeplink-video", into: directory)
+
+        // 8. refresh() reaches a real (locally served) document: the marker id proves the fetch.
+        if let configURL = ProcessInfo.processInfo.environment["C_LIVE_CONFIG_URL"] {
+            app = launch(live(["-fitrah-remote-config-url", configURL, "-fitrah-tab", "home"]), locale: en, extraArguments: [], fakeContainer: false)
+            let until = Date().addingTimeInterval(30)
+            var refreshed: [String] = []
+            while Date() < until, refreshed.isEmpty { Thread.sleep(forTimeInterval: 1); refreshed = logLines(log, prefix: "RemoteConfig:") }
+            notes.append("live-8 remote config via \(configURL): \(refreshed)")
+            XCTAssertTrue(refreshed.contains { $0.contains("featuredCategoryId=c-task6-live-marker") }, "live 8: current() did not return the fetched document")
+        } else {
+            notes.append("live-8 remote config: NOT RUN (C_LIVE_CONFIG_URL unset)")
+        }
+
+        // 11 / CF-C-2: did the stale-token rotation ever fire?
+        let botChecks = logLines(log, prefix: "BrowseClient: bot-check")
+        notes.append("live-11 bot-check trips=\(botChecks.count) \(botChecks)")
+    }
+
     /// iPad leg: the strip fills the width, two autofills then Load more (ruling 10), the
     /// selection survives rotation, playlist positions, ar mirroring, `.accessibility3`.
     func testDetailCTask6IPad() throws {
@@ -2412,9 +2608,11 @@ final class ScreenshotTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func launch(_ screen: Screen, locale: LocaleCase, extraArguments: [String]) -> XCUIApplication {
+    /// `fakeContainer: false` (Plan C Task 6's live leg) launches the LIVE container: real
+    /// `LiveBrowseSource`, real index/report clients, the app's own defaults suite and store.
+    private func launch(_ screen: Screen, locale: LocaleCase, extraArguments: [String], fakeContainer: Bool = true) -> XCUIApplication {
         let app = XCUIApplication()
-        var arguments = ["-fitrah-fake-container", "-theme", locale.theme]
+        var arguments = (fakeContainer ? ["-fitrah-fake-container"] : []) + ["-theme", locale.theme]
         if screen.key != "onboarding" {
             // NSArgumentDomain override of the key `UserDefaultsSettingsStore` already persists —
             // the fake container's suite reads it, so every non-onboarding screen starts past the
