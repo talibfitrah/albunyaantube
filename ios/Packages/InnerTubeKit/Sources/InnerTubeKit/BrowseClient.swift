@@ -518,8 +518,12 @@ public actor BrowseClient {
     private static func parseDurationText(_ text: String) -> Int? {
         let components = text.split(separator: ":")
         let numbers = components.compactMap { Int($0) }
-        guard !numbers.isEmpty, numbers.count == components.count else { return nil }
-        return numbers.reversed().enumerated().reduce(0) { $0 + $1.element * Int(pow(60.0, Double($1.offset))) }
+        // ss / mm:ss / hh:mm:ss only, each group bounded: 12+ groups made `Int(pow(60, n))` trap
+        // and an `Int.max` group overflowed the multiply.
+        guard (1...3).contains(numbers.count), numbers.count == components.count,
+            numbers.allSatisfy({ (0..<100_000).contains($0) })
+        else { return nil }
+        return numbers.reduce(0) { $0 * 60 + $1 }
     }
 
     private static func largestImageURL(_ sources: [[String: Any]]?) -> URL? {

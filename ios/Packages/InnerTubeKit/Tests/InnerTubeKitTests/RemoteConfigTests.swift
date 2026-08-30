@@ -113,6 +113,25 @@ import Testing
         #expect(await store2.current().schemaVersion == 2)
     }
 
+    @Test func aNon200ResponseWithADecodableBodyKeepsLastGood() async {
+        let goodBody = Data(
+            """
+            {"schemaVersion":2,"minAppVersion":"1.0.0","resolverOrder":["embed"],"manifestCacheSeconds":60,"clients":{}}
+            """.utf8)
+        let errorBody = Data(
+            """
+            {"schemaVersion":3,"minAppVersion":"1.0.0","resolverOrder":["embed"],"manifestCacheSeconds":60,"clients":{}}
+            """.utf8)
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: .init(status: 500, headers: [:], body: errorBody))
+        ])
+        let store = RemoteConfigStore(
+            transport: transport, keyValueStore: keyValueStoreWithLastGood(goodBody),
+            url: URL(string: "https://example.com/remote-config.json")!)
+        await store.refresh()
+        #expect(await store.current().schemaVersion == 2)
+    }
+
     @Test func refreshDropsClientWithMismatchedClientName() async {
         // "visionos" renamed to something other than the expected "VISIONOS" — bad remote data,
         // must drop-and-continue (same pattern as the unknown-resolver-strategy filter above)

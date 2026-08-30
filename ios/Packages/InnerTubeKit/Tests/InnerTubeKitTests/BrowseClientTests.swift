@@ -269,6 +269,18 @@ import Testing
         #expect(item.durationSeconds == nil)
     }
 
+    // MARK: - f3) badge parse rejects overflow / over-long timestamps (Cubic finding: `Int(pow(60, n))` trapped)
+
+    @Test(arguments: [
+        "1:1:1:1",                       // 4 groups: no such timestamp shape
+        "1:1:1:1:1:1:1:1:1:1:1:1",       // 12 groups: 60^11 > Int.max
+        "9223372036854775807:00",        // Int.max group: `* 60` overflows
+    ])
+    func malformedDurationBadgeYieldsNilDuration(text: String) async throws {
+        let item = try await firstLiveItem(try liveFixture(badge: (text, "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT")))
+        #expect(item.durationSeconds == nil)
+    }
+
     // MARK: - g) channelTab(.shorts) and channelPlaylists — CF-C1 (Plan C Task 1)
 
     @Test func shortsTabParsesIntoVideoItemsWithNoDuration() async throws {

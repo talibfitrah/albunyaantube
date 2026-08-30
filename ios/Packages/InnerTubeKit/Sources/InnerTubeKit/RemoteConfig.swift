@@ -154,6 +154,7 @@ public actor RemoteConfigStore {
     public func refresh() async {
         guard
             let response = try? await transport.send(HTTPRequest(method: "GET", url: url, headers: [:], body: nil)),
+            response.status == 200,
             response.body.count <= Self.maxBodyBytes,
             let decoded = try? JSONDecoder().decode(RemoteConfig.self, from: response.body)
         else {

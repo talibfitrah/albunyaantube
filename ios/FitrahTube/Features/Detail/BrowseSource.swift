@@ -10,8 +10,8 @@ protocol BrowseSource: Sendable {
     func channelTab(_ id: String, tab: ChannelTab, continuation: String?) async throws -> BrowsePage<VideoItem>
     func channelPlaylists(_ id: String, continuation: String?) async throws -> BrowsePage<PlaylistTile>
     func playlistItems(_ playlistId: String, continuation: String?) async throws -> BrowsePage<VideoItem>
-    /// True while the browse-only latch holds -- the screens show `browse_degraded_notice` and
-    /// route the in-header search to the backend index instead of the loaded items.
+    /// True while the browse-only latch holds -- the screens show `browse_degraded_notice`; the
+    /// in-header search still filters the already-loaded items locally.
     func isDegraded() async -> Bool
 }
 
