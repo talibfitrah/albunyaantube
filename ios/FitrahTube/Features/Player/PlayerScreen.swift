@@ -69,7 +69,7 @@ struct PlayerScreen: View {
             // resolve (see `PlayerViewModel.debugForceRecoveryExhausted`) -- the budget machine
             // itself is exhaustively unit-tested in `PlaybackRecoveryTests` and would otherwise need
             // a genuinely failing `AVPlayerItem` to drive for real.
-            if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-recovery-exhausted") {
+            if LaunchArguments.debug.contains("-fitrah-fake-player-recovery-exhausted") {
                 vm.debugForceRecoveryExhausted()
             }
             #endif
@@ -454,28 +454,28 @@ struct PlayerScreen: View {
     /// lands on both screens.
     static func resolver(container: AppContainer) -> any StreamResolving {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-audio-only") {
+        if LaunchArguments.debug.contains("-fitrah-fake-player-audio-only") {
             return FixtureAudioOnlyResolver()
         }
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-hls") {
+        if LaunchArguments.debug.contains("-fitrah-fake-player-hls") {
             return FixtureHLSPlayerResolver()
         }
         // Task 9 screenshot rig: each of these throws the `ExtractionError` `PlayerViewModel.map`
         // maps onto the state it's named for, so `ScreenshotTests` can capture every row of spec
         // §6.6's state table with no network access.
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-error") {
+        if LaunchArguments.debug.contains("-fitrah-fake-player-error") {
             return FixtureErrorResolver()
         }
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-unavailable") {
+        if LaunchArguments.debug.contains("-fitrah-fake-player-unavailable") {
             return FixtureUnavailableResolver()
         }
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-cooldown") {
+        if LaunchArguments.debug.contains("-fitrah-fake-player-cooldown") {
             return FixtureCooldownResolver()
         }
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-embed") {
+        if LaunchArguments.debug.contains("-fitrah-fake-player-embed") {
             return FixtureEmbedResolver()
         }
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player") {
+        if LaunchArguments.debug.contains("-fitrah-fake-player") {
             return FixturePlayerResolver()
         }
         #endif
@@ -491,10 +491,10 @@ struct PlayerScreen: View {
     /// under `FixturePlayerResolver`'s dead-id rule (the auto-skip capture).
     static func queueSource(container: AppContainer) -> any PlaylistQueueSource {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-queue-dead") {
+        if LaunchArguments.debug.contains("-fitrah-fake-player-queue-dead") {
             return FixtureQueueSource(deadItems: true)
         }
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-fake-player-queue") {
+        if LaunchArguments.debug.contains("-fitrah-fake-player-queue") {
             return FixtureQueueSource(deadItems: false)
         }
         #endif

@@ -122,7 +122,7 @@ struct ContentListView: View {
             // pull-to-refresh gesture, so `-fitrah-fail-after-first-load` drives the same
             // `refresh()` a real swipe would call, against a stub server that fails starting on
             // its 2nd request -- reproducing "terminal error with existing content" for capture.
-            if ProcessInfo.processInfo.arguments.contains("-fitrah-fail-after-first-load") {
+            if LaunchArguments.debug.contains("-fitrah-fail-after-first-load") {
                 await viewModel?.refresh()
             }
             #endif

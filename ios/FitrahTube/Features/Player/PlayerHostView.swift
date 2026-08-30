@@ -511,7 +511,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                             // without sitting through a whole lecture. Once per process, so the
                             // advanced-to video plays from 0 -- that is the thing under test.
                             if !Self.debugSeekNearEndConsumed,
-                               ProcessInfo.processInfo.arguments.contains("-fitrah-player-seek-near-end"),
+                               LaunchArguments.debug.contains("-fitrah-player-seek-near-end"),
                                item.duration.seconds.isFinite, item.duration.seconds > 5 {
                                 Self.debugSeekNearEndConsumed = true
                                 player.seek(to: CMTime(seconds: item.duration.seconds - 5, preferredTimescale: 600))

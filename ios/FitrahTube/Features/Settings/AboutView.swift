@@ -99,7 +99,7 @@ struct AboutView: View {
             // Acceptance-screenshot hook (task-13): the Developer dialog otherwise only opens
             // after 7 real taps on the version text within 3s, which `simctl launch` can't
             // perform -- same technique as FavoritesView's `-fitrah-show-clear-all-confirm`.
-            if ProcessInfo.processInfo.arguments.contains("-fitrah-show-developer-dialog") {
+            if LaunchArguments.debug.contains("-fitrah-show-developer-dialog") {
                 showDeveloperDialog = true
             }
             #endif

@@ -86,7 +86,7 @@ import SwiftUI
         // `NetworkMonitor`'s `-fitrah-offline`; unlike that one, this assignment runs through
         // the `didSet` below (it's not the *first* assignment to the property, so the observer
         // does fire) and genuinely persists `false` -- a real reset, not just a one-run fake.
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-reset-onboarding") {
+        if LaunchArguments.debug.contains("-fitrah-reset-onboarding") {
             onboardingCompleted = false
         }
         #endif

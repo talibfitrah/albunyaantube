@@ -90,7 +90,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// document itself and prove `refresh()` adopts it, without editing the production URL.
     private static var debugRemoteConfigURL: URL? {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         guard let i = args.firstIndex(of: "-fitrah-remote-config-url"), args.indices.contains(i + 1) else { return nil }
         return AppConfig.validate(args[i + 1])
         #else
@@ -108,7 +108,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         #if DEBUG
         // Plan C Task 6 screenshot rig: `-fitrah-fake-report <status>` answers every report POST
         // with that status and no network (201 -> thank-you, 429 -> the sheet stays).
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         if let i = args.firstIndex(of: "-fitrah-fake-report"), args.indices.contains(i + 1), let status = Int(args[i + 1]) {
             return ReportClient(transport: FixedStatusTransport(status: status), baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
         }

@@ -47,7 +47,7 @@ struct OnboardingView: View {
     /// for a screenshot, since this sandbox has no reliable way to synthesize a swipe/tap
     /// (`RootView`'s `-fitrah-gallery-section` is the same pattern). Absent/unparsable -> page 0.
     private static var initialPage: Int {
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         guard let flagIndex = args.firstIndex(of: "-fitrah-onboarding-page"), args.indices.contains(flagIndex + 1),
               let page = Int(args[flagIndex + 1]) else { return 0 }
         return page

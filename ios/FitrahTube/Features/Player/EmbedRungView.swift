@@ -171,7 +171,7 @@ struct EmbedRungView: View {
     /// technique as `PlayerViewModel.debugForceRecoveryExhausted`.
     private static var debugSeedEnded: Bool {
         #if DEBUG
-        return ProcessInfo.processInfo.arguments.contains("-fitrah-fake-embed-ended")
+        return LaunchArguments.debug.contains("-fitrah-fake-embed-ended")
         #else
         return false
         #endif
@@ -365,7 +365,7 @@ struct EmbedWebView: UIViewRepresentable {
                 // real bridge without needing a video short enough to sit through. Unlike
                 // `-fitrah-fake-embed-ended` (which seeds the cover with no IFrame at all) this
                 // proves state 0 actually arrives from YouTube's player.
-                if ProcessInfo.processInfo.arguments.contains("-fitrah-embed-seek-to-end") {
+                if LaunchArguments.debug.contains("-fitrah-embed-seek-to-end") {
                     web?.evaluateJavaScript(
                         "if (window.player) { player.seekTo(Math.max(0, player.getDuration() - 2), true); }")
                 }
@@ -493,7 +493,7 @@ private final class WeakScriptMessageProxy: NSObject, WKScriptMessageHandler {
 @MainActor
 final class EmbedDebugLog {
     static let shared = EmbedDebugLog()
-    static let isEnabled = ProcessInfo.processInfo.arguments.contains("-fitrah-embed-debug-events")
+    static let isEnabled = LaunchArguments.debug.contains("-fitrah-embed-debug-events")
 
     private(set) var text = ""
     private var lines: [String] = []

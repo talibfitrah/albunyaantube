@@ -20,7 +20,7 @@ struct ReportSheet: View {
     /// unreliably on the iOS 26 simulator, so the rig seeds the state it needs -- same technique as
     /// `EmbedRungView`'s `-fitrah-fake-embed-ended`. Empty in Release.
     private static func debugPreselected() -> [ReportReason] {
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         if let i = args.firstIndex(of: "-fitrah-report-preselect"), args.indices.contains(i + 1) {
             if let n = Int(args[i + 1]) { return Array(ReportReason.allCases.prefix(n)) }
             return args[i + 1].split(separator: ",").compactMap { ReportReason(rawValue: String($0)) }

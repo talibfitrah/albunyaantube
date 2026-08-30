@@ -10,7 +10,7 @@ struct RootView: View {
 
     var body: some View {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-gallery") {
+        if LaunchArguments.debug.contains("-fitrah-gallery") {
             return AnyView(ComponentsGallery(section: gallerySection).environment(\.widthClass, widthClass))
         }
         #endif
@@ -22,7 +22,7 @@ struct RootView: View {
     /// so a full-height screenshot on a phone captures every component (fix round 1). Absent or
     /// unparsable -> `nil`, which renders the whole gallery (original, pre-fix-round behaviour).
     private var gallerySection: ComponentsGallery.Section? {
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         guard let flagIndex = args.firstIndex(of: "-fitrah-gallery-section"), args.indices.contains(flagIndex + 1),
               let raw = Int(args[flagIndex + 1]) else { return nil }
         return ComponentsGallery.Section(rawValue: raw)

@@ -16,7 +16,7 @@ import Observation
         #if DEBUG
         // Acceptance artefact hook (task 7): forces the offline banner on for a screenshot
         // without needing to actually disable the simulator's network.
-        if ProcessInfo.processInfo.arguments.contains("-fitrah-offline") {
+        if LaunchArguments.debug.contains("-fitrah-offline") {
             isOnline = false
             return
         }

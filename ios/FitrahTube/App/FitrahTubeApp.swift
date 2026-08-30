@@ -13,14 +13,14 @@ struct FitrahTubeApp: App {
     // defaults suite *without* wiping it -- the hazard `AppContainer.fake()`'s own doc warns
     // callers about -- so onboarding/settings/filter/search-history state leaked from one UI-test
     // or screenshot run into the next. `sharedFake` wipes the suite once, at creation.
-    @State private var container = ProcessInfo.processInfo.arguments.contains("-fitrah-fake-container")
+    @State private var container = LaunchArguments.debug.contains("-fitrah-fake-container")
         ? AppContainer.sharedFake
         : AppContainer.live(baseURL: debugAPIBaseURL ?? AppConfig.apiBaseURL)
 
     /// Plan C Task 6 live rig: `-fitrah-api-base-url <url>` points the LIVE container at a backend
     /// other than the xcconfig's (Debug is `localhost:8080`; the acceptance leg needs production).
     private static var debugAPIBaseURL: URL? {
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         guard let i = args.firstIndex(of: "-fitrah-api-base-url"), args.indices.contains(i + 1) else { return nil }
         return AppConfig.validate(args[i + 1])
     }
@@ -29,7 +29,7 @@ struct FitrahTubeApp: App {
     /// refresh, InnerTubeKit's bot-check trips) lands in a file the live XCUITest can read -- the
     /// app's own stdout is invisible from a UI-test run and `simctl spawn … log` needs approval.
     init() {
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         if let i = args.firstIndex(of: "-fitrah-stdout"), args.indices.contains(i + 1),
            freopen(args[i + 1], "a", stdout) != nil {
             setvbuf(stdout, nil, _IOLBF, 0)
@@ -102,7 +102,7 @@ struct FitrahTubeApp: App {
     /// AppName?" system confirmation and needs a real tap to proceed.
     private func openDebugDeepLinkIfRequested() {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         if let flagIndex = args.firstIndex(of: "-fitrah-deeplink"),
            args.indices.contains(flagIndex + 1),
            let url = URL(string: args[flagIndex + 1]) {
@@ -116,7 +116,7 @@ struct FitrahTubeApp: App {
     /// in `simctl`, and `-fitrah-deeplink` only reaches item-detail routes, not tab selection.
     private func selectDebugTabIfRequested() {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         guard let flagIndex = args.firstIndex(of: "-fitrah-tab"), args.indices.contains(flagIndex + 1) else { return }
         switch args[flagIndex + 1] {
         case "home": router.selectedTab = .home
@@ -140,7 +140,7 @@ struct FitrahTubeApp: App {
     /// contract, so the rig can reach Up Next, deep start and shuffle with no Plan C screen.
     private func pushDebugRouteIfRequested() {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         guard let flagIndex = args.firstIndex(of: "-fitrah-route"), args.indices.contains(flagIndex + 1) else { return }
         func arg(_ offset: Int) -> String? {
             let index = flagIndex + offset
@@ -205,7 +205,7 @@ struct FitrahTubeApp: App {
     /// `-fitrah-banner "<text>"`.
     private func showDebugBannerIfRequested() {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         guard let flagIndex = args.firstIndex(of: "-fitrah-banner"), args.indices.contains(flagIndex + 1) else { return }
         router.pendingBanner = BannerMessage(text: args[flagIndex + 1])
         #endif
@@ -217,7 +217,7 @@ struct FitrahTubeApp: App {
     /// for a screenshot.
     private func seedDebugFavoritesIfRequested() {
         #if DEBUG
-        guard ProcessInfo.processInfo.arguments.contains("-fitrah-seed-favorites") else { return }
+        guard LaunchArguments.debug.contains("-fitrah-seed-favorites") else { return }
         for index in 1...3 {
             let item = ContentItem(
                 id: "seed-favorite-\(index)", type: .video, title: "Seeded Favorite \(index)", category: nil,
@@ -239,7 +239,7 @@ struct FitrahTubeApp: App {
     /// as `seedDebugFavoritesIfRequested`.
     private func seedDebugSubscriptionsIfRequested() {
         #if DEBUG
-        guard ProcessInfo.processInfo.arguments.contains("-fitrah-seed-subscriptions") else { return }
+        guard LaunchArguments.debug.contains("-fitrah-seed-subscriptions") else { return }
         for index in 1...SwiftDataSubscriptionsStore.cap {
             let id = "UCseed\(index)"
             guard !container.subscriptions.isSubscribed(id) else { continue }

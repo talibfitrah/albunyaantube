@@ -157,7 +157,7 @@ struct FakeBrowseSource: BrowseSource {
     /// `-fitrah-fake-browse-pages <pages> <perPage>` (perPage 0 = every tab empty). Same launch-argument
     /// ladder as `PlayerScreen.resolver(container:)`.
     static func fromLaunchArguments() -> FakeBrowseSource {
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         var source = FakeBrowseSource()
         source.degraded = args.contains("-fitrah-fake-browse-botcheck")
         source.unavailable = args.contains("-fitrah-fake-browse-unavailable")

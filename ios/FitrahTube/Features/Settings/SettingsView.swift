@@ -204,7 +204,7 @@ struct SettingsView: View {
             // Acceptance-screenshot hook (task-13): the theme picker otherwise only opens after a
             // real tap on the Theme row, which `simctl launch` can't perform -- same technique as
             // FavoritesView's `-fitrah-show-clear-all-confirm`.
-            if ProcessInfo.processInfo.arguments.contains("-fitrah-show-theme-picker") {
+            if LaunchArguments.debug.contains("-fitrah-show-theme-picker") {
                 showThemePicker = true
             }
             #endif

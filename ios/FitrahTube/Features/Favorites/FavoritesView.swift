@@ -66,7 +66,7 @@ struct FavoritesView: View {
             #if DEBUG
             // Acceptance-screenshot hook (task-12): the confirmation only otherwise appears after a
             // real tap on "Clear all", which `simctl launch` can't perform.
-            if ProcessInfo.processInfo.arguments.contains("-fitrah-show-clear-all-confirm") {
+            if LaunchArguments.debug.contains("-fitrah-show-clear-all-confirm") {
                 showClearAllConfirm = true
             }
             #endif

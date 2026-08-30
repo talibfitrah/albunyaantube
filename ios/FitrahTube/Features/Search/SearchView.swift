@@ -39,7 +39,7 @@ struct SearchView: View {
 
     #if DEBUG
     private static var debugSeedQuery: String? {
-        let args = ProcessInfo.processInfo.arguments
+        let args = LaunchArguments.debug
         guard let flagIndex = args.firstIndex(of: "-fitrah-search-query"), args.indices.contains(flagIndex + 1) else { return nil }
         return args[flagIndex + 1]
     }
