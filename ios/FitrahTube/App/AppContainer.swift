@@ -132,19 +132,16 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
 
     static func live(baseURL: URL = AppConfig.apiBaseURL) -> AppContainer {
         let api = FitrahAPIClient.make(baseURL: baseURL, deviceId: .persisted())
+        // Degraded-mode header (plan Task 2 table): the backend's own `Channel` stands in for a
+        // bot-checked `channelHeader` -- name and avatar only; banner, subscriber line and verified
+        // badge are lost, which the screen renders as their placeholders. Hand-written (C T6):
+        // the generated `getPublicChannel`/`getPublicPlaylist` cannot decode production's
+        // Timestamp objects, see `PublicHeaders`.
+        let headers = PublicHeaders(baseURL: baseURL, deviceId: .persisted())
         return AppContainer(
             catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false), apiBaseURL: baseURL,
-            // Degraded-mode header (plan Task 2 table): the backend's own `Channel` DTO stands in
-            // for a bot-checked `channelHeader` -- name and avatar only; banner, subscriber line
-            // and verified badge are lost, which the screen renders as their placeholders.
-            degradedHeader: { id in
-                let dto = try await api.getPublicChannel(.init(path: .init(channelId: id))).ok.body.json
-                return ChannelHeader(id: dto.youtubeId, name: dto.name, avatarURL: dto.thumbnailUrl.flatMap(URL.init(string:)))
-            },
-            playlistHeader: { id in
-                let dto = try await api.getPublicPlaylist(.init(path: .init(playlistId: id))).ok.body.json
-                return PlaylistHeader(title: dto.title, thumbnailURL: dto.thumbnailUrl.flatMap(URL.init(string:)), count: dto.itemCount)
-            })
+            degradedHeader: { try await headers.channel($0) },
+            playlistHeader: { try await headers.playlist($0) })
     }
 
     /// Device language/region for InnerTube requests (`hl`/`gl`) -- ruling 19: the engine itself
