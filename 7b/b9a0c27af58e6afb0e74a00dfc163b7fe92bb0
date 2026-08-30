@@ -1,0 +1,53 @@
+ios/FitrahTube/Features/Settings/AboutView.swift
+  s_66ddb7c44de816::t_35e21769a333da 102
+ios/FitrahTube/Features/Settings/SettingsView.swift
+  s_66ddb7c44de816::t_35e21769a333da 207
+ios/FitrahTubeTests/LaunchArgumentsTests.swift
+  s_66ddb7c44de816::t_35e21769a333da 1-12
+ios/FitrahTube/Features/Player/PlayerScreen.swift
+  s_66ddb7c44de816::t_35e21769a333da 72,457,460,466,469,472,475,478,494,497
+ios/FitrahTube/App/FitrahTubeApp.swift
+  s_66ddb7c44de816::t_35e21769a333da 16,23,32,105,119,143,208,220,242
+ios/FitrahTube/App/AppContainer.swift
+  s_66ddb7c44de816::t_35e21769a333da 93,111
+ios/FitrahTube/App/NetworkMonitor.swift
+  s_66ddb7c44de816::t_35e21769a333da 19
+ios/FitrahTube/Features/Player/EmbedRungView.swift
+  s_66ddb7c44de816::t_35e21769a333da 174,368,496
+ios/FitrahTube/Features/Onboarding/OnboardingView.swift
+  s_66ddb7c44de816::t_35e21769a333da 50
+ios/FitrahTube/Persistence/SettingsStore.swift
+  s_66ddb7c44de816::t_35e21769a333da 89
+ios/FitrahTube/Features/Report/ReportSheet.swift
+  s_66ddb7c44de816::t_35e21769a333da 23
+ios/FitrahTube/App/LaunchArguments.swift
+  s_66ddb7c44de816::t_35e21769a333da 1-13
+ios/FitrahTube/Features/Detail/BrowseSource.swift
+  s_66ddb7c44de816::t_35e21769a333da 160
+ios/FitrahTube/Features/Favorites/FavoritesView.swift
+  s_66ddb7c44de816::t_35e21769a333da 69
+ios/FitrahTube/Features/Lists/ContentListView.swift
+  s_66ddb7c44de816::t_35e21769a333da 125
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_66ddb7c44de816::t_35e21769a333da 514
+ios/FitrahTube/Features/Search/SearchView.swift
+  s_66ddb7c44de816::t_35e21769a333da 42
+ios/FitrahTube/App/RootView.swift
+  s_66ddb7c44de816::t_35e21769a333da 13,25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7bb9a0c27af58e6afb0e74a00dfc163b7fe92bb0",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
