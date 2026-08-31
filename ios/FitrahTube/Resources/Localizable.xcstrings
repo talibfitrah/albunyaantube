@@ -508,6 +508,50 @@
       },
       "shouldTranslate": false
     },
+    "app_update_required_message": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "هذا الإصدار من فطرة تيوب لم يعد مدعومًا. يرجى التحديث للمتابعة."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This version of FitrahTube is no longer supported. Please update to continue."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze versie van FitrahTube wordt niet meer ondersteund. Werk de app bij om door te gaan."
+          }
+        }
+      }
+    },
+    "app_update_required_title": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التحديث مطلوب"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update required"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update vereist"
+          }
+        }
+      }
+    },
     "auth_create_account_link": {
       "localizations": {
         "ar": {

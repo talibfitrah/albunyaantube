@@ -1,4 +1,5 @@
 import Foundation
+import InnerTubeKit
 import SwiftUI
 
 @main
@@ -49,6 +50,10 @@ struct FitrahTubeApp: App {
     // re-fetch on every scene-phase flicker.
     @State private var lastRemoteConfigRefresh: Date?
     private static let remoteConfigRefreshSpacing: TimeInterval = 15 * 60
+    // Spec D3 "update required" gate: set after every remote-config refresh, never persisted --
+    // a later config that LOWERS `minAppVersion` un-blocks on the next refresh (or relaunch)
+    // without a reinstall.
+    @State private var updateRequired = false
 
     var body: some Scene {
         WindowGroup {
@@ -68,6 +73,11 @@ struct FitrahTubeApp: App {
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active { refreshRemoteConfigIfDue() }
                 }
+                // Overlay, not a branch replacing RootView: the refresh task/onChange above keep
+                // firing underneath, which is what lets a lowered `minAppVersion` un-block live.
+                .overlay {
+                    if updateRequired { UpdateRequiredView() }
+                }
         }
     }
 
@@ -83,9 +93,16 @@ struct FitrahTubeApp: App {
         lastRemoteConfigRefresh = now
         Task {
             await container.innerTube.remoteConfig.refresh()
-            #if DEBUG
             let config = await container.innerTube.remoteConfig.current()
-            print("RemoteConfig: refreshed featuredCategoryId=\(config.featuredCategoryId ?? "nil") resolverOrder=\(config.resolverOrder)")
+            // Spec D3: re-evaluated after EVERY refresh, from the served config alone (fetched,
+            // else persisted last-known-good, else bundled default) -- so a lowered minAppVersion
+            // un-blocks and the first launch after a blocking publish blocks even if this
+            // refresh's fetch failed.
+            updateRequired = Self.isUpdateRequired(
+                appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                config: config)
+            #if DEBUG
+            print("RemoteConfig: refreshed featuredCategoryId=\(config.featuredCategoryId ?? "nil") resolverOrder=\(config.resolverOrder) updateRequired=\(updateRequired)")
             #endif
         }
     }
@@ -94,6 +111,15 @@ struct FitrahTubeApp: App {
     static func isRemoteConfigRefreshDue(now: Date, last: Date?, spacing: TimeInterval) -> Bool {
         guard let last else { return true }
         return now.timeIntervalSince(last) >= spacing
+    }
+
+    /// Spec D3's "update required" decision, extracted (same pattern as `isRemoteConfigRefreshDue`)
+    /// so `UpdateGateTests` drives it without a running scene. Fails open: a missing
+    /// `CFBundleShortVersionString` never blocks, and `requiresUpdate`'s numeric-segment compare
+    /// treats an unparseable `minAppVersion` as 0-segments, which never exceeds a real version.
+    static func isUpdateRequired(appVersion: String?, config: RemoteConfig) -> Bool {
+        guard let appVersion else { return false }
+        return config.requiresUpdate(appVersion: appVersion)
     }
 
     /// Debug-only launch hook (`-fitrah-deeplink <url>`, two argv tokens): exercises the exact
@@ -248,3 +274,22 @@ struct FitrahTubeApp: App {
         #endif
     }
 }
+
+/// Spec D3's blocking "update required" surface: full-screen, opaque, no dismiss and no bypass --
+/// it sits over everything and swallows every touch until a refreshed config (or an updated
+/// build) clears `updateRequired`.
+// TODO: add an "Update" button linking to the App Store listing once the app has a store id.
+struct UpdateRequiredView: View {
+    var body: some View {
+        EmptyStateView(
+            systemImage: "arrow.down.circle.fill",
+            title: String(localized: "app_update_required_title"),
+            message: String(localized: "app_update_required_message")
+        )
+        .background(Color.background.ignoresSafeArea())
+    }
+}
+
+#if DEBUG
+#Preview("Update required") { UpdateRequiredView() }
+#endif

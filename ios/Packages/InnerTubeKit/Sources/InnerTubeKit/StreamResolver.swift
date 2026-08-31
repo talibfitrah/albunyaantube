@@ -221,7 +221,8 @@ public actor StreamResolver {
             // Cubic r3 #4: an HTTP-level 429/403 block. Same handling as a parsed LOGIN_REQUIRED
             // bot check below, minus the visitor bootstrap (a non-200 body carries no
             // `responseContext.visitorData` to adopt): rotate once and retry the rung, else
-            // surface `.botCheck` so `performResolve` records the (per-walk deduped) cooldown trip.
+            // surface `.botCheck` so `performResolve` NOTES it -- the (per-walk single) cooldown
+            // trip is recorded at walk end, and only when the walk fails overall (ruling 2026-09-01).
             if canRotate, await sessionStore.rotate(family) {
                 return try await runPlayerRung(
                     family: family, videoId: videoId, config: config, expectHLS: expectHLS, canRotate: false)

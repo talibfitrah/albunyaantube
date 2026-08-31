@@ -223,6 +223,21 @@ EXTRA_KEYS = {
         "ar": "غير مُضاف للمفضلة",
         "nl": "Niet toegevoegd aan favorieten",
     },
+    # Update-required gate (spec D3, wired 2026-09-01): the blocking screen when a published
+    # `minAppVersion` exceeds the running build. iOS-only -- Android's `update_*` keys belong to
+    # its self-updater island (DEAD_PREFIXES above; impossible on iOS). Named `app_update_*`, not
+    # `update_*`: EXTRA_KEYS are never run through is_dead(), but staying outside the dead prefix
+    # keeps these from ever shadowing a skipped Android key of the same name.
+    "app_update_required_title": {
+        "en": "Update required",
+        "ar": "التحديث مطلوب",
+        "nl": "Update vereist",
+    },
+    "app_update_required_message": {
+        "en": "This version of FitrahTube is no longer supported. Please update to continue.",
+        "ar": "هذا الإصدار من فطرة تيوب لم يعد مدعومًا. يرجى التحديث للمتابعة.",
+        "nl": "Deze versie van FitrahTube wordt niet meer ondersteund. Werk de app bij om door te gaan.",
+    },
     # Shorts chrome (B4 tasks 2-3). Both are iOS-only. Android's kebab content description is a
     # hard-coded "More options" literal in fragment_shorts_player.xml:44 (recorded as a defect in
     # playlist-detail-shorts.md 9.3, not a string resource we can port), and its scrub bar is an
