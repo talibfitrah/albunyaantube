@@ -270,6 +270,18 @@
                 <span class="action-label">{{ t('contentLibrary.keywords') }}</span>
               </button>
               <button
+                v-if="item.type === 'video'"
+                type="button"
+                class="card-action-btn offline-btn"
+                :class="{ 'offline-on': item.offlineAllowed }"
+                :aria-pressed="item.offlineAllowed ? 'true' : 'false'"
+                :title="item.offlineAllowed ? t('contentLibrary.offlineAllowedOn') : t('contentLibrary.offlineAllowedOff')"
+                @click="toggleOfflineAllowed(item)"
+              >
+                <span class="action-icon">⬇</span>
+                <span class="action-label">{{ t('contentLibrary.offlineLabel') }}</span>
+              </button>
+              <button
                 type="button"
                 class="card-action-btn delete"
                 @click="confirmDelete(item)"
@@ -365,6 +377,15 @@
                   <button type="button" class="action-btn" @click="openDetailsModal(item)" :title="t('contentLibrary.view')">👁</button>
                   <button type="button" class="action-btn" @click="openCategoryModal(item)" :title="t('contentLibrary.categories')">🏷</button>
                   <button type="button" class="action-btn keywords-btn" @click="openKeywordsModal(item)" :title="t('contentLibrary.keywords')">🔑</button>
+                  <button
+                    v-if="item.type === 'video'"
+                    type="button"
+                    class="action-btn offline-btn"
+                    :class="{ 'offline-on': item.offlineAllowed }"
+                    :aria-pressed="item.offlineAllowed ? 'true' : 'false'"
+                    :title="item.offlineAllowed ? t('contentLibrary.offlineAllowedOn') : t('contentLibrary.offlineAllowedOff')"
+                    @click="toggleOfflineAllowed(item)"
+                  >⬇</button>
                   <button type="button" class="action-btn delete" @click="confirmDelete(item)" :title="t('contentLibrary.delete')">🗑</button>
                 </td>
               </tr>
@@ -587,6 +608,8 @@ interface ContentItem {
   visibility?: string;
   /** Names of the people a PERSONAL approval covers. Empty for a public item. */
   grantedTo: string[];
+  /** Videos only: "Save for offline" gate (iOS Phase 3). Absent/null from the server means false. */
+  offlineAllowed?: boolean;
 }
 
 interface Category {
@@ -1127,6 +1150,21 @@ async function saveKeywords() {
   }
 }
 
+/**
+ * Flip a video's "Save for offline" gate (iOS Phase 3). Sends the partial
+ * {offlineAllowed} body; the backend merge leaves every other field untouched.
+ */
+async function toggleOfflineAllowed(item: ContentItem) {
+  const next = !item.offlineAllowed;
+  try {
+    await contentLibraryService.setVideoOfflineAllowed(item.id, next);
+    item.offlineAllowed = next;
+  } catch (err: any) {
+    console.error('Failed to update offline setting:', err);
+    alert(t('contentLibrary.errorSavingOffline') + ': ' + (err.message || ''));
+  }
+}
+
 // Data Loading
 // Max items for custom sort mode to enable reordering.
 // Must not exceed backend's page size cap (100) since ContentLibraryController caps at Math.min(size, 100).
@@ -1169,7 +1207,8 @@ function mapContentItem(item: any): ContentItem {
     displayOrder: item.displayOrder ?? undefined,
     keywords: item.keywords || [],
     visibility: item.visibility,
-    grantedTo: item.grantedTo || []
+    grantedTo: item.grantedTo || [],
+    offlineAllowed: item.type === 'video' ? item.offlineAllowed === true : undefined
   };
 }
 
@@ -2278,7 +2317,7 @@ onUnmounted(() => {
   background: var(--color-surface-alt);
 }
 
-:root[data-theme="dark"] .action-btn:not(.keywords-btn) {
+:root[data-theme="dark"] .action-btn:not(.keywords-btn):not(.offline-btn) {
   filter: brightness(0) invert(1);
   opacity: 0.8;
 }
@@ -2287,10 +2326,29 @@ onUnmounted(() => {
   opacity: 1;
 }
 
-:root[data-theme="dark"] .action-btn:not(.keywords-btn):hover {
+:root[data-theme="dark"] .action-btn:not(.keywords-btn):not(.offline-btn):hover {
   filter: brightness(0) invert(1);
   opacity: 1;
   background: var(--color-surface-alt);
+}
+
+/* Save-for-offline toggle: dimmed when off, green when on (both themes, both layouts). */
+.action-btn.offline-btn,
+.card-action-btn.offline-btn .action-icon {
+  opacity: 0.45;
+}
+
+.action-btn.offline-btn.offline-on,
+.card-action-btn.offline-btn.offline-on .action-icon {
+  opacity: 1;
+}
+
+.action-btn.offline-btn.offline-on {
+  background: #dcfce7;
+}
+
+:root[data-theme="dark"] .action-btn.offline-btn.offline-on {
+  background: #14532d;
 }
 
 :root[data-theme="dark"] .action-btn.keywords-btn:hover {

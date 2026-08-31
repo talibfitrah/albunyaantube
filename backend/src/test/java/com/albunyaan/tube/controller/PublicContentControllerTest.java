@@ -138,6 +138,30 @@ public class PublicContentControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/v1/videos/{videoId} - offlineAllowed serialized when set (iOS Phase 3 gate)")
+    void testGetVideoDetails_OfflineAllowedSerialized() throws Exception {
+        testVideo.setOfflineAllowed(true);
+        when(contentService.getVideoDetails(anyString())).thenReturn(testVideo);
+
+        mockMvc.perform(get("/api/v1/videos/{videoId}", "EnfgPg0Ey3I")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.offlineAllowed").value(true));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/videos/{videoId} - legacy document without offlineAllowed reads as null (client treats as false)")
+    void testGetVideoDetails_OfflineAllowedAbsentOnLegacyDoc() throws Exception {
+        // testVideo never had the field set — mirrors a Firestore document written before Phase 3.
+        when(contentService.getVideoDetails(anyString())).thenReturn(testVideo);
+
+        mockMvc.perform(get("/api/v1/videos/{videoId}", "EnfgPg0Ey3I")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.offlineAllowed").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
     @DisplayName("GET /api/v1/videos/{videoId} - Special Characters in Video ID")
     void testGetVideoDetails_SpecialCharacters() throws Exception {
         // Given

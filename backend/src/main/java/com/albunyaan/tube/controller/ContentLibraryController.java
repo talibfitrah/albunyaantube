@@ -365,11 +365,12 @@ public class ContentLibraryController {
                 anyTypeTruncated = true;
             }
             for (Video v : result.items) {
-                allContent.add(withVisibility(new ContentItem("video", v.getId(), v.getYoutubeId(), v.getTitle(),
+                ContentItem item = new ContentItem("video", v.getId(), v.getYoutubeId(), v.getTitle(),
                         v.getDescription(), v.getThumbnailUrl(), v.getStatus(), v.getCategoryIds(),
                         v.getCreatedAt() != null ? v.getCreatedAt().toDate() : null,
-                        v.getViewCount(), v.getDisplayOrder(), v.getKeywords()),
-                        v.getVisibility(), v.getPersonalGrants()));
+                        v.getViewCount(), v.getDisplayOrder(), v.getKeywords());
+                item.offlineAllowed = v.getOfflineAllowed();
+                allContent.add(withVisibility(item, v.getVisibility(), v.getPersonalGrants()));
             }
         }
 
@@ -833,6 +834,12 @@ public class ContentLibraryController {
         public String visibility;
         /** Display names (or emails, or uid) of the people a PERSONAL grant covers. Never null. */
         public List<String> grantedTo = List.of();
+
+        /**
+         * Videos only (null for channels/playlists): whether admins allow this video to be
+         * saved for offline playback. Null means never toggled — treated as false.
+         */
+        public Boolean offlineAllowed;
 
         public ContentItem(String type, String id, String youtubeId, String title, String description, String thumbnailUrl,
                            String status, List<String> categoryIds, Date createdAt, Long count, Integer displayOrder,

@@ -145,3 +145,17 @@ export interface RegistryTotals {
 export async function fetchRegistryTotals(): Promise<RegistryTotals> {
   return await authorizedJsonFetch('/api/admin/content/totals');
 }
+
+/**
+ * Flip a video's "Save for offline" flag (iOS Phase 3 offline gate).
+ *
+ * Sends a partial body through PUT /api/admin/registry/videos/{id} — legal because the
+ * backend merges null-guarded fields, so everything the body omits stays untouched.
+ */
+export async function setVideoOfflineAllowed(videoId: string, offlineAllowed: boolean): Promise<void> {
+  await authorizedJsonFetch(`/api/admin/registry/videos/${videoId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ offlineAllowed })
+  });
+}

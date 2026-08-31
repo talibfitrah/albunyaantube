@@ -135,6 +135,15 @@ public class Video {
      */
     private List<String> keywordsLower;
 
+    /**
+     * iOS Phase 3 (offline gate): whether admins allow this video to be saved for
+     * offline playback. Null on legacy documents and on any video never toggled —
+     * clients treat null/absent as false (the default). Deliberately NOT initialized
+     * to false: a request body deserialized from partial JSON must keep null for
+     * "field absent" so updateVideo's merge can distinguish absent from explicit false.
+     */
+    private Boolean offlineAllowed;
+
     public Video() {
         this.categoryIds = new ArrayList<>();
         this.status = "PENDING";
@@ -418,6 +427,14 @@ public class Video {
 
     public void setKeywordsLower(List<String> keywordsLower) {
         this.keywordsLower = keywordsLower;
+    }
+
+    public Boolean getOfflineAllowed() {
+        return offlineAllowed;
+    }
+
+    public void setOfflineAllowed(Boolean offlineAllowed) {
+        this.offlineAllowed = offlineAllowed;
     }
 }
 

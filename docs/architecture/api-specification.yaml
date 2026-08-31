@@ -1306,7 +1306,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Video'
     put:
-      summary: Update video in registry
+      summary: Update video in registry (merge semantics — absent fields untouched)
       operationId: registryUpdateVideo
       tags: [Registry]
       parameters:
@@ -1320,7 +1320,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Video'
+              $ref: '#/components/schemas/VideoUpdateRequest'
       responses:
         '200':
           description: Video updated
@@ -3333,6 +3333,51 @@ components:
           $ref: '#/components/schemas/VideoType'
           nullable: true
           description: STANDARD for regular videos, LIVE for live streams. Null on legacy docs treated as STANDARD.
+        offlineAllowed:
+          type: boolean
+          nullable: true
+          description: >-
+            Whether admins allow this video to be saved for offline playback.
+            Null/absent on legacy documents; clients MUST treat null/absent as false
+            (the default — nothing is saveable until an admin toggles it on).
+
+    VideoUpdateRequest:
+      type: object
+      description: >-
+        Partial update for a registry video. Merge semantics: fields absent from the
+        body are left untouched, so a body carrying only offlineAllowed changes only
+        that flag. Not the Video entity — the entity's defaults (status PENDING,
+        empty categoryIds) would make partial bodies destructive.
+      properties:
+        title:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        categoryIds:
+          type: array
+          nullable: true
+          items:
+            type: string
+        status:
+          type: string
+          nullable: true
+          enum: [APPROVED, PENDING, REJECTED, REQUEST_CHANGES]
+        thumbnailUrl:
+          type: string
+          nullable: true
+        durationSeconds:
+          type: integer
+          nullable: true
+        viewCount:
+          type: integer
+          format: int64
+          nullable: true
+        offlineAllowed:
+          type: boolean
+          nullable: true
+          description: Whether admins allow this video to be saved for offline playback.
 
     ExcludedItems:
       type: object
