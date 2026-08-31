@@ -905,6 +905,12 @@ public class AuthService {
             // whom this human was reinstated") are the same class of metadata.
             target.setRecoveredAt(null);
             target.setRecoveredBy(null);
+            // Block stamps too: post-F8 recover clears them, but pre-F8 docs
+            // can still carry "which admin blocked them and why" (blockReason
+            // holds moderators' internal notes) on an active user.
+            target.setBlockedAt(null);
+            target.setBlockedBy(null);
+            target.setBlockReason(null);
             target.recordSoftDelete(uid, SELF_DELETE_REASON);
             // The sweep below has not run yet. Recording that on the tombstone
             // is what lets a later call tell "finished" from "died halfway".

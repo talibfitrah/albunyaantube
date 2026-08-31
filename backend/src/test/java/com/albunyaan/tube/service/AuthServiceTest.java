@@ -593,6 +593,11 @@ class AuthServiceTest {
         recovered.setStatus("deleted");
         recovered.recordRecover("admin-uid");
         assertNotNull(recovered.getRecoveredAt(), "precondition: recovery stamped");
+        // Legacy pre-F8 block stamps on an otherwise-active doc: set directly,
+        // after recordRecover (which clears them post-F8).
+        recovered.setBlockedAt(com.google.cloud.Timestamp.now());
+        recovered.setBlockedBy("mod-uid");
+        recovered.setBlockReason("internal moderator note");
 
         com.google.cloud.firestore.CollectionReference usersColl =
                 mock(com.google.cloud.firestore.CollectionReference.class);
@@ -635,6 +640,9 @@ class AuthServiceTest {
         assertNull(recovered.getEmail(), "email must be erased from the tombstone");
         assertNull(recovered.getRecoveredAt(), "recoveredAt must be erased from the tombstone");
         assertNull(recovered.getRecoveredBy(), "recoveredBy must be erased from the tombstone");
+        assertNull(recovered.getBlockedAt(), "blockedAt must be erased from the tombstone");
+        assertNull(recovered.getBlockedBy(), "blockedBy must be erased from the tombstone");
+        assertNull(recovered.getBlockReason(), "blockReason must be erased from the tombstone");
     }
 
     @Test
