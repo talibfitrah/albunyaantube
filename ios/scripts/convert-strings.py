@@ -244,6 +244,15 @@ EXTRA_KEYS = {
     # ExoPlayer DefaultTimeBar with no accessibility label at all.
     "shorts_more_options_cd": {"en": "More options", "ar": "المزيد من الخيارات", "nl": "Meer opties"},
     "shorts_seek_cd": {"en": "Seek", "ar": "التنقل في المقطع", "nl": "Zoeken in video"},
+    # offline_footer_format (Phase 3 Task 3): the Saved screen's storage footer, rendered by
+    # `OfflineStorage.footer` -- authored here (ahead of Task 5's offline_* batch) because the
+    # footer math ships with the pure engine. Args: %1$ count of saved items, %2$/%3$ localized
+    # byte strings. Owner ruling 2026-09-01: "Save for offline" language, never "Download".
+    "offline_footer_format": {
+        "en": "%1$lld saved • %2$@ used • %3$@ available",
+        "ar": "%1$lld محفوظة • %2$@ مستخدمة • %3$@ متاحة",
+        "nl": "%1$lld opgeslagen • %2$@ gebruikt • %3$@ beschikbaar",
+    },
 }
 
 def is_dead(key):

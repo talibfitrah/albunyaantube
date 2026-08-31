@@ -8680,6 +8680,28 @@
         }
       }
     },
+    "offline_footer_format": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld محفوظة • %2$@ مستخدمة • %3$@ متاحة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld saved • %2$@ used • %3$@ available"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld opgeslagen • %2$@ gebruikt • %3$@ beschikbaar"
+          }
+        }
+      }
+    },
     "offline_mode": {
       "localizations": {
         "ar": {

@@ -39,11 +39,18 @@ enum FavoritesSchemaV3: VersionedSchema {
     static var models: [any PersistentModel.Type] { [FavoriteVideo.self, SavedPlaylist.self, SubscribedChannel.self] }
 }
 
+/// Phase 3 Task 3 adds `OfflineItem` (Save for offline), the same way.
+enum FavoritesSchemaV4: VersionedSchema {
+    static let versionIdentifier = Schema.Version(4, 0, 0)
+    static var models: [any PersistentModel.Type] { [FavoriteVideo.self, SavedPlaylist.self, SubscribedChannel.self, OfflineItem.self] }
+}
+
 enum FavoritesMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self] }
+    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self, FavoritesSchemaV4.self] }
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: FavoritesSchemaV1.self, toVersion: FavoritesSchemaV2.self),
-         .lightweight(fromVersion: FavoritesSchemaV2.self, toVersion: FavoritesSchemaV3.self)]
+         .lightweight(fromVersion: FavoritesSchemaV2.self, toVersion: FavoritesSchemaV3.self),
+         .lightweight(fromVersion: FavoritesSchemaV3.self, toVersion: FavoritesSchemaV4.self)]
     }
 }
 
