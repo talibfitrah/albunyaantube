@@ -1,0 +1,52 @@
+backend/src/main/java/com/albunyaan/tube/dto/VideoUpdateRequest.java
+  s_66ddb7c44de816::t_f9e556e7731eb5 1-89
+frontend/src/views/ContentLibraryView.vue
+  s_66ddb7c44de816::t_212335670958a8 1153-1167
+  s_66ddb7c44de816::t_a6ee5935932c7c 1210-1211
+  s_66ddb7c44de816::t_af3da9bf10b463 2320,2329,2335-2351
+  s_66ddb7c44de816::t_65035a8ef8ba54 380-388
+  s_66ddb7c44de816::t_2ac123b0cacd10 273-283
+  s_66ddb7c44de816::t_c4a451974fabda 611-612
+backend/src/test/java/com/albunyaan/tube/controller/PublicContentControllerTest.java
+  s_66ddb7c44de816::t_17477f2807e27c 141-163
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_66ddb7c44de816::t_16e89956f5d3c5 838-843
+  s_66ddb7c44de816::t_c30040c119d468 368,371-373
+docs/architecture/api-specification.yaml
+  s_66ddb7c44de816::t_ef1d722058d53a 3336-3380
+  s_66ddb7c44de816::t_7a34d8348781d8 1309,1323
+backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
+  s_66ddb7c44de816::t_eb08aa82e5ecb7 1005-1009,1016
+  s_66ddb7c44de816::t_59eda5100c51cd 979-980,986
+  s_66ddb7c44de816::t_9262808f258ee3 1004,1010-1015,1017-1034
+frontend/src/services/contentLibrary.ts
+  s_66ddb7c44de816::t_120c39b44be019 148-161
+frontend/tests/ContentLibraryOfflineToggle.spec.ts
+  s_66ddb7c44de816::t_750f1b8c067c3f 1-114
+frontend/src/locales/messages.ts
+  s_66ddb7c44de816::t_c0fcb33dde4316 2117-2121
+  s_66ddb7c44de816::t_8adf9a498f82d6 3508-3512
+  s_66ddb7c44de816::t_a8809c74b050df 507-511
+backend/src/test/java/com/albunyaan/tube/controller/RegistryControllerTest.java
+  s_66ddb7c44de816::t_893dc76ff5a023 603,622,644,666,681
+  s_66ddb7c44de816::t_879f3dade9fc71 580-602,604-621,623-643,645-665,667-680,682-686
+backend/src/main/java/com/albunyaan/tube/model/Video.java
+  s_66ddb7c44de816::t_9dd2c337028987 431-438
+  s_66ddb7c44de816::t_ddc9f943d29799 138-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "182de73764dba95d67011645d6f3b3191b5a3c4e",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
