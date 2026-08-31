@@ -353,6 +353,88 @@ import Testing
         #expect(transport.callCount == 2)
     }
 
+    /// Cubic #1: `URLSessionTransport` does no error mapping, so a job cancelled mid-request can
+    /// surface `URLError(.cancelled)` instead of `CancellationError`. First call hangs and throws
+    /// exactly that on cancellation; later calls answer immediately.
+    private final class URLErrorCancellingTransport: HTTPTransport, @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        private let response: HTTPResponse
+
+        init(_ response: HTTPResponse) { self.response = response }
+
+        var callCount: Int { lock.withLock { count } }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            let ordinal = lock.withLock { count += 1; return count }
+            if ordinal == 1 {
+                do { try await Task.sleep(for: .seconds(30)) } catch { throw URLError(.cancelled) }
+            }
+            return response
+        }
+
+        func waitForCall() async {
+            var attempts = 0
+            while callCount < 1, attempts < 1000 {
+                try? await Task.sleep(for: .milliseconds(1))
+                attempts += 1
+            }
+        }
+    }
+
+    /// First call throws the given error synchronously; later calls answer with the response.
+    private final class FailFirstTransport: HTTPTransport, @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        private let error: Error
+        private let response: HTTPResponse
+
+        init(error: Error, then response: HTTPResponse) {
+            self.error = error
+            self.response = response
+        }
+
+        var callCount: Int { lock.withLock { count } }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            let ordinal = lock.withLock { count += 1; return count }
+            if ordinal == 1 { throw error }
+            return response
+        }
+    }
+
+    @Test func aTransportLevelURLErrorCancelledStopsTheLadderInsteadOfWalkingIt() async throws {
+        // Deterministic half of Cubic #1: a rung that dies with `URLError(.cancelled)` must read as
+        // cancellation -- stop the ladder, surface `.cancelled` -- not as a rung failure that walks
+        // on down and spends more POSTs on a resolve nobody is waiting for.
+        let transport = FailFirstTransport(error: URLError(.cancelled), then: try fixtureResponse("player-ok-hls"))
+        let (resolver, _) = makeResolver(transport: transport)
+
+        await #expect(throws: ExtractionError.cancelled) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 1)
+    }
+
+    @Test func supersededAwaiterAdoptsWinnerWhenTheCancelledJobSurfacesURLErrorCancelled() async throws {
+        // Same contract as d5, but the cancelled job dies with `URLError(.cancelled)` -- the shape
+        // the real transport produces -- rather than a clean `CancellationError`. The adoption path
+        // must treat both as cancellation, or the superseded awaiter gets a spurious failure.
+        let transport = URLErrorCancellingTransport(try fixtureResponse("player-ok-hls"))
+        let (resolver, _) = makeResolver(transport: transport)
+
+        async let superseded = resolver.resolve(
+            Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        await transport.waitForCall()
+
+        let winner = try await resolver.resolve(
+            Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        guard case .hls = winner.stream else { Issue.record("expected .hls, got \(winner.stream)"); return }
+
+        let adopted = try await superseded
+        guard case .hls = adopted.stream else { Issue.record("expected adopted .hls, got \(adopted.stream)"); return }
+    }
+
     // MARK: - d6) reason -> terminal error mapping (ruling 14)
 
     @Test func terminalErrorMapsReasonToItsTerminalError() {

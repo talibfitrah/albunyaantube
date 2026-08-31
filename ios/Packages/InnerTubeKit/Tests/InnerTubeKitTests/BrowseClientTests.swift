@@ -389,11 +389,11 @@ import Testing
         #expect(await session.cooldownRemaining(now: .now) == nil)  // CF-C2: never escalate
     }
 
-    @Test func aBotCheckWithATokenAlreadyAttachedRotatesItAsStale() async throws {
-        // The other half: we sent a token and were bot-checked anyway, so the token is burnt.
-        // rotate() clears it (throttled to 1/10 min by SessionStore itself) and the next call
-        // re-bootstraps. The interstitial's own token is adopted first, then rotate clears the
-        // family -- the net effect is "no token", the correct state for a session YouTube rejected.
+    @Test func aBotCheckWithATokenAlreadyAttachedAdoptsTheInterstitialsTokenWithoutRotating() async throws {
+        // Cubic #8 / CF-CL-2: the rotate-on-stale path is DELETED. It wiped the visitorData the same
+        // interstitial just handed over and burnt the 10-minute rotation slot -- and it never fired
+        // in ~14 live launches (cold path). Adoption is unconditional: the interstitial's own token
+        // replaces the stale one, and the next call retries with it.
         let transport = FixtureTransport(routes: [
             .init(match: { _ in true }, response: try fixtureResponse("browse-botcheck"))
         ])
@@ -402,8 +402,27 @@ import Testing
 
         await #expect(throws: BrowseError.botCheck) { _ = try await client.channelVideos(Self.channelId, continuation: nil) }
 
-        #expect(await session.visitorData(for: .web) == nil)
+        #expect(await session.visitorData(for: .web) == Self.syntheticVisitorData)  // adopted, not rotated away
         #expect(await session.cooldownRemaining(now: .now) == nil)  // CF-C2
+    }
+
+    @Test func aBotCheckInterstitialIsDetectedByAlertTypeNotByEnglishCopy() async throws {
+        // Cubic #7 (locale probe 2026-08-31): the interstitial's alert text is localized -- an
+        // Arabic-locale session never contains "confirm you're not a bot". The discriminator is the
+        // structured `alerts[].alertWithButtonRenderer.type == "ERROR"`, which is locale-independent.
+        let body = try fixtureResponse("browse-botcheck").body
+        var json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        json["alerts"] = [["alertWithButtonRenderer": [
+            "type": "ERROR",
+            "text": ["simpleText": "يُرجى تسجيل الدخول للتأكد من أنك لست روبوتًا"],
+        ]]]
+        let localized = try JSONSerialization.data(withJSONObject: json)
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: HTTPResponse(status: 200, headers: [:], body: localized))
+        ])
+        let client = makeClient(transport)
+
+        await #expect(throws: BrowseError.botCheck) { _ = try await client.channelVideos(Self.channelId, continuation: nil) }
     }
 
     @Test func theSecondPageSendsTheAdoptedVisitorDataAsAHeader() async throws {

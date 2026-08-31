@@ -106,6 +106,47 @@ import Testing
         #expect(result == .botCheck)
     }
 
+    // MARK: - locale-independent LOGIN_REQUIRED classification (Cubic #2, live probe 2026-08-31)
+    //
+    // Probe facts (6 live VISIONOS probes, hl=en/ar/nl): every age-gated response carries the
+    // locale-independent `playabilityStatus.desktopLegacyAgeGateReason` (= 1), absent from ERROR
+    // responses and from the bot-check capture. The `reason` strings are fully localized -- an
+    // Arabic age gate says "يجب تسجيل الدخول لتأكيد عمرك." (no "age", no "bot" substring), so any
+    // English-substring match misclassifies the ar/nl core audience.
+
+    private func fixtureReplacingReason(_ name: String, reason: String) throws -> Data {
+        var json = try #require(try JSONSerialization.jsonObject(with: loadFixture(name)) as? [String: Any])
+        var status = try #require(json["playabilityStatus"] as? [String: Any])
+        status["reason"] = reason
+        json["playabilityStatus"] = status
+        return try JSONSerialization.data(withJSONObject: json)
+    }
+
+    @Test(arguments: [
+        "يجب تسجيل الدخول لتأكيد عمرك.",      // ar, probe verbatim
+        "Log in om je leeftijd te bevestigen", // nl, probe verbatim
+    ])
+    func aLocalizedAgeGateReasonStillClassifiesAsAgeGate(reason: String) throws {
+        let body = try fixtureReplacingReason("player-age-gated", reason: reason)
+        #expect(try parser.parse(body).playability == .ageGate)
+    }
+
+    @Test func aLocalizedBotCheckReasonStillClassifiesAsBotCheck() throws {
+        // player-botcheck.json is LOGIN_REQUIRED with NO desktopLegacyAgeGateReason -- that shape,
+        // not the English copy, is the discriminator.
+        let body = try fixtureReplacingReason("player-botcheck", reason: "يُرجى تسجيل الدخول للتأكد من أنك لست روبوتًا")
+        #expect(try parser.parse(body).playability == .botCheck)
+    }
+
+    @Test(arguments: [
+        "هذا الفيديو غير متوفّر.",             // ar, probe verbatim
+        "Deze video is niet beschikbaar",     // nl, probe verbatim
+    ])
+    func aLocalizedErrorReasonStaysUnavailable(reason: String) throws {
+        let body = try fixtureReplacingReason("player-embed-only", reason: reason)
+        #expect(try parser.parse(body).playability == .unavailable(reason: reason))
+    }
+
     // Synthetic fixture (not probe-captured — the embed-only case wasn't reproducible live in
     // Task 1): a response missing `streamingData` entirely, with a non-branching status.
     @Test func embedOnlyFixtureMissingStreamingDataYieldsUnavailable() throws {

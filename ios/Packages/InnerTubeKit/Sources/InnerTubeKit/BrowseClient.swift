@@ -188,11 +188,7 @@ public actor BrowseClient {
     }
 
     public func channelHeader(_ id: String) async throws -> ChannelHeader {
-        let sent = try await send(browseId: id, params: nil, continuation: nil)
-        do { return try Self.parseHeader(sent.body) } catch BrowseError.botCheck {
-            await rotateIfStale(sent)
-            throw BrowseError.botCheck
-        }
+        try Self.parseHeader(await send(browseId: id, params: nil, continuation: nil))
     }
 
     /// The Videos tab -- the one uploads path (ruling 3), kept as its own entry point so the app
@@ -209,12 +205,7 @@ public actor BrowseClient {
     public func channelTab(_ id: String, tab: ChannelTab, continuation: String?) async throws -> BrowsePage<VideoItem> {
         let browseId = continuation == nil ? id : nil
         let params = continuation == nil ? tab.params : nil
-        let sent = try await send(browseId: browseId, params: params, continuation: continuation)
-        var page: BrowsePage<VideoItem>
-        do { page = try Self.parsePage(sent.body) } catch BrowseError.botCheck {
-            await rotateIfStale(sent)
-            throw BrowseError.botCheck
-        }
+        var page = try Self.parsePage(await send(browseId: browseId, params: params, continuation: continuation))
         // Channel-tab items carry no byline (the channel is implicit); backfill from the known id.
         page.items = page.items.map { item in
             guard item.channelId == nil else { return item }
@@ -227,11 +218,7 @@ public actor BrowseClient {
 
     public func playlistItems(_ playlistId: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
         let browseId = continuation == nil ? "VL" + playlistId : nil
-        let sent = try await send(browseId: browseId, params: nil, continuation: continuation)
-        do { return try Self.parsePage(sent.body) } catch BrowseError.botCheck {
-            await rotateIfStale(sent)
-            throw BrowseError.botCheck
-        }
+        return try Self.parsePage(await send(browseId: browseId, params: nil, continuation: continuation))
     }
 
     /// The channel's Playlists tab: `gridRenderer`-wrapped playlist lockups with an item-count
@@ -239,23 +226,12 @@ public actor BrowseClient {
     public func channelPlaylists(_ id: String, continuation: String?) async throws -> BrowsePage<PlaylistTile> {
         let browseId = continuation == nil ? id : nil
         let params = continuation == nil ? Self.playlistsTabParams : nil
-        let sent = try await send(browseId: browseId, params: params, continuation: continuation)
-        do { return try Self.parsePlaylistPage(sent.body) } catch BrowseError.botCheck {
-            await rotateIfStale(sent)
-            throw BrowseError.botCheck
-        }
+        return try Self.parsePlaylistPage(await send(browseId: browseId, params: params, continuation: continuation))
     }
 
     // MARK: - network
 
-    /// A response body together with the visitorData that was attached to its request (nil when
-    /// the call went out tokenless), so the caller can tell a bootstrap bot-check from a stale one.
-    private struct Sent {
-        var body: Data
-        var visitorData: String?
-    }
-
-    private func send(browseId: String?, params: String?, continuation: String?) async throws -> Sent {
+    private func send(browseId: String?, params: String?, continuation: String?) async throws -> Data {
         guard let context = await remoteConfigStore.current().clients["web"] else {
             throw BrowseError.malformed
         }
@@ -273,27 +249,20 @@ public actor BrowseClient {
         {
             await sessionStore.setVisitorData(visitor, for: .web)
         }
-        return Sent(body: response.body, visitorData: visitorData)
+        return response.body
     }
 
-    /// Rotate the WEB family iff a token was attached and the response was still bot-checked: that
-    /// token is burnt, `rotate` clears it (throttled 1/10 min by `SessionStore`) and the next call
-    /// re-bootstraps. A tokenless bot-check is the bootstrap trip and must NOT rotate — `send` has
-    /// just adopted the interstitial's own token and rotating would discard it (C3).
-    ///
-    /// Deliberately no `recordBotCheck()`: the shared cooldown ladder is consulted by
-    /// `StreamResolver` before every resolve, so escalating it from browse would let one
-    /// bot-checked listing page silence playback for an hour (24 h on the fourth trip). Android's
-    /// cooldown exempts the player for the same reason; a bot-checked browse goes degraded
-    /// instead (reconciliation note 3, CF-C2).
-    private func rotateIfStale(_ sent: Sent) async {
-        #if DEBUG
-        // CF-C-2 measurement (Plan C Task 6): how often the stale-token branch fires at all.
-        print("BrowseClient: bot-check tokenless=\(sent.visitorData == nil) rotate=\(sent.visitorData != nil)")
-        #endif
-        guard sent.visitorData != nil else { return }
-        _ = await sessionStore.rotate(.web)
-    }
+    // The rotate-on-stale path was DELETED (Cubic #8 = CF-CL-2, closed): it wiped the visitorData
+    // the same interstitial just handed over (`send` adopts from EVERY response, bot checks
+    // included) and burnt the 10-minute rotation slot -- and it never fired in ~14 live launches.
+    // Adoption alone leaves the session in the correct state: the interstitial's fresh token rides
+    // on the next call.
+    //
+    // Deliberately no `recordBotCheck()` here either: the shared cooldown ladder is consulted by
+    // `StreamResolver` before every resolve, so escalating it from browse would let one
+    // bot-checked listing page silence playback for an hour (24 h on the fourth trip). Android's
+    // cooldown exempts the player for the same reason; a bot-checked browse goes degraded
+    // instead (reconciliation note 3, CF-C2).
 
     /// The Playlists tab's opaque `params` token, captured live 2026-08-24 (`channel-detail.md`).
     /// Forwarded verbatim — nothing in this app decodes it.
@@ -536,18 +505,14 @@ public actor BrowseClient {
     /// names the block.
     private static func detectBotCheck(_ json: [String: Any]) -> Bool {
         guard let alerts = json["alerts"] as? [[String: Any]] else { return false }
-        for alert in alerts {
-            for value in alert.values {
-                guard let renderer = value as? [String: Any] else { continue }
-                let text = (dig(renderer, "text", "simpleText") as? String) ?? (dig(renderer, "text", "content") as? String)
-                // A known phrase fragment, not a bare "bot" substring — "bot" alone false-positives
-                // on "robot"/"bottom" etc. This is YouTube's actual interstitial copy.
-                if let text, text.lowercased().contains("confirm you're not a bot") {
-                    return true
-                }
-            }
+        // Locale probe 2026-08-31 (Cubic #7): the alert text is localized -- an ar/nl session never
+        // contains the English interstitial copy, so a text match missed every non-English bot
+        // check. The structured, locale-independent discriminator is the alert's renderer + type:
+        // the interstitial is an `alertWithButtonRenderer` (it carries the sign-in button) with
+        // `type == "ERROR"`; informational notices are plain `alertRenderer`s and never match.
+        return alerts.contains { alert in
+            ((alert["alertWithButtonRenderer"] as? [String: Any])?["type"] as? String) == "ERROR"
         }
-        return false
     }
 
     /// Minimal dictionary-path walker over `JSONSerialization`'s `[String: Any]` tree —

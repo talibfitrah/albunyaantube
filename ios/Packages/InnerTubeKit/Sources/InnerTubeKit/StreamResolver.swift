@@ -105,7 +105,13 @@ public actor StreamResolver {
             return try await task.value
         } catch is CancellationError {
             try Task.checkCancellation()
-            if let winner = inFlight[videoId] { return try await awaitJob(winner.task, videoId: videoId) }
+            // `winner.task != task`: a job that dies with a cancellation while still registered
+            // (a transport-level `URLError(.cancelled)` with no superseding forceRefresh, which
+            // removes the loser from the registry BEFORE inserting the winner) must not re-await
+            // itself forever.
+            if let winner = inFlight[videoId], winner.task != task {
+                return try await awaitJob(winner.task, videoId: videoId)
+            }
             if let cached = await cache.get(videoId, now: wallClock.wallNow) { return cached }
             throw ExtractionError.cancelled
         }
@@ -274,7 +280,17 @@ public actor StreamResolver {
         let wait = scheduled - now
         if wait > .zero { try await Task.sleep(for: wait) }
 
-        return try await transport.send(request).body
+        do {
+            return try await transport.send(request).body
+        } catch let error as URLError where error.code == .cancelled {
+            // Cubic #1: `URLSessionTransport` does no error mapping, so a request torn down by task
+            // cancellation surfaces `URLError(.cancelled)`, not `CancellationError`. Normalized HERE,
+            // the resolver's one transport call site, so the ladder loop and the single-flight
+            // adoption path (`awaitJob`) see a single cancellation currency -- otherwise a cancelled
+            // force-refresh job walks the ladder as if the rung failed and superseded awaiters get a
+            // raw URLError instead of adopting the winner.
+            throw CancellationError()
+        }
     }
 
     private static func withTimeout<T: Sendable>(

@@ -58,14 +58,18 @@ public struct PlayerResponseParser: Sendable {
         case "OK":
             return .ok(streamingData(from: wire))
         case "LOGIN_REQUIRED", "AGE_CHECK_REQUIRED":
-            let lowered = reason.lowercased()
-            if lowered.contains("age") {
+            // Locale probe 2026-08-31 (6 live VISIONOS probes, hl=en/ar/nl): `reason` is fully
+            // localized (ar age gate: "يجب تسجيل الدخول لتأكيد عمرك." -- no "age", no "bot"
+            // substring), so English-substring matching misclassified every non-English response.
+            // The locale-independent discriminator is `desktopLegacyAgeGateReason` (= 1 on every
+            // age-gated response across locales; absent from the bot-check capture and from ERROR
+            // responses).
+            if status == "AGE_CHECK_REQUIRED" || wire.playabilityStatus.desktopLegacyAgeGateReason != nil {
                 return .ageGate
             }
-            if lowered.contains("bot") {
-                return .botCheck
-            }
-            return .unavailable(reason: reason)
+            // Caveat (unverified live): a private video may also answer LOGIN_REQUIRED; it would
+            // classify as .botCheck, which is retryable -- the safer failure direction.
+            return .botCheck
         case "UNPLAYABLE":
             // ponytail: every UNPLAYABLE collapses to `.unplayableKids`, so a private/removed
             // video walks the ladder instead of terminating. Splitting on `reason` needs real
@@ -124,6 +128,9 @@ public struct PlayerResponseParser: Sendable {
         struct PlayabilityStatus: Decodable {
             var status: String
             var reason: String?
+            /// Locale-independent age-gate marker (live probe 2026-08-31): present (= 1) on every
+            /// age-gated response in en/ar/nl, absent from bot-check and ERROR responses.
+            var desktopLegacyAgeGateReason: Int?
         }
         struct Format: Decodable {
             var itag: Int?

@@ -94,6 +94,56 @@ struct PlayerViewModelQueueTests {
         #expect(StreamState.queueEnded != StreamState.idle)
     }
 
+    @Test func anAdvanceLandingOnTheEmbedRungPlaysItInsteadOfSkipping() async {
+        // Cubic #3 = gstack R2: `.embed(Resolved)` is a first-class playable state (its own
+        // `PlayerScreen` branch), but `advance()` gated success on `isPlayable`, which excludes it --
+        // so a playlist member whose ladder legitimately bottomed out on the embed rung was
+        // auto-skipped mid-queue (burning a `consecutiveSkips` slot) though a direct tap played it.
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        resolver.outcomes["b"] = .embed
+        await vm.open()
+        await vm.playToEnd()
+        #expect(vm.args.videoId == "b")                    // NOT skipped ahead to c
+        guard case .embed = vm.state else { Issue.record("expected .embed, got \(vm.state)"); return }
+        await vm.playToEnd()
+        #expect(vm.args.videoId == "c")                    // the queue continues normally after it
+        #expect(vm.state.isPlayable)
+    }
+
+    @Test func aUserTapDuringAGatedAdvancePageFetchWins() async {
+        // Cubic #4: `advance()` suspends in `await pageIfNeeded()` and then unconditionally moved
+        // the queue -- a `play(at:)` landing during that suspension was overridden by the resumed
+        // advance (its resolve superseded the user's pick). Same gated window as
+        // `anAdvanceDuringAnInFlightPageFetchWaitsInsteadOfEndingTheQueue`: a near-page-end launch
+        // holds `open()`'s page fetch, the end-of-item advance joins that in-flight fetch, and the
+        // user taps "g" while both are held open.
+        let source = FakeQueueSource(pages: [(ids: ["a", "b", "c", "d", "e", "f", "g"], next: "P2"),
+                                             (ids: ["h"], next: nil)],
+                                     gateFrom: 1)
+        let (vm, _) = makeModel(args: .init(videoId: "e", playlistId: "PL", targetVideoId: "e"),
+                                source: source)
+        let opening = Task { await vm.open() }   // loadQueue (call 0), then pageIfNeeded holds call 1
+        await source.waitUntilPageCalled(count: 2)
+        let advancing = Task { await vm.playToEnd() }      // advance joins the held fetch, pre-queue.advance()
+        for _ in 0..<2000 {
+            if vm.advanceCalls >= 1 { break }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(vm.advanceCalls >= 1)
+        let playing = Task { await vm.play(at: 6) }        // the user taps "g" mid-fetch
+        for _ in 0..<2000 {                                // the tap's own resolve must land first
+            if vm.args.videoId == "g" { break }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(vm.args.videoId == "g")
+        source.release()
+        await opening.value
+        await advancing.value
+        await playing.value
+        #expect(vm.args.videoId == "g")                    // the user's pick survives the resumed advance
+        #expect(vm.state.isPlayable)
+    }
+
     @Test func autoSkipWalksPastUnplayableItemsAndStopsAfterThree() async {
         // `PlayerViewModel.kt:1349-1366`. Four dead items in a row: skip 1, 2, 3, then STOP on the
         // 4th with the real terminal state so the user sees something instead of a silent walk.

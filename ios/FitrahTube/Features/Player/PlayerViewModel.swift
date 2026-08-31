@@ -81,6 +81,15 @@ extension StreamState {
     }
 
     var isPlayable: Bool { resolved != nil }
+
+    /// Cubic #3 (= gstack R2): `.embed` is a successful playback surface for auto-advance purposes
+    /// even though it is deliberately NOT `isPlayable` -- it has no `AVPlayer` to preserve, is never
+    /// cached and never counts as a healthy fetch (`StreamResolver.succeed`), which is why it stays
+    /// out of `resolved`/`isPlayable` rather than being folded in.
+    var isEmbedRung: Bool {
+        if case .embed = self { return true }
+        return false
+    }
 }
 
 /// Android's `PlayerViewModel` resolve pipeline (`player.md` §2.2), the InnerTubeKit-backed slice
@@ -299,7 +308,14 @@ extension StreamState {
         #if DEBUG
         advanceCalls += 1
         #endif
+        // Cubic #4: `pageIfNeeded()` can suspend (its own fetch, or joining an in-flight one), and a
+        // user action landing in that window -- `play(at:)`, `retry()` -- owns the queue now. Every
+        // user action routes through `resolve()`, which bumps `generation`, so a stale advance
+        // aborts here instead of walking the queue out from under the user's pick and superseding
+        // their resolve with its own.
+        let myGeneration = generation
         await pageIfNeeded()
+        guard myGeneration == generation else { return }
         guard let next = queue.advance() else {
             // `PlayerViewModel.kt:1920-1923`: no next item and no more pages -- playback stops.
             // NOT `.idle` (reconciliation note 9): that is the pre-open value and renders as a
@@ -315,7 +331,16 @@ extension StreamState {
         // drives auto-skip and, past the cap, the terminal state the user sees.
         // `forceRefresh: false` is CF-B2-2 rule (b): land on the warmed ManifestCache entry.
         await resolve(forceRefresh: false, kind: .player, showLoading: false)
-        if state.isPlayable {
+        // `.embed` counts as a successful advance (Cubic #3): the video shows in PlayerScreen's
+        // embed branch and a direct tap would have played it -- skipping it burnt a
+        // `consecutiveSkips` slot on a playable item. Backgrounded, the same hop stops the queue
+        // instead (traced, not guessed): the state change dismantles `PlayerHostView`, whose
+        // teardown runs `BackgroundPlaybackController.detach()` (audio session released, and
+        // `NowPlayingSnapshot.make` already returns nil for `.embed` per CF-B2-9, clearing the lock
+        // screen), and the embed's WKWebView cannot autoplay without the foreground -- so playback
+        // ends silently at the embed item with the queue position preserved for the return to
+        // foreground. That is the existing background pause semantics, not a skip.
+        if state.isPlayable || state.isEmbedRung {
             consecutiveSkips = 0             // `PlayerViewModel.kt:1916`
             await prefetchUpcoming()
             await pageIfNeeded()

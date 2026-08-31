@@ -17,7 +17,7 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     // so a test that means "Shorts never resolve a neighbour" has to be able to see it.
     struct Call: Equatable { var videoId: String; var kind: RequestKind; var purpose: Purpose; var forceRefresh: Bool }
 
-    enum Outcome { case hls, progressive, failure(ExtractionError) }
+    enum Outcome { case hls, progressive, embed, failure(ExtractionError) }
 
     private let holdsUntilReleased: Bool
     private let lock = NSLock()
@@ -94,6 +94,9 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         case .progressive:
             return Resolved(stream: .progressive(url: url, label: "360p"), client: .android,
                             userAgent: "UA", resolvedAt: Date(), expiresAt: Date().addingTimeInterval(3600))
+        case .embed:
+            return Resolved(stream: .embed(videoId: videoId), client: .web,
+                            userAgent: "", resolvedAt: Date(), expiresAt: nil)
         case .failure(let error):
             throw error
         }
