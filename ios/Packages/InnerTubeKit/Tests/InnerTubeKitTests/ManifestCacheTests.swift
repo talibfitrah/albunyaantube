@@ -116,26 +116,6 @@ import Testing
         #expect(await cache.get("clampexpiry1", now: now.addingTimeInterval(121)) == nil)
     }
 
-    @Test func flushAllEmptiesCache() async {
-        let cache = await makeCache(configTTLSeconds: 100)
-        let now = Date(timeIntervalSince1970: 1000)
-        await cache.put(hlsResolved(), videoId: "abc123def45", now: now)
-
-        await cache.flushAll()
-
-        #expect(await cache.get("abc123def45", now: now) == nil)
-    }
-
-    @Test func invalidateRemovesSingleEntry() async {
-        let cache = await makeCache(configTTLSeconds: 100)
-        let now = Date(timeIntervalSince1970: 1000)
-        await cache.put(hlsResolved(), videoId: "abc123def45", now: now)
-
-        await cache.invalidate("abc123def45")
-
-        #expect(await cache.get("abc123def45", now: now) == nil)
-    }
-
     // CF-B1-11: the TTL must follow whatever the *published* config says, not the value that
     // happened to be bundled when `ManifestCache` was constructed.
     @Test func ttlFollowsThePublishedRemoteConfigNotTheBundledDefault() async {

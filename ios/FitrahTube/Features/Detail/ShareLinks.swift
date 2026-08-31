@@ -16,8 +16,6 @@ nonisolated enum ShareLinks {
     private static let maxVideoTitle = 160
 
     static func video(_ id: String) -> URL { url(for: .video(id)) }
-    static func channel(_ id: String) -> URL { url(for: .channel(id)) }
-    static func playlist(_ id: String) -> URL { url(for: .playlist(id)) }
 
     static func url(for target: Target) -> URL {
         switch target {

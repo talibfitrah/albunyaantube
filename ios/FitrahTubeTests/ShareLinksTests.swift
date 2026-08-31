@@ -9,8 +9,8 @@ struct ShareLinksTests {
         // ShareLinks.kt:8-73 -- note video maps to the path segment "watch", and the /api prefix is
         // ALWAYS present on shared links (the non-/api routes exist only for inbound).
         #expect(ShareLinks.video("abc") == URL(string: "https://app.fitrahtube.com/api/watch/abc"))
-        #expect(ShareLinks.channel("UC1") == URL(string: "https://app.fitrahtube.com/api/channel/UC1"))
-        #expect(ShareLinks.playlist("PL1") == URL(string: "https://app.fitrahtube.com/api/playlist/PL1"))
+        #expect(ShareLinks.url(for: .channel("UC1")) == URL(string: "https://app.fitrahtube.com/api/channel/UC1"))
+        #expect(ShareLinks.url(for: .playlist("PL1")) == URL(string: "https://app.fitrahtube.com/api/playlist/PL1"))
     }
 
     @Test func noShareURLEverPointsAtYouTube() {
@@ -25,7 +25,7 @@ struct ShareLinksTests {
     @Test func everyShareURLRoundTripsThroughOurOwnDeepLinkParser() {
         // RULING 74 + the backend watch page's 50 ms hop (WatchPageController.java:536-542): a link we
         // emit must be a link we accept. This is the test that catches a path-shape drift on either side.
-        for url in [ShareLinks.video("abc"), ShareLinks.channel("UC1"), ShareLinks.playlist("PL1")] {
+        for url in [ShareLinks.video("abc"), ShareLinks.url(for: .channel("UC1")), ShareLinks.url(for: .playlist("PL1"))] {
             #expect(DeepLinkParser.route(for: url) != nil, "\(url)")
         }
     }

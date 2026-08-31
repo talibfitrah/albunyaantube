@@ -52,16 +52,6 @@ public actor ManifestCache {
         }
     }
 
-    public func invalidate(_ videoId: String) {
-        entries.removeValue(forKey: videoId)
-        order.removeAll { $0 == videoId }
-    }
-
-    public func flushAll() {
-        entries.removeAll()
-        order.removeAll()
-    }
-
     private func isLive(_ resolved: Resolved) -> Bool {
         if case .hls(_, let isLive, _, _) = resolved.stream {
             return isLive

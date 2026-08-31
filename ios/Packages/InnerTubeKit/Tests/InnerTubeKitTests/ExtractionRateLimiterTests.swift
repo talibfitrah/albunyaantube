@@ -109,16 +109,6 @@ import Testing
         #expect(decision == .allowed)
     }
 
-    @Test func resetForVideoClearsPlayerBackoff() async {
-        let limiter = ExtractionRateLimiter()
-        let last = await buildConsecutivePlayerAttempts(5, videoId: "abc123def45", limiter: limiter)
-
-        await limiter.resetForVideo("abc123def45")
-
-        let decision = await limiter.check("abc123def45", kind: .player, now: last + .seconds(31))
-        #expect(decision == .allowed)
-    }
-
     @Test func autoRecoveryReservedBudgetAllowedTwiceThenBlockedAfterPlayerExhausted() async {
         let limiter = ExtractionRateLimiter()
         _ = await limiter.check("abc123def45", kind: .player, now: .seconds(0))

@@ -42,7 +42,7 @@ public actor ExtractionRateLimiter {
         /// not starve manual/reactive recovery).
         var attemptTimestamps: [Duration] = []
         /// Consecutive `.player` attempts, for exponential backoff. Only
-        /// `.player` increments this; `onSuccess`/`resetForVideo` clear it.
+        /// `.player` increments this; `onSuccess` clears it.
         var consecutivePlayerAttempts = 0
         var lastPlayerAttemptTime: Duration?
         var lastAutoRecoveryAttemptTime: Duration?
@@ -114,11 +114,6 @@ public actor ExtractionRateLimiter {
     /// Clears the `.player` exponential backoff (does not affect attempt
     /// counts — those are already recorded by `check`).
     public func onSuccess(_ videoId: String) {
-        records[videoId]?.consecutivePlayerAttempts = 0
-    }
-
-    /// Clears the `.player` exponential backoff for a video.
-    public func resetForVideo(_ videoId: String) {
         records[videoId]?.consecutivePlayerAttempts = 0
     }
 

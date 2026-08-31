@@ -13,19 +13,11 @@ public struct InnerTube: Sendable {
     /// until it does, `current()` returns the bundled default forever — by design, but load-bearing.
     public let remoteConfig: RemoteConfigStore
 
-    private let sessionStore: SessionStore
     /// ONE instance for the app's lifetime. `SystemClock` measures elapsed time from a baseline
     /// captured at its own init, so a second one built app-side would hand `ExtractionRateLimiter`
     /// a fresh zero and reset every interval it enforces -- public so consumers reuse THIS clock
     /// instead of making that mistake.
     public let clock: SystemClock
-
-    /// Remaining backoff from the persisted, restart-surviving bot-check cooldown, if one is active
-    /// (§6.3). Passthrough to `SessionStore` so the player can show "try again in X"; the resolver
-    /// also self-gates on it internally, so a caller need not check this before resolving.
-    public func cooldownRemaining() async -> Duration? {
-        await sessionStore.cooldownRemaining(now: clock.wallNow)
-    }
 
     public init(
         keyValueStore: KeyValueStore,
@@ -40,7 +32,6 @@ public struct InnerTube: Sendable {
             transport: URLSessionTransport(), keyValueStore: keyValueStore, url: remoteConfigURL)
 
         let sessionStore = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: keyValueStore)
-        self.sessionStore = sessionStore
         let manifestCache = ManifestCache(remoteConfig: remoteConfig)
 
         resolver = StreamResolver(

@@ -211,6 +211,7 @@ struct PlayerViewModelQueueTests {
             if vm.advanceCalls >= 1 { break }
             try? await Task.sleep(for: .milliseconds(1))
         }
+        #expect(vm.advanceCalls >= 1)            // a timed-out poll must fail loudly, not test nothing
         source.release()
         await opening.value
         await advancing.value

@@ -29,13 +29,12 @@ public enum FitrahAPIClient {
     public static func make(
         baseURL: URL,
         deviceId: DeviceId,
-        transport: any ClientTransport = defaultTransport(),
-        extraMiddlewares: [any ClientMiddleware] = []
+        transport: any ClientTransport = defaultTransport()
     ) -> Client {
         Client(
             serverURL: baseURL.appending(path: "api"),
             transport: transport,
-            middlewares: [DeviceIdMiddleware(deviceId: deviceId)] + extraMiddlewares
+            middlewares: [DeviceIdMiddleware(deviceId: deviceId)]
         )
     }
 }

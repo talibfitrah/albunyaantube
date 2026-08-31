@@ -18,7 +18,9 @@ PLURAL_CATEGORIES = ("zero", "one", "two", "few", "many", "other")
 REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands", "share_app_promo",
           # Orphaned on iOS (Phase 2 gate, 2026-08-30): no Swift reader. `videoAccessibilityLabel` and
           # `CountFormat`-style formatting replaced them; drop rather than ship dead catalog entries.
-          "a11y_video_item", "a11y_playlist_video", "video_views_format", "playlist_metadata_duration_format"}
+          "a11y_video_item", "a11y_playlist_video", "video_views_format", "playlist_metadata_duration_format",
+          # Android self-updater island — impossible on iOS (App Store policy), Phase 2 gate 2026-08-31.
+          "settings_check_for_updates", "settings_available_updates"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -33,7 +35,9 @@ SUBSTITUTION_PLURALS = {"video_views", "live_watching_count"}
 # DownloadsFragment.kt, PlayerFragment.kt, home_section_error.xml and error_state.xml -- verified
 # by grepping android/app/src/main/java + res/layout* for R.string./@string/ references. A blanket
 # prefix would silently drop live, phase-1-needed strings.
-DEAD_PREFIXES = ("filter_length_", "filter_date_", "filter_sort_", "list_", "locale_settings_", "error_")
+DEAD_PREFIXES = ("filter_length_", "filter_date_", "filter_sort_", "list_", "locale_settings_", "error_",
+                 # Android self-updater island — impossible on iOS (App Store policy), Phase 2 gate 2026-08-31.
+                 "update_", "available_versions_")
 DEAD_PREFIX_EXCEPTIONS = {
     "list_error_title", "list_error_description",
     "error_title", "error_unknown", "error_state_generic_headline",

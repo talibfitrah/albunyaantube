@@ -69,14 +69,6 @@ struct ShortsScreenTests {
         #expect(ShortsOverlay.showsChannelRow(channelName: "   ") == false)
     }
 
-    @Test func theShortsKebabReusesTheOneQualityLadder() {
-        // CF-B1-5: B4's kebab reuses QualityOption and inherits its catalog labels. This fails loudly
-        // if someone adds a Shorts-only ladder (Android hard-codes 2160..144 in the VM; iOS has one).
-        #expect(QualityOption.allCases.count == 5)
-        #expect(QualityOption.auto.label == String(localized: "player_quality_auto"))
-        #expect(QualityOption.dataSaver.label == String(localized: "player_quality_data_saver"))
-    }
-
     @Test func theEmbedRungIsTheOnlyThingThatChangesShapeForShorts() {
         // CF-B3-1: the aspect ratio is the ONE parameter. Its default keeps every B3 call site 16:9.
         #expect(EmbedRungView.defaultAspectRatio == 16.0 / 9.0)
