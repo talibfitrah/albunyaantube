@@ -136,3 +136,30 @@ B5 shipped 2026-08-29 (e64ef606..796325a6 + the final fix round). Open items unl
 - **CF-B5-i** ~~The intermediate update pass between `swapArgs` and the landed resolve restarted the outgoing video, so the next one started off-zero (a very short member could double-advance).~~ **FIXED in the B5 final fix round (`[FIX]: B5 final-review fixes, CF-B5 section`)**: the host keys on `PlayerViewModel.hostVideoId` (`resolvedVideoId ?? args.videoId`), which only moves when a resolve lands; the periodic observer's guard stays on `args`.
 - **CF-B5-j** `pageIfNeeded`/`advance` race: an item ending during an in-flight page reads an empty `upcoming` as exhausted → premature `.queueEnded`. → Plan C / holder plan
 - **CF-B5-k** The advance's item swap depends on a SwiftUI update pass running in the background (the plan overstated "no SwiftUI teardown"); C2's synchronous-swap pattern (`applyPolicyAction`) is the remedy if the device confirms it never runs. → device pass, then holder plan
+
+---
+
+## From Plan C (channel/playlist detail, report, share) — 2026-08-30
+
+Plan C shipped 2026-08-30 (`dc592322..23b3c325`, final whole-plan review → SHIP; Cubic two consecutive clean rounds). The Plan A "For Plan C" items at the top of this file are superseded: CF-C1 modelled (Shorts/Playlists lockups + the playlists-tab continuation, captured live), CF-C2 decided (no shared-cooldown escalation; browse gets its own `DegradedLatch`), CF-C3 wired (`LiveBrowseSource` degraded fallback). Open items live in **two series**: the plan file's own CF-C-1..11 ("Carry-forward for Phase 3 / the Phase-2 gate" section of `2026-08-27-ios-phase2c-detail-report-share.md`) and the ledger's CF-CL-n (the ledger wrote them as "CF-C-n" too; read ledger ids as CF-CL-n — CL-14/CL-16 were never defined, a numbering gap, nothing lost).
+
+**Plan-series status:** CF-C-1, C-2, C-4, C-5, C-6, C-7, C-8, C-10, C-11 OPEN as written in the plan file. CF-C-3 CLOSED (VLUU capped at 200 rows live; `07ce6f16` swapped `channelVideos` to the Videos-tab `richGridRenderer` continuation; `ios-app-plan.md` and spec §9 amended 2026-08-30). CF-C-9 is a standing property (deep-linked routes carry all-nil metadata; every screen must render with the optionals nil), not a task.
+
+**Ledger-series OPEN:**
+- **CF-CL-2** `BrowseClient`'s rotate-on-stale path (rotate only when an attached token was bot-checked anyway) never fired across ~14 live launches — no live evidence it is reachable. If it stays cold, deleting it is the ponytail move; keep the two pinning tests until then.
+- **CF-CL-13** UPCOMING badge live check NOT RUN — no upcoming item existed in the approved catalog during Task 6. The mapping is pinned by a fixture-mutation test only.
+- **CF-CL-17** The channel detail header pins (no collapse) on compact height: measured y=452/874 on iPhone portrait, 4 content rows visible — usable per ruling F. The in-header search field is the cheapest future space reclaim if this ever tightens.
+
+**BACKEND items surfaced by Plan C:**
+1. `Channel.java:72` / `Playlist.java:69` serialize `com.google.cloud.Timestamp` **objects** (`{seconds,nanos}`) where `api-specification.yaml:3062/3163` declares `date-time` strings — every generated-client decode of a prod header silently failed (masked by `try?`). iOS ships hand-written `PublicHeaders` (`0bfb4cea`) with a pin test that turns green the day the backend conforms; fix the serializer + spec, regen, then delete `PublicHeaders`.
+2. The spec lacks `/api/v1/index/streams` entirely and `/v1/reports` omits `parentType`/`parentId`/`contentSubType` (bound by `ContentReportController.java:165-171`) → CF-C-7's hand-written clients stay until the spec catches up.
+3. Report reasons cap is 10 server-side vs an 11-member enum (`ContentReportController.java:161`) → CF-C-6.
+4. Stored playlist `itemCount` can wildly disagree with the live playlist (1,535 stored vs 200 actual on the acceptance playlist). Stored counts are estimates; no client may use them for pagination arithmetic.
+
+**Deferred (needs live evidence):** `itemsArray` parses only `appendContinuationItemsAction`; a `reloadContinuationItemsCommand` continuation would yield an empty page and end pagination early (Cubic P3). Not the captured live shape on any surface Plan C pages; add the case the day a capture shows it.
+
+**MINOR:** `IndexClient` pushes `uploaderName: nil` for Videos-tab rows (richGrid rows carry no channel name; screens read `header.name` so nothing user-visible today). Tracking params remain in the pre-existing `browse-playlist` / `browse-channel-live` / `player-ok-hls` / `player-live` fixtures (visitorData and client IPs are already synthetic/redacted).
+
+**Live-ops note:** every `C_LIVE=1` acceptance run files ONE real report into the production admin queue, description "iOS Plan C acceptance test — safe to dismiss". Two exist from 2026-08-30.
+
+**USER-BLOCKED (Plan C additions to the standing list):** ar/nl translations for the four `report_*` keys; the merge to `main` that makes `ios-remote-config.json` live (CF-C-1's checklist item: confirm the raw URL returns 200 after the merge); device acceptance for the detail screens rides the existing B2/B3/B4 signing blocker.
