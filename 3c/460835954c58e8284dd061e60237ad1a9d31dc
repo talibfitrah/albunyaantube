@@ -1,0 +1,22 @@
+backend/src/test/java/com/albunyaan/tube/service/AuthServiceTest.java
+  s_66ddb7c44de816::t_01d6ed1b8b40cd 643-645
+  s_66ddb7c44de816::t_0e35036af3ea6f 596-600
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_66ddb7c44de816::t_305ca1da6a89db 908-913
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3c460835954c58e8284dd061e60237ad1a9d31dc",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
