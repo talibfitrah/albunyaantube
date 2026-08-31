@@ -183,6 +183,13 @@ public actor RemoteConfigStore {
             config.resolverOrder
                 .filter { RemoteConfig.knownResolverStrategies.contains($0) && seen.insert($0).inserted }
                 .prefix(8))
+        // CF-G-13: an order that sanitizes to EMPTY (all-unknown, or literally []) would persist as
+        // fetched AND lastGood, so `current()` never reaches the bundled default and the resolver
+        // walks zero rungs -> allRungsFailed for every video, surviving relaunch. One operator typo
+        // must not brick playback: fall back to the bundled default's order.
+        if config.resolverOrder.isEmpty {
+            config.resolverOrder = RemoteConfig.bundledDefault.resolverOrder
+        }
         // Floor at 0: "0 = no cache" is a legitimate published choice; a negative value back-dates
         // every entry's expiry in `ManifestCache.put`, silently disabling the cache.
         config.manifestCacheSeconds = max(0, config.manifestCacheSeconds)

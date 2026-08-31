@@ -508,10 +508,13 @@ import Testing
 
     /// Both rungs see the same LOGIN_REQUIRED, so a single walk used to call `recordBotCheck()`
     /// once PER RUNG: one video escalated trip 1 -> trip 2 = a 4 h app-wide persisted cooldown
-    /// in seconds. A walk is one incident; it records one trip (the 1 h tier).
+    /// in seconds. A walk is one incident; it records one trip (the 1 h tier) — and only because
+    /// the walk FAILS overall (owner ruling 2026-09-01: the trip is recorded at walk end, never
+    /// mid-walk).
     @Test func aTwoRungWalkAgainstABotCheckedTransportRecordsExactlyOneTrip() async throws {
+        let clock = ManualClock()
         let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
-        let (resolver, session) = makeResolver(transport: transport)
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
         await session.setVisitorData("v1", for: .visionos)   // skip the bootstrap path: this is a
         await session.setVisitorData("v1", for: .android)    // genuine bot check on both rungs
 
@@ -520,6 +523,32 @@ import Testing
         }
         #expect(transport.callCount == 4)   // per rung: POST + rotate + retry POST
         #expect(await session.loadCooldown().tripCount == 1)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) != nil)  // the failed walk arms it
+    }
+
+    // MARK: - d8b) a walk that ends in working playback leaves no armed trip (owner ruling 2026-09-01)
+
+    /// The known live pattern: VISIONOS bot-checked, ANDROID itag-18 plays fine. Recording the trip
+    /// mid-walk armed a 1 h cooldown despite healthy playback, blocking the next hour of resolves.
+    /// Owner ruling 2026-09-01 mirrors Android's player lane: a walk that ends in working playback
+    /// records nothing.
+    @Test func aBotCheckedRungFollowedByAWorkingRungArmsNoCooldown() async throws {
+        let clock = ManualClock()
+        let transport = RecordingTransport([
+            try fixtureResponse("player-botcheck"), try fixtureResponse("player-botcheck"),
+            androidItag18Response,
+        ])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.setVisitorData("v1", for: .visionos)   // genuine bot check, not a bootstrap
+        await session.setVisitorData("v1", for: .android)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = resolved.stream else {
+            Issue.record("expected .progressive, got \(resolved.stream)"); return
+        }
+        #expect(transport.callCount == 3)   // rung 1: POST + rotate + retry POST; rung 2: one POST
+        #expect(await session.loadCooldown().tripCount == 0)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)
     }
 
     // MARK: - d9) an HTTP-level 429/403 routes into the bot-check path (Cubic r3 #4)

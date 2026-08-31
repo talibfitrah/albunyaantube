@@ -100,6 +100,25 @@ import Testing
         #expect(config.resolverOrder == ["visionosHLS", "embed"])
     }
 
+    /// CF-G-13: a published order that sanitizes to EMPTY (all-unknown, or literally `[]`) must not
+    /// stick as fetched/lastGood — `current()` would then never reach the bundled default, and
+    /// `performResolve` walks zero rungs -> `allRungsFailed` for every video, surviving relaunch.
+    /// One operator typo must never brick playback: an empty sanitized order falls back to the
+    /// bundled default's order.
+    @Test func refreshWithAnAllUnknownResolverOrderFallsBackToTheBundledDefaultOrder() async {
+        let body = Data(
+            """
+            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["typo"],"manifestCacheSeconds":3600,"clients":{}}
+            """.utf8)
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: body))
+        ])
+        let store = RemoteConfigStore(
+            transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
+        await store.refresh()
+        #expect(await store.current().resolverOrder == RemoteConfig.bundledDefault.resolverOrder)
+    }
+
     @Test func oversizedFetchIsRejectedKeepingLastGood() async {
         let goodBody = Data(
             """

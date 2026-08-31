@@ -139,7 +139,7 @@ public actor StreamResolver {
 
         let config = await remoteConfigStore.current()
         var lastError: Error = ExtractionError.allRungsFailed
-        var recordedBotCheck = false
+        var sawBotCheck = false
 
         for strategy in config.resolverOrder {
             let outcome: RungResult
@@ -150,18 +150,17 @@ public actor StreamResolver {
                     try await self.runRung(strategy, videoId: videoId, config: config)
                 }
             } catch let error as ExtractionError where error.terminal {
+                if sawBotCheck { await sessionStore.recordBotCheck() }
                 throw error
             } catch is CancellationError {
                 // A superseded/cancelled job stops here; it must not walk on down the ladder.
+                // No trip either: the superseding walk sees the bot check itself if it's real.
                 throw CancellationError()
             } catch {
-                // Review F2a: recorded HERE, once per walk, not per rung. Both rungs see the same
-                // LOGIN_REQUIRED, so recording inside the rung escalated trip 1 -> trip 2 (a 4 h
-                // app-wide persisted cooldown) off a single video in seconds. One walk = one incident.
-                if case ExtractionError.botCheck = error, !recordedBotCheck {
-                    recordedBotCheck = true
-                    await sessionStore.recordBotCheck()
-                }
+                // Owner ruling 2026-09-01: successful walk ends clean — mirrors Android's
+                // player-lane never-trip. A bot check only NOTES here; the (per-walk single,
+                // review F2a) trip is recorded at walk end, and only when the walk fails overall.
+                if case ExtractionError.botCheck = error { sawBotCheck = true }
                 lastError = error
                 continue
             }
@@ -172,6 +171,7 @@ public actor StreamResolver {
                 continue
             }
         }
+        if sawBotCheck { await sessionStore.recordBotCheck() }
         throw lastError
     }
 
