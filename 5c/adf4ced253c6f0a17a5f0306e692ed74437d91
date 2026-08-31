@@ -1,0 +1,60 @@
+ios/FitrahTube/Features/Detail/ChannelDetailViewModel.swift
+  s_66ddb7c44de816::t_6ee8e23150c079 147-149
+  s_66ddb7c44de816::t_016043f5bc7678 201
+  s_66ddb7c44de816::t_25dee09c7ecd13 216
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/RemoteConfigTests.swift
+  s_66ddb7c44de816::t_662fb669070635 66-87
+ios/FitrahTubeTests/ReportPayloadTests.swift
+  s_66ddb7c44de816::t_e0190521157e7b 114-123
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/ExtractionRateLimiterTests.swift
+  s_66ddb7c44de816::t_499ffd5d73df38 26-28,31,33,35
+  s_66ddb7c44de816::t_7c7473f3e7c8c0 23-25,29-30,32,34,36-37
+ios/FitrahTube/Features/Report/ReportPayload.swift
+  s_66ddb7c44de816::t_fbb1b89aeecf96 97-100,102
+  s_66ddb7c44de816::t_7ae3441c0183cd 96,101,103
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/AtomFeedFetcher.swift
+  s_66ddb7c44de816::t_cc018f31180fd6 108-113,115-119
+  s_66ddb7c44de816::t_40d4691acf2f74 114,120-121
+  s_66ddb7c44de816::t_96cd62e60bb219 180-182
+ios/FitrahTube/DesignSystem/Components.swift
+  s_66ddb7c44de816::t_b20fdfa3555668 117-122
+ios/FitrahTube/Features/Player/PlayerToolbar.swift
+  s_66ddb7c44de816::t_d475f96df8de74 38-41
+ios/FitrahTube/Features/Player/PlaybackRecovery.swift
+  s_66ddb7c44de816::t_0063ee9f70245e 155-161
+ios/FitrahTubeTests/ChannelDetailViewModelTests.swift
+  s_66ddb7c44de816::t_1da1657d1289c4 184-206
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/AtomFeedFetcherTests.swift
+  s_66ddb7c44de816::t_4d568b95106783 25-29,33-43
+ios/FitrahTube/Features/Detail/PlaylistDetailViewModel.swift
+  s_66ddb7c44de816::t_288c7abd82027d 116-118
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/ExtractionRateLimiter.swift
+  s_66ddb7c44de816::t_4fddaf09409992 73-79,81
+  s_66ddb7c44de816::t_c409df16f5b870 64-66
+  s_66ddb7c44de816::t_ecd267fdc46fd5 72,80,82-88
+ios/FitrahTube/Features/Report/ReportSheet.swift
+  s_66ddb7c44de816::t_0bc9e8475d5e0b 88
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/RemoteConfig.swift
+  s_66ddb7c44de816::t_d5f48f4e193cce 178-188
+ios/FitrahTubeTests/PlaylistDetailViewModelTests.swift
+  s_66ddb7c44de816::t_1813dca5409b7b 293-296
+  s_66ddb7c44de816::t_1142b6f2e1c358 70-88
+ios/FitrahTubeTests/PlaybackRecoveryTests.swift
+  s_66ddb7c44de816::t_7eca08745632a5 135-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5cadf4ced253c6f0a17a5f0306e692ed74437d91",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
