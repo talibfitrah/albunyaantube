@@ -139,6 +139,7 @@ public actor StreamResolver {
 
         let config = await remoteConfigStore.current()
         var lastError: Error = ExtractionError.allRungsFailed
+        var recordedBotCheck = false
 
         for strategy in config.resolverOrder {
             let outcome: RungResult
@@ -154,6 +155,13 @@ public actor StreamResolver {
                 // A superseded/cancelled job stops here; it must not walk on down the ladder.
                 throw CancellationError()
             } catch {
+                // Review F2a: recorded HERE, once per walk, not per rung. Both rungs see the same
+                // LOGIN_REQUIRED, so recording inside the rung escalated trip 1 -> trip 2 (a 4 h
+                // app-wide persisted cooldown) off a single video in seconds. One walk = one incident.
+                if case ExtractionError.botCheck = error, !recordedBotCheck {
+                    recordedBotCheck = true
+                    await sessionStore.recordBotCheck()
+                }
                 lastError = error
                 continue
             }
@@ -206,7 +214,20 @@ public actor StreamResolver {
         let visitorData = await sessionStore.visitorData(for: family)
         let request = requestBuilder.build(
             videoId: videoId, family: family, context: context, visitorData: visitorData, locale: locale)
-        let body = try await sendPlayerPost(request)
+        let body: Data
+        do {
+            body = try await sendPlayerPost(request)
+        } catch ExtractionError.botCheck {
+            // Cubic r3 #4: an HTTP-level 429/403 block. Same handling as a parsed LOGIN_REQUIRED
+            // bot check below, minus the visitor bootstrap (a non-200 body carries no
+            // `responseContext.visitorData` to adopt): rotate once and retry the rung, else
+            // surface `.botCheck` so `performResolve` records the (per-walk deduped) cooldown trip.
+            if canRotate, await sessionStore.rotate(family) {
+                return try await runPlayerRung(
+                    family: family, videoId: videoId, config: config, expectHLS: expectHLS, canRotate: false)
+            }
+            throw ExtractionError.botCheck
+        }
 
         let parsed = try responseParser.parse(body)
 
@@ -255,7 +276,8 @@ public actor StreamResolver {
                 return try await runPlayerRung(
                     family: family, videoId: videoId, config: config, expectHLS: expectHLS, canRotate: false)
             }
-            await sessionStore.recordBotCheck()
+            // No `recordBotCheck()` here: `performResolve` records it, deduped to one trip per
+            // ladder walk (review F2a) -- both rungs tripping is one incident, not two.
             throw ExtractionError.botCheck
         case .liveOffline(let startsAt):
             throw ExtractionError.liveOffline(startsAt: startsAt)
@@ -281,7 +303,15 @@ public actor StreamResolver {
         if wait > .zero { try await Task.sleep(for: wait) }
 
         do {
-            return try await transport.send(request).body
+            let response = try await transport.send(request)
+            // Cubic r3 #4: a raw 429/403 (non-JSON body) IS a bot block -- surfaced as a Wire-decode
+            // failure it read as a generic rung failure, so the ladder walked on and rotation /
+            // cooldown never engaged. Other non-200s are retryable transport failures, never terminal.
+            switch response.status {
+            case 200..<300: return response.body
+            case 429, 403: throw ExtractionError.botCheck
+            default: throw ExtractionError.transport("HTTP \(response.status)")
+            }
         } catch let error as URLError where error.code == .cancelled {
             // Cubic #1: `URLSessionTransport` does no error mapping, so a request torn down by task
             // cancellation surfaces `URLError(.cancelled)`, not `CancellationError`. Normalized HERE,

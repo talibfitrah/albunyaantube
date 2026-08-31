@@ -29,6 +29,11 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     /// B5: ids the `.prefetch` lane refuses with `.cooldown` while the `.player` lane still serves
     /// them -- CF-B2-2 rule (a), "a refusal is skipped silently and never blocks the advance".
     private var _prefetchRefusals: Set<String> = []
+    /// Review F1: per-id holds, independent of the global `holdsUntilReleased` gate -- a race test
+    /// needs to hold TWO specific resolves open (the advance's and the tap's) and release them in
+    /// a scripted order, which one global permit pool cannot express.
+    private var _heldIds: Set<String> = []
+    private var _idPermits: [String: Int] = [:]
 
     var outcome: Outcome {
         get { lock.withLock { _outcome } }
@@ -51,6 +56,12 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
 
     /// Lets one held resolve proceed (no-op when `holdsUntilReleased` is false).
     func release() { lock.withLock { _permits += 1 } }
+
+    /// Every later resolve of `id` suspends until a matching `release(id:)`.
+    func hold(_ id: String) { lock.withLock { _ = _heldIds.insert(id) } }
+
+    /// Lets one held resolve of `id` proceed.
+    func release(id: String) { lock.withLock { _idPermits[id, default: 0] += 1 } }
 
     /// Suspends until `calls.count >= count`, or fails after ~2 s. M3 (fix round 1): an unbounded
     /// wait turns "the call never came" into a hang that only the per-test limit ends, with no
@@ -81,6 +92,12 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         if holdsUntilReleased {
             while lock.withLock({ () -> Bool in
                 if _permits > 0 { _permits -= 1; return false }
+                return true
+            }) { try? await Task.sleep(for: .milliseconds(1)) }
+        }
+        if lock.withLock({ _heldIds.contains(videoId) }) {
+            while lock.withLock({ () -> Bool in
+                if _idPermits[videoId, default: 0] > 0 { _idPermits[videoId]! -= 1; return false }
                 return true
             }) { try? await Task.sleep(for: .milliseconds(1)) }
         }

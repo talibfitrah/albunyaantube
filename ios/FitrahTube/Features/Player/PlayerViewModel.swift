@@ -330,7 +330,13 @@ extension StreamState {
         // auto-advance. NOT `silent:` -- a failed advance MUST surface, because that is what
         // drives auto-skip and, past the cap, the terminal state the user sees.
         // `forceRefresh: false` is CF-B2-2 rule (b): land on the warmed ManifestCache entry.
-        await resolve(forceRefresh: false, kind: .player, showLoading: false)
+        let stillCurrent = await resolve(forceRefresh: false, kind: .player, showLoading: false)
+        // Review F1: the same supersession check as after `pageIfNeeded()` above, for the OTHER
+        // suspension. A `play(at:)` landing during THIS resolve owns the queue now -- it cancelled
+        // this resolve and set `.loading`; without this guard the resumed advance read that
+        // `.loading` as a failed advance, burned a skip walking `queue.advance()` off the user's
+        // pick, and its recursive resolve superseded the tap's.
+        guard stillCurrent else { return }
         // `.embed` counts as a successful advance (Cubic #3): the video shows in PlayerScreen's
         // embed branch and a direct tap would have played it -- skipping it burnt a
         // `consecutiveSkips` slot on a playable item. Backgrounded, the same hop stops the queue
@@ -496,8 +502,13 @@ extension StreamState {
                       resetBudget: false, showLoading: false, silent: true)
     }
 
+    /// Returns whether this resolve is still the current one when it finishes (review F1): `false`
+    /// means a later user action bumped `generation` while it was in flight, so the caller's
+    /// context -- queue position included -- belongs to that action now. Only `advance()` acts on
+    /// it; every other caller is either itself the superseder or has nothing left to do.
+    @discardableResult
     private func resolve(forceRefresh: Bool, kind: RequestKind, resetBudget: Bool = true,
-                         showLoading: Bool = true, silent: Bool = false) async {
+                         showLoading: Bool = true, silent: Bool = false) async -> Bool {
         generation += 1
         let myGeneration = generation
         resolveTask?.cancel()
@@ -511,6 +522,7 @@ extension StreamState {
         }
         resolveTask = task
         await task.value
+        return myGeneration == generation
     }
 
     private func performResolve(generation: Int, forceRefresh: Bool, kind: RequestKind, silent: Bool) async {

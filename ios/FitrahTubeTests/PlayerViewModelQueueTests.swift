@@ -144,6 +144,31 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state.isPlayable)
     }
 
+    /// Review F1: `advance()` re-checks supersession after `pageIfNeeded()` but not after its OWN
+    /// resolve. Traced: advance's resolve for "b" in flight -> the user taps "d" (`play(at:)`
+    /// cancels it, sets `.loading`, bumps generation) -> advance resumes, sees `.loading` (not
+    /// playable/embed), enters the skip recursion, `queue.advance()` moves off the user's pick and
+    /// its own resolve supersedes the tap.
+    @Test(.timeLimit(.minutes(1))) func aUserTapDuringTheAdvancesOwnResolveWins() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"),
+                                       queue: ["a", "b", "c", "d", "e"])
+        await vm.open()
+        resolver.hold("b")                                 // the advance's own resolve
+        resolver.hold("d")                                 // the tap's resolve: held so the resumed
+                                                           // advance sees `.loading` -- the traced window
+        let advancing = Task { await vm.playToEnd() }      // -> b, resolve held
+        await resolver.waitUntilCalled(count: 4)           // open: a(.player), b/c(.prefetch); then b(.player)
+        let playing = Task { await vm.play(at: 3) }        // the user taps "d" mid-resolve
+        await resolver.waitUntilCalled(count: 5)           // the tap's resolve for d is out (held)
+        resolver.release(id: "b")                          // the advance resumes into the race window
+        await advancing.value
+        #expect(vm.args.videoId == "d")                    // the tap's pick wins; no skip burned onto "e"
+        resolver.release(id: "d")
+        await playing.value
+        #expect(vm.args.videoId == "d")
+        #expect(vm.state.isPlayable)
+    }
+
     @Test func autoSkipWalksPastUnplayableItemsAndStopsAfterThree() async {
         // `PlayerViewModel.kt:1349-1366`. Four dead items in a row: skip 1, 2, 3, then STOP on the
         // 4th with the real terminal state so the user sees something instead of a silent walk.

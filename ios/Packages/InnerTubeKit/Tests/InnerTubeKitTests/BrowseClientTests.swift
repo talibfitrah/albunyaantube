@@ -185,6 +185,21 @@ import Testing
         }
     }
 
+    /// Cubic r3 #5: a non-JSON 429/403 body used to fail `JSONSerialization` -> `.malformed`, so
+    /// the degraded fallback (keyed on `.botCheck`) never engaged. Live interstitials arrive as
+    /// 200 + `alerts[]`; a non-200 browse block is unobserved live -- this guard is defensive.
+    @Test func http429ResponseThrowsBrowseErrorBotCheck() async throws {
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true },
+                  response: HTTPResponse(status: 429, headers: [:], body: Data("Too Many Requests".utf8)))
+        ])
+        let client = makeClient(transport)
+
+        await #expect(throws: BrowseError.botCheck) {
+            _ = try await client.channelVideos(Self.channelId, continuation: nil)
+        }
+    }
+
     // MARK: - e) channelHeader parses id/name/subscriberText/avatar/banner
 
     @Test func channelHeaderParsesCoreFields() async throws {

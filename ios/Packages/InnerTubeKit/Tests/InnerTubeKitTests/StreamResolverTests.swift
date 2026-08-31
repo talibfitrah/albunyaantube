@@ -504,6 +504,50 @@ import Testing
         #expect(transport.callCount == 3)
     }
 
+    // MARK: - d8) one resolve walk records at most ONE bot-check trip (review F2a)
+
+    /// Both rungs see the same LOGIN_REQUIRED, so a single walk used to call `recordBotCheck()`
+    /// once PER RUNG: one video escalated trip 1 -> trip 2 = a 4 h app-wide persisted cooldown
+    /// in seconds. A walk is one incident; it records one trip (the 1 h tier).
+    @Test func aTwoRungWalkAgainstABotCheckedTransportRecordsExactlyOneTrip() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
+        let (resolver, session) = makeResolver(transport: transport)
+        await session.setVisitorData("v1", for: .visionos)   // skip the bootstrap path: this is a
+        await session.setVisitorData("v1", for: .android)    // genuine bot check on both rungs
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 4)   // per rung: POST + rotate + retry POST
+        #expect(await session.loadCooldown().tripCount == 1)
+    }
+
+    // MARK: - d9) an HTTP-level 429/403 routes into the bot-check path (Cubic r3 #4)
+
+    /// `sendPlayerPost` used to ignore HTTP status: a raw 429 body failed Wire decode -> generic
+    /// rung failure -> the ladder walked on and rotation/cooldown never engaged. A 429/403 IS a
+    /// bot block: same handling as a parsed LOGIN_REQUIRED (rotate once, then ONE recorded trip).
+    @Test func http429RoutesIntoTheBotCheckPathNotAGenericRungFailure() async throws {
+        let transport = RecordingTransport(
+            [HTTPResponse(status: 429, headers: [:], body: Data("Too Many Requests".utf8))])
+        let (resolver, session) = makeResolver(transport: transport)
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(await session.loadCooldown().tripCount == 1)
+    }
+
+    @Test func otherNon200IsARetryableTransportErrorNotABotTrip() async throws {
+        let transport = RecordingTransport([HTTPResponse(status: 503, headers: [:], body: Data())])
+        let (resolver, session) = makeResolver(transport: transport)
+
+        await expectThrows(.transport("HTTP 503")) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
     // MARK: - e) two concurrent resolves for the same id issue ONE player POST
 
     @Test func concurrentResolvesShareOnePost() async throws {

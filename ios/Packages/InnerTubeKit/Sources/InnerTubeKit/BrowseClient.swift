@@ -240,6 +240,16 @@ public actor BrowseClient {
             browseId: browseId, params: params, continuation: continuation,
             context: context, visitorData: visitorData, locale: locale)
         let response = try await transport.send(request)
+        // Cubic r3 #5 (defensive): an HTTP-level browse block. Unobserved live -- real
+        // interstitials arrive as 200 + `alerts[]` (see `detectBotCheck`) -- but a raw 429/403
+        // body is not JSON, so without this it surfaced as `.malformed` and the degraded fallback
+        // (keyed on `.botCheck`) never engaged. Other non-200s stay `.malformed` (`BrowseError`
+        // has no transport case; either way the caller retries/degrades, never terminal).
+        switch response.status {
+        case 200..<300: break
+        case 429, 403: throw BrowseError.botCheck
+        default: throw BrowseError.malformed
+        }
         // Adopt `responseContext.visitorData` from EVERY response that carries one — including a
         // bot-check interstitial, which is the bootstrap trip (Plan A: the first tokenless call is
         // bot-checked and THAT response carries the token the next call succeeds with). This runs
