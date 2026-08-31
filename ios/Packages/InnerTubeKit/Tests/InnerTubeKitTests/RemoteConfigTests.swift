@@ -63,6 +63,28 @@ import Testing
         #expect(await store.current().resolverOrder == ["visionosHLS", "androidItag18", "embed"])
     }
 
+    @Test func refreshDedupesAndCapsResolverOrderAndClampsANegativeCacheTTL() async {
+        // Cubic #10: a published config could repeat a rung arbitrarily (each duplicate is a full
+        // extra ladder walk per resolve) and ship a negative `manifestCacheSeconds` (which back-dates
+        // every cache entry's expiry, silently disabling the manifest cache). Dedupe preserves first
+        // occurrence order, the ladder is capped at 8 rungs, and the TTL floor is 0 (0 = no cache is
+        // a legitimate published choice; negative is not).
+        let repeated = Array(repeating: "\"visionosHLS\",\"embed\"", count: 6).joined(separator: ",")
+        let body = Data(
+            """
+            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":[\(repeated)],"manifestCacheSeconds":-5,"clients":{}}
+            """.utf8)
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: body))
+        ])
+        let store = RemoteConfigStore(
+            transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
+        await store.refresh()
+        let config = await store.current()
+        #expect(config.resolverOrder == ["visionosHLS", "embed"])
+        #expect(config.manifestCacheSeconds == 0)
+    }
+
     @Test func refreshDropsUnknownResolverStrategy() async {
         let body = Data(
             """

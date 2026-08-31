@@ -175,7 +175,17 @@ public actor RemoteConfigStore {
 
     private static func sanitized(_ config: RemoteConfig) -> RemoteConfig {
         var config = config
-        config.resolverOrder = config.resolverOrder.filter { RemoteConfig.knownResolverStrategies.contains($0) }
+        // Cubic #10: dedupe (first occurrence wins -- a duplicated rung is a whole extra ladder walk
+        // per resolve) and cap the ladder at 8 rungs (unobservable today with 3 known strategies;
+        // belt for a future, larger strategy table).
+        var seen = Set<String>()
+        config.resolverOrder = Array(
+            config.resolverOrder
+                .filter { RemoteConfig.knownResolverStrategies.contains($0) && seen.insert($0).inserted }
+                .prefix(8))
+        // Floor at 0: "0 = no cache" is a legitimate published choice; a negative value back-dates
+        // every entry's expiry in `ManifestCache.put`, silently disabling the cache.
+        config.manifestCacheSeconds = max(0, config.manifestCacheSeconds)
         // Bad remote data must drop-and-continue (same pattern as `resolverOrder` above), not crash
         // `PlayerRequestBuilder.build`'s family/context match — a renamed clientName just loses that
         // rung (`StreamResolver`'s `guard let context = config.clients[…]` already yields `.advance`).

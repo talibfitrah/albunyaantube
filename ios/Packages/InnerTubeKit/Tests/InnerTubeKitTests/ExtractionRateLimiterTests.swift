@@ -20,6 +20,21 @@ import Testing
         return now
     }
 
+    @Test func recordsWhoseWindowsAllExpiredArePrunedFromTheLedger() async {
+        // Cubic #9: the per-record timestamp arrays were pruned but the `records` dict itself never
+        // was, so a long session accumulated one entry per video ever attempted. An entry whose
+        // windows have all expired and whose player backoff was cleared (`onSuccess`) carries no
+        // live state and must be dropped on the same pruning pass. A record still holding a
+        // consecutive-failure backoff counter survives -- that counter is deliberately not windowed.
+        let limiter = ExtractionRateLimiter()
+        _ = await limiter.check("aaaaaaaaaaa", kind: .player, now: .seconds(0))
+        await limiter.onSuccess("aaaaaaaaaaa")          // resolve succeeded: backoff cleared
+        _ = await limiter.check("bbbbbbbbbbb", kind: .prefetch, now: .seconds(1))
+        _ = await limiter.check("ddddddddddd", kind: .player, now: .seconds(2))   // failure: backoff stands
+        _ = await limiter.check("ccccccccccc", kind: .player, now: .seconds(600))
+        #expect(await limiter.videoRecordCount == 2)   // the fresh one + the one still backing off
+    }
+
     @Test func firstAttemptIsAllowed() async {
         let limiter = ExtractionRateLimiter()
         let decision = await limiter.check("abc123def45", kind: .player, now: .zero)

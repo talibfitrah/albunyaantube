@@ -85,7 +85,7 @@ struct ReportSheet: View {
                 selected.removeAll { $0 == reason }
                 if on { selected.append(reason) }
                 validationKey = nil
-                state = .idle
+                state = ReportState.afterReasonChange(state)
             })
         // The eleventh row goes disabled at the server's cap rather than eating its 400.
         let capped = !isOn.wrappedValue && selected.count >= ReportPayload.maxReasons

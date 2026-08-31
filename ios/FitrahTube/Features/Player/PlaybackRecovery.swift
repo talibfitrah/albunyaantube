@@ -152,6 +152,13 @@ struct StallWatchdog: Equatable {
         if bufferedEnd > lastBufferedEnd + 0.1 {
             lastBufferedEnd = bufferedEnd
             stalledSince = nil // still downloading -- re-arm instead of firing
+        } else if bufferedEnd < lastBufferedEnd - 0.1 {
+            // Cubic #11: a buffer-flushing seek regresses bufferedEnd far below the old high-water
+            // mark, and a legitimate post-seek rebuffer (growing, but still below it) could then
+            // never re-arm -- false-firing `.stall` at 6 s while visibly downloading. A regression
+            // is a flush, not a stall signal: re-base the mark so growth re-arms again.
+            lastBufferedEnd = bufferedEnd
+            stalledSince = nil
         }
         let since = stalledSince ?? now
         stalledSince = since

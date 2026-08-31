@@ -113,7 +113,9 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
                 items = .loaded(items: page.items, continuation: page.nextContinuation, isAppending: false, showsLoadMore: false)
                 firstKnownItem = page.items.first
             }
-            if header.count == nil { header.count = page.items.count }
+            // Cubic #19: only a continuation-less first page IS the whole playlist; adopting a
+            // partial page's count made a deep-linked multi-page hero understate the total.
+            if header.count == nil, page.nextContinuation == nil { header.count = page.items.count }
         } catch {
             guard g == generation else { return }
             items = .errorInitial(messageKey: Self.errorKey(error))

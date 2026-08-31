@@ -111,6 +111,16 @@ struct ReportPayloadTests {
         #expect(body.otherDescription == nil)
     }
 
+    @Test func aReasonFlipMidSubmitDoesNotReenableSubmit() {
+        // Cubic #15: a toggle flip while `.submitting` reset the sheet to `.idle`, re-enabling
+        // Submit mid-flight (double-POST + a late `.succeeded` dismissing over the second attempt).
+        // Error states still clear so the inline message goes away when the user edits the form.
+        #expect(ReportState.afterReasonChange(.submitting) == .submitting)
+        #expect(ReportState.afterReasonChange(.failed(messageKey: "report_error")) == .idle)
+        #expect(ReportState.afterReasonChange(.rateLimited) == .idle)
+        #expect(ReportState.afterReasonChange(.idle) == .idle)
+    }
+
     @Test func everyReasonHasACatalogKey() {
         // RULING 70. All 11 report_reason_* keys already exist; this pins the mapping so a renamed
         // enum case cannot silently render a raw key on screen.

@@ -61,9 +61,29 @@ public actor ExtractionRateLimiter {
 
     public init() {}
 
+    /// Test hook: how many per-video records the ledger currently holds (pruning coverage).
+    var videoRecordCount: Int { records.count }
+
     public func check(_ videoId: String, kind: RequestKind, now: Duration) -> Decision {
         if let blocked = globalDecision(kind: kind, now: now) {
             return blocked
+        }
+
+        // Cubic #9: the same pass that prunes a record's timestamp arrays also drops records whose
+        // windows have all expired -- otherwise the ledger keeps one entry per video ever attempted
+        // for the life of the session. `perVideoWindow` (5 min) dominates the other windowed
+        // horizons (the 30 s min interval, the 60 s backoff delay). The one deliberately
+        // NON-windowed state is `consecutivePlayerAttempts`: consecutive failures keep backing off
+        // across expired windows until `onSuccess` clears them (Android parity, pinned by
+        // `playerBackoffReaches32SecondsAtFifthConsecutiveAttempt`), so a record still carrying
+        // that counter is never pruned.
+        records = records.filter { _, record in
+            guard record.consecutivePlayerAttempts == 0 else { return true }
+            let lastActivity = [record.lastPlayerAttemptTime, record.lastAutoRecoveryAttemptTime,
+                                record.lastPrefetchAttemptTime, record.lastProactiveTTLRefreshAttemptTime]
+                .compactMap(\.self).max()
+            guard let lastActivity else { return false }
+            return now - lastActivity <= Self.perVideoWindow
         }
 
         var record = records[videoId] ?? VideoRecord()

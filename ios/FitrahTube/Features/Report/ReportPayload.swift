@@ -93,4 +93,12 @@ nonisolated enum ReportState: Equatable, Sendable {
     case succeeded
     case rateLimited
     case failed(messageKey: String)
+
+    /// What a reason-toggle flip does to the sheet's state: clears a shown error back to `.idle`,
+    /// but never resurrects Submit mid-flight (Cubic #15) -- resetting `.submitting` re-enabled the
+    /// button for a double-POST, with the first attempt's late `.succeeded` still able to dismiss
+    /// the sheet over the second.
+    static func afterReasonChange(_ current: ReportState) -> ReportState {
+        current == .submitting ? .submitting : .idle
+    }
 }

@@ -144,6 +144,9 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
         default: guard self[tab] == .idle else { return }
         }
         await loadInitial(tab)
+        // Cubic #14: the degraded latch can trip DURING this lazy load; refreshed only in
+        // `load()`/`reload()`, the notice never surfaced mid-session.
+        isDegraded = await browse.isDegraded()
     }
 
     /// Retry from the tab's error state.
@@ -195,6 +198,7 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
                 guard g == generations[tab] else { return true }
                 playlists = .errorAppend(messageKey: "load_more_error", items: current, continuation: c, showsLoadMore: false)
             }
+            isDegraded = await browse.isDegraded()   // Cubic #14: the latch can trip on a page fetch too
             return true
         }
         guard let c = visible(tab).continuation, !self[tab].isAppending else { return false }
@@ -209,6 +213,7 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
             guard g == generations[tab] else { return true }
             self[tab] = .errorAppend(messageKey: "load_more_error", items: current, continuation: c, showsLoadMore: false)
         }
+        isDegraded = await browse.isDegraded()   // Cubic #14
         return true
     }
 

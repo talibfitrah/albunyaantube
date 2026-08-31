@@ -67,6 +67,25 @@ struct PlaylistDetailViewModelTests {
                                 browse: source, saved: saved, fetchHeader: fetchHeader)
     }
 
+    // MARK: - Deep-linked header count (Cubic #19)
+
+    @Test func aDeepLinkDoesNotAdoptAPartialFirstPageAsTheHeaderCount() async {
+        // Cubic #19: the fallback adopted `page.items.count` even when a continuation remained, so
+        // a deep-linked multi-page playlist's hero claimed "5 videos" for a 10-video playlist. No
+        // count beats a wrong one; the fake's page 1 carries a continuation.
+        let vm = makeVM(title: nil, count: nil)
+        await vm.load()
+        #expect(vm.header.count == nil)
+    }
+
+    @Test func aDeepLinkAdoptsTheFirstPageCountWhenItIsTheWholePlaylist() async {
+        let source = FakeSource()
+        source.pages = 1
+        let vm = makeVM(source: source, title: nil, count: nil)
+        await vm.load()
+        #expect(vm.header.count == 5)
+    }
+
     // MARK: - Gate + errors
 
     @Test func aBlockedPlaylistIsTerminalWithNoRetry() async {
@@ -271,7 +290,10 @@ struct PlaylistDetailViewModelTests {
         let deepLink = makeVM(title: nil, count: nil)
         #expect(deepLink.metadataLine(locale: en) == nil)
         await deepLink.load()
-        #expect(deepLink.metadataLine(locale: en) == "5 videos")  // first page's own count
+        // Cubic #19: the fake's first page carries a continuation, so its count is PARTIAL -- the
+        // line stays absent rather than claiming "5 videos" for a 10-video playlist. See
+        // `aDeepLinkAdoptsTheFirstPageCountWhenItIsTheWholePlaylist` for the adopting side.
+        #expect(deepLink.metadataLine(locale: en) == nil)
     }
 
     @Test func aDeepLinkFetchesTheHeaderAndTheFirstPageInParallel() async {

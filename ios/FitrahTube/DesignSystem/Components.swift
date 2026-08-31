@@ -114,7 +114,12 @@ struct RemoteImage: View {
             return
         }
         image = nil
-        image = await Self.cachedImage(for: url)
+        let loaded = await Self.cachedImage(for: url)
+        // Cubic #13: `.task(id: url)` cancels this task on cell reuse, but a cancelled task still
+        // resumes past the await -- without this guard its stale result (or nil) overwrote the
+        // image the replacement task had already committed for the NEW url.
+        guard !Task.isCancelled else { return }
+        image = loaded
     }
 
     /// The one image fetch in the app, shared with `BackgroundPlaybackController`'s Now Playing

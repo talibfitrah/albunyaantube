@@ -181,6 +181,29 @@ struct ChannelDetailViewModelTests {
         #expect(vm.live.items.count == 5)
     }
 
+    @Test func aDegradedLatchDuringALazyTabLoadSurfacesTheNotice() async {
+        // Cubic #14: `isDegraded` was refreshed only in `load()`/`reload()` -- a latch that fired
+        // during `ensureTabLoaded` (first tap on another tab) never surfaced the degraded banner.
+        let source = FakeSource()
+        let vm = makeVM(source: source)
+        await vm.load()
+        #expect(!vm.isDegraded)
+        source.degraded = true                    // the browse source latches mid-session
+        await vm.ensureTabLoaded(.live)
+        #expect(vm.isDegraded)
+    }
+
+    @Test func aDegradedLatchDuringLoadMoreSurfacesTheNotice() async {
+        // The other mid-session path Cubic #14 names: paging an already-open tab.
+        let source = FakeSource()
+        let vm = makeVM(source: source)
+        await vm.load()
+        #expect(!vm.isDegraded)
+        source.degraded = true
+        _ = await vm.loadMore(.videos)
+        #expect(vm.isDegraded)
+    }
+
     @Test func aGate410OnTheHeaderIsTerminal() async {
         final class Blocked: BrowseSource, @unchecked Sendable {
             func isDegraded() async -> Bool { false }

@@ -35,7 +35,10 @@ struct PlayerToolbar: View {
                 bannerMessage = BannerMessage(text: String(localized: "report_success"))
             }
         }
-        .task {
+        // `.task(id:)`, not `.task` (Cubic #12): `PlayerViewModel.swapArgs` mutates `args` in place
+        // on every advance / Up Next tap, and an id-less task runs once per view lifetime -- so the
+        // heart kept the FIRST video's favorite state for the whole queue.
+        .task(id: args.videoId) {
             isFavorite = container.favorites.isFavorite(args.videoId)
         }
     }

@@ -132,6 +132,24 @@ struct PlaybackRecoveryTests {
         }
     }
 
+    @Test func aBufferFlushingSeekDoesNotFalseFireWhileTheRebufferIsStillDownloading() {
+        // Cubic #11: the re-arm branch required bufferedEnd to EXCEED the pre-seek high-water mark
+        // (+0.1), but a buffer-flushing seek regresses bufferedEnd far below it -- so a legitimate
+        // post-seek rebuffer that was visibly downloading the whole time could never re-arm and
+        // false-fired `.stall` at 6 s. A regression is a flush: re-base the mark and re-arm.
+        var watchdog = StallWatchdog(playbackTime: 300)
+        watchdog.armed = true
+        // Playing normally with a high buffered mark.
+        _ = watchdog.tick(playbackTime: 301, bufferedEnd: 600, isStalled: true, isLive: false, now: Self.t0)
+        // Seek back to 20: the position jump registers as progress, the buffer is flushed to just
+        // past the target, and it grows ~1 s/s for 9 s while the player rebuffers (stalled).
+        for i in 0..<9 {
+            let tick = watchdog.tick(playbackTime: 20, bufferedEnd: 25 + Double(i), isStalled: true,
+                                     isLive: false, now: Self.t0.addingTimeInterval(TimeInterval(2 + i)))
+            #expect(!tick.fire, "tick \(i) fired on a rebuffer that was still downloading")
+        }
+    }
+
     @Test func aFullyBufferedItemPlayingNormallyNeverStalls() {
         // The pre-fix bug: a rung-2 MP4 finishes downloading in seconds, `loadedTimeRanges` stops
         // growing, and the watchdog fired 6 s later on a perfectly healthy stream.
