@@ -1,0 +1,48 @@
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
+  s_66ddb7c44de816::t_b9d33e04578c58 108-114
+  s_66ddb7c44de816::t_f2ddf12358d231 283-293
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_66ddb7c44de816::t_7ef6cc694c19f6 311-316
+  s_66ddb7c44de816::t_a44d98f2e617de 318
+  s_66ddb7c44de816::t_62b6b368092b1e 334-343
+  s_66ddb7c44de816::t_fc5083fe0b7416 84-92
+ios/FitrahTubeTests/Support/PlayerTestDoubles.swift
+  s_66ddb7c44de816::t_a8ab47b76e47a8 97-99
+  s_66ddb7c44de816::t_8b3ea48327848a 20
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/BrowseClient.swift
+  s_66ddb7c44de816::t_983b2fcf83dc21 208
+  s_66ddb7c44de816::t_11333a9040c82b 229,234
+  s_66ddb7c44de816::t_dfe26e5096a66e 252,255-265
+  s_66ddb7c44de816::t_14f2ac9843ff74 508-514
+  s_66ddb7c44de816::t_3179f2cee13096 221
+  s_66ddb7c44de816::t_af04c26f40368a 191
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/PlayerResponseParser.swift
+  s_66ddb7c44de816::t_095c607574df7b 61-67,70-72
+  s_66ddb7c44de816::t_fd016f674049a8 131-133
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_66ddb7c44de816::t_8711a990f7dac0 356-384,419-437
+  s_66ddb7c44de816::t_91f6fdbc7db5b8 385-418
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/BrowseClientTests.swift
+  s_66ddb7c44de816::t_a6e6eb713fedc3 392-396,405,409-425
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/PlayerResponseParserTests.swift
+  s_66ddb7c44de816::t_f922a04c1f616b 109-149
+ios/FitrahTubeTests/PlayerViewModelQueueTests.swift
+  s_66ddb7c44de816::t_66e86b1f7db160 114-119,123-125,127-132,140
+  s_66ddb7c44de816::t_c46c20f41e2007 97-113,120-122,126,133-139,141-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "98f7a1f7c181f9d8a622729b8bdacb963e8366fd",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
