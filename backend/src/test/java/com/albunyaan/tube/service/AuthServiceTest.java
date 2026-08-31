@@ -579,6 +579,64 @@ class AuthServiceTest {
         verify(mockCache).evict("u-role");
     }
 
+    // ── Self-delete tombstone must not leak recovery metadata ────────────────
+    // A user who was admin-soft-deleted, then recovered, then self-deletes
+    // carries recoveredAt/recoveredBy from recordRecover. The anonymise block
+    // promises "exactly uid, role, status, deletedAt, deletedBy, deleteReason"
+    // survive — recovery stamps are behavioural metadata and must be nulled too.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void deleteAccountPermanently_clearsRecoveryMetadataOnTombstone() throws Exception {
+        // Arrange: a recovered user (recordRecover stamps recoveredAt/recoveredBy).
+        User recovered = new User("rec-uid", "rec@t.com", "Rec", "user");
+        recovered.setStatus("deleted");
+        recovered.recordRecover("admin-uid");
+        assertNotNull(recovered.getRecoveredAt(), "precondition: recovery stamped");
+
+        com.google.cloud.firestore.CollectionReference usersColl =
+                mock(com.google.cloud.firestore.CollectionReference.class);
+        com.google.cloud.firestore.DocumentReference userRef =
+                mock(com.google.cloud.firestore.DocumentReference.class);
+        when(firestore.collection("users")).thenReturn(usersColl);
+        when(usersColl.document("rec-uid")).thenReturn(userRef);
+
+        com.google.cloud.firestore.DocumentSnapshot snap =
+                mock(com.google.cloud.firestore.DocumentSnapshot.class);
+        when(snap.exists()).thenReturn(true);
+        when(snap.toObject(User.class)).thenReturn(recovered);
+        ApiFuture<com.google.cloud.firestore.DocumentSnapshot> snapFuture = mock(ApiFuture.class);
+        when(snapFuture.get(anyLong(), any())).thenReturn(snap);
+
+        com.google.cloud.firestore.Transaction tx = mock(com.google.cloud.firestore.Transaction.class);
+        when(tx.get(userRef)).thenReturn(snapFuture);
+
+        // Run the tx lambda synchronously against the mocked Transaction.
+        doAnswer(inv -> {
+            com.google.cloud.firestore.Transaction.Function<Object> fn = inv.getArgument(0);
+            Object result = fn.updateCallback(tx);
+            ApiFuture<Object> f = mock(ApiFuture.class);
+            when(f.get(anyLong(), any())).thenReturn(result);
+            return f;
+        }).when(firestore).runTransaction(any());
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        // Abort right after the tombstone commits — the post-tx purge sweep is
+        // not under test and would need a mocked Firestore query surface.
+        FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
+        doThrow(fbEx).when(firebaseAuth).revokeRefreshTokens("rec-uid");
+
+        assertThrows(FirebaseAuthException.class,
+                () -> authService.deleteAccountPermanently("rec-uid"));
+
+        // Assert: tombstone written, and recovery metadata is gone from it.
+        verify(tx).set(eq(userRef), same(recovered), any(com.google.cloud.firestore.SetOptions.class));
+        assertEquals("deleted", recovered.getStatus());
+        assertNull(recovered.getEmail(), "email must be erased from the tombstone");
+        assertNull(recovered.getRecoveredAt(), "recoveredAt must be erased from the tombstone");
+        assertNull(recovered.getRecoveredBy(), "recoveredBy must be erased from the tombstone");
+    }
+
     @Test
     void recordLogin_shouldUpdateLastLoginTimestamp() throws Exception {
         // Arrange

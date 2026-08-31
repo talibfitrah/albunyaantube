@@ -901,6 +901,10 @@ public class AuthService {
             target.setLastLoginAt(null);
             target.setProfileCompletedAt(null);
             target.setCreatedBy(null);
+            // Recovery stamps from a prior softDelete→recover cycle ("when/by
+            // whom this human was reinstated") are the same class of metadata.
+            target.setRecoveredAt(null);
+            target.setRecoveredBy(null);
             target.recordSoftDelete(uid, SELF_DELETE_REASON);
             // The sweep below has not run yet. Recording that on the tombstone
             // is what lets a later call tell "finished" from "died halfway".
