@@ -1,0 +1,31 @@
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_66ddb7c44de816::t_fc20922468d534 511-554
+ios/FitrahTube/App/FitrahTubeApp.swift
+  s_66ddb7c44de816::t_785af2b3b84cde 277-295
+  s_66ddb7c44de816::t_1cf11ba3dd792f 76-80
+  s_66ddb7c44de816::t_f77f038d8d2ac6 2
+  s_66ddb7c44de816::t_ba29a8f2f5fb11 97-105,116-122
+  s_66ddb7c44de816::t_472f280c7f6258 53-56
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
+  s_66ddb7c44de816::t_504f906589eb4d 224-225
+ios/FitrahTubeTests/UpdateGateTests.swift
+  s_66ddb7c44de816::t_ed30b741f03243 1-49
+ios/scripts/convert-strings.py
+  s_66ddb7c44de816::t_ee485a771dfca1 226-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c68d1a3824ddc92d2ef45d1c9bed25ef4e8f8d00",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
