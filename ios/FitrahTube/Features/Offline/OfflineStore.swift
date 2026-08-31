@@ -23,7 +23,10 @@ import SwiftData
         first(#Predicate { $0.id == id })
     }
 
-    /// Upserts on `videoId` (`#Unique`): a re-save at a different quality replaces the row.
+    /// Upserts on `videoId` (`#Unique`): a re-save at a different quality replaces the row —
+    /// EVERY attribute, including `id` (fresh UUID) and `localPath` (nil). Task 4 must cancel
+    /// any in-flight task and delete the old file for this videoId BEFORE calling insert, or
+    /// the old task completes against a ghost row and the old file leaks on disk.
     func insert(_ item: OfflineItem) throws {
         context.insert(item)
         try saveOrRollback()
