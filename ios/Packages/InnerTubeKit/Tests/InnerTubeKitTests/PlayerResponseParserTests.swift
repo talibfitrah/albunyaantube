@@ -138,6 +138,19 @@ import Testing
         #expect(try parser.parse(body).playability == .botCheck)
     }
 
+    /// CF-G-16: the probe recorded the marker "= 1 on every age-gated response". A hypothetical 0
+    /// must NOT read as age-gated -- misclassifying to terminal `.ageGate` is the worse direction;
+    /// `.botCheck` stays retryable.
+    @Test func aZeroDesktopLegacyAgeGateReasonClassifiesAsBotCheckNotAgeGate() throws {
+        var json = try #require(
+            try JSONSerialization.jsonObject(with: loadFixture("player-botcheck")) as? [String: Any])
+        var status = try #require(json["playabilityStatus"] as? [String: Any])
+        status["desktopLegacyAgeGateReason"] = 0
+        json["playabilityStatus"] = status
+        let body = try JSONSerialization.data(withJSONObject: json)
+        #expect(try parser.parse(body).playability == .botCheck)
+    }
+
     @Test(arguments: [
         "هذا الفيديو غير متوفّر.",             // ar, probe verbatim
         "Deze video is niet beschikbaar",     // nl, probe verbatim

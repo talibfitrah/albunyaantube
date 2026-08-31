@@ -121,13 +121,19 @@ struct DeepLinkParserTests {
                 == .player(PlayerArgs(videoId: "a")))
     }
 
-    @Test func idLongerThan64CharactersIsRejected() {
-        let long = String(repeating: "a", count: 65)
-        #expect(DeepLinkParser.route(for: URL(string: "albunyaantube://video/\(long)")!) == nil)
-        // ...and exactly 64 is still fine -- the bound is a bound, not an off-by-one.
-        let atLimit = String(repeating: "a", count: 64)
-        #expect(DeepLinkParser.route(for: URL(string: "albunyaantube://video/\(atLimit)")!)
-                == .player(PlayerArgs(videoId: atLimit)))
+    @Test func idLongerThan128CharactersIsRejected() {
+        let tooLong = String(repeating: "a", count: 129)
+        #expect(DeepLinkParser.route(for: URL(string: "albunyaantube://playlist/\(tooLong)")!) == nil)
+        // CF-G-16: the bound is `SavedPlaylistsStore`'s 128 (Android `^[A-Za-z0-9_-]{3,128}$`),
+        // not 64 -- a real >64-char playlist id must route, or the deep link dies at the parser
+        // while the store would have accepted it.
+        let long = String(repeating: "a", count: 100)
+        #expect(DeepLinkParser.route(for: URL(string: "albunyaantube://playlist/\(long)")!)
+                == .playlist(id: long, title: nil, category: nil, count: nil))
+        // ...and exactly 128 is still fine -- the bound is a bound, not an off-by-one.
+        let atLimit = String(repeating: "a", count: 128)
+        #expect(DeepLinkParser.route(for: URL(string: "albunyaantube://playlist/\(atLimit)")!)
+                == .playlist(id: atLimit, title: nil, category: nil, count: nil))
     }
 
     @Test func universalLinkHostileIDIsRejected() {

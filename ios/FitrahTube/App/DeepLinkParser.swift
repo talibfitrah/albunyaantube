@@ -48,15 +48,17 @@ nonisolated enum DeepLinkParser {
 
     private static let allowedIDCharacters = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 
-    /// `^[A-Za-z0-9_-]{1,64}$`, applied at the trust boundary where all four kinds converge
+    /// `^[A-Za-z0-9_-]{1,128}$`, applied at the trust boundary where all four kinds converge
     /// (gate A-I4 / cso-F1). Any web page or installed app can navigate to `albunyaantube://…`,
     /// and the ids reach `Route` verbatim: `..`, an embedded NUL, a `?`, or a 64 KB string are all
     /// interpolated into InnerTube request bodies and `PlayerArgs.videoId` into playback URLs, so
     /// an unchecked id is a path-traversal / C-string-truncation / query-injection primitive and
     /// the screens that consume it never revisit this file. Covers every real YouTube and
-    /// Firestore document id.
+    /// Firestore document id. The 128 cap matches `SavedPlaylistsStore.isValid`'s bound
+    /// (Android `^[A-Za-z0-9_-]{3,128}$`, `PlaylistDetailFragment.kt:787`) -- a 64 cap dropped
+    /// deep links to playlist ids the store itself accepts (CF-G-16).
     private static func isValidID(_ id: String) -> Bool {
-        !id.isEmpty && id.count <= 64 && id.allSatisfy(allowedIDCharacters.contains)
+        !id.isEmpty && id.count <= 128 && id.allSatisfy(allowedIDCharacters.contains)
     }
 
     private static func pathComponents(of url: URL) -> [String] {

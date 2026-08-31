@@ -567,6 +567,65 @@ import Testing
         #expect(await session.loadCooldown().tripCount == 1)
     }
 
+    // MARK: - d9b) 429 vs 403 split (CF-G-15): a 429 is IP-level, not a token problem
+
+    /// Rotating a healthy visitorData on an IP/QPS-level 429 burns the 10-min rotation slot for
+    /// nothing — the token is fine, the IP budget is not. A 429 surfaces `.botCheck` (so the
+    /// walk-end recording still notes it when the walk fails) with NO rotation and NO retry.
+    @Test func http429SurfacesBotCheckWithoutRotatingOrRetrying() async throws {
+        let transport = RecordingTransport(
+            [HTTPResponse(status: 429, headers: [:], body: Data("Too Many Requests".utf8))])
+        let (resolver, session) = makeResolver(transport: transport)
+        await session.setVisitorData("v1", for: .visionos)
+        await session.setVisitorData("v1", for: .android)
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 2)                            // one POST per rung, no rotate-retry
+        #expect(await session.visitorData(for: .visionos) == "v1")   // healthy token kept
+        #expect(await session.visitorData(for: .android) == "v1")
+        #expect(await session.rotate(.visionos) == true)             // the rotation slot is unburned
+        #expect(await session.loadCooldown().tripCount == 1)         // walk-end recording still notes it
+    }
+
+    /// A 403 is a block on THIS session's token: it keeps the rotate-once-then-surface path.
+    @Test func http403StillRotatesOnceAndRetriesBeforeSurfacingBotCheck() async throws {
+        let transport = RecordingTransport(
+            [HTTPResponse(status: 403, headers: [:], body: Data("Forbidden".utf8))])
+        let (resolver, session) = makeResolver(transport: transport)
+        await session.setVisitorData("v1", for: .visionos)
+        await session.setVisitorData("v1", for: .android)
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 4)                          // per rung: POST + rotate + retry POST
+        #expect(await session.visitorData(for: .visionos) == nil)  // rotated away
+        #expect(await session.loadCooldown().tripCount == 1)
+    }
+
+    // MARK: - d1b) the post-rotation retry adopts a 200-interstitial's fresh visitor
+
+    /// The retry after a rotation goes out tokenless; YouTube's bot-check interstitial carries a
+    /// freshly-minted `responseContext.visitorData`. Adoption is harmless and not slot-limited
+    /// (only ROTATION is), so the `canRotate: false` retry must keep that token for the next walk
+    /// instead of discarding it and leaving the family tokenless.
+    @Test func thePostRotationRetryAdoptsTheInterstitialsFreshVisitor() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
+        let (resolver, session) = makeResolver(transport: transport)
+        await session.setVisitorData("v1", for: .visionos)   // genuine bot check -> rotate -> retry
+        await session.setVisitorData("v1", for: .android)
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        let minted = try #require(
+            try PlayerResponseParser().parse(fixtureResponse("player-botcheck").body).visitorData)
+        #expect(await session.visitorData(for: .visionos) == minted)
+        #expect(await session.visitorData(for: .android) == minted)
+    }
+
     @Test func otherNon200IsARetryableTransportErrorNotABotTrip() async throws {
         let transport = RecordingTransport([HTTPResponse(status: 503, headers: [:], body: Data())])
         let (resolver, session) = makeResolver(transport: transport)

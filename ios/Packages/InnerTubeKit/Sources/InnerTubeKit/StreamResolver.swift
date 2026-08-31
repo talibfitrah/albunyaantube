@@ -217,8 +217,13 @@ public actor StreamResolver {
         let body: Data
         do {
             body = try await sendPlayerPost(request)
+        } catch is RateLimited {
+            // CF-G-15: a 429 is an IP/QPS-level block, not a token problem -- rotating a healthy
+            // visitorData here burns the 10-min rotation slot for nothing. Surface `.botCheck`
+            // unrotated; the walk-end recording still notes it if the walk fails overall.
+            throw ExtractionError.botCheck
         } catch ExtractionError.botCheck {
-            // Cubic r3 #4: an HTTP-level 429/403 block. Same handling as a parsed LOGIN_REQUIRED
+            // Cubic r3 #4: an HTTP-level 403 block. Same handling as a parsed LOGIN_REQUIRED
             // bot check below, minus the visitor bootstrap (a non-200 body carries no
             // `responseContext.visitorData` to adopt): rotate once and retry the rung, else
             // surface `.botCheck` so `performResolve` NOTES it -- the (per-walk single) cooldown
@@ -268,10 +273,15 @@ public actor StreamResolver {
             // rung to OK+HLS (verified live 2026-08-24 against `xc7keR2piUM`). This is session
             // establishment, not a rotation — rotating here would clear the token we were just
             // handed and burn the 10-minute rotation budget on the first play of every launch.
-            if visitorData == nil, canRotate, let visitor = parsed.visitorData {
+            // ADOPTION is not slot-limited (only rotation is), so even the post-rotation retry
+            // (`canRotate: false`) keeps a fresh interstitial token for the next walk (CF-G-15) --
+            // discarding it left the family tokenless after every failed rotate-retry.
+            if visitorData == nil, let visitor = parsed.visitorData {
                 await sessionStore.setVisitorData(visitor, for: family)
-                return try await runPlayerRung(
-                    family: family, videoId: videoId, config: config, expectHLS: expectHLS, canRotate: false)
+                if canRotate {
+                    return try await runPlayerRung(
+                        family: family, videoId: videoId, config: config, expectHLS: expectHLS, canRotate: false)
+                }
             }
             if canRotate, await sessionStore.rotate(family) {
                 return try await runPlayerRung(
@@ -288,6 +298,10 @@ public actor StreamResolver {
     }
 
     // MARK: - network
+
+    /// Internal marker for an HTTP 429: routed to `.botCheck` WITHOUT the rotation a 403 gets
+    /// (CF-G-15). Never escapes `runPlayerRung`.
+    private struct RateLimited: Error {}
 
     /// Enforces ≥`minPostSpacing` between `player` POSTs, then delegates to the injected
     /// transport. The 8 s budget wraps the whole rung, one level up.
@@ -307,10 +321,14 @@ public actor StreamResolver {
             let response = try await transport.send(request)
             // Cubic r3 #4: a raw 429/403 (non-JSON body) IS a bot block -- surfaced as a Wire-decode
             // failure it read as a generic rung failure, so the ladder walked on and rotation /
-            // cooldown never engaged. Other non-200s are retryable transport failures, never terminal.
+            // cooldown never engaged. CF-G-15 splits them: 403 -> `.botCheck` (rotate-once path),
+            // 429 -> `RateLimited` (surfaced as `.botCheck` upstream, but never rotates -- the
+            // token is healthy, the IP budget is not). Other non-200s are retryable transport
+            // failures, never terminal.
             switch response.status {
             case 200..<300: return response.body
-            case 429, 403: throw ExtractionError.botCheck
+            case 403: throw ExtractionError.botCheck
+            case 429: throw RateLimited()
             default: throw ExtractionError.transport("HTTP \(response.status)")
             }
         } catch let error as URLError where error.code == .cancelled {

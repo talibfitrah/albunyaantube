@@ -27,10 +27,13 @@ struct NowPlayingSnapshot: Equatable, Sendable {
         switch state {
         case .ready(let resolved):
             if case .hls(_, let live, _, _) = resolved.stream { isLive = live } else { isLive = false }
-        case .rung2Progressive, .recoveryExhausted:
+        case .rung2Progressive:
             isLive = false
         default:
-            return nil   // nothing playable to advertise
+            // Nothing playable to advertise. `.recoveryExhausted` lands here too (CF-G-16):
+            // playback has stopped for good until a manual retry, so advertising it was a lie --
+            // masked only because that state dismantles the host, which clears the dictionary.
+            return nil
         }
         let title = args.title?.trimmingCharacters(in: .whitespacesAndNewlines)
         // Ruling 39: the real channel title, never the category, never a placeholder. `PlayerArgs`

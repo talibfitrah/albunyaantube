@@ -63,8 +63,9 @@ public struct PlayerResponseParser: Sendable {
             // substring), so English-substring matching misclassified every non-English response.
             // The locale-independent discriminator is `desktopLegacyAgeGateReason` (= 1 on every
             // age-gated response across locales; absent from the bot-check capture and from ERROR
-            // responses).
-            if status == "AGE_CHECK_REQUIRED" || wire.playabilityStatus.desktopLegacyAgeGateReason != nil {
+            // responses). CF-G-16: match the probed value exactly -- a hypothetical 0 must fall
+            // through to retryable `.botCheck`, not terminal `.ageGate` (the worse direction).
+            if status == "AGE_CHECK_REQUIRED" || wire.playabilityStatus.desktopLegacyAgeGateReason == 1 {
                 return .ageGate
             }
             // Caveat (unverified live): a private video may also answer LOGIN_REQUIRED; it would

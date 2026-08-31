@@ -95,11 +95,19 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
                 return true
             }) { try? await Task.sleep(for: .milliseconds(1)) }
         }
+        // CF-G-15: bounded like `waitUntilCalled` (~2 s), and cancellation-safe -- a cancelled
+        // task's `Task.sleep` throws immediately, so the old unbounded `try?` loop hot-spun.
+        // On cancellation we bail out (the resolver's caller discards a cancelled result anyway).
         if lock.withLock({ _heldIds.contains(videoId) }) {
-            while lock.withLock({ () -> Bool in
-                if _idPermits[videoId, default: 0] > 0 { _idPermits[videoId]! -= 1; return false }
-                return true
-            }) { try? await Task.sleep(for: .milliseconds(1)) }
+            var released = false
+            for _ in 0..<2000 {
+                if lock.withLock({ () -> Bool in
+                    if _idPermits[videoId, default: 0] > 0 { _idPermits[videoId]! -= 1; return true }
+                    return false
+                }) { released = true; break }
+                do { try await Task.sleep(for: .milliseconds(1)) } catch { break }
+            }
+            #expect(released || Task.isCancelled, "held resolve of \(videoId) was never released")
         }
         let url = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
         switch outcome {

@@ -74,6 +74,18 @@ import Testing
     /// `removeRemoteCommands()`, which runs because the embed branch never mounts the host --
     /// nothing in `EmbedRungView` publishes a Now Playing entry of its own (YouTube API Services
     /// policy III.I.9: no background player for embed content).
+    /// CF-G-16: `.recoveryExhausted` means playback has STOPPED for good until a manual retry --
+    /// advertising it as playable was masked only because that state dismantles the host, which
+    /// clears the dictionary anyway. The snapshot must not lie: nothing playable, nothing made.
+    @Test func recoveryExhaustedPublishesNothing() {
+        let resolved = Resolved(stream: .hls(url: URL(string: "https://x/y.m3u8")!, isLive: false,
+                                             audioOnlyURL: nil, captionTracks: []),
+                                client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
+        #expect(NowPlayingSnapshot.make(args: PlayerArgs(videoId: "abc", title: "T"),
+                                        state: .recoveryExhausted(resolved),
+                                        elapsed: 10, duration: 60, rate: 0) == nil)
+    }
+
     @Test func theEmbedRungAdvertisesNoNowPlayingEntry() {
         let resolved = Resolved(stream: .embed(videoId: "xc7keR2piUM"), client: .web, userAgent: "",
                                 resolvedAt: Date(), expiresAt: nil)
