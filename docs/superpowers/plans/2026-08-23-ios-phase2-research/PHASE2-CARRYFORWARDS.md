@@ -163,3 +163,28 @@ Plan C shipped 2026-08-30 (`dc592322..23b3c325`, final whole-plan review → SHI
 **Live-ops note:** every `C_LIVE=1` acceptance run files ONE real report into the production admin queue, description "iOS Plan C acceptance test — safe to dismiss". Two exist from 2026-08-30.
 
 **USER-BLOCKED (Plan C additions to the standing list):** ar/nl translations for the four `report_*` keys; the merge to `main` that makes `ios-remote-config.json` live (CF-C-1's checklist item: confirm the raw URL returns 200 after the merge); device acceptance for the detail screens rides the existing B2/B3/B4 signing blocker.
+
+---
+
+## From the Phase 2 gate reviews (gstack /review + Cubic whole-range, 2026-08-31)
+
+Confirmed findings the gate did NOT fix, each adjudicated. iOS items were deferred for design reasons; Android/backend items because this Mac has no Android SDK (fixes would be unverifiable here — they belong to an Android-capable session).
+
+**iOS, design-level (fix before any human-facing build where marked):**
+- **CF-G-1 (P1-class, before any human-facing build):** two simultaneous live players are reachable. The iPad rail keeps every visited tab's `NavigationStack` mounted in a `ZStack` hidden by `.opacity` (`MainShellView.swift:87-100`), so a playing `PlayerScreen` never gets dismantled on tab switch — invisible audio continues, and a second video starts a second player; `ShortsOverlay.swift:198-201` pushes the channel route over a still-looping Short with the same effect. Compounding: the second host's `BackgroundPlaybackController.attach` strips the first player's remote-command targets, and popping it deactivates the audio session under the still-playing first player. The real fix is the app-scoped player holder CF-B2-1 already defers; the cheap interim is pause-on-route-deactivation. Device builds are USER-BLOCKED today, which is the only reason this can wait.
+- **CF-G-2 (P2):** lock-screen Next/Previous remote commands were never enabled after B5 shipped the queue — `BackgroundPlaybackController.swift:340-343` still says "B5 owns Up Next … until then". Decide: wire `nextTrackCommand` to `advance()` (and previous via `select(at:)`) or record the descope.
+- **CF-G-3 (P3):** the player queue bypasses Plan C's browse seam — `PlayerScreen.swift:506` hands the queue `container.innerTube.browse` directly, skipping the `DegradedLatch` (latched hours still emit real browse POSTs), the 410 availability gate, and `IndexClient.push`. Route queue paging through `LiveBrowseSource` or record the exemption.
+
+**Android (in the Phase 2 diff via the account-deletion/flavor work; needs an Android-capable machine):**
+- **CF-G-4 (P1):** `LocalAccountDataWiper.kt:29-66` races in-flight downloads — no WorkManager cancel, and `DownloadRepository.kt:108-114`'s in-memory `entries` StateFlow is never cleared, so a wiped account's downloads can keep materializing and stale entries survive until process death.
+- **CF-G-5 (P2):** `DeleteAccountViewModel.kt:47-90` — the post-204 `wipe()`→`signOut()` cleanup runs cancellable in `viewModelScope`; back-navigation mid-cleanup strands a signed-in session on a deleted account. Wrap in `NonCancellable`.
+- **CF-G-6 (P2):** search history (`search_prefs`/`search_history`, `SearchFragment.kt:56-57`) survives account deletion — the wiper clears only `device_prefs`.
+- **CF-G-7 (P3):** `main_tabs_nav.xml:220-223` references the sideload-only `AvailableVersionsFragment` in both flavors; guarded today by SettingsFragment's `InstallSource` runtime check — a behavioral, not structural, seam.
+
+**Backend:**
+- **CF-G-8 (P1-class, known-degraded):** `RESUME_SWEEP` (`AuthService.java:866-872`) is unreachable — `FirebaseAuthFilter.java:135-147` 403s any tombstoned user before the sole calling controller runs, so a purge that dies after the tombstone commit has no self-serve retry. The code's own javadoc calls the route "narrow"; it is nonexistent. The recorded upgrade path (scheduled scan) is the fix; at minimum correct the javadoc.
+- **CF-G-9 (P3):** an Auth-only user with no Firestore doc gets 404 from self-delete and keeps their Auth record — unreachable in practice (`GET /me` lazy-creates the doc at first app open), noted for completeness.
+
+**Informational (recorded, no owner):** `ExtractionError.terminal` returns false for `.invalidVideoId`, contradicting its doc; `RateLimitedResolver` reuses `.cooldown(until:)` for 2-second backoffs (UI correct because the case carries the date); `StreamResolver.resolve(purpose:)` is a documented no-op parameter running parallel to `RequestKind`; InnerTubeKit declares `.macOS(.v14)` vs FitrahAPI `.macOS(.v15)`.
+
+**OWNER DECISION pending (from the bloat audit):** `RemoteConfig.requiresUpdate` + `SemVer` are shipped and tested but nothing reads them — the spec-D3-mandated `minAppVersion` "update required" gate is unwired. Wire it or delete it; the current state (a kill-switch that silently no-ops) is the worst of the three.
