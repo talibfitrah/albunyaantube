@@ -199,7 +199,11 @@ extension StreamState {
     /// eligible for the next window (CF-B2-2 rule (a) says skip silently, not give up).
     private var prefetchedIds: Set<String> = []
     private var consecutiveSkips = 0
-    private var isPaging = false
+    /// The in-flight page fetch (Cubic P3). A single-flight boolean made a concurrent caller
+    /// return EARLY: an end-of-item `advance()` landing while `open()`'s page was still inside
+    /// `queueSource.page(...)` saw an empty `upcoming` and showed `.queueEnded` with a whole page
+    /// still loading. Concurrent callers await this instead.
+    private var pagingTask: Task<Void, Never>?
 
     private var generation = 0
     private var resolveTask: Task<Void, Never>?
@@ -324,9 +328,10 @@ extension StreamState {
     }
 
     /// The Up Next tap (`PlayerViewModel.kt:355-387`). A deliberate user action, so this one DOES
-    /// show the loading card with the new thumbnail.
-    func play(id: String) async {
-        guard let item = queue.select(id: id) else { return }
+    /// show the loading card with the new thumbnail. Index-addressed (Cubic P2): a duplicate id in
+    /// the playlist must play the tapped occurrence, not the first one.
+    func play(at index: Int) async {
+        guard let item = queue.select(at: index) else { return }
         swapArgs(to: item)
         consecutiveSkips = 0
         await resolve(forceRefresh: false, kind: .player)
@@ -364,18 +369,27 @@ extension StreamState {
         }
     }
 
-    /// Playlist paging at <=5 remaining (`PlayerViewModel.kt:1786,1911`); single-flight; a throw
-    /// latches `pagingFailed` (`:1946-1978`). Browse paging is not rate-limited.
+    /// Playlist paging at <=5 remaining (`PlayerViewModel.kt:1786,1911`); single-flight -- but a
+    /// concurrent caller AWAITS the in-flight fetch (Cubic P3, `pagingTask`'s doc comment) and
+    /// then proceeds with the refreshed queue. A throw latches `pagingFailed` (`:1946-1978`).
+    /// Browse paging is not rate-limited.
     private func pageIfNeeded() async {
-        guard queue.needsPage, !isPaging, let queueSource, let playlistId = args.playlistId else { return }
-        isPaging = true
-        defer { isPaging = false }
-        do {
-            let page = try await queueSource.page(playlistId: playlistId, continuation: queue.cursor)
-            queue.append(page.items, cursor: page.continuation)
-        } catch {
-            queue.markPagingFailed()
+        if let pagingTask {
+            await pagingTask.value
+            return
         }
+        guard queue.needsPage, let queueSource, let playlistId = args.playlistId else { return }
+        let task = Task {
+            do {
+                let page = try await queueSource.page(playlistId: playlistId, continuation: queue.cursor)
+                queue.append(page.items, cursor: page.continuation)
+            } catch {
+                queue.markPagingFailed()
+            }
+        }
+        pagingTask = task
+        await task.value
+        pagingTask = nil
     }
 
     /// CF-B1: `.cooldown` is terminal -- a manual retry while still inside the window must not

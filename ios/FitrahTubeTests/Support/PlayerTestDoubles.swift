@@ -106,13 +106,32 @@ final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
     private let lock = NSLock()
     private let pages: [(ids: [String], next: String?)]
     private let failFrom: Int?
+    /// Calls with a 0-based index >= this suspend until `release()` -- lets a test observe the
+    /// view model mid-page (same 1 ms-poll gate as `RecordingResolver.holdsUntilReleased`).
+    private let gateFrom: Int?
     private var _pageCalls = 0
+    private var _permits = 0
 
     var pageCalls: Int { lock.withLock { _pageCalls } }
 
-    init(pages: [(ids: [String], next: String?)], failFrom: Int? = nil) {
+    init(pages: [(ids: [String], next: String?)], failFrom: Int? = nil, gateFrom: Int? = nil) {
         self.pages = pages
         self.failFrom = failFrom
+        self.gateFrom = gateFrom
+    }
+
+    /// Lets one gated page call proceed (no-op when `gateFrom` is nil).
+    func release() { lock.withLock { _permits += 1 } }
+
+    /// Suspends until `pageCalls >= count`, or fails after ~2 s (same shape as
+    /// `RecordingResolver.waitUntilCalled`).
+    func waitUntilPageCalled(count: Int, sourceLocation: SourceLocation = #_sourceLocation) async {
+        for _ in 0..<2000 {
+            if pageCalls >= count { return }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(pageCalls >= count, "page was called \(pageCalls) times, expected \(count)",
+                sourceLocation: sourceLocation)
     }
 
     func page(playlistId: String, continuation: String?) async throws
@@ -120,6 +139,12 @@ final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
         let index = lock.withLock { () -> Int in
             defer { _pageCalls += 1 }
             return _pageCalls
+        }
+        if let gateFrom, index >= gateFrom {
+            while lock.withLock({ () -> Bool in
+                if _permits > 0 { _permits -= 1; return false }
+                return true
+            }) { try? await Task.sleep(for: .milliseconds(1)) }
         }
         if let failFrom, index >= failFrom { throw ExtractionError.transport("fake page failure") }
         guard index < pages.count else { return ([], nil) }

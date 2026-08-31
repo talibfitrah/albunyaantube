@@ -287,17 +287,22 @@ struct PlayerScreen: View {
     @ViewBuilder
     private func upNextList(_ model: PlayerViewModel) -> some View {
         let columns = GridRules.columns(widthClass == .compact ? 1 : 2, dynamicTypeSize: dynamicTypeSize)
+        // Keyed and tapped by absolute queue index, not `item.id` (Cubic P2, same class as
+        // 23b3c325): a playlist can repeat a video id, which collapsed duplicate rows to one
+        // SwiftUI identity and sent a tap on the later duplicate to the first occurrence. The
+        // a11y identifier keeps the video id AFTER the unique index so XCUITest can still
+        // address a row by video.
         if columns == 1 {
-            ForEach(Array(model.queue.upcoming), id: \.id) { item in
-                VideoRow(item: item, subtitle: item.channelTitle) { Task { await model.play(id: item.id) } }
-                    .accessibilityIdentifier("player.upNext.row.\(item.id)")
+            ForEach(Array(zip(model.queue.upcoming.indices, model.queue.upcoming)), id: \.0) { index, item in
+                VideoRow(item: item, subtitle: item.channelTitle) { Task { await model.play(at: index) } }
+                    .accessibilityIdentifier("player.upNext.row.\(index).\(item.id)")
             }
         } else {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: GridRules.cardGap(widthClass)),
                                      count: columns), spacing: GridRules.cardGap(widthClass)) {
-                ForEach(Array(model.queue.upcoming), id: \.id) { item in
-                    VideoGridCell(item: item, subtitle: item.channelTitle) { Task { await model.play(id: item.id) } }
-                        .accessibilityIdentifier("player.upNext.row.\(item.id)")
+                ForEach(Array(zip(model.queue.upcoming.indices, model.queue.upcoming)), id: \.0) { index, item in
+                    VideoGridCell(item: item, subtitle: item.channelTitle) { Task { await model.play(at: index) } }
+                        .accessibilityIdentifier("player.upNext.row.\(index).\(item.id)")
                 }
             }
             .padding(.horizontal, Spacing.md(widthClass))

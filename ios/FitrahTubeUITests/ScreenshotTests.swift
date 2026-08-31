@@ -1296,8 +1296,12 @@ final class ScreenshotTests: XCTestCase {
             .allElementsBoundByIndex
     }
 
+    /// Row identifiers are `player.upNext.row.<queue index>.<video id>` (Cubic P2: the index makes
+    /// duplicate playlist members distinct), so a video is addressed by its `.<id>` suffix.
     private func row(_ app: XCUIApplication, _ id: String) -> XCUIElement {
-        app.descendants(matching: .any)["player.upNext.row.\(id)"]
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'player.upNext.row.' AND identifier ENDSWITH %@", ".\(id)"))
+            .firstMatch
     }
 
     /// The `player.*` identifiers in enumeration order (the VoiceOver-order record, as B4 does).
@@ -1336,7 +1340,7 @@ final class ScreenshotTests: XCTestCase {
         var rows = upNextRows(app)
         notes.append("iphone-en rows=\(rows.map { $0.identifier })")
         XCTAssertEqual(rows.count, 7, "b5t4 en: expected fixture-2…8 queued, got \(rows.count)")
-        XCTAssertEqual(rows.first?.identifier, "player.upNext.row.fixture-2")
+        XCTAssertEqual(rows.first?.identifier, "player.upNext.row.1.fixture-2")
         if rows.count >= 2 {
             notes.append("iphone-en row0=\(rows[0].frame) row1=\(rows[1].frame)")
             XCTAssertEqual(rows[0].frame.minX, rows[1].frame.minX, accuracy: 1, "b5t4 en: Up Next must be ONE column on iPhone")
@@ -1348,7 +1352,7 @@ final class ScreenshotTests: XCTestCase {
         let order = playerA11yOrder(app)
         notes.append("iphone-en a11y order=\(order)")
         XCTAssertFalse(order.contains("player.seekFeedback"), "b5t4 en: the seek-feedback layer must be absent from the accessibility tree")
-        if let h = order.firstIndex(of: "player.upNext.header"), let r = order.firstIndex(of: "player.upNext.row.fixture-2") {
+        if let h = order.firstIndex(of: "player.upNext.header"), let r = order.firstIndex(where: { $0.hasSuffix(".fixture-2") }) {
             XCTAssertLessThan(h, r, "b5t4 en: header must precede the rows in VoiceOver order")
         } else { XCTFail("b5t4 en: header/row missing from the a11y order \(order)") }
         try write(named: "player-b5t4-iphone-en-portrait", into: directory)
@@ -1755,7 +1759,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["player.upNext.header"].waitForExistence(timeout: 90), "live 3: Up Next never appeared")
         rows = upNextRows(app)
         notes.append("live-3 deep start: header after \(String(format: "%.1f", Date().timeIntervalSince(t3)))s (incl. launch); rows=\(rows.count) first=\(rows.first?.identifier ?? "-")")
-        XCTAssertEqual(rows.first?.identifier, "player.upNext.row.\(Self.livePlaylistPage2Second)", "live 3: deep start did not land on the page-2 target")
+        XCTAssertEqual(rows.first?.identifier, "player.upNext.row.101.\(Self.livePlaylistPage2Second)", "live 3: deep start did not land on the page-2 target")
         XCTAssertEqual(rows.count, 99)
         try write(named: "player-b5t4-live-deep-start", into: directory)
 

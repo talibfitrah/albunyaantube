@@ -57,10 +57,12 @@ nonisolated struct PlayerQueue: Equatable, Sendable {
         return current
     }
 
-    /// Up Next tap, id-matched (`PlayerViewModel.kt:355-387`). A desync is a no-op.
-    mutating func select(id: String) -> ContentItem? {
-        guard let i = items.firstIndex(where: { $0.id == id }) else { return nil }
-        index = i
+    /// Up Next tap (`PlayerViewModel.kt:355-387`), index-addressed: a playlist can legitimately
+    /// repeat a video id (Cubic P2, same class as 23b3c325), and an id match sent a tap on a later
+    /// duplicate back to its first occurrence. A desync (out-of-range index) is a no-op.
+    mutating func select(at index: Int) -> ContentItem? {
+        guard items.indices.contains(index) else { return nil }
+        self.index = index
         return current
     }
 

@@ -90,12 +90,24 @@ private func items(_ ids: [String]) -> [ContentItem] {
 }
 
 @Test func selectPlaysAnArbitraryQueuedItemAndRepositionsTheQueue() {
-    // `PlayerViewModel.kt:355-387`: the Up Next tap is id-matched against the queue.
+    // `PlayerViewModel.kt:355-387`: the Up Next tap repositions the queue to the tapped index.
     var q = PlayerQueue.start(items: items(["a", "b", "c"]), targetVideoId: nil, startIndex: 0,
                               shuffled: false, cursor: nil)
-    #expect(q.select(id: "c")?.id == "c")
+    #expect(q.select(at: 2)?.id == "c")
     #expect(q.upcoming.isEmpty)
-    #expect(q.select(id: "nope") == nil)      // desync is a no-op, never a crash
+    #expect(q.select(at: 99) == nil)          // desync is a no-op, never a crash
+    #expect(q.select(at: -1) == nil)
+}
+
+@Test func selectingALaterDuplicateOccurrencePlaysThatOccurrence() {
+    // Cubic P2, the Up Next twin of PlaylistDetail's `rowsStayDistinctWhenAPlaylistRepeatsAVideo`
+    // (23b3c325): a playlist can repeat a video id. A tap on the SECOND "dup" (absolute index 3)
+    // must reposition the queue there, never jump back to the first occurrence at index 1.
+    var q = PlayerQueue.start(items: items(["a", "dup", "b", "dup"]), targetVideoId: nil,
+                              startIndex: 0, shuffled: false, cursor: nil)
+    #expect(q.select(at: 3)?.id == "dup")
+    #expect(q.index == 3)
+    #expect(q.upcoming.isEmpty)
 }
 
 @Test func needsPageFiresAtFiveRemainingAndNotAboveIt() {

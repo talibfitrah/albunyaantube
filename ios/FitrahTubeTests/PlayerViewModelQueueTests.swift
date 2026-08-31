@@ -48,7 +48,7 @@ struct PlayerViewModelQueueTests {
         await vm.playToEnd()
         #expect(vm.args.videoId == "a")                    // did not advance
         #expect(vm.queue.upcoming.map(\.id) == ["b"])      // queue intact -- ruling 33 shows it
-        await vm.play(id: "b")
+        await vm.play(at: 1)
         #expect(vm.args.videoId == "b")                    // manual tap is unaffected
     }
 
@@ -193,6 +193,30 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state == .queueEnded)
         #expect(vm.queue.hasMorePages == false)
         #expect(source.pageCalls == 2)           // the latch: no third attempt
+    }
+
+    /// Cubic P3: `pageIfNeeded`'s single-flight guard returned EARLY while another task was still
+    /// suspended inside `queueSource.page(...)`. An end-of-item advance in that window saw an
+    /// empty `upcoming`, took nil from `queue.advance()` and showed `.queueEnded` -- with a whole
+    /// page still loading. A concurrent caller must await the in-flight fetch and advance into it.
+    @Test func anAdvanceDuringAnInFlightPageFetchWaitsInsteadOfEndingTheQueue() async {
+        let source = FakeQueueSource(pages: [(ids: ["a", "b"], next: "P2"), (ids: ["c", "d"], next: nil)],
+                                     gateFrom: 1)
+        let (vm, _) = makeModel(args: .init(videoId: "b", playlistId: "PL", targetVideoId: "b"),
+                                source: source)
+        let opening = Task { await vm.open() }   // loadQueue (call 0), then pageIfNeeded holds call 1
+        await source.waitUntilPageCalled(count: 2)
+        let advancing = Task { await vm.playToEnd() }
+        for _ in 0..<2000 {                      // the advance must be underway before the release
+            if vm.advanceCalls >= 1 { break }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        source.release()
+        await opening.value
+        await advancing.value
+        #expect(vm.state != .queueEnded)
+        #expect(vm.args.videoId == "c")
+        #expect(vm.state.isPlayable)
     }
 
     @Test func theDeepStartScanIsBoundedAndFallsBackToTheIndexHint() async {
