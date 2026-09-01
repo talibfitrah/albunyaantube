@@ -53,5 +53,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping @MainActor @Sendable () -> Void) {
         ProgressiveEngine.registerBackgroundCompletion(identifier: identifier, handler: completionHandler)
+        // Cubic P1: on a background-events relaunch no scene renders, so RootView's `.task` — the
+        // only other builder of the lazy `offlineManager` — never runs. Parking the handler alone
+        // recreates nothing: the queued delegate events are only delivered to a session that
+        // exists, and the delegate is what issues every next chunk and eventually pops the
+        // handler. Touching `offlineManager` through `AppContainer.current` (the container the App
+        // set at init — the smallest seam that avoids the closure-registration chicken-and-egg)
+        // builds the engine's session and `reattach()` re-binds the rows.
+        Task { @MainActor in
+            await AppContainer.current?.offlineManager.reattach()
+        }
     }
 }

@@ -175,6 +175,9 @@ actor OfflineManager: OfflineSaving {
 
     /// Test hook: which ids currently wait on a retry timer.
     var pendingRetryIds: Set<String> { Set(retries.keys) }
+    /// Test hook (cubic P1): how many times `reattach()` has run — the background-events relaunch
+    /// wiring is asserted at this flag level; the real relaunch is device territory.
+    private(set) var reattachCount = 0
 
     init(store: OfflineStore, engine: any OfflineEngine, resolver: any StreamResolving,
          limiterCheck: @escaping @Sendable (String) async -> Decision,
@@ -272,6 +275,7 @@ actor OfflineManager: OfflineSaving {
     }
 
     func reattach() async {
+        reattachCount += 1
         let live = await engine.liveIds()
         let rows = await readAll()
         for row in rows where row.status == .running {
@@ -509,7 +513,18 @@ actor OfflineManager: OfflineSaving {
         // for a dead row, in parallel with whatever the freed slot picked up next.
         guard stillCurrent(row.id, attempt) else { return }
         guard let url = Self.sourceURL(resolved.stream, audioOnly: row.audioOnly) else {
-            if case .embed = resolved.stream { await fail(row.id, .notSaveable) } else { await fail(row.id, .noStream) }
+            if case .embed = resolved.stream { await fail(row.id, .notSaveable); return }
+            // Cubic P2: an audio-only save resolves without `requiresMuxed`, so this answer may be
+            // the shared `ManifestCache`'s — and a player fallback walk caches `.progressive`
+            // (nil `audioOnlyURL`) for its whole 1 h TTL even though a fresh visionos walk would
+            // return `.hls` with itag-140. `!forceRefresh` is exactly "plausibly from cache" (a
+            // forced walk never reads it), so re-resolve once forced — same shape as the
+            // <10-min-expiry refresh above and the 403 re-resolve; forceRefresh bounds it.
+            if row.audioOnly, !forceRefresh {
+                await resolveAndStart(row, forceRefresh: true)
+                return
+            }
+            await fail(row.id, .noStream)
             return
         }
         if row.status != .running { await transition(row.id, row.status == .paused ? .resume : .start) }

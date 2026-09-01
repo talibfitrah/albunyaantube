@@ -59,6 +59,15 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
 /// `lazy` so building a container stays cheap and side-effect-free until something actually reads
 /// settings/filters/history.
 @MainActor final class AppContainer {
+    /// Cubic P1: the app's ONE container, set once by `FitrahTubeApp.init` — the seam
+    /// `AppDelegate.application(_:handleEventsForBackgroundURLSession:completionHandler:)` needs on
+    /// a background-events relaunch, where no scene ever renders and so RootView's `.task` (the
+    /// only other builder of `offlineManager`) never runs. Static-on-the-class rather than a
+    /// registered closure: a closure the manager registers when built recreates the same
+    /// chicken-and-egg (nothing builds the manager on that launch path). Only the App sets it;
+    /// tests/previews that build their own containers leave it alone.
+    static var current: AppContainer?
+
     let catalog: any CatalogClient
     private let userDefaults: UserDefaults
     private let modelContainer: ModelContainer

@@ -26,19 +26,24 @@ struct FitrahTubeApp: App {
         return AppConfig.validate(args[i + 1])
     }
 
-    /// `-fitrah-stdout <path>`: every DEBUG `print` (IndexClient statuses, the remote-config
+    #else
+    @State private var container = AppContainer.live()
+    #endif
+
+    /// DEBUG `-fitrah-stdout <path>`: every DEBUG `print` (IndexClient statuses, the remote-config
     /// refresh, InnerTubeKit's bot-check trips) lands in a file the live XCUITest can read -- the
     /// app's own stdout is invisible from a UI-test run and `simctl spawn … log` needs approval.
     init() {
+        #if DEBUG
         let args = LaunchArguments.debug
         if let i = args.firstIndex(of: "-fitrah-stdout"), args.indices.contains(i + 1),
            freopen(args[i + 1], "a", stdout) != nil {
             setvbuf(stdout, nil, _IOLBF, 0)
         }
+        #endif
+        // Cubic P1: the background-events relaunch seam — see `AppContainer.current`.
+        AppContainer.current = container
     }
-    #else
-    @State private var container = AppContainer.live()
-    #endif
 
     // Owned at the app scope, not inside MainShellView, so a deep link that arrives before the
     // shell exists -- e.g. tapped while Onboarding is still showing -- has somewhere to land

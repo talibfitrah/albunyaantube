@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Testing
+import UIKit
 @testable import FitrahTube
 
 @Suite(.perTest)
@@ -33,6 +34,27 @@ struct AppContainerTests {
             let survived = (try? Data(contentsOf: sidecar))?.starts(with: stale) ?? false
             #expect(!survived, "\(sidecar.lastPathComponent) survived the corrupt-store recovery")
         }
+    }
+
+    /// Cubic P1: a background-events relaunch calls the AppDelegate hook and renders NO scene, so
+    /// RootView's `.task` — the only other builder of `offlineManager` — never runs; without this
+    /// wiring the background session/delegate is never recreated, queued delegate events go
+    /// undelivered, the chunk walk stalls, and the parked completion handler is never called. The
+    /// hook must reach the App's one container (the `AppContainer.current` seam, set at
+    /// `FitrahTubeApp.init` — which the test host's launch already ran) and schedule a `reattach()`.
+    /// Asserted at flag level; the real background relaunch is device territory.
+    @Test func theBackgroundSessionRelaunchHookReachesTheManagerAndSchedulesReattach() async throws {
+        let container = try #require(AppContainer.current, "FitrahTubeApp.init must set AppContainer.current")
+        let before = await container.offlineManager.reattachCount
+        AppDelegate().application(
+            UIApplication.shared,
+            handleEventsForBackgroundURLSession: ProgressiveEngine.backgroundSessionIdentifier) {}
+        var after = before
+        for _ in 0..<2000 where after == before {
+            try? await Task.sleep(for: .milliseconds(1))
+            after = await container.offlineManager.reattachCount
+        }
+        #expect(after > before, "the relaunch hook never scheduled a reattach")
     }
 
     @Test func fakeContainerServesCannedCategories() async throws {

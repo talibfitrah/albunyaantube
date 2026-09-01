@@ -189,6 +189,39 @@ struct OfflineManagerTests {
         #expect(row.errorCode == "NOT_SAVEABLE")
     }
 
+    /// Cubic P2: an audio-only save resolves WITHOUT `requiresMuxed`, so it reads the shared
+    /// `ManifestCache` — which may hold a player fallback walk's `.progressive` (nil
+    /// `audioOnlyURL`) for its whole 1 h TTL even though a fresh visionos walk would return
+    /// `.hls` with itag-140. The manager must re-resolve ONCE with `forceRefresh: true` (a
+    /// forced walk never reads the cache) before failing.
+    @Test func anAudioOnlySaveHittingAProgressiveCacheShapeReResolvesForcedAndStarts() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hold(Self.lectureVideoId)
+        let saveTask = Task { await save(rig) }
+        await rig.resolver.waitUntilCalled(count: 1)   // call 1 captured .progressive (the cache shape)
+        rig.resolver.outcome = .hls                    // what a fresh walk would return
+        rig.resolver.release(id: Self.lectureVideoId)
+        await rig.resolver.waitUntilCalled(count: 2)
+        rig.resolver.release(id: Self.lectureVideoId)
+        let id = await saveTask.value
+        #expect(rig.resolver.calls.map(\.forceRefresh) == [false, true])
+        #expect(rig.engine.starts.count == 1)
+        #expect(rig.engine.starts.first?.url.absoluteString == "https://r1/a140")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+    }
+
+    /// Cubic P2, the bound: when the FORCED re-resolve still yields no audio URL, the row fails
+    /// NO_STREAM after exactly two resolves — never a loop.
+    @Test func anAudioOnlySaveWhoseForcedReResolveStillLacksAudioFailsNoStream() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        let id = await save(rig)
+        #expect(rig.resolver.calls.map(\.forceRefresh) == [false, true])
+        #expect(rig.engine.starts.isEmpty)
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.failed.rawValue)
+        #expect(row.errorCode == "NO_STREAM")
+    }
+
     @Test func anExpiryUnderTenMinutesForcesExactlyOneRefreshBeforeTheEngine() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         // RecordingResolver answers expiresAt = now + 3600; a clock 3300 s ahead leaves 300 s.
