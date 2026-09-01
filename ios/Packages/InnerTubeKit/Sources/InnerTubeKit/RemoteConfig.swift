@@ -49,6 +49,11 @@ public struct RemoteConfig: Sendable, Codable, Equatable {
     /// Optional on purpose -- a persisted last-known-good config from before this field must still
     /// decode (`bundledDefault` fatalErrors on a decode failure); nil means the app's bundled id.
     public var featuredCategoryId: String?
+    /// Phase 3 Task 5: the Save-for-offline kill-switch. Optional on purpose (the
+    /// `featuredCategoryId` pattern above): a persisted last-known-good config from before this
+    /// field must still decode, and nil means ENABLED -- a pre-Phase-3 config must not dark the
+    /// feature. Read through `isDownloadsEnabled`; no sanitizing (a Bool needs none).
+    public var downloadsEnabled: Bool?
 
     public init(
         schemaVersion: Int,
@@ -56,7 +61,8 @@ public struct RemoteConfig: Sendable, Codable, Equatable {
         resolverOrder: [String],
         manifestCacheSeconds: Int,
         clients: [String: ClientContext],
-        featuredCategoryId: String? = nil
+        featuredCategoryId: String? = nil,
+        downloadsEnabled: Bool? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.minAppVersion = minAppVersion
@@ -64,10 +70,14 @@ public struct RemoteConfig: Sendable, Codable, Equatable {
         self.manifestCacheSeconds = manifestCacheSeconds
         self.clients = clients
         self.featuredCategoryId = featuredCategoryId
+        self.downloadsEnabled = downloadsEnabled
     }
 }
 
 extension RemoteConfig {
+    /// nil ⇒ enabled (see `downloadsEnabled`); the ONE call-site helper every gate reads through.
+    public var isDownloadsEnabled: Bool { downloadsEnabled ?? true }
+
     /// Strategy names the bundled resolver ladder actually implements (spec
     /// §6.13: "unknown strategy names are dropped").
     ///

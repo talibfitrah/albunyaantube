@@ -4,6 +4,7 @@
   "resolverOrder": ["visionosHLS", "androidItag18"],
   "manifestCacheSeconds": 3600,
   "featuredCategoryId": "itirf9pGpAvoBT5VSkEc",
+  "downloadsEnabled": true,
   "clients": {
     "visionos": {
       "clientName": "VISIONOS", "clientVersion": "1.02", "clientNameId": 101,

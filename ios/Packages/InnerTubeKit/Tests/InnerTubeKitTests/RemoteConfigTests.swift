@@ -225,6 +225,43 @@ import Testing
         #expect(config.featuredCategoryId != nil)     // ruling 63's key is present
     }
 
+    /// Task 5 (Phase 3): the kill-switch field is optional so a pre-Phase-3 persisted
+    /// last-known-good config (or a published one that omits it) still decodes -- and nil must
+    /// read as ENABLED, or the last-known-good darks the feature (the `featuredCategoryId`
+    /// optional pattern, verbatim).
+    @Test func aDocumentWithoutDownloadsEnabledDecodesNilAndReadsEnabled() throws {
+        let body = Data(
+            """
+            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS"],"manifestCacheSeconds":3600,"clients":{}}
+            """.utf8)
+        let decoded = try JSONDecoder().decode(RemoteConfig.self, from: body)
+        #expect(decoded.downloadsEnabled == nil)
+        #expect(decoded.isDownloadsEnabled == true)
+    }
+
+    /// The OFF state must survive persistence: `false` fetched once -> sanitized -> persisted as
+    /// last-known-good -> a fresh store (relaunch) still reads the feature as OFF.
+    @Test func downloadsEnabledFalseRoundTripsThroughLastKnownGood() async throws {
+        let body = Data(
+            """
+            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS"],"manifestCacheSeconds":3600,"clients":{},"downloadsEnabled":false}
+            """.utf8)
+        let keyValueStore = InMemoryKeyValueStore()
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: body))
+        ])
+        let store = RemoteConfigStore(
+            transport: transport, keyValueStore: keyValueStore, url: URL(string: "https://example.com/remote-config.json")!)
+        await store.refresh()
+        #expect(await store.current().downloadsEnabled == false)
+        #expect(await store.current().isDownloadsEnabled == false)
+
+        // Relaunch: a fresh store over the same persistence, no network.
+        let relaunched = RemoteConfigStore(
+            transport: FixtureTransport(routes: []), keyValueStore: keyValueStore, url: URL(string: "https://example.invalid/none")!)
+        #expect(await relaunched.current().isDownloadsEnabled == false)
+    }
+
     @Test func semVerComparesNumericSegmentsNotLexicographically() {
         #expect(SemVer.compare("1.0.0", "1.0.10") == .orderedAscending)
         #expect(SemVer.compare("1.2.0", "1.10.0") == .orderedAscending)
