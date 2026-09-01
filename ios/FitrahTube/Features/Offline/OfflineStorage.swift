@@ -40,4 +40,19 @@ enum OfflineStorage {
     nonisolated static func byteText(_ bytes: Int64, locale: Locale) -> String {
         bytes.formatted(.byteCount(style: .file).locale(locale))
     }
+
+    /// Free space the save could actually use — `volumeAvailableCapacityForImportantUsage`
+    /// includes purgeable space iOS would clear for a user-initiated save. A read, not a mutation:
+    /// the manager still owns every write/delete.
+    nonisolated static func availableBytes(base: URL = URL.applicationSupportDirectory) -> Int64 {
+        let values = try? base.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return values?.volumeAvailableCapacityForImportantUsage ?? 0
+    }
+
+    /// The Settings Storage row's value — "%@ used • %@ available" (no count; the Saved screen's
+    /// footer carries that).
+    static func storageValue(used: Int64, available: Int64, locale: Locale) -> String {
+        Format.localizedFormat("settings_offline_storage_value", locale: locale,
+                               byteText(used, locale: locale), byteText(available, locale: locale))
+    }
 }

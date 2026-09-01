@@ -45,6 +45,8 @@ nonisolated enum Route: Hashable, Sendable {
     case favorites
     case settings
     case about
+    /// Phase 3 Task 6: the Saved (offline library) screen — the ONE Route case Phase 3 adds.
+    case offline
 }
 
 extension Route {

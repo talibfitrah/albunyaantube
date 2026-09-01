@@ -68,6 +68,7 @@ struct FitrahTubeApp: App {
                     showDebugBannerIfRequested()
                     seedDebugFavoritesIfRequested()
                     seedDebugSubscriptionsIfRequested()
+                    seedDebugOfflineItemsIfRequested()
                     refreshRemoteConfigIfDue()
                     // Phase 3 Task 4: re-bind rows to background tasks that outlived the last
                     // launch (creates the session, so a relaunch-for-events gets its delegate).
@@ -222,6 +223,9 @@ struct FitrahTubeApp: App {
             router.push(.settings)
         case "about":
             router.push(.about)
+        case "offline":
+            // Phase 3 Task 6: the Saved screen, for the `phase3-saved` screenshot case.
+            router.push(.offline)
         default:
             break
         }
@@ -273,6 +277,28 @@ struct FitrahTubeApp: App {
             let id = "UCseed\(index)"
             guard !container.subscriptions.isSubscribed(id) else { continue }
             try? container.subscriptions.toggle(id: id, name: "Seeded Channel \(index)", avatarURL: nil)
+        }
+        #endif
+    }
+
+    /// Phase 3 Task 6 screenshot rig: `-fitrah-seed-offline` inserts one Saved row per
+    /// `OfflineStatus` (the full action matrix on one screen). Rows only, through the store —
+    /// no files, no manager. Seed, not toggle — same reason as `seedDebugFavoritesIfRequested`.
+    private func seedDebugOfflineItemsIfRequested() {
+        #if DEBUG
+        guard LaunchArguments.debug.contains("-fitrah-seed-offline") else { return }
+        for (index, status) in OfflineStatus.allCases.enumerated() {
+            let videoId = "seed-offline-\(index)"
+            guard container.offlineStore.item(videoId: videoId) == nil else { continue }
+            let item = OfflineItem(
+                videoId: videoId, title: "Seeded Lecture \(index + 1) (\(status.rawValue))",
+                channelName: "Sample Channel", thumbnailUrl: nil,
+                qualityLabel: "360p", audioOnly: false, status: status.rawValue,
+                bytesWritten: Int64(index + 1) * 3_000_000,
+                totalBytes: status == .queued ? nil : 18_000_000,
+                errorCode: status == .failed ? "NETWORK" : nil,
+                completedAt: status == .completed ? Date() : nil)
+            try? container.offlineStore.insert(item)
         }
         #endif
     }

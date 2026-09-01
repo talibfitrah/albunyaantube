@@ -87,8 +87,17 @@ struct PlayerScreen: View {
         // new video is in flight.
         .task(id: model?.args.videoId ?? args.videoId) {
             saveGate = nil
-            saveEnabled = await container.innerTube.remoteConfig.current().isDownloadsEnabled
-            saveGate = await container.offlineGate.answer(model?.args.videoId ?? args.videoId)
+            // Task 5 review fold-in 1: `.task(id:)` cancels the old task on advance but does NOT
+            // prevent its in-flight continuation from resuming — without these guards a stale
+            // `.allowed` fetched for video A could land AFTER the reset for video B ran (the
+            // gate fetch can take ~15 s against a slow backend), showing Save on a video the
+            // gate never affirmed. Fail-closed means checking before every assignment.
+            let enabled = await container.innerTube.remoteConfig.current().isDownloadsEnabled
+            guard !Task.isCancelled else { return }
+            saveEnabled = enabled
+            let answer = await container.offlineGate.answer(model?.args.videoId ?? args.videoId)
+            guard !Task.isCancelled else { return }
+            saveGate = answer
         }
         // Task 9 + B3 task 4: the two announcements `PlayerStateView` can't make itself, since
         // neither `.rung2Progressive` nor `.embed` mounts it (Task 7's identity note keeps both

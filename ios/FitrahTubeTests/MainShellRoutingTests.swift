@@ -32,6 +32,11 @@ struct MainShellRoutingTests {
         #expect(leaf == "ChannelDetailScreen")
     }
 
+    /// Phase 3 Task 6: the ONE new `Route` case this plan adds.
+    @Test func theOfflineRouteRendersTheSavedScreen() {
+        #expect(leafTypeName(for: .offline) == "SavedScreen")
+    }
+
     @Test func theWalkerReachesADistinctLeafPerRoute() {
         // Guards the helper: Plan C Task 5 gave the last route its screen, so no placeholder route is
         // left to pin; two different routes resolving to two different leaves proves the walker

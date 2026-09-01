@@ -2647,6 +2647,29 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "detail-c6-ipad-en-light-playlist-a11y3", into: directory)
     }
 
+    // MARK: - Phase 3 Task 6: the Saved screen (plan 2026-09-01-ios-phase3-offline-cast)
+
+    /// `-fitrah-seed-offline` inserts one row per `OfflineStatus`, so one screen shows the full
+    /// action matrix, every status caption, the failed row's error copy and the storage footer.
+    /// en + ar (RTL) portrait, on whichever device `screenshots.sh`'s phase3-saved block launches.
+    func testSavedScreenPhase3() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "phase3-saved",
+                            arguments: ["-fitrah-seed-offline", "-fitrah-route", "offline"],
+                            anchor: .element("unused"))
+        for locale in Self.locales {
+            XCUIDevice.shared.orientation = .portrait
+            let app = launch(screen, locale: locale, extraArguments: [])
+            // Seeded titles come from `seedDebugOfflineItemsIfRequested` and are
+            // locale-independent, same idea as the FakeCatalogClient anchors.
+            let firstRow = app.staticTexts
+                .matching(NSPredicate(format: "label CONTAINS %@", "Seeded Lecture")).firstMatch
+            XCTAssertTrue(firstRow.waitForExistence(timeout: 20),
+                          "phase3-saved/\(locale.key): the seeded rows never appeared")
+            try write(named: "phase3-saved-\(locale.key)-\(locale.theme)-portrait", into: directory)
+        }
+    }
+
     // MARK: - Helpers
 
     /// `fakeContainer: false` (Plan C Task 6's live leg) launches the LIVE container: real

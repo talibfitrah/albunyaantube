@@ -93,10 +93,16 @@ import Testing
     private static let allGates: [GateAnswer?] = [nil, .allowed, .notAllowed, .gone, .unreachable]
     private static let allStatuses: [OfflineStatus?] = [nil] + OfflineStatus.allCases.map { $0 }
 
-    /// The kill-switch OFF state hides EVERY save affordance, silently — progress and Open included.
-    @Test func downloadsDisabledHidesEverything() {
+    /// Fork D (Task 5 review fold-in): the kill-switch governs SAVING, not access to what is
+    /// already saved — OFF hides only the `.save` state (silently). A running save stays
+    /// visible/cancellable and a completed item stays openable.
+    @Test func downloadsDisabledHidesOnlyTheSaveState() {
         for gate in Self.allGates {
-            for status in Self.allStatuses {
+            for status: OfflineStatus in [.queued, .running, .paused] {
+                #expect(SaveAffordance.state(gate: gate, downloadsEnabled: false, itemStatus: status) == .progress)
+            }
+            #expect(SaveAffordance.state(gate: gate, downloadsEnabled: false, itemStatus: .completed) == .open)
+            for status: OfflineStatus? in [nil, .failed, .cancelled] {
                 #expect(SaveAffordance.state(gate: gate, downloadsEnabled: false, itemStatus: status) == .hidden)
             }
         }

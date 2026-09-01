@@ -26,6 +26,8 @@ nonisolated enum SettingsRow: Hashable {
     case language, theme
     case audioOnly, backgroundPlay, safeMode
     case downloadQuality, wifiOnly
+    // Phase 3 Task 6: the Save-for-offline section's library/storage/clear rows.
+    case savedLibrary, storage, clearOffline
     case favorites
     case aboutSupport
 
@@ -39,6 +41,9 @@ nonisolated enum SettingsRow: Hashable {
         case .safeMode: "shield"
         case .downloadQuality: "arrow.down.circle"
         case .wifiOnly: "wifi"
+        case .savedLibrary: "checkmark.circle"
+        case .storage: "internaldrive"
+        case .clearOffline: "trash"
         case .favorites: "heart"
         case .aboutSupport: "questionmark.circle"
         }
@@ -53,6 +58,9 @@ nonisolated enum SettingsRow: Hashable {
         case .safeMode: "settings_safe_mode"
         case .downloadQuality: "settings_download_quality"
         case .wifiOnly: "settings_wifi_only"
+        case .savedLibrary: "offline_saved_title"
+        case .storage: "settings_offline_storage"
+        case .clearOffline: "settings_offline_clear"
         case .favorites: "settings_favorites_title"
         case .aboutSupport: "settings_support_center" // row inside the "About & Support" section
         }
@@ -64,7 +72,8 @@ nonisolated enum SettingsRow: Hashable {
         case .backgroundPlay: "settings_background_play_desc"
         case .safeMode: "settings_safe_mode_desc"
         case .wifiOnly: "settings_wifi_only_desc"
-        case .language, .theme, .downloadQuality, .favorites, .aboutSupport: nil
+        case .language, .theme, .downloadQuality, .savedLibrary, .storage, .clearOffline,
+             .favorites, .aboutSupport: nil
         }
     }
 }
@@ -80,6 +89,9 @@ nonisolated enum SettingsLayout {
         Row(section: .playback, row: .backgroundPlay),
         Row(section: .downloads, row: .downloadQuality),
         Row(section: .downloads, row: .wifiOnly),
+        Row(section: .downloads, row: .savedLibrary),
+        Row(section: .downloads, row: .storage),
+        Row(section: .downloads, row: .clearOffline),
         Row(section: .content, row: .safeMode),
         Row(section: .aboutSupport, row: .aboutSupport),
     ]
@@ -147,7 +159,7 @@ private struct SettingsPickerSheet: View {
 /// Android's `SettingsFragment` (`favorites-settings-about.md:139-253`). Account/Sign-out is
 /// omitted entirely: phase 1 has no signed-in state to show it for (spec D11: guest-only until
 /// phase 4 auth), so "hidden unless signed in" holds with nothing that ever signs in yet --
-/// `SettingsRowsTests.nineRowsInFiveSectionsNoAccountSection` proves this by construction.
+/// `SettingsRowsTests.twelveRowsInSixSectionsNoAccountSection` proves this by construction.
 struct SettingsView: View {
     @Environment(\.container) private var container
     @Environment(\.router) private var router
@@ -157,6 +169,8 @@ struct SettingsView: View {
 
     @State private var showThemePicker = false
     @State private var showQualityPicker = false
+    /// Phase 3 Task 6 (CF-B3-11): Clear saved videos requires an explicit confirm.
+    @State private var showClearOfflineConfirm = false
     /// task-14 (`screenshots/task-14/iphone-17/settings-en-light-a11y3-portrait.png`): the row
     /// symbol scales with Dynamic Type but its 28 pt circular plate did not, so at
     /// `.accessibility3` the glyph overflowed the plate on every row.
@@ -199,6 +213,14 @@ struct SettingsView: View {
                 selection: Binding(get: { settings.downloadQuality }, set: { settings.downloadQuality = $0 })
             )
         }
+        // Phase 3 Task 6 (CF-B3-11): a confirmation `.alert`, deleting through the manager once
+        // per row (`OfflineClearAll`) — never the file system from UI.
+        .alert(String(localized: "settings_offline_clear"), isPresented: $showClearOfflineConfirm) {
+            Button(String(localized: "offline_action_delete"), role: .destructive) { clearOffline() }
+            Button(String(localized: "cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "settings_offline_clear_confirm"))
+        }
         .task {
             #if DEBUG
             // Acceptance-screenshot hook (task-13): the theme picker otherwise only opens after a
@@ -228,6 +250,14 @@ struct SettingsView: View {
             actionRow(row, value: qualityValue) { showQualityPicker = true }
         case .wifiOnly:
             toggleRow(row, isOn: Binding(get: { settings.wifiOnlyDownloads }, set: { settings.wifiOnlyDownloads = $0 }))
+        case .savedLibrary:
+            actionRow(row, value: nil) { router.push(.offline) }
+        case .storage:
+            valueRow(row, value: OfflineStorage.storageValue(
+                used: OfflineStorage.usedBytes(items: container.offlineStore.items),
+                available: OfflineStorage.availableBytes(), locale: locale))
+        case .clearOffline:
+            actionRow(row, value: nil) { showClearOfflineConfirm = true }
         case .favorites:
             actionRow(row, value: nil) { router.push(.favorites) }
         case .aboutSupport:
@@ -268,6 +298,23 @@ struct SettingsView: View {
             // five settings it was.
             Toggle(String(localized: String.LocalizationValue(row.titleKey)), isOn: isOn).labelsHidden()
         }
+    }
+
+    /// Informational row (Phase 3 Task 6's Storage): icon + label + value, no chevron, no action.
+    private func valueRow(_ row: SettingsRow, value: String) -> some View {
+        HStack(spacing: Spacing.sm) {
+            rowIcon(row)
+            rowLabel(row)
+            Spacer()
+            Text(value)
+                .foregroundStyle(Color.textSecondary)
+        }
+    }
+
+    private func clearOffline() {
+        let ids = container.offlineStore.items.map(\.id)
+        let manager = container.offlineManager
+        Task { await OfflineClearAll.run(ids: ids, manager: manager) }
     }
 
     private func actionRow(_ row: SettingsRow, value: String?, action: @escaping () -> Void) -> some View {

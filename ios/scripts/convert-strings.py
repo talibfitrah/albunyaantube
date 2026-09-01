@@ -416,10 +416,12 @@ EXTRA_KEYS = {
         "ar": "فتح",
         "nl": "Openen",
     },
+    # nl: "Wissen", not "Verwijderen" -- Remove (a failed/cancelled row) and Delete (a saved
+    # file) sat on adjacent rows with identical Dutch labels (Task 5 review fold-in 4).
     "offline_action_delete": {
         "en": "Delete",
         "ar": "حذف",
-        "nl": "Verwijderen",
+        "nl": "Wissen",
     },
     # Settings rows Task 6 adds under the Save-for-offline section.
     "settings_offline_storage": {
@@ -431,6 +433,13 @@ EXTRA_KEYS = {
         "en": "Clear saved videos",
         "ar": "مسح الفيديوهات المحفوظة",
         "nl": "Opgeslagen video's wissen",
+    },
+    # The Settings Storage row's value ("Storage    1.2 GB used • 40 GB available") -- args are
+    # pre-localized byte strings from `OfflineStorage.byteText`.
+    "settings_offline_storage_value": {
+        "en": "%1$@ used • %2$@ available",
+        "ar": "%1$@ مستخدمة • %2$@ متاحة",
+        "nl": "%1$@ gebruikt • %2$@ beschikbaar",
     },
     "settings_offline_clear_confirm": {
         "en": "Remove all saved videos? This can't be undone.",
@@ -895,6 +904,13 @@ def verify(out):
     # Every emitted key carries all three locales -- the invariant the amended R7 exists to hold.
     for key, entry in out["strings"].items():
         assert set(entry["localizations"]) == {"en", "ar", "nl"}, f"{key}: {sorted(entry['localizations'])}"
+
+    # Task 5 review fold-in 4: Remove and Delete are adjacent Saved-row actions -- their labels
+    # must differ in every locale, or the row shows two identical buttons.
+    for loc in ("en", "ar", "nl"):
+        remove = value_of(out["strings"]["offline_action_remove"], loc)
+        delete = value_of(out["strings"]["offline_action_delete"], loc)
+        assert remove != delete, f"offline_action_remove == offline_action_delete in {loc}: {remove}"
 
     # A refused key re-authored under EXTRA_KEYS (share_app_promo) is emitted from there, not Android.
     for key in REFUSE - set(EXTRA_KEYS):

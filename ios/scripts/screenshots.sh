@@ -436,6 +436,26 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$C_TASK6_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
 
+# Phase 3 Task 6 (docs/superpowers/plans/2026-09-01-ios-phase3-offline-cast.md): the Saved screen
+# with `-fitrah-seed-offline` rows across all six statuses, en + ar, phone + iPad. One
+# `-only-testing:` per invocation (the Plan C scoping trap).
+SAVED_OUT="$ROOT/.superpowers/sdd/2026-09-01-ios-phase3-offline-cast/screenshots/phase3-saved"
+for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
+    slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
+    echo "== phase3-saved ($device) -> $SAVED_OUT/$slug =="
+    rm -rf "${SAVED_OUT:?}/$slug"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$SAVED_OUT/$slug" xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testSavedScreenPhase3 \
+        -destination "platform=iOS Simulator,name=$device" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "$device" >/dev/null 2>&1
+done
+
 # Task 6 step 5 (live acceptance): OPT-IN, same contract as B5_LIVE -- talks to youtube.com AND the
 # backend named by C_LIVE_API_BASE_URL (default: production), and files exactly ONE real content
 # report per run (reason OTHER, "iOS Plan C acceptance test - safe to dismiss"). Step 8 needs a real

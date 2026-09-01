@@ -8697,7 +8697,7 @@
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Verwijderen"
+            "value": "Wissen"
           }
         }
       }
@@ -15050,6 +15050,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Opslag"
+          }
+        }
+      }
+    },
+    "settings_offline_storage_value": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ مستخدمة • %2$@ متاحة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ used • %2$@ available"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ gebruikt • %2$@ beschikbaar"
           }
         }
       }

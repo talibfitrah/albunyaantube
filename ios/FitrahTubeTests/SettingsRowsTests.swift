@@ -13,12 +13,15 @@ struct SettingsRowsTests {
     // minus the phase-3/none rows (RULINGS 32-35). RULINGS.md line 3 makes parity the default, so
     // Safe Mode keeps its own "Content" section and Library stays right after General.
 
+    // Phase 3 Task 6: the Downloads section (now titled with the re-authored "Save for offline"
+    // copy) keeps its two Android rows and gains Saved library / Storage / Clear, in the plan's
+    // listing order (kept rows first, gained rows after).
     @Test func rowOrderMatchesAndroidExactly() {
         let expected: [SettingsRow] = [
             .language, .theme,
             .favorites,
             .audioOnly, .backgroundPlay,
-            .downloadQuality, .wifiOnly,
+            .downloadQuality, .wifiOnly, .savedLibrary, .storage, .clearOffline,
             .safeMode,
             .aboutSupport,
         ]
@@ -30,7 +33,7 @@ struct SettingsRowsTests {
             .general, .general,
             .library,
             .playback, .playback,
-            .downloads, .downloads,
+            .downloads, .downloads, .downloads, .downloads, .downloads,
             .content,
             .aboutSupport,
         ]
@@ -44,8 +47,8 @@ struct SettingsRowsTests {
     // appears: phase 1 has no signed-in state to show it for (spec D11, guest-only until phase 4
     // auth), so there is no `.signOut` case and no Account section case to ever render -- proved
     // by construction (the type simply has none), not by a runtime visibility flag.
-    @Test func nineRowsInSixSectionsNoAccountSection() {
-        #expect(SettingsLayout.rows.count == 9)
+    @Test func twelveRowsInSixSectionsNoAccountSection() {
+        #expect(SettingsLayout.rows.count == 12)
         #expect(SettingsSection.allCases.count == 6)
     }
 

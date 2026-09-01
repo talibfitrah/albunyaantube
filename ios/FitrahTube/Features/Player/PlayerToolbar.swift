@@ -16,12 +16,18 @@ struct PlayerToolbar: View {
     var saveEnabled: Bool = true
 
     @Environment(\.container) private var container
+    @Environment(\.router) private var router
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
     @State private var isFavorite = false
     @State private var bannerMessage: BannerMessage?
     @State private var showReport = false
-    @State private var showSaveSheet = false
+    /// Task 5 review fold-in 2: the args CAPTURED at tap time, not a `Bool` re-reading `self.args`
+    /// — `PlayerViewModel.swapArgs` replaces `args` in place on a queue auto-advance, and an
+    /// `isPresented` sheet re-evaluating its content closure mid-selection would silently re-aim
+    /// the quality picker (and its Save) at the advanced-to video. `.sheet(item:)` keeps the
+    /// tapped video; its identity is the videoId (`SavedScreenTests.theSaveSheetIdentityIs...`).
+    @State private var saveSheetArgs: PlayerArgs?
 
     var body: some View {
         HStack {
@@ -47,8 +53,8 @@ struct PlayerToolbar: View {
                 bannerMessage = BannerMessage(text: String(localized: "report_success"))
             }
         }
-        .sheet(isPresented: $showSaveSheet) {
-            SaveOfflineSheet(args: args)
+        .sheet(item: $saveSheetArgs) { presented in
+            SaveOfflineSheet(args: presented)
         }
         // `.task(id:)`, not `.task` (Cubic #12): `PlayerViewModel.swapArgs` mutates `args` in place
         // on every advance / Up Next tap, and an id-less task runs once per view lifetime -- so the
@@ -114,7 +120,7 @@ struct PlayerToolbar: View {
         switch saveButtonState {
         case .save:
             Button {
-                showSaveSheet = true
+                saveSheetArgs = args
             } label: {
                 toolbarLabel(systemImage: "arrow.down.circle", title: String(localized: "offline_save"))
             }
@@ -131,10 +137,12 @@ struct PlayerToolbar: View {
             .accessibilityLabel(String(localized: "offline_save"))
             .accessibilityValue(progressCaption)
         case .open:
-            // Task 6 wires Route.offline (the offline player) -- until then the completed state
-            // renders its label/a11y with a no-op action rather than a route case this task
-            // isn't allowed to add.
-            Button {} label: {
+            // Task 6: Open pushes `Route.offline` (the Saved screen, where the completed row
+            // lives) -- NOT a player route: `PlayerArgs` has no `offlineItemId` yet. Task 7
+            // (offline playback) upgrades this push to play the saved file directly.
+            Button {
+                router.push(.offline)
+            } label: {
                 toolbarLabel(systemImage: "checkmark.circle", title: String(localized: "offline_action_open"))
             }
             .accessibilityIdentifier("player.saveButton")
@@ -175,6 +183,12 @@ struct PlayerToolbar: View {
         }
         .foregroundStyle(Color.textPrimary)
     }
+}
+
+/// The save sheet's presentation identity (`.sheet(item:)`, fold-in 2): the videoId, so the
+/// sheet is pinned to the video whose Save was tapped even if the toolbar's `args` advance.
+nonisolated extension PlayerArgs: Identifiable {
+    var id: String { videoId }
 }
 
 extension PlayerArgs {

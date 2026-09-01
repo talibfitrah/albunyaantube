@@ -160,6 +160,8 @@ struct MainShellView: View {
             SettingsView()
         case .about:
             AboutView()
+        case .offline:
+            SavedScreen()
         }
     }
 

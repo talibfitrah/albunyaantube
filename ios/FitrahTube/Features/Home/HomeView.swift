@@ -18,6 +18,11 @@ struct HomeView: View {
     /// other two list screens use -- in particular guard 5's progress invariant, which is what
     /// stops a failing endpoint from being retried on every footer-spinner-driven relayout.
     @State private var paginationGuard = PaginationGuard()
+    /// Phase 3 Task 6: the overflow menu's Saved entry, gated by the remote kill-switch
+    /// (`RemoteConfig.isDownloadsEnabled`, read once per appearance — the `PlayerScreen` idiom).
+    /// false until the read lands: the OFF state hides silently, so appearing late beats
+    /// flashing out.
+    @State private var downloadsEnabled = false
 
     private static let topAnchor = "home-top"
 
@@ -86,6 +91,7 @@ struct HomeView: View {
         // `submitList` completion callback (gate B1-C1).
         .onChange(of: viewModel?.state) { _, _ in triggerAutoFill() }
         .task {
+            downloadsEnabled = await container.innerTube.remoteConfig.current().isDownloadsEnabled
             if viewModel == nil {
                 // ponytail: `widthClass` is captured once here (the environment value at first
                 // appearance), not re-read live on every later call -- contentLimit (10 vs 20) can
@@ -119,12 +125,21 @@ struct HomeView: View {
                 } label: {
                     Label(String(localized: "favorites_title"), systemImage: "heart.fill")
                 }
+                // Phase 3 Task 6: the Saved library entry (`arrow.down.circle` -- the project's
+                // save-for-offline glyph, PlayerToolbar's save slot). Hidden, silently, while the
+                // kill-switch is off.
+                if downloadsEnabled {
+                    Button {
+                        router.push(.offline)
+                    } label: {
+                        Label(String(localized: "offline_saved_title"), systemImage: "arrow.down.circle")
+                    }
+                }
                 Button {
                     router.push(.settings)
                 } label: {
                     Label(String(localized: "settings"), systemImage: "gearshape")
                 }
-                // Downloads arrives in phase 3 -- task-9 brief.
             } label: {
                 Image(systemName: "ellipsis") // iOS convention is horizontal, unlike Android's vertical 3-dot (shell-home.md:B2)
                     .font(.system(size: 20))
