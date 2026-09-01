@@ -76,11 +76,17 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var offlineStore = OfflineStore(modelContainer: modelContainer)
     private(set) lazy var categories: any CategoriesCache = LiveCategoriesCache(client: catalog)
     private(set) lazy var network = NetworkMonitor()
+    /// Phase 3 Task 5: the per-video `offlineAllowed` gate — ONE client shared by the player's
+    /// Save button (via `PlayerScreen`) and the manager's revalidation sweep. Fake containers get
+    /// the real client against an unreachable host: every answer is `.unreachable`, which is
+    /// hidden-button / keep-on-sweep — the safe fixture default.
+    private(set) lazy var offlineGate = OfflineGateClient(baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+
     /// Phase 3 Task 4: resolve → download → persist over `offlineStore`. One background session
     /// (`ProgressiveEngine.backgroundSessionIdentifier`); `.prefetch` lane on the ONE limiter/clock
-    /// (reconciliation note 4); the cellular gate reads `settings`/`network` live (note 6). The
-    /// per-video gate closure is the Task 5 `OfflineGateClient` seam -- `.unreachable` (keep) until
-    /// it lands, so `sweep()` only ever applies the TTL today.
+    /// (reconciliation note 4); the cellular gate reads `settings`/`network` live (note 6); the
+    /// per-video gate closure is `offlineGate` (Task 5), whose `.unreachable`-on-error keeps the
+    /// sweep fail-open.
     private(set) lazy var offlineManager: OfflineManager = makeOfflineManager()
 
     private func makeOfflineManager() -> OfflineManager {
@@ -95,7 +101,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             wifiOnly: { [settings] in settings.wifiOnlyDownloads },
             isOnCellular: { [network] in network.isOnCellular },
             baseDirectory: base,
-            gate: { _ in .unreachable },
+            gate: { [offlineGate] in await offlineGate.answer($0) },
             now: { Date() })
         observeOfflineGate(manager)
         return manager

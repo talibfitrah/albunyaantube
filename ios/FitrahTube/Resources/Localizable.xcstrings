@@ -8680,6 +8680,270 @@
         }
       }
     },
+    "offline_action_delete": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حذف"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verwijderen"
+          }
+        }
+      }
+    },
+    "offline_action_open": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فتح"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Openen"
+          }
+        }
+      }
+    },
+    "offline_action_pause": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إيقاف مؤقت"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pauzeren"
+          }
+        }
+      }
+    },
+    "offline_action_remove": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إزالة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verwijderen"
+          }
+        }
+      }
+    },
+    "offline_action_resume": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "استئناف"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hervatten"
+          }
+        }
+      }
+    },
+    "offline_empty_state": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ستظهر هنا الفيديوهات التي تحفظها للمشاهدة دون اتصال"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Videos you save for offline appear here"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video's die je offline opslaat verschijnen hier"
+          }
+        }
+      }
+    },
+    "offline_error_403": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر حفظ هذا الفيديو"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't save this video"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kan deze video niet opslaan"
+          }
+        }
+      }
+    },
+    "offline_error_429": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "طلبات كثيرة جدًا. حاول مرة أخرى لاحقًا"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too many requests. Try again later"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Te veel verzoeken. Probeer het later opnieuw"
+          }
+        }
+      }
+    },
+    "offline_error_invalid": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يمكن حفظ هذا الفيديو"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video can't be saved"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze video kan niet worden opgeslagen"
+          }
+        }
+      }
+    },
+    "offline_error_network": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "خطأ في الشبكة. تحقق من اتصالك"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network error. Check your connection"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netwerkfout. Controleer je verbinding"
+          }
+        }
+      }
+    },
+    "offline_error_no_stream": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يمكن حفظ هذا الفيديو للمشاهدة دون اتصال"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video can't be saved for offline"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze video kan niet offline worden opgeslagen"
+          }
+        }
+      }
+    },
+    "offline_error_unknown": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حدث خطأ ما"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Something went wrong"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Er is iets misgegaan"
+          }
+        }
+      }
+    },
     "offline_footer_format": {
       "localizations": {
         "ar": {
@@ -8742,6 +9006,270 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sommige functies zijn offline niet beschikbaar."
+          }
+        }
+      }
+    },
+    "offline_not_saveable": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يمكن حفظ هذا الفيديو للمشاهدة دون اتصال"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video can't be saved for offline"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze video kan niet offline worden opgeslagen"
+          }
+        }
+      }
+    },
+    "offline_quality_audio_only": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الصوت فقط"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio only"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alleen audio"
+          }
+        }
+      }
+    },
+    "offline_quality_standard_ceiling": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جودة قياسية (360p)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard quality (360p)"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standaardkwaliteit (360p)"
+          }
+        }
+      }
+    },
+    "offline_quality_title": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اختر الجودة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose quality"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kies kwaliteit"
+          }
+        }
+      }
+    },
+    "offline_save": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الحفظ دون اتصال"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save for offline"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline opslaan"
+          }
+        }
+      }
+    },
+    "offline_saved_title": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "المحفوظات"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opgeslagen"
+          }
+        }
+      }
+    },
+    "offline_status_cancelled": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أُلغي"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelled"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geannuleerd"
+          }
+        }
+      }
+    },
+    "offline_status_completed": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "محفوظ"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opgeslagen"
+          }
+        }
+      }
+    },
+    "offline_status_failed": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فشل"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mislukt"
+          }
+        }
+      }
+    },
+    "offline_status_paused": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "متوقف مؤقتًا"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gepauzeerd"
+          }
+        }
+      }
+    },
+    "offline_status_queued": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "قيد الانتظار"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In wachtrij"
+          }
+        }
+      }
+    },
+    "offline_status_saving": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ الحفظ…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving…"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bezig met opslaan…"
           }
         }
       }
@@ -14069,19 +14597,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "جودة التنزيل"
+            "value": "جودة الحفظ دون اتصال"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download Quality"
+            "value": "Offline quality"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Downloadkwaliteit"
+            "value": "Offline kwaliteit"
           }
         }
       }
@@ -14113,19 +14641,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "جودة التنزيل"
+            "value": "جودة الحفظ دون اتصال"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download Quality"
+            "value": "Offline quality"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Downloadkwaliteit"
+            "value": "Offline kwaliteit"
           }
         }
       }
@@ -14135,19 +14663,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "التنزيلات"
+            "value": "الحفظ دون اتصال"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Downloads"
+            "value": "Save for offline"
           }
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Downloads"
+            "state": "translated",
+            "value": "Offline opslaan"
           }
         }
       }
@@ -14456,6 +14984,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bibliotheek"
+          }
+        }
+      }
+    },
+    "settings_offline_clear": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مسح الفيديوهات المحفوظة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear saved videos"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opgeslagen video's wissen"
+          }
+        }
+      }
+    },
+    "settings_offline_clear_confirm": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "هل تريد إزالة جميع الفيديوهات المحفوظة؟ لا يمكن التراجع عن ذلك."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove all saved videos? This can't be undone."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle opgeslagen video's verwijderen? Dit kan niet ongedaan worden gemaakt."
+          }
+        }
+      }
+    },
+    "settings_offline_storage": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التخزين"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opslag"
           }
         }
       }
@@ -15191,19 +15785,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "واي فاي فقط"
+            "value": "شبكة Wi-Fi فقط"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "WiFi Only"
+            "value": "Wi-Fi only"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alleen WiFi"
+            "value": "Alleen wifi"
           }
         }
       }
@@ -15213,19 +15807,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "التنزيل عبر شبكة واي فاي فقط"
+            "value": "الحفظ دون اتصال عبر شبكة Wi-Fi فقط"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Only download over WiFi connections"
+            "value": "Only save for offline over Wi-Fi"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alleen downloaden via WiFi-verbindingen"
+            "value": "Video's alleen via wifi offline opslaan"
           }
         }
       }

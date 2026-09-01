@@ -20,7 +20,15 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # `CountFormat`-style formatting replaced them; drop rather than ship dead catalog entries.
           "a11y_video_item", "a11y_playlist_video", "video_views_format", "playlist_metadata_duration_format",
           # Android self-updater island — impossible on iOS (App Store policy), Phase 2 gate 2026-08-31.
-          "settings_check_for_updates", "settings_available_updates"}
+          "settings_check_for_updates", "settings_available_updates",
+          # Owner ruling 2026-09-01 (Phase 3 Task 5): every user-facing surface says "Save for
+          # offline", never "Download". These five are the settings keys SettingsView already
+          # renders with Android's "Downloads"/"Download Quality"/"WiFi Only" values -- refused
+          # here and re-authored under EXTRA_KEYS. The other download_*/downloads_* Android keys
+          # are NOT ported to any iOS caller and stay orphaned in the catalog (pruning them is a
+          # converter change with its own blast radius -- out of scope).
+          "settings_downloads", "settings_download_quality", "settings_download_quality_title",
+          "settings_wifi_only", "settings_wifi_only_desc"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -252,6 +260,182 @@ EXTRA_KEYS = {
         "en": "%1$lld saved • %2$@ used • %3$@ available",
         "ar": "%1$lld محفوظة • %2$@ مستخدمة • %3$@ متاحة",
         "nl": "%1$lld opgeslagen • %2$@ gebruikt • %3$@ beschikbaar",
+    },
+    # --- Phase 3 Task 5: the Save-for-offline surface (owner ruling 2026-09-01). ---
+    # The five refused settings_* keys, re-authored with "Save for offline" language; then the
+    # offline_* batch. Copy rules: never "Download", never "ad-free"; refusal copy says WHAT,
+    # never why. offline_action_cancel/retry deliberately absent -- the Android generics
+    # `cancel` (strings.xml:564) and `retry` (strings.xml:194) already live in the catalog.
+    "settings_downloads": {
+        "en": "Save for offline",
+        "ar": "الحفظ دون اتصال",
+        "nl": "Offline opslaan",
+    },
+    "settings_download_quality": {
+        "en": "Offline quality",
+        "ar": "جودة الحفظ دون اتصال",
+        "nl": "Offline kwaliteit",
+    },
+    # The quality-picker sheet title (SettingsView.swift:193, Task 6 keeps it) -- same value as
+    # the row on purpose; two keys because Android shipped two.
+    "settings_download_quality_title": {
+        "en": "Offline quality",
+        "ar": "جودة الحفظ دون اتصال",
+        "nl": "Offline kwaliteit",
+    },
+    "settings_wifi_only": {
+        "en": "Wi-Fi only",
+        "ar": "شبكة Wi-Fi فقط",
+        "nl": "Alleen wifi",
+    },
+    "settings_wifi_only_desc": {
+        "en": "Only save for offline over Wi-Fi",
+        "ar": "الحفظ دون اتصال عبر شبكة Wi-Fi فقط",
+        "nl": "Video's alleen via wifi offline opslaan",
+    },
+    # The player toolbar's fourth button + the save sheet's confirm action.
+    "offline_save": {
+        "en": "Save for offline",
+        "ar": "الحفظ دون اتصال",
+        "nl": "Offline opslaan",
+    },
+    # The Saved screen's title (Task 6 renders it; authored with the batch).
+    "offline_saved_title": {
+        "en": "Saved",
+        "ar": "المحفوظات",
+        "nl": "Opgeslagen",
+    },
+    # Refusal copy: WHAT, never why -- never "the admin hasn't allowed it", never who blocked it.
+    "offline_not_saveable": {
+        "en": "This video can't be saved for offline",
+        "ar": "لا يمكن حفظ هذا الفيديو للمشاهدة دون اتصال",
+        "nl": "Deze video kan niet offline worden opgeslagen",
+    },
+    "offline_quality_title": {
+        "en": "Choose quality",
+        "ar": "اختر الجودة",
+        "nl": "Kies kwaliteit",
+    },
+    "offline_quality_audio_only": {
+        "en": "Audio only",
+        "ar": "الصوت فقط",
+        "nl": "Alleen audio",
+    },
+    # States the 360p ceiling (spec §17 risk row); same phrasing as player_standard_quality.
+    "offline_quality_standard_ceiling": {
+        "en": "Standard quality (360p)",
+        "ar": "جودة قياسية (360p)",
+        "nl": "Standaardkwaliteit (360p)",
+    },
+    # Row/button status captions (OfflineStatus, `running` reads as "saving").
+    "offline_status_queued": {
+        "en": "Waiting",
+        "ar": "قيد الانتظار",
+        "nl": "In wachtrij",
+    },
+    "offline_status_saving": {
+        "en": "Saving…",
+        "ar": "جارٍ الحفظ…",
+        "nl": "Bezig met opslaan…",
+    },
+    "offline_status_paused": {
+        "en": "Paused",
+        "ar": "متوقف مؤقتًا",
+        "nl": "Gepauzeerd",
+    },
+    "offline_status_completed": {
+        "en": "Saved",
+        "ar": "محفوظ",
+        "nl": "Opgeslagen",
+    },
+    "offline_status_failed": {
+        "en": "Failed",
+        "ar": "فشل",
+        "nl": "Mislukt",
+    },
+    "offline_status_cancelled": {
+        "en": "Cancelled",
+        "ar": "أُلغي",
+        "nl": "Geannuleerd",
+    },
+    # Android's download_error_* meanings (strings.xml:133-141) re-authored without "Download"
+    # (the FFmpeg merge codes were dropped with the engine, OfflineManager.ErrorCode).
+    "offline_error_403": {
+        "en": "Couldn't save this video",
+        "ar": "تعذّر حفظ هذا الفيديو",
+        "nl": "Kan deze video niet opslaan",
+    },
+    "offline_error_429": {
+        "en": "Too many requests. Try again later",
+        "ar": "طلبات كثيرة جدًا. حاول مرة أخرى لاحقًا",
+        "nl": "Te veel verzoeken. Probeer het later opnieuw",
+    },
+    "offline_error_network": {
+        "en": "Network error. Check your connection",
+        "ar": "خطأ في الشبكة. تحقق من اتصالك",
+        "nl": "Netwerkfout. Controleer je verbinding",
+    },
+    "offline_error_no_stream": {
+        "en": "This video can't be saved for offline",
+        "ar": "لا يمكن حفظ هذا الفيديو للمشاهدة دون اتصال",
+        "nl": "Deze video kan niet offline worden opgeslagen",
+    },
+    "offline_error_invalid": {
+        "en": "This video can't be saved",
+        "ar": "لا يمكن حفظ هذا الفيديو",
+        "nl": "Deze video kan niet worden opgeslagen",
+    },
+    "offline_error_unknown": {
+        "en": "Something went wrong",
+        "ar": "حدث خطأ ما",
+        "nl": "Er is iets misgegaan",
+    },
+    "offline_empty_state": {
+        "en": "Videos you save for offline appear here",
+        "ar": "ستظهر هنا الفيديوهات التي تحفظها للمشاهدة دون اتصال",
+        "nl": "Video's die je offline opslaat verschijnen hier",
+    },
+    # Row action matrix (OfflineStateMachine.actions); cancel/retry reuse the Android generics.
+    "offline_action_pause": {
+        "en": "Pause",
+        "ar": "إيقاف مؤقت",
+        "nl": "Pauzeren",
+    },
+    "offline_action_resume": {
+        "en": "Resume",
+        "ar": "استئناف",
+        "nl": "Hervatten",
+    },
+    "offline_action_remove": {
+        "en": "Remove",
+        "ar": "إزالة",
+        "nl": "Verwijderen",
+    },
+    "offline_action_open": {
+        "en": "Open",
+        "ar": "فتح",
+        "nl": "Openen",
+    },
+    "offline_action_delete": {
+        "en": "Delete",
+        "ar": "حذف",
+        "nl": "Verwijderen",
+    },
+    # Settings rows Task 6 adds under the Save-for-offline section.
+    "settings_offline_storage": {
+        "en": "Storage",
+        "ar": "التخزين",
+        "nl": "Opslag",
+    },
+    "settings_offline_clear": {
+        "en": "Clear saved videos",
+        "ar": "مسح الفيديوهات المحفوظة",
+        "nl": "Opgeslagen video's wissen",
+    },
+    "settings_offline_clear_confirm": {
+        "en": "Remove all saved videos? This can't be undone.",
+        "ar": "هل تريد إزالة جميع الفيديوهات المحفوظة؟ لا يمكن التراجع عن ذلك.",
+        "nl": "Alle opgeslagen video's verwijderen? Dit kan niet ongedaan worden gemaakt.",
     },
 }
 

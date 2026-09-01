@@ -81,4 +81,45 @@ struct LocalizationTests {
         #expect(!arabicRetry.isEmpty)
         #expect(arabicRetry != "Retry")
     }
+
+    /// Phase 3 Task 5 — the naming-ruling pin. Every `offline_*` key plus the five re-authored
+    /// `settings_*` keys must exist in all three locales, and NO value may contain "Download"
+    /// (any case) or "ad-free" (owner directives 2026-09-01 / spec D10). No offline_action_cancel
+    /// or offline_action_retry: those reuse the Android generics `cancel`/`retry` in the catalog.
+    private static let offlineRulingKeys = [
+        "offline_save", "offline_saved_title", "offline_not_saveable",
+        "offline_quality_title", "offline_quality_audio_only", "offline_quality_standard_ceiling",
+        "offline_status_queued", "offline_status_saving", "offline_status_paused",
+        "offline_status_completed", "offline_status_failed", "offline_status_cancelled",
+        "offline_error_403", "offline_error_429", "offline_error_network",
+        "offline_error_no_stream", "offline_error_invalid", "offline_error_unknown",
+        "offline_empty_state", "offline_footer_format",
+        "offline_action_pause", "offline_action_resume", "offline_action_remove",
+        "offline_action_open", "offline_action_delete",
+        "settings_offline_storage", "settings_offline_clear", "settings_offline_clear_confirm",
+        "settings_downloads", "settings_download_quality", "settings_download_quality_title",
+        "settings_wifi_only", "settings_wifi_only_desc",
+    ]
+
+    @Test func everyOfflineKeyExistsInAllLocalesWithoutDownloadOrAdFree() throws {
+        for locale in ["en", "ar", "nl"] {
+            let bundle = try Self.lproj(locale)
+            for key in Self.offlineRulingKeys {
+                let value = bundle.localizedString(forKey: key, value: nil, table: nil)
+                #expect(value != key, "\(locale)/\(key) is missing from the catalog")
+                #expect(!value.localizedCaseInsensitiveContains("download"), "\(locale)/\(key) says Download: \(value)")
+                #expect(!value.localizedCaseInsensitiveContains("ad-free"), "\(locale)/\(key) says ad-free: \(value)")
+            }
+        }
+    }
+
+    /// The re-authored settings copy actually carries the "Save for offline" language (not just
+    /// any Download-free value), and the refusal copy says WHAT, never WHY.
+    @Test func reauthoredSettingsAndRefusalCopyAreOfflineShaped() {
+        for key in ["settings_downloads", "settings_download_quality", "settings_download_quality_title", "settings_wifi_only_desc"] {
+            #expect(string(key, locale: "en").localizedCaseInsensitiveContains("offline"), "\(key) lost the offline language")
+        }
+        #expect(string("offline_save", locale: "en") == "Save for offline")
+        #expect(string("offline_not_saveable", locale: "en") == "This video can't be saved for offline")
+    }
 }

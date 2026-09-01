@@ -24,6 +24,13 @@ struct PlayerScreen: View {
     @State private var userExitedFullscreen = false
     /// Same flag name Android uses (`PlayerFragment.kt:3473-3484`).
     @AppStorage("fullscreen_zoom_hint_shown") private var zoomHintShown = false
+    /// Phase 3 Task 5 (reconciliation note 3): the per-open `offlineAllowed` answer — nil until
+    /// the ONE fetch per player open lands, and the Save button stays hidden until then
+    /// (fail-closed). Held here, not in the toolbar: a fullscreen toggle rebuilds the toolbar
+    /// and must not refetch.
+    @State private var saveGate: GateAnswer?
+    /// The remote kill-switch (`RemoteConfig.isDownloadsEnabled`), read per open.
+    @State private var saveEnabled = true
 
     var body: some View {
         let fullscreen = model.map(isFullscreen) ?? false
@@ -73,6 +80,15 @@ struct PlayerScreen: View {
                 vm.debugForceRecoveryExhausted()
             }
             #endif
+        }
+        // Phase 3 Task 5: one gate fetch per player open, re-run when the queue advances to a new
+        // video (`PlayerViewModel.swapArgs` mutates `args` in place — the `.task(id:)` lesson from
+        // this file's favorite seed). Reset FIRST so the button is hidden while the answer for the
+        // new video is in flight.
+        .task(id: model?.args.videoId ?? args.videoId) {
+            saveGate = nil
+            saveEnabled = await container.innerTube.remoteConfig.current().isDownloadsEnabled
+            saveGate = await container.offlineGate.answer(model?.args.videoId ?? args.videoId)
         }
         // Task 9 + B3 task 4: the two announcements `PlayerStateView` can't make itself, since
         // neither `.rung2Progressive` nor `.embed` mounts it (Task 7's identity note keeps both
@@ -215,7 +231,7 @@ struct PlayerScreen: View {
                     // player, so hiding it in landscape lost it entirely.
                     // B5: `model.args`, never this screen's own `args` -- after an advance the
                     // screen's value is only the INITIAL video.
-                    PlayerToolbar(args: model.args)
+                    PlayerToolbar(args: model.args, saveGate: saveGate, saveEnabled: saveEnabled)
                     if verticalSizeClass != .compact {
                         PlayerMetadataView(args: model.args)
                     }

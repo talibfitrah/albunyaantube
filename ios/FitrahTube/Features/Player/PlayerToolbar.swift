@@ -1,12 +1,19 @@
 import SwiftUI
 
 /// The action row between the player and the metadata panel (spec §10, Android's `PlayerFragment`
-/// action-row placement): Favorite, Share, Report. Download is Phase 3 (ruling 28, plan global
-/// constraints) -- there is no `DownloadKit` reference in this app yet, so this renders no button
-/// at all rather than a permanently-disabled one; a disabled placeholder would be its own kind of
-/// lie ("this will work once you tap enough") for a feature with no wiring behind it.
+/// action-row placement): Favorite, Share, Report, and — Phase 3 Task 5 — Save for offline.
+/// The Save slot renders per `SaveAffordance.state` (gate × kill-switch × item status,
+/// `OfflineGateTests`' table): nothing at all until the gate affirms (fail-closed; the
+/// kill-switch OFF state hides it silently), the quality sheet when saveable, live progress
+/// while an item runs, Open when it completed.
 struct PlayerToolbar: View {
     let args: PlayerArgs
+    /// The per-open `offlineAllowed` answer, fetched once by `PlayerScreen` (reconciliation
+    /// note 3); nil = not landed yet = hidden. Defaults keep fixture/preview call sites on the
+    /// pre-Phase-3 three-button row.
+    var saveGate: GateAnswer? = nil
+    /// The remote config's kill-switch (`RemoteConfig.isDownloadsEnabled`), read per open.
+    var saveEnabled: Bool = true
 
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
@@ -14,6 +21,7 @@ struct PlayerToolbar: View {
     @State private var isFavorite = false
     @State private var bannerMessage: BannerMessage?
     @State private var showReport = false
+    @State private var showSaveSheet = false
 
     var body: some View {
         HStack {
@@ -26,6 +34,10 @@ struct PlayerToolbar: View {
             .accessibilityIdentifier("player.shareButton")
             Spacer()
             reportButton
+            if saveButtonState != .hidden {
+                Spacer()
+                saveSlot
+            }
         }
         .padding(.horizontal, Spacing.md(widthClass))
         .padding(.vertical, Spacing.sm)
@@ -34,6 +46,9 @@ struct PlayerToolbar: View {
             ReportSheet(context: args.reportContext) {
                 bannerMessage = BannerMessage(text: String(localized: "report_success"))
             }
+        }
+        .sheet(isPresented: $showSaveSheet) {
+            SaveOfflineSheet(args: args)
         }
         // `.task(id:)`, not `.task` (Cubic #12): `PlayerViewModel.swapArgs` mutates `args` in place
         // on every advance / Up Next tap, and an id-less task runs once per view lifetime -- so the
@@ -78,6 +93,79 @@ struct PlayerToolbar: View {
             toolbarLabel(systemImage: "flag", title: String(localized: "player_action_report"))
         }
         .accessibilityIdentifier("player.reportButton")
+    }
+
+    // MARK: - Save for offline (Phase 3 Task 5)
+
+    /// The row for this video, live from the `@Observable` store — progress re-renders as the
+    /// manager persists `bytesWritten` (Task 4's throttle), no extra plumbing.
+    private var offlineItem: OfflineItem? {
+        container.offlineStore.items.first { $0.videoId == args.videoId }
+    }
+
+    private var saveButtonState: SaveButtonState {
+        SaveAffordance.state(gate: saveGate, downloadsEnabled: saveEnabled,
+                             itemStatus: offlineItem.flatMap { OfflineStatus(rawValue: $0.status) })
+    }
+
+    /// The `favoriteButton` a11y idiom: a constant role label (`offline_save`) plus a value that
+    /// carries the current state, instead of the visible caption doubling as the label.
+    @ViewBuilder private var saveSlot: some View {
+        switch saveButtonState {
+        case .save:
+            Button {
+                showSaveSheet = true
+            } label: {
+                toolbarLabel(systemImage: "arrow.down.circle", title: String(localized: "offline_save"))
+            }
+            .accessibilityIdentifier("player.saveButton")
+            .accessibilityLabel(String(localized: "offline_save"))
+        case .progress:
+            VStack(spacing: 4) {
+                progressRing
+                Text(progressCaption).font(TypeScale.caption)
+            }
+            .foregroundStyle(Color.textPrimary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("player.saveProgress")
+            .accessibilityLabel(String(localized: "offline_save"))
+            .accessibilityValue(progressCaption)
+        case .open:
+            // Task 6 wires Route.offline (the offline player) -- until then the completed state
+            // renders its label/a11y with a no-op action rather than a route case this task
+            // isn't allowed to add.
+            Button {} label: {
+                toolbarLabel(systemImage: "checkmark.circle", title: String(localized: "offline_action_open"))
+            }
+            .accessibilityIdentifier("player.saveButton")
+            .accessibilityLabel(String(localized: "offline_save"))
+            .accessibilityValue(String(localized: "offline_status_completed"))
+        case .hidden:
+            EmptyView()
+        }
+    }
+
+    /// Determinate ring, icon-sized. Not `ProgressView(value:).progressViewStyle(.circular)` --
+    /// on iOS that renders the indeterminate spinner regardless of the value.
+    private var progressRing: some View {
+        let fraction = offlineItem.flatMap { item in
+            item.totalBytes.flatMap { $0 > 0 ? Double(item.bytesWritten) / Double($0) : nil }
+        } ?? 0
+        return ZStack {
+            Circle().stroke(Color.textPrimary.opacity(0.2), lineWidth: 2)
+            Circle().trim(from: 0, to: min(max(fraction, 0), 1))
+                .stroke(Color.brand, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: 20, height: 20)
+    }
+
+    private var progressCaption: String {
+        switch offlineItem.flatMap({ OfflineStatus(rawValue: $0.status) }) {
+        case .paused: String(localized: "offline_status_paused")
+        case .running: String(localized: "offline_status_saving")
+        default: String(localized: "offline_status_queued")
+        }
     }
 
     private func toolbarLabel(systemImage: String, title: String) -> some View {

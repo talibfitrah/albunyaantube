@@ -143,3 +143,50 @@ struct PlayerToolbarTests {
 
     func clearAll() throws {}
 }
+
+// MARK: - Task 5 UI preservation: the 4-button row at accessibility sizes
+
+import SwiftUI
+import UIKit
+
+/// The Save slot must join the row without breaking the toolbar's one-row shape — at
+/// accessibility Dynamic Type, in RTL. `ImageRenderer`, not a hosted window: it renders
+/// synchronously (no `.task` races, deterministic pixels) and its ideal size is a real
+/// discriminator — a fourth button widens the row's ideal width and, if it broke the
+/// horizontal layout, would grow its height.
+@MainActor
+@Suite(.perTest)
+struct PlayerToolbarLayoutTests {
+    private func idealSize(gate: GateAnswer?, width: CGFloat?) -> CGSize {
+        let toolbar = PlayerToolbar(args: PlayerArgs(videoId: "layout", title: "Layout"),
+                                    saveGate: gate, saveEnabled: true)
+            .environment(\.container, .sharedFake)
+            .environment(\.layoutDirection, .rightToLeft)
+            .environment(\.locale, Locale(identifier: "ar"))
+            .dynamicTypeSize(.accessibility3)
+        let renderer = ImageRenderer(content: toolbar)
+        renderer.proposedSize = ProposedViewSize(width: width, height: nil)
+        return renderer.uiImage?.size ?? .zero
+    }
+
+    @Test func theSaveSlotRendersAndKeepsTheRowHeightAtAccessibilitySizesInRTL() {
+        // Ideal (unconstrained) size: the fourth button must WIDEN the row — proof it renders —
+        // while the row height stays that of the tallest existing caption.
+        let three = idealSize(gate: nil, width: nil)
+        let four = idealSize(gate: .allowed, width: nil)
+        #expect(four.width > three.width, "gate .allowed added no width — the save slot is missing")
+        #expect(abs(four.height - three.height) < 1, "the save slot reflowed the row: \(three.height) -> \(four.height)")
+
+        // Constrained to the narrowest phone width at accessibility3: captions may wrap inside
+        // their (now narrower) columns, but the fourth button must not stack the row vertically.
+        // The reference is the 3-button toolbar at the SAME width — wrapping grows both alike; a
+        // second stacked row would add a whole button's height (icon + padding + caption ≥160pt),
+        // far beyond the ≤3 extra caption lines (~40pt each at accessibility3) allowed here.
+        // Measured 2026-09-01: iPhone 17 narrow3≈narrow4≈165pt; iPad narrow3=149, narrow4=241
+        // (the ar save caption wraps to 3 lines in its 80pt column — taller column, still one row).
+        let narrow3 = idealSize(gate: nil, width: 320)
+        let narrow4 = idealSize(gate: .allowed, width: 320)
+        #expect(narrow4.height <= narrow3.height + 130,
+                "four-button toolbar no longer fits one row at 320pt: \(narrow3.height) -> \(narrow4.height)")
+    }
+}
