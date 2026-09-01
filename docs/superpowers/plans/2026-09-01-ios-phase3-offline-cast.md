@@ -376,6 +376,9 @@ Implementers inherit nothing from earlier plans. All of the following are bindin
 - **CF-D-9:** a bot-checked background save walk arms the shared persisted resolver cooldown and can lock the next playback tap (Task 4's accepted CF-G-14 interaction). If live evidence shows saves tripping it in practice, the fix is a per-purpose no-trip flag in `StreamResolver` — decide it together with CF-G-14's own pending owner decision, not separately.
 - **CF-D-10:** cancel racing `engine.start`/a delegate callback can start a bounded zombie walk or resurrect a ≤10 MB orphan `.tmp` (both self-healing via the status guards; review of 92e9feea F3/F5). The real fix is an engine-side generation token; take it only with live evidence of user-visible cost.
 - **CF-D-11:** `StreamResolving`'s 6-arg default-forwarding means a future conformer implementing only the 5-arg form silently drops `requiresMuxed` (review F6). Mitigated by the doc comment + `RecordingResolver` pinning the flag; keep offline integration fakes asserting it.
+- **CF-D-12 (device QA):** Saved's Open / the toolbar's Open push a second `.player` over a playing online player; whether the covered `PlayerHostView` pauses on cover is iOS-version-dependent and unverified on hardware (Task 7 review F1). If a device doubles the audio, pause the covered player on cover. Stacked players pre-date Phase 3; Open makes it one tap.
+- **CF-D-13:** `FitrahTubeApp`'s sweep wiring (`Task { await offlineManager.sweep() }` beside the config refresh) is untested view-layer glue — deleting the line fails no test (Task 7 review F3). The due-decision itself is pinned; accept, or pin via a launch-hook seam if it ever regresses.
+- **CF-D-14:** sweep skips a completed row with nil `completedAt` forever (unreachable today — `.finished` always sets it); defensive gap only (Task 7 review F4).
 
 ---
 
