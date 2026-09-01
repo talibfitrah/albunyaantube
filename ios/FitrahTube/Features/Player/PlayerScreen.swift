@@ -66,9 +66,19 @@ struct PlayerScreen: View {
         }
         .task {
             guard model == nil else { return }
-            let vm = PlayerViewModel(resolver: Self.resolver(container: container),
-                                      settings: container.settings, args: args,
-                                      queueSource: Self.queueSource(container: container))
+            // Task 7 (reconciliation note 5): an offline open builds the SAME VM over
+            // `OfflineResolver` — no network, no player fork — and passes NO queue source, so
+            // Up Next/queue paging are disabled by construction (`loadQueue` guards on it).
+            let vm: PlayerViewModel
+            if let offlineItemId = args.offlineItemId {
+                vm = PlayerViewModel(resolver: OfflineResolver(store: container.offlineStore,
+                                                               itemId: offlineItemId),
+                                     settings: container.settings, args: args)
+            } else {
+                vm = PlayerViewModel(resolver: Self.resolver(container: container),
+                                     settings: container.settings, args: args,
+                                     queueSource: Self.queueSource(container: container))
+            }
             model = vm
             await vm.open()
             #if DEBUG
@@ -87,6 +97,9 @@ struct PlayerScreen: View {
         // new video is in flight.
         .task(id: model?.args.videoId ?? args.videoId) {
             saveGate = nil
+            // Task 7: an offline open performs NO backend fetch — the Save slot (and every other
+            // save affordance) is hidden by the offline flag, so the answer would go unread.
+            if args.offlineItemId != nil { return }
             // Task 5 review fold-in 1: `.task(id:)` cancels the old task on advance but does NOT
             // prevent its in-flight continuation from resuming — without these guards a stale
             // `.allowed` fetched for video A could land AFTER the reset for video B ran (the
@@ -201,10 +214,15 @@ struct PlayerScreen: View {
                                 // Quality control on rung 1 only -- rung 2 (progressive, single
                                 // rendition) hides it entirely per spec §10 ("Rung 2 hides the
                                 // control") and shows the persistent pill instead.
-                                if isRung1 {
-                                    qualityMenu(model)
-                                } else {
-                                    rung2Pill
+                                // Task 7: neither offline -- a saved file has exactly one
+                                // rendition, and the rung-2 pill is a statement about the
+                                // extraction ladder, which an offline open never walked.
+                                if !model.isOfflinePlayback {
+                                    if isRung1 {
+                                        qualityMenu(model)
+                                    } else {
+                                        rung2Pill
+                                    }
                                 }
                                 AudioLanguageMenu(model: model)
                                 CaptionsMenu(model: model, tracks: tracks)
@@ -240,7 +258,8 @@ struct PlayerScreen: View {
                     // player, so hiding it in landscape lost it entirely.
                     // B5: `model.args`, never this screen's own `args` -- after an advance the
                     // screen's value is only the INITIAL video.
-                    PlayerToolbar(args: model.args, saveGate: saveGate, saveEnabled: saveEnabled)
+                    PlayerToolbar(args: model.args, saveGate: saveGate, saveEnabled: saveEnabled,
+                                  isOfflinePlayback: model.isOfflinePlayback)
                     if verticalSizeClass != .compact {
                         PlayerMetadataView(args: model.args)
                     }

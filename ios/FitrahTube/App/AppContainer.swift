@@ -102,7 +102,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             isOnCellular: { [network] in network.isOnCellular },
             baseDirectory: base,
             gate: { [offlineGate] in await offlineGate.answer($0) },
-            now: { Date() })
+            now: { Date() },
+            // The SAME config read `PlayerScreen`'s Save button consults (Task 6 review fold-in:
+            // the manager refuses to START new work while the kill-switch is off).
+            downloadsEnabled: { [innerTube] in await innerTube.remoteConfig.current().isDownloadsEnabled })
         observeOfflineGate(manager)
         return manager
     }

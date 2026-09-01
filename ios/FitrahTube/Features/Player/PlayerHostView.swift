@@ -716,7 +716,18 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// once built, so `assetOptions(userAgent:)` below -- not this asset -- is what `PlayerHostTests`
     /// actually asserts the value against.
     static func asset(url: URL, userAgent: String) -> AVURLAsset {
-        AVURLAsset(url: url, options: assetOptions(userAgent: userAgent))
+        AVURLAsset(url: url, options: assetOptions(userAgent: userAgent, url: url))
+    }
+
+    /// Task 7 (the Task 4 trap): a LOCAL file gets `AVURLAssetPreferPreciseDurationAndTimingKey` —
+    /// without it a saved fMP4 m4a reports ~2× its real duration (measured, Task 4's live leg).
+    /// File URLs only: on a remote stream precise timing forces a full parse over the network for
+    /// a duration the estimate already gets right. ONE seam, so offline playback needs no player
+    /// fork; `OfflinePlaybackTests` pins the split.
+    static func assetOptions(userAgent: String, url: URL) -> [String: Any] {
+        var options = assetOptions(userAgent: userAgent)
+        if url.isFileURL { options[AVURLAssetPreferPreciseDurationAndTimingKey] = true }
+        return options
     }
 
     static func assetOptions(userAgent: String) -> [String: Any] {

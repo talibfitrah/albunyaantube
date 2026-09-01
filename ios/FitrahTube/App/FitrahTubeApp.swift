@@ -95,6 +95,11 @@ struct FitrahTubeApp: App {
         guard Self.isRemoteConfigRefreshDue(
             now: now, last: lastRemoteConfigRefresh, spacing: Self.remoteConfigRefreshSpacing) else { return }
         lastRemoteConfigRefresh = now
+        // Task 7 (reconciliation note 7): the revalidation sweep shares this hook's cadence —
+        // launch + `willEnterForeground` (the `DownloadExpiryPolicy.kt:23-28` cadence), spaced by
+        // the SAME due-decision above so a scene-phase flicker never re-fires it. Fire-and-forget
+        // and fail-open: an unreachable gate keeps every row (`OfflineSweep.decide`).
+        Task { await container.offlineManager.sweep() }
         Task {
             await container.innerTube.remoteConfig.refresh()
             let config = await container.innerTube.remoteConfig.current()

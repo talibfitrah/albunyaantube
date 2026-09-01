@@ -1,6 +1,88 @@
 import Foundation
 import InnerTubeKit
 
+/// Task 7, the Task 4 trap's ROOT cause: YouTube's itag-140 fMP4 declares the FULL duration in
+/// `mvhd`/`mdhd` while also carrying every fragment, so AVFoundation reports ~2× (probed live
+/// 2026-09-01: afinfo 8455.99 s vs `AVURLAsset` 16912.02 s — and
+/// `AVURLAssetPreferPreciseDurationAndTimingKey` changes NOTHING; zeroing the two fields, the
+/// shape the fMP4 spec itself prescribes for fragmented files, yields the exact 8455.99 s).
+/// Runs once at save completion. Fragmented files only (`mvex` present) — a plain mp4's `mvhd`
+/// is authoritative and must not be touched.
+nonisolated enum FragmentedMP4Durations {
+    /// How much of the file head is searched for `moov` (it sits right after `ftyp` in these
+    /// files; a `moov` beyond this is left alone — fail-safe no-op, never a corrupted file).
+    private static let headLimit = 4 * 1024 * 1024
+
+    /// The absolute byte ranges of every `mvhd`/`mdhd` duration field inside a `moov` that also
+    /// contains `mvex` — empty for non-fragmented (or unparseable) data. Pure, so the tests pin
+    /// the box walk without AVFoundation.
+    static func durationFieldRanges(in data: Data) -> [Range<Int>] {
+        // Zero-base a slice so every offset below is both a Data index and a file offset.
+        guard data.startIndex == 0 else { return durationFieldRanges(in: Data(data)) }
+        var ranges: [Range<Int>] = []
+        var fragmented = false
+
+        func boxType(at offset: Int) -> String? {
+            String(data: data[(offset + 4)..<(offset + 8)], encoding: .ascii)
+        }
+
+        func walk(_ lower: Int, _ upper: Int) {
+            var offset = lower
+            while offset + 8 <= upper {
+                let size = Int(readUInt32(data, at: offset) ?? 0)
+                guard size >= 8, offset + size <= upper, let type = boxType(at: offset) else { return }
+                if type == "trak" || type == "mdia" {
+                    walk(offset + 8, offset + size)
+                }
+                if type == "mvex" { fragmented = true }
+                if type == "mvhd" || type == "mdhd", offset + 9 <= upper {
+                    let version = data[offset + 8]
+                    // v0: ver/flags(4) + creation(4) + modification(4) + timescale(4) → 4-byte
+                    // duration at +24; v1: 8-byte creation/modification → 8-byte duration at +32.
+                    let (start, length) = version == 1 ? (offset + 32, 8) : (offset + 24, 4)
+                    if start + length <= offset + size {
+                        ranges.append(start..<(start + length))
+                    }
+                }
+                offset += size
+            }
+        }
+
+        // Top level: only moov is entered; everything else (ftyp/sidx/moof/mdat) is stepped over.
+        var offset = 0
+        let upper = min(data.count, Self.headLimit)
+        while offset + 8 <= upper {
+            let size = Int(readUInt32(data, at: offset) ?? 0)
+            guard size >= 8 else { break }
+            if offset + size <= upper, boxType(at: offset) == "moov" {
+                walk(offset + 8, offset + size)
+                break   // one movie header per file
+            }
+            offset += size
+        }
+        return fragmented ? ranges : []
+    }
+
+    /// Zeroes the duration fields in place. Any failure (unreadable head, unwritable file,
+    /// nothing fragmented) is a silent no-op — the file still plays, just with the 2× scrubber.
+    static func normalize(at url: URL) {
+        guard let handle = try? FileHandle(forUpdating: url),
+              let head = try? handle.read(upToCount: headLimit) else { return }
+        defer { try? handle.close() }
+        for range in durationFieldRanges(in: head) {
+            try? handle.seek(toOffset: UInt64(range.lowerBound))
+            try? handle.write(contentsOf: Data(repeating: 0, count: range.count))
+        }
+    }
+
+    private static func readUInt32(_ data: Data, at offset: Int) -> UInt32? {
+        guard offset + 4 <= data.count else { return nil }
+        let index = data.startIndex + offset
+        return (UInt32(data[index]) << 24) | (UInt32(data[index + 1]) << 16)
+            | (UInt32(data[index + 2]) << 8) | UInt32(data[index + 3])
+    }
+}
+
 /// What a save request carries besides its ids (the Saved-screen row's text + thumbnail).
 nonisolated struct OfflineMetadata: Sendable {
     var title: String
@@ -68,6 +150,13 @@ actor OfflineManager: OfflineSaving {
     private let isOnCellular: @MainActor @Sendable () -> Bool
     private let gate: @Sendable (String) async -> GateAnswer
     private let now: @Sendable () -> Date
+    /// The remote kill-switch (Task 6 review fold-in): `SaveAffordance` hiding the Save button was
+    /// the ONLY config consult, so Saved-screen Retry/Resume started downloads with the switch
+    /// off. Consulted wherever new work would START (`retry`, `begin` — which schedule/resume
+    /// route through); NEVER by delete/cancel/pause/sweep or offline playback (fork D: the switch
+    /// governs saving, not access to what's already saved). Refusal is silent — the row stays as
+    /// it was, exactly like the kill-switch's hidden-affordance rule.
+    private let downloadsEnabled: @Sendable () async -> Bool
     private let directory: URL
 
     /// Ids with an engine task in flight (or a resolve on the way to one).
@@ -93,7 +182,8 @@ actor OfflineManager: OfflineSaving {
          isOnCellular: @escaping @MainActor @Sendable () -> Bool,
          baseDirectory: URL,
          gate: @escaping @Sendable (String) async -> GateAnswer,
-         now: @escaping @Sendable () -> Date) {
+         now: @escaping @Sendable () -> Date,
+         downloadsEnabled: @escaping @Sendable () async -> Bool = { true }) {
         self.store = store
         self.engine = engine
         self.resolver = resolver
@@ -102,6 +192,7 @@ actor OfflineManager: OfflineSaving {
         self.isOnCellular = isOnCellular
         self.gate = gate
         self.now = now
+        self.downloadsEnabled = downloadsEnabled
         directory = OfflineStorage.directoryURL(base: baseDirectory)
         Task { [engine] in
             for await event in engine.events { await self.handle(event) }
@@ -161,6 +252,9 @@ actor OfflineManager: OfflineSaving {
     }
 
     func retry(_ id: String) async {
+        // Kill-switch guard BEFORE the status write, so a refused retry leaves the row failed/
+        // cancelled as it was — not silently re-queued for a start that will never come.
+        guard await downloadsEnabled() else { return }
         guard let row = await read(id: id), OfflineStateMachine.transition(from: row.status, on: .retry) != nil else { return }
         await write { store in
             guard let item = store.item(id: id) else { return }
@@ -207,7 +301,9 @@ actor OfflineManager: OfflineSaving {
             } else {
                 action = OfflineSweep.decide(completedAt: completedAt, now: current, gate: await gate(row.videoId))
             }
-            if action != .keep { await tearDown(row) }
+            // Through `delete` (Task 7): files + row together, the same teardown a user Delete
+            // runs — never a second removal path.
+            if action != .keep { await delete(row.id) }
         }
     }
 
@@ -259,6 +355,9 @@ actor OfflineManager: OfflineSaving {
                 await fail(id, .network)
                 return
             }
+            // Task 7: zero the lying mvhd/mdhd durations of a fragmented save (no-op for a plain
+            // itag-18 mp4) — see `FragmentedMP4Durations`. Once, here, so playback needs no fix-up.
+            FragmentedMP4Durations.normalize(at: destination)
             let size = (try? FileManager.default.attributesOfItem(atPath: destination.path())[.size] as? Int64) ?? 0
             let completedAt = now()
             forget(id)
@@ -325,6 +424,12 @@ actor OfflineManager: OfflineSaving {
         // (or a double-tap Resume) both used to pass their checks and start the same row twice.
         guard !active.contains(row.id) else { return }
         let attempt = claim(row.id)
+        // Kill-switch (fold-in): `begin` is the one funnel every start rides — schedule picks,
+        // user Resume, reattach's re-queue. Refusal leaves the row queued/paused untouched.
+        guard await downloadsEnabled() else {
+            active.remove(row.id)
+            return
+        }
         guard await gateAllows() else {
             // Stays queued/paused. A queued row is re-picked by the schedule() a gateDidChange
             // runs; a paused row waits for the user's Resume (schedule() picks only queued rows).

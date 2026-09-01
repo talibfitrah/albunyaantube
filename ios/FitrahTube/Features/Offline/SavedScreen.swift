@@ -68,6 +68,7 @@ private struct SavedRow: View {
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
+    @Environment(\.router) private var router
 
     private var status: OfflineStatus? { OfflineStatus(rawValue: item.status) }
 
@@ -125,10 +126,16 @@ private struct SavedRow: View {
         .accessibilityValue(item.title)
     }
 
-    /// Task 7 wires offline playback (the completed row plays its `localPath` through the
-    /// player's `.ready`/`.rung2Progressive` states); until then Open renders per the matrix
-    /// with no navigation of its own — the user is already on the Saved screen.
-    private func openCompleted() {}
+    /// Task 7: Open plays the saved file through the player's existing `.ready`/
+    /// `.rung2Progressive` states — a `.player` push whose `offlineItemId` makes `PlayerScreen`
+    /// build its VM over `OfflineResolver` (no network, reduced chrome).
+    private func openCompleted() {
+        var args = PlayerArgs(videoId: item.videoId, title: item.title,
+                              channelName: item.channelName,
+                              thumbnailURL: item.thumbnailUrl.flatMap(URL.init))
+        args.offlineItemId = item.id
+        router.push(.player(args))
+    }
 
     /// Determinate only while bytes are actually moving toward a known total.
     private var progressFraction: Double? {

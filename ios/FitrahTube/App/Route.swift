@@ -94,6 +94,11 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     /// Opened from a channel's Live tab (`ChannelLiveTabFragment.kt:62-69`): the report carries
     /// `contentSubType = LIVESTREAM`. Nothing else reads it.
     var isLive: Bool = false
+    /// Phase 3 Task 7: set, the player plays this `OfflineItem`'s saved file through
+    /// `OfflineResolver` (no network, reduced chrome — `PlayerViewModel.isOfflinePlayback`).
+    /// Additive with a nil default so every existing construction — deep links included
+    /// (CF-C-9's all-optionals-nil equality) — is untouched.
+    var offlineItemId: String? = nil
 }
 
 extension PlayerArgs {

@@ -265,6 +265,13 @@ extension StreamState {
     /// is open takes effect on the next background transition (ruling 34).
     var backgroundPlay: Bool { settings.backgroundPlay }
 
+    /// Phase 3 Task 7: the offline presentation flag. True while this player plays a saved file
+    /// through `OfflineResolver` — `PlayerScreen`/`PlayerToolbar` hide the quality control, the
+    /// cast affordance (Task 8 consumes this same flag) and the Save button, and the queue is
+    /// disabled (the screen passes no `queueSource`). favorite/share/report stay: sharing the
+    /// LINK is allowed; only media files never leave the sandbox.
+    var isOfflinePlayback: Bool { args.offlineItemId != nil }
+
     /// The Settings "Safe Mode" value, read live so a change made while the player is open takes
     /// effect on the next resolve (same shape as `backgroundPlay`). Ruling 58 + spec §10: this is
     /// also B5's auto-advance hook -- Up Next reads THIS, not `SettingsStore` directly.

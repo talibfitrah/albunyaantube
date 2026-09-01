@@ -145,6 +145,9 @@ struct SavedScreenTests {
         // Six rows, each carrying at least one ≥44 pt action button, plus the footer — anything
         // shorter means rows failed to mount.
         #expect(seeded >= 6 * 44)
+        // And taller than the empty state (Task 6 review fold-in: the comment above promised
+        // this; now the pin does too).
+        #expect(seeded > empty)
     }
 
     @MainActor

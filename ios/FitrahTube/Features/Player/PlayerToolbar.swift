@@ -14,6 +14,10 @@ struct PlayerToolbar: View {
     var saveGate: GateAnswer? = nil
     /// The remote config's kill-switch (`RemoteConfig.isDownloadsEnabled`), read per open.
     var saveEnabled: Bool = true
+    /// Task 7 (`PlayerViewModel.isOfflinePlayback`): while playing a saved file the whole Save
+    /// slot is hidden — there is nothing to save and Open would open the screen it's on.
+    /// favorite/share/report stay (link sharing is allowed; only media files never leave).
+    var isOfflinePlayback: Bool = false
 
     @Environment(\.container) private var container
     @Environment(\.router) private var router
@@ -40,7 +44,7 @@ struct PlayerToolbar: View {
             .accessibilityIdentifier("player.shareButton")
             Spacer()
             reportButton
-            if saveButtonState != .hidden {
+            if !isOfflinePlayback, saveButtonState != .hidden {
                 Spacer()
                 saveSlot
             }
@@ -137,11 +141,13 @@ struct PlayerToolbar: View {
             .accessibilityLabel(String(localized: "offline_save"))
             .accessibilityValue(progressCaption)
         case .open:
-            // Task 6: Open pushes `Route.offline` (the Saved screen, where the completed row
-            // lives) -- NOT a player route: `PlayerArgs` has no `offlineItemId` yet. Task 7
-            // (offline playback) upgrades this push to play the saved file directly.
+            // Task 7: Open plays the saved file directly — the same `.player` route with
+            // `offlineItemId` set that the Saved screen's own Open pushes.
             Button {
-                router.push(.offline)
+                guard let itemId = offlineItem?.id else { return }
+                var offlineArgs = args
+                offlineArgs.offlineItemId = itemId
+                router.push(.player(offlineArgs))
             } label: {
                 toolbarLabel(systemImage: "checkmark.circle", title: String(localized: "offline_action_open"))
             }
