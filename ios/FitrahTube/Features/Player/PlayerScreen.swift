@@ -72,7 +72,8 @@ struct PlayerScreen: View {
             let vm: PlayerViewModel
             if let offlineItemId = args.offlineItemId {
                 vm = PlayerViewModel(resolver: OfflineResolver(store: container.offlineStore,
-                                                               itemId: offlineItemId),
+                                                               itemId: offlineItemId,
+                                                               base: container.offlineBase),
                                      settings: container.settings, args: args)
             } else {
                 vm = PlayerViewModel(resolver: Self.resolver(container: container),

@@ -16,9 +16,10 @@ struct OfflineResolver: StreamResolving {
     /// The `OfflineItem.id` from `PlayerArgs.offlineItemId` — the row is looked up per resolve,
     /// so a sweep deleting it mid-session honestly turns the next re-resolve into `.unavailable`.
     let itemId: String
-    /// `Application Support` in production (`AppContainer.makeOfflineManager`'s base); tests
-    /// point it at a temp directory.
-    var base: URL = .applicationSupportDirectory
+    /// `AppContainer.offlineBase` in production — the same value `makeOfflineManager` writes
+    /// under; tests point it at a temp directory. No default on purpose: the compiler forces
+    /// every construction seam to pass the manager's base, so the two can never drift apart.
+    let base: URL
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {

@@ -16,8 +16,11 @@ protocol StreamResolving: Sendable {
 }
 
 extension StreamResolving {
-    /// Default for player-only doubles and fixtures: drops the muxed requirement. The two
-    /// production resolvers and `RecordingResolver` implement the six-argument form themselves.
+    /// Default for player-only doubles and fixtures: drops the muxed requirement.
+    /// `LiveStreamResolver`, `RateLimitedResolver`, and `RecordingResolver` implement the
+    /// six-argument form themselves. The third production resolver, `OfflineResolver`,
+    /// deliberately rides this default: it answers from disk with zero network calls, so
+    /// `requiresMuxed` is meaningless offline.
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
         try await resolve(videoId, purpose: purpose, kind: kind,

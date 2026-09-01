@@ -74,6 +74,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var subscriptions: any SubscriptionsStore = SwiftDataSubscriptionsStore(modelContainer: modelContainer)
     /// Phase 3 Task 3: the Save-for-offline library rows, same container/schema as favorites.
     private(set) lazy var offlineStore = OfflineStore(modelContainer: modelContainer)
+    /// Task 7 follow-up: the ONE spelling of the offline files' base directory — the manager
+    /// (`makeOfflineManager`) writes under it and `PlayerScreen`'s `OfflineResolver` reads from it.
+    let offlineBase = URL.applicationSupportDirectory
     private(set) lazy var categories: any CategoriesCache = LiveCategoriesCache(client: catalog)
     private(set) lazy var network = NetworkMonitor()
     /// Phase 3 Task 5: the per-video `offlineAllowed` gate — ONE client shared by the player's
@@ -92,7 +95,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private func makeOfflineManager() -> OfflineManager {
         let configuration = URLSessionConfiguration.background(withIdentifier: ProgressiveEngine.backgroundSessionIdentifier)
         configuration.sessionSendsLaunchEvents = true
-        let base = URL.applicationSupportDirectory
+        let base = offlineBase
         let manager = OfflineManager(
             store: offlineStore,
             engine: ProgressiveEngine(directory: OfflineStorage.directoryURL(base: base), configuration: configuration),
