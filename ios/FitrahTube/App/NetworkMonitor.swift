@@ -10,6 +10,11 @@ import Observation
 @MainActor @Observable final class NetworkMonitor {
     private(set) var isOnline = true
     /// Phase 3 Task 4: the offline cellular gate's input (`OfflineStateMachine.allowedToRun`).
+    /// ponytail: starts `false`, so on a cellular launch with Wi-Fi-only ON a download scheduled
+    /// before `NWPathMonitor`'s first (near-immediate, main-queue) callback can start on cellular
+    /// once; `gateDidChange` pauses it as soon as the real path lands. Deferring the first
+    /// scheduling pass on this signal would thread launch ordering through OfflineManager for a
+    /// milliseconds-wide window — upgrade there if the window ever bites.
     private(set) var isOnCellular = false
 
     private let monitor = NWPathMonitor()

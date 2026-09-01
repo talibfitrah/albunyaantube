@@ -65,6 +65,12 @@ struct OfflineManagerTests {
         nonisolated(unsafe) var cellular = false
         nonisolated(unsafe) var gate: GateAnswer = .unreachable
         nonisolated(unsafe) var decision: Decision = .allowed
+        /// Per-video overrides of `decision` (the starvation test blocks one id, allows the rest).
+        nonisolated(unsafe) var decisions: [String: Decision] = [:]
+        /// Ids whose limiter check suspends until removed (same 1 ms-poll gate as
+        /// `RecordingResolver.hold`); `limiterEntered` records arrival so a test can wait for it.
+        nonisolated(unsafe) var limiterHeld: Set<String> = []
+        nonisolated(unsafe) var limiterEntered: Set<String> = []
         nonisolated(unsafe) var now = Date()
     }
 
@@ -103,7 +109,11 @@ struct OfflineManagerTests {
             .appending(path: "OfflineManagerTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         let manager = OfflineManager(
             store: store, engine: engine, resolver: resolver,
-            limiterCheck: { _ in flags.decision },
+            limiterCheck: { id in
+                flags.limiterEntered.insert(id)
+                while flags.limiterHeld.contains(id) { try? await Task.sleep(for: .milliseconds(1)) }
+                return flags.decisions[id] ?? flags.decision
+            },
             wifiOnly: { flags.wifiOnly }, isOnCellular: { flags.cellular },
             baseDirectory: base, gate: { _ in flags.gate }, now: { flags.now })
         return Rig(manager: manager, store: store, container: container, engine: engine,
@@ -377,6 +387,172 @@ struct OfflineManagerTests {
         #expect(rig.engine.pauses == [id])
         #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
         #expect(rig.persisted(id: id)?.resumeData == Data("RD".utf8))
+    }
+
+    // MARK: - Race windows (Task 4 review fix round)
+
+    /// Finding 1 (double-tap `resume`): two concurrent resumes of the same paused row must hand
+    /// the engine exactly one task — both used to pass the status guard before either claimed
+    /// the serial slot.
+    @Test func aDoubleTapResumeStartsTheEngineOnce() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.handle(.progress(id: id, bytesWritten: 500, totalBytes: 1_000))
+        await rig.manager.pause(id)
+        async let first: Void = rig.manager.resume(id)
+        async let second: Void = rig.manager.resume(id)
+        _ = await (first, second)
+        #expect(rig.engine.resumes.map(\.id) == [id])
+    }
+
+    /// Finding 1 (serial-slot TOCTOU): `schedule()` used to check `active.isEmpty`, then suspend
+    /// (`readAll`, the gate hop) before claiming — two interleaved passes both began the same row.
+    @Test func twoConcurrentGateFlipsStartTheQueuedRowOnce() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.wifiOnly = true
+        rig.flags.cellular = true
+        let id = await save(rig)
+        #expect(rig.engine.starts.isEmpty)
+
+        rig.flags.cellular = false
+        async let first: Void = rig.manager.gateDidChange()
+        async let second: Void = rig.manager.gateDidChange()
+        _ = await (first, second)
+        #expect(rig.engine.starts.map(\.id) == [id])
+        #expect(rig.resolver.calls.count == 1)
+    }
+
+    /// Finding 2: a cancel landing while the resolve is in flight must not start the engine for
+    /// the dead row when the resolve finally answers.
+    @Test func cancelDuringAnInFlightResolveNeverStartsTheEngine() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.resolver.hold(Self.lectureVideoId)
+        let saveTask = Task { await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p",
+                                                     audioOnly: true, metadata: Self.metadata) }
+        await rig.resolver.waitUntilCalled(count: 1)
+        let id = try #require(rig.persisted(videoId: Self.lectureVideoId)?.id)
+
+        await rig.manager.cancel(id)
+        rig.resolver.release(id: Self.lectureVideoId)
+        await saveTask.value
+
+        #expect(rig.engine.starts.isEmpty)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.cancelled.rawValue)
+    }
+
+    /// Finding 4: a head-of-queue row parked by a limiter block must not starve a younger queued
+    /// row that the limiter would allow — the block frees the slot AND re-runs the scheduler.
+    @Test func aLimiterBlockedHeadRowDoesNotStarveAYoungerQueuedRow() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let older = "vidOlder000", younger = "vidYounger0"
+        rig.flags.decisions[older] = .blocked(reason: "prefetch blocked", retryAfter: .seconds(300))
+        rig.flags.limiterHeld = [older]
+
+        let saveOlder = Task { await rig.manager.save(videoId: older, quality: "360p",
+                                                      audioOnly: true, metadata: Self.metadata) }
+        await waitUntil { rig.flags.limiterEntered.contains(older) }
+        // The younger save's own schedule() bails: the older row holds the serial slot.
+        _ = await save(rig, videoId: younger)
+        #expect(rig.engine.starts.isEmpty)
+
+        rig.flags.limiterHeld = []
+        await saveOlder.value
+        let youngerId = try #require(rig.persisted(videoId: younger)?.id)
+        await waitUntil { rig.engine.starts.map(\.id) == [youngerId] }
+        let olderId = try #require(rig.persisted(videoId: older)?.id)
+        #expect(await rig.manager.pendingRetryIds == [olderId])
+    }
+
+    /// Finding 6: `pause()` writes `paused` before the engine hop returns, so a queued final
+    /// `.finished` can land on a paused row — the completed bytes must be kept, not deleted.
+    @Test func aFinishedEventForAPausedRowCompletesItInsteadOfDeletingTheFile() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.handle(.progress(id: id, bytesWritten: 500, totalBytes: 1_000))
+        await rig.manager.pause(id)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        try Data(repeating: 7, count: 1_000).write(to: rig.directory.appending(path: "\(id).tmp"))
+        await rig.manager.handle(.finished(id: id))
+
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.completed.rawValue)
+        #expect(row.localPath == "\(id).m4a")
+        #expect(row.resumeData == nil)
+        let file = OfflineStorage.fileURL(relativePath: "\(id).m4a", base: rig.base)
+        #expect(FileManager.default.fileExists(atPath: file.path()))
+    }
+
+    // MARK: - Engine kill switch (finding 3: cancel/pause must hold at a chunk boundary,
+    // when no task is live because the delegate is between chunks)
+
+    /// URLProtocol that fails every load immediately — drives a started walk into the
+    /// no-live-task state while its walk bookkeeping still exists.
+    nonisolated final class FailingURLProtocol: URLProtocol {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+        }
+        override func stopLoading() {}
+    }
+
+    private func makeStubbedEngine() -> (engine: ProgressiveEngine, directory: URL) {
+        let base = FileManager.default.temporaryDirectory
+            .appending(path: "OfflineEngineKillSwitch-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FailingURLProtocol.self]
+        let directory = OfflineStorage.directoryURL(base: base)
+        return (ProgressiveEngine(directory: directory, configuration: configuration), directory)
+    }
+
+    /// A cancel issued at a chunk boundary (`task(id)` nil) must stop the walk: the delegate
+    /// consults the kill switch before touching the finished chunk, so a straggler completion
+    /// writes nothing and issues nothing.
+    @Test func engineCancelIsAuthoritativeAtAChunkBoundary() async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let id = "boundary-cancel"
+        await engine.cancel(id: id)   // boundary: no live task to find
+
+        // The straggler chunk completion the real session would deliver next.
+        var request = URLRequest(url: URL(string: "https://example.invalid/file")!)
+        request.setValue("bytes=0-10485759", forHTTPHeaderField: "Range")
+        request.setValue("UA", forHTTPHeaderField: "User-Agent")
+        let side = URLSession(configuration: .ephemeral)
+        let task = side.downloadTask(with: request)   // never resumed; carries the request shape
+        task.taskDescription = id
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data("chunk".utf8).write(to: location)
+        defer { try? FileManager.default.removeItem(at: location) }
+
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(id).tmp").path()),
+                "a cancelled walk must not append the straggler chunk")
+        #expect(FileManager.default.fileExists(atPath: location.path()),
+                "the delegate must bail before consuming the chunk")
+    }
+
+    /// `pause` must hand back a resume token even when no task is live (a chunk boundary, or a
+    /// pause racing a transient failure) — the walk state, not the live task, carries it.
+    @Test func enginePauseReturnsTheWalkTokenWhenNoTaskIsLive() async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let id = "boundary-pause"
+        let url = URL(string: "https://example.invalid/media?itag=140")!
+        await engine.start(id: id, url: url, userAgent: "UA", allowsCellular: true)
+        for _ in 0..<2000 {   // the stubbed failure retires the task; wait for the no-live window
+            if await engine.liveIds().isEmpty { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await engine.liveIds().isEmpty)
+
+        let token = try #require(await engine.pause(id: id))
+        struct Token: Decodable { var url: URL; var userAgent: String }
+        let decoded = try JSONDecoder().decode(Token.self, from: token)
+        #expect(decoded.url == url)
+        #expect(decoded.userAgent == "UA")
     }
 
     // MARK: - Chunked engine arithmetic (googlevideo throttles single long GETs on adaptive

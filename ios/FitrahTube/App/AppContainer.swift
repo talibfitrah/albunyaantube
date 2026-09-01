@@ -101,16 +101,18 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         return manager
     }
 
-    /// Reconciliation note 6's "thin observation glue": re-arms itself after every change to the
-    /// two gate inputs and forwards into the actor.
+    /// Reconciliation note 6's "thin observation glue": re-arms itself on every change to the
+    /// two gate inputs and forwards into the actor. Re-arm BEFORE acting — `withObservationTracking`
+    /// fires once per arm, so a change landing while `gateDidChange` is still running would
+    /// otherwise go unobserved and the gate would stick to a stale answer.
     private func observeOfflineGate(_ manager: OfflineManager) {
         withObservationTracking {
             _ = settings.wifiOnlyDownloads
             _ = network.isOnCellular
         } onChange: {
             Task { @MainActor [weak self] in
-                await manager.gateDidChange()
                 self?.observeOfflineGate(manager)
+                await manager.gateDidChange()
             }
         }
     }

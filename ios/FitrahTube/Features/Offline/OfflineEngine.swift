@@ -66,18 +66,42 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     private let directory: URL
     private var session: URLSession!
 
+    /// Guards `walks` + `stoppedIds` — the ONLY authority on whether a walk may continue.
+    /// `task(id)` alone cannot be: at every ~10 MB chunk boundary the finished task is already
+    /// `.completed` and the next task doesn't exist yet, so a cancel/pause landing there found
+    /// nothing to stop and the delegate walked on.
+    private let stateLock = NSLock()
+    /// Per-walk resume token, registered by `start`/`resume` — `pause` reads it here rather than
+    /// off a live task (nil at a boundary). Cleared on `.finished` and on `cancel`; kept across a
+    /// transient failure so a racing pause still gets its token. A relaunch-re-attached task has
+    /// no entry: `pause` falls back to the live task's request.
+    private var walks: [String: ResumeToken] = [:]
+    /// Ids whose walk is stopped (cancel or pause). The delegate consults this before touching a
+    /// finished chunk or issuing the next one; `start`/`resume` clear it (a fresh attempt).
+    /// ponytail: grows by one id per cancelled/paused item per session — trim on clear if that
+    /// ever matters.
+    private var stoppedIds: Set<String> = []
+
     init(directory: URL, configuration: URLSessionConfiguration) {
         let (stream, continuation) = AsyncStream.makeStream(of: OfflineDownloadEvent.self)
         events = stream
         self.continuation = continuation
         self.directory = directory
         super.init()
-        session = URLSession(configuration: configuration, delegate: self, delegateQueue: OperationQueue())
+        // URLSession requires a SERIAL delegate queue ("an operation queue … with a maximum
+        // concurrency of 1"); a fresh OperationQueue defaults to concurrent.
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        session = URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
     }
 
     // MARK: - OfflineEngine
 
     func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async {
+        stateLock.withLock {
+            stoppedIds.remove(id)
+            walks[id] = ResumeToken(url: url, userAgent: userAgent)
+        }
         try? FileManager.default.removeItem(at: partialURL(id))
         issueChunk(id: id, url: url, userAgent: userAgent, allowsCellular: allowsCellular, offset: 0)
     }
@@ -87,18 +111,32 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             continuation.yield(.failed(id: id, failure: .network(resumeData: nil)))
             return
         }
+        stateLock.withLock {
+            stoppedIds.remove(id)
+            walks[id] = token
+        }
         issueChunk(id: id, url: token.url, userAgent: token.userAgent, allowsCellular: allowsCellular,
                    offset: partialSize(id))
     }
 
     func pause(id: String) async -> Data? {
-        guard let task = await task(id) else { return nil }
-        let token = Self.token(for: task)
-        task.cancel()
-        return token
+        let walk = stateLock.withLock { () -> ResumeToken? in
+            stoppedIds.insert(id)   // authoritative: the delegate won't issue another chunk
+            return walks[id]
+        }
+        let live = await task(id)
+        live?.cancel()
+        // Walk state first; the live task is the fallback for a relaunch-re-attached walk that
+        // never registered one. At a chunk boundary both `live` and the old task-only path are
+        // nil — the walk state is what keeps the token.
+        return walk.flatMap { try? JSONEncoder().encode($0) } ?? live.flatMap(Self.token(for:))
     }
 
     func cancel(id: String) async {
+        stateLock.withLock {
+            stoppedIds.insert(id)   // authoritative even when no task is live (chunk boundary)
+            walks[id] = nil
+        }
         await task(id)?.cancel()
     }
 
@@ -109,6 +147,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     // MARK: - Chunk walk
 
     private func issueChunk(id: String, url: URL, userAgent: String, allowsCellular: Bool, offset: Int64) {
+        guard stateLock.withLock({ !stoppedIds.contains(id) }) else { return }
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(Self.rangeHeader(offset: offset), forHTTPHeaderField: "Range")
@@ -154,6 +193,10 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let id = downloadTask.taskDescription, let request = downloadTask.originalRequest, let url = request.url else { return }
+        // Kill switch first: a chunk finishing after a cancel/pause must neither append its bytes
+        // (a cancel already deleted the tmp) nor issue the next chunk. Pause discards this chunk
+        // too — resume re-fetches it from the tmp size, ≤10 MB of re-download for a simple rule.
+        guard stateLock.withLock({ !stoppedIds.contains(id) }) else { return }
         let response = downloadTask.response as? HTTPURLResponse
         let status = response?.statusCode ?? 200
         guard (200..<300).contains(status) else {
@@ -185,6 +228,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
                 issueChunk(id: id, url: url, userAgent: request.value(forHTTPHeaderField: "User-Agent") ?? "",
                            allowsCellular: request.allowsCellularAccess, offset: written)
             } else {
+                stateLock.withLock { walks[id] = nil }
                 continuation.yield(.finished(id: id))
             }
         } catch {

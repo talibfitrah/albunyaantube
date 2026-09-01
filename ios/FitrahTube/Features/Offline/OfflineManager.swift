@@ -72,6 +72,12 @@ actor OfflineManager: OfflineSaving {
 
     /// Ids with an engine task in flight (or a resolve on the way to one).
     private var active: Set<String> = []
+    /// Per-id attempt generation, bumped when `begin` claims the slot. `stillCurrent` re-checks
+    /// it after every suspension: a cancel/delete (drops `active`) or a cancel→retry re-claim
+    /// (bumps the counter) invalidates the older attempt mid-flight. Never cleared — clearing
+    /// would reissue token 1 to a retry and let a stale attempt pass; one `Int` per id ever saved
+    /// this session is the cost.
+    private var attempts: [String: Int] = [:]
     /// Ids whose next attempt is timer-scheduled (limiter delay/block, resolver cooldown).
     private var retries: [String: Task<Void, Never>] = [:]
     /// Ids that already spent their one re-resolve on a 403.
@@ -122,7 +128,9 @@ actor OfflineManager: OfflineSaving {
         let resumeData = await engine.pause(id: id)
         active.remove(id)
         await write { store in
-            guard let item = store.item(id: id) else { return }
+            // Still-paused guard: a `.finished` racing this pause may have completed the row
+            // while `engine.pause` was in flight — never scribble resume data onto it.
+            guard let item = store.item(id: id), item.status == OfflineStatus.paused.rawValue else { return }
             item.resumeData = resumeData
             try store.save()
         }
@@ -235,7 +243,10 @@ actor OfflineManager: OfflineSaving {
 
         case .finished(let id):
             let tmp = directory.appending(path: "\(id).tmp")
-            guard let row = await read(id: id), row.status == .running else {
+            // `.paused` too: `pause()` writes `paused` before the engine hop returns, so a final
+            // chunk racing the pause can deliver `.finished` for a paused row — those bytes are
+            // the complete file and must be kept, not deleted.
+            guard let row = await read(id: id), row.status == .running || row.status == .paused else {
                 try? FileManager.default.removeItem(at: tmp)   // cancelled/deleted while finishing
                 return
             }
@@ -302,30 +313,55 @@ actor OfflineManager: OfflineSaving {
             .filter { $0.status == .queued && !waiting.contains($0.id) }
             .min { $0.createdAt < $1.createdAt }
         guard let next else { return }
+        // `readAll` suspended: a concurrent schedule()/resume() may have claimed the slot since
+        // the guard above — begin's own synchronous claim closes the same window for one row.
+        guard active.isEmpty else { return }
         await begin(next)
     }
 
     /// Runs one row: the cellular gate, then either a resume-data restart or the resolve path.
     private func begin(_ row: Row) async {
-        guard await gateAllows() else { return }   // stays queued/paused; `gateDidChange` re-runs us
+        // Claim the slot SYNCHRONOUSLY, before any suspension: two interleaved schedule() passes
+        // (or a double-tap Resume) both used to pass their checks and start the same row twice.
+        guard !active.contains(row.id) else { return }
         active.insert(row.id)
+        attempts[row.id, default: 0] += 1
+        let attempt = attempts[row.id]!
+        guard await gateAllows() else {
+            // Stays queued/paused. A queued row is re-picked by the schedule() a gateDidChange
+            // runs; a paused row waits for the user's Resume (schedule() picks only queued rows).
+            active.remove(row.id)
+            return
+        }
+        guard stillCurrent(row.id, attempt) else { return }   // cancelled/deleted during the hop
         if let resumeData = row.resumeData {
             await transition(row.id, row.status == .paused ? .resume : .start)
             try? Self.prepareDirectory(directory)
+            guard stillCurrent(row.id, attempt) else { return }
             await engine.resume(id: row.id, resumeData: resumeData, allowsCellular: !(await wifiOnly()))
             return
         }
         await resolveAndStart(row, forceRefresh: false)
     }
 
+    /// True while `id`'s claim from `begin` (or the 403 re-resolve continuing it) is the live
+    /// attempt: cancel/delete/fail/pause drop `active`, a re-claim bumps the generation.
+    private func stillCurrent(_ id: String, _ attempt: Int) -> Bool {
+        active.contains(id) && attempts[id] == attempt
+    }
+
     private func resolveAndStart(_ row: Row, forceRefresh: Bool) async {
+        let attempt = attempts[row.id] ?? 0
         switch await limiterCheck(row.videoId) {
         case .allowed:
             break
         case .delayed(let delay, _):
-            scheduleRetry(row.id, after: delay); return
+            // The head row parking on a timer frees the serial slot — re-run the scheduler so a
+            // downloadable younger row proceeds instead of starving behind the timer. (Not in the
+            // cooldown arm below: that cooldown is global, every row would hit the same wall.)
+            scheduleRetry(row.id, after: delay); await schedule(); return
         case .blocked(_, let retryAfter):
-            scheduleRetry(row.id, after: retryAfter); return
+            scheduleRetry(row.id, after: retryAfter); await schedule(); return
         }
         let resolved: Resolved
         do {
@@ -343,6 +379,10 @@ actor OfflineManager: OfflineSaving {
         } catch {
             await fail(row.id, Self.code(for: error)); return
         }
+        // The resolve suspended for up to the whole ladder walk: a cancel/delete landing in that
+        // window already tore the row down — starting the engine now would download a full file
+        // for a dead row, in parallel with whatever the freed slot picked up next.
+        guard stillCurrent(row.id, attempt) else { return }
         guard let url = Self.sourceURL(resolved.stream, audioOnly: row.audioOnly) else {
             if case .embed = resolved.stream { await fail(row.id, .notSaveable) } else { await fail(row.id, .noStream) }
             return
@@ -353,6 +393,7 @@ actor OfflineManager: OfflineSaving {
         } catch {
             await fail(row.id, .unknown); return
         }
+        guard stillCurrent(row.id, attempt) else { return }   // cancel during the transition hop
         await engine.start(id: row.id, url: url, userAgent: resolved.userAgent, allowsCellular: !(await wifiOnly()))
     }
 
