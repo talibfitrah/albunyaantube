@@ -9,6 +9,8 @@ import Observation
 /// here), so this is a thin wrapper: start the monitor, map `path.status`, de-dupe.
 @MainActor @Observable final class NetworkMonitor {
     private(set) var isOnline = true
+    /// Phase 3 Task 4: the offline cellular gate's input (`OfflineStateMachine.allowedToRun`).
+    private(set) var isOnCellular = false
 
     private let monitor = NWPathMonitor()
 
@@ -31,8 +33,11 @@ import Observation
             // structural: `NWPathMonitor` serialises its callbacks onto the queue it is given.
             monitor.pathUpdateHandler = { [weak self] path in
                 let online = Self.isOnline(for: path.status)
+                let cellular = path.usesInterfaceType(.cellular)
                 MainActor.assumeIsolated {
-                    guard let self, self.isOnline != online else { return }
+                    guard let self else { return }
+                    if self.isOnCellular != cellular { self.isOnCellular = cellular }
+                    guard self.isOnline != online else { return }
                     self.isOnline = online
                 }
             }

@@ -20,7 +20,9 @@
 /// packaging remains an OPEN question, answerable only on hardware (USER-BLOCKED — no signing
 /// identity). Hardware re-run: `TEST_RUNNER_OFFLINE_LIVE=1` + `OfflineSpikeTests` on a device
 /// (CF-D-1); if the round trip passes there (outcome A), flip `current` to `.hls` and the
-/// engine selection and picker tiers follow.
+/// engine selection and picker tiers follow. A green `OfflineSpikeTests` run alone is NOT
+/// outcome A: the movpkg `#expect` must actually have fired (a hardware refusal still prints
+/// "2 passed") -- the `[spike]` log lines are the instrument.
 nonisolated enum OfflineEngineSupport: Sendable {
     /// `AVAssetDownloadTask` proven against YouTube's HLS end-to-end (movpkg lands and plays):
     /// saves download HLS; the picker offers audio-only + 360/480/720/1080.

@@ -46,4 +46,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         MainActor.assumeIsolated { OrientationLock.mask }
     }
+
+    /// Phase 3 Task 4: iOS hands over the background-session completion handler here; the
+    /// offline engine calls it once its session has delivered its events (the second reason this
+    /// app has a delegate).
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping @MainActor @Sendable () -> Void) {
+        ProgressiveEngine.registerBackgroundCompletion(identifier: identifier, handler: completionHandler)
+    }
 }

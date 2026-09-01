@@ -69,6 +69,9 @@ struct FitrahTubeApp: App {
                     seedDebugFavoritesIfRequested()
                     seedDebugSubscriptionsIfRequested()
                     refreshRemoteConfigIfDue()
+                    // Phase 3 Task 4: re-bind rows to background tasks that outlived the last
+                    // launch (creates the session, so a relaunch-for-events gets its delegate).
+                    Task { await container.offlineManager.reattach() }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active { refreshRemoteConfigIfDue() }

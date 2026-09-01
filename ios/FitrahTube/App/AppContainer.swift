@@ -76,6 +76,44 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var offlineStore = OfflineStore(modelContainer: modelContainer)
     private(set) lazy var categories: any CategoriesCache = LiveCategoriesCache(client: catalog)
     private(set) lazy var network = NetworkMonitor()
+    /// Phase 3 Task 4: resolve → download → persist over `offlineStore`. One background session
+    /// (`ProgressiveEngine.backgroundSessionIdentifier`); `.prefetch` lane on the ONE limiter/clock
+    /// (reconciliation note 4); the cellular gate reads `settings`/`network` live (note 6). The
+    /// per-video gate closure is the Task 5 `OfflineGateClient` seam -- `.unreachable` (keep) until
+    /// it lands, so `sweep()` only ever applies the TTL today.
+    private(set) lazy var offlineManager: OfflineManager = makeOfflineManager()
+
+    private func makeOfflineManager() -> OfflineManager {
+        let configuration = URLSessionConfiguration.background(withIdentifier: ProgressiveEngine.backgroundSessionIdentifier)
+        configuration.sessionSendsLaunchEvents = true
+        let base = URL.applicationSupportDirectory
+        let manager = OfflineManager(
+            store: offlineStore,
+            engine: ProgressiveEngine(directory: OfflineStorage.directoryURL(base: base), configuration: configuration),
+            resolver: LiveStreamResolver(resolver: resolver),
+            limiterCheck: { [innerTube] in await innerTube.rateLimiter.check($0, kind: .prefetch, now: innerTube.clock.now) },
+            wifiOnly: { [settings] in settings.wifiOnlyDownloads },
+            isOnCellular: { [network] in network.isOnCellular },
+            baseDirectory: base,
+            gate: { _ in .unreachable },
+            now: { Date() })
+        observeOfflineGate(manager)
+        return manager
+    }
+
+    /// Reconciliation note 6's "thin observation glue": re-arms itself after every change to the
+    /// two gate inputs and forwards into the actor.
+    private func observeOfflineGate(_ manager: OfflineManager) {
+        withObservationTracking {
+            _ = settings.wifiOnlyDownloads
+            _ = network.isOnCellular
+        } onChange: {
+            Task { @MainActor [weak self] in
+                await manager.gateDidChange()
+                self?.observeOfflineGate(manager)
+            }
+        }
+    }
 
     /// InnerTubeKit composition root (CF-B3/CF-B4, `ios-app-plan.md` §6.1) -- resolves a videoId to
     /// a playable stream via `resolver`. `lazy`, same reasoning as the stores above: building it is
