@@ -208,6 +208,20 @@ struct OfflineManagerTests {
         #expect(await rig.manager.pendingRetryIds == [id])
     }
 
+    /// Review F2, app side: a bot-checked muxed walk now fails overall with `.botCheck` (the
+    /// walk-end trip armed the persisted cooldown). The row must stay queued with a retry —
+    /// never a failed NOT_SAVEABLE/NO_STREAM row. The parked retry's own resolve then hits the
+    /// resolver's cooldown self-gate (zero network) and the `.cooldown` arm reschedules it at
+    /// the cooldown's exact end.
+    @Test func aBotCheckedVideoSaveStaysQueuedWithARetryNeverFailed() async throws {
+        let rig = makeRig(.failure(.botCheck)); defer { rig.cleanUp() }
+        let id = await save(rig, audioOnly: false)
+        #expect(rig.engine.starts.isEmpty)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.queued.rawValue)
+        #expect(rig.persisted(id: id)?.errorCode == nil)
+        #expect(await rig.manager.pendingRetryIds == [id])
+    }
+
     @Test func aTransportFailureFailsWithNetwork() async throws {
         let rig = makeRig(.failure(.transport("boom"))); defer { rig.cleanUp() }
         let id = await save(rig)
@@ -361,6 +375,33 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: orphanNoData)?.status == OfflineStatus.queued.rawValue)
         #expect(rig.resolver.calls.isEmpty)
         #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Fix-first F1: a re-attached claim must carry an attempt token like `begin`'s. Without it,
+    /// the designed-for expired-URL 403 after a relaunch is silently discarded (`stillCurrent`
+    /// reads nil against the re-resolve's token) AND the `active` claim is never released — every
+    /// later save wedges behind `schedule()`'s serial guard for the whole session.
+    @Test func aReattached403SurvivorReResolvesAndTheSchedulerIsNotWedged() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let item = OfflineItem(videoId: "vidRelaunch", title: "t", channelName: nil, thumbnailUrl: nil,
+                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.running.rawValue,
+                               resumeData: nil)
+        try rig.store.insert(item)
+        rig.engine.live = [item.id]
+        await rig.manager.reattach()
+
+        // A chunk 403s (the expired googlevideo URL): the one forced re-resolve must proceed
+        // and restart the engine with the fresh URL.
+        await rig.manager.handle(.failed(id: item.id, failure: .http(status: 403)))
+        #expect(rig.resolver.calls.map(\.forceRefresh) == [true])
+        #expect(rig.engine.starts.map(\.id) == [item.id])
+        #expect(rig.persisted(id: item.id)?.status == OfflineStatus.running.rawValue)
+
+        // And once the row completes, an unrelated save is not blocked by a leaked claim.
+        try Data("x".utf8).write(to: rig.directory.appending(path: "\(item.id).tmp"))
+        await rig.manager.handle(.finished(id: item.id))
+        let other = await save(rig, videoId: "vidOther000")
+        #expect(rig.engine.starts.map(\.id) == [item.id, other])
     }
 
     // MARK: - Cellular gate (reconciliation note 6)
@@ -557,6 +598,70 @@ struct OfflineManagerTests {
         let decoded = try JSONDecoder().decode(Token.self, from: token)
         #expect(decoded.url == url)
         #expect(decoded.userAgent == "UA")
+    }
+
+    /// Serves a 206 partial chunk (with a Content-Range naming more to come) so a side-session
+    /// task carries the real response shape a mid-walk chunk has.
+    nonisolated final class PartialChunkURLProtocol: URLProtocol {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil,
+                                           headerFields: ["Content-Range": "bytes 0-4/1000000"])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data("chunk".utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        override func stopLoading() {}
+    }
+
+    /// Review F4: only `start`/`resume` registered `walks[id]` — a relaunch-re-attached walk
+    /// enters through the delegate's `issueChunk` and never did, so a boundary `pause` returned
+    /// a nil token and the later resume restarted from zero via `engine.start` (deleting the
+    /// `.tmp`). `issueChunk` must register the token itself.
+    @Test func aReattachedWalkRegistersItsTokenSoABoundaryPauseCanResume() async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let id = "boundary-reattach"
+        let url = URL(string: "https://example.invalid/media?itag=140")!
+
+        // The live task from the PREVIOUS launch — `start` was never called this session. Run it
+        // on a side session so it carries a real 206 + Content-Range when the delegate sees it.
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PartialChunkURLProtocol.self]
+        let side = URLSession(configuration: configuration)
+        var request = URLRequest(url: url)
+        request.setValue("bytes=0-10485759", forHTTPHeaderField: "Range")
+        request.setValue("UA", forHTTPHeaderField: "User-Agent")
+        let task = side.downloadTask(with: request) { _, _, _ in }
+        task.taskDescription = id
+        task.resume()
+        for _ in 0..<2000 {
+            if task.state == .completed { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(task.state == .completed)
+
+        // The delegate appends the chunk and crosses the boundary (issues the next chunk, which
+        // the engine's failing protocol immediately retires — the no-live-task window).
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data("chunk".utf8).write(to: location)
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        for _ in 0..<2000 {
+            if await engine.liveIds().isEmpty { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+
+        let token = try #require(await engine.pause(id: id), "boundary pause on a reattached walk lost its token")
+        struct Token: Decodable { var url: URL; var userAgent: String }
+        let decoded = try JSONDecoder().decode(Token.self, from: token)
+        #expect(decoded.url == url)
+        #expect(decoded.userAgent == "UA")
+
+        // And the resume continues from the `.tmp` (no `start`, which would have deleted it).
+        await engine.resume(id: id, resumeData: token, allowsCellular: true)
+        let tmp = directory.appending(path: "\(id).tmp")
+        #expect((try? Data(contentsOf: tmp))?.count == 5)
     }
 
     // MARK: - Chunked engine arithmetic (googlevideo throttles single long GETs on adaptive

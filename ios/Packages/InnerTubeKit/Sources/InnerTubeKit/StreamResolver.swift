@@ -231,6 +231,10 @@ public actor StreamResolver {
             // every redirect or hand-off to YouTube, so a video `embed` cannot play is a terminal
             // `ExtractionError`, never an escape hatch out of the app. `RemoteConfig` drops an
             // `openInYouTube` entry from a published config for the same reason.
+            // A muxed-required walk advances instead (review F2): the caller maps `.embed` to
+            // terminal NOT_SAVEABLE, so "resolving" here would dress a bot-checked walk as a
+            // clean success and skip the walk-end trip recording.
+            if requiresMuxed { return .advance }
             return .resolved(makeEmbed(videoId))
         default:
             return .advance

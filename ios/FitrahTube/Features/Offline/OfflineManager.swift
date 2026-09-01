@@ -182,7 +182,7 @@ actor OfflineManager: OfflineSaving {
         let rows = await readAll()
         for row in rows where row.status == .running {
             if live.contains(row.id) {
-                active.insert(row.id)
+                _ = claim(row.id)
             } else {
                 // Orphaned: the app died mid-download. Resume data (from a pause before the death)
                 // resumes as paused; without it the row queues and downloads from zero.
@@ -324,9 +324,7 @@ actor OfflineManager: OfflineSaving {
         // Claim the slot SYNCHRONOUSLY, before any suspension: two interleaved schedule() passes
         // (or a double-tap Resume) both used to pass their checks and start the same row twice.
         guard !active.contains(row.id) else { return }
-        active.insert(row.id)
-        attempts[row.id, default: 0] += 1
-        let attempt = attempts[row.id]!
+        let attempt = claim(row.id)
         guard await gateAllows() else {
             // Stays queued/paused. A queued row is re-picked by the schedule() a gateDidChange
             // runs; a paused row waits for the user's Resume (schedule() picks only queued rows).
@@ -344,7 +342,17 @@ actor OfflineManager: OfflineSaving {
         await resolveAndStart(row, forceRefresh: false)
     }
 
-    /// True while `id`'s claim from `begin` (or the 403 re-resolve continuing it) is the live
+    /// The ONLY way to claim the serial slot (review F1): every `active.insert` must carry an
+    /// attempt bump, or `stillCurrent` reads a nil generation against the claimant's own token and
+    /// silently discards its continuation — a re-attached row's 403 re-resolve wedged the whole
+    /// scheduler this way (the claim was never released either).
+    private func claim(_ id: String) -> Int {
+        active.insert(id)
+        attempts[id, default: 0] += 1
+        return attempts[id]!
+    }
+
+    /// True while `id`'s claim from `begin`/`reattach` (or the 403 re-resolve continuing it) is the live
     /// attempt: cancel/delete/fail/pause drop `active`, a re-claim bumps the generation.
     private func stillCurrent(_ id: String, _ attempt: Int) -> Bool {
         active.contains(id) && attempts[id] == attempt
@@ -381,6 +389,13 @@ actor OfflineManager: OfflineSaving {
         } catch ExtractionError.cooldown(let until) {
             // CF-D-9 reverse direction: never a failed row, never a retry into the cooldown.
             scheduleRetry(row.id, after: .seconds(max(1, until.timeIntervalSince(now())))); return
+        } catch ExtractionError.botCheck {
+            // Review F2: a bot-checked walk (the muxed save-walk's shape — its walk-end trip just
+            // armed the persisted cooldown) is a temporary block, never a failed row. `.botCheck`
+            // carries no date, so park briefly: the retry's own resolve hits the resolver's
+            // cooldown self-gate BEFORE any rung or network call and lands in the `.cooldown` arm
+            // above with the cooldown's exact end.
+            scheduleRetry(row.id, after: .seconds(1)); return
         } catch {
             await fail(row.id, Self.code(for: error)); return
         }

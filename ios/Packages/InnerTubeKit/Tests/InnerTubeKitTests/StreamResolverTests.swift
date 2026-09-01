@@ -767,6 +767,28 @@ import Testing
         #expect(transport.callCount == 2)
     }
 
+    /// Review F2: under `requiresMuxed` the embed floor is unusable by construction (the caller
+    /// maps `.embed` to terminal NOT_SAVEABLE), so "resolving" it dressed a bot-checked walk as a
+    /// clean success — no trip recorded, no cooldown armed, N queued video saves burned N×2 POSTs
+    /// with every row mislabeled. The rung must advance instead: the walk fails overall and the
+    /// walk-end path records its one trip.
+    @Test func aBotCheckedMuxedWalkAdvancesPastEmbedAndRecordsTheTrip() async throws {
+        let clock = ManualClock()
+        let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
+        let (resolver, session) = makeResolver(
+            transport: transport, clock: clock,
+            configStore: configStore(resolverOrder: ["visionosHLS", "androidItag18", "embed"]))
+        await session.setVisitorData("v1", for: .android)   // genuine bot check, not a bootstrap
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .prefetch, sourceChannelId: nil,
+                                           forceRefresh: false, requiresMuxed: true)
+        }
+        #expect(transport.callCount == 2)   // android rung: POST + rotate + retry POST; HLS rung skipped
+        #expect(await session.loadCooldown().tripCount == 1)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) != nil)
+    }
+
     /// Serves call 1 only after `release()` (a live player walk held open at the transport);
     /// later calls answer immediately from the script. Same 1 ms-poll gate as `GatedTransport`,
     /// but releasable — the held call must complete un-cancelled after the muxed walk is done.

@@ -71,10 +71,11 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     /// `.completed` and the next task doesn't exist yet, so a cancel/pause landing there found
     /// nothing to stop and the delegate walked on.
     private let stateLock = NSLock()
-    /// Per-walk resume token, registered by `start`/`resume` — `pause` reads it here rather than
-    /// off a live task (nil at a boundary). Cleared on `.finished` and on `cancel`; kept across a
-    /// transient failure so a racing pause still gets its token. A relaunch-re-attached task has
-    /// no entry: `pause` falls back to the live task's request.
+    /// Per-walk resume token, registered by `start`/`resume` and re-registered by every
+    /// `issueChunk` (review F4: a relaunch-re-attached walk enters only through the delegate's
+    /// `issueChunk`) — `pause` reads it here rather than off a live task (nil at a boundary).
+    /// Cleared on `.finished` and on `cancel`; kept across a transient failure so a racing pause
+    /// still gets its token.
     private var walks: [String: ResumeToken] = [:]
     /// Ids whose walk is stopped (cancel or pause). The delegate consults this before touching a
     /// finished chunk or issuing the next one; `start`/`resume` clear it (a fresh attempt).
@@ -147,7 +148,15 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     // MARK: - Chunk walk
 
     private func issueChunk(id: String, url: URL, userAgent: String, allowsCellular: Bool, offset: Int64) {
-        guard stateLock.withLock({ !stoppedIds.contains(id) }) else { return }
+        let proceed = stateLock.withLock { () -> Bool in
+            guard !stoppedIds.contains(id) else { return false }
+            // Review F4: register on every chunk, not just in start/resume — a relaunch-re-attached
+            // walk enters here from the delegate without ever passing either, and a boundary
+            // `pause` without the token restarts the walk from zero (deleting the `.tmp`).
+            walks[id] = ResumeToken(url: url, userAgent: userAgent)
+            return true
+        }
+        guard proceed else { return }
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(Self.rangeHeader(offset: offset), forHTTPHeaderField: "Range")
