@@ -363,14 +363,19 @@ actor OfflineManager: OfflineSaving {
         case .blocked(_, let retryAfter):
             scheduleRetry(row.id, after: retryAfter); await schedule(); return
         }
+        // A VIDEO save needs the muxed itag 18 (save-purpose walk, owner ruling 2026-09-01);
+        // an audio-only save stays on the plain walk — it needs visionos's itag-140 `audioOnlyURL`.
+        let requiresMuxed = !row.audioOnly
         let resolved: Resolved
         do {
             var first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
-                                                   sourceChannelId: nil, forceRefresh: forceRefresh)
+                                                   sourceChannelId: nil, forceRefresh: forceRefresh,
+                                                   requiresMuxed: requiresMuxed)
             if !forceRefresh, let expiresAt = first.expiresAt,
                expiresAt.timeIntervalSince(now()) < Self.minimumRemainingLifetime {
                 first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
-                                                   sourceChannelId: nil, forceRefresh: true)
+                                                   sourceChannelId: nil, forceRefresh: true,
+                                                   requiresMuxed: requiresMuxed)
             }
             resolved = first
         } catch ExtractionError.cooldown(let until) {
@@ -397,9 +402,10 @@ actor OfflineManager: OfflineSaving {
         await engine.start(id: row.id, url: url, userAgent: resolved.userAgent, allowsCellular: !(await wifiOnly()))
     }
 
-    /// itag 140 for audio-only (only the VISIONOS `.hls` rung carries it), itag 18 for video (only
-    /// the ANDROID `.progressive` rung carries it — the `.hls` rung has no muxed format and the HLS
-    /// engine is dormant, so a video save there is `NO_STREAM`; Task 5's picker must reflect this).
+    /// itag 140 for audio-only (only the VISIONOS `.hls` rung carries it), itag 18 for video (the
+    /// ANDROID `.progressive` rung — the muxed save-walk skips the `.hls` rung for video saves, so
+    /// `(.hls, audioOnly: false)` is unreachable there and stays a defensive nil; video saves are
+    /// always 360p/mp4, Task 5's picker must reflect this).
     nonisolated static func sourceURL(_ stream: ResolvedStream, audioOnly: Bool) -> URL? {
         switch (stream, audioOnly) {
         case (.hls(_, _, let audioOnlyURL, _), true): return audioOnlyURL

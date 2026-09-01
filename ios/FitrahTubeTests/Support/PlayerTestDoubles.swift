@@ -15,7 +15,11 @@ final class FixedMonotonicClock: MonotonicClock, @unchecked Sendable {
 final class RecordingResolver: StreamResolving, @unchecked Sendable {
     // B4: `purpose` was dropped on the floor. It is the lane CF-B2-2 reserves (.prefetch is B5's),
     // so a test that means "Shorts never resolve a neighbour" has to be able to see it.
-    struct Call: Equatable { var videoId: String; var kind: RequestKind; var purpose: Purpose; var forceRefresh: Bool }
+    struct Call: Equatable {
+        var videoId: String; var kind: RequestKind; var purpose: Purpose; var forceRefresh: Bool
+        /// Defaulted so the many pre-save-walk call assertions stay as written (they all mean false).
+        var requiresMuxed: Bool = false
+    }
 
     enum Outcome { case hls, progressive, embed, failure(ExtractionError) }
 
@@ -77,10 +81,17 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        try await resolve(videoId, purpose: purpose, kind: kind,
+                          sourceChannelId: sourceChannelId, forceRefresh: forceRefresh, requiresMuxed: false)
+    }
+
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
         // Captured HERE, not after the hold: a test that scripts a second answer while this call is
         // still held is describing the NEXT call's outcome, not retroactively this one's.
         let outcome = lock.withLock { () -> Outcome in
-            _calls.append(Call(videoId: videoId, kind: kind, purpose: purpose, forceRefresh: forceRefresh))
+            _calls.append(Call(videoId: videoId, kind: kind, purpose: purpose,
+                               forceRefresh: forceRefresh, requiresMuxed: requiresMuxed))
             if kind == .prefetch, _prefetchRefusals.contains(videoId) {
                 return .failure(.cooldown(until: Date().addingTimeInterval(30)))
             }

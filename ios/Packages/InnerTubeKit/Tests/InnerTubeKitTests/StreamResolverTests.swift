@@ -724,4 +724,99 @@ import Testing
         }
         #expect(transport.callCount == 0)
     }
+
+    // MARK: - h) muxed save-walk (owner ruling 2026-09-01: requiresMuxed enables VIDEO saves)
+
+    /// The HLS rung has no muxed format, so a muxed-required walk must advance past it without
+    /// even POSTing and land on the ANDROID itag-18 rung: exactly one POST, `.progressive`.
+    @Test func aMuxedWalkSkipsTheVisionosRungAndYieldsTheItag18Progressive() async throws {
+        let transport = RecordingTransport([androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let resolved = try await resolver.resolve(
+            Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false, requiresMuxed: true)
+
+        guard case .progressive(let url, let label) = resolved.stream else {
+            Issue.record("expected .progressive, got \(resolved.stream)"); return
+        }
+        #expect(url.absoluteString.contains("itag=18"))
+        #expect(label == "360p")
+        #expect(transport.callCount == 1)
+    }
+
+    /// Cache poisoning guard, both directions: a muxed walk must not accept a cached `.hls`
+    /// (wrong shape for a save), and its `.progressive` must not land under the plain videoId key
+    /// (the player would degrade to 360p on its next resolve).
+    @Test func aMuxedWalkNeitherReadsNorWritesThePlainCache() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls"), androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        // Warm the plain cache with the player's `.hls`.
+        let player = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .hls = player.stream else { Issue.record("expected .hls, got \(player.stream)"); return }
+
+        // No cache READ: the muxed walk must go to the network despite the warm `.hls`.
+        let muxed = try await resolver.resolve(
+            Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false, requiresMuxed: true)
+        guard case .progressive = muxed.stream else { Issue.record("expected .progressive, got \(muxed.stream)"); return }
+        #expect(transport.callCount == 2)
+
+        // No cache WRITE: the player's next resolve still gets its cached `.hls`, no extra POST.
+        let replay = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .hls = replay.stream else { Issue.record("muxed walk poisoned the cache: \(replay.stream)"); return }
+        #expect(transport.callCount == 2)
+    }
+
+    /// Serves call 1 only after `release()` (a live player walk held open at the transport);
+    /// later calls answer immediately from the script. Same 1 ms-poll gate as `GatedTransport`,
+    /// but releasable — the held call must complete un-cancelled after the muxed walk is done.
+    private final class ReleasableTransport: HTTPTransport, @unchecked Sendable {
+        private let lock = NSLock()
+        private let responses: [HTTPResponse]
+        private var count = 0
+        private var released = false
+
+        init(_ responses: [HTTPResponse]) { self.responses = responses }
+
+        var callCount: Int { lock.withLock { count } }
+        func release() { lock.withLock { released = true } }
+
+        func waitForCall(_ ordinal: Int = 1) async {
+            for _ in 0..<2000 {
+                if callCount >= ordinal { return }
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+        }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            let ordinal = lock.withLock { count += 1; return count }
+            if ordinal == 1 {
+                while !lock.withLock({ released }) {
+                    try await Task.sleep(for: .milliseconds(1))   // throws when cancelled — the test's tripwire
+                }
+            }
+            return responses[min(ordinal, responses.count) - 1]
+        }
+    }
+
+    /// A background save must neither JOIN the user's in-flight player walk (wrong shape — it
+    /// would adopt `.hls`) nor CANCEL it (its `forceRefresh` used to evict the in-flight job).
+    @Test func aSaveWalkNeitherJoinsNorCancelsAnInFlightPlayerWalk() async throws {
+        let transport = ReleasableTransport([try fixtureResponse("player-ok-hls"), androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        async let playerWalk = resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        await transport.waitForCall(1)
+
+        // Joining would wait on call 1 (held); cancelling would kill it. The muxed walk must do
+        // neither: it POSTs its own call 2 and completes while the player walk is still open.
+        let muxed = try await resolver.resolve(
+            Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: true, requiresMuxed: true)
+        guard case .progressive = muxed.stream else { Issue.record("expected .progressive, got \(muxed.stream)"); return }
+        #expect(transport.callCount == 2)
+
+        transport.release()
+        let player = try await playerWalk   // throws if the save walk cancelled it
+        guard case .hls = player.stream else { Issue.record("expected .hls, got \(player.stream)"); return }
+    }
 }

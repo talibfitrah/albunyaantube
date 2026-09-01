@@ -155,15 +155,19 @@ struct OfflineManagerTests {
         #expect(rig.engine.starts.first?.url.absoluteString == "https://manifest.googlevideo.com/x.m3u8")
     }
 
-    /// Outcome B gap, pinned so Task 5's picker can't pretend otherwise: the VISIONOS rung returns
-    /// `.hls` with NO muxed itag 18 (`player-ok-hls.json` carries only `adaptiveFormats`), and
-    /// the HLS engine is dormant — a video save on that rung has no source.
-    @Test func aVideoSaveOnTheHLSRungFailsNoStreamWithoutAnEngineCall() async throws {
-        let rig = makeRig(.hls); defer { rig.cleanUp() }
+    /// Muxed save-walk (owner ruling 2026-09-01, replaces the old "HLS rung → NO_STREAM" pin):
+    /// a VIDEO save demands the muxed itag 18 from the resolver (`requiresMuxed: true` — the
+    /// resolver's ladder skips the HLS rung for it), and the `.progressive` answer reaches the
+    /// engine. An audio-only save keeps `requiresMuxed: false` (it needs visionos's itag-140
+    /// `audioOnlyURL`) — pinned by `aCacheWarmAudioOnlySaveReachesTheEngineWithTheItag140URL`.
+    @Test func aVideoSaveRequiresMuxedAndTheProgressiveAnswerReachesTheEngine() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
         let id = await save(rig, audioOnly: false)
-        #expect(rig.engine.starts.isEmpty)
-        #expect(rig.persisted(id: id)?.status == OfflineStatus.failed.rawValue)
-        #expect(rig.persisted(id: id)?.errorCode == "NO_STREAM")
+        #expect(rig.resolver.calls == [.init(videoId: Self.lectureVideoId, kind: .prefetch,
+                                             purpose: .prefetch, forceRefresh: false, requiresMuxed: true)])
+        #expect(rig.engine.starts.count == 1)
+        #expect(rig.engine.starts.first?.url.absoluteString == "https://manifest.googlevideo.com/x.m3u8")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
     }
 
     @Test func aBlockedLimiterDecisionLeavesTheItemQueuedWithARetryAndNoEngineCall() async throws {

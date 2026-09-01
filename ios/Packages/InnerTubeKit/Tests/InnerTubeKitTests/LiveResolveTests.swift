@@ -48,4 +48,38 @@ extension Tag {
             return
         }
     }
+
+    /// Muxed save-walk live leg (Task 4 fix round / save-purpose walk): the `requiresMuxed` walk
+    /// must land on the ANDROID itag-18 rung against live YouTube, and one 10 MB `Range` chunk of
+    /// that URL must answer 206 with bytes (the `ProgressiveEngine` walk shape). Deliberately does
+    /// NOT download the file. Run: `OFFLINE_LIVE=1 swift test --filter theMuxedSaveWalk`.
+    @Test(.tags(.live), .enabled(if: ProcessInfo.processInfo.environment["OFFLINE_LIVE"] == "1"))
+    func theMuxedSaveWalkResolvesItag18AndARangeChunkAnswers206() async throws {
+        let innerTube = InnerTube(
+            keyValueStore: InMemoryKeyValueStore(),
+            availabilityGate: AlwaysAvailable(),
+            locale: InnerTubeLocale(hl: "en", gl: "US"),
+            remoteConfigURL: URL(string: "https://example.invalid/remote-config.json")!
+        )
+
+        let resolved = try await innerTube.resolver.resolve(
+            Self.knownGoodVideoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false,
+            requiresMuxed: true)
+        guard case .progressive(let url, let label) = resolved.stream else {
+            Issue.record("expected .progressive, got \(resolved.stream)")
+            return
+        }
+        // Never print the full URL: googlevideo playback URLs embed the caller's IP.
+        print("[muxed-live] client=\(resolved.client) label=\(label) host=\(url.host() ?? "?") itag18=\(url.absoluteString.contains("itag=18"))")
+        #expect(url.absoluteString.contains("itag=18"))
+
+        var request = URLRequest(url: url)
+        request.setValue(resolved.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("bytes=0-10485759", forHTTPHeaderField: "Range")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let http = try #require(response as? HTTPURLResponse)
+        print("[muxed-live] status=\(http.statusCode) bytes=\(data.count) contentRange=\(http.value(forHTTPHeaderField: "Content-Range") ?? "nil")")
+        #expect(http.statusCode == 206)
+        #expect(!data.isEmpty)
+    }
 }

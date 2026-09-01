@@ -7,6 +7,22 @@ import InnerTubeKit
 protocol StreamResolving: Sendable {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved
+    /// Save-purpose walk (owner ruling 2026-09-01): `requiresMuxed: true` demands a single-file
+    /// muxed stream (itag 18) — the resolver skips the HLS rung, and neither reads nor writes the
+    /// manifest cache nor touches the single-flight registry. Only `OfflineManager` passes `true`;
+    /// every player call site stays on the five-argument form above.
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved
+}
+
+extension StreamResolving {
+    /// Default for player-only doubles and fixtures: drops the muxed requirement. The two
+    /// production resolvers and `RecordingResolver` implement the six-argument form themselves.
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
+        try await resolve(videoId, purpose: purpose, kind: kind,
+                          sourceChannelId: sourceChannelId, forceRefresh: forceRefresh)
+    }
 }
 
 /// Production `StreamResolving` -- thin pass-through to the real actor (`AppContainer.resolver`).
@@ -18,7 +34,14 @@ struct LiveStreamResolver: StreamResolving {
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
-        try await resolver.resolve(videoId, purpose: purpose, sourceChannelId: sourceChannelId, forceRefresh: forceRefresh)
+        try await resolve(videoId, purpose: purpose, kind: kind,
+                          sourceChannelId: sourceChannelId, forceRefresh: forceRefresh, requiresMuxed: false)
+    }
+
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
+        try await resolver.resolve(videoId, purpose: purpose, sourceChannelId: sourceChannelId,
+                                   forceRefresh: forceRefresh, requiresMuxed: requiresMuxed)
     }
 }
 
@@ -38,6 +61,12 @@ struct RateLimitedResolver: StreamResolving {
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        try await resolve(videoId, purpose: purpose, kind: kind,
+                          sourceChannelId: sourceChannelId, forceRefresh: forceRefresh, requiresMuxed: false)
+    }
+
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
         // Scoped exactly as Android scopes it (`ui/player/PlayerViewModel.kt:1243/1256/1265` are its
         // only three limiter call sites, all force-refreshes). A non-forced resolve may be served
         // straight from `ManifestCache` with no network at all -- gating it would make the 30 s
@@ -56,7 +85,8 @@ struct RateLimitedResolver: StreamResolving {
             }
         }
         let resolved = try await wrapped.resolve(videoId, purpose: purpose, kind: kind,
-                                                 sourceChannelId: sourceChannelId, forceRefresh: forceRefresh)
+                                                 sourceChannelId: sourceChannelId, forceRefresh: forceRefresh,
+                                                 requiresMuxed: requiresMuxed)
         await rateLimiter.onSuccess(videoId)   // clears the .player exponential backoff (Android :1551)
         return resolved
     }

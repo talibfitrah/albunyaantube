@@ -65,10 +65,28 @@ public actor StreamResolver {
     /// - Parameter purpose: the resolve lane (`.player` vs `.prefetch`, ruling 16). Reserved for
     ///   caller-side rate-limiter lane coordination (`ExtractionRateLimiter`); it does NOT alter
     ///   resolver behaviour today — kept in the signature to avoid a later break when it's wired.
+    /// - Parameter requiresMuxed: save-purpose walk (owner ruling 2026-09-01) — the caller needs a
+    ///   single-file muxed stream (itag 18), so the HLS rung advances instead of returning, and the
+    ///   walk bypasses both the manifest cache and the single-flight registry (see `resolve` body).
     public func resolve(
-        _ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool
+        _ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool,
+        requiresMuxed: Bool = false
     ) async throws -> Resolved {
         guard Self.isValidVideoId(videoId) else { throw ExtractionError.invalidVideoId }
+
+        if requiresMuxed {
+            // Save-purpose walk, fully outside the shared structures:
+            // - CACHE (keyed by videoId only, shape-blind): a cached `.hls` has no muxed format,
+            //   and caching this walk's `.progressive` would degrade the player to 360p on its
+            //   next resolve. Skipping both read and write means EVERY video save POSTs — CF-D-9
+            //   exposure accepted; the per-walk trip dedupe caps it.
+            // - SINGLE-FLIGHT: joining a player walk would adopt the wrong shape, and a
+            //   `forceRefresh` through the registry would cancel the user's own playback resolve
+            //   (forbidden — a save walk must never cancel any in-flight job). Bypassing also
+            //   means two concurrent muxed walks of one id would both POST, but `OfflineManager`
+            //   is serial (one active save), so that pair cannot form.
+            return try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: true)
+        }
 
         if !forceRefresh, let cached = await cache.get(videoId, now: wallClock.wallNow) {
             return cached
@@ -84,7 +102,7 @@ public actor StreamResolver {
         nextJobId += 1
         let jobId = nextJobId
         let job = Task<Resolved, Error> { [self] in
-            try await performResolve(videoId, sourceChannelId: sourceChannelId)
+            try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: false)
         }
         inFlight[videoId] = InFlight(id: jobId, task: job)
         defer {
@@ -124,7 +142,9 @@ public actor StreamResolver {
         case advance
     }
 
-    private func performResolve(_ videoId: String, sourceChannelId: String?) async throws -> Resolved {
+    private func performResolve(
+        _ videoId: String, sourceChannelId: String?, requiresMuxed: Bool
+    ) async throws -> Resolved {
         // Self-gate on the persisted, restart-surviving escalating cooldown (§6.3): if a prior
         // bot-check tripped it, suppress all API traffic until it elapses rather than hammering
         // the `player` endpoint on every launch. Terminal — no rung can clear it.
@@ -147,7 +167,7 @@ public actor StreamResolver {
                 // The 8 s budget (§6.6 "8 s budget before demotion") covers the whole rung —
                 // a bot-check rung is POST + rotate + retry POST, which per-POST would allow ~16 s.
                 outcome = try await Self.withTimeout(Self.rungBudget) {
-                    try await self.runRung(strategy, videoId: videoId, config: config)
+                    try await self.runRung(strategy, videoId: videoId, config: config, requiresMuxed: requiresMuxed)
                 }
             } catch let error as ExtractionError where error.terminal {
                 if sawBotCheck { await sessionStore.recordBotCheck() }
@@ -166,7 +186,7 @@ public actor StreamResolver {
             }
             switch outcome {
             case .resolved(let resolved):
-                return await succeed(resolved, videoId: videoId)
+                return await succeed(resolved, videoId: videoId, requiresMuxed: requiresMuxed)
             case .advance:
                 continue
             }
@@ -179,10 +199,15 @@ public actor StreamResolver {
     /// they are the only outcome that proves the session is healthy. Caching `embed` would pin a
     /// user on the fallback for the full TTL after a transient bot check clears, and counting it as
     /// a clean fetch would fake a healthy session while the ladder bottomed out.
-    private func succeed(_ resolved: Resolved, videoId: String) async -> Resolved {
+    private func succeed(_ resolved: Resolved, videoId: String, requiresMuxed: Bool) async -> Resolved {
         switch resolved.stream {
         case .hls, .progressive:
-            await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
+            // A muxed walk's result must never land under the plain videoId key: the cache is
+            // shape-blind, and the player's next resolve would degrade to this 360p progressive.
+            // The fetch still counts as a healthy session (`recordSuccess`) — it is a real one.
+            if !requiresMuxed {
+                await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
+            }
             await sessionStore.recordSuccess()
         case .embed:
             break
@@ -190,9 +215,14 @@ public actor StreamResolver {
         return resolved
     }
 
-    private func runRung(_ strategy: String, videoId: String, config: RemoteConfig) async throws -> RungResult {
+    private func runRung(
+        _ strategy: String, videoId: String, config: RemoteConfig, requiresMuxed: Bool
+    ) async throws -> RungResult {
         switch strategy {
         case "visionosHLS":
+            // A muxed-required walk advances without POSTing: this rung's HLS answer carries no
+            // muxed format (adaptive-only), so the POST would be a wasted player call.
+            if requiresMuxed { return .advance }
             return try await runPlayerRung(family: .visionos, videoId: videoId, config: config, expectHLS: true, canRotate: true)
         case "androidItag18":
             return try await runPlayerRung(family: .android, videoId: videoId, config: config, expectHLS: false, canRotate: true)
