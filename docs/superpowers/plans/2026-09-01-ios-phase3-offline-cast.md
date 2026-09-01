@@ -374,6 +374,8 @@ Implementers inherit nothing from earlier plans. All of the following are bindin
 - **CF-D-7:** Cast SDK in the gate — test.sh's fetch pre-stage adds a first-run network dependency; if CI ever runs this, mirror the zip.
 - **CF-D-8:** `contentItem`-level `offlineAllowed` (lists) skipped — needed only if a future surface wants save badges on rows.
 - **CF-D-9:** a bot-checked background save walk arms the shared persisted resolver cooldown and can lock the next playback tap (Task 4's accepted CF-G-14 interaction). If live evidence shows saves tripping it in practice, the fix is a per-purpose no-trip flag in `StreamResolver` — decide it together with CF-G-14's own pending owner decision, not separately.
+- **CF-D-10:** cancel racing `engine.start`/a delegate callback can start a bounded zombie walk or resurrect a ≤10 MB orphan `.tmp` (both self-healing via the status guards; review of 92e9feea F3/F5). The real fix is an engine-side generation token; take it only with live evidence of user-visible cost.
+- **CF-D-11:** `StreamResolving`'s 6-arg default-forwarding means a future conformer implementing only the 5-arg form silently drops `requiresMuxed` (review F6). Mitigated by the doc comment + `RecordingResolver` pinning the flag; keep offline integration fakes asserting it.
 
 ---
 
