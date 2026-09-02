@@ -63,6 +63,12 @@ walk(data.get("testNodes", []))
 }
 
 run_all() {
+    # Phase 4 Task 1: must precede `xcodegen generate` below -- that is what makes the app target's
+    # `sources` glob pick the plist up. Exits 0 with a notice when the (USER-BLOCKED, git-ignored)
+    # source file is absent, so a checkout without it gates green.
+    echo "== copy-firebase-plist.sh =="
+    bash ios/scripts/copy-firebase-plist.sh || return $?
+
     # Repo-root-relative: this must run before the `cd` below (invoke test.sh from the repo root).
     echo "== convert-strings.py --check =="
     python3 ios/scripts/convert-strings.py --check || return $?

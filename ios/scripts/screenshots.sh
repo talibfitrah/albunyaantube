@@ -27,6 +27,9 @@ cd "$ROOT/ios" || exit 1
 # Same pre-stage as test.sh (CF-D-7): project.yml names the gitignored Vendor/ Cast SDK, so a
 # fresh checkout would fail at build time with a missing framework instead of fetching it once.
 [ -d Vendor/GoogleCast.xcframework ] || ./scripts/fetch-cast-sdk.sh || exit $?
+# Same pre-stage as test.sh (Phase 4 Task 1): stage the git-ignored GoogleService-Info.plist before
+# `xcodegen generate` so the sources glob sees it. No-ops with a notice when it is absent.
+bash scripts/copy-firebase-plist.sh || exit $?
 xcodegen generate >/dev/null || exit $?
 
 status=0

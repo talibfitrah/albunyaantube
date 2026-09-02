@@ -35,6 +35,23 @@ packages:
     path: Packages/FitrahAPI
   InnerTubeKit:
     path: Packages/InnerTubeKit
+  # Phase 4 Task 1, resolved 2026-09-02 from floors `from: "11.0.0"` / `from: "8.0.0"`, then pinned
+  # to what actually came back. `exactVersion` is not prudence: /ios/FitrahTube.xcodeproj/ and
+  # /ios/DerivedData/ are both gitignored (.gitignore:199,204), and that is where the resolved graph
+  # lives (with -derivedDataPath, Xcode records it in DerivedData/SourcePackages/
+  # workspace-state.json and writes no Package.resolved into the workspace at all) -- so a floating
+  # `from:` would make the gate's reproducibility a function of the day it runs. Xcode does mirror
+  # the resolution into the root local package's tracked Packages/FitrahAPI/Package.resolved, which
+  # carries the exact revisions; this file carries the requirement, and the two must agree.
+  # Re-resolve by hand (`xcodebuild -resolvePackageDependencies -scheme FitrahTube
+  # -derivedDataPath DerivedData`, ~128 s) before gating after any change here -- a cold resolve
+  # does not fit inside test.sh's 300 s watchdog.
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    exactVersion: "11.15.0"
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    exactVersion: "8.0.0"
 
 targets:
   FitrahTube:
@@ -57,6 +74,13 @@ targets:
       - framework: Vendor/GoogleCast.xcframework
         embed: true
         codeSign: true
+      # Phase 4 Task 1. FirebaseAuth ONLY -- never FirebaseFirestore, which drags abseil/gRPC/
+      # BoringSSL into the graph and multiplies both resolve and link time. FitrahTubeTests
+      # deliberately depends on neither: no test-visible interface may name a Firebase type.
+      - package: Firebase
+        product: FirebaseAuth
+      - package: GoogleSignIn
+        product: GoogleSignIn
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.albunyaan.tube
