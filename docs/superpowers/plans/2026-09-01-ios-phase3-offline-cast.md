@@ -379,6 +379,9 @@ Implementers inherit nothing from earlier plans. All of the following are bindin
 - **CF-D-12 (device QA):** Saved's Open / the toolbar's Open push a second `.player` over a playing online player; whether the covered `PlayerHostView` pauses on cover is iOS-version-dependent and unverified on hardware (Task 7 review F1). If a device doubles the audio, pause the covered player on cover. Stacked players pre-date Phase 3; Open makes it one tap.
 - **CF-D-13:** `FitrahTubeApp`'s sweep wiring (`Task { await offlineManager.sweep() }` beside the config refresh) is untested view-layer glue — deleting the line fails no test (Task 7 review F3). The due-decision itself is pinned; accept, or pin via a launch-hook seam if it ever regresses.
 - **CF-D-14:** sweep skips a completed row with nil `completedAt` forever (unreachable today — `.finished` always sets it); defensive gap only (Task 7 review F4).
+- **CF-D-15 (device QA):** the cast slot is a combined accessibility element wrapping `GCKUICastButton`; VoiceOver activation of the merged action and the announced state are unverified without a device (Task 8 review I3/⚠️). Joins Tier 3 items 1-2 (discovery, load, hand-back, mini controller, AirPlay + the 403→mirroring fallback on hardware).
+- **CF-D-16:** the AirPlay mirroring fallback latches once per stream — re-picking AirPlay on the same video after a fallback gets no second attempt (`ponytail:` in `PlayerViewModel`); lift it only with a device repro that wants one.
+- **CF-D-17:** the cast slot's caption can outlive the SDK's own glyph after the first tap on a network with no receiver (`ponytail:` in `PlayerToolbar`); hiding it needs a `castState` observer on `CastController` — the same observer the mini controller's SDK `active` flag wants (Task 8 review M1).
 
 ---
 
