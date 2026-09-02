@@ -212,14 +212,22 @@ struct OfflinePlaybackTests {
         func liveIds() async -> Set<String> { [] }
     }
 
+    /// The remote kill-switch as the manager reads it — live, so a test can flip it mid-run
+    /// (the `GateLog` idiom).
+    private final class KillSwitch: @unchecked Sendable {
+        nonisolated(unsafe) var enabled: Bool
+        init(_ enabled: Bool) { self.enabled = enabled }
+    }
+
     private func makeManager(_ rig: Rig, gate: GateLog, engine: NullEngine = NullEngine(),
-                             downloadsEnabled: Bool = true, now: Date = Date()) -> OfflineManager {
+                             downloadsEnabled: @escaping @Sendable () async -> Bool = { true },
+                             now: Date = Date()) -> OfflineManager {
         OfflineManager(store: rig.store, engine: engine, resolver: RecordingResolver(.hls),
                        limiterCheck: { _ in .allowed }, wifiOnly: { false }, isOnCellular: { false },
                        baseDirectory: rig.base,
                        gate: { id in gate.asked.append(id); return gate.answer },
                        now: { now },
-                       downloadsEnabled: { downloadsEnabled })
+                       downloadsEnabled: downloadsEnabled)
     }
 
     private func fileExists(_ rig: Rig, _ item: OfflineItem) -> Bool {
@@ -233,7 +241,7 @@ struct OfflinePlaybackTests {
         let gate = GateLog(); gate.answer = .gone
         // `downloadsEnabled: false` on purpose (fork D): the kill-switch governs SAVING, never
         // the sweep — revalidation must keep deleting revoked copies while saving is off.
-        await makeManager(rig, gate: gate, downloadsEnabled: false).sweep()
+        await makeManager(rig, gate: gate, downloadsEnabled: { false }).sweep()
         #expect(rig.store.item(id: item.id) == nil)
         #expect(!fileExists(rig, item))
     }
@@ -353,7 +361,7 @@ struct OfflinePlaybackTests {
                                status: OfflineStatus.failed.rawValue, errorCode: "NETWORK")
         try rig.store.insert(item)
         let engine = NullEngine()
-        let manager = makeManager(rig, gate: GateLog(), engine: engine, downloadsEnabled: false)
+        let manager = makeManager(rig, gate: GateLog(), engine: engine, downloadsEnabled: { false })
         await manager.retry(item.id)
         #expect(rig.store.item(id: item.id)?.status == OfflineStatus.failed.rawValue)
         #expect(engine.starts.isEmpty && engine.resumes.isEmpty)
@@ -366,7 +374,7 @@ struct OfflinePlaybackTests {
                                status: OfflineStatus.paused.rawValue, resumeData: Data("RD".utf8))
         try rig.store.insert(item)
         let engine = NullEngine()
-        let manager = makeManager(rig, gate: GateLog(), engine: engine, downloadsEnabled: false)
+        let manager = makeManager(rig, gate: GateLog(), engine: engine, downloadsEnabled: { false })
         await manager.resume(item.id)
         #expect(rig.store.item(id: item.id)?.status == OfflineStatus.paused.rawValue)
         #expect(engine.starts.isEmpty && engine.resumes.isEmpty)
@@ -379,8 +387,34 @@ struct OfflinePlaybackTests {
                                status: OfflineStatus.failed.rawValue, errorCode: "NETWORK")
         try rig.store.insert(item)
         let engine = NullEngine()
-        let manager = makeManager(rig, gate: GateLog(), engine: engine, downloadsEnabled: true)
+        let manager = makeManager(rig, gate: GateLog(), engine: engine, downloadsEnabled: { true })
         await manager.retry(item.id)
+        for _ in 0..<2000 {
+            if !engine.starts.isEmpty { break }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(engine.starts == [item.id])
+    }
+
+    /// Cubic P3-1: a row saved during an off-window stays queued, and NOTHING observed the switch
+    /// flipping back on — `observeOfflineGate` watches only Wi-Fi/cellular, so the row sat at
+    /// "Waiting" until the next launch's `reattach()`. The remote-config refresh path now kicks
+    /// `schedule()` after every refresh; this pins the manager end of that kick.
+    @Test func aRowQueuedWhileTheKillSwitchWasOffStartsWhenTheSchedulerIsKickedAfterItFlipsOn() async throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let item = OfflineItem(videoId: "vid-queued", title: "Lecture", channelName: nil,
+                               thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
+                               status: OfflineStatus.queued.rawValue)
+        try rig.store.insert(item)
+        let engine = NullEngine()
+        let killSwitch = KillSwitch(false)
+        let manager = makeManager(rig, gate: GateLog(), engine: engine,
+                                  downloadsEnabled: { killSwitch.enabled })
+        await manager.schedule()
+        #expect(engine.starts.isEmpty, "the switch is off — nothing may start")
+
+        killSwitch.enabled = true
+        await manager.schedule()
         for _ in 0..<2000 {
             if !engine.starts.isEmpty { break }
             try? await Task.sleep(for: .milliseconds(1))
@@ -401,17 +435,6 @@ struct OfflinePlaybackTests {
     }
 
     // MARK: - Live leg (never in the gate; §15 "offline play" evidence)
-
-    private struct AlwaysAvailable: AvailabilityGate {
-        func verify(videoId: String, sourceChannelId: String?) async throws -> Bool { true }
-    }
-
-    private nonisolated final class MemoryKV: KeyValueStore, @unchecked Sendable {
-        private let lock = NSLock()
-        private var storage: [String: Data] = [:]
-        func get(_ key: String) -> Data? { lock.withLock { storage[key] } }
-        func set(_ key: String, _ value: Data) { lock.withLock { storage[key] = value } }
-    }
 
     /// Saves the approved lecture audio-only for REAL, then opens it through `OfflineResolver`.
     /// The plan's "airplane-mode the Mac" step is replaced by proof by construction:

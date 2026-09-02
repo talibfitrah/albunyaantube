@@ -111,10 +111,18 @@ nonisolated struct SettingsPickerOption: Hashable {
 /// option's own label* back in the row, and the contract (§2.3) requires the row to show the
 /// **resolved** value ("System default (Light)") while the options show the plain ones
 /// ("System default"). Keeping the custom row is what preserves that distinction.
-private struct SettingsPickerSheet: View {
+///
+/// Not `private` (Phase 3 fold-in): `SaveOfflineSheet` was a verbatim copy of this body — same
+/// `List`, checkmark row, `.isSelected` trait, detents and background. Its one real difference is
+/// `confirm`.
+struct SettingsPickerSheet: View {
     let titleKey: String
     let options: [SettingsPickerOption]
     @Binding var selection: String
+    /// An explicit confirmation button, and with it tap-to-select-WITHOUT-dismissing: the
+    /// Save-for-offline sheet must never fire on a row tap (every video save POSTs a real walk).
+    /// nil keeps the Material single-choice behaviour above — tap commits and dismisses.
+    var confirm: (titleKey: String, action: () -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -123,7 +131,7 @@ private struct SettingsPickerSheet: View {
             List(options, id: \.self) { option in
                 Button {
                     selection = option.value
-                    dismiss()
+                    if confirm == nil { dismiss() }
                 } label: {
                     HStack {
                         Text(String(localized: String.LocalizationValue(option.labelKey)))
@@ -145,6 +153,12 @@ private struct SettingsPickerSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(String(localized: "cancel")) { dismiss() }
+                }
+                if let confirm {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(String(localized: String.LocalizationValue(confirm.titleKey)),
+                               action: confirm.action)
+                    }
                 }
             }
         }
@@ -213,8 +227,8 @@ struct SettingsView: View {
                 selection: Binding(get: { settings.downloadQuality }, set: { settings.downloadQuality = $0 })
             )
         }
-        // Phase 3 Task 6 (CF-B3-11): a confirmation `.alert`, deleting through the manager once
-        // per row (`OfflineClearAll`) — never the file system from UI.
+        // Phase 3 Task 6 (CF-B3-11): a confirmation `.alert`, deleting the whole batch through the
+        // manager in one call (Cubic P3-3) — never the file system from UI.
         .alert(String(localized: "settings_offline_clear"), isPresented: $showClearOfflineConfirm) {
             Button(String(localized: "offline_action_delete"), role: .destructive) { clearOffline() }
             Button(String(localized: "cancel"), role: .cancel) {}
@@ -255,7 +269,7 @@ struct SettingsView: View {
         case .storage:
             valueRow(row, value: OfflineStorage.storageValue(
                 used: OfflineStorage.usedBytes(items: container.offlineStore.items),
-                available: OfflineStorage.availableBytes(), locale: locale))
+                available: OfflineStorage.availableBytes(base: container.offlineBase), locale: locale))
         case .clearOffline:
             actionRow(row, value: nil) { showClearOfflineConfirm = true }
         case .favorites:
@@ -314,7 +328,7 @@ struct SettingsView: View {
     private func clearOffline() {
         let ids = container.offlineStore.items.map(\.id)
         let manager = container.offlineManager
-        Task { await OfflineClearAll.run(ids: ids, manager: manager) }
+        Task { await manager.delete(ids) }
     }
 
     private func actionRow(_ row: SettingsRow, value: String?, action: @escaping () -> Void) -> some View {

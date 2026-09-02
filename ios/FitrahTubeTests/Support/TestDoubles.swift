@@ -1,4 +1,5 @@
 import Foundation
+import InnerTubeKit
 import Observation
 @testable import FitrahTube
 
@@ -64,3 +65,19 @@ func items(count: Int, prefix: String) -> [ContentItem] {
 
 /// Debounce-clock stub: tests assert on the requested `Duration`, never wait out real time.
 func noSleep(_ duration: Duration) async throws {}
+
+// MARK: - Live-leg InnerTube doubles (three byte-identical copies before the Phase 3 fold-in)
+
+/// The backend availability gate, always affirmative — the live-gated suites talk to YouTube
+/// directly and must not depend on a running backend.
+struct AlwaysAvailable: AvailabilityGate {
+    func verify(videoId: String, sourceChannelId: String?) async throws -> Bool { true }
+}
+
+/// `KeyValueStore` in memory: no `UserDefaults` domain to leak between suites.
+nonisolated final class MemoryKV: KeyValueStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String: Data] = [:]
+    func get(_ key: String) -> Data? { lock.withLock { storage[key] } }
+    func set(_ key: String, _ value: Data) { lock.withLock { storage[key] = value } }
+}

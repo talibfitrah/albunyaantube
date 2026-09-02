@@ -724,6 +724,28 @@ struct OfflineManagerTests {
         #expect(values.isExcludedFromBackup == true)
     }
 
+    // MARK: - Batched teardown (Cubic P3-3)
+
+    /// Settings' Clear-all used to loop `delete(id)`, and every `delete` ends with `schedule()` —
+    /// which picks a still-existing queued row and begins its resolve (a real InnerTube POST)
+    /// before the loop's next iteration deletes it. One teardown of the whole batch under the
+    /// actor, one `schedule()` at the end: nothing starts, no rate-limited resolve is burned.
+    @Test func clearingEveryRowTearsThemDownWithoutStartingAnyOfThem() async throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        var ids: [String] = []
+        for index in 0..<3 {
+            let item = OfflineItem(videoId: "vid-queued-\(index)", title: "Lecture \(index)",
+                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
+                                   audioOnly: true, status: OfflineStatus.queued.rawValue)
+            try rig.store.insert(item)
+            ids.append(item.id)
+        }
+        await rig.manager.delete(ids)
+        #expect(rig.rowCount() == 0)
+        #expect(rig.resolver.calls.isEmpty, "a clear must not burn a resolve on a row it is deleting")
+        #expect(rig.engine.starts.isEmpty, "a clear must never start a row it is deleting")
+    }
+
     // MARK: - Sweep (Task 7 calls it; the gate answer is injected)
 
     @Test func sweepDeletesExpiredAndGoneAndKeepsUnreachable() async throws {
@@ -754,17 +776,6 @@ struct OfflineManagerTests {
     }
 
     // MARK: - Live smoke (plan Task 4 step 2; §15 "simulator download" evidence)
-
-    private struct AlwaysAvailable: AvailabilityGate {
-        func verify(videoId: String, sourceChannelId: String?) async throws -> Bool { true }
-    }
-
-    private nonisolated final class MemoryKV: KeyValueStore, @unchecked Sendable {
-        private let lock = NSLock()
-        private var storage: [String: Data] = [:]
-        func get(_ key: String) -> Data? { lock.withLock { storage[key] } }
-        func set(_ key: String, _ value: Data) { lock.withLock { storage[key] = value } }
-    }
 
     /// Saves the approved lecture through the REAL resolver + limiter + `ProgressiveEngine` over a
     /// non-background session (the simulator test host cannot set up a background session —

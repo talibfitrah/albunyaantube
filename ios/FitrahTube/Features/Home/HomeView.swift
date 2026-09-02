@@ -19,9 +19,12 @@ struct HomeView: View {
     /// stops a failing endpoint from being retried on every footer-spinner-driven relayout.
     @State private var paginationGuard = PaginationGuard()
     /// Phase 3 Task 6: the overflow menu's Saved entry, gated by the remote kill-switch
-    /// (`RemoteConfig.isDownloadsEnabled`, read once per appearance — the `PlayerScreen` idiom).
-    /// false until the read lands: the OFF state hides silently, so appearing late beats
-    /// flashing out.
+    /// (`RemoteConfig.isDownloadsEnabled`). Read once per LAUNCH, not per appearance: Home is a
+    /// tab root that stays alive for the session, so its plain `.task` below runs once (unlike
+    /// `PlayerScreen`'s, which is correctly keyed). A mid-session flip therefore leaves this entry
+    /// as it was until relaunch — accepted, because the Saved screen is access to already-saved
+    /// content, which the switch does not govern (fork D). false until the read lands: the OFF
+    /// state hides silently, so appearing late beats flashing out.
     @State private var downloadsEnabled = false
 
     private static let topAnchor = "home-top"

@@ -12,12 +12,6 @@ struct SavedScreen: View {
     @Environment(\.locale) private var locale
     @Environment(\.widthClass) private var widthClass
 
-    /// The row action set consults Task 3's ONE matrix — pinned by
-    /// `SavedScreenTests.rowActionsComeFromTheOneMatrix`; no second status switch in this file.
-    static func rowActions(for status: OfflineStatus) -> [OfflineAction] {
-        OfflineStateMachine.actions(for: status)
-    }
-
     var body: some View {
         Group {
             if container.offlineStore.items.isEmpty {
@@ -50,7 +44,7 @@ struct SavedScreen: View {
         let items = container.offlineStore.items
         return Text(OfflineStorage.footer(count: items.count,
                                           used: OfflineStorage.usedBytes(items: items),
-                                          available: OfflineStorage.availableBytes(),
+                                          available: OfflineStorage.availableBytes(base: container.offlineBase),
                                           locale: locale))
             .font(TypeScale.caption)
             .foregroundStyle(Color.textSecondary)
@@ -67,7 +61,6 @@ private struct SavedRow: View {
 
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
-    @Environment(\.locale) private var locale
     @Environment(\.router) private var router
 
     private var status: OfflineStatus? { OfflineStatus(rawValue: item.status) }
@@ -93,18 +86,14 @@ private struct SavedRow: View {
             }
             Spacer(minLength: 0)
             if let status {
-                ForEach(Self.rowActions(for: status), id: \.self) { action in
+                // Task 3's ONE matrix, read directly — no second status switch in this file.
+                ForEach(OfflineStateMachine.actions(for: status), id: \.self) { action in
                     actionButton(action)
                 }
             }
         }
         .padding(.horizontal, Spacing.md(widthClass))
         .padding(.vertical, Spacing.sm)
-    }
-
-    /// Same delegation the type-level pin covers — a private forward, not a second switch.
-    private static func rowActions(for status: OfflineStatus) -> [OfflineAction] {
-        SavedScreen.rowActions(for: status)
     }
 
     private func actionButton(_ action: OfflineAction) -> some View {
@@ -139,9 +128,8 @@ private struct SavedRow: View {
 
     /// Determinate only while bytes are actually moving toward a known total.
     private var progressFraction: Double? {
-        guard let status, status == .running || status == .paused || status == .queued,
-              let total = item.totalBytes, total > 0 else { return nil }
-        return min(max(Double(item.bytesWritten) / Double(total), 0), 1)
+        guard let status, status == .running || status == .paused || status == .queued else { return nil }
+        return item.progressFraction
     }
 
     /// Failed rows surface their error copy (WHAT, never why); every other status shows its
@@ -222,14 +210,6 @@ enum SavedRowAction {
         case .open: "play.circle"
         case .delete: "trash.circle"
         }
-    }
-}
-
-/// Settings' Clear row (CF-B3-11 confirm fires this): every row through the manager, once each —
-/// never `FileManager` from UI.
-enum OfflineClearAll {
-    static func run(ids: [String], manager: any OfflineSaving) async {
-        for id in ids { await manager.delete(id) }
     }
 }
 

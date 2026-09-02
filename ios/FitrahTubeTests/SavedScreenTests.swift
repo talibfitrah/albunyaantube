@@ -10,16 +10,6 @@ import Testing
 @Suite(.perTest)
 struct SavedScreenTests {
 
-    // MARK: - The ONE action matrix
-
-    /// The row's action set delegates to Task 3's `OfflineStateMachine.actions(for:)` — no second
-    /// status switch in the view. Editing the matrix must move the rows with it.
-    @Test func rowActionsComeFromTheOneMatrix() {
-        for status in OfflineStatus.allCases {
-            #expect(SavedScreen.rowActions(for: status) == OfflineStateMachine.actions(for: status))
-        }
-    }
-
     // MARK: - Action dispatch (every mutation through the manager, never FileManager)
 
     @Test func eachRowActionCallsItsManagerMethodExactlyOnce() async {
@@ -41,16 +31,6 @@ struct SavedScreenTests {
         await SavedRowAction.perform(.open, id: "row-1", manager: spy, open: { opened = true })
         #expect(opened)
         #expect(await spy.calls.isEmpty)
-    }
-
-    // MARK: - Settings Clear (spy manager, once per item — CF-B3-11's confirm fires this)
-
-    @Test func clearAllDeletesThroughTheManagerOncePerItem() async {
-        let spy = SpyOfflineManager()
-        await OfflineClearAll.run(ids: ["a", "b", "c"], manager: spy)
-        #expect(await spy.calls == [Call(method: "delete", id: "a"),
-                                    Call(method: "delete", id: "b"),
-                                    Call(method: "delete", id: "c")])
     }
 
     // MARK: - Row captions (status/error keys, running → "saving")
@@ -120,15 +100,11 @@ struct SavedScreenTests {
 
     // MARK: - Task 5 fold-in 2: the save sheet's captured identity
 
-    /// `.sheet(item:)` presents the args captured at tap time; its identity is the videoId, so a
-    /// queue auto-advance mutating the toolbar's `args` in place can never re-aim an open sheet at
-    /// the advanced-to video.
+    /// `.sheet(item:)` presents the args captured at tap time; the identity is the toolbar's own
+    /// wrapper (Cubic P3-2 — never an app-wide `PlayerArgs: Identifiable`, which would silently
+    /// equate an online and an `offlineItemId` variant of the same video anywhere else).
     @Test func theSaveSheetIdentityIsThePresentedVideoId() {
-        var args = PlayerArgs(videoId: "xc7keR2piUM", title: "Lecture")
-        let captured = args
-        args = PlayerArgs(videoId: "advanced-to")   // swapArgs-style replacement of the toolbar's args
-        #expect(captured.id == "xc7keR2piUM")
-        #expect(args.id == "advanced-to")
+        #expect(SaveSheetArgs(args: PlayerArgs(videoId: "xc7keR2piUM", title: "Lecture")).id == "xc7keR2piUM")
     }
 
     // MARK: - Layout pin (the screenshots.sh substitute — simulator launch is owner-gated)

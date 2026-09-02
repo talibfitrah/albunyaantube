@@ -28,17 +28,6 @@ import Testing
     /// question just as well as a full download.
     private static let ceiling: Duration = .seconds(50)
 
-    private struct AlwaysAvailable: AvailabilityGate {
-        func verify(videoId: String, sourceChannelId: String?) async throws -> Bool { true }
-    }
-
-    private nonisolated final class MemoryKV: KeyValueStore, @unchecked Sendable {
-        private let lock = NSLock()
-        private var storage: [String: Data] = [:]
-        func get(_ key: String) -> Data? { lock.withLock { storage[key] } }
-        func set(_ key: String, _ value: Data) { lock.withLock { storage[key] = value } }
-    }
-
     /// Collects every delegate signal; `waitForCompletion()` parks until `didCompleteWithError`
     /// (which fires for success, failure, AND cancellation — no continuation leak).
     private nonisolated final class SpikeDelegate: NSObject, AVAssetDownloadDelegate, @unchecked Sendable {

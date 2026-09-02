@@ -274,6 +274,18 @@ actor OfflineManager: OfflineSaving {
         await schedule()
     }
 
+    /// Settings' Clear-all (Cubic P3-3). Looping `delete(_:)` ran a `schedule()` per row, and a
+    /// schedule between two deletes picks a still-existing queued row and begins its resolve — a
+    /// real, rate-limited InnerTube POST for a row the very next iteration deletes. Every row
+    /// tears down first, then ONE `schedule()`.
+    func delete(_ ids: [String]) async {
+        for id in ids {
+            guard let row = await read(id: id) else { continue }
+            await tearDown(row)
+        }
+        await schedule()
+    }
+
     func reattach() async {
         reattachCount += 1
         let live = await engine.liveIds()
@@ -409,7 +421,14 @@ actor OfflineManager: OfflineSaving {
     // ponytail: ONE active download at a time (CF-D-5) — per-item concurrency when saves
     // actually queue up in practice; serial is the rate-limit-friendly floor and keeps the single
     // background session's re-attach trivial.
-    private func schedule() async {
+    //
+    /// Not `private` (Cubic P3-1): the smallest kick the remote-config refresh path can give the
+    /// queue when the kill-switch flips back ON. Nothing else observes that flip
+    /// (`observeOfflineGate` watches only Wi-Fi/cellular), so rows queued during an off-window
+    /// used to sit at "Waiting" until the next launch's `reattach()`. A no-op when nothing is
+    /// queued, and `begin` still re-consults the switch — so kicking while it is OFF changes
+    /// nothing.
+    func schedule() async {
         guard active.isEmpty else { return }
         let waiting = pendingRetryIds
         let next = await readAll()

@@ -45,11 +45,14 @@ enum OfflineStorage {
     /// includes purgeable space iOS would clear for a user-initiated save. A read, not a mutation:
     /// the manager still owns every write/delete.
     /// Returns 0 when `resourceValues` throws — which in practice means `base` doesn't exist.
-    /// That never happens for the default `Application Support` in a running app: SwiftData
-    /// creates its store there before any caller renders (a real coupling, named here — Task 6
-    /// review fold-in). If that store ever moves, add an `NSHomeDirectory()` fallback; until
-    /// then it's a fallback nothing can reach.
-    nonisolated static func availableBytes(base: URL = URL.applicationSupportDirectory) -> Int64 {
+    /// That never happens for `AppContainer.offlineBase` in a running app: SwiftData creates its
+    /// store there before any caller renders (a real coupling, named here — Task 6 review
+    /// fold-in). If that store ever moves, add an `NSHomeDirectory()` fallback; until then it's a
+    /// fallback nothing can reach.
+    ///
+    /// `base` is required, with no default: the default used to be a SECOND spelling of
+    /// `AppContainer.offlineBase`, which documents itself as the ONE spelling of this directory.
+    nonisolated static func availableBytes(base: URL) -> Int64 {
         let values = try? base.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         return values?.volumeAvailableCapacityForImportantUsage ?? 0
     }

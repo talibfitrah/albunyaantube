@@ -1,5 +1,17 @@
 import SwiftUI
 
+/// The save sheet's presentation identity (`.sheet(item:)`, Task 5 fold-in 2): the videoId, so the
+/// sheet stays pinned to the video whose Save was tapped even if the toolbar's `args` advance.
+///
+/// A wrapper carrying the args, NOT `PlayerArgs: Identifiable` (Cubic P3-2): that conformance was
+/// app-wide though only this one sheet needed it, and any future `ForEach`/`sheet` over
+/// `PlayerArgs` would then silently treat two different args for the same video (online vs the
+/// `offlineItemId` variant) as one identity. Nothing outside this file constructs it.
+nonisolated struct SaveSheetArgs: Identifiable {
+    let args: PlayerArgs
+    var id: String { args.videoId }
+}
+
 /// The action row between the player and the metadata panel (spec §10, Android's `PlayerFragment`
 /// action-row placement): Favorite, Share, Report, and — Phase 3 Task 5 — Save for offline.
 /// The Save slot renders per `SaveAffordance.state` (gate × kill-switch × item status,
@@ -30,8 +42,9 @@ struct PlayerToolbar: View {
     /// — `PlayerViewModel.swapArgs` replaces `args` in place on a queue auto-advance, and an
     /// `isPresented` sheet re-evaluating its content closure mid-selection would silently re-aim
     /// the quality picker (and its Save) at the advanced-to video. `.sheet(item:)` keeps the
-    /// tapped video; its identity is the videoId (`SavedScreenTests.theSaveSheetIdentityIs...`).
-    @State private var saveSheetArgs: PlayerArgs?
+    /// tapped video; its identity is `SaveSheetArgs.id`
+    /// (`SavedScreenTests.theSaveSheetIdentityIs...`).
+    @State private var saveSheetArgs: SaveSheetArgs?
 
     var body: some View {
         HStack {
@@ -63,7 +76,7 @@ struct PlayerToolbar: View {
             }
         }
         .sheet(item: $saveSheetArgs) { presented in
-            SaveOfflineSheet(args: presented)
+            SaveOfflineSheet(args: presented.args)
         }
         // `.task(id:)`, not `.task` (Cubic #12): `PlayerViewModel.swapArgs` mutates `args` in place
         // on every advance / Up Next tap, and an id-less task runs once per view lifetime -- so the
@@ -154,7 +167,7 @@ struct PlayerToolbar: View {
         switch saveButtonState {
         case .save:
             Button {
-                saveSheetArgs = args
+                saveSheetArgs = SaveSheetArgs(args: args)
             } label: {
                 toolbarLabel(systemImage: "arrow.down.circle", title: String(localized: "offline_save"))
             }
@@ -192,24 +205,20 @@ struct PlayerToolbar: View {
     /// Determinate ring, icon-sized. Not `ProgressView(value:).progressViewStyle(.circular)` --
     /// on iOS that renders the indeterminate spinner regardless of the value.
     private var progressRing: some View {
-        let fraction = offlineItem.flatMap { item in
-            item.totalBytes.flatMap { $0 > 0 ? Double(item.bytesWritten) / Double($0) : nil }
-        } ?? 0
+        let fraction = offlineItem?.progressFraction ?? 0
         return ZStack {
             Circle().stroke(Color.textPrimary.opacity(0.2), lineWidth: 2)
-            Circle().trim(from: 0, to: min(max(fraction, 0), 1))
+            Circle().trim(from: 0, to: fraction)
                 .stroke(Color.brand, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
         .frame(width: 20, height: 20)
     }
 
+    /// The Saved row's own status→key mapping (`SavedRowText`), not a third copy of it.
     private var progressCaption: String {
-        switch offlineItem.flatMap({ OfflineStatus(rawValue: $0.status) }) {
-        case .paused: String(localized: "offline_status_paused")
-        case .running: String(localized: "offline_status_saving")
-        default: String(localized: "offline_status_queued")
-        }
+        let status = offlineItem.flatMap { OfflineStatus(rawValue: $0.status) } ?? .queued
+        return String(localized: String.LocalizationValue(SavedRowText.statusKey(status)))
     }
 
     private func toolbarLabel(systemImage: String, title: String) -> some View {
@@ -219,12 +228,6 @@ struct PlayerToolbar: View {
         }
         .foregroundStyle(Color.textPrimary)
     }
-}
-
-/// The save sheet's presentation identity (`.sheet(item:)`, fold-in 2): the videoId, so the
-/// sheet is pinned to the video whose Save was tapped even if the toolbar's `args` advance.
-nonisolated extension PlayerArgs: Identifiable {
-    var id: String { videoId }
 }
 
 extension PlayerArgs {

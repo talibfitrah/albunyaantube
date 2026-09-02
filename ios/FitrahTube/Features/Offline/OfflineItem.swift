@@ -62,3 +62,12 @@ nonisolated enum OfflineStatus: String, CaseIterable, Sendable {
         self.completedAt = completedAt
     }
 }
+
+extension OfflineItem {
+    /// Clamped 0…1, nil while there is no known total to be determinate about. ONE clamp for the
+    /// Saved row's bar and the player toolbar's ring (both rendered the same arithmetic).
+    var progressFraction: Double? {
+        guard let totalBytes, totalBytes > 0 else { return nil }
+        return min(max(Double(bytesWritten) / Double(totalBytes), 0), 1)
+    }
+}
