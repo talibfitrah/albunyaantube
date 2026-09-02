@@ -572,10 +572,18 @@ nonisolated enum CastOwnership {
         // Resetting the flag alone left the fallback in force. The flag is this VM's bookkeeping;
         // `allowsExternalPlayback = false` is what the fallback actually DID, and it lives on the
         // `AVPlayer` -- which `PlayerHostView.player(for:replacing:)` reuses across advances and
-        // never re-enables (it writes the value only on a freshly built player, so an update pass
-        // cannot undo a fallback that is still wanted). Undo it through the same `currentPlayer`
-        // seam the fallback used, or every later queue item silently mirrors. Never for an offline
-        // player: a saved file is in-app only, whatever route the stock picker offers.
+        // never re-enables: it writes the value in full only on a freshly built player, and only the
+        // OFF direction on an update pass (AC-P3-3), so a fallback that is still wanted survives.
+        // Undo it through the same `currentPlayer` seam the fallback used, or every later queue item
+        // silently mirrors. Never for an offline player: a saved file is in-app only, whatever route
+        // the stock picker offers.
+        //
+        // ponytail: `isOfflinePlayback` is read off the NEW args, which never carry an
+        // `offlineItemId` (`PlayerArgs(item:)` has none) -- so this line would enable the route while
+        // the `file://` item is still in the player. Unreachable only because `PlayerScreen` gives an
+        // offline VM no `queueSource` (`PlayerScreen.swift:113-121`), so no advance can run here at
+        // all; the reuse branch's own OFF write covers the item swap, not this one. Close it with a
+        // `guard !isOfflinePlayback` here if an offline player ever gets a queue.
         currentPlayer?.allowsExternalPlayback = !isOfflinePlayback
         // The same start path a mount runs (spec §10): a video opened during a live session casts.
         reconcile(.videoStarted)

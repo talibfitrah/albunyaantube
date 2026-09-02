@@ -35,9 +35,13 @@ struct CastSessionTests {
     /// owner is a non-owner like any other, and the owner's own re-claim still succeeds.
     @Test func aSecondScreenOnTheSameVideoIsStillANonOwner() {
         let cast = CastController()
+        // A LIVE session, or `stillCasting` short-circuits on `isSessionActive` and the owner
+        // comparison below it never runs.
+        cast.sessionDidBegin(deviceName: "Living Room TV")
         #expect(cast.claimCastSource(videoId: Self.claimed, owner: Self.owner))
         #expect(cast.claimCastSource(videoId: Self.claimed, owner: Self.otherOwner) == false,
                 "the same video from another screen is another screen")
+        #expect(cast.stillCasting(Self.claimed, owner: Self.owner), "the session is live and ours")
         #expect(cast.stillCasting(Self.claimed, owner: Self.otherOwner) == false)
         // Nor may it release, finish or spend anything of the owner's.
         cast.recordLoad(Self.claimed, owner: Self.owner)
@@ -633,9 +637,10 @@ struct CastSessionTests {
     }
 
     /// The bound, end to end through the one start path: `startCast` pauses the phone only once it
-    /// has something to load, so a refused near-expiry cast must leave the phone playing and put
-    /// nothing on the receiver — the `reportLoadFailure` arm, exactly as a rejected load behaves.
-    @Test func aDoomedNearExpiryCastNeitherPausesThePhoneNorLoadsTheReceiver() async {
+    /// has something to load, so a refused near-expiry cast must leave the phone playing — and then
+    /// take the `reportLoadFailure` arm, exactly as a rejected load does: the existing
+    /// `cast_error_format` banner, and the spent claim dropped so this screen can cast again.
+    @Test func aDoomedNearExpiryCastKeepsThePhonePlayingAndTakesTheBannerPath() async {
         let cast = CastController()
         let resolver = RecordingResolver(.hls)
         resolver.expiresIn = 120
@@ -650,7 +655,15 @@ struct CastSessionTests {
         await resolver.waitUntilCalled(count: 2)
         await settle()
         #expect(vm.pausedForCast == false, "the phone must keep playing under a cast that cannot work")
-        #expect(cast.loadedVideoId == nil, "nothing of ours reached the receiver")
+
+        // The failure path proper — the screen's `.onChange(of: lastLoadFailureDevice)` arm.
+        // `reportLoadFailure` cannot name a device on a controller with no `GCKCastContext`, so the
+        // test supplies the one the receiver would have carried.
+        cast.lastLoadFailureDevice = "Living Room TV"
+        vm.reconcile(.loadFailed)
+        #expect(vm.banner?.text.contains("Living Room TV") == true, "the existing cast_error_format")
+        #expect(vm.claimedVideoId == nil, "a spent claim would block this screen's own next cast")
+        #expect(cast.castingVideoId == nil)
     }
 
     /// The other direction: a refusal with nothing castable behind it still surfaces. The embed

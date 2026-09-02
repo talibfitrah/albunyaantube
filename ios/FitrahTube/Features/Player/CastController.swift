@@ -10,7 +10,7 @@ import SwiftUI
 ///
 /// It PUBLISHES; it never drives. The controller holds no `PlayerViewModel` and knows nothing
 /// about the local player: `PlayerViewModel.reconcile(_:)` reads `isSessionActive` /
-/// `castingVideoId` / `loadedVideoId` / `lastStreamPosition` / `lastLoadFailureDevice`, asks
+/// `castingClaim` / `loadedClaim` / `lastStreamPosition` / `lastLoadFailureDevice`, asks
 /// `CastOwnership.decide` what is owed, and does the resolving, pausing and seeking through the
 /// seams it already owns. A session that ends with no player mounted (the mini controller outlives
 /// the player route) is therefore a natural no-op -- there is no local player to hand the position
@@ -19,8 +19,9 @@ import SwiftUI
 ///
 /// The session is app-wide but the player it drives is not:
 /// `MainShellView` keeps every visited tab's stack mounted, so several `PlayerScreen`s can read
-/// one `isSessionActive`. `castingVideoId` is the stamp that names the ONE screen this session
-/// belongs to; every decision is gated on it.
+/// one `isSessionActive`. `castingClaim` is the stamp that names the ONE screen this session
+/// belongs to -- the whole (videoId, owner) pair, since two screens can be up on the same video and
+/// the video half alone names neither of them; every decision is gated on it.
 ///
 /// `NSObject` subclass because `GCKSessionManagerListener`, `GCKRequestDelegate` and
 /// `GCKUIMiniMediaControlsViewControllerDelegate` all refine `NSObjectProtocol`. Every one of
