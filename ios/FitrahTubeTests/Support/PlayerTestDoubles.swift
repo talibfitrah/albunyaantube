@@ -38,10 +38,18 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     /// a scripted order, which one global permit pool cannot express.
     private var _heldIds: Set<String> = []
     private var _idPermits: [String: Int] = [:]
+    /// How far out the answered stream's `expiresAt` sits. Settable because the cast path re-uses
+    /// the stream the player already holds UNLESS it is near expiry, and that margin is the only
+    /// thing separating "cast what we have" from "walk the network again".
+    private var _expiresIn: TimeInterval = 3600
 
     var outcome: Outcome {
         get { lock.withLock { _outcome } }
         set { lock.withLock { _outcome = newValue } }
+    }
+    var expiresIn: TimeInterval {
+        get { lock.withLock { _expiresIn } }
+        set { lock.withLock { _expiresIn = newValue } }
     }
     var calls: [Call] { lock.withLock { _calls } }
     var outcomes: [String: Outcome] {
@@ -121,15 +129,16 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
             #expect(released || Task.isCancelled, "held resolve of \(videoId) was never released")
         }
         let url = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
+        let expiresAt = Date().addingTimeInterval(expiresIn)
         switch outcome {
         case .hls:
             return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: URL(string: "https://r1/a140")!,
                                          captionTracks: []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
-                            expiresAt: Date().addingTimeInterval(3600))
+                            expiresAt: expiresAt)
         case .progressive:
             return Resolved(stream: .progressive(url: url, label: "360p"), client: .android,
-                            userAgent: "UA", resolvedAt: Date(), expiresAt: Date().addingTimeInterval(3600))
+                            userAgent: "UA", resolvedAt: Date(), expiresAt: expiresAt)
         case .embed:
             return Resolved(stream: .embed(videoId: videoId), client: .web,
                             userAgent: "", resolvedAt: Date(), expiresAt: nil)

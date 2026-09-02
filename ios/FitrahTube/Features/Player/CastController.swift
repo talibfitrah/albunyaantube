@@ -2,20 +2,6 @@ import Foundation
 import GoogleCast
 import SwiftUI
 
-/// What a `PlayerScreen` that claimed a cast does when it comes back on screen
-/// (`CastController.returnAction`).
-nonisolated enum CastReturnAction: Sendable, Equatable {
-    /// Nothing to reconcile: another screen owns the live session now.
-    case none
-    /// The session is still up, the stamp is free, and the receiver is still playing OUR video:
-    /// take back the claim we surrendered.
-    case reclaim
-    /// Reconcile and let go -- seek local to the receiver's position (only if the receiver played
-    /// our video) and resume, then drop the claim. Covers both a session that ended while we were
-    /// away and a claim that has simply gone stale.
-    case handBack
-}
-
 /// The app's ONE Google Cast seam (spec §10 Chromecast). Every `GoogleCast` reference lives here
 /// and in `CastMedia`'s one mapping function -- spec §10's "Cast SDK is not loaded at all when
 /// `GCKCastContext` cannot be created" is enforced by construction: a failed `setUp()` leaves
@@ -23,17 +9,18 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
 /// controller, `PlayerScreen`'s session reaction) is gated on published state, never on the SDK.
 ///
 /// It PUBLISHES; it never drives. The controller holds no `PlayerViewModel` and knows nothing
-/// about the local player: the mounted `PlayerScreen` reacts to `isSessionActive` /
-/// `lastStreamPosition` / `lastLoadFailureDevice` and does the resolving, pausing and seeking
-/// through the seams it already owns. A session that ends with no player mounted (the mini
-/// controller outlives the player route) is therefore a natural no-op -- there is no local player
-/// to hand the position back to, and resurrecting the popped route to seek it would be worse than
-/// doing nothing. Deliberate.
+/// about the local player: `PlayerViewModel.reconcile(_:)` reads `isSessionActive` /
+/// `castingVideoId` / `loadedVideoId` / `lastStreamPosition` / `lastLoadFailureDevice`, asks
+/// `CastOwnership.decide` what is owed, and does the resolving, pausing and seeking through the
+/// seams it already owns. A session that ends with no player mounted (the mini controller outlives
+/// the player route) is therefore a natural no-op -- there is no local player to hand the position
+/// back to, and resurrecting the popped route to seek it would be worse than doing nothing.
+/// Deliberate.
 ///
 /// The session is app-wide but the player it drives is not:
 /// `MainShellView` keeps every visited tab's stack mounted, so several `PlayerScreen`s can read
 /// one `isSessionActive`. `castingVideoId` is the stamp that names the ONE screen this session
-/// belongs to; every reaction is gated on it.
+/// belongs to; every decision is gated on it.
 ///
 /// `NSObject` subclass because `GCKSessionManagerListener`, `GCKRequestDelegate` and
 /// `GCKUIMiniMediaControlsViewControllerDelegate` all refine `NSObjectProtocol`. Every one of
@@ -54,7 +41,7 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
 
     /// The videoId of the screen this session belongs to. Claimed by the first `PlayerScreen` to
     /// react to a session start (`claimCastSource`), cleared by that screen's hand-back
-    /// (`finishCasting`) or by the next session beginning. Survives `sessionDidEnd` on purpose:
+    /// (`finishClaim`) or by the next session beginning. Survives `sessionDidEnd` on purpose:
     /// SwiftUI runs `.onChange` after the callback returns, so the end reaction still has to be
     /// able to identify its owner.
     ///
@@ -194,36 +181,10 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
     ///
     /// The STAMP only: `lastStreamPosition` is the receiver's position and the hand-back still
     /// needs it -- `onDisappear` fires for a screen that is merely covered or tab-switched, not
-    /// just a popped one. `finishCasting()` is what consumes both.
+    /// just a popped one. `finishClaim(_:)` is what consumes both.
     func releaseClaim(_ videoId: String) {
         guard castingVideoId == videoId else { return }
         castingVideoId = nil
-    }
-
-    /// What a claimant that comes BACK on screen should do. Pure, so the three-way reconcile is
-    /// pinned without driving SwiftUI's appearance callbacks.
-    ///
-    /// A re-claim costs no re-resolve and no second `load()` -- it only takes back the stamp the
-    /// screen surrendered on its way off. The hand-back arm exists because a session that ends
-    /// while the claimant is away leaves its `.onChange` with no stamp to match, so the phone would
-    /// stay paused at the pre-cast position with the receiver's position unspent.
-    nonisolated static func returnAction(pausedForCast: Bool, sessionActive: Bool,
-                                         stampIsFree: Bool,
-                                         receiverPlaysOurVideo: Bool) -> CastReturnAction {
-        // Another screen owns the live session now: not ours to reconcile, and its claimant is the
-        // one that pays its own hand-back.
-        if sessionActive, !stampIsFree { return .none }
-        // A free stamp is not evidence that the session is still OURS. Reclaiming needs both halves
-        // of the claim to still hold: our player is paused for this cast, and the receiver is still
-        // playing the video we put there. Without them a screen that is not casting silently owns
-        // the session -- phone paused, receiver playing someone else's video (or nothing), and no
-        // other screen able to claim.
-        if sessionActive, pausedForCast, receiverPlaysOurVideo { return .reclaim }
-        // Everything else is "reconcile and let go": resume whatever we paused (at the receiver's
-        // position only if it is ours -- `receiverPosition(for:)` decides), give the stamp back,
-        // and drop the claim. Dropping it matters even when there is nothing to resume: a claim
-        // that outlives its session is what stops this screen ever casting this video again.
-        return .handBack
     }
 
     /// The receiver's position, but only for the screen whose video the receiver actually played.
@@ -234,17 +195,27 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
         loadedVideoId == videoId ? lastStreamPosition : nil
     }
 
-    /// Still ours to act on: `PlayerScreen.startCasting` awaits a forced resolve before it pauses
+    /// Still ours to act on: `PlayerViewModel.startCast` can await a resolve before it pauses
     /// the local player, and both the session and the claim can be gone by the time that lands.
     func stillCasting(_ videoId: String) -> Bool {
         isSessionActive && castingVideoId == videoId
     }
 
-    /// The owning screen has consumed the hand-back: drop the stamp and the spent position.
-    func finishCasting() {
-        castingVideoId = nil
-        lastStreamPosition = nil
-        loadedVideoId = nil
+    /// The claimant has consumed its hand-back: give back what is actually ours to give. The stamp
+    /// goes only if this screen still holds it; the receiver's position and the loaded id go only
+    /// if what the receiver played was this screen's video -- a claimant handing back while another
+    /// screen's video is on the receiver must not clear the position that belongs to that screen.
+    ///
+    /// One call for both halves. They used to be two -- an unguarded stamp-only release on the
+    /// return leg and a clear-everything call on the session-end arm -- so which fields a hand-back
+    /// spent depended on which arm ran: a spent position could linger until the next session began,
+    /// and the other arm could clear a live claimant's.
+    func finishClaim(_ videoId: String) {
+        if castingVideoId == videoId { castingVideoId = nil }
+        if loadedVideoId == videoId {
+            loadedVideoId = nil
+            lastStreamPosition = nil
+        }
     }
 
     // MARK: - Session lifecycle seams
@@ -299,7 +270,7 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
         // removes the dependency.
         miniControlsActive = false
         // `castingVideoId`/`lastStreamPosition` deliberately survive: the owning screen's
-        // `.onChange` has not run yet and needs both. `finishCasting()` clears them.
+        // `.onChange` has not run yet and needs both. `finishClaim(_:)` clears them.
     }
 
     // MARK: - Load

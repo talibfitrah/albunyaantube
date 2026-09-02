@@ -125,6 +125,113 @@ extension StreamState {
     }
 }
 
+// MARK: - Cast ownership (spec §10)
+
+/// What just happened to a `PlayerScreen` that the cast session might have to answer for. One case
+/// per reaction site, and not one of them decides anything itself.
+nonisolated enum CastTrigger: Sendable, Equatable, CaseIterable {
+    /// `onAppear`: back on screen after a push-over or a compact-layout tab switch.
+    case appear
+    /// `onDisappear`. A WENT-OFF-SCREEN seam, not a teardown one -- the screen is usually still
+    /// alive, still paused for its cast, and coming back.
+    case disappear
+    /// This screen started playing a video: the `.task` mount arm, and `swapArgs` on every
+    /// auto-advance, Up Next tap and auto-skip.
+    case videoStarted
+    /// `.onChange(of: isSessionActive)` -- a receiver connected or disconnected.
+    case sessionChanged
+    /// `.onChange(of: lastLoadFailureDevice)` -- the receiver refused what it was handed.
+    case loadFailed
+}
+
+/// Everything the cast decision reads, from all three of its owners: this screen's claim and pause
+/// (`PlayerViewModel`), what it plays now (`args`), and the controller's session/stamp/loaded-id.
+nonisolated struct CastOwnershipState: Sendable, Equatable {
+    /// The video THIS screen claimed the session for; nil when it holds no claim.
+    var claimedVideoId: String?
+    /// The video it plays NOW. `swapArgs` moves this; a claim never follows on its own.
+    var videoId: String
+    var isOfflinePlayback: Bool
+    var pausedForCast: Bool
+    var sessionActive: Bool
+    /// `CastController.castingVideoId`: the ONE screen this session belongs to.
+    var stampedVideoId: String?
+    /// `CastController.loadedVideoId`: what the receiver was actually asked to play.
+    var loadedVideoId: String?
+}
+
+/// The one thing a reaction can be owed. Each carries the id it acts on, because acting on the
+/// CURRENT id where the CLAIMED one was meant (or the reverse) is the shape of every ownership bug
+/// this feature has had: a release keyed on `args.videoId` freed nothing after an advance, and a
+/// hand-back keyed on it seeked the wrong video to the wrong position.
+nonisolated enum CastAction: Sendable, Equatable {
+    case none
+    /// Claim, get the stream, pause the phone, load the receiver.
+    case startCast(videoId: String)
+    /// Take back the stamp surrendered on the way off screen. No re-resolve, no second load.
+    case reclaim(videoId: String)
+    /// Give the stamp back so the next video opened during this session can claim it, keeping the
+    /// claim (and the receiver's position) for the return leg.
+    case release(videoId: String)
+    /// Seek local to the receiver's position if the receiver played our video, resume if we paused,
+    /// and drop the claim.
+    case handBack(videoId: String)
+    /// Banner, resume the phone, drop the spent claim.
+    case reportFailure(videoId: String)
+}
+
+/// Who owns the cast session, as a pure table. It lives outside the view model on purpose: the
+/// decision used to be five `if`s spread across a view, a model and a controller, and every
+/// hand-back bug in this feature was two of those three disagreeing. Pure means the whole table is
+/// pinned without driving SwiftUI's appearance callbacks or an SDK session.
+nonisolated enum CastOwnership {
+    static func decide(state: CastOwnershipState, trigger: CastTrigger) -> CastAction {
+        guard let claimed = state.claimedVideoId else {
+            switch trigger {
+            case .videoStarted, .sessionChanged:
+                return canStart(state) ? .startCast(videoId: state.videoId) : .none
+            case .appear, .disappear, .loadFailed:
+                // A screen with no claim owns nothing, and `.appear` deliberately does not start
+                // one: a player left mounted on another tab would otherwise take the TV away from
+                // the screen the user is actually watching, the moment they switch tabs.
+                return .none
+            }
+        }
+        switch trigger {
+        case .disappear:
+            return .release(videoId: claimed)
+        case .loadFailed:
+            // The banner belongs to the claimant that is still stamped, or several mounted screens
+            // each raise it and each write the device name back (and `.onChange` does not fire
+            // twice for the same name, so the next failure would be silent).
+            return state.stampedVideoId == claimed ? .reportFailure(videoId: claimed) : .none
+        case .appear, .sessionChanged, .videoStarted:
+            // The session is over: resume whatever we paused and let the claim go. A claim that
+            // outlives its session is what stops this screen ever casting this video again.
+            guard state.sessionActive else { return .handBack(videoId: claimed) }
+            // Another screen owns the live session now: not ours to reconcile, and its own claimant
+            // pays its own hand-back.
+            guard state.stampedVideoId == nil || state.stampedVideoId == claimed else { return .none }
+            // The receiver is still playing what we put there and our player is still paused for
+            // it: taking the stamp back is the whole job.
+            if state.loadedVideoId == claimed, state.pausedForCast { return .reclaim(videoId: claimed) }
+            // Anything else means the TV is NOT playing what this screen holds a claim for -- our
+            // load was rejected, or another screen cast its own video and popped. Resuming locally
+            // there leaves the phone playing one video audibly while the TV plays another, with the
+            // SDK's cast button offering only disconnect. The session is live and free: cast.
+            return canStart(state) ? .startCast(videoId: state.videoId) : .none
+        }
+    }
+
+    /// Every precondition for taking (or keeping) the session: a live session, a stream a receiver
+    /// could actually fetch (a saved sandbox file never is -- it is also why the offline player
+    /// hides its cast slot), and a stamp that is free or already this video's.
+    private static func canStart(_ state: CastOwnershipState) -> Bool {
+        guard state.sessionActive, !state.isOfflinePlayback else { return false }
+        return state.stampedVideoId == nil || state.stampedVideoId == state.videoId
+    }
+}
+
 /// Android's `PlayerViewModel` resolve pipeline (`player.md` §2.2), the InnerTubeKit-backed slice
 /// of it: `open()`/`retry()` walk `StreamResolver`'s ladder and map the outcome onto `StreamState`.
 /// Same generation-guard discipline as `HomeViewModel`/`ContentListViewModel` (cancel the prior job,
@@ -258,15 +365,22 @@ extension StreamState {
     /// bites -- it needs a route observer this player does not otherwise want.
     private var airPlayFellBack = false
 
+    /// The app's ONE cast seam (spec §10), or nil for a player that has no cast affordance: Shorts
+    /// (the cast button is the main player's toolbar only) and every test that is not about
+    /// casting. `reconcile(_:)` is then a no-op -- the same "no cast at all" posture a container
+    /// whose `GCKCastContext` could not be created already has.
+    private let cast: CastController?
+
     /// M4 (B1 final review): `catalog` and `favorites` were stored and never read -- `PlayerToolbar`
     /// reaches favorites through the environment container on its own, and nothing in the player
     /// touches the catalog.
     init(resolver: any StreamResolving, settings: any SettingsStore, args: PlayerArgs,
-         queueSource: (any PlaylistQueueSource)? = nil) {
+         queueSource: (any PlaylistQueueSource)? = nil, cast: CastController? = nil) {
         self.resolver = resolver
         self.settings = settings
         self.args = args
         self.queueSource = queueSource
+        self.cast = cast
         self.audioOnly = settings.audioOnly
     }
 
@@ -419,6 +533,14 @@ extension StreamState {
     /// The queue context rides along: playlistId/shuffled keep the queue alive across the hop;
     /// targetVideoId/startIndex are consumed and must NOT be re-applied to the next video.
     private func swapArgs(to item: ContentItem) {
+        // The claim and the pause belong to the video they were taken for. Leaving them set meant
+        // the phone played B while every cast field still described A: the session's end seeked B
+        // to A's receiver position and played it, and nothing ever cast B -- phone and TV on
+        // different videos for the rest of the session. Released with the id actually claimed,
+        // before `args` moves off it.
+        if let claimedVideoId { cast?.releaseClaim(claimedVideoId) }
+        claimedVideoId = nil
+        pausedForCast = false
         var next = PlayerArgs(item: item)
         next.playlistId = args.playlistId
         next.shuffled = args.shuffled
@@ -427,13 +549,16 @@ extension StreamState {
         videoZoomed = false                  // B5 Task 3: the fit/zoom override is per stream
         videoIsPortrait = false              // unknown reads as landscape until the new item is ready
         airPlayFellBack = false              // Task 8: the mirroring fallback is per stream too
-        // Cubic R2-4: resetting the flag alone left the fallback in force. The flag is this VM's
-        // bookkeeping; `allowsExternalPlayback = false` is what the fallback actually DID, and it
-        // lives on the `AVPlayer` -- which `PlayerHostView.player(for:replacing:)` reuses across
-        // advances and never re-enables (it writes `true` only on a freshly built player, so an
-        // update pass cannot undo a fallback that is still wanted). Undo it through the same
-        // `currentPlayer` seam the fallback used, or every later queue item silently mirrors.
-        currentPlayer?.allowsExternalPlayback = true
+        // Resetting the flag alone left the fallback in force. The flag is this VM's bookkeeping;
+        // `allowsExternalPlayback = false` is what the fallback actually DID, and it lives on the
+        // `AVPlayer` -- which `PlayerHostView.player(for:replacing:)` reuses across advances and
+        // never re-enables (it writes the value only on a freshly built player, so an update pass
+        // cannot undo a fallback that is still wanted). Undo it through the same `currentPlayer`
+        // seam the fallback used, or every later queue item silently mirrors. Never for an offline
+        // player: a saved file is in-app only, whatever route the stock picker offers.
+        currentPlayer?.allowsExternalPlayback = !isOfflinePlayback
+        // The same start path a mount runs (spec §10): a video opened during a live session casts.
+        reconcile(.videoStarted)
     }
 
     /// Ruling 16's prefetch lane, first and only call site in the app. Six lines because
@@ -542,34 +667,170 @@ extension StreamState {
 
     // MARK: - Cast (Task 8, spec §10)
 
-    /// A cast session start/resume needs a FRESH stream: the receiver fetches from its own IP and
-    /// a URL minted minutes ago may already be dead. Side-band on purpose -- NOT through
-    /// `resolve()`, whose `state` write would dismantle `PlayerHostView` and drop the very local
-    /// player this screen is about to pause and hand back to on session end. `forceRefresh: true`
-    /// + `.player` kind: tapping Cast is a manual, user-initiated action.
-    /// `nil` = nothing castable (the embed rung, or a resolve that failed) -- the caller surfaces
-    /// that as the same "Couldn't play on {device}" the receiver's own refusal produces.
-    func castMedia() async -> CastMediaInfo? {
+    /// How close to `expiresAt` a stream has to be before a cast re-resolves it rather than handing
+    /// the receiver the URL the phone is already playing.
+    static let castExpiryMargin: TimeInterval = 600
+
+    /// The stream to cast. Side-band on purpose -- NOT through `resolve()`, whose `state` write
+    /// would dismantle `PlayerHostView` and drop the very local player this screen is about to
+    /// pause and hand back to on session end.
+    ///
+    /// It re-uses the stream this player is ALREADY playing whenever it has one for this video and
+    /// that one is not about to expire. Forcing a fresh walk per cast put every cast on the
+    /// `.player` rate-limit lane, whose 30 s minimum interval turns any second attempt inside the
+    /// window -- reopening a video mid-cast, a receiver reconnecting, a manual Retry then Cast --
+    /// into a `.cooldown` and a false "Couldn't play on {device}" for a URL that works. The
+    /// resolved URL is bound to the phone's IP either way, so a fresh walk buys the receiver
+    /// nothing; only genuine expiry does.
+    ///
+    /// `nil` = nothing castable (the embed rung, or a refusal with no usable stream behind it) --
+    /// the caller surfaces that as the same "Couldn't play on {device}" a receiver's own refusal
+    /// produces.
+    func castMedia(now: Date = Date()) async -> CastMediaInfo? {
+        if let fresh = currentCastStream(now: now) { return CastMedia.make(resolved: fresh, args: args) }
+        // An advance reconciles BEFORE its own resolve lands, so at this point `state` still carries
+        // the outgoing video's stream. Joining the walk this player is already making is free;
+        // opening a second, FORCED one would race it onto the manual-retry lane and hand the 30 s
+        // minimum interval a reason to refuse the cast of a video that is resolving fine.
+        await resolveTask?.value
+        if let fresh = currentCastStream(now: now) { return CastMedia.make(resolved: fresh, args: args) }
         do {
             let resolved = try await resolver.resolve(args.videoId, purpose: .player, kind: .player,
                                                       sourceChannelId: args.channelId, forceRefresh: true)
             return CastMedia.make(resolved: resolved, args: args)
         } catch {
-            // Review Minor 3: the user-visible collapse to one banner is deliberate (a cooldown
-            // and a receiver refusal look the same to them), but swallowing the reason entirely
-            // made a cast that can never work indistinguishable from one the TV refused.
+            // The user-visible collapse to one banner is deliberate (a cooldown and a receiver
+            // refusal look the same to them), but swallowing the reason entirely made a cast that
+            // can never work indistinguishable from one the TV refused.
             #if DEBUG
             print("PlayerViewModel: cast resolve failed for \(args.videoId): \(error)")
             #endif
-            return nil
+            // A refusal is not a dead stream: a limiter cooldown, a bot check or a transient
+            // failure all leave the URL the phone is playing right now perfectly castable, and
+            // near-expiry is a reason to prefer a fresher one, never a reason to cast nothing.
+            // With no stream of ours at all (the embed rung, a resolve that never landed) there is
+            // nothing to fall back to and the banner is the honest answer.
+            // ponytail: a refusal with no stream for THIS video yet still banners -- reachable when
+            // a cast is refused for a video whose own resolve also failed. Closing it would mean
+            // giving the cast its own limiter lane, which is a rate-limit decision, not this one.
+            guard let playing = currentCastStream(now: now, allowNearExpiry: true) else { return nil }
+            return CastMedia.make(resolved: playing, args: args)
         }
     }
 
+    /// The stream on screen, but only when it is THIS video's. `state` keeps the previous video's
+    /// stream until an advance's own resolve lands (the advance deliberately never hops through
+    /// `.loading`), so `resolvedVideoId` is what stops a cast handing the receiver the outgoing
+    /// video's URL under the incoming video's title.
+    private func currentCastStream(now: Date, allowNearExpiry: Bool = false) -> Resolved? {
+        guard resolvedVideoId == args.videoId, let resolved = state.resolved else { return nil }
+        guard allowNearExpiry
+                || !Self.shouldPreemptivelyReResolve(state, now: now, margin: Self.castExpiryMargin)
+        else { return nil }
+        return resolved
+    }
+
     /// True while THIS view model's player is paused because THIS screen started a cast. The
-    /// session flag is app-wide and several `PlayerScreen`s can be mounted at once (review
-    /// Important 1), so the hand-back has to know it is talking to the player it actually paused --
-    /// otherwise an unrelated (or offline) video gets seeked and force-played.
+    /// session flag is app-wide and several `PlayerScreen`s can be mounted at once, so the
+    /// hand-back has to know it is talking to the player it actually paused -- otherwise an
+    /// unrelated (or offline) video gets seeked and force-played.
     private(set) var pausedForCast = false
+
+    /// The videoId THIS view model claimed the cast session for -- never a re-read `args.videoId`,
+    /// which `swapArgs` replaces on every auto-advance, Up Next tap and auto-skip while the
+    /// controller's stamp keeps the id that was claimed. It lives HERE, next to `pausedForCast`,
+    /// because the two are halves of one fact: the claim used to live in the view, the pause in
+    /// this model and the stamp in the controller, recombined by five reaction sites, and every
+    /// hand-back bug in this feature was one of the three being reset without the others.
+    private(set) var claimedVideoId: String?
+
+    /// The video a cast start is currently walking for. Keyed on the id rather than a flag: a
+    /// mount and a session transition landing together for one screen must open ONE walk, while an
+    /// advance's start for the NEXT video must not be blocked by the outgoing one still in flight.
+    private var startingCastVideoId: String?
+
+    /// The ONE cast reaction. Every site that can change who owns the session -- `onAppear`,
+    /// `onDisappear`, `.onChange(isSessionActive)`, `.onChange(lastLoadFailureDevice)`, the `.task`
+    /// mount arm and `swapArgs` -- calls this with what happened and nothing else decides anything:
+    /// `CastOwnership.decide` is a pure table over the three owners' state, and this executes its
+    /// one answer.
+    func reconcile(_ trigger: CastTrigger) {
+        guard let cast else { return }
+        let action = CastOwnership.decide(
+            state: CastOwnershipState(claimedVideoId: claimedVideoId, videoId: args.videoId,
+                                      isOfflinePlayback: isOfflinePlayback, pausedForCast: pausedForCast,
+                                      sessionActive: cast.isSessionActive,
+                                      stampedVideoId: cast.castingVideoId,
+                                      loadedVideoId: cast.loadedVideoId),
+            trigger: trigger)
+        switch action {
+        case .none:
+            break
+        case .startCast(let videoId):
+            Task { await startCast(videoId) }
+        case .reclaim(let videoId):
+            // No re-resolve and no second `load()`: the receiver is already playing this.
+            cast.claimCastSource(videoId)
+        case .release(let videoId):
+            cast.releaseClaim(videoId)
+        case .handBack(let videoId):
+            // The receiver's position only if the receiver actually played OUR video -- it is
+            // sampled off the session, so after another screen cast and popped it belongs to that
+            // video and seeking to it is a silent jump to a stranger's timestamp. `nil` resumes in
+            // place. This arm also runs for a claim that has simply gone stale, where its whole job
+            // is to let the claim go: one that outlives its session is what stops this screen ever
+            // casting this video again.
+            resumeAfterCast(at: cast.receiverPosition(for: videoId))
+            cast.finishClaim(videoId)
+            claimedVideoId = nil
+        case .reportFailure(let videoId):
+            // Spec §10: "observe the load result and surface 'Couldn't play on {device}'" (Android
+            // swallows it). Consumed and cleared here so a second failure on the same device still
+            // announces itself.
+            if let device = cast.lastLoadFailureDevice {
+                banner = BannerMessage(text: String(format: String(localized: "cast_error_format"), device))
+                cast.lastLoadFailureDevice = nil
+            }
+            // `startCast` pauses the local player before the load, so without this the user taps
+            // Cast, gets a toast, and their video has silently stopped on the phone too. A no-op
+            // for the "nothing castable" path, which never paused.
+            resumeAfterCast(at: nil)
+            // Nothing of ours reached the receiver, so this screen owns nothing -- and holding a
+            // spent claim would both block its own next cast and keep every other screen out.
+            cast.finishClaim(videoId)
+            claimedVideoId = nil
+        }
+    }
+
+    /// Session start/resume (spec §10): the stream, then the load with the local position, then the
+    /// pause. Order matters -- the pause happens only once there is something to load, so a video
+    /// that turns out to be uncastable keeps playing on the phone under its banner.
+    private func startCast(_ videoId: String) async {
+        guard let cast, startingCastVideoId != videoId,
+              // Every remaining precondition in one call: a live session, an online player (a
+              // sandbox `file://` is never castable, and its cast slot is hidden for the same
+              // reason), and a claim no other mounted `PlayerScreen` already holds.
+              cast.claimForCast(videoId: videoId, isOfflinePlayback: isOfflinePlayback) else { return }
+        startingCastVideoId = videoId
+        defer { if startingCastVideoId == videoId { startingCastVideoId = nil } }
+        claimedVideoId = videoId
+        let media = await castMedia()
+        // `castMedia()` can walk the network, and both the session and this screen's video can be
+        // gone by the time it lands: a session that ended inside the window already ran its
+        // hand-back, and an advance means the stamp names a video this screen no longer plays.
+        // Ahead of the no-media branch too -- a cancelled walk must not raise "Couldn't play on
+        // {TV}" for a cast that was never attempted.
+        guard args.videoId == videoId, cast.stillCasting(videoId) else { return }
+        guard let media else {
+            // Nothing castable: the embed rung (never castable -- the no-hand-off directive) or a
+            // resolve that did not come back. Same outcome for the user as a receiver refusing the
+            // load, so it gets the same banner rather than copy of its own.
+            cast.reportLoadFailure()
+            return
+        }
+        pauseForCast()
+        cast.load(media, videoId: videoId, at: currentTime)
+    }
 
     /// The receiver owns playback now. Goes through the host's `currentPlayer` hand-off slot --
     /// never `AVAudioSession` (single-audio-owner rule), never a second player.
@@ -579,9 +840,9 @@ extension StreamState {
     }
 
     /// Session end (spec §10): seek local to the receiver's `approximateStreamPosition` and
-    /// resume. Also the failure hand-back (review Important 4): a receiver that REJECTS the load
-    /// leaves the phone paused otherwise, against `startCasting`'s own promise -- that path calls
-    /// this with a nil position, so playback resumes exactly where it stopped.
+    /// resume. Also the failure hand-back: a receiver that REJECTS the load leaves the phone paused
+    /// otherwise, against `startCast`'s own promise -- that path calls this with a nil position, so
+    /// playback resumes exactly where it stopped.
     ///
     /// A no-op unless this player is the one `pauseForCast()` paused: with no player at all (the
     /// mini controller outlives the player route, so a session can end with no `PlayerScreen`
@@ -589,12 +850,13 @@ extension StreamState {
     /// player that never cast, seeking it to some other video's receiver position is the bug.
     func resumeAfterCast(at position: TimeInterval?) {
         guard let player = currentPlayer else { return }
-        // RULING (re-review Minor 6): the SEEK is unconditional for the claimant. Spec §10's
+        // RULING: the SEEK is unconditional for the claimant. Spec §10's
         // hand-back is "seek local to the receiver's position and resume", and a screen reopened
         // on the same video mid-cast must still land where the TV got to even though its fresh
         // view model never paused anything. Only the RESUME stays gated on having paused: playing
         // a player the user deliberately left paused is the unrequested-playback bug.
-        // Who reacts at all is `PlayerScreen`'s `castingVideoId` gate, not this.
+        // WHO hands back at all, and WHICH position, are `CastOwnership.decide` and
+        // `CastController.receiverPosition(for:)`; this only performs it.
         if let position, position > 0, position.isFinite {
             player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
             currentTime = position

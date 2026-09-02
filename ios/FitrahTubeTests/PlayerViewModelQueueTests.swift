@@ -60,6 +60,20 @@ struct PlayerViewModelQueueTests {
                 "the next queue item mirrors instead of playing on the AirPlay device")
     }
 
+    /// R4-2: `swapArgs` reset `currentTime` and the per-stream flags but not `pausedForCast`, so
+    /// after an Up Next tap mid-cast the phone played B while the cast bookkeeping still described
+    /// A — and the session's end then seeked B to A's receiver position and played it. The pause
+    /// belongs to the video it was taken for.
+    @Test func anAdvanceSpendsThePauseThatBelongedToTheVideoThatIsGone() async {
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
+        await vm.open()
+        vm.currentPlayer = AVPlayer()
+        vm.pauseForCast()
+        await vm.playToEnd()
+        #expect(vm.args.videoId == "b")
+        #expect(vm.pausedForCast == false, "the pause belonged to A's cast, not to B")
+    }
+
     @Test func safeModeDisablesAutoAdvanceButNotTheQueue() async {
         // Ruling 58 + spec §10 "auto-advance on end UNLESS Safe Mode" + plan §6.10. The queue is
         // still populated and a TAP still plays -- only the automatic hop is gone.

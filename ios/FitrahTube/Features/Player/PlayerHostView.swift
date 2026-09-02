@@ -695,7 +695,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // actually play the video remotely. Written ONLY here, on a freshly built player, and
             // never on an update pass -- `PlayerViewModel`'s mirroring fallback clears it on the
             // live player, and an unconditional write per pass would undo that immediately.
-            player.allowsExternalPlayback = true
+            //
+            // OFF for a saved file. Casting one is blocked three ways over precisely because the
+            // receiver would pull media out of the sandbox, and the stock route picker does the
+            // same thing over AirPlay with no cast SDK involved: offline playback is in-app only
+            // (screen mirroring is a device-level setting and is unaffected). The URL is the
+            // signal, not a new parameter -- an offline open IS a `file://` resolve, the same split
+            // `assetOptions(userAgent:url:)` below already makes, so this stays one player with no
+            // offline fork.
+            player.allowsExternalPlayback = !url.isFileURL
             if resume > 0 { player.seek(to: resumeTime) }
             player.play()
             return player

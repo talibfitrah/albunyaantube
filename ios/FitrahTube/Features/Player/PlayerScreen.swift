@@ -29,16 +29,9 @@ struct PlayerScreen: View {
     /// (fail-closed). Held here, not in the toolbar: a fullscreen toggle rebuilds the toolbar
     /// and must not refetch.
     @State private var saveGate: GateAnswer?
-    /// The remote kill-switch (`RemoteConfig.isDownloadsEnabled`), read per open.
-    @State private var saveEnabled = true
-    /// The videoId THIS screen claimed the cast session for — never a re-read
-    /// `model.args.videoId`, which `swapArgs` replaces on every auto-advance, Up Next tap and
-    /// auto-skip while the stamp keeps the id that was claimed. Every cast reaction below is
-    /// keyed on this: releasing by the advanced-to id released nothing (so the stamp stuck for the
-    /// rest of the session and no later video could claim it), and matching the hand-back on it let
-    /// an offline twin of the same video drop the real claimant's stamp. A screen that never
-    /// claimed holds nil and therefore cannot touch anyone else's session.
-    @State private var claimedVideoId: String?
+    /// The remote kill-switch (`RemoteConfig.isDownloadsEnabled`), read per open. False until that
+    /// read lands, like `saveGate` above and for the same fail-closed reason.
+    @State private var saveEnabled = false
 
     var body: some View {
         let fullscreen = model.map(isFullscreen) ?? false
@@ -66,9 +59,9 @@ struct PlayerScreen: View {
         // the app with no tab bar.
         .onDisappear {
             router.isFullscreen = false
-            // The claim is the screen's, not the session's. A claimant that goes away must give
-            // its stamp back, or the NEXT video the user opens during the same session cannot claim
-            // it and never casts — the phone plays locally while the TV keeps the old video.
+            // A claimant that goes away must give its stamp back, or the NEXT video the user opens
+            // during the same session cannot claim it and never casts — the phone plays locally
+            // while the TV keeps the old video.
             //
             // This is a WENT-OFF-SCREEN seam, not a teardown one: a push-over and a compact-layout
             // tab switch both fire it on a screen that is still alive and still paused for its cast
@@ -80,35 +73,12 @@ struct PlayerScreen: View {
             // another tab keeps its claim and the cross-tab case still waits for the user to return
             // to the player. Closing that needs a visibility signal the rail layout does not
             // publish.
-            if let claimedVideoId { container.castController.releaseClaim(claimedVideoId) }
+            model?.reconcile(.disappear)
         }
-        // The return leg of the release above: take the claim back if the cast is still running, or
-        // pay the hand-back the session-end arm could not (it found no stamp, because we had
-        // surrendered it). `CastController.returnAction` carries the decision.
-        .onAppear {
-            guard let model, let claimed = claimedVideoId else { return }
-            let cast = container.castController
-            switch CastController.returnAction(pausedForCast: model.pausedForCast,
-                                               sessionActive: cast.isSessionActive,
-                                               stampIsFree: cast.castingVideoId == nil,
-                                               receiverPlaysOurVideo: cast.loadedVideoId == claimed) {
-            case .none:
-                break
-            case .reclaim:
-                // No re-resolve and no second `load()`: the receiver is already playing this.
-                cast.claimCastSource(claimed)
-            case .handBack:
-                // The receiver's position only if the receiver actually played OUR video — it is
-                // sampled off the session, so after another screen cast and popped it belongs to
-                // that video and seeking to it is a silent jump to a stranger's timestamp. `nil`
-                // resumes in place. This arm also runs for a claim that has simply gone stale
-                // (a rejected load, or session churn while off screen), where its whole job is to
-                // let the claim go.
-                model.resumeAfterCast(at: cast.receiverPosition(for: claimed))
-                cast.releaseClaim(claimed)   // no-op unless the stamp is still ours
-                claimedVideoId = nil
-            }
-        }
+        // The return leg of the release above: take the claim back if the receiver is still playing
+        // our video, re-cast if the session is live but it is not, or pay the hand-back the
+        // session-end arm could not (it found no stamp, because we had surrendered it).
+        .onAppear { model?.reconcile(.appear) }
         // Reconciliation note 3: rotating out of the fullscreen orientation re-arms the auto-enter.
         .onChange(of: verticalSizeClass) { _, new in if new != .compact { userExitedFullscreen = false } }
         .onChange(of: fullscreen, initial: true) { _, isFS in
@@ -122,38 +92,18 @@ struct PlayerScreen: View {
         // fire: no spurious hand-back on mount, where there was never a session to come back from.
         //
         // `isSessionActive` is app-wide and `MainShellView` keeps every visited tab's stack
-        // mounted, so SEVERAL `PlayerScreen`s can read this. The
-        // start side claims the session (first writer wins); the end side only reacts for the
-        // claimant, or an unrelated — possibly offline — video gets seeked to another video's
-        // receiver position and force-played.
-        .onChange(of: container.castController.isSessionActive) { _, active in
-            guard let model else { return }
-            let cast = container.castController
-            if active {
-                Task { await startCastingIfClaimed(model) }
-            } else if let claimed = claimedVideoId, cast.castingVideoId == claimed {
-                // Same identity rule as the return leg above: our own load may have been rejected,
-                // leaving a position that belongs to whatever the receiver kept playing.
-                model.resumeAfterCast(at: cast.receiverPosition(for: claimed))
-                cast.finishCasting()
-                claimedVideoId = nil
-            }
+        // mounted, so SEVERAL `PlayerScreen`s can read this — which is exactly why the view decides
+        // nothing here. It reports what happened; `PlayerViewModel.reconcile` asks the one table
+        // whether this screen owns anything and what it owes.
+        .onChange(of: container.castController.isSessionActive) { _, _ in
+            model?.reconcile(.sessionChanged)
         }
         // Spec §10: "observe the load result and surface 'Couldn't play on {device}' on failure
-        // (Android swallows it)". Consumed and cleared here so a second failure on the same device
-        // still announces itself — by the claimant only, so several mounted screens can't each
-        // raise the banner and each write nil back.
+        // (Android swallows it)". Only a non-nil write is news — the reconcile that shows the
+        // banner clears it, and that clear re-fires this.
         .onChange(of: container.castController.lastLoadFailureDevice) { _, device in
-            guard let device, let model, let claimed = claimedVideoId,
-                  container.castController.castingVideoId == claimed else { return }
-            model.banner = BannerMessage(
-                text: String(format: String(localized: "cast_error_format"), device))
-            container.castController.lastLoadFailureDevice = nil
-            // `startCasting` already paused the local player by the time a receiver rejects the
-            // load, so without this the user taps Cast, gets a toast, and their video has silently
-            // stopped on the phone too. `resumeAfterCast` no-ops unless THIS screen is the one that
-            // paused.
-            model.resumeAfterCast(at: nil)
+            guard device != nil else { return }
+            model?.reconcile(.loadFailed)
         }
         .task {
             guard model == nil else { return }
@@ -165,11 +115,13 @@ struct PlayerScreen: View {
                 vm = PlayerViewModel(resolver: OfflineResolver(store: container.offlineStore,
                                                                itemId: offlineItemId,
                                                                base: container.offlineBase),
-                                     settings: container.settings, args: args)
+                                     settings: container.settings, args: args,
+                                     cast: container.castController)
             } else {
                 vm = PlayerViewModel(resolver: Self.resolver(container: container),
                                      settings: container.settings, args: args,
-                                     queueSource: Self.queueSource(container: container))
+                                     queueSource: Self.queueSource(container: container),
+                                     cast: container.castController)
             }
             model = vm
             await vm.open()
@@ -185,15 +137,20 @@ struct PlayerScreen: View {
             // `.onChange` fires only on TRANSITIONS, so a screen that mounts with the session
             // already up had nothing to react to — the user connected to a receiver, then opened
             // another video, and the phone played it locally while the TV kept the old one. The
-            // same start path the transition runs, once, on mount.
-            await startCastingIfClaimed(vm)
+            // same trigger `swapArgs` raises for the next video in a queue.
+            vm.reconcile(.videoStarted)
         }
         // Phase 3 Task 5: one gate fetch per player open, re-run when the queue advances to a new
         // video (`PlayerViewModel.swapArgs` mutates `args` in place — the `.task(id:)` lesson from
         // this file's favorite seed). Reset FIRST so the button is hidden while the answer for the
         // new video is in flight.
         .task(id: model?.args.videoId ?? args.videoId) {
+            // BOTH halves of the fail-closed answer, at one point. `saveGate` was reset here and
+            // `saveEnabled` only where its own fetch landed, so between the two the new video
+            // carried the previous one's kill-switch verdict — harmless only because a nil gate
+            // already hides the button, i.e. the safety was incidental rather than structural.
             saveGate = nil
+            saveEnabled = false
             // Task 7: an offline open performs NO backend fetch — the Save slot (and every other
             // save affordance) is hidden by the offline flag, so the answer would go unread.
             if args.offlineItemId != nil { return }
@@ -215,58 +172,6 @@ struct PlayerScreen: View {
         // -- `EmbedRungView` deliberately posts nothing of its own. `.onChange` fires only on a real
         // transition, so entering `.embed` announces exactly once.
         .rungAnnouncements(state: model?.state, isOnline: container.network.isOnline)
-    }
-
-    /// The ONE cast start path: run by the session transition AND by a screen that mounts into a
-    /// live session. `claimForCast` carries every precondition — a live session, an online player
-    /// (a sandbox `file://` is never castable, and its cast slot is hidden for the same reason),
-    /// and a claim no other mounted `PlayerScreen` already holds.
-    private func startCastingIfClaimed(_ model: PlayerViewModel) async {
-        let cast = container.castController
-        // Read the id ONCE: it is both what we claim and what we remember claiming, so the two can
-        // never drift apart when `swapArgs` moves `args`.
-        let videoId = model.args.videoId
-        // Idempotent per video: when the session goes active while
-        // `.task` is still inside `vm.open()`, the transition arm and the mount arm both reach
-        // here for one screen, and `claimForCast` answers true for an id that already holds the
-        // stamp — two forced resolves and two `load()`s, the second cancelling the first. Both the
-        // check and the write happen before the first suspension, so the loser bails.
-        guard claimedVideoId != videoId,
-              cast.claimForCast(videoId: videoId, isOfflinePlayback: model.isOfflinePlayback)
-        else { return }
-        claimedVideoId = videoId
-        await startCasting(model)
-    }
-
-    /// Session start/resume (spec §10): a FRESH resolve, then load with the local position, then
-    /// pause local. Called only by the screen that claimed the session (`claimForCast`).
-    /// Order matters — the pause happens only once there is something to load, so a video that
-    /// turns out to be uncastable keeps playing on the phone under its banner; a load the RECEIVER
-    /// rejects is undone by the `lastLoadFailureDevice` reaction's `resumeAfterCast(at: nil)`.
-    private func startCasting(_ model: PlayerViewModel) async {
-        let cast = container.castController
-        let media = await model.castMedia()
-        // That resolve is a forced network walk and can take seconds. If the session ended inside
-        // it the end reaction already ran (`pausedForCast` was false, so it resumed
-        // nothing) and `finishCasting()` cleared the stamp — `load()` would then find no session,
-        // `reportLoadFailure()` would have no device to name, and nothing would ever undo the
-        // pause below. Same for a queue advance in that window: the stamp names a video this
-        // screen no longer plays, which is why this reads `args`, not the claimed id.
-        //
-        // Ahead of the no-media branch too: `.task` is cancelled when the
-        // screen disappears, so a tab switch during the resolve would otherwise turn a cancelled
-        // walk into a "Couldn't play on {TV}" banner for a cast that was never attempted — stamped
-        // on whatever session happens to be up, for a screen that has since released its claim.
-        guard cast.stillCasting(model.args.videoId) else { return }
-        guard let media else {
-            // Nothing castable: the embed rung (never castable — the no-hand-off directive) or a
-            // resolve that did not come back. Same outcome for the user as a receiver refusing the
-            // load, so it gets the same banner rather than copy of its own.
-            cast.reportLoadFailure()
-            return
-        }
-        model.pauseForCast()
-        cast.load(media, videoId: model.args.videoId, at: model.currentTime)
     }
 
     /// What a transition INTO `state` says out loud, or nil for silence. Pure, so

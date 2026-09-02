@@ -1,4 +1,6 @@
+import AVFoundation
 import Foundation
+import InnerTubeKit
 import Testing
 @testable import FitrahTube
 
@@ -34,5 +36,27 @@ struct OfflineComplianceTests {
     /// exists to hand one to). Link sharing stays allowed and unchanged; this pins the FILE side.
     @Test func aCompletedRowOffersOpenAndDeleteAndNothingElse() {
         #expect(OfflineStateMachine.actions(for: .completed) == [.open, .delete])
+    }
+
+    /// Casting a saved file is blocked three ways over (the toolbar slot, the claim, and
+    /// `CastMedia.make`'s http(s) guard) — but AVKit's stock transport carries its OWN route
+    /// picker, and `allowsExternalPlayback` was written `true` for every player this app builds.
+    /// That is the same export by another route: AirPlay pulls the decoded sandbox file to a device
+    /// on the network. Offline playback is in-app only (screen mirroring is a device-level setting
+    /// and is unaffected); a remote stream keeps the route it always had.
+    ///
+    /// The signal is the URL, not a new parameter: a saved item is exactly a `file://` resolve, and
+    /// `assetOptions(userAgent:url:)` right below already splits local from remote on it.
+    @Test func theOfflinePlayerNeverOffersItsSavedFileToAnExternalRoute() {
+        let saved = Resolved(stream: .progressive(url: URL(filePath: "/tmp/fitrah-offline.m4a"), label: "360p"),
+                             client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
+        #expect(PlayerHostView.player(for: .rung2Progressive(saved), replacing: nil)?
+            .allowsExternalPlayback == false)
+
+        let streamed = Resolved(stream: .hls(url: URL(string: "https://example.invalid/v.m3u8")!, isLive: false,
+                                             audioOnlyURL: nil, captionTracks: []),
+                                client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
+        #expect(PlayerHostView.player(for: .ready(streamed), replacing: nil)?
+            .allowsExternalPlayback == true)
     }
 }
