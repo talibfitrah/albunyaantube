@@ -1,0 +1,22 @@
+ios/scripts/test.sh
+  s_66ddb7c44de816::t_3e8137e65d940b 2,4-12,16-17
+  s_66ddb7c44de816::t_b88287a31a8055 125-138
+  s_66ddb7c44de816::t_82feb12053429a 156,178-210
+  s_66ddb7c44de816::t_f17460b033f6ed 72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "33605714db3fef61c818e07c9488e60d902d893a",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
