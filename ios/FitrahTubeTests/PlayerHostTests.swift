@@ -15,7 +15,7 @@ struct PlayerHostTests {
     // resolved User-Agent MUST be set on the AVURLAsset)
 
     @Test func readyStateBuildsPlayerWithResolvedURL() throws {
-        let url = URL(string: "https://example.com/stream.m3u8")!
+        let url = URL(string: "https://127.0.0.1:9/stream.m3u8")!
         let resolved = Self.resolved(.hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []), userAgent: "FitrahTube/1.0")
 
         let player = PlayerHostView.player(for: .ready(resolved), replacing: nil)
@@ -33,7 +33,7 @@ struct PlayerHostTests {
     }
 
     @Test func rung2ProgressiveStateAlsoBuildsAPlayer() throws {
-        let url = URL(string: "https://example.com/a.mp4")!
+        let url = URL(string: "https://127.0.0.1:9/a.mp4")!
         let resolved = Self.resolved(.progressive(url: url, label: "360p"))
 
         let player = PlayerHostView.player(for: .rung2Progressive(resolved), replacing: nil)
@@ -80,7 +80,7 @@ struct PlayerHostTests {
     // MARK: - Ruling 32: session-only resume -- replacing an existing player for the SAME URL keeps it
 
     @Test func sameURLReusesTheExistingPlayerInstance() {
-        let url = URL(string: "https://example.com/stream.m3u8")!
+        let url = URL(string: "https://127.0.0.1:9/stream.m3u8")!
         let resolved = Self.resolved(.hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []))
         let first = PlayerHostView.player(for: .ready(resolved), replacing: nil)
 
@@ -120,7 +120,7 @@ struct PlayerHostTests {
     /// fixture resolver today, but the rule is the right one regardless: `continuesCurrentVideo`
     /// already says "this is a different video", and a different video is never the same item.
     @Test func aDifferentVideoNeverReusesTheItemEvenOnTheSameURL() throws {
-        let url = URL(string: "https://example.com/stream.m3u8")!
+        let url = URL(string: "https://127.0.0.1:9/stream.m3u8")!
         let resolved = Self.resolved(.hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []))
         let player = try #require(PlayerHostView.player(for: .ready(resolved), replacing: nil))
         let firstItem = try #require(player.currentItem)
@@ -136,8 +136,8 @@ struct PlayerHostTests {
     }
 
     @Test func differentURLReplacesTheItemOnTheSamePlayer() throws {
-        let firstURL = URL(string: "https://example.com/a.m3u8")!
-        let secondURL = URL(string: "https://example.com/b.m3u8")!
+        let firstURL = URL(string: "https://127.0.0.1:9/a.m3u8")!
+        let secondURL = URL(string: "https://127.0.0.1:9/b.m3u8")!
         let first = Self.resolved(.hls(url: firstURL, isLive: false, audioOnlyURL: nil, captionTracks: []))
         let second = Self.resolved(.hls(url: secondURL, isLive: false, audioOnlyURL: nil, captionTracks: []))
         let player = PlayerHostView.player(for: .ready(first), replacing: nil)
@@ -324,7 +324,7 @@ struct PlayerHostTests {
     }
 
     @Test func dismantlingDuringPiPKeepsThePlayerUntilPiPStops() {
-        let url = URL(string: "https://example.com/a.m3u8")!
+        let url = URL(string: "https://127.0.0.1:9/a.m3u8")!
         let resolved = Self.resolved(.hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []))
         let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
         let controller = AVPlayerViewController()
@@ -341,7 +341,7 @@ struct PlayerHostTests {
     // MARK: - A non-playable state tears playback down instead of leaving a stale player (cont.)
 
     @Test func transitioningToANonPlayableStatePausesTheExistingPlayer() {
-        let url = URL(string: "https://example.com/a.m3u8")!
+        let url = URL(string: "https://127.0.0.1:9/a.m3u8")!
         let resolved = Self.resolved(.hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []))
         let player = PlayerHostView.player(for: .ready(resolved), replacing: nil)
 

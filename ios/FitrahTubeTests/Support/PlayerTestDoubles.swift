@@ -90,12 +90,6 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     }
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
-        try await resolve(videoId, purpose: purpose, kind: kind,
-                          sourceChannelId: sourceChannelId, forceRefresh: forceRefresh, requiresMuxed: false)
-    }
-
-    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
         // Captured HERE, not after the hold: a test that scripts a second answer while this call is
         // still held is describing the NEXT call's outcome, not retroactively this one's.

@@ -5,40 +5,27 @@ import InnerTubeKit
 /// Wraps InnerTubeKit's `StreamResolver` actor behind a protocol `PlayerViewModel` depends on --
 /// depending on the concrete actor directly would leave tests unable to script resolve outcomes.
 protocol StreamResolving: Sendable {
-    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved
-    /// Save-purpose walk (owner ruling 2026-09-01): `requiresMuxed: true` demands a single-file
-    /// muxed stream (itag 18) — the resolver skips the HLS rung, and neither reads nor writes the
-    /// manifest cache nor touches the single-flight registry. Only `OfflineManager` passes `true`;
-    /// every player call site stays on the five-argument form above.
+    /// The ONE requirement, and it carries `requiresMuxed` (owner ruling 2026-09-01): `true` demands
+    /// a single-file muxed stream (itag 18) — the resolver skips the HLS rung, and neither reads nor
+    /// writes the manifest cache nor touches the single-flight registry. Only `OfflineManager`
+    /// passes `true`; every player call site takes the five-argument convenience below.
+    ///
+    /// R8-3: the direction used to be the other way round, with a defaulted six-argument overload
+    /// forwarding to a five-argument requirement. A conformer that implemented only the short form
+    /// then dropped the flag SILENTLY — every video save resolved `.hls`, hit `sourceURL`'s
+    /// `(.hls, false)` nil arm and failed NO_STREAM, with a doc comment as the only guard. This way
+    /// round, the compiler is the guard: a resolver that cannot answer the muxed question does not
+    /// conform.
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved
 }
 
 extension StreamResolving {
-    /// Default for player-only doubles and fixtures: drops the muxed requirement.
-    /// `LiveStreamResolver`, `RateLimitedResolver`, and `RecordingResolver` implement the
-    /// six-argument form themselves. The third production resolver, `OfflineResolver`,
-    /// deliberately rides this default: it answers from disk with zero network calls, so
-    /// `requiresMuxed` is meaningless offline.
-    ///
-    /// The rule this default needs: ONLY a resolver that can never be handed to `OfflineManager`,
-    /// or one whose answer cannot depend on the flag, may ride it. `ParkedStreamResolver`
-    /// (`AppContainer`) is the live exception on the second clause — it IS the offline manager's
-    /// resolver in fixture builds, and rides this default safely because it throws `.cooldown` for
-    /// every argument, muxed or not. Anything else on the save path — a new production resolver, or
-    /// a decorator wrapped around one — must implement the six-argument form and FORWARD the flag,
-    /// or every video save silently resolves `.hls`, `sourceURL` refuses that pair and the row
-    /// fails NO_STREAM (pinned by `aVideoSaveAnsweredWithAManifestFailsNoStreamAndStartsNothing`;
-    /// the forwarding half by `aVideoSaveRequiresMuxedAndTheProgressiveAnswerReachesTheEngine`).
-    /// Making the six-argument form the sole requirement would remove the footgun outright, and is
-    /// deliberately not done here: the five-argument-only conformers are the seven `PlayerScreen`
-    /// fixtures plus four test doubles, and rewriting them is a wider blast radius than the
-    /// footgun.
+    /// Every player call site: a plain walk, muxed not required.
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
-        try await resolve(videoId, purpose: purpose, kind: kind,
-                          sourceChannelId: sourceChannelId, forceRefresh: forceRefresh)
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        try await resolve(videoId, purpose: purpose, kind: kind, sourceChannelId: sourceChannelId,
+                          forceRefresh: forceRefresh, requiresMuxed: false)
     }
 }
 
@@ -48,12 +35,6 @@ extension StreamResolving {
 /// exactly what `RateLimitedResolver` (the decorator wrapped around this) now performs.
 struct LiveStreamResolver: StreamResolving {
     let resolver: StreamResolver
-
-    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
-        try await resolve(videoId, purpose: purpose, kind: kind,
-                          sourceChannelId: sourceChannelId, forceRefresh: forceRefresh, requiresMuxed: false)
-    }
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
@@ -74,12 +55,6 @@ struct RateLimitedResolver: StreamResolving {
         self.wrapped = wrapped
         self.rateLimiter = rateLimiter
         self.clock = clock
-    }
-
-    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
-        try await resolve(videoId, purpose: purpose, kind: kind,
-                          sourceChannelId: sourceChannelId, forceRefresh: forceRefresh, requiresMuxed: false)
     }
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
@@ -930,6 +905,19 @@ nonisolated enum CastOwnership {
     /// indistinguishable to the claim (same id, same owner); only an attempt number says which one
     /// still counts.
     private var castAttempts = 0
+
+    /// The mount path: everything `PlayerScreen`'s `.task` arm owes this model the moment it exists.
+    ///
+    /// `.appear` FIRST, and not only because `.onAppear` fires before this model is built -- it is
+    /// the appearance that already happened, replayed against the model that missed it. Without it
+    /// a screen was never recorded visible for the whole of its first presentation, so any
+    /// `.dropClaim(resume:)` decided during it left the phone paused on a screen the user is
+    /// looking at, waiting for an `.appear` that only comes after navigating away and back. Harmless
+    /// on its own: with no claim yet, `.appear` decides `.none` and only sets the flag.
+    func didMount() {
+        reconcile(.appear)
+        reconcile(.videoStarted)
+    }
 
     /// The ONE cast reaction. Every site that can change who owns the session -- `onAppear`,
     /// `onDisappear`, `.onChange(isSessionActive)`, `.onChange(lastLoadFailure)`, the `.task`

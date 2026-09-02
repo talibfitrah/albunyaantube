@@ -22,7 +22,8 @@ struct OfflineResolver: StreamResolving {
     let base: URL
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
         guard let item = store.item(id: itemId), let localPath = item.localPath else {
             throw ExtractionError.unavailable(videoId: videoId)
         }

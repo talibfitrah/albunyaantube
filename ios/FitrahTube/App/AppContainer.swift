@@ -385,7 +385,8 @@ nonisolated struct ParkedOfflineEngine: OfflineEngine {
 /// which would hand the engine a fake URL to pretend to download.
 nonisolated struct ParkedStreamResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
         throw ExtractionError.cooldown(until: Date().addingTimeInterval(86_400))
     }
 }

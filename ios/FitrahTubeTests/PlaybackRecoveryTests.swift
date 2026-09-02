@@ -247,12 +247,12 @@ struct PlaybackRecoveryTests {
         Resolved(stream: stream, client: .visionos, userAgent: "ua", resolvedAt: date, expiresAt: nil)
     }
 
-    private static let hls = resolved(.hls(url: URL(string: "https://example.com/a.m3u8")!, isLive: false,
+    private static let hls = resolved(.hls(url: URL(string: "https://127.0.0.1:9/a.m3u8")!, isLive: false,
                                            audioOnlyURL: nil, captionTracks: []))
-    private static let freshHLS = resolved(.hls(url: URL(string: "https://example.com/fresh.m3u8")!, isLive: false,
+    private static let freshHLS = resolved(.hls(url: URL(string: "https://127.0.0.1:9/fresh.m3u8")!, isLive: false,
                                                 audioOnlyURL: nil, captionTracks: []),
                                            at: Date().addingTimeInterval(30))
-    private static let progressive = resolved(.progressive(url: URL(string: "https://example.com/a.mp4")!, label: "360p"))
+    private static let progressive = resolved(.progressive(url: URL(string: "https://127.0.0.1:9/a.mp4")!, label: "360p"))
 
     private actor FakeResolver: StreamResolving {
         private let outcomes: [Result<Resolved, Error>]
@@ -267,7 +267,8 @@ struct PlaybackRecoveryTests {
         }
 
         func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                     sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+                     sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
             let index = calls.count
             calls.append(forceRefresh)
             if calls.count == gatedCallIndex, let gate { await gate.block() }

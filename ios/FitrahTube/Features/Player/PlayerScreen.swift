@@ -138,8 +138,10 @@ struct PlayerScreen: View {
             // `.onChange` fires only on TRANSITIONS, so a screen that mounts with the session
             // already up had nothing to react to — the user connected to a receiver, then opened
             // another video, and the phone played it locally while the TV kept the old one. The
-            // same trigger `swapArgs` raises for the next video in a queue.
-            vm.reconcile(.videoStarted)
+            // same trigger `swapArgs` raises for the next video in a queue. It is `didMount`
+            // rather than one `reconcile` because `.onAppear` above already fired against a nil
+            // model, and what that appearance was supposed to record is owed here too.
+            vm.didMount()
         }
         // Phase 3 Task 5: one gate fetch per player open, re-run when the queue advances to a new
         // video (`PlayerViewModel.swapArgs` mutates `args` in place — the `.task(id:)` lesson from
@@ -163,7 +165,9 @@ struct PlayerScreen: View {
             let enabled = await container.innerTube.remoteConfig.current().isDownloadsEnabled
             guard !Task.isCancelled else { return }
             saveEnabled = enabled
-            let answer = await container.offlineGate.answer(model?.args.videoId ?? args.videoId)
+            let answer = await Self.gateAnswer(enabled: enabled) {
+                await container.offlineGate.answer(model?.args.videoId ?? args.videoId)
+            }
             guard !Task.isCancelled else { return }
             saveGate = answer
         }
@@ -173,6 +177,18 @@ struct PlayerScreen: View {
         // -- `EmbedRungView` deliberately posts nothing of its own. `.onChange` fires only on a real
         // transition, so entering `.embed` announces exactly once.
         .rungAnnouncements(state: model?.state, isOnline: container.network.isOnline)
+    }
+
+    /// The per-video gate answer for the Save slot, or nil when there is no point asking. Static and
+    /// closure-fed for the same reason as the announcement below: the `.task(id:)` arm above cannot
+    /// be driven from a test, and whether a backend GET is spent at all is worth pinning.
+    static func gateAnswer(enabled: Bool, fetch: () async -> GateAnswer) async -> GateAnswer? {
+        // R8-5: `SaveAffordance.state` hides Save outright while the switch is off, whatever the
+        // gate says, so the request buys an answer nothing can render. nil is what the caller's
+        // fail-closed reset already wrote, and skipping is silent — the kill-switch never announces
+        // itself (fork D).
+        guard enabled else { return nil }
+        return await fetch()
     }
 
     /// What a transition INTO `state` says out loud, or nil for silence. Pure, so
@@ -614,7 +630,8 @@ struct PlayerScreen: View {
 /// own state-mapping tag differs.
 private struct FixtureHLSPlayerResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
@@ -629,7 +646,8 @@ private struct FixtureHLSPlayerResolver: StreamResolving {
 /// (and no network) is needed to capture the audio-only surface.
 private struct FixtureAudioOnlyResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
@@ -645,7 +663,8 @@ private struct FixtureAudioOnlyResolver: StreamResolving {
 /// through the same `PlayerHostView` as `.ready`, so this still exercises the real playback path.
 private struct FixturePlayerResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
         // B5: `-fitrah-fake-player-queue-dead`'s unplayable ids.
         if videoId.hasPrefix("dead-") { throw ExtractionError.unavailable(videoId: videoId) }
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
@@ -660,7 +679,8 @@ private struct FixturePlayerResolver: StreamResolving {
 /// the real error path a network failure takes, exercised here with no network at all.
 private struct FixtureErrorResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
         throw ExtractionError.transport("fixture error")
     }
 }
@@ -669,7 +689,8 @@ private struct FixtureErrorResolver: StreamResolving {
 /// non-retryable "not playable" surface for every terminal not-available reason).
 private struct FixtureUnavailableResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
         throw ExtractionError.unavailable(videoId: videoId)
     }
 }
@@ -678,7 +699,8 @@ private struct FixtureUnavailableResolver: StreamResolving {
 /// 45s out so the captured frame always shows a non-trivial countdown.
 private struct FixtureCooldownResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
         throw ExtractionError.cooldown(until: Date().addingTimeInterval(45))
     }
 }
@@ -687,7 +709,8 @@ private struct FixtureCooldownResolver: StreamResolving {
 /// asset -- the video id is the whole stream.
 private struct FixtureEmbedResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
         Resolved(stream: .embed(videoId: videoId), client: .web,
                  userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }

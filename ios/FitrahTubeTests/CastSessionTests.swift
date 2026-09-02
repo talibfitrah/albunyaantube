@@ -1049,6 +1049,30 @@ struct CastSessionTests {
         #expect(player.rate == 0, "and nothing was left armed for a later appearance to spend")
     }
 
+    /// R8-1: `PlayerScreen`'s `.onAppear` fires BEFORE its `.task` arm creates the model, so the
+    /// view's own `.appear` reconcile hits a nil model and the screen is never recorded visible for
+    /// the whole of its FIRST presentation. A drop decided during it — session already live, nothing
+    /// of ours on the receiver, the disconnect landing before any `.onChange` — then left the phone
+    /// paused on a screen the user is looking at, with the resume flag armed for an `.appear` that
+    /// only arrives after navigating away and back. The mount owes what that appearance could not.
+    @Test func aDropOnTheVeryFirstPresentationResumesInTheSameStep() async throws {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+        let player = try #require(phonePlayer(vm))
+        vm.currentPlayer = player
+        vm.didMount()                    // the mount path; no `.appear` ever reached this model
+        await settle()
+        #expect(vm.pausedForCast)
+
+        cast.sessionDidEnd()
+        vm.reconcile(.sessionChanged)    // nothing reached the receiver, so this is a drop
+
+        #expect(vm.claimedVideoId == nil, "the spent claim goes either way")
+        #expect(player.rate == 1, "a first presentation is a presentation: the phone plays now")
+    }
+
     /// R7-8: A casts X and tab-switches (stamp released, claim kept), B casts Y, the receiver
     /// disconnects. A's hand-back gets a nil position — the receiver's belongs to Y — but the pause
     /// was still spent by a `play()`, so the hidden tab played under B's own resume: double audio.

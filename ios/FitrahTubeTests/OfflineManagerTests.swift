@@ -250,11 +250,12 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
     }
 
-    /// Cubic R7-19, the blast radius of the defaulted `StreamResolving` overload: a resolver or
-    /// decorator that implements only the five-argument form drops `requiresMuxed`, so a VIDEO save
-    /// is answered with `.hls` — the manifest URL the muxed walk exists to avoid. `sourceURL`
-    /// refuses that pair, so the row fails NO_STREAM with nothing written: never a saved `.mp4`
-    /// that is really a manifest. (The forwarding half is pinned by
+    /// `sourceURL`'s defensive `(.hls, audioOnly: false)` nil arm, end to end: a VIDEO save answered
+    /// with a manifest — a rung that ignored `requiresMuxed`, a cache hit, a future resolver — fails
+    /// NO_STREAM with nothing written, never a saved `.mp4` that is really a manifest. R8-3 made the
+    /// muxed argument the sole protocol requirement, so a conformer can no longer drop the flag
+    /// silently; that this row still cannot reach the engine is the half the compiler cannot state.
+    /// (The forwarding half is pinned by
     /// `aVideoSaveRequiresMuxedAndTheProgressiveAnswerReachesTheEngine` above.)
     @Test func aVideoSaveAnsweredWithAManifestFailsNoStreamAndStartsNothing() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }

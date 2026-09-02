@@ -146,6 +146,24 @@ import Testing
         }
     }
 
+    // MARK: - The fetch the button state never needs (R8-5)
+
+    /// R8-5: `SaveAffordance.state` hides Save outright while the kill-switch is off, whatever the
+    /// gate says — so a player opened in an off-window spent one backend GET per open on an answer
+    /// nothing could ever render. The request is skipped, silently: no copy, no state beyond the
+    /// nil the fail-closed reset already wrote.
+    @Test func theGateIsNotAskedAtAllWhileTheKillSwitchIsOff() async {
+        var calls = 0
+        let fetch: () async -> GateAnswer = { calls += 1; return .allowed }
+
+        #expect(await PlayerScreen.gateAnswer(enabled: false, fetch: fetch) == nil,
+                "and the answer stays the fail-closed nil the reset wrote")
+        #expect(calls == 0, "an answer the button can never read is not worth a backend round trip")
+
+        #expect(await PlayerScreen.gateAnswer(enabled: true, fetch: fetch) == .allowed)
+        #expect(calls == 1, "exactly one, per open, when the answer can actually be rendered")
+    }
+
     // MARK: - Button-state table (gate × config × item-status → state)
 
     private static let allGates: [GateAnswer?] = [nil, .allowed, .notAllowed, .gone, .unreachable]
