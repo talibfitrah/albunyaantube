@@ -18,6 +18,9 @@ struct PlayerScreen: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.router) private var router
+    /// T0-1: the rail layout's own visibility signal (`MainShellView.railStacks`). Always true in
+    /// the compact `TabView`, which publishes nothing.
+    @Environment(\.tabIsSelected) private var tabIsSelected
     @State private var model: PlayerViewModel?
     /// B5 Task 3 (reconciliation note 3): the fullscreen exit control's latch. Suppresses the
     /// auto-enter until the device rotates out of the fullscreen orientation; no timers.
@@ -68,17 +71,23 @@ struct PlayerScreen: View {
             // — and browsing other tabs mid-cast is exactly what the mini strip exists for. So the
             // release surrenders the STAMP only (`lastStreamPosition` survives for the hand-back)
             // and `.onAppear` below reconciles on the way back.
-            // ponytail: the regular-width shell keeps non-selected tabs mounted at `opacity(0)`
-            // (`MainShellView.railStacks`), which never fires this — so on iPad a claimant on
-            // another tab keeps its claim and the cross-tab case still waits for the user to return
-            // to the player. Closing that needs a visibility signal the rail layout does not
-            // publish.
+            //
+            // T0-1: the regular-width shell keeps non-selected tabs mounted at `opacity(0)`
+            // (`MainShellView.railStacks`), which fires neither this nor `.onAppear` — so the rail
+            // publishes `\.tabIsSelected` instead and the `.onChange` below is that layout's half
+            // of the same pair. Compact width never sets the key, so both arms stay as they were.
             model?.reconcile(.disappear)
         }
         // The return leg of the release above: take the claim back if the receiver is still playing
         // our video, re-cast if the session is live but it is not, or pay the hand-back the
         // session-end arm could not (it found no stamp, because we had surrendered it).
         .onAppear { model?.reconcile(.appear) }
+        // T0-1: the rail layout's `.onAppear`/`.onDisappear`. A nil model is the mount window, which
+        // `didMount()` covers on its own -- and no `initial:`, because the mount path already
+        // records the appearance that layout could not.
+        .onChange(of: tabIsSelected) { _, selected in
+            model?.reconcile(selected ? .appear : .disappear)
+        }
         // Reconciliation note 3: rotating out of the fullscreen orientation re-arms the auto-enter.
         .onChange(of: verticalSizeClass) { _, new in if new != .compact { userExitedFullscreen = false } }
         .onChange(of: fullscreen, initial: true) { _, isFS in
@@ -125,6 +134,12 @@ struct PlayerScreen: View {
                                      cast: container.castController)
             }
             model = vm
+            // Minor 1 (r8 review): the model is live from here and `open()` can take seconds — a
+            // `.sessionChanged`/`.loadFailed` landing in that window decided `resume: false` on a
+            // screen the user is looking at. `didMount()` below replays this (idempotent: with no
+            // claim yet it only sets the flag), because the `.videoStarted` half has to stay AFTER
+            // `open()` — a cast needs a resolved stream to hand the receiver.
+            vm.reconcile(.appear)
             await vm.open()
             #if DEBUG
             // Task 9 screenshot rig: jumps straight to `.recoveryExhausted` after a real fixture

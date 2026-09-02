@@ -46,7 +46,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.player = Self.player(for: state, replacing: nil, audioOnly: audioOnly,
                                         continuesCurrentVideo: continuesCurrentVideo(context),
                                         resumeFallback: model.currentTime,
-                                        pausedForCast: model.pausedForCast)
+                                        pausedForCast: model.pausedForCast,
+                                        airPlayFellBack: model.airPlayFellBack)
         context.coordinator.lastVideoId = model.hostVideoId
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
         applyBackgroundController(to: controller, context: context)
@@ -85,7 +86,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly,
                                         continuesCurrentVideo: continuesCurrentVideo(context),
                                         resumeFallback: model.currentTime,
-                                        pausedForCast: model.pausedForCast)
+                                        pausedForCast: model.pausedForCast,
+                                        airPlayFellBack: model.airPlayFellBack)
         context.coordinator.lastVideoId = model.hostVideoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
         // M6 (B4 final review): write only on change -- an unconditional write would churn AVKit's
@@ -657,14 +659,19 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// player built after a non-playable state dismantled the host. Both defaulted, so every
     /// existing call site is unchanged.
     /// R7-2: `pausedForCast` is the receiver-owns-playback flag (`PlayerViewModel`). With a session
-    /// already live the `.task` arm's `reconcile(.videoStarted)` -- and every Up Next hop through
+    /// already live the `.task` arm's `didMount()` -- and every Up Next hop through
     /// `.loading` -- runs `startCast` BEFORE this builds the player, so `pauseForCast` finds
     /// `currentPlayer == nil` and can only record the intent; without consulting it here the host
     /// then autoplayed the phone alongside the TV and nothing ever re-paused it. Only the autoplay
     /// is gated: the URL, the position carry and `allowsExternalPlayback` are unchanged.
+    /// R9-8: `airPlayFellBack` is the VM's per-video mirroring latch. The fresh-player write below
+    /// is the one place external playback is ever turned back ON, and `swapArgs` -- which resets
+    /// the latch -- is not the only thing that gets here: a fallback whose forced re-resolve throws
+    /// dismantles the host, and Retry then rebuilt the player with AirPlay re-enabled, so the next
+    /// 403 found `alreadyFellBack` true and burned the real recovery budget on the dead route.
     static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false,
                        continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0,
-                       pausedForCast: Bool = false) -> AVPlayer? {
+                       pausedForCast: Bool = false, airPlayFellBack: Bool = false) -> AVPlayer? {
         guard let resolved = state.resolved,
               let url = streamURL(resolved.stream, audioOnly: audioOnly) else {
             existing?.pause()
@@ -705,7 +712,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // signal, not a new parameter -- an offline open IS a `file://` resolve, the same split
             // `assetOptions(userAgent:url:)` below already makes, so this stays one player with no
             // offline fork.
-            player.allowsExternalPlayback = !url.isFileURL
+            player.allowsExternalPlayback = !url.isFileURL && !airPlayFellBack
             if resume > 0 { player.seek(to: resumeTime) }
             if !pausedForCast { player.play() }
             return player
@@ -716,7 +723,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // B5 Task 4: a DIFFERENT video always starts -- an ended item leaves the player `.paused`,
         // so an auto-advance under this rule alone swapped the item in and never played it.
         // R7-2's other half: a DIFFERENT video always starts -- unless the receiver owns playback,
-        // where the advance's own `reconcile(.videoStarted)` has already claimed the cast.
+        // where the advance's own `.videoStarted` reconcile (`swapArgs`, or the mount's
+        // `didMount()`) has already claimed the cast.
         let wasPlaying = (existing.timeControlStatus != .paused || !continuesCurrentVideo) && !pausedForCast
         // AC-P3-3: the flag above is written only on a FRESH player, so a `file://` item swapped
         // into a player a remote item had been granted an external route on kept that route -- the

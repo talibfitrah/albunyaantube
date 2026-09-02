@@ -33,7 +33,7 @@ import UIKit
         init(_ resolved: Resolved) { self.resolved = resolved }
         func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                      sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved { resolved }
+                     requiresMuxed: Bool) async throws -> Resolved { resolved }
     }
 
     /// The observers are registered with `queue: .main`, so delivery is a run-loop hop away rather

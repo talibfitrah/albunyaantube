@@ -46,4 +46,22 @@ struct AirPlayFallbackTests {
             .allowsExternalPlayback == false,
                 "the mirroring fallback must survive its own re-resolve")
     }
+
+    /// R9-8: the reuse branch above is not the only way back here. A fallback whose forced
+    /// re-resolve THROWS (a cooldown, a transient failure) hops to a non-playable state, which
+    /// dismantles the host and drops the player — and Retry then took the FRESH-player branch,
+    /// whose write is the one place external playback is ever turned back on. AirPlay came back
+    /// mid-video, and the next 403 found `alreadyFellBack` true and spent the real recovery budget
+    /// on the dead route. `swapArgs` still resets the latch, so the next video mirrors normally.
+    @Test func aFreshPlayerBuiltInsideTheSameVideoKeepsTheMirroringFallback() {
+        let streamed = Resolved(stream: .hls(url: URL(string: "https://127.0.0.1:9/new.m3u8")!,
+                                             isLive: false, audioOnlyURL: nil, captionTracks: []),
+                                client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
+        #expect(PlayerHostView.player(for: .ready(streamed), replacing: nil,
+                                      airPlayFellBack: true)?.allowsExternalPlayback == false,
+                "Retry inside the same video must not re-enable the route the fallback dropped")
+        #expect(PlayerHostView.player(for: .ready(streamed), replacing: nil,
+                                      airPlayFellBack: false)?.allowsExternalPlayback == true,
+                "and a stream that never fell back still gets its route")
+    }
 }

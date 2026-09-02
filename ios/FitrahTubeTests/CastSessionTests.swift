@@ -207,33 +207,36 @@ struct CastSessionTests {
     /// R2-5: casting was driven solely by `.onChange(of: isSessionActive)`, which fires only on
     /// TRANSITIONS — a screen that mounts with the session already up never cast (phone plays
     /// locally, the TV keeps the old video), and the popped claimant's stale stamp meant it could
-    /// not even claim. `claimForCast` is the one start decision both the transition and the mount
-    /// run; `releaseClaim` is what the leaving screen gives back.
+    /// not even claim. `claimCastSource` is the stamp both the transition and the mount compete
+    /// for; `releaseClaim` is what the leaving screen gives back.
     @Test func aVideoOpenedDuringALiveSessionClaimsItOnceTheOldClaimantIsGone() {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
-        #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
         // Fix round 1's Important 1 still holds: a second mounted screen does not steal the session.
-        #expect(cast.claimForCast(videoId: "other-video", owner: Self.otherOwner,
-                                  isOfflinePlayback: false) == false)
+        #expect(cast.claimCastSource(videoId: "other-video", owner: Self.otherOwner) == false)
         // The claimant goes away: its claim goes with it, and the next screen mounts and casts.
         cast.releaseClaim("xc7keR2piUM", owner: Self.owner)
         #expect(cast.castingClaim?.videoId == nil)
-        #expect(cast.claimForCast(videoId: "other-video", owner: Self.otherOwner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: "other-video", owner: Self.otherOwner))
     }
 
-    /// m1 survives the new funnel: an offline player never starts, claims or loads a cast — and
-    /// with no live session there is nothing to start at all.
-    @Test func anOfflinePlayerNeverClaimsALiveSession() {
+    /// m1, at the seam that owns it since R9-12: the offline fact is the PLAYER's, so it is the
+    /// table (and the view model feeding it) that refuses — `claimCastSource` is now only the stamp
+    /// CAS and knows nothing about players. An offline screen must not even take the stamp, on any
+    /// trigger, with a live session sitting right there.
+    @Test func anOfflinePlayerNeverClaimsALiveSession() async {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
-        #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner,
-                                  isOfflinePlayback: true) == false)
-        #expect(cast.castingClaim?.videoId == nil, "an offline screen must not even take the stamp")
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast,
+                               args: PlayerArgs(videoId: Self.claimed, offlineItemId: "saved-1"))
+        await vm.open()
 
-        cast.sessionDidEnd()
-        #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner,
-                                  isOfflinePlayback: false) == false)
+        for trigger in CastTrigger.allCases { vm.reconcile(trigger) }
+        await settle()
+        #expect(vm.claimedVideoId == nil)
+        #expect(vm.pausedForCast == false)
+        #expect(cast.castingClaim == nil, "an offline screen must not even take the stamp")
     }
 
     /// The release half of R2-5: only the screen that OWNS the stamp may drop it, or a second
@@ -241,7 +244,7 @@ struct CastSessionTests {
     @Test func aScreenThatNeverClaimedCannotReleaseAnotherScreensSession() {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
-        #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
         cast.releaseClaim("other-video", owner: Self.otherOwner)
         #expect(cast.castingClaim?.videoId == "xc7keR2piUM")
     }
@@ -258,7 +261,7 @@ struct CastSessionTests {
     @Test func onlyTheClaimedIdReleasesTheClaimNotTheVideoTheScreenAdvancedTo() {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
-        #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
 
         // The queue advanced: the screen plays another video now, the stamp still names the claim.
         cast.releaseClaim("other-video", owner: Self.owner)
@@ -267,7 +270,7 @@ struct CastSessionTests {
 
         cast.releaseClaim("xc7keR2piUM", owner: Self.owner)
         #expect(cast.castingClaim?.videoId == nil)
-        #expect(cast.claimForCast(videoId: "other-video", owner: Self.owner, isOfflinePlayback: false),
+        #expect(cast.claimCastSource(videoId: "other-video", owner: Self.owner),
                 "the next video opened during the same session must be able to claim it")
     }
 
@@ -280,7 +283,7 @@ struct CastSessionTests {
     @Test func anOffScreenReleaseGivesBackTheStampButKeepsTheReceiversPosition() {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
-        #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
         cast.sessionWillEnd(position: 300)
 
         cast.releaseClaim("xc7keR2piUM", owner: Self.owner)
@@ -384,11 +387,17 @@ struct CastSessionTests {
             // and the session gone is the same arm: nothing to resume, but the stale claim still
             // has to go, or this screen can never cast this video again. WHICH position it resumes
             // at is `receiverPosition(for:)`'s decision, not this one's.
+            //
+            // R9-7: whether it may PLAY is this screen's own visibility, exactly as on the
+            // `.dropClaim` arm below — the seek is owed either way, the audio is not.
             for paused in [true, false] {
                 for stamp in [Self.claimed, Self.other, nil] {
-                    #expect(CastOwnership.decide(state: ownership(paused: paused, sessionActive: false,
-                                                                  stamp: stamp),
-                                                 trigger: trigger) == .handBack(videoId: Self.claimed))
+                    for visible in [true, false] {
+                        #expect(CastOwnership.decide(state: ownership(paused: paused, sessionActive: false,
+                                                                      stamp: stamp, visible: visible),
+                                                     trigger: trigger)
+                                == .handBack(videoId: Self.claimed, resume: visible))
+                    }
                 }
             }
             // R7-8: but ONLY when the receiver was playing OUR video. A casts X and tab-switches, B
@@ -440,6 +449,17 @@ struct CastSessionTests {
         #expect(CastOwnership.decide(state: ownership(stamp: nil, failure: Self.claimed, visible: true),
                                      trigger: .loadFailed)
                 == .dropClaim(videoId: Self.claimed, resume: true))
+        // R9-2: and that is true while we hold the STAMP too. Cast A (request in flight), tap Up
+        // Next to B: `swapArgs` releases A, B claims and awaits its own resolve, then A's receiver
+        // rejection arrives — attributing it to B raised a false banner, spent B's claim and left
+        // B's own load never issued. Whose load failed is a question about the failure, not about
+        // who happens to be stamped.
+        #expect(CastOwnership.decide(state: ownership(failure: Self.other, failureOwner: Self.otherOwner),
+                                     trigger: .loadFailed) == .none,
+                "another screen's failure must not be reported by the stamped claimant")
+        #expect(CastOwnership.decide(state: ownership(failure: Self.claimed), trigger: .loadFailed)
+                == .reportFailure(videoId: Self.claimed),
+                "our own failure while stamped still takes the banner path")
         // Someone else's failure, and a failure with no claim behind it, are nothing of ours.
         #expect(CastOwnership.decide(state: ownership(stamp: nil, failure: Self.other),
                                      trigger: .loadFailed) == .none)
@@ -510,7 +530,7 @@ struct CastSessionTests {
     @Test func aSessionEndingDuringTheResolveStopsTheCastBeforeThePause() {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
-        #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
         #expect(cast.stillCasting("xc7keR2piUM", owner: Self.owner))
 
         cast.sessionWillEnd(position: 90)
@@ -522,7 +542,7 @@ struct CastSessionTests {
         // stamp names a video this screen no longer plays.
         let advanced = CastController()
         advanced.sessionDidBegin(deviceName: "Living Room TV")
-        #expect(advanced.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
+        #expect(advanced.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
         #expect(advanced.stillCasting("other-video", owner: Self.owner) == false)
     }
 
@@ -588,7 +608,7 @@ struct CastSessionTests {
     @Test func aResumedSessionKeepsTheClaimThePositionAndAnUnreadFailure() {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
-        #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
         cast.recordLoad("xc7keR2piUM", owner: Self.owner)
         // `willEndSession` is the only thing that ever stamps a position, so this is how a test
         // gets one onto a session it is about to suspend.
@@ -618,10 +638,10 @@ struct CastSessionTests {
     @Test func aReclaimAndAHandBackNeedTheReceiverToStillPlayOurVideo() {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
-        #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
         cast.recordLoad("xc7keR2piUM", owner: Self.owner)
         cast.releaseClaim("xc7keR2piUM", owner: Self.owner)
-        #expect(cast.claimForCast(videoId: "other-video", owner: Self.owner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: "other-video", owner: Self.owner))
         cast.recordLoad("other-video", owner: Self.owner)
         cast.releaseClaim("other-video", owner: Self.owner)
 
@@ -915,7 +935,7 @@ struct CastSessionTests {
     @Test func aRejectedLoadLeavesNothingOfOursOnTheReceiver() {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
-        #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
         cast.recordLoad("xc7keR2piUM", owner: Self.owner)
         cast.reportLoadFailure(claim: CastClaim(videoId: "xc7keR2piUM", owner: Self.owner))
         #expect(cast.loadedClaim?.videoId == nil)
@@ -985,7 +1005,7 @@ struct CastSessionTests {
         #expect(player.rate == 0, "and must not start a tab the user cannot see")
         #expect(vm.banner == nil, "the banner belongs to a screen that is on it")
         // (c) the session is usable again — by this screen and by every other one.
-        #expect(cast.claimForCast(videoId: Self.other, owner: Self.otherOwner, isOfflinePlayback: false))
+        #expect(cast.claimCastSource(videoId: Self.other, owner: Self.otherOwner))
     }
 
     /// I2 (cubic-r7 cast fix1): continues the scenario above -- the claim is already gone and the
@@ -1205,7 +1225,7 @@ struct CastSessionTests {
     @Test func aLoadFailureLeavesAnotherScreensVideoOnTheReceiver() {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
-        _ = cast.claimForCast(videoId: Self.claimed, owner: Self.owner, isOfflinePlayback: false)
+        _ = cast.claimCastSource(videoId: Self.claimed, owner: Self.owner)
         cast.recordLoad(Self.claimed, owner: Self.owner)
         // A goes off screen; the receiver keeps playing it
         cast.releaseClaim(Self.claimed, owner: Self.owner)
@@ -1217,5 +1237,106 @@ struct CastSessionTests {
                 "another screen's failure must not erase what the receiver is actually playing")
         cast.sessionWillEnd(position: 77)
         #expect(cast.receiverPosition(for: Self.claimed, owner: Self.owner) == 77)
+    }
+
+    // MARK: - Cubic round 9
+
+    /// R9-1: `startCast` claimed the session BEFORE checking the screen still plays that video, and
+    /// the bail path never undid the claim. An Up Next tap whose `swapArgs` lands between
+    /// `.startCast(A)` being enqueued and executed left the session stamped for A while the phone
+    /// played B: B's own start found a foreign stamp and returned, and every later reconcile decided
+    /// `.none` because the stamp names a video this screen no longer plays — phone on B, TV idle,
+    /// for the rest of the session.
+    @Test func anAdvanceThatBeatsAnEnqueuedStartLeavesNoStampForTheVideoThatIsGone() async {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast,
+                               args: PlayerArgs(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
+        vm.currentPlayer = AVPlayer()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+
+        // The enqueued start for A never gets the actor before the tap: `play(at:)` is same-actor
+        // async, so its `swapArgs` runs before the `Task` `reconcile` created can be scheduled.
+        vm.reconcile(.videoStarted)
+        await vm.play(at: 1)
+        await settle()
+
+        #expect(vm.args.videoId == "b")
+        #expect(cast.castingClaim == CastClaim(videoId: "b", owner: vm.castOwner),
+                "a video the screen no longer plays must claim nothing")
+        #expect(vm.claimedVideoId == "b")
+        #expect(vm.pausedForCast, "and B casts normally")
+    }
+
+    /// R9-5: `.adopt` is reachable on a screen with no player at all (`start` never checks
+    /// `state.resolved`), so `pauseForCast()` records the intent with `currentPlayer == nil`. The
+    /// hand-back then returned at the player guard with the flag still set and nothing left to
+    /// clear it — the next Retry built a player that never autoplayed.
+    @Test func aHandBackWithNoPlayerStillSpendsTheCastPause() async {
+        let vm = makeCastModel(RecordingResolver(.hls))
+        await vm.open()
+        #expect(vm.currentPlayer == nil, "no host has run — that is the whole case")
+
+        vm.pauseForCast()
+        #expect(vm.pausedForCast)
+        vm.resumeAfterCast(at: nil)
+        #expect(vm.pausedForCast == false,
+                "a pause nothing can undo makes the next player build silently paused")
+    }
+
+    /// R9-6: session live, the video's own resolve throws, so the mount's `.startCast` finds nothing
+    /// castable and the failure drops the claim. Retry then lands `.ready` and the phone plays — but
+    /// nothing reconciled, and `.appear` with no claim is `.none`, so the TV stayed idle with the
+    /// session connected until the next advance or a reconnect.
+    @Test func aRetryThatFixesTheStreamCastsItAfterTheFailedStartDroppedTheClaim() async {
+        let cast = CastController()
+        let resolver = RecordingResolver(.failure(.transport("no stream")))
+        let vm = makeCastModel(resolver, cast: cast)
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+        vm.didMount()
+        await settle()
+        #expect(cast.lastLoadFailure != nil, "nothing castable is the same failure a refusal is")
+        vm.reconcile(.loadFailed)                 // what `PlayerScreen`'s `.onChange` arm does
+        #expect(vm.claimedVideoId == nil, "the spent claim goes")
+
+        resolver.outcome = .hls
+        await vm.retry()
+        await settle()
+        #expect(vm.claimedVideoId == Self.claimed, "a retry that lands playable is a video starting")
+        #expect(cast.castingClaim == CastClaim(videoId: Self.claimed, owner: vm.castOwner))
+        #expect(vm.pausedForCast, "the receiver owns playback again")
+    }
+
+    /// R9-7: `.dropClaim` gates its resume on visibility — playing on a mounted tab the user cannot
+    /// see is the audio bug it exists to avoid — while `.handBack` beside it seeked AND played
+    /// unconditionally. Same rule for both: the SEEK is position, which is state, so it always
+    /// happens; the PLAY waits for the screen to be the one on screen.
+    @Test func aHiddenClaimantsHandBackSeeksNowAndPlaysOnTheNextAppear() async throws {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+        let player = try #require(phonePlayer(vm))
+        vm.currentPlayer = player
+        vm.reconcile(.appear)
+        vm.reconcile(.videoStarted)
+        await settle()
+        #expect(vm.pausedForCast)
+        cast.recordLoad(Self.claimed, owner: vm.castOwner)   // the receiver really played ours
+
+        vm.reconcile(.disappear)                             // the user is on another tab now
+        cast.sessionWillEnd(position: 512)
+        cast.sessionDidEnd()
+        vm.reconcile(.sessionChanged)
+
+        #expect(vm.currentTime == 512, "position is state: the seek is owed either way")
+        #expect(player.rate == 0, "but a tab nobody is looking at must not start playing")
+
+        vm.reconcile(.appear)
+        #expect(player.rate == 1, "the next appearance is what plays it")
+        player.pause()                                       // the user's own pause
+        vm.reconcile(.appear)
+        #expect(player.rate == 0, "and the flag is spent exactly once")
     }
 }

@@ -162,10 +162,16 @@ import SwiftUI
 
     // MARK: - Session ownership
 
-    /// Claims this session for `owner`'s `videoId`. `false` means another mounted `PlayerScreen`
-    /// already owns it and this one must not resolve, load or pause anything -- including a screen
-    /// showing the SAME video, which is a non-owner like any other. The owner's own re-claim on
-    /// re-appear still succeeds.
+    /// Claims this session for `owner`'s `videoId`, and nothing else: the compare-and-swap on the
+    /// stamp. `false` means another mounted `PlayerScreen` already owns it and this one must not
+    /// resolve, load or pause anything -- including a screen showing the SAME video, which is a
+    /// non-owner like any other. The owner's own re-claim on re-appear still succeeds.
+    ///
+    /// R9-12: it is NOT the start decision -- `CastOwnership.canStart` is, and the preconditions
+    /// this used to restate ("session active, not offline, stamp free-or-ours") had to be changed
+    /// in lockstep in two places. The offline fact in particular is the PLAYER's, which this type's
+    /// own header says it must not hold. `PlayerViewModel.startCast` re-reads `isSessionActive`
+    /// beside this call because its decision was taken before its task got the actor.
     @discardableResult
     func claimCastSource(videoId: String, owner: UUID) -> Bool {
         let claim = CastClaim(videoId: videoId, owner: owner)
@@ -174,19 +180,6 @@ import SwiftUI
             return true
         }
         return castingClaim == claim
-    }
-
-    /// The ONE start decision, run both by the session TRANSITION and by a screen that MOUNTS
-    /// into a live session: a session is up, this is not an offline player (a sandbox file is never
-    /// castable), and the claim is winnable. Claims as a side effect when it answers true, exactly
-    /// like `claimCastSource`.
-    ///
-    /// Both callers are needed because `.onChange(of: isSessionActive)` fires only on transitions:
-    /// on its own it leaves the phone playing locally while the TV keeps the old video whenever the
-    /// receiver was connected before this video was opened.
-    func claimForCast(videoId: String, owner: UUID, isOfflinePlayback: Bool) -> Bool {
-        guard isSessionActive, !isOfflinePlayback else { return false }
-        return claimCastSource(videoId: videoId, owner: owner)
     }
 
     /// The claiming screen went OFF SCREEN: give the stamp back so the next video opened during

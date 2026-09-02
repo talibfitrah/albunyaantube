@@ -92,6 +92,12 @@ struct MainShellView: View {
                         .opacity(tab == router.selectedTab ? 1 : 0)
                         .allowsHitTesting(tab == router.selectedTab)
                         .accessibilityHidden(tab != router.selectedTab)
+                        // T0-1: an opacity change fires neither `.onAppear` nor `.onDisappear`, so
+                        // a hidden tab's content had no way to know it was hidden -- and a cast
+                        // claimant sitting on one decided `resume: true` and played audio the user
+                        // cannot see. The three modifiers above already say "hidden" to layout,
+                        // hit-testing and VoiceOver; this says it to the content itself.
+                        .environment(\.tabIsSelected, tab == router.selectedTab)
                 }
             }
         }
@@ -207,6 +213,16 @@ struct MainShellView: View {
         }
     }
 
+}
+
+extension EnvironmentValues {
+    /// T0-1: whether the tab this subtree lives in is the SELECTED one. Written only by
+    /// `railStacks`, which is the one layout that keeps unselected tabs mounted — the compact
+    /// `TabView` never sets it, so its content keeps reading the default and behaves exactly as
+    /// before. `true` is that default for the same reason `isVisible` is false until the first
+    /// `.appear`: a screen with nobody publishing a signal is a screen presented normally
+    /// (a sheet, a preview, a test), and the safe answer there is "you are on screen".
+    @Entry var tabIsSelected: Bool = true
 }
 
 #if DEBUG

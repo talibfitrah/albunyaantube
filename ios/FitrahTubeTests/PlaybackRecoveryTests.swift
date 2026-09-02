@@ -268,7 +268,7 @@ struct PlaybackRecoveryTests {
 
         func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                      sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                     requiresMuxed: Bool) async throws -> Resolved {
             let index = calls.count
             calls.append(forceRefresh)
             if calls.count == gatedCallIndex, let gate { await gate.block() }

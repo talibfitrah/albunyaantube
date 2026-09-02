@@ -54,7 +54,7 @@ struct PlayerViewModelTests {
 
         func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                      sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                     requiresMuxed: Bool) async throws -> Resolved {
             calls.append((purpose, sourceChannelId, forceRefresh))
             // The outcome is picked by *registration* order (this call's index), not removed off a
             // shared queue after the gate -- otherwise a later, ungated call racing past a blocked

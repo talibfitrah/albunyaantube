@@ -37,6 +37,15 @@ struct MainShellRoutingTests {
         #expect(leafTypeName(for: .offline) == "SavedScreen")
     }
 
+    /// T0-1: `railStacks` is the only publisher of `\.tabIsSelected` — the compact `TabView` sets
+    /// nothing, and neither does a sheet, a preview or a test host. So the DEFAULT is what every
+    /// one of those readers gets, and it has to mean "you are on screen": `false` there would have
+    /// `PlayerScreen`'s `.onChange` arm reconcile `.disappear` on a player nobody hid, releasing
+    /// its cast stamp and refusing to resume the phone on hand-back.
+    @Test func anUnpublishedTabVisibilitySignalReadsAsOnScreen() {
+        #expect(EnvironmentValues().tabIsSelected)
+    }
+
     @Test func theWalkerReachesADistinctLeafPerRoute() {
         // Guards the helper: Plan C Task 5 gave the last route its screen, so no placeholder route is
         // left to pin; two different routes resolving to two different leaves proves the walker
