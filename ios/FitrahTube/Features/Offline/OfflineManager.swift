@@ -107,6 +107,14 @@ actor OfflineManager: OfflineSaving {
     /// alternative is a relaunch that silently starts downloads nobody asked for — and it is why
     /// this stays in memory instead of becoming a persisted column.
     private var gatePausedIds: Set<String> = []
+    /// Ids a USER asked to pause, marked SYNCHRONOUSLY by `pause(_:)` before any suspension.
+    /// `gateDidChange`'s close leg writes `.paused` and only THEN suspends in `engine.pause`, so a
+    /// tap made while the row still rendered `.running` lands inside that hop, finds the row already
+    /// `.paused`, and `pauseIfRunning` returns false — the leg would otherwise mark as its own a row
+    /// the user asked to stop, and the next re-open would resume it (R9-11). The leg clears the mark
+    /// before its own hop (a stale one from a pause the user has since resumed is not evidence) and
+    /// re-reads it after: a user pause outranks gate bookkeeping wherever it lands.
+    private var userPausedIds: Set<String> = []
     /// Ids that already spent their one re-resolve on a 403.
     private var reResolvedAfter403: Set<String> = []
     /// Ids whose next resolve must bypass the manifest cache — the 403 re-resolve's intent, held
@@ -159,7 +167,13 @@ actor OfflineManager: OfflineSaving {
         await schedule()
     }
 
-    func pause(_ id: String) async { _ = await pauseIfRunning(id) }
+    func pause(_ id: String) async {
+        // Marked before the first suspension, because the guard below can find nothing left to do
+        // and still owe the gate an answer (R9-11) — this is the USER's entry point, and the gate's
+        // close leg calls `pauseIfRunning` directly.
+        userPausedIds.insert(id)
+        _ = await pauseIfRunning(id)
+    }
 
     /// Returns whether THIS call is what paused the row — the gate's close leg needs to know, and
     /// nothing else does.
@@ -180,12 +194,19 @@ actor OfflineManager: OfflineSaving {
         await transition(id, .pause)
         let resumeData = await engine.pause(id: id)
         active.remove(id)
-        await write { store in
-            // Still-paused guard: a `.finished` racing this pause may have completed the row
-            // while `engine.pause` was in flight — never scribble resume data onto it.
-            guard let item = store.item(id: id), item.status == OfflineStatus.paused.rawValue else { return }
-            item.resumeData = resumeData
-            try store.save()
+        // Only a NON-NIL token is written (R9-10). Nil is "I have nothing to add", not "there is
+        // nothing": after a relaunch, before the adopted walk's first callback registers `walks[id]`
+        // (and at a chunk boundary with no task live), the engine returns nil while the token the
+        // PREVIOUS launch's `engine.start` persisted still names the partial on disk. Erasing it
+        // sent the next Resume down the resolve path, and `engine.start` deletes the partial.
+        if let resumeData {
+            await write { store in
+                // Still-paused guard: a `.finished` racing this pause may have completed the row
+                // while `engine.pause` was in flight — never scribble resume data onto it.
+                guard let item = store.item(id: id), item.status == OfflineStatus.paused.rawValue else { return }
+                item.resumeData = resumeData
+                try store.save()
+            }
         }
         await schedule()
         return true
@@ -335,7 +356,7 @@ actor OfflineManager: OfflineSaving {
                 checked += 1
                 let answer = await gate(row.videoId)
                 if case .unreachable = answer { unreachable += 1 }
-                action = OfflineSweep.decide(completedAt: row.completedAt, now: current, gate: answer)
+                action = OfflineSweep.decide(gate: answer)
             }
             switch action {
             case .keep: break
@@ -378,7 +399,14 @@ actor OfflineManager: OfflineSaving {
                 // itself — but one still suspended in `engine.pause` leaves the row reading
                 // `.paused` with its claim intact, and marking that one would hand the next gate
                 // re-open a row the user had paused (the invariant `pause` protects above).
-                if await pauseIfRunning(row.id) { gatePausedIds.insert(row.id) }
+                //
+                // The mark is cleared first — a pause the user has since RESUMED says nothing about
+                // this hop — and re-read after it, because the tap can also land INSIDE the hop, on
+                // a row this leg has already written `.paused`: `pauseIfRunning` then returns true
+                // to the leg and false to the user, and only the mark says who owns the row (R9-11).
+                userPausedIds.remove(row.id)
+                let paused = await pauseIfRunning(row.id)
+                if paused, userPausedIds.remove(row.id) == nil { gatePausedIds.insert(row.id) }
             }
             // The gate can re-open inside those awaits, and that re-open's own allow leg
             // snapshotted the parked set BEFORE this leg inserted into it — so re-checking here is
@@ -397,10 +425,15 @@ actor OfflineManager: OfflineSaving {
     /// ponytail: restores every parked row, which briefly exceeds the serial floor (CF-D-5) if two
     /// were somehow running — that is a faithful restore of the pre-gate state; add a
     /// one-at-a-time drain if per-item concurrency ever lands.
+    ///
+    /// The set is NOT drained here (R9-3): each id leaves it inside `begin`, once that funnel is
+    /// past the two gates that put it there. Clearing up front handed `begin`'s kill-switch and
+    /// cellular refusals — both of which `release` silently — a row that had already left the set:
+    /// `.paused` outside it, which `schedule()` (queued-only) and every later re-open skip, so the
+    /// row read "Paused" until a manual Resume. `for id in gatePausedIds` iterates a value-type
+    /// snapshot, so `begin` removing from the set mid-loop is safe.
     private func resumeGateParked() async {
-        let parked = gatePausedIds
-        gatePausedIds.removeAll()
-        for id in parked { await resume(id, userInitiated: false) }
+        for id in gatePausedIds { await resume(id, userInitiated: false) }
         await schedule()
     }
 
@@ -486,8 +519,15 @@ actor OfflineManager: OfflineSaving {
                 // resume data names the dead URL. The intent is armed here and SPENT by the walk
                 // that answers, so a limiter park between the two cannot swallow it.
                 pendingForceRefresh.insert(id)
+                // The walk this 403 ended is not coming back, so its claim goes with it — the same
+                // thing every sibling arm's `fail` → `forget` does, and what lets `begin` (which
+                // refuses a row already in `active`) take the row from here.
+                active.remove(id)
                 await write { store in
-                    guard let item = store.item(id: id) else { return }
+                    // Still-running guard, the `pause` write's: a cancel or a completion racing
+                    // this hop must not be written back to `.queued`.
+                    guard let item = store.item(id: id),
+                          item.status == OfflineStatus.running.rawValue else { return }
                     // Back to queued directly (no running→queued transition exists): a limiter
                     // block on the re-resolve then leaves an honest queued row, not a taskless
                     // running one.
@@ -496,8 +536,18 @@ actor OfflineManager: OfflineSaving {
                     item.bytesWritten = 0
                     try store.save()
                 }
-                guard let requeued = await read(id: id) else { return }
-                await resolveAndStart(requeued, forceRefresh: true)
+                // A CALLER of the one start funnel, never a peer that adopts whatever attempt is
+                // live (R9-4). The write above is a whole suspension: on a background-events
+                // relaunch `reattach()` re-queues this very row inside it and `schedule()` → `begin`
+                // claims it, and the old shape then drove the same row twice — a wasted
+                // rate-limited InnerTube POST in one ordering, `begin`'s refused transition
+                // releasing the claim the 403 walk was running under in the other. Re-read, and only
+                // a still-`.queued` row is re-entered: a cancelled, deleted, completed or
+                // already-re-claimed row spends no limiter attempt and no resolve (R9-9). `begin`
+                // claims, re-consults the kill-switch and both gates, and `pendingForceRefresh`
+                // carries the cache bypass into its `resolveAndStart`.
+                guard let requeued = await read(id: id), requeued.status == .queued else { return }
+                await begin(requeued)
             case .http(403, _): await fail(id, .http403)
             // A throttle leaves the `.tmp` untouched like any other transient status, so the token
             // rides the failure and the retry continues the walk instead of re-downloading it.
@@ -566,6 +616,11 @@ actor OfflineManager: OfflineSaving {
             if userInitiated { await note(row.id, .network) }
             return
         }
+        // Past both gates, so a gate pause is discharged HERE and nowhere else (R9-3): the two
+        // refusals above leave the id parked for the next re-open to retry, and everything below
+        // either runs the row, fails it (`fail` → `forget` clears the set) or parks it `.queued`,
+        // which `schedule()` picks up on its own. A no-op for every row the gate never paused.
+        gatePausedIds.remove(row.id)
         // The per-video gate, fail-CLOSED. This funnel is what every byte-writing walk rides — a
         // scheduler pick, a user Resume, `reattach()`'s re-queue, a cellular re-open, the
         // kill-switch kick — and without it they would all start on authorization that could be
@@ -961,6 +1016,7 @@ actor OfflineManager: OfflineSaving {
         retries[id]?.task.cancel()
         retries[id] = nil
         gatePausedIds.remove(id)
+        userPausedIds.remove(id)
         reResolvedAfter403.remove(id)
         pendingForceRefresh.remove(id)
         lastProgressPersist[id] = nil

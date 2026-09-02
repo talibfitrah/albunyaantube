@@ -407,6 +407,70 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: id)?.errorCode == "HTTP_403")
     }
 
+    /// Cubic R9-4: the handler re-entered `resolveAndStart` with NO claim of its own, so it adopted
+    /// whatever attempt was live. On a background-events relaunch whose pending chunk 403s, its
+    /// write hop is exactly where `reattach()` re-queues the same row and `schedule()` → `begin`
+    /// claims it — one row, two drivers: a wasted rate-limited InnerTube POST in one ordering, a
+    /// released claim under a live walk in the other. The handler is a CALLER of the one start
+    /// funnel now, so the row is claimed once and resolved once.
+    @Test func aRelaunch403ThatBeatsReattachResolvesTheRowExactlyOnce() async throws {
+        let first = makeRig(.hls); defer { first.cleanUp() }
+        let id = await save(first)
+        #expect(first.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+
+        // The relaunch: the session's pending 403 is delivered before either `reattach()` caller
+        // has run, so nothing holds a claim when the handler starts.
+        let rig = makeRig(.hls, relaunching: first)
+        await rig.manager.handle(.failed(id: id, failure: .http(status: 403, resumeData: nil)))
+        await rig.manager.reattach()
+
+        #expect(rig.resolver.calls.map(\.forceRefresh) == [true],
+                "one forced re-resolve for the row, not one per driver")
+        #expect(rig.engine.starts.map(\.id) == [id])
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+    }
+
+    /// Cubic R9-9, the same funnel's cheaper half: a cancel landing inside the handler's flight
+    /// still spent a resolve, because nothing checked currency before the limiter and the InnerTube
+    /// POST — and the recorded `.prefetch` attempt then parked the user's next Retry of that video
+    /// for up to 30 s. `begin`'s claim, re-read and transition guard now sit in front of the spend.
+    ///
+    /// Scripted, not raced: the cancel parks inside `engine.cancel` (past its own row read, before
+    /// it drops the claim) so the row still reads `.running` when the 403 arrives, and the restart
+    /// parks in the kill-switch consult — the first thing `begin` does after claiming — so the
+    /// cancel completes while it is suspended there.
+    @Test func aCancelInsideThe403HandlersFlightSpendsNoResolve() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let flags = rig.flags
+        let id = await save(rig)
+        let resolvesAfterTheSave = rig.resolver.calls.count
+        let limiterCallsAfterTheSave = flags.limiterCalls
+
+        rig.engine.cancelHeld = [id]
+        let cancelTask = Task { await rig.manager.cancel(id) }
+        await waitUntil { rig.engine.cancelEntered.contains(id) }
+
+        flags.killSwitchHeld = true
+        flags.downloadsEnabled = { @Sendable in
+            _ = flags.countKillSwitchCall()
+            await FakeOfflineEngine.hold(while: { flags.killSwitchHeld }, what: "kill-switch consult")
+            return true
+        }
+        let handled = Task {
+            await rig.manager.handle(.failed(id: id, failure: .http(status: 403, resumeData: nil)))
+        }
+        await waitUntil { flags.killSwitchCalls == 1 }
+        rig.engine.cancelHeld = []
+        await cancelTask.value
+        flags.killSwitchHeld = false
+        await handled.value
+
+        #expect(rig.resolver.calls.count == resolvesAfterTheSave, "a cancelled row spends no re-resolve")
+        #expect(flags.limiterCalls == limiterCallsAfterTheSave, "nor a rate-limited attempt")
+        #expect(rig.engine.starts.count == 1, "and no second walk")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.cancelled.rawValue)
+    }
+
     /// A transient 5xx/416 is a NETWORK failure with the `.tmp` still on disk, so the row must keep
     /// the resume token: `retry` → `begin` resumes only when the row carries one, and `engine.start`
     /// deletes the partial — a 503 used to throw away the whole download.
@@ -1182,6 +1246,32 @@ struct OfflineManagerTests {
         #expect(relaunched.resolver.calls.isEmpty, "and it costs no re-resolve")
     }
 
+    /// Cubic R9-10: `pauseIfRunning` stored whatever `engine.pause` returned. After a relaunch,
+    /// before the adopted walk's first delegate callback registers `walks[id]`, the engine hands
+    /// back nil — and the token the PREVIOUS launch's `engine.start` persisted was erased, so the
+    /// next Resume took the resolve path and `engine.start` deleted the partial. A nil is "I have
+    /// nothing to add", never "there is nothing".
+    @Test func aPauseTheEngineCannotTokenizeKeepsThePersistedResumeToken() async throws {
+        let first = makeRig(.hls); defer { first.cleanUp() }
+        let id = await save(first)
+        #expect(first.persisted(id: id)?.resumeData == Data("RD".utf8))
+
+        let rig = makeRig(.hls, relaunching: first)
+        rig.engine.live = [id]
+        await rig.manager.reattach()
+        rig.engine.pauseResumeData = nil     // the adopted walk has registered nothing yet
+        await rig.manager.pause(id)
+
+        #expect(rig.persisted(id: id)?.resumeData == Data("RD".utf8),
+                "the previous launch's token still names the partial on disk")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        await rig.manager.resume(id)
+        #expect(rig.engine.resumes.map(\.id) == [id], "so the Resume continues the partial")
+        #expect(rig.engine.starts.isEmpty, "a restart would delete a nearly complete partial")
+        #expect(rig.resolver.calls.isEmpty, "and it costs no re-resolve")
+    }
+
     /// Cubic R2-3: on a background-events relaunch the session's pending delegate callbacks and
     /// `liveIds()`'s `getAllTasks` are both async on the delegate queue with no ordering
     /// guarantee. When the final chunk's finish lands first, `reattach()` sees no live task and
@@ -1534,6 +1624,35 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: second)?.status == OfflineStatus.paused.rawValue)
     }
 
+    /// Cubic R9-11, the interleaving the 168-177 comment does NOT cover: the leg writes `.paused`
+    /// and only THEN suspends in `engine.pause`. A user Pause dispatched while the row still
+    /// rendered `.running` finds nothing in `gatePausedIds` (the leg has not inserted yet), reads
+    /// `.paused`, and returns false — so the leg went on to mark as its own a row the user had asked
+    /// to stop, and the next re-open resumed it. A user pause outranks the bookkeeping whether it
+    /// lands before, during or after the leg's own hop.
+    @Test func aUserPauseInsideTheGatesOwnEnginePauseIsNotAdoptedByTheGate() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.cellular = true
+        let id = await save(rig)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+
+        rig.engine.pauseHeld = [id]
+        rig.flags.wifiOnly = true
+        let close = Task { await rig.manager.gateDidChange() }
+        await waitUntil { rig.engine.pauseEntered.contains(id) }
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue,
+                "the leg writes `.paused` before it suspends — the tap was made on a row reading Running")
+
+        await rig.manager.pause(id)   // the user's tap, landing inside the leg's own hop
+        rig.engine.pauseHeld = []
+        await close.value
+
+        rig.flags.cellular = false
+        await rig.manager.gateDidChange()   // the re-open must find nothing of its own to resume
+        #expect(rig.engine.resumes.isEmpty, "a user pause must wait for the user, not for the gate")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+    }
+
     /// Carried minor (B-offline loop): `resumeGateParked` went through `resume(_:)`, which marks its
     /// refusals `userInitiated` — R5-3's remedy for a button that appears to do nothing. A cellular
     /// re-open meeting an unreachable per-video gate therefore noted NETWORK on a row nobody
@@ -1554,6 +1673,68 @@ struct OfflineManagerTests {
         #expect(row.status == OfflineStatus.queued.rawValue, "wait-don't-skip, exactly like a save")
         #expect(row.errorCode == nil, "nobody tapped anything, so there is nothing to explain")
         #expect(await rig.manager.pendingRetryIds == [id])
+    }
+
+    /// Cubic R9-3: `resumeGateParked` cleared `gatePausedIds` BEFORE `begin` had agreed to run, and
+    /// `begin`'s kill-switch refusal `release`s silently. A row the gate parked therefore LEFT the
+    /// set on a re-open that refused it: `.paused` outside the set, which `schedule()` (queued-only)
+    /// and every later re-open skip — "Paused" until a manual Resume, the exact end state this path
+    /// exists to prevent. The id leaves the set only when `begin` is past its gates.
+    @Test func aKillSwitchRefusedGateReOpenLeavesTheRowParkedForTheNextOne() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let flags = rig.flags
+        flags.cellular = true
+        let id = await save(rig)
+        flags.wifiOnly = true
+        await rig.manager.gateDidChange()          // the gate parks the row
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        flags.downloadsEnabled = { @Sendable in false }   // saving switched off remotely…
+        flags.cellular = false                            // …and the path comes back
+        await rig.manager.gateDidChange()
+        #expect(rig.engine.resumes.isEmpty)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+        #expect(rig.persisted(id: id)?.errorCode == nil, "the kill-switch never announces itself")
+
+        flags.downloadsEnabled = { @Sendable in true }    // back on, and the next gate event
+        flags.wifiOnly = false                            // still finds the row parked
+        await rig.manager.gateDidChange()
+        #expect(rig.engine.resumes.map(\.id) == [id])
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+    }
+
+    /// The same finding's other path: the gate re-opens, `resumeGateParked` hands the row to
+    /// `begin`, and the path flaps back to cellular INSIDE `begin`'s own kill-switch await — after
+    /// `gateDidChange`'s check, before `begin`'s. That refusal must leave the row parked for the
+    /// next re-open too, not stranded outside the set.
+    @Test func aPathFlapInsideTheGateReOpenLeavesTheRowParkedForTheNextOne() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let flags = rig.flags
+        flags.cellular = true
+        let id = await save(rig)
+        flags.wifiOnly = true
+        await rig.manager.gateDidChange()
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        flags.killSwitchHeld = true
+        flags.downloadsEnabled = { @Sendable in
+            _ = flags.countKillSwitchCall()
+            await FakeOfflineEngine.hold(while: { flags.killSwitchHeld }, what: "kill-switch consult")
+            return true
+        }
+        flags.cellular = false
+        let reOpen = Task { await rig.manager.gateDidChange() }
+        await waitUntil { flags.killSwitchCalls == 1 }
+        flags.cellular = true              // the flap, inside `begin`'s own await
+        flags.killSwitchHeld = false
+        await reOpen.value
+        #expect(rig.engine.resumes.isEmpty)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        flags.cellular = false
+        await rig.manager.gateDidChange()
+        #expect(rig.engine.resumes.map(\.id) == [id])
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
     }
 
     /// The preserve clause of the same finding: a row the USER paused still waits for the

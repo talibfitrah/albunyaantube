@@ -80,36 +80,38 @@ struct OfflineEngineTests {
     private let now = Date(timeIntervalSince1970: 1_756_600_000)
     private let day: TimeInterval = 86_400
 
-    @Test func expiredUnderGraceIsKept() {
+    // Cubic R9-13: the TTL has ONE spelling, the pre-check `OfflineManager.sweep()` runs before it
+    // spends a gate GET. These two pin its grace boundary directly; `decide` below answers the gate
+    // half only, and `anExpiredRowStillDeletesWhileTheGateVerdictsAreBelted` (OfflineManagerTests)
+    // pins that the manager still asks the TTL first.
+    @Test func expiredUnderGraceIsNotYetExpired() {
         // 30 days + 30 minutes: past TTL, inside the 1 h grace — kept.
         let completedAt = now.addingTimeInterval(-(30 * day + 1_800))
-        #expect(OfflineSweep.decide(completedAt: completedAt, now: now, gate: .allowed) == .keep)
+        #expect(OfflineSweep.isExpired(completedAt: completedAt, now: now) == false)
     }
 
-    @Test func expiredPastGraceIsDeletedRegardlessOfTheGateAnswer() {
+    @Test func expiredPastGraceIsExpired() {
         let completedAt = now.addingTimeInterval(-(30 * day + 2 * 3_600))
-        for gate: GateAnswer in [.allowed, .notAllowed, .gone, .unreachable] {
-            #expect(OfflineSweep.decide(completedAt: completedAt, now: now, gate: gate) == .deleteExpired)
-        }
+        #expect(OfflineSweep.isExpired(completedAt: completedAt, now: now))
     }
 
     @Test func aCatalogRemovalDeletes() {
         // 410/404 → the ruling's auto-delete on catalog removal.
-        #expect(OfflineSweep.decide(completedAt: now.addingTimeInterval(-day), now: now, gate: .gone) == .deleteRemoved)
+        #expect(OfflineSweep.decide(gate: .gone) == .deleteRemoved)
     }
 
     @Test func aGateFlipDeletes() {
         // fork C: an admin turning `offlineAllowed` off is the same-day remedy path.
-        #expect(OfflineSweep.decide(completedAt: now.addingTimeInterval(-day), now: now, gate: .notAllowed) == .deleteGateRevoked)
+        #expect(OfflineSweep.decide(gate: .notAllowed) == .deleteGateRevoked)
     }
 
     @Test func anUnreachableGateKeepsTheCopy() {
         // fail-open: never mass-delete a library because the phone was offline.
-        #expect(OfflineSweep.decide(completedAt: now.addingTimeInterval(-day), now: now, gate: .unreachable) == .keep)
+        #expect(OfflineSweep.decide(gate: .unreachable) == .keep)
     }
 
-    @Test func freshAndAllowedKeeps() {
-        #expect(OfflineSweep.decide(completedAt: now.addingTimeInterval(-day), now: now, gate: .allowed) == .keep)
+    @Test func anAllowedGateKeeps() {
+        #expect(OfflineSweep.decide(gate: .allowed) == .keep)
     }
 
     // MARK: - Storage (file layout + footer math)

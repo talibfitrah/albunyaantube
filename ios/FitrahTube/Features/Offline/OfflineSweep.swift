@@ -30,10 +30,11 @@ nonisolated enum OfflineSweep {
         now.timeIntervalSince(completedAt) > ttl + grace
     }
 
-    /// `completedAt` is nil for a row that never finished — the TTL has nothing to age, and only
-    /// the gate half of the table applies (Task 7's sweep walks every row, not only completed ones).
-    static func decide(completedAt: Date?, now: Date, gate: GateAnswer) -> SweepAction {
-        if let completedAt, isExpired(completedAt: completedAt, now: now) { return .deleteExpired }
+    /// The GATE half of the table, and only that half: `OfflineManager.sweep()` answers the TTL
+    /// itself with `isExpired` above — before it spends the gate GET — and calls this for the rows
+    /// that survive, so a `completedAt`/`now` arm here was reachable from tests alone and gave the
+    /// TTL-first rule two spellings to keep in step (R9-13). One rule, one place.
+    static func decide(gate: GateAnswer) -> SweepAction {
         switch gate {
         case .gone:
             // Catalog removal → the owner ruling's auto-delete.
