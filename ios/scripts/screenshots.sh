@@ -24,6 +24,9 @@ else
 fi
 
 cd "$ROOT/ios" || exit 1
+# Same pre-stage as test.sh (CF-D-7): project.yml names the gitignored Vendor/ Cast SDK, so a
+# fresh checkout would fail at build time with a missing framework instead of fetching it once.
+[ -d Vendor/GoogleCast.xcframework ] || ./scripts/fetch-cast-sdk.sh || exit $?
 xcodegen generate >/dev/null || exit $?
 
 status=0

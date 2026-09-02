@@ -120,8 +120,13 @@ struct PlayerToolbarTests {
 
     /// Spec §10's "Cast SDK is not loaded at all when `GCKCastContext` cannot be created": a
     /// controller whose `setUp()` never ran (or ran and failed) leaves `castAvailable == false`,
-    /// and the toolbar then has no cast slot at all -- not a disabled one. Fixture container, so
-    /// nothing here creates a Cast context.
+    /// and the toolbar then has no cast slot at all -- not a disabled one.
+    ///
+    /// Note (review Minor 8): the test HOST is the app, whose `AppDelegate.didFinishLaunching`
+    /// has already created a real shared `GCKCastContext` in this process. That is why the
+    /// assertion below is about a fresh container's controller and not about the process:
+    /// `castAvailable` is per-instance and only `setUp()` writes it, so a fixture container that
+    /// never called it reports false regardless. `PlayerToolbarLayoutTests` pins the render.
     @Test func theCastSlotIsHiddenUntilTheCastContextExists() {
         #expect(AppContainer.fake().castController.castAvailable == false)
         #expect(CastAffordance.isVisible(castAvailable: false, isOfflinePlayback: false) == false)
@@ -207,5 +212,30 @@ struct PlayerToolbarLayoutTests {
         let narrow4 = idealSize(gate: .allowed, width: 320)
         #expect(narrow4.height <= narrow3.height + 130,
                 "four-button toolbar no longer fits one row at 320pt: \(narrow3.height) -> \(narrow4.height)")
+    }
+
+    /// Task 8 fix round 1 (review Minor 7): the requirement is "the TOOLBAR hides the button", and
+    /// asserting `CastAffordance.isVisible`'s truth table alone stays green if someone drops the
+    /// guard from the view. Same `ImageRenderer` width discriminator the Save slot uses above; the
+    /// `setUp()` in the middle picks up the shared `GCKCastContext` the app host's own launch
+    /// already created, which is all `castAvailable` needs.
+    @Test func theToolbarItselfShowsTheCastSlotOnlyWhenAvailableAndNotOffline() {
+        let container = AppContainer.fake(
+            defaults: UserDefaults(suiteName: "PlayerToolbarLayoutTests.\(UUID().uuidString)")!)
+        func width(offline: Bool) -> CGFloat {
+            let toolbar = PlayerToolbar(args: PlayerArgs(videoId: "layout", title: "Layout"),
+                                        saveGate: nil, saveEnabled: true, isOfflinePlayback: offline)
+                .environment(\.container, container)
+            return ImageRenderer(content: toolbar).uiImage?.size.width ?? 0
+        }
+        let hidden = width(offline: false)
+        #expect(container.castController.castAvailable == false)
+
+        container.castController.setUp()
+        #expect(container.castController.castAvailable, "the app host's launch never created a context")
+        #expect(width(offline: false) > hidden, "castAvailable added no width — the toolbar ignores it")
+        // Task 7's flag still wins: an offline player never offers cast (a sandboxed file no
+        // receiver can fetch), even with a live context.
+        #expect(width(offline: true) == hidden, "the offline player still rendered a cast slot")
     }
 }

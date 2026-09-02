@@ -2690,7 +2690,9 @@ final class ScreenshotTests: XCTestCase {
             let save = app.buttons["player.saveButton"]
             XCTAssertTrue(save.waitForExistence(timeout: 10),
                           "phase3-player-save-cast/\(locale.key): the save slot never appeared")
-            let cast = app.otherElements["player.castButton"]
+            // `buttons`, not `otherElements` (fix round 1, review Important 3): the accessibility
+            // element is now the `GCKUICastButton` itself, so it carries the button trait.
+            let cast = app.buttons["player.castButton"]
             XCTAssertTrue(cast.waitForExistence(timeout: 10),
                           "phase3-player-save-cast/\(locale.key): the cast slot never appeared")
             try write(named: "phase3-player-save-cast-\(locale.key)-\(locale.theme)-portrait", into: directory)

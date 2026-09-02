@@ -543,24 +543,46 @@ extension StreamState {
     /// `nil` = nothing castable (the embed rung, or a resolve that failed) -- the caller surfaces
     /// that as the same "Couldn't play on {device}" the receiver's own refusal produces.
     func castMedia() async -> CastMediaInfo? {
-        guard let resolved = try? await resolver.resolve(args.videoId, purpose: .player, kind: .player,
-                                                         sourceChannelId: args.channelId, forceRefresh: true)
-        else { return nil }
-        return CastMedia.make(resolved: resolved, args: args)
+        do {
+            let resolved = try await resolver.resolve(args.videoId, purpose: .player, kind: .player,
+                                                      sourceChannelId: args.channelId, forceRefresh: true)
+            return CastMedia.make(resolved: resolved, args: args)
+        } catch {
+            // Review Minor 3: the user-visible collapse to one banner is deliberate (a cooldown
+            // and a receiver refusal look the same to them), but swallowing the reason entirely
+            // made a cast that can never work indistinguishable from one the TV refused.
+            #if DEBUG
+            print("PlayerViewModel: cast resolve failed for \(args.videoId): \(error)")
+            #endif
+            return nil
+        }
     }
+
+    /// True while THIS view model's player is paused because THIS screen started a cast. The
+    /// session flag is app-wide and several `PlayerScreen`s can be mounted at once (review
+    /// Important 1), so the hand-back has to know it is talking to the player it actually paused --
+    /// otherwise an unrelated (or offline) video gets seeked and force-played.
+    private(set) var pausedForCast = false
 
     /// The receiver owns playback now. Goes through the host's `currentPlayer` hand-off slot --
     /// never `AVAudioSession` (single-audio-owner rule), never a second player.
     func pauseForCast() {
         currentPlayer?.pause()
+        pausedForCast = true
     }
 
     /// Session end (spec §10): seek local to the receiver's `approximateStreamPosition` and
-    /// resume. With no player -- the mini controller outlives the player route, so a session can
-    /// end with no `PlayerScreen` mounted -- this is a deliberate no-op: there is nothing to seek,
-    /// and resurrecting the popped route to seek it would be worse than doing nothing.
+    /// resume. Also the failure hand-back (review Important 4): a receiver that REJECTS the load
+    /// leaves the phone paused otherwise, against `startCasting`'s own promise -- that path calls
+    /// this with a nil position, so playback resumes exactly where it stopped.
+    ///
+    /// A no-op unless this player is the one `pauseForCast()` paused: with no player at all (the
+    /// mini controller outlives the player route, so a session can end with no `PlayerScreen`
+    /// mounted) there is nothing to seek and resurrecting the popped route would be worse; with a
+    /// player that never cast, seeking it to some other video's receiver position is the bug.
     func resumeAfterCast(at position: TimeInterval?) {
-        guard let player = currentPlayer else { return }
+        guard let player = currentPlayer, pausedForCast else { return }
+        pausedForCast = false
         if let position, position > 0, position.isFinite {
             player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
             currentTime = position

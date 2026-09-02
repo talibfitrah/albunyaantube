@@ -62,7 +62,10 @@ struct AppContainerTests {
     /// background-events hook above uses (a unit test cannot drive the live `UIApplication`
     /// delegate, and nothing else in the app builds the controller). Asserted on the App's OWN
     /// launch, which the test host already performed: delete the hook and this goes red, because
-    /// `castAvailable` is per-controller state that only `setUp()` writes.
+    /// `castAvailable` is per-controller state that only `setUp()` writes. (Review Minor 8: this
+    /// means a real `GCKCastContext` DOES exist in the unit-test host process — benign, since
+    /// `startDiscoveryAfterFirstTapOnCastButton` stays at the SDK default, so no mDNS and no
+    /// local-network prompt.)
     @Test func theLaunchHookCreatesTheCastContextThroughTheContainerSeam() throws {
         let container = try #require(AppContainer.current, "FitrahTubeApp.init must set AppContainer.current")
         #expect(container.castController.castAvailable,

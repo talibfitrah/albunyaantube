@@ -68,22 +68,38 @@ struct PlayerScreen: View {
         // the controller holds no ViewModel, so a session that starts or ends with no player on
         // screen simply has no reader. `.onChange` (not `.task(id:)`) so only real transitions
         // fire: no spurious hand-back on mount, where there was never a session to come back from.
+        //
+        // Fix round 1 (review Important 1): `isSessionActive` is app-wide and `MainShellView`
+        // keeps every visited tab's stack mounted, so SEVERAL `PlayerScreen`s can read this. The
+        // start side claims the session (first writer wins); the end side only reacts for the
+        // claimant, or an unrelated — possibly offline — video gets seeked to another video's
+        // receiver position and force-played.
         .onChange(of: container.castController.isSessionActive) { _, active in
             guard let model else { return }
+            let cast = container.castController
             if active {
+                guard cast.claimCastSource(model.args.videoId) else { return }
                 Task { await startCasting(model) }
-            } else {
-                model.resumeAfterCast(at: container.castController.lastStreamPosition)
+            } else if cast.castingVideoId == model.args.videoId {
+                model.resumeAfterCast(at: cast.lastStreamPosition)
+                cast.finishCasting()
             }
         }
         // Spec §10: "observe the load result and surface 'Couldn't play on {device}' on failure
         // (Android swallows it)". Consumed and cleared here so a second failure on the same device
-        // still announces itself.
+        // still announces itself — by the claimant only, so several mounted screens can't each
+        // raise the banner and each write nil back.
         .onChange(of: container.castController.lastLoadFailureDevice) { _, device in
-            guard let device else { return }
-            model?.banner = BannerMessage(
+            guard let device, let model,
+                  container.castController.castingVideoId == model.args.videoId else { return }
+            model.banner = BannerMessage(
                 text: String(format: String(localized: "cast_error_format"), device))
             container.castController.lastLoadFailureDevice = nil
+            // Review Important 4: `startCasting` already paused the local player by the time a
+            // receiver rejects the load, so without this the user taps Cast, gets a toast, and
+            // their video has silently stopped on the phone too. `resumeAfterCast` no-ops unless
+            // THIS screen is the one that paused.
+            model.resumeAfterCast(at: nil)
         }
         .task {
             guard model == nil else { return }
@@ -143,8 +159,10 @@ struct PlayerScreen: View {
     }
 
     /// Session start/resume (spec §10): a FRESH resolve, then load with the local position, then
-    /// pause local. Order matters — the pause happens only once there is something to load, so a
-    /// video that turns out to be uncastable keeps playing on the phone under its banner.
+    /// pause local. Called only by the screen that claimed the session (`claimCastSource`).
+    /// Order matters — the pause happens only once there is something to load, so a video that
+    /// turns out to be uncastable keeps playing on the phone under its banner; a load the RECEIVER
+    /// rejects is undone by the `lastLoadFailureDevice` reaction's `resumeAfterCast(at: nil)`.
     private func startCasting(_ model: PlayerViewModel) async {
         let cast = container.castController
         guard let media = await model.castMedia() else {

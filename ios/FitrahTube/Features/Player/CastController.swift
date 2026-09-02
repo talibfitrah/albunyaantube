@@ -16,22 +16,54 @@ import SwiftUI
 /// to hand the position back to, and resurrecting the popped route to seek it would be worse than
 /// doing nothing. Deliberate.
 ///
+/// The session is app-wide but the player it drives is not (fix round 1, review Important 1):
+/// `MainShellView` keeps every visited tab's stack mounted, so several `PlayerScreen`s can read
+/// one `isSessionActive`. `castingVideoId` is the stamp that names the ONE screen this session
+/// belongs to; every reaction is gated on it.
+///
 /// `NSObject` subclass because `GCKSessionManagerListener`/`GCKRequestDelegate` both refine
-/// `NSObjectProtocol`; their callbacks arrive on the main thread, hence the `assumeIsolated` hops.
+/// `NSObjectProtocol`. Their callbacks are delivered on the main thread empirically (and
+/// `PlayerHostView.Coordinator` already makes the same bet for AVFoundation's) -- but the 4.8.6
+/// headers do NOT document it, so the `assumeIsolated` hops below are a bet, not a quoted
+/// guarantee. They trap rather than race if it is ever wrong.
 @MainActor @Observable final class CastController: NSObject {
     /// False until `setUp()` has actually created (or found) a shared `GCKCastContext`. Per
     /// instance, written only by `setUp()`: the composition root calls it once from the launch
     /// hook, and a container that never did (every fixture container) reports false forever.
     private(set) var castAvailable = false
 
-    /// A Cast session is connected. `PlayerScreen` reacts to the transitions: true -> fresh
-    /// resolve + load + pause local; false -> seek local to `lastStreamPosition` and resume.
+    /// A Cast session is connected. The `PlayerScreen` that owns `castingVideoId` reacts to the
+    /// transitions: true -> fresh resolve + load + pause local; false -> seek local to
+    /// `lastStreamPosition` and resume.
     private(set) var isSessionActive = false
+
+    /// The videoId of the screen this session belongs to. Claimed by the first `PlayerScreen` to
+    /// react to a session start (`claimCastSource`), cleared by that screen's hand-back
+    /// (`finishCasting`) or by the next session beginning. Survives `sessionDidEnd` on purpose:
+    /// SwiftUI runs `.onChange` after the callback returns, so the end reaction still has to be
+    /// able to identify its owner.
+    ///
+    /// ponytail: first-writer-wins. With two players mounted (CF-D-12's stacked case) the screen
+    /// whose `.onChange` SwiftUI runs first claims the session, and that order is not defined.
+    /// Both candidates are the user's own player screens and only one resolves/loads either way;
+    /// naming the visible one needs a visibility signal SwiftUI does not reliably give a pushed
+    /// destination on an unselected tab.
+    private(set) var castingVideoId: String?
 
     /// The receiver's `approximateStreamPosition`, sampled in `willEndSession` while the remote
     /// media client is still connected (by `didEndSession` it may already be gone), and published
-    /// when the session actually ends.
+    /// when the session actually ends. Cleared when a new session begins so a hand-back can never
+    /// seek to a previous session's position (review Important 2).
     private(set) var lastStreamPosition: TimeInterval?
+
+    /// The receiver currently connected, for the cast slot's accessibility value. `nil` when no
+    /// session is up.
+    private(set) var connectedDeviceName: String?
+
+    /// `GCKUIMiniMediaControlsViewController.active` ("When NO, the control bar should be
+    /// hidden", `:43-48`) -- true only once there is media on the receiver to control, so a
+    /// connected session with nothing loaded parks no empty strip above the tab bar.
+    private(set) var miniControlsActive = false
 
     /// The device a load failed on, for the "Couldn't play on %@" banner (`cast_error_format`).
     /// Android swallows this failure; spec §10 says to surface it. Consumed and cleared by the
@@ -41,6 +73,11 @@ import SwiftUI
     /// Held only until its delegate callback lands -- `GCKRequest.delegate` is weak and the
     /// request is the only thing carrying the load's outcome.
     private var loadRequest: GCKRequest?
+
+    /// Owned rather than made per mount, so its delegate can publish `miniControlsActive` before
+    /// anything decides whether to show the strip (the flag and the view cannot both wait on each
+    /// other). Created once, with the context.
+    private var miniControls: GCKUIMiniMediaControlsViewController?
 
     /// Creates the shared `GCKCastContext`, once per process. Idempotent and non-throwing: the
     /// `setSharedInstanceWithOptions:error:` overload (Bool + NSError, `GCKCastContext.h:78`) is
@@ -52,30 +89,85 @@ import SwiftUI
     /// prompt -- begins on the first cast-button tap, not at launch.
     func setUp() {
         guard !castAvailable else { return }
-        guard !GCKCastContext.isSharedInstanceInitialized() else {
-            castAvailable = true
-            observeSessions()
-            return
-        }
-        // Receiver CC1AD845 -- the default media receiver, same as Android's
-        // `CastOptionsProvider.kt:36-42`.
-        let options = GCKCastOptions(discoveryCriteria:
-            GCKDiscoveryCriteria(applicationID: kGCKDefaultMediaReceiverApplicationID))
-        do {
-            try GCKCastContext.setSharedInstanceWith(options)
-        } catch {
-            // Nothing else in the app references the SDK, so this is the whole failure handling:
-            // no cast button, no mini controller, no session reaction. Never a user-facing error
-            // -- casting is an affordance, not a feature the screen depends on.
-            return
+        if !GCKCastContext.isSharedInstanceInitialized() {
+            // Receiver CC1AD845 -- the default media receiver, same as Android's
+            // `CastOptionsProvider.kt:36-42`.
+            let options = GCKCastOptions(discoveryCriteria:
+                GCKDiscoveryCriteria(applicationID: kGCKDefaultMediaReceiverApplicationID))
+            do {
+                try GCKCastContext.setSharedInstanceWith(options)
+            } catch {
+                // Nothing else in the app references the SDK, so this is the whole failure
+                // handling: no cast button, no mini controller, no session reaction. Never a
+                // user-facing error -- casting is an affordance, not a feature the screen needs.
+                #if DEBUG
+                print("CastController: GCKCastContext could not be created: \(error)")
+                #endif
+                return
+            }
         }
         castAvailable = true
-        observeSessions()
+        let context = GCKCastContext.sharedInstance()
+        context.sessionManager.add(self)
+        let controls = context.createMiniMediaControlsViewController()
+        controls.delegate = self
+        miniControls = controls
     }
 
-    private func observeSessions() {
-        GCKCastContext.sharedInstance().sessionManager.add(self)
+    /// The one mini controller (see `miniControls`). Never called before `setUp()` succeeded --
+    /// `MainShellView` gates on `miniControlsActive`, which only its delegate can set.
+    func makeMiniControls() -> GCKUIMiniMediaControlsViewController {
+        miniControls ?? GCKCastContext.sharedInstance().createMiniMediaControlsViewController()
     }
+
+    // MARK: - Session ownership (review Important 1)
+
+    /// Claims this session for `videoId`. `false` means another mounted `PlayerScreen` already
+    /// owns it and this one must not resolve, load or pause anything.
+    @discardableResult
+    func claimCastSource(_ videoId: String) -> Bool {
+        guard let castingVideoId else {
+            self.castingVideoId = videoId
+            return true
+        }
+        return castingVideoId == videoId
+    }
+
+    /// The owning screen has consumed the hand-back: drop the stamp and the spent position.
+    func finishCasting() {
+        castingVideoId = nil
+        lastStreamPosition = nil
+    }
+
+    // MARK: - Session lifecycle seams
+    //
+    // The `GCKSessionManagerListener` callbacks below carry no decisions of their own: every one
+    // of them reads what it needs off the non-`Sendable` `GCKSession` and calls one of these.
+    // `GCKSessionManager`'s `init` is `NS_UNAVAILABLE` and `GCKSession` is abstract, so these
+    // seams are also the only way `CastSessionTests` can drive the lifecycle at all.
+
+    func sessionDidBegin(deviceName: String?) {
+        // A new session inherits nothing from the last one (review Important 2): a stale position
+        // would show up as a silent wrong seek that looks like a playback bug, not a cast bug.
+        lastStreamPosition = nil
+        castingVideoId = nil
+        connectedDeviceName = deviceName
+        isSessionActive = true
+    }
+
+    /// Called from `willEndSession` -- the last moment the receiver's position can be read.
+    func sessionWillEnd(position: TimeInterval?) {
+        lastStreamPosition = position
+    }
+
+    func sessionDidEnd() {
+        isSessionActive = false
+        connectedDeviceName = nil
+        // `castingVideoId`/`lastStreamPosition` deliberately survive: the owning screen's
+        // `.onChange` has not run yet and needs both. `finishCasting()` clears them.
+    }
+
+    // MARK: - Load
 
     /// Session start/resume's load (spec §10): autoplay, at the local player's position. Live
     /// streams keep the builder's default `startTime` (`kGCKInvalidTimeInterval` = live edge).
@@ -85,9 +177,20 @@ import SwiftUI
         guard castAvailable,
               let session = GCKCastContext.sharedInstance().sessionManager.currentSession,
               let client = session.remoteMediaClient else {
+            // Not silent (review Minor 2): `reportLoadFailure` needs a named device and there is
+            // no session to name, so the banner cannot fire -- say so somewhere, and clear any
+            // in-flight request rather than leaving one pointed at a session that is gone.
+            #if DEBUG
+            print("CastController: load with no current session/remote media client")
+            #endif
+            cancelLoadRequest()
             reportLoadFailure()
             return
         }
+        // Minor 4: a second load issued while the first is in flight would otherwise drop the only
+        // strong reference to it (`GCKRequest.delegate` is weak) and its outcome would go
+        // unobserved.
+        cancelLoadRequest()
         let builder = GCKMediaLoadRequestDataBuilder()
         builder.mediaInformation = CastMedia.gckMediaInformation(from: media)
         builder.autoplay = true
@@ -95,6 +198,11 @@ import SwiftUI
         let request = client.loadMedia(with: builder.build())
         request.delegate = self
         loadRequest = request
+    }
+
+    private func cancelLoadRequest() {
+        if loadRequest?.inProgress == true { loadRequest?.cancel() }
+        loadRequest = nil
     }
 
     /// The other way a cast can fail to play: nothing castable to load at all (an embed rung, or a
@@ -111,31 +219,41 @@ import SwiftUI
     }
 }
 
-// MARK: - Session lifecycle
+// MARK: - Session lifecycle (SDK callbacks -> the seams above)
 
 extension CastController: GCKSessionManagerListener {
     nonisolated func sessionManager(_ sessionManager: GCKSessionManager, didStart session: GCKSession) {
-        MainActor.assumeIsolated { isSessionActive = true }
+        // Read BEFORE the actor hop: `GCKSession` is a non-`Sendable` ObjC object, so carrying it
+        // into the closure is a sending violation. Only the `String?` crosses.
+        let name = session.device.friendlyName
+        MainActor.assumeIsolated { sessionDidBegin(deviceName: name) }
     }
 
     nonisolated func sessionManager(_ sessionManager: GCKSessionManager, didResumeSession session: GCKSession) {
-        MainActor.assumeIsolated { isSessionActive = true }
+        let name = session.device.friendlyName
+        MainActor.assumeIsolated { sessionDidBegin(deviceName: name) }
     }
 
     /// WILL, not DID: the remote media client is still connected here, so this is the last moment
     /// the receiver's position can be read.
     nonisolated func sessionManager(_ sessionManager: GCKSessionManager, willEnd session: GCKSession) {
-        // Read BEFORE the actor hop: `GCKSession` is a non-`Sendable` ObjC object, so carrying it
-        // into the closure is a sending violation. Only the `TimeInterval` crosses. Safe because
-        // the SDK raises these callbacks on the main thread (the same assumption every
-        // `assumeIsolated` here makes).
         let position = session.remoteMediaClient?.approximateStreamPosition()
-        MainActor.assumeIsolated { lastStreamPosition = position }
+        MainActor.assumeIsolated { sessionWillEnd(position: position) }
     }
 
     nonisolated func sessionManager(_ sessionManager: GCKSessionManager, didEnd session: GCKSession,
                                     withError error: (any Error)?) {
-        MainActor.assumeIsolated { isSessionActive = false }
+        MainActor.assumeIsolated { sessionDidEnd() }
+    }
+}
+
+// MARK: - Mini controller visibility (review Minor 1)
+
+extension CastController: GCKUIMiniMediaControlsViewControllerDelegate {
+    nonisolated func miniMediaControlsViewController(
+        _ miniMediaControlsViewController: GCKUIMiniMediaControlsViewController,
+        shouldAppear: Bool) {
+        MainActor.assumeIsolated { miniControlsActive = shouldAppear }
     }
 }
 
@@ -165,6 +283,9 @@ extension CastController: GCKRequestDelegate {
 
 /// `GCKUICastButton` (spec §10: the toolbar's cast affordance). The SDK button owns its own icon
 /// states and presents the device chooser itself; the first tap is also what starts discovery.
+/// It is a real `UIButton`, so it carries the button trait and its own activation -- which is why
+/// `PlayerToolbar` puts the slot's accessibility label/value on THIS view rather than on a
+/// combined `VStack` element (review Important 3).
 struct CastButton: UIViewRepresentable {
     func makeUIView(context: Context) -> GCKUICastButton {
         let button = GCKUICastButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
@@ -185,8 +306,10 @@ struct CastButton: UIViewRepresentable {
 /// active). Renders UI only -- it drives the RECEIVER, never this app's `AVAudioSession` or its
 /// local player, so the single-audio-owner rule is untouched.
 struct CastMiniControls: UIViewControllerRepresentable {
+    let controller: CastController
+
     func makeUIViewController(context: Context) -> GCKUIMiniMediaControlsViewController {
-        GCKCastContext.sharedInstance().createMiniMediaControlsViewController()
+        controller.makeMiniControls()
     }
 
     func updateUIViewController(_ controller: GCKUIMiniMediaControlsViewController, context: Context) {}
