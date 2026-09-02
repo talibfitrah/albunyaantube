@@ -48,6 +48,11 @@ struct PlayerToolbar: View {
                 Spacer()
                 saveSlot
             }
+            if CastAffordance.isVisible(castAvailable: container.castController.castAvailable,
+                                        isOfflinePlayback: isOfflinePlayback) {
+                Spacer()
+                castSlot
+            }
         }
         .padding(.horizontal, Spacing.md(widthClass))
         .padding(.vertical, Spacing.sm)
@@ -103,6 +108,31 @@ struct PlayerToolbar: View {
             toolbarLabel(systemImage: "flag", title: String(localized: "player_action_report"))
         }
         .accessibilityIdentifier("player.reportButton")
+    }
+
+    // MARK: - Cast (Phase 3 Task 8, spec §10)
+
+    /// The SDK's own `GCKUICastButton` (spec §10 names it), captioned like every other slot so the
+    /// five-button row stays one shape. The button owns its icon states and presents the device
+    /// chooser itself; the first tap is also what starts discovery, so nothing here does. The
+    /// ≥44 pt target comes from the 24 pt glyph plus the caption below it, same as the other
+    /// slots' `toolbarLabel`.
+    // ponytail: the SDK button hides its own glyph in one state (`startDiscoveryAfterFirstTap...`
+    // docs: after the first tap, with no Wi-Fi connection), which would leave this slot's caption
+    // standing over an invisible icon. Reading `castState` to hide the whole slot needs a second
+    // SDK observer in `CastController`; add it if that state is ever seen in practice.
+    private var castSlot: some View {
+        VStack(spacing: 4) {
+            CastButton()
+                .frame(width: 24, height: 24)
+            Text(String(localized: "player_action_cast")).font(TypeScale.caption)
+        }
+        .foregroundStyle(Color.textPrimary)
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("player.castButton")
+        // Same idiom as `favoriteButton`: a constant role label, never the SDK's own.
+        .accessibilityLabel(String(localized: "player_action_cast"))
     }
 
     // MARK: - Save for offline (Phase 3 Task 5)

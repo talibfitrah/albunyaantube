@@ -456,6 +456,22 @@ for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
     xcrun simctl shutdown "$device" >/dev/null 2>&1
 done
 
+# Phase 3 Task 8: the player toolbar with all five slots (favorite / share / report / save / cast),
+# en + ar. Phone only -- the toolbar row is the subject and it is identical on iPad.
+CAST_OUT="$ROOT/.superpowers/sdd/2026-09-01-ios-phase3-offline-cast/screenshots/phase3-player-save-cast"
+echo "== phase3-player-save-cast (iPhone 17) -> $CAST_OUT =="
+rm -rf "${CAST_OUT:?}"
+TEST_RUNNER_FITRAH_SHOTS_DIR="$CAST_OUT" xcodebuild test \
+    -project FitrahTube.xcodeproj \
+    -scheme FitrahTube \
+    -testPlan FitrahTubeUITests \
+    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerSaveAndCastToolbarPhase3 \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -derivedDataPath DerivedData \
+    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+
 # Task 6 step 5 (live acceptance): OPT-IN, same contract as B5_LIVE -- talks to youtube.com AND the
 # backend named by C_LIVE_API_BASE_URL (default: production), and files exactly ONE real content
 # report per run (reason OTHER, "iOS Plan C acceptance test - safe to dismiss"). Step 8 needs a real

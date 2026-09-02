@@ -64,6 +64,27 @@ struct PlayerScreen: View {
             zoomHintShown = true
             model?.banner = BannerMessage(text: String(localized: "player_fullscreen_zoom_hint"))
         }
+        // Task 8 (spec §10 Chromecast): `CastController` publishes, the MOUNTED screen reacts —
+        // the controller holds no ViewModel, so a session that starts or ends with no player on
+        // screen simply has no reader. `.onChange` (not `.task(id:)`) so only real transitions
+        // fire: no spurious hand-back on mount, where there was never a session to come back from.
+        .onChange(of: container.castController.isSessionActive) { _, active in
+            guard let model else { return }
+            if active {
+                Task { await startCasting(model) }
+            } else {
+                model.resumeAfterCast(at: container.castController.lastStreamPosition)
+            }
+        }
+        // Spec §10: "observe the load result and surface 'Couldn't play on {device}' on failure
+        // (Android swallows it)". Consumed and cleared here so a second failure on the same device
+        // still announces itself.
+        .onChange(of: container.castController.lastLoadFailureDevice) { _, device in
+            guard let device else { return }
+            model?.banner = BannerMessage(
+                text: String(format: String(localized: "cast_error_format"), device))
+            container.castController.lastLoadFailureDevice = nil
+        }
         .task {
             guard model == nil else { return }
             // Task 7 (reconciliation note 5): an offline open builds the SAME VM over
@@ -119,6 +140,22 @@ struct PlayerScreen: View {
         // -- `EmbedRungView` deliberately posts nothing of its own. `.onChange` fires only on a real
         // transition, so entering `.embed` announces exactly once.
         .rungAnnouncements(state: model?.state, isOnline: container.network.isOnline)
+    }
+
+    /// Session start/resume (spec §10): a FRESH resolve, then load with the local position, then
+    /// pause local. Order matters — the pause happens only once there is something to load, so a
+    /// video that turns out to be uncastable keeps playing on the phone under its banner.
+    private func startCasting(_ model: PlayerViewModel) async {
+        let cast = container.castController
+        guard let media = await model.castMedia() else {
+            // Nothing castable: the embed rung (never castable — the no-hand-off directive) or a
+            // resolve that did not come back. Same outcome for the user as a receiver refusing the
+            // load, so it gets the same banner rather than copy of its own.
+            cast.reportLoadFailure()
+            return
+        }
+        model.pauseForCast()
+        cast.load(media, at: model.currentTime)
     }
 
     /// What a transition INTO `state` says out loud, or nil for silence. Pure, so

@@ -104,6 +104,17 @@ struct MainShellView: View {
             rootView(for: tab)
                 .navigationDestination(for: Route.self) { destination(for: $0) }
         }
+        // Task 8 (spec §10): the mini controller pinned above the tab bar while a session is
+        // active. `safeAreaInset` INSIDE the tab's stack, not an overlay on the shell: the stack's
+        // content area ends above the tab bar, so this is what "above the tab bar" means in both
+        // layouts, and the inset also lifts the tab's own scroll content clear of it. Only the
+        // SELECTED tab mounts one -- every mounted stack would otherwise hold its own controller.
+        // Renders UI only: it drives the receiver, never this app's audio session or local player.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if container.castController.isSessionActive, tab == router.selectedTab, !router.isFullscreen {
+                CastMiniControls()
+            }
+        }
     }
 
     @ViewBuilder

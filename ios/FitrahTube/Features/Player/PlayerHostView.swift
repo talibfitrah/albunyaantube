@@ -690,6 +690,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
         let resumeTime = CMTime(seconds: resume, preferredTimescale: 600)
         guard let existing else {
             let player = AVPlayer(playerItem: item)
+            // Task 8 (spec §10 AirPlay): explicit, not inherited from the default. AVKit's stock
+            // transport already carries the route picker; this is what makes the picked route
+            // actually play the video remotely. Written ONLY here, on a freshly built player, and
+            // never on an update pass -- `PlayerViewModel`'s mirroring fallback clears it on the
+            // live player, and an unconditional write per pass would undo that immediately.
+            player.allowsExternalPlayback = true
             if resume > 0 { player.seek(to: resumeTime) }
             player.play()
             return player

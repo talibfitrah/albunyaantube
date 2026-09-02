@@ -57,6 +57,18 @@ struct AppContainerTests {
         #expect(after > before, "the relaunch hook never scheduled a reattach")
     }
 
+    /// Phase 3 Task 8: `GCKCastContext` is created exactly once, on launch, from
+    /// `didFinishLaunchingWithOptions` — through the same `AppContainer.current` seam the
+    /// background-events hook above uses (a unit test cannot drive the live `UIApplication`
+    /// delegate, and nothing else in the app builds the controller). Asserted on the App's OWN
+    /// launch, which the test host already performed: delete the hook and this goes red, because
+    /// `castAvailable` is per-controller state that only `setUp()` writes.
+    @Test func theLaunchHookCreatesTheCastContextThroughTheContainerSeam() throws {
+        let container = try #require(AppContainer.current, "FitrahTubeApp.init must set AppContainer.current")
+        #expect(container.castController.castAvailable,
+                "AppDelegate.didFinishLaunchingWithOptions must call castController.setUp()")
+    }
+
     @Test func fakeContainerServesCannedCategories() async throws {
         let container = AppContainer.fake()
         let categories = try await container.catalog.categories()

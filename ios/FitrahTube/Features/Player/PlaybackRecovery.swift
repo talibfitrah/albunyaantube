@@ -101,6 +101,35 @@ enum PlaybackRecovery {
     }
 }
 
+/// Spec §10's AirPlay paragraph: "if the external device fails the item with a 403 (the plan's
+/// IP-binding risk), set `allowsExternalPlayback = false` and retry so video mirrors from the
+/// phone -- AirPlay always works, at worst as mirroring."
+///
+/// Deliberately NOT a fourth `RecoveryAction`: it is a PRE-CHECK consulted in
+/// `PlayerViewModel.handleRecoveryEvent` before `PlaybackRecovery.decide` runs, so the mirroring
+/// retry spends none of the retry/re-resolve budgets. Those budgets exist for genuinely broken
+/// streams; a stream that is fine on the phone and only 403s because the AirPlay receiver fetches
+/// it from a different public IP must not consume them, or a later real failure on the same video
+/// finds the machine already exhausted.
+nonisolated enum AirPlayFallback {
+    static func shouldMirror(event: RecoveryEvent, externalPlaybackActive: Bool, alreadyFellBack: Bool) -> Bool {
+        // Once per stream: a second failure after mirroring is not the route's fault (there is no
+        // route left to blame), so it belongs to the ordinary ladder and its budgets.
+        guard externalPlaybackActive, !alreadyFellBack else { return false }
+        switch event {
+        case .playbackError, .failedBeforeFirstFrame:
+            // AVFoundation surfaces no HTTP status, so "the item failed" is the whole 403 signal
+            // available -- the same reasoning `RecoveryEvent.playbackError`'s own doc records.
+            return true
+        case .stall:
+            // A stall is not an item failure: the stream is still valid, the route is not the
+            // suspect, and dropping the user off their TV for a network hiccup is worse than
+            // waiting for the buffer.
+            return false
+        }
+    }
+}
+
 /// The stall watchdog as a pure value (fix round 1, C1): the host feeds it one sample per periodic
 /// tick and it answers what changed. Previously this logic lived inline in
 /// `PlayerHostView.Coordinator.sample` and measured only `loadedTimeRanges` growth, which false-fired

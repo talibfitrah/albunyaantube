@@ -47,6 +47,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         MainActor.assumeIsolated { OrientationLock.mask }
     }
 
+    /// Phase 3 Task 8: `GCKCastContext` is created once, here (spec §10) — through the same
+    /// `AppContainer.current` seam the background-events hook below uses, because nothing on the
+    /// SwiftUI side owns launch. `setUp()` is idempotent and never throws: a context that cannot
+    /// be created leaves `castAvailable == false` and no cast affordance anywhere. No discovery
+    /// starts here (the SDK's `startDiscoveryAfterFirstTapOnCastButton` default), so this does not
+    /// raise the local-network prompt at launch.
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        MainActor.assumeIsolated { AppContainer.current?.castController.setUp() }
+        return true
+    }
+
     /// Phase 3 Task 4: iOS hands over the background-session completion handler here; the
     /// offline engine calls it once its session has delivered its events (the second reason this
     /// app has a delegate).

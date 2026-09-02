@@ -89,6 +89,15 @@ struct AboutView: View {
             Section(String(localized: "about_legal")) {
                 ForEach(legal) { linkRow($0) }
             }
+            // Phase 3 Task 8 (spec §10's "known ceiling, documented in the About -> Help text"):
+            // a cast stream URL is bound to the phone's public IP, so the receiver can only fetch
+            // it from behind the same IPv4 NAT. Stated as the user-visible condition (same Wi-Fi,
+            // not cellular, not IPv6-only) rather than as the mechanism.
+            Section {
+                Text(String(localized: "cast_help_network"))
+                    .font(.footnote)
+                    .foregroundStyle(Color.textSecondary)
+            }
         }
         .navigationTitle(String(localized: "about_title"))
         .navigationBarTitleDisplayMode(.inline)

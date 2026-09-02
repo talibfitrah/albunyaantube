@@ -49,6 +49,14 @@ targets:
         product: FitrahAPI
       - package: InnerTubeKit
         product: InnerTubeKit
+      # Phase 3 Task 8: the Google Cast iOS Sender SDK, vendored by `scripts/fetch-cast-sdk.sh`
+      # (ios/Vendor/ is gitignored; test.sh's pre-stage heals a fresh checkout). The zip ships
+      # exactly ONE xcframework -- no GoogleCastCore/protobuf members -- so this is the whole
+      # dependency. Dynamic framework => Embed & Sign; `-ObjC -lc++` are static-build flags and
+      # are deliberately NOT set.
+      - framework: Vendor/GoogleCast.xcframework
+        embed: true
+        codeSign: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.albunyaan.tube
@@ -80,6 +88,16 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
+        # Phase 3 Task 8 (spec §10 Chromecast): Cast discovery is mDNS/Bonjour on the local
+        # network. `_CC1AD845._googlecast._tcp` is the default media receiver's own service type
+        # (`CastOptionsProvider.kt:36-42`). Without both entries discovery finds nothing and the
+        # usage string is what iOS shows on the first cast-button tap (discovery -- and so the
+        # prompt -- starts there, not at launch: `startDiscoveryAfterFirstTapOnCastButton` stays
+        # at the SDK default).
+        NSBonjourServices:
+          - _googlecast._tcp
+          - _CC1AD845._googlecast._tcp
+        NSLocalNetworkUsageDescription: FitrahTube finds Chromecast and other TV devices on your local network so you can play videos on your TV.
         CFBundleURLTypes:
           - CFBundleURLName: com.albunyaan.tube
             CFBundleURLSchemes: [albunyaantube]
@@ -98,6 +116,11 @@ targets:
         product: FitrahAPI
       - package: InnerTubeKit
         product: InnerTubeKit
+      # `@testable import FitrahTube` exposes `CastController`'s internals, whose interface names
+      # GoogleCast types -- so the test module needs the module on its search path too. NOT
+      # embedded: the app host already carries the one copy this bundle loads into.
+      - framework: Vendor/GoogleCast.xcframework
+        embed: false
     settings:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

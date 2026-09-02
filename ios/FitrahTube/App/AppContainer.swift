@@ -101,6 +101,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// sweep fail-open.
     private(set) lazy var offlineManager: OfflineManager = makeOfflineManager()
 
+    /// Phase 3 Task 8: the app's ONE Cast seam. `lazy` like the stores above — building it is free
+    /// and side-effect-free; `setUp()` (from `AppDelegate.didFinishLaunchingWithOptions`, through
+    /// the `current` seam) is what actually creates the `GCKCastContext`. A container whose
+    /// `setUp()` never ran reports `castAvailable == false`, which hides every cast affordance —
+    /// spec §10's "not loaded at all" clause, and the fixture containers' default.
+    private(set) lazy var castController = CastController()
+
     private func makeOfflineManager() -> OfflineManager {
         let configuration = URLSessionConfiguration.background(withIdentifier: ProgressiveEngine.backgroundSessionIdentifier)
         configuration.sessionSendsLaunchEvents = true

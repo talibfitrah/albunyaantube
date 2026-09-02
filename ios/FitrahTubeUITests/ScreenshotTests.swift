@@ -2670,6 +2670,33 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// Phase 3 Task 8: the player toolbar with all FIVE slots — favorite, share, report, the Save
+    /// slot and the cast slot. `seed-offline-3` is `-fitrah-seed-offline`'s `.completed` row
+    /// (`OfflineStatus.allCases[3]`), so the Save slot renders its Open state without a gate hook;
+    /// the cast slot needs no hook either — `AppDelegate`'s launch `setUp()` creates a real
+    /// `GCKCastContext` on the simulator, which is all `castAvailable` asks for.
+    func testPlayerSaveAndCastToolbarPhase3() throws {
+        let directory = try shotsDirectory()
+        let screen = Screen(key: "phase3-player-save-cast",
+                            arguments: ["-fitrah-seed-offline", "-fitrah-fake-player-hls",
+                                        "-fitrah-route", "player", "seed-offline-3"],
+                            anchor: .button("unused"))
+        for locale in Self.locales {
+            XCUIDevice.shared.orientation = .portrait
+            let app = launch(screen, locale: locale, extraArguments: [])
+            let favorite = app.buttons["player.favoriteButton"]
+            XCTAssertTrue(favorite.waitForExistence(timeout: 20),
+                          "phase3-player-save-cast/\(locale.key): the toolbar never appeared")
+            let save = app.buttons["player.saveButton"]
+            XCTAssertTrue(save.waitForExistence(timeout: 10),
+                          "phase3-player-save-cast/\(locale.key): the save slot never appeared")
+            let cast = app.otherElements["player.castButton"]
+            XCTAssertTrue(cast.waitForExistence(timeout: 10),
+                          "phase3-player-save-cast/\(locale.key): the cast slot never appeared")
+            try write(named: "phase3-player-save-cast-\(locale.key)-\(locale.theme)-portrait", into: directory)
+        }
+    }
+
     // MARK: - Helpers
 
     /// `fakeContainer: false` (Plan C Task 6's live leg) launches the LIVE container: real

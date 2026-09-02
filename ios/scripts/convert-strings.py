@@ -446,6 +446,26 @@ EXTRA_KEYS = {
         "ar": "هل تريد إزالة جميع الفيديوهات المحفوظة؟ لا يمكن التراجع عن ذلك.",
         "nl": "Alle opgeslagen video's verwijderen? Dit kan niet ongedaan worden gemaakt.",
     },
+    # --- Phase 3 Task 8: Chromecast + AirPlay (spec §10). ---
+    # No `player_action_cast` here: Android already ships it ("Cast to TV", strings.xml:301) and
+    # the converter carries it into the catalog, so the toolbar's fifth slot reuses the existing
+    # translated key rather than authoring a fourth spelling of the same word.
+    # Spec §10: "surface 'Couldn't play on {device}' on failure (Android swallows it)". %@ is the
+    # receiver's friendly name. Copy rule: WHAT, never why -- never "your network doesn't support
+    # it", never an HTTP status.
+    "cast_error_format": {
+        "en": "Couldn't play on %@",
+        "ar": "تعذّر التشغيل على %@",
+        "nl": "Kan niet afspelen op %@",
+    },
+    # Spec §10's documented ceiling, in About -> Help: the cast stream URL is bound to the phone's
+    # public IP, so the receiver can only fetch it from behind the same IPv4 NAT. Stated as the
+    # user-visible condition, not the mechanism.
+    "cast_help_network": {
+        "en": "Casting needs your phone and the TV device on the same Wi-Fi network. It won't work over mobile data, or on networks that only use IPv6.",
+        "ar": "يتطلب البث وجود هاتفك وجهاز التلفزيون على شبكة Wi-Fi نفسها. لن يعمل عبر بيانات الجوال أو على الشبكات التي تستخدم IPv6 فقط.",
+        "nl": "Casten werkt alleen als je telefoon en het tv-apparaat op hetzelfde wifi-netwerk zitten. Het werkt niet via mobiele data of op netwerken die alleen IPv6 gebruiken.",
+    },
 }
 
 def is_dead(key):

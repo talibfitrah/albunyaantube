@@ -1696,6 +1696,50 @@
         }
       }
     },
+    "cast_error_format": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر التشغيل على %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't play on %@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kan niet afspelen op %@"
+          }
+        }
+      }
+    },
+    "cast_help_network": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتطلب البث وجود هاتفك وجهاز التلفزيون على شبكة Wi-Fi نفسها. لن يعمل عبر بيانات الجوال أو على الشبكات التي تستخدم IPv6 فقط."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Casting needs your phone and the TV device on the same Wi-Fi network. It won't work over mobile data, or on networks that only use IPv6."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Casten werkt alleen als je telefoon en het tv-apparaat op hetzelfde wifi-netwerk zitten. Het werkt niet via mobiele data of op netwerken die alleen IPv6 gebruiken."
+          }
+        }
+      }
+    },
     "categories": {
       "localizations": {
         "ar": {

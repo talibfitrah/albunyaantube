@@ -68,6 +68,12 @@ run_all() {
     python3 ios/scripts/convert-strings.py --check || return $?
 
     cd "$(dirname "$0")/.."
+
+    # CF-D-7: the Cast SDK is vendored, not committed (ios/Vendor/ is gitignored), so a fresh
+    # checkout heals itself here. This is a ONE-TIME ~40 MB network fetch that counts against the
+    # 300s watchdog on that first run only -- every later run finds the xcframework and no-ops.
+    [ -d Vendor/GoogleCast.xcframework ] || ./scripts/fetch-cast-sdk.sh || return $?
+
     xcodegen generate || return $?
 
     echo "== $IPHONE_SIM + $IPAD_SIM =="

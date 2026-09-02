@@ -115,6 +115,25 @@ struct PlayerToolbarTests {
         let text = PlayerMetadataView.viewsText(viewCount: nil, locale: Locale(identifier: "en_US"))
         #expect(text == String(localized: "player_no_views"))
     }
+
+    // MARK: - Cast slot (Phase 3 Task 8)
+
+    /// Spec §10's "Cast SDK is not loaded at all when `GCKCastContext` cannot be created": a
+    /// controller whose `setUp()` never ran (or ran and failed) leaves `castAvailable == false`,
+    /// and the toolbar then has no cast slot at all -- not a disabled one. Fixture container, so
+    /// nothing here creates a Cast context.
+    @Test func theCastSlotIsHiddenUntilTheCastContextExists() {
+        #expect(AppContainer.fake().castController.castAvailable == false)
+        #expect(CastAffordance.isVisible(castAvailable: false, isOfflinePlayback: false) == false)
+        #expect(CastAffordance.isVisible(castAvailable: true, isOfflinePlayback: false))
+    }
+
+    /// Task 7's `isOfflinePlayback` gates the cast slot exactly as it gates Save: a saved file
+    /// lives in the app sandbox and no receiver can fetch it, so casting it is impossible -- and
+    /// the media file must never leave the sandbox in any case.
+    @Test func theOfflinePlayerHidesTheCastSlotEvenWhenCastIsAvailable() {
+        #expect(CastAffordance.isVisible(castAvailable: true, isOfflinePlayback: true) == false)
+    }
 }
 
 /// Minimal `FavoritesStore` fake -- `items`/`clearAll` are unused by `FavoriteToggle`, present

@@ -251,6 +251,12 @@ extension StreamState {
     private var resolveTask: Task<Void, Never>?
     private var recoveryBudget = RecoveryBudget()
     private var isRecovering = false
+    /// Task 8: this stream already mirrored once out of an AirPlay failure (`AirPlayFallback`).
+    /// Per stream, reset in `swapArgs` alongside `videoZoomed`.
+    /// ponytail: never re-armed within one video, so re-selecting an AirPlay route after a
+    /// mirroring fallback gets no second fallback. Re-arm on an external-route change if that ever
+    /// bites -- it needs a route observer this player does not otherwise want.
+    private var airPlayFellBack = false
 
     /// M4 (B1 final review): `catalog` and `favorites` were stored and never read -- `PlayerToolbar`
     /// reaches favorites through the environment container on its own, and nothing in the player
@@ -420,6 +426,7 @@ extension StreamState {
         currentTime = 0                      // a new video starts at the beginning
         videoZoomed = false                  // B5 Task 3: the fit/zoom override is per stream
         videoIsPortrait = false              // unknown reads as landscape until the new item is ready
+        airPlayFellBack = false              // Task 8: the mirroring fallback is per stream too
     }
 
     /// Ruling 16's prefetch lane, first and only call site in the app. Six lines because
@@ -494,6 +501,20 @@ extension StreamState {
         guard !isRecovering, let resolved = state.resolved else { return }
         isRecovering = true
         defer { isRecovering = false }
+        // Task 8 (spec §10 AirPlay), BEFORE the budget machine and never as a `RecoveryAction`:
+        // an item that failed while an external route was playing it is the plan's IP-binding
+        // risk, not a broken stream. Drop external playback so the same re-resolve mirrors from
+        // the phone instead -- and spend nothing, because the budgets belong to real failures.
+        // The re-resolve is the SAME call the recovery actions issue, with the same
+        // `showLoading: false` (a `.loading` hop would dismantle the host and lose the position).
+        if AirPlayFallback.shouldMirror(event: event,
+                                        externalPlaybackActive: currentPlayer?.isExternalPlaybackActive == true,
+                                        alreadyFellBack: airPlayFellBack) {
+            airPlayFellBack = true
+            currentPlayer?.allowsExternalPlayback = false
+            await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false, showLoading: false)
+            return
+        }
         let action = PlaybackRecovery.decide(event: event, state: recoveryBudget)
         recoveryBudget.apply(action, for: event)
         switch action {
@@ -510,6 +531,41 @@ extension StreamState {
     /// The stream is genuinely playing again: refund what Android refunds (`RecoveryBudget`).
     func recordPlaybackProgress() {
         recoveryBudget.recordPlaybackProgress()
+    }
+
+    // MARK: - Cast (Task 8, spec §10)
+
+    /// A cast session start/resume needs a FRESH stream: the receiver fetches from its own IP and
+    /// a URL minted minutes ago may already be dead. Side-band on purpose -- NOT through
+    /// `resolve()`, whose `state` write would dismantle `PlayerHostView` and drop the very local
+    /// player this screen is about to pause and hand back to on session end. `forceRefresh: true`
+    /// + `.player` kind: tapping Cast is a manual, user-initiated action.
+    /// `nil` = nothing castable (the embed rung, or a resolve that failed) -- the caller surfaces
+    /// that as the same "Couldn't play on {device}" the receiver's own refusal produces.
+    func castMedia() async -> CastMediaInfo? {
+        guard let resolved = try? await resolver.resolve(args.videoId, purpose: .player, kind: .player,
+                                                         sourceChannelId: args.channelId, forceRefresh: true)
+        else { return nil }
+        return CastMedia.make(resolved: resolved, args: args)
+    }
+
+    /// The receiver owns playback now. Goes through the host's `currentPlayer` hand-off slot --
+    /// never `AVAudioSession` (single-audio-owner rule), never a second player.
+    func pauseForCast() {
+        currentPlayer?.pause()
+    }
+
+    /// Session end (spec §10): seek local to the receiver's `approximateStreamPosition` and
+    /// resume. With no player -- the mini controller outlives the player route, so a session can
+    /// end with no `PlayerScreen` mounted -- this is a deliberate no-op: there is nothing to seek,
+    /// and resurrecting the popped route to seek it would be worse than doing nothing.
+    func resumeAfterCast(at position: TimeInterval?) {
+        guard let player = currentPlayer else { return }
+        if let position, position > 0, position.isFinite {
+            player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
+            currentTime = position
+        }
+        player.play()
     }
 
     /// §6.2 step 5: "On `willEnterForeground`, re-resolve pre-emptively if past
