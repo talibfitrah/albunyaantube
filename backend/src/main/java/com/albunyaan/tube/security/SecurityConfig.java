@@ -65,6 +65,14 @@ public class SecurityConfig {
                         // link unfurlers (WhatsApp/Telegram/Slack/Skype) can crawl og:image.
                         // Permit both GET and HEAD — Slack, Facebook and others probe HEAD
                         // first to sniff Content-Type before committing to a full fetch.
+                        // WellKnownController: iOS Universal Links (AASA) + Android App
+                        // Links (assetlinks.json) verification files. GET only, exact
+                        // paths enumerated -- never a broad "/.well-known/**" permitAll,
+                        // so an unrelated /.well-known/* path stays denied like before.
+                        .requestMatchers(HttpMethod.GET,
+                                "/.well-known/apple-app-site-association",
+                                "/apple-app-site-association",
+                                "/.well-known/assetlinks.json").permitAll()
                         .requestMatchers(HttpMethod.GET, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/watch/**").permitAll()
