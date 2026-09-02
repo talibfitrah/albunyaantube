@@ -1,0 +1,58 @@
+ios/FitrahTube/Features/Offline/OfflineManager.swift
+  s_66ddb7c44de816::t_48b52043ccc8df 278-279
+  s_66ddb7c44de816::t_551a1c63730d17 294-301,304-308,312-313,315
+  s_66ddb7c44de816::t_b57577a62ce817 320
+  s_66ddb7c44de816::t_0eca82e47b8cf3 674-679,686-698
+  s_66ddb7c44de816::t_c12f7e320bf41b 732-740,746
+  s_66ddb7c44de816::t_fc560806215638 670-671
+ios/FitrahTubeTests/OfflineManagerTests.swift
+  s_66ddb7c44de816::t_2b761eeafa607f 623-651
+  s_66ddb7c44de816::t_1d84967fe0e80a 2047-2112
+  s_66ddb7c44de816::t_05e69a61c7213e 396,402
+  s_66ddb7c44de816::t_16a3a897e2f3cc 409-414
+  s_66ddb7c44de816::t_e926405e1ca926 415-426
+ios/FitrahTubeTests/LocalizationTests.swift
+  s_66ddb7c44de816::t_9a9d0558469770 127-132
+ios/FitrahTube/Features/Offline/OfflineGateClient.swift
+  s_66ddb7c44de816::t_1829b6b9fe2f32 9
+  s_66ddb7c44de816::t_9879c0fe9a7429 72-80
+  s_66ddb7c44de816::t_fe895ce549a581 12-16
+  s_66ddb7c44de816::t_9ac2e95dd026b3 54-55,59-63
+  s_66ddb7c44de816::t_5c7d033692a15f 29-34,36
+ios/FitrahTube/Features/Offline/FragmentedMP4Durations.swift
+  s_66ddb7c44de816::t_14e55bf6061775 28-33,39
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_66ddb7c44de816::t_31e0db54b44467 176-184
+ios/scripts/convert-strings.py
+  s_66ddb7c44de816::t_e0d72195723da2 281-289
+  s_66ddb7c44de816::t_1c4ade2a51453f 31-36
+ios/FitrahTube/App/FitrahTubeApp.swift
+  s_66ddb7c44de816::t_186b06c7966fc6 100-102
+  s_66ddb7c44de816::t_15d49a565f401e 114-116
+  s_66ddb7c44de816::t_a366abe97675b7 141-146
+ios/FitrahTubeTests/OfflineGateTests.swift
+  s_66ddb7c44de816::t_931fdb3e6a888e 61-62,68-92
+  s_66ddb7c44de816::t_807427deb22ee5 45-46
+ios/FitrahTube/Features/Offline/OfflineEngine.swift
+  s_66ddb7c44de816::t_dea43080ed8f09 281-284
+ios/FitrahTube/App/AppContainer.swift
+  s_66ddb7c44de816::t_40a5cb1a642ff3 363-365
+ios/FitrahTubeTests/OfflinePlaybackTests.swift
+  s_66ddb7c44de816::t_c0f342a1b5927e 353-368
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a99a107ee969270f10e25a69a95e198b24552c98",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
