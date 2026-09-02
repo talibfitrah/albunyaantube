@@ -825,7 +825,7 @@ nonisolated enum CastOwnership {
             // Nothing castable: the embed rung (never castable -- the no-hand-off directive) or a
             // resolve that did not come back. Same outcome for the user as a receiver refusing the
             // load, so it gets the same banner rather than copy of its own.
-            cast.reportLoadFailure()
+            cast.reportLoadFailure(videoId: videoId)
             return
         }
         pauseForCast()

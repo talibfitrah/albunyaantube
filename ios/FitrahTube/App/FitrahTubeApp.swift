@@ -106,7 +106,11 @@ struct FitrahTubeApp: App {
         // and fail-open: an unreachable gate keeps every row (`OfflineSweep.decide`).
         Task { await container.offlineManager.sweep() }
         Task {
-            await container.innerTube.remoteConfig.refresh()
+            // R5-1, fix round 1: `refresh()` is the launch path's one remaining network call, and
+            // the screenshot rig must make none. `current()` still runs — it reads the persisted
+            // last-known-good or InnerTubeKit's bundled default, no transport — so the kill-switch
+            // and the forced-update decision below behave exactly as they do live.
+            if !container.isFixture { await container.innerTube.remoteConfig.refresh() }
             let config = await container.innerTube.remoteConfig.current()
             // Cubic P3-1: the kill-switch flipping back ON is observed by nothing — a row saved
             // during an off-window stays queued until the next launch. The refresh above is where

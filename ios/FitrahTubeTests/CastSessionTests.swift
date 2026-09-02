@@ -647,10 +647,31 @@ struct CastSessionTests {
         cast.sessionDidBegin(deviceName: "Living Room TV")
         #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
         cast.recordLoad("xc7keR2piUM")
-        cast.reportLoadFailure()
+        cast.reportLoadFailure(videoId: "xc7keR2piUM")
         #expect(cast.loadedVideoId == nil)
 
         cast.sessionWillEnd(position: 77)
         #expect(cast.receiverPosition(for: "xc7keR2piUM") == nil)
+    }
+
+    /// Cubic R6-4: the failure belongs to ONE video, and only that video's stamp is its to clear.
+    /// Screen A casts and goes off-screen (stamp released, receiver still playing A); screen B
+    /// mounts on an embed rung, `startCast` finds nothing castable and reports the failure.
+    /// Clearing `loadedVideoId` unconditionally erased A's presence on the receiver, so A returning
+    /// re-resolved and reloaded it at the phone's stale position — and the hand-back then handed
+    /// back a position the receiver never had.
+    @Test func aLoadFailureLeavesAnotherScreensVideoOnTheReceiver() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        _ = cast.claimForCast(videoId: Self.claimed, isOfflinePlayback: false)
+        cast.recordLoad(Self.claimed)
+        cast.releaseClaim(Self.claimed)          // A goes off screen; the receiver keeps playing it
+
+        cast.reportLoadFailure(videoId: Self.other)   // B has nothing castable
+
+        #expect(cast.loadedVideoId == Self.claimed,
+                "another screen's failure must not erase what the receiver is actually playing")
+        cast.sessionWillEnd(position: 77)
+        #expect(cast.receiverPosition(for: Self.claimed) == 77)
     }
 }

@@ -290,7 +290,7 @@ import SwiftUI
             print("CastController: load with no current session/remote media client")
             #endif
             cancelLoadRequest()
-            reportLoadFailure()
+            reportLoadFailure(videoId: videoId)
             return
         }
         // A second load issued while the first is in flight would otherwise drop the only strong
@@ -353,12 +353,19 @@ import SwiftUI
     /// resolve that did not come back). Same user-visible outcome as a rejected load, so it gets
     /// the same banner rather than copy of its own -- and, per the copy rule, it says WHAT, never
     /// why.
-    func reportLoadFailure() {
-        // Whatever else this does, nothing of ours ended up on the receiver -- so the position
-        // sampled at the next disconnect belongs to whatever the receiver kept playing, and the
-        // screen whose load failed must not reclaim on the strength of a load that never landed.
-        // Ahead of the guard below: the banner is optional, this is not.
-        loadedVideoId = nil
+    ///
+    /// Cubic R6-4: `videoId` is the video whose load failed, and only THAT video's stamp is this
+    /// call's to clear. Screen A casts and goes off-screen (stamp released, receiver still playing
+    /// A); screen B mounts on an embed rung, gets no media and lands here — clearing
+    /// `loadedVideoId` unconditionally erased A's presence on the receiver, so A returning
+    /// re-resolved and reloaded it at the phone's stale `currentTime` and the hand-back lost the
+    /// receiver's position.
+    func reportLoadFailure(videoId: String?) {
+        // Nothing of OURS ended up on the receiver -- so the position sampled at the next
+        // disconnect belongs to whatever the receiver kept playing, and the screen whose load
+        // failed must not reclaim on the strength of a load that never landed. Ahead of the guard
+        // below: the banner is optional, this is not.
+        if loadedVideoId == videoId { loadedVideoId = nil }
         // No named device means no session left to blame — and `cast_error_format` is built around
         // the device's name, so there is nothing honest to say. Silence beats "Couldn't play on ".
         guard castAvailable,
@@ -458,7 +465,10 @@ private extension CastController {
             loadRequest = nil
         case .clearAndReport:
             loadRequest = nil
-            reportLoadFailure()
+            // The failed request's video: `load` stamps it via `recordLoad` at issue time, and a
+            // later `load` cancels this request, whose callback then takes `.ignore` above — so
+            // `loadedVideoId` here is still this request's own.
+            reportLoadFailure(videoId: loadedVideoId)
         }
     }
 }

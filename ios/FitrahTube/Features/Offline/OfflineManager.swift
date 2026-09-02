@@ -278,13 +278,16 @@ actor OfflineManager: OfflineSaving {
         var doomed: [String] = []
         var removed: [String] = []
         var checked = 0
+        var unreachable = 0
         for row in await readAll() {
             let action: SweepAction
             if let completedAt = row.completedAt, OfflineSweep.isExpired(completedAt: completedAt, now: current) {
                 action = .deleteExpired   // TTL first, before any network
             } else {
                 checked += 1
-                action = OfflineSweep.decide(completedAt: row.completedAt, now: current, gate: await gate(row.videoId))
+                let answer = await gate(row.videoId)
+                if case .unreachable = answer { unreachable += 1 }
+                action = OfflineSweep.decide(completedAt: row.completedAt, now: current, gate: answer)
             }
             switch action {
             case .keep: break
@@ -297,7 +300,13 @@ actor OfflineManager: OfflineSaving {
         // 404 shape this deletion is most likely to be wrong about. Keep them all and let the next
         // sweep retry; the delete is irreversible, the wait is not. One row alone still goes: a
         // single video really does leave the catalog.
-        if checked >= 2 && removed.count == checked { removed = [] }
+        //
+        // Review Minor 1: `.unreachable` rows are discounted from the denominator, because a broken
+        // edge does not have to answer uniformly — 404 for some rows and a transport error for
+        // others would otherwise leave `removed.count < checked` and delete the 404 half. What is
+        // being asked is "did every row that got an ANSWER say gone", not "did every row say gone".
+        let answered = checked - unreachable
+        if answered >= 2 && removed.count == answered { removed = [] }
         // Through `deleteAll` (Task 7): files + rows together, the same teardown a user Delete
         // runs — never a second removal path — and ONE `schedule()`. A per-row `delete` re-ran the
         // scheduler between deletions, which picks a still-existing queued row and begins its
@@ -402,6 +411,11 @@ actor OfflineManager: OfflineSaving {
                 item.bytesWritten = size
                 item.totalBytes = size
                 item.resumeData = nil
+                // Belt for R6-1: a completed row can carry no error, whatever route it took here.
+                // `transition` already clears the code on the way into `.running`, and a `.finished`
+                // for a `.queued`/`.paused` row (the relaunch and pause races) never passes through
+                // one — so this is the second half of the same invariant, not a duplicate.
+                item.errorCode = nil
                 item.completedAt = completedAt
                 try store.save()
             }
@@ -540,9 +554,9 @@ actor OfflineManager: OfflineSaving {
             // The head row parking on a timer frees the serial slot — re-run the scheduler so a
             // downloadable younger row proceeds instead of starving behind the timer. (Not in the
             // cooldown arm below: that cooldown is global, every row would hit the same wall.)
-            scheduleRetry(row.id, after: delay); await schedule(); return
+            await scheduleRetry(row.id, after: delay); await schedule(); return
         case .blocked(_, let retryAfter):
-            scheduleRetry(row.id, after: retryAfter); await schedule(); return
+            await scheduleRetry(row.id, after: retryAfter); await schedule(); return
         }
         // A VIDEO save needs the muxed itag 18 (save-purpose walk, owner ruling 2026-09-01);
         // an audio-only save stays on the plain walk — it needs visionos's itag-140 `audioOnlyURL`.
@@ -561,14 +575,14 @@ actor OfflineManager: OfflineSaving {
             resolved = first
         } catch ExtractionError.cooldown(let until) {
             // CF-D-9 reverse direction: never a failed row, never a retry into the cooldown.
-            scheduleRetry(row.id, after: .seconds(max(1, until.timeIntervalSince(now())))); return
+            await scheduleRetry(row.id, after: .seconds(max(1, until.timeIntervalSince(now())))); return
         } catch ExtractionError.botCheck {
             // A bot-checked walk (the muxed save-walk's shape — its walk-end trip just
             // armed the persisted cooldown) is a temporary block, never a failed row. `.botCheck`
             // carries no date, so park briefly: the retry's own resolve hits the resolver's
             // cooldown self-gate BEFORE any rung or network call and lands in the `.cooldown` arm
             // above with the cooldown's exact end.
-            scheduleRetry(row.id, after: .seconds(1)); return
+            await scheduleRetry(row.id, after: .seconds(1)); return
         } catch {
             await fail(row.id, Self.code(for: error)); return
         }
@@ -639,8 +653,22 @@ actor OfflineManager: OfflineSaving {
         }
     }
 
-    private func scheduleRetry(_ id: String, after delay: Duration) {
+    /// Parks `id` on a timer whose expiry re-runs `schedule()`.
+    ///
+    /// Cubic R6-2: `schedule()` picks `.queued` rows ONLY, so parking a row that is still `.paused`
+    /// dropped it — a user Resume that landed on a limiter delay, a limiter block, a resolver
+    /// cooldown or a bot-check left the row reading "Paused" forever with no timer that could ever
+    /// pick it up, which is the broken-button shape R5-3 set out to remove. Wait-don't-skip, exactly
+    /// like a save: the row becomes `.queued` ("Waiting", not an error) and the existing queued-row
+    /// mechanism resumes it when the timer fires. Here rather than at the four call sites: every
+    /// park routes through this one function, and a `.queued` row's write is a no-op.
+    private func scheduleRetry(_ id: String, after delay: Duration) async {
         active.remove(id)
+        await write { store in
+            guard let item = store.item(id: id), item.status == OfflineStatus.paused.rawValue else { return }
+            item.status = OfflineStatus.queued.rawValue
+            try store.save()
+        }
         retries[id]?.cancel()
         retries[id] = Task { [weak self] in
             try? await Task.sleep(for: delay)
@@ -662,7 +690,13 @@ actor OfflineManager: OfflineSaving {
     /// Saved row renders an error code whatever its status, so a Retry/Resume that does nothing
     /// visible stops reading as a broken button. NOT used by the kill-switch refusals: that one
     /// never announces itself (fork D). The completed guard is the `pause` write's: a `.finished`
-    /// racing the refusal's own awaits must not end up captioned "Network error".
+    /// racing the refusal's own awaits must not end up captioned "Network error"; `transition` and
+    /// the completion write clear the code again the moment real work starts or lands (R6-1).
+    ///
+    /// Review Minor 2, on the asymmetry: `.cancelled` is deliberately NOT guarded alongside
+    /// `.completed`. A refused Retry of an already-cancelled row is the main way this is reached,
+    /// and that row SHOULD say why its button did nothing — a saved file has nothing left to
+    /// explain. A cancel racing a refusal ends in exactly the state a refused retry does.
     private func note(_ id: String, _ code: ErrorCode) async {
         await write { store in
             guard let item = store.item(id: id), item.status != OfflineStatus.completed.rawValue else { return }
@@ -739,6 +773,13 @@ actor OfflineManager: OfflineSaving {
             guard let item = store.item(id: id), let status = OfflineStatus(rawValue: item.status),
                   let next = OfflineStateMachine.transition(from: status, on: event) else { return }
             item.status = next.rawValue
+            // Cubic R6-1: `note()` and `fail()` write an error code, and `retry()` was the ONLY
+            // thing that ever cleared one — so a row that resumed successfully after a refused
+            // Resume kept `NETWORK` and, since `captionKey` prefers a code over any status,
+            // rendered "Network error. Check your connection" while it downloaded and permanently
+            // after it completed. Work actually starting is what makes the old reason stale, and
+            // this is the ONE place every entry into `.running` goes through.
+            if next == .running { item.errorCode = nil }
             try store.save()
         }
     }

@@ -156,7 +156,13 @@ struct OfflineManagerTests {
         /// The remote kill-switch as the manager reads it; a test replaces it to hold a refusal
         /// inside `begin`'s own `await`.
         nonisolated(unsafe) var downloadsEnabled: @Sendable () async -> Bool = { true }
-        nonisolated(unsafe) var killSwitchCalls = 0
+        /// Review Minor 4: the same race class R5-5 fixed, two fields away — the closure runs its
+        /// read-modify-write on the ACTOR while the test's `waitUntil` reads it. Behind the lock.
+        private var _killSwitchCalls = 0
+        var killSwitchCalls: Int { lock.withLock { _killSwitchCalls } }
+        /// Increments and returns the new count in one critical section, so no caller can read a
+        /// value it then acts on out of date.
+        func countKillSwitchCall() -> Int { lock.withLock { _killSwitchCalls += 1; return _killSwitchCalls } }
         nonisolated(unsafe) var killSwitchHeld = false
     }
 
@@ -511,7 +517,7 @@ struct OfflineManagerTests {
 
         let row = try #require(rig.persisted(id: id))
         #expect(row.status == OfflineStatus.failed.rawValue, "the refusal changes no status")
-        #expect(row.errorCode == "NETWORK", "a refused retry must say WHY nothing happened")
+        #expect(row.errorCode == "NETWORK", "a refused retry must leave the reason on the row")
         #expect(FileManager.default.fileExists(atPath: tmp.path()))
         #expect(rig.engine.starts.isEmpty)
         #expect(rig.resolver.calls.count == 1)
@@ -534,6 +540,83 @@ struct OfflineManagerTests {
         #expect(row.status == OfflineStatus.paused.rawValue)
         #expect(row.errorCode == "NETWORK", "a refused Resume must leave a trace on the row")
         #expect(rig.engine.resumes.isEmpty)
+    }
+
+    /// Cubic R6-1 (the R5-3 regression): `note()` wrote an error code and only `retry()` ever
+    /// cleared one, while `captionKey` prefers a code over ANY status — so a row that resumed
+    /// successfully after a refused Resume rendered "Network error. Check your connection" while it
+    /// downloaded, and permanently after it completed. Work actually starting is what makes the old
+    /// reason stale.
+    @Test func aRowThatResumesAfterARefusedResumeLosesTheStaleErrorCode() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.pause(id)
+        rig.flags.wifiOnly = true
+        rig.flags.cellular = true
+        await rig.manager.resume(id)                       // refused: the row now carries NETWORK
+        #expect(rig.persisted(id: id)?.errorCode == "NETWORK")
+
+        rig.flags.cellular = false                         // the user joins Wi-Fi and taps Resume
+        await rig.manager.resume(id)
+
+        let running = try #require(rig.persisted(id: id))
+        #expect(running.status == OfflineStatus.running.rawValue)
+        #expect(running.errorCode == nil, "a running row cannot still be captioned with why it once refused")
+        #expect(SavedRowText.captionKey(status: .running, errorCode: running.errorCode) == "offline_status_saving")
+
+        try Data(repeating: 7, count: 128).write(to: rig.directory.appending(path: "\(id).tmp"))
+        await rig.manager.handle(.finished(id: id))
+
+        let done = try #require(rig.persisted(id: id))
+        #expect(done.status == OfflineStatus.completed.rawValue)
+        #expect(done.errorCode == nil)
+        #expect(SavedRowText.captionKey(status: .completed, errorCode: done.errorCode) == "offline_status_completed")
+    }
+
+    /// Cubic R6-2: a user Resume that lands on a limiter delay/block, a resolver cooldown or a
+    /// bot-check parked the row on a timer — but `schedule()` picks `.queued` rows ONLY, so a row
+    /// still reading `.paused` was dropped: no start, no retry, no error, exactly the broken-button
+    /// shape R5-3 set out to remove. Wait-don't-skip, like a save: the row goes to "Waiting" and
+    /// the timer picks it up.
+    @Test(arguments: [Decision.delayed(.seconds(30), reason: "prefetch delayed"),
+                      Decision.blocked(reason: "prefetch blocked", retryAfter: .seconds(300))])
+    func aResumeTheLimiterParksBecomesQueuedRatherThanBeingDropped(decision: Decision) async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.pause(id)
+        // A paused row WITH resume data takes `begin`'s resume leg, which never consults the
+        // limiter; the row that reaches `resolveAndStart` is the one whose pause landed during the
+        // resolve, i.e. one with no token yet.
+        rig.store.item(id: id)?.resumeData = nil
+        try rig.store.save()
+        rig.flags.decision = decision
+
+        await rig.manager.resume(id)
+
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.queued.rawValue, "a parked Resume must read Waiting, not Paused")
+        #expect(row.errorCode == nil, "waiting is not an error")
+        #expect(await rig.manager.pendingRetryIds == [id], "and it must actually be on a timer")
+        #expect(SavedRowText.captionKey(status: .queued, errorCode: row.errorCode) == "offline_status_queued")
+    }
+
+    /// The same drop through the resolver's own cooldown arm (CF-D-9's direction).
+    @Test func aResumeIntoAResolverCooldownBecomesQueuedRatherThanBeingDropped() async throws {
+        let rig = makeRig(.failure(.cooldown(until: Date().addingTimeInterval(1800))))
+        defer { rig.cleanUp() }
+        // A row the user paused mid-resolve: `.paused`, no token, so Resume takes the resolve leg.
+        let item = OfflineItem(videoId: Self.lectureVideoId, title: "Lecture", channelName: nil,
+                               thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
+                               status: OfflineStatus.paused.rawValue)
+        try rig.store.insert(item)
+        let id = item.id
+
+        await rig.manager.resume(id)
+
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.queued.rawValue)
+        #expect(row.errorCode == nil)
+        #expect(await rig.manager.pendingRetryIds == [id])
     }
 
     /// The preserve clause (fork D): the kill-switch refusal NEVER announces itself, so the same
@@ -824,8 +907,7 @@ struct OfflineManagerTests {
         // (the retry's own guard, the new attempt's) allows.
         flags.killSwitchHeld = true
         flags.downloadsEnabled = { @Sendable in
-            flags.killSwitchCalls += 1
-            guard flags.killSwitchCalls == 1 else { return true }
+            guard flags.countKillSwitchCall() == 1 else { return true }
             await FakeOfflineEngine.hold(while: { flags.killSwitchHeld }, what: "kill-switch consult")
             return false
         }
@@ -1548,6 +1630,98 @@ struct OfflineManagerTests {
         #expect(resumeData != nil, "without the token the manager's retry restarts the walk from zero")
     }
 
+    /// Serves a 416 with `Content-Range: bytes */<total>` — what googlevideo answers when the walk
+    /// asks for an offset at or past the end of the file. The total rides in the URL's `total`
+    /// query item rather than a static, so two tests can drive different totals in parallel.
+    nonisolated final class RangeNotSatisfiableURLProtocol: URLProtocol {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            let total = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "total" }?.value ?? "0"
+            let response = HTTPURLResponse(url: request.url!, statusCode: 416, httpVersion: nil,
+                                           headerFields: ["Content-Range": "bytes */\(total)"])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        override func stopLoading() {}
+    }
+
+    /// The engine's resume-token wire format, mirroring the `Token: Decodable` the boundary-pause
+    /// tests already use — the engine's own struct is private, and `start` cannot hand one back
+    /// without first deleting the partial these tests are about.
+    private struct WireToken: Encodable { var url: URL; var userAgent: String }
+
+    /// Cubic R6-3: if the app dies between the engine's `.finished` and the manager's file move,
+    /// the row is re-queued carrying a token for a `.tmp` that is ALREADY whole — and `resume`
+    /// then asks for `bytes=<total>-`, which is a 416. Failing with the token made every Retry
+    /// re-issue the same 416 forever; the only exit was Remove plus a full re-download. A partial
+    /// that matches the total is simply finished.
+    @Test func a416OnACompletePartialFinishesTheWalkInsteadOfLooping() async throws {
+        let (engine, directory) = makeStubbed416Engine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "range-complete"
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let tmp = directory.appending(path: "\(id).tmp")
+        try Data("chunk".utf8).write(to: tmp)   // 5 bytes: the whole file
+
+        // `resume`, not `start`: this is the relaunch shape — the row came back carrying a token
+        // for a partial that is already whole, and `resume` walks from the `.tmp`'s own size.
+        let token = try JSONEncoder().encode(
+            WireToken(url: URL(string: "https://example.invalid/media?itag=140&total=5")!, userAgent: "UA"))
+        await engine.resume(id: id, resumeData: token, allowsCellular: true)
+
+        await waitUntil { collector.events.contains { if case .finished = $0 { return true }; return false } }
+        #expect(!collector.events.contains { if case .failed = $0 { return true }; return false },
+                "a complete partial must never be reported as a failure the retry re-issues")
+        #expect(FileManager.default.fileExists(atPath: tmp.path()),
+                "the finished bytes stay for the manager to move")
+    }
+
+    /// The other arm: a 416 whose partial does NOT match the total (or that carries no total at
+    /// all) restarts clean ONCE — the `.tmp` and the token both go, so the next attempt walks from
+    /// offset 0 and a second 416 is impossible.
+    @Test func a416OnAMismatchedPartialRestartsCleanWithNoToken() async throws {
+        let (engine, directory) = makeStubbed416Engine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "range-mismatch"
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let tmp = directory.appending(path: "\(id).tmp")
+        try Data("chunk".utf8).write(to: tmp)
+
+        let token = try JSONEncoder().encode(
+            WireToken(url: URL(string: "https://example.invalid/media?itag=140&total=999")!, userAgent: "UA"))
+        await engine.resume(id: id, resumeData: token, allowsCellular: true)
+
+        await waitUntil { collector.events.contains { if case .failed = $0 { return true }; return false } }
+        let failure = try #require(collector.events.compactMap { event -> OfflineDownloadFailure? in
+            if case .failed(_, let failure) = event { return failure } else { return nil }
+        }.first)
+        guard case .http(let status, let resumeData) = failure else {
+            Issue.record("expected an http failure, got \(failure)")
+            return
+        }
+        #expect(status == 416)
+        #expect(resumeData == nil, "keeping the token is what made the 416 loop forever")
+        #expect(!FileManager.default.fileExists(atPath: tmp.path()),
+                "the unusable partial must go, or the restart is not a restart")
+    }
+
+    private func makeStubbed416Engine() -> (engine: ProgressiveEngine, directory: URL) {
+        let base = FileManager.default.temporaryDirectory
+            .appending(path: "OfflineEngine416-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RangeNotSatisfiableURLProtocol.self]
+        let directory = OfflineStorage.directoryURL(base: base)
+        return (ProgressiveEngine(directory: directory, configuration: configuration), directory)
+    }
+
     /// Serves a 503 with a body — the shape a transient googlevideo error has.
     nonisolated final class ServerErrorURLProtocol: URLProtocol {
         override class func canInit(with request: URLRequest) -> Bool { true }
@@ -1798,6 +1972,27 @@ struct OfflineManagerTests {
         await rig.manager.sweep()
 
         #expect(rig.rowCount() == 3, "a whole-library removal in one pass is an edge, not a purge")
+    }
+
+    /// Review Minor 1: a broken edge does not have to answer uniformly. With 404s on some rows and
+    /// a transport error on others, `removed.count < checked` and the belt used to stand down —
+    /// deleting the 404 half of a library on exactly the failure it exists to survive. The
+    /// denominator is the rows that got an ANSWER, not every row asked.
+    @Test func aSweepWhereEveryAnsweringRowIsGoneKeepsThemEvenAlongsideUnreachableRows() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        for index in 0..<3 {
+            let item = OfflineItem(videoId: "vidMixed\(index)", title: "Lecture \(index)",
+                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
+                                   audioOnly: true, status: OfflineStatus.completed.rawValue,
+                                   completedAt: rig.flags.now)
+            try rig.store.insert(item)
+        }
+        rig.flags.gate = .gone
+        rig.flags.gates = ["vidMixed2": .unreachable]   // the same edge, failing differently
+
+        await rig.manager.sweep()
+
+        #expect(rig.rowCount() == 3, "an edge that 404s some rows and drops others is still one edge")
     }
 
     /// The bound: ONE row really can leave the catalog, and it still goes.

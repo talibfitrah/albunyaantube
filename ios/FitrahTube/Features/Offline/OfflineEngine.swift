@@ -269,6 +269,30 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
         guard isCurrent(id, generation) else { return }
         let response = downloadTask.response as? HTTPURLResponse
         let status = response?.statusCode ?? 200
+        // Cubic R6-3: 416 (Range Not Satisfiable) is the ONE status a resume token cannot survive.
+        // The walk asks for `bytes=<partial size>-`, so a 416 means that offset is past the end —
+        // which happens when the app died between the engine's `.finished` and the manager's file
+        // move (the row is re-queued carrying a token for a `.tmp` that is already whole), or when
+        // a chunk's `Content-Range` carried no total and the walk kept the partial. Failing with
+        // the token made every Retry re-issue the same 416: an infinite loop whose only exit was
+        // Remove plus a full re-download.
+        if status == 416 {
+            // The 416 response's own `Content-Range: bytes */<total>` is the authority on the size.
+            let total = Self.total(fromContentRange: response?.value(forHTTPHeaderField: "Content-Range"))
+            if let total, partialSize(id) == total {
+                // The file IS complete — the walk simply never got to say so. Finish it.
+                stateLock.withLock { walks[id] = nil }
+                continuation.yield(.finished(id: id))
+            } else {
+                // Anything else: start clean ONCE. Dropping the partial AND the token is what makes
+                // this terminal — `begin` takes the resolve path, `start` walks from zero, and a
+                // second 416 is impossible because the offset is 0.
+                try? FileManager.default.removeItem(at: partialURL(id))
+                stateLock.withLock { walks[id] = nil }
+                continuation.yield(.failed(id: id, failure: .http(status: status, resumeData: nil)))
+            }
+            return
+        }
         guard (200..<300).contains(status) else {
             // The partial is untouched, so the token continues the walk from it (the manager
             // re-resolves from zero for a 403, where the URL itself is what died).

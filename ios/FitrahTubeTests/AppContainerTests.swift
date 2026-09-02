@@ -10,19 +10,6 @@ import UIKit
 @Suite(.perTest, .serialized)
 struct AppContainerTests {
 
-    /// R5-7: no background `URLSession`, no resolver, no files. The hook's job is to REACH the
-    /// manager, and `reattachCount` is where that lands; the real `ProgressiveEngine` the process
-    /// container carries would open a second session on `ProgressiveEngine.backgroundSessionIdentifier`
-    /// and let `reattach()` start a live InnerTube resolve for any row a sibling test seeded.
-    private nonisolated final class NoOpEngine: OfflineEngine, @unchecked Sendable {
-        let events: AsyncStream<OfflineDownloadEvent> = AsyncStream { _ in }
-        func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data? { nil }
-        func resume(id: String, resumeData: Data, allowsCellular: Bool) async {}
-        func pause(id: String) async -> Data? { nil }
-        func cancel(id: String) async {}
-        func liveIds() async -> Set<String> { [] }
-    }
-
     /// Gate A-I1: a store SwiftData cannot open used to `preconditionFailure` on the launch path,
     /// i.e. a permanent crash loop with no recovery short of delete-and-reinstall. It must now
     /// delete the store and rebuild instead -- favorites are lost, the app is not.
@@ -69,7 +56,7 @@ struct AppContainerTests {
         _ = try #require(AppContainer.current, "FitrahTubeApp.init must set AppContainer.current")
         let previous = AppContainer.current
         defer { AppContainer.current = previous }
-        let container = AppContainer.fake(offlineEngine: NoOpEngine())
+        let container = AppContainer.fake()   // `isFixture`: a parked engine and resolver, no session
         AppContainer.current = container
         let before = await container.offlineManager.reattachCount
         AppDelegate().application(
@@ -109,6 +96,39 @@ struct AppContainerTests {
         #expect(container.gateTransport is FixedStatusTransport,
                 "a fake container must not run the real gate client against the API base URL")
         #expect(await container.offlineGate.answer("xc7keR2piUM") == .unreachable)
+    }
+
+    /// R5-1, fix round 1: stubbing the gate closed the deletion vector but not the constraint the
+    /// item was written for — the fake container still built `LiveStreamResolver` over the real
+    /// InnerTubeKit resolver, so nothing stopped a `-fitrah-seed-offline` launch resolving over the
+    /// network. Every seam the offline stack can reach the network through must be a stub.
+    @Test func theFakeContainersOfflineStackIsEntirelyStubbed() {
+        let container = AppContainer.fake()
+        #expect(container.isFixture)
+        #expect(container.offlineEngine is ParkedOfflineEngine,
+                "a fixture container must not open a background URLSession")
+        #expect(container.offlineResolver is ParkedStreamResolver,
+                "a fixture container must not resolve over InnerTubeKit")
+    }
+
+    /// The behavioural half, and the one the screenshot rig actually depends on: the `.queued` seed
+    /// row `seedDebugOfflineItemsIfRequested` inserts used to go straight through `schedule()` →
+    /// `begin` → a real InnerTube resolve, fail, and photograph as "Failed" with Retry/Remove
+    /// buttons — or stay "Waiting", depending on the network. Wait-don't-skip keeps it queued.
+    @Test func aQueuedRowInAFakeContainerStaysQueuedAndNeverResolves() async throws {
+        let container = AppContainer.fake()
+        let item = OfflineItem(videoId: "seed-offline-0", title: "Seeded Lecture", channelName: nil,
+                               thumbnailUrl: nil, qualityLabel: "360p", audioOnly: false,
+                               status: OfflineStatus.queued.rawValue)
+        try container.offlineStore.insert(item)
+
+        await container.offlineManager.schedule()
+
+        #expect(container.offlineStore.item(id: item.id)?.status == OfflineStatus.queued.rawValue,
+                "the seeded row's caption and buttons must not be decided by the network")
+        #expect(container.offlineStore.item(id: item.id)?.errorCode == nil)
+        #expect(await container.offlineManager.pendingRetryIds == [item.id],
+                "wait-don't-skip: parked on a timer, not dropped")
     }
 
     @Test func fakeContainerServesCannedCategories() async throws {

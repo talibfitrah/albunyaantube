@@ -76,6 +76,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// the gate client over the network against `AppConfig.apiBaseURL`, so `AppContainerTests` pins
     /// which transport a fixture container actually got.
     let gateTransport: any HTTPTransport
+    /// A previews/tests/screenshot-rig container (`fake()`), whose offline stack must reach the
+    /// network NOWHERE: the gate transport is canned, `offlineEngine`/`offlineResolver` are parked
+    /// stubs, and `FitrahTubeApp` skips the remote-config fetch. Always false in Release — nothing
+    /// outside the `#if DEBUG` `fake()` sets it.
+    let isFixture: Bool
 
     private(set) lazy var settings: any SettingsStore = UserDefaultsSettingsStore(defaults: userDefaults)
     private(set) lazy var filters: any FilterStore = UserDefaultsFilterStore(defaults: userDefaults)
@@ -104,6 +109,26 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// sweep fail-open.
     private(set) lazy var offlineManager: OfflineManager = makeOfflineManager()
 
+    /// The download engine and the resolver `offlineManager` gets, as their own properties so
+    /// `AppContainerTests` can name what a fixture container was actually handed.
+    ///
+    /// R5-1, fix round 1: stubbing the GATE closed the deletion vector but not the constraint —
+    /// `fake()` still built `LiveStreamResolver` over the real InnerTubeKit resolver, so a
+    /// `-fitrah-seed-offline` launch's `.queued` seed row went straight through `schedule()` →
+    /// `begin` → a REAL InnerTube resolve for `seed-offline-0`, which failed and flipped the row to
+    /// `.failed` — the screenshot's caption and action buttons decided by the network, which is the
+    /// instability R5-1 exists to remove, just relocated from the gate to the resolver.
+    private(set) lazy var offlineEngine: any OfflineEngine = isFixture
+        ? ParkedOfflineEngine()
+        : {
+            let configuration = URLSessionConfiguration.background(withIdentifier: ProgressiveEngine.backgroundSessionIdentifier)
+            configuration.sessionSendsLaunchEvents = true
+            return ProgressiveEngine(directory: OfflineStorage.directoryURL(base: offlineBase), configuration: configuration)
+        }()
+    private(set) lazy var offlineResolver: any StreamResolving = isFixture
+        ? ParkedStreamResolver()
+        : LiveStreamResolver(resolver: resolver)
+
     /// Phase 3 Task 8: the app's ONE Cast seam. `lazy` like the stores above — building it is free
     /// and side-effect-free; `setUp()` (from `AppDelegate.didFinishLaunchingWithOptions`, through
     /// the `current` seam) is what actually creates the `GCKCastContext`. A container whose
@@ -115,12 +140,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         let base = offlineBase
         let manager = OfflineManager(
             store: offlineStore,
-            engine: injectedOfflineEngine ?? {
-                let configuration = URLSessionConfiguration.background(withIdentifier: ProgressiveEngine.backgroundSessionIdentifier)
-                configuration.sessionSendsLaunchEvents = true
-                return ProgressiveEngine(directory: OfflineStorage.directoryURL(base: base), configuration: configuration)
-            }(),
-            resolver: LiveStreamResolver(resolver: resolver),
+            engine: offlineEngine,
+            resolver: offlineResolver,
             limiterCheck: { [innerTube] in await innerTube.rateLimiter.check($0, kind: .prefetch, now: innerTube.clock.now) },
             wifiOnly: { [settings] in settings.wifiOnlyDownloads },
             isOnCellular: { [network] in network.isOnCellular },
@@ -199,10 +220,6 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         degradedHeader: degradedHeader
     )
     private let injectedBrowse: (any BrowseSource)?
-    /// R5-7: fixture containers inject a fake download engine, so a test that reaches
-    /// `offlineManager` never opens a second background `URLSession` on
-    /// `ProgressiveEngine.backgroundSessionIdentifier` nor lets `reattach()` start a live resolve.
-    private let injectedOfflineEngine: (any OfflineEngine)?
     private let degradedHeader: (@Sendable (String) async throws -> ChannelHeader)?
     /// Plan C Task 4: a deep-linked `Route.playlist` carries no title/count, so the header falls back
     /// to `getPublicPlaylist` -- same closure shape as `degradedHeader` (the container never holds the
@@ -213,13 +230,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
          browse: (any BrowseSource)? = nil, degradedHeader: (@Sendable (String) async throws -> ChannelHeader)? = nil,
          playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)? = nil,
          gateTransport: any HTTPTransport = URLSessionTransport(),
-         offlineEngine: (any OfflineEngine)? = nil) {
+         isFixture: Bool = false) {
         self.catalog = catalog
         self.userDefaults = userDefaults
         self.modelContainer = modelContainer
         self.apiBaseURL = apiBaseURL
         self.injectedBrowse = browse
-        self.injectedOfflineEngine = offlineEngine
+        self.isFixture = isFixture
         self.degradedHeader = degradedHeader
         self.playlistHeader = playlistHeader
         self.gateTransport = gateTransport
@@ -256,8 +273,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // bundle identifier or a reserved domain -- a trap in a default-argument position, far
         // from any call site (gate A-M15). "fitrahtube.fake" is safe today; this keeps it latent.
         defaults: UserDefaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard,
-        browse: any BrowseSource = FakeBrowseSource(),
-        offlineEngine: (any OfflineEngine)? = nil
+        browse: any BrowseSource = FakeBrowseSource()
     ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
         // defaults domain. Does NOT wipe the suite -- callers that write through the returned
@@ -280,7 +296,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // keep-on-sweep, zero requests.
         AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true),
                      apiBaseURL: AppConfig.apiBaseURL, browse: browse,
-                     gateTransport: FixedStatusTransport(status: 503), offlineEngine: offlineEngine)
+                     gateTransport: FixedStatusTransport(status: 503), isFixture: true)
     }
     #endif
 
@@ -340,6 +356,30 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         return fake(defaults: defaults, browse: FakeBrowseSource.fromLaunchArguments())
     }()
     #endif
+}
+
+/// A fixture container's download engine: records nothing, moves nothing, opens no background
+/// `URLSession` (a second one on `ProgressiveEngine.backgroundSessionIdentifier` is its own hazard).
+/// `events` never yields, so the manager's consumer loop simply parks.
+nonisolated struct ParkedOfflineEngine: OfflineEngine {
+    let events: AsyncStream<OfflineDownloadEvent> = AsyncStream { _ in }
+    func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data? { nil }
+    func resume(id: String, resumeData: Data, allowsCellular: Bool) async {}
+    func pause(id: String) async -> Data? { nil }
+    func cancel(id: String) async {}
+    func liveIds() async -> Set<String> { [] }
+}
+
+/// A fixture container's offline resolver. Answers every resolve with a cooldown a day out, which
+/// `OfflineManager` treats as wait-don't-skip: the row stays `.queued` ("Waiting") behind a timer
+/// that will not fire during a screenshot run. Deliberately NOT a throw the manager fails on — the
+/// seeded `.queued` row must photograph as Waiting, and deliberately not a canned success either,
+/// which would hand the engine a fake URL to pretend to download.
+nonisolated struct ParkedStreamResolver: StreamResolving {
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
+        throw ExtractionError.cooldown(until: Date().addingTimeInterval(86_400))
+    }
 }
 
 #if DEBUG
