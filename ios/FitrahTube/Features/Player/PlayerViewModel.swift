@@ -581,12 +581,19 @@ extension StreamState {
     /// mounted) there is nothing to seek and resurrecting the popped route would be worse; with a
     /// player that never cast, seeking it to some other video's receiver position is the bug.
     func resumeAfterCast(at position: TimeInterval?) {
-        guard let player = currentPlayer, pausedForCast else { return }
-        pausedForCast = false
+        guard let player = currentPlayer else { return }
+        // RULING (re-review Minor 6): the SEEK is unconditional for the claimant. Spec §10's
+        // hand-back is "seek local to the receiver's position and resume", and a screen reopened
+        // on the same video mid-cast must still land where the TV got to even though its fresh
+        // view model never paused anything. Only the RESUME stays gated on having paused: playing
+        // a player the user deliberately left paused is the unrequested-playback bug.
+        // Who reacts at all is `PlayerScreen`'s `castingVideoId` gate, not this.
         if let position, position > 0, position.isFinite {
             player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
             currentTime = position
         }
+        guard pausedForCast else { return }
+        pausedForCast = false
         player.play()
     }
 

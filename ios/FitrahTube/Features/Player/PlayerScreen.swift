@@ -78,7 +78,11 @@ struct PlayerScreen: View {
             guard let model else { return }
             let cast = container.castController
             if active {
-                guard cast.claimCastSource(model.args.videoId) else { return }
+                // Re-review Minor 1: the claim is keyed on the videoId, so an OFFLINE screen for
+                // the SAME video (CF-D-12's Open shape) would otherwise pass it and try to cast a
+                // sandbox file. An offline player never starts, claims or loads a cast — its cast
+                // slot is hidden for the same reason.
+                guard !model.isOfflinePlayback, cast.claimCastSource(model.args.videoId) else { return }
                 Task { await startCasting(model) }
             } else if cast.castingVideoId == model.args.videoId {
                 model.resumeAfterCast(at: cast.lastStreamPosition)

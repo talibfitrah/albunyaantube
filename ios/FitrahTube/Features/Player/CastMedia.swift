@@ -50,6 +50,16 @@ nonisolated enum CastMedia {
             // handing it the video id would be that hand-off by another route. Never castable.
             return nil
         }
+        // Compliance pin (re-review Minor 1): the receiver fetches `contentURL` over the network,
+        // so only an http(s) URL can ever be cast. An offline `PlayerScreen` resolves through
+        // `OfflineResolver`, which answers with a sandbox `file://` URL — handing that to a
+        // receiver is a guaranteed-doomed load AND points the cast surface at a saved media file,
+        // which must never leave the sandbox. `PlayerScreen` also refuses to start a cast from an
+        // offline player; this is the belt-and-braces half, at the one place every cast load is
+        // built.
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            return nil
+        }
         return CastMediaInfo(contentURL: url, contentType: contentType, streamType: streamType,
                              title: args.title ?? args.videoId, channelName: args.channelName,
                              thumbnailURL: args.thumbnailURL)

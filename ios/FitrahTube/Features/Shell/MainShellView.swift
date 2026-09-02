@@ -110,13 +110,19 @@ struct MainShellView: View {
         // layouts, and the inset also lifts the tab's own scroll content clear of it. Only the
         // SELECTED tab mounts one -- every mounted stack would otherwise hold its own controller.
         // Renders UI only: it drives the receiver, never this app's audio session or local player.
-        // Fix round 1 (review Minor 1): gated on the SDK's own `active` flag as well as the
-        // session, so a connected session with nothing loaded on the receiver (the shape a
-        // rejected load leaves behind) parks no empty strip above the tab bar.
+        // Fix round 2 (re-review Important 2): MOUNTED on the session, so the SDK's view controller
+        // actually loads its view — `miniControlsActive` is written only by that controller's own
+        // delegate, so mounting on it made the flag its own precondition and the strip could never
+        // appear. The flag now drives HEIGHT instead, which still closes fix round 1's complaint:
+        // a connected session with nothing loaded on the receiver (the shape a rejected load leaves
+        // behind) collapses to zero height rather than parking an empty strip above the tab bar.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if container.castController.miniControlsActive, tab == router.selectedTab,
+            if container.castController.isSessionActive, tab == router.selectedTab,
                !router.isFullscreen {
                 CastMiniControls(controller: container.castController)
+                    .frame(height: container.castController.miniControlsActive ? nil : 0)
+                    .clipped()
+                    .accessibilityHidden(!container.castController.miniControlsActive)
             }
         }
     }

@@ -54,6 +54,18 @@ struct CastMediaTests {
         #expect(CastMedia.make(resolved: resolved(.embed(videoId: "xc7keR2piUM")), args: args) == nil)
     }
 
+    /// Compliance pin (re-review Minor 1): a receiver fetches `contentURL` over the network, so a
+    /// sandbox `file://` URL — what `OfflineResolver` answers with for a saved video — is never
+    /// castable. Handing one to a receiver is a guaranteed-doomed load AND points the cast surface
+    /// at a saved media file, which must never leave the sandbox. `PlayerScreen` also refuses to
+    /// start a cast from an offline player; this is the pin at the one place every load is built.
+    @Test func aSavedFileURLIsNeverCastable() {
+        let file = URL(fileURLWithPath: "/var/mobile/Containers/Data/Application/offline/xc7keR2piUM.mp4")
+        #expect(CastMedia.make(resolved: resolved(.progressive(url: file, label: "360p")), args: args) == nil)
+        #expect(CastMedia.make(resolved: resolved(
+            .hls(url: file, isLive: false, audioOnlyURL: nil, captionTracks: [])), args: args) == nil)
+    }
+
     @Test func theMetadataFieldsAreCarriedFromTheArgs() throws {
         let media = try #require(CastMedia.make(resolved: resolved(
             .hls(url: hlsURL, isLive: false, audioOnlyURL: nil, captionTracks: [])), args: args))

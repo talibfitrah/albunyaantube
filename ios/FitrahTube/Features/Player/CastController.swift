@@ -21,11 +21,12 @@ import SwiftUI
 /// one `isSessionActive`. `castingVideoId` is the stamp that names the ONE screen this session
 /// belongs to; every reaction is gated on it.
 ///
-/// `NSObject` subclass because `GCKSessionManagerListener`/`GCKRequestDelegate` both refine
-/// `NSObjectProtocol`. Their callbacks are delivered on the main thread empirically (and
-/// `PlayerHostView.Coordinator` already makes the same bet for AVFoundation's) -- but the 4.8.6
-/// headers do NOT document it, so the `assumeIsolated` hops below are a bet, not a quoted
-/// guarantee. They trap rather than race if it is ever wrong.
+/// `NSObject` subclass because `GCKSessionManagerListener`, `GCKRequestDelegate` and
+/// `GCKUIMiniMediaControlsViewControllerDelegate` all refine `NSObjectProtocol`. Every one of
+/// those three delivers on the main thread empirically (and `PlayerHostView.Coordinator` already
+/// makes the same bet for AVFoundation's) -- but the 4.8.6 headers do NOT document it for any of
+/// them, so the `assumeIsolated` hops below are a bet, not a quoted guarantee. They trap rather
+/// than race if it is ever wrong.
 @MainActor @Observable final class CastController: NSObject {
     /// False until `setUp()` has actually created (or found) a shared `GCKCastContext`. Per
     /// instance, written only by `setUp()`: the composition root calls it once from the launch
@@ -63,6 +64,12 @@ import SwiftUI
     /// `GCKUIMiniMediaControlsViewController.active` ("When NO, the control bar should be
     /// hidden", `:43-48`) -- true only once there is media on the receiver to control, so a
     /// connected session with nothing loaded parks no empty strip above the tab bar.
+    ///
+    /// Drives the strip's HEIGHT, never whether `MainShellView` mounts it (re-review Important 2):
+    /// the SDK's own container embeds the mini controller permanently and uses the delegate only
+    /// to show/hide it (`GCKUICastContainerViewController.h:27-39`), and nothing in the headers
+    /// promises `active` updates for a view controller whose view was never loaded. Mounting on
+    /// this flag would have made it its own precondition.
     private(set) var miniControlsActive = false
 
     /// The device a load failed on, for the "Couldn't play on %@" banner (`cast_error_format`).
@@ -151,6 +158,10 @@ import SwiftUI
         // would show up as a silent wrong seek that looks like a playback bug, not a cast bug.
         lastStreamPosition = nil
         castingVideoId = nil
+        // Re-review Minor 2: a failure that landed with no claimant mounted is never consumed, and
+        // `.onChange` does not fire again for the same device name -- so the NEXT failure on that
+        // device would be silent. A new session is the natural place to drop an unread one.
+        lastLoadFailureDevice = nil
         connectedDeviceName = deviceName
         isSessionActive = true
     }
@@ -160,9 +171,19 @@ import SwiftUI
         lastStreamPosition = position
     }
 
+    /// The mini controller's `active` flag, from its delegate (same seam shape as the session
+    /// callbacks above, and the only way a test can set it without an SDK view controller).
+    func miniMediaControlsViewControllerDidChangeActive(_ active: Bool) {
+        miniControlsActive = active
+    }
+
     func sessionDidEnd() {
         isSessionActive = false
         connectedDeviceName = nil
+        // Re-review Important 2, other direction: nothing else clears this, so a strip stuck above
+        // the tab bar after the session ends would be just as SDK-dependent as one that never
+        // appears. One assignment removes the dependency.
+        miniControlsActive = false
         // `castingVideoId`/`lastStreamPosition` deliberately survive: the owning screen's
         // `.onChange` has not run yet and needs both. `finishCasting()` clears them.
     }
@@ -203,6 +224,21 @@ import SwiftUI
     private func cancelLoadRequest() {
         if loadRequest?.inProgress == true { loadRequest?.cancel() }
         loadRequest = nil
+    }
+
+    /// Whether a load-result callback is this controller's business to report to the user.
+    ///
+    /// Re-review Important 1: `GCKRequest.cancel()` aborts with `.cancelled` and tells the delegate
+    /// (`GCKRequest.h:23-24,142-148`), so `cancelLoadRequest()` fed its own abort straight into the
+    /// failure handler -- every second load raised "Couldn't play on {TV}" for a request the app
+    /// itself cancelled, and (via the Important-4 resume) restarted the phone's player while the
+    /// real load was still in flight. Both guards are load-bearing and neither subsumes the other:
+    /// a SYNCHRONOUS abort arrives while `loadRequest` is still the cancelled request (identity
+    /// passes, only the reason saves it), an ASYNCHRONOUS one arrives after the new request is
+    /// stored (only identity saves it -- and it is also what stops the handler nil-ing the NEW
+    /// request's only strong reference, the leak the cancel was added to close).
+    static func reportsLoadFailure(isCurrentRequest: Bool, wasCancelledByUs: Bool) -> Bool {
+        isCurrentRequest && !wasCancelledByUs
     }
 
     /// The other way a cast can fail to play: nothing castable to load at all (an embed rung, or a
@@ -253,29 +289,47 @@ extension CastController: GCKUIMiniMediaControlsViewControllerDelegate {
     nonisolated func miniMediaControlsViewController(
         _ miniMediaControlsViewController: GCKUIMiniMediaControlsViewController,
         shouldAppear: Bool) {
-        MainActor.assumeIsolated { miniControlsActive = shouldAppear }
+        MainActor.assumeIsolated { miniMediaControlsViewControllerDidChangeActive(shouldAppear) }
     }
 }
 
 // MARK: - Load result (spec §10: "surface 'Couldn't play on {device}' on failure")
 
 extension CastController: GCKRequestDelegate {
+    // `requestID` (an `NSInteger`), not the request object: `GCKRequest` is a non-`Sendable` ObjC
+    // object and carrying it into the actor hop is a sending violation -- the same reason
+    // `willEndSession` reads its position before hopping. Distinct in-flight requests carry
+    // distinct ids, which is all the identity check needs.
     nonisolated func requestDidComplete(_ request: GCKRequest) {
-        MainActor.assumeIsolated { loadRequest = nil }
+        let id = request.requestID
+        MainActor.assumeIsolated { finishLoad(id, cancelledByUs: false, reportFailure: false) }
     }
 
     nonisolated func request(_ request: GCKRequest, didFailWithError error: GCKError) {
-        MainActor.assumeIsolated {
-            loadRequest = nil
-            reportLoadFailure()
-        }
+        let id = request.requestID
+        MainActor.assumeIsolated { finishLoad(id, cancelledByUs: false, reportFailure: true) }
     }
 
     nonisolated func request(_ request: GCKRequest, didAbortWith abortReason: GCKRequestAbortReason) {
-        MainActor.assumeIsolated {
-            loadRequest = nil
-            reportLoadFailure()
-        }
+        let id = request.requestID
+        let cancelledByUs = abortReason == .cancelled
+        MainActor.assumeIsolated { finishLoad(id, cancelledByUs: cancelledByUs, reportFailure: true) }
+    }
+}
+
+private extension CastController {
+    /// The one exit for all three delegate callbacks (`reportsLoadFailure`'s two guards). A
+    /// callback about a request this controller is no longer holding touches nothing -- neither
+    /// the banner nor `loadRequest`, which by then may already be the NEXT request's only strong
+    /// reference.
+    func finishLoad(_ requestID: GCKRequestID, cancelledByUs: Bool, reportFailure: Bool) {
+        let isCurrent = loadRequest?.requestID == requestID
+        guard isCurrent else { return }
+        loadRequest = nil
+        guard reportFailure,
+              Self.reportsLoadFailure(isCurrentRequest: isCurrent, wasCancelledByUs: cancelledByUs)
+        else { return }
+        reportLoadFailure()
     }
 }
 

@@ -145,6 +145,17 @@ struct PlayerToolbar: View {
         VStack(spacing: 4) {
             CastButton()
                 .frame(width: 24, height: 24)
+                // Re-review Minor 3: moving the accessibility element onto the button shrank it to
+                // the 24 pt glyph; this restores the ≥44 pt floor for it. The negative vertical
+                // padding is what keeps the finding's OTHER half ("without changing the row's
+                // look"): `.frame(minHeight: 44)` alone makes the slot 20 pt taller than the other
+                // four and drops its caption out of line with them — measured, screenshotted.
+                // -10 top and bottom hands the parent back the original 24 pt of layout while the
+                // view itself still measures 44. The SDK button's own TOUCH area is 24 pt and
+                // always was; enlarging that means resizing the `UIButton`, which reintroduces the
+                // same misalignment.
+                .frame(minWidth: 44, minHeight: 44)
+                .padding(.vertical, -10)
                 .accessibilityIdentifier("player.castButton")
                 .accessibilityLabel(String(localized: "player_action_cast"))
                 .accessibilityValue(container.castController.connectedDeviceName ?? "")
