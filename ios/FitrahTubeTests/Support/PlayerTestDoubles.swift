@@ -131,15 +131,22 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
             #expect(released || Task.isCancelled, "held resolve of \(videoId) was never released")
         }
         let url = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
+        // m6: `.hls`/`.liveHLS` are what `CastSessionTests.phonePlayer(_:)` builds real `AVPlayer`s
+        // from -- a real host there started DNS from un-gated unit tests (same class as R7-22's
+        // OfflineComplianceTests fix). An address literal on the discard port needs no lookup at
+        // all. `.progressive` keeps `url` above unchanged: `OfflineManagerTests` pins that exact
+        // string and is off limits here.
+        let nonResolvingURL = URL(string: "https://127.0.0.1:9/x.m3u8")!
         let expiresAt = Date().addingTimeInterval(expiresIn)
         switch outcome {
         case .hls:
-            return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: URL(string: "https://r1/a140")!,
-                                         captionTracks: []),
+            return Resolved(stream: .hls(url: nonResolvingURL, isLive: false,
+                                         audioOnlyURL: URL(string: "https://r1/a140")!, captionTracks: []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
                             expiresAt: expiresAt)
         case .liveHLS:
-            return Resolved(stream: .hls(url: url, isLive: true, audioOnlyURL: nil, captionTracks: []),
+            return Resolved(stream: .hls(url: nonResolvingURL, isLive: true, audioOnlyURL: nil,
+                                         captionTracks: []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
                             expiresAt: expiresAt)
         case .progressive:

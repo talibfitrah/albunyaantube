@@ -210,6 +210,13 @@ nonisolated struct CastOwnershipState: Sendable, Equatable {
     /// recently refused. A failure is announced app-wide, so this is what stops a screen acting on
     /// one that was never its own.
     var failure: CastClaim?
+    /// I2: set by a `.dropClaim` that fired while THIS screen was paused for a cast that never
+    /// reached the receiver -- off screen, there is no route back (playing here is the hidden-tab
+    /// audio bug `.dropClaim` itself exists to avoid), so nothing resumes it until the screen is
+    /// actually looked at. Consumed by the next `.appear` (`.resume`, below); recomputed fresh by
+    /// every `.dropClaim`, so a drop that was never paused (nothing castable, before
+    /// `pauseForCast()` ever ran) correctly leaves it false.
+    var droppedWhilePaused: Bool = false
 
     /// Ours, meaning THIS screen's claim on `videoId` -- never merely "the same video", which is
     /// what let a second screen on the same video act on the first screen's session.
@@ -236,6 +243,11 @@ nonisolated enum CastAction: Sendable, Equatable {
     /// Give the stamp back so the next video opened during this session can claim it, keeping the
     /// claim (and the receiver's position) for the return leg.
     case release(videoId: String)
+    /// I2: play the local player a `.dropClaim` left paused with no route back -- no seek (nothing
+    /// of ours ever reached the receiver), no claim work (the `.dropClaim` that set the flag this
+    /// answers already spent it). No videoId: unlike every other case this acts on no claim at all,
+    /// only on whatever `currentPlayer` this screen currently holds.
+    case resume
     /// Seek local to the receiver's position if the receiver played our video, resume if we paused,
     /// and drop the claim.
     case handBack(videoId: String)
@@ -253,10 +265,17 @@ nonisolated enum CastOwnership {
             switch trigger {
             case .videoStarted, .sessionChanged:
                 return start(state)
-            case .appear, .disappear, .loadFailed:
-                // A screen with no claim owns nothing, and `.appear` deliberately does not start
-                // one: a player left mounted on another tab would otherwise take the TV away from
-                // the screen the user is actually watching, the moment they switch tabs.
+            case .appear:
+                // I2: a screen with no claim owns nothing to CAST, but it may still owe itself a
+                // RESUME -- a `.dropClaim` that fired while it was paused and off screen left no
+                // other route back. `.appear` is the one trigger that means the screen is actually
+                // visible, so it is the one that may spend the flag; otherwise unchanged, a player
+                // left mounted on another tab must not start one, or switching tabs would take the
+                // TV away from the screen the user is actually watching.
+                return state.droppedWhilePaused ? .resume : .none
+            case .disappear, .loadFailed:
+                // Neither means the screen is the one on screen right now, so neither may act on a
+                // dropped-while-paused flag -- it stays exactly as `.dropClaim` left it.
                 return .none
             }
         }
@@ -862,6 +881,11 @@ nonisolated enum CastOwnership {
     /// hand-back bug in this feature was one of the three being reset without the others.
     private(set) var claimedVideoId: String?
 
+    /// I2: mirrors `CastOwnershipState.droppedWhilePaused` -- written by the `.dropClaim` arm below,
+    /// read back into `decide` on the next `reconcile` call, consumed by `.resume`. Lives here for
+    /// the same reason `claimedVideoId` does: it is this screen's own fact, not the controller's.
+    private var droppedWhilePaused = false
+
     /// AC-P2-1: THIS screen's identity in the cast stamp, minted per view model -- which is exactly
     /// per `PlayerScreen`, since the screen owns its model. `MainShellView` keeps every visited
     /// tab's stack mounted, so two screens can be up on the same video; without this the stamp read
@@ -892,7 +916,8 @@ nonisolated enum CastOwnership {
                                       isOfflinePlayback: isOfflinePlayback, pausedForCast: pausedForCast,
                                       sessionActive: cast.isSessionActive, owner: castOwner,
                                       stamp: cast.castingClaim, loaded: cast.loadedClaim,
-                                      failure: cast.lastLoadFailure?.claim),
+                                      failure: cast.lastLoadFailure?.claim,
+                                      droppedWhilePaused: droppedWhilePaused),
             trigger: trigger)
         switch action {
         case .none:
@@ -904,6 +929,11 @@ nonisolated enum CastOwnership {
             // loaded claim is re-stamped with OUR owner because the screen that put it there may be
             // gone -- and `receiverPosition(for:owner:)`, which the hand-back spends, answers only
             // for the screen the receiver played FOR.
+            //
+            // m7: `recordLoad` re-stamps it WITHOUT issuing a fresh `load()`, so the claim we adopt
+            // carries the PREDECESSOR's issue time -- if that still-in-flight request then fails, the
+            // rejection lands on our claim, not its own. Self-correcting (`.reportFailure` still
+            // resumes and drops it, just under our name); narrow enough that nothing further is owed.
             cast.claimCastSource(videoId: videoId, owner: castOwner)
             cast.recordLoad(videoId, owner: castOwner)
             claimedVideoId = videoId
@@ -913,9 +943,22 @@ nonisolated enum CastOwnership {
             // when the receiver was never playing ours -- so there is no position to take and
             // nothing to resume. Playing here is what put a hidden tab's audio under another
             // screen's cast. The pause still has to go, or the video is stuck paused forever.
+            //
+            // I2: capture whether THIS drop is leaving a genuinely paused phone behind BEFORE
+            // clearing the flag below -- only that phone is owed the next `.appear`'s `.resume`.
+            // Recomputed on every drop, so a stale flag from an earlier episode never lingers past
+            // this one: a drop that was never paused (nothing castable, `pauseForCast()` never ran)
+            // correctly overwrites it back to false.
+            droppedWhilePaused = pausedForCast
             pausedForCast = false
             cast.finishClaim(videoId, owner: castOwner)
             claimedVideoId = nil
+        case .resume:
+            // I2: the resume `.dropClaim` couldn't give while this screen was off screen -- no seek
+            // (nothing of ours ever reached the receiver, so there is no position to take), just let
+            // the phone keep going now that this screen is the one actually on screen.
+            droppedWhilePaused = false
+            currentPlayer?.play()
         case .release(let videoId):
             cast.releaseClaim(videoId, owner: castOwner)
         case .handBack(let videoId):

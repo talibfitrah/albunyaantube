@@ -12,6 +12,12 @@ import Testing
 /// The three `sessionDid*` seams below are what the `GCKSessionManagerListener` callbacks call:
 /// `GCKSessionManager` has an unavailable `init` and `GCKSession` is abstract, so the callbacks
 /// themselves cannot be driven from a test — the seams carry every decision they make.
+///
+/// m8: `castAvailable` is false throughout this file (`setUp()` is never called), so every
+/// `cast.load()` that reaches the SDK call takes its no-session branch and calls
+/// `reportLoadFailure` on the spot -- most tests below already have a device-less
+/// `lastLoadFailure` sitting in `CastController` by the time their own assertions run. A future
+/// `.loadFailed` assertion should not mistake that leftover for its own.
 @Suite(.perTest)
 struct CastSessionTests {
 
@@ -797,12 +803,17 @@ struct CastSessionTests {
         #expect(cast.castingVideoId == "b", "A's stamp was given back and B took it")
         #expect(vm.pausedForCast, "B is the video being cast now, so B's player is the paused one")
 
-        // The session ends carrying A's receiver position. B must not inherit it.
+        // The session ends carrying A's receiver position. B must not inherit it -- though B's own
+        // `load()` was never recorded here (the test never calls `cast.recordLoad("b", ...)`, unlike
+        // A's above), so this actually takes the `.dropClaim` arm, not a hand-back: `.dropClaim`
+        // never seeks at all, so `receiverPosition`'s owner-guard is not what is under test on this
+        // line (m4). That guard is still pinned at the controller by
+        // `aReclaimAndAHandBackNeedTheReceiverToStillPlayOurVideo`.
         cast.sessionWillEnd(position: 512)
         cast.sessionDidEnd()
         vm.reconcile(.sessionChanged)
         #expect(vm.currentTime == 0, "B must never be seeked to A's receiver position")
-        #expect(vm.claimedVideoId == nil, "the hand-back drops the claim")
+        #expect(vm.claimedVideoId == nil, "the claim is spent either way (`.dropClaim` here, not a hand-back)")
         #expect(cast.castingVideoId == nil)
     }
 
@@ -978,6 +989,35 @@ struct CastSessionTests {
         #expect(cast.claimForCast(videoId: Self.other, owner: Self.otherOwner, isOfflinePlayback: false))
     }
 
+    /// I2 (cubic-r7 cast fix1): continues the scenario above -- the claim is already gone and the
+    /// phone is silently paused with no banner and no re-cast. RULING: a screen that dropped its
+    /// claim while paused RESUMES on its next `.appear` (it is visible then -- no hidden-tab audio
+    /// to protect); a second `.appear` must not fight a pause the user made themselves in between.
+    @Test func aClaimantThatDroppedWhilePausedResumesOnlyOnTheNextAppear() async throws {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+        let player = try #require(phonePlayer(vm))
+        vm.currentPlayer = player
+        vm.reconcile(.videoStarted)
+        await settle()
+        #expect(vm.pausedForCast)
+
+        vm.reconcile(.disappear)                        // a tab switch: the stamp goes back
+        cast.reportLoadFailure(claim: CastClaim(videoId: Self.claimed, owner: vm.castOwner))
+        vm.reconcile(.loadFailed)                        // the receiver rejects it, off screen
+        #expect(vm.claimedVideoId == nil, "the claim is spent either way")
+        #expect(player.rate == 0, "still nothing to see off screen")
+
+        vm.reconcile(.appear)                            // back on screen
+        #expect(player.rate == 1, "visible now: nothing left to protect by staying paused")
+
+        player.pause()                                   // the user's own pause, not cast's
+        vm.reconcile(.appear)
+        #expect(player.rate == 0, "the flag was already spent by the first `.appear`")
+    }
+
     /// R7-8: A casts X and tab-switches (stamp released, claim kept), B casts Y, the receiver
     /// disconnects. A's hand-back gets a nil position — the receiver's belongs to Y — but the pause
     /// was still spent by a `play()`, so the hidden tab played under B's own resume: double audio.
@@ -1039,7 +1079,10 @@ struct CastSessionTests {
                 "the receiver is playing this screen's video now, so the position is this screen's")
         #expect(vm.pausedForCast, "the receiver owns playback: the phone stops")
         #expect(player.rate == 0)
-        #expect(resolver.calls.count == 1, "adopting resolves nothing and loads nothing")
+        // m3: NOT `resolver.calls.count == 1` here -- `expiresIn` defaults to 3600 vs
+        // `castExpiryMargin` 600, so `.startCast` would reuse the cached stream too and never touch
+        // the resolver either. `cast.loadedClaim` above (owned by OUR owner with no second `load()`
+        // between it and the popped screen's `recordLoad`) is what actually discriminates adopt.
 
         cast.sessionWillEnd(position: 512)
         cast.sessionDidEnd()
@@ -1070,7 +1113,14 @@ struct CastSessionTests {
         await resolver.waitUntilCalled(count: 3)
         resolver.release(id: Self.claimed)
         resolver.release(id: Self.claimed)
-        await settle()
+        // I1/I9: a fixed `settle()` (ten yields, zero wall time) cannot outlast the resolver's own
+        // 1 ms `Task.sleep` poll waking up to see the release above (`PlayerTestDoubles.swift:113-130`)
+        // -- under a full-suite load the two raced (this test failed 4/5 full runs while passing 5/5
+        // alone). Poll the real observable instead, bounded like `RecordingResolver.waitUntilCalled`.
+        for _ in 0..<2000 {
+            if vm.pausedForCast { break }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
         #expect(cast.castingVideoId == Self.claimed, "the return leg has to actually cast")
         #expect(vm.claimedVideoId == Self.claimed)
         #expect(vm.pausedForCast, "and pause the phone it cast from")

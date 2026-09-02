@@ -23,18 +23,16 @@ struct NowPlayingSnapshot: Equatable, Sendable {
     /// the first prepare and the item reporting for itself.
     static func make(args: PlayerArgs, state: StreamState, elapsed: TimeInterval,
                      duration: TimeInterval?, rate: Float) -> NowPlayingSnapshot? {
-        let isLive: Bool
-        switch state {
-        case .ready(let resolved):
-            if case .hls(_, let live, _, _) = resolved.stream { isLive = live } else { isLive = false }
-        case .rung2Progressive:
-            isLive = false
-        default:
+        // m5: the `case .hls(_, let live, _, _)` unwrap used to be written out here too --
+        // `StreamState.isLive` (`PlayerViewModel.swift`) is the same guard over the same two cases,
+        // folded onto the one place a rung that ever carries liveness now says so.
+        guard state.isPlayable else {
             // Nothing playable to advertise. `.recoveryExhausted` lands here too (CF-G-16):
             // playback has stopped for good until a manual retry, so advertising it was a lie --
             // masked only because that state dismantles the host, which clears the dictionary.
             return nil
         }
+        let isLive = state.isLive
         let title = args.title?.trimmingCharacters(in: .whitespacesAndNewlines)
         // Ruling 39: the real channel title, never the category, never a placeholder. `PlayerArgs`
         // already applied that preference at its `ContentItem` boundary (ruling 17).
