@@ -232,7 +232,7 @@ struct OfflineManagerTests {
     @Test func aVideoSaveOnTheProgressiveRungReachesTheEngineWithTheItag18URL() async throws {
         let rig = makeRig(.progressive); defer { rig.cleanUp() }
         _ = await save(rig, audioOnly: false)
-        #expect(rig.engine.starts.first?.url.absoluteString == "https://manifest.googlevideo.com/x.m3u8")
+        #expect(rig.engine.starts.first?.url.absoluteString == "https://127.0.0.1:9/x.m3u8")
     }
 
     /// Muxed save-walk (owner ruling 2026-09-01, replaces the old "HLS rung → NO_STREAM" pin):
@@ -246,7 +246,7 @@ struct OfflineManagerTests {
         #expect(rig.resolver.calls == [.init(videoId: Self.lectureVideoId, kind: .prefetch,
                                              purpose: .prefetch, forceRefresh: false, requiresMuxed: true)])
         #expect(rig.engine.starts.count == 1)
-        #expect(rig.engine.starts.first?.url.absoluteString == "https://manifest.googlevideo.com/x.m3u8")
+        #expect(rig.engine.starts.first?.url.absoluteString == "https://127.0.0.1:9/x.m3u8")
         #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
     }
 
@@ -1401,6 +1401,30 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
     }
 
+    /// Fix-round m4, the mirror of `theGateCloseLegNeverMarksARowTheUserPausedInsideIt`: when the
+    /// GATE's leg pauses FIRST, the user's own Pause — in flight from a row that still read
+    /// `.running` when they tapped it — finds `.paused` and used to do nothing at all, not even drop
+    /// the gate's claim on it. The gate went on believing it had parked a row the user asked to
+    /// stop, and its next re-open resumed it. A user pause outranks the bookkeeping whether or not
+    /// it finds any work left to do.
+    @Test func aUserPauseThatLostTheRaceToTheGateStillOutranksIt() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.cellular = true
+        let id = await save(rig)
+
+        rig.flags.wifiOnly = true
+        await rig.manager.gateDidChange()   // the gate parks it and marks it its own
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        await rig.manager.pause(id)         // the user's tap, landing after the gate's own write
+
+        rig.flags.cellular = false
+        await rig.manager.gateDidChange()   // the re-open must find nothing of its own to resume
+
+        #expect(rig.engine.resumes.isEmpty, "a user pause must wait for the user, not for the gate")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+    }
+
     /// Part A review, Important 1: the R2-2 ruling rests on the invariant "`gatePausedIds` holds
     /// only rows the GATE paused", and nothing enforced it — the set is written by the refuse leg
     /// and drained by the allow leg, so any id that leaves the paused state by another route (a
@@ -1703,6 +1727,34 @@ struct OfflineManagerTests {
         #expect(rig.engine.pauses == [id, id, id], "the walk begun under a paused row must be stopped")
         #expect(rig.engine.live.isEmpty, "or it downloads on until it completes a row the user paused")
         #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+    }
+
+    /// Fix-round I1: `stopWalkIfNotRunning`'s `!stillCurrent` disjunct is true both when this
+    /// attempt's own claim was merely dropped (the pause the stop exists to catch) and when a NEWER
+    /// attempt owns the row — so an old attempt's continuation could `engine.pause` a walk the new
+    /// one had just started, leaving a `.running`, claimed row with no live task and nothing left to
+    /// reschedule it. A non-current attempt touches nothing.
+    @Test func aStaleAttemptNeverStopsTheWalkANewerAttemptStarted() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.pause(id)
+        #expect(rig.engine.pauses == [id])
+
+        rig.engine.resumeHeld = [id]
+        let stale = Task { await rig.manager.resume(id) }   // attempt 2, parked in its engine hop
+        await waitUntil { rig.engine.resumeEntered.contains(id) }
+
+        await rig.manager.cancel(id)                        // frees the claim without bumping…
+        await rig.manager.retry(id)                         // …and attempt 3 claims and starts
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+        #expect(rig.engine.live == [id])
+
+        rig.engine.resumeHeld = []
+        await stale.value
+
+        #expect(rig.engine.live == [id], "a stale attempt must not stop the live walk")
+        #expect(rig.engine.pauses == [id], "nor bump the generation out from under it")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
     }
 
     /// Finding 4: a head-of-queue row parked by a limiter block must not starve a younger queued
@@ -2067,6 +2119,7 @@ struct OfflineManagerTests {
         // FIFO sentinel: the stream preserves order, so once this arrives anything the straggler
         // yielded has been collected too.
         var request = URLRequest(url: url)
+        request.setValue(ProgressiveEngine.rangeHeader(offset: 0), forHTTPHeaderField: "Range")
         request.setValue("UA", forHTTPHeaderField: "User-Agent")
         let sentinel = side.downloadTask(with: request)   // never resumed; carries the request shape
         sentinel.taskDescription = "sentinel"

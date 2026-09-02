@@ -223,8 +223,10 @@ import SwiftUI
     /// screen's video is on the receiver must not clear the position that belongs to that screen.
     ///
     /// One call for both halves, so which fields a hand-back spends never depends on which arm ran
-    /// it -- split into a stamp-only release and a clear-everything call, one arm leaves a spent
-    /// position lingering until the next session begins and the other clears a live claimant's.
+    /// it. Splitting it back into a stamp-only release and a clear-everything call would leave one
+    /// arm lingering with a spent position until the next session begins, and the other clearing a
+    /// live claimant's. (`releaseClaim` stays as the deliberate stamp-only seam for going off
+    /// screen, where the claim is explicitly KEPT for the return leg.)
     func finishClaim(_ videoId: String, owner: UUID) {
         let claim = CastClaim(videoId: videoId, owner: owner)
         if castingClaim == claim { castingClaim = nil }
@@ -357,7 +359,8 @@ import SwiftUI
     /// `GCKRequest.delegate` is weak).
     ///
     /// Taking the current id as an ARGUMENT is what makes the identity guard testable: inside
-    /// `finishLoad`, ahead of this helper, no test can watch it answer false.
+    /// `finishLoad`, ahead of this helper, no test can watch it answer false — deleting it left
+    /// every test green, which is the evidence this seam is kept for.
     static func loadCallbackOutcome(callbackID: GCKRequestID, currentID: GCKRequestID?,
                                     reportFailure: Bool, cancelledByUs: Bool) -> LoadCallbackOutcome {
         guard currentID == callbackID else { return .ignore }

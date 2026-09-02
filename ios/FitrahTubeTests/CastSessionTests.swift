@@ -306,12 +306,14 @@ struct CastSessionTests {
                            loaded: String? = "xc7keR2piUM",
                            loadedOwner: UUID = CastSessionTests.owner,
                            failure: String? = nil,
-                           failureOwner: UUID = CastSessionTests.owner) -> CastOwnershipState {
+                           failureOwner: UUID = CastSessionTests.owner,
+                           visible: Bool = false) -> CastOwnershipState {
         CastOwnershipState(claimedVideoId: claim, videoId: video, isOfflinePlayback: offline,
                            pausedForCast: paused, sessionActive: sessionActive, owner: Self.owner,
                            stamp: stamp.map { CastClaim(videoId: $0, owner: stampOwner) },
                            loaded: loaded.map { CastClaim(videoId: $0, owner: loadedOwner) },
-                           failure: failure.map { CastClaim(videoId: $0, owner: failureOwner) })
+                           failure: failure.map { CastClaim(videoId: $0, owner: failureOwner) },
+                           isVisible: visible)
     }
 
     /// A screen with no claim owns nothing, so only the two triggers that MEAN "there is something
@@ -396,12 +398,21 @@ struct CastSessionTests {
             for loaded in [Self.other, nil] {
                 #expect(CastOwnership.decide(state: ownership(sessionActive: false, stamp: nil,
                                                               loaded: loaded),
-                                             trigger: trigger) == .dropClaim(videoId: Self.claimed))
+                                             trigger: trigger)
+                        == .dropClaim(videoId: Self.claimed, resume: false))
             }
             #expect(CastOwnership.decide(state: ownership(sessionActive: false, stamp: nil,
                                                           loadedOwner: Self.otherOwner),
-                                         trigger: trigger) == .dropClaim(videoId: Self.claimed),
+                                         trigger: trigger)
+                    == .dropClaim(videoId: Self.claimed, resume: false),
                     "the same video from another screen is another screen's load")
+            // C1: silently only while nobody is looking. The screen deciding this may be the one on
+            // screen — its own `.appear` beat its `.onChange(isSessionActive)` to the session end —
+            // and then there is nothing left to protect by staying paused.
+            #expect(CastOwnership.decide(state: ownership(sessionActive: false, stamp: nil,
+                                                          loaded: nil, visible: true),
+                                         trigger: trigger)
+                    == .dropClaim(videoId: Self.claimed, resume: true))
         }
     }
 
@@ -421,9 +432,11 @@ struct CastSessionTests {
         #expect(CastOwnership.decide(state: ownership(loaded: nil, failure: Self.claimed),
                                      trigger: .loadFailed) == .reportFailure(videoId: Self.claimed))
         #expect(CastOwnership.decide(state: ownership(stamp: Self.other, failure: Self.claimed),
-                                     trigger: .loadFailed) == .dropClaim(videoId: Self.claimed))
+                                     trigger: .loadFailed)
+                == .dropClaim(videoId: Self.claimed, resume: false))
         #expect(CastOwnership.decide(state: ownership(stamp: nil, failure: Self.claimed),
-                                     trigger: .loadFailed) == .dropClaim(videoId: Self.claimed))
+                                     trigger: .loadFailed)
+                == .dropClaim(videoId: Self.claimed, resume: false))
         // Someone else's failure, and a failure with no claim behind it, are nothing of ours.
         #expect(CastOwnership.decide(state: ownership(stamp: nil, failure: Self.other),
                                      trigger: .loadFailed) == .none)
@@ -999,6 +1012,38 @@ struct CastSessionTests {
         player.pause()                                   // the user's own pause, not cast's
         vm.reconcile(.appear)
         #expect(player.rate == 0, "the flag was already spent by the first `.appear`")
+    }
+
+    /// C1 (cast re-review 1): the flag above is armed by a `.dropClaim` and spent only by a LATER,
+    /// separate `.appear`. When the trigger that discovers the drop is the still-visible screen's
+    /// OWN `.appear` — the session ended just before that screen's `.onChange(isSessionActive)` ran
+    /// — the phone stayed paused until some further visibility cycle. Visibility is its own state
+    /// field now, so a drop decided while the screen is visible resumes in the SAME step.
+    @Test func aDropDiscoveredByAVisibleScreenResumesInTheSameStep() async throws {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+        let player = try #require(phonePlayer(vm))
+        vm.currentPlayer = player
+        vm.reconcile(.appear)                            // this screen is the one on screen
+        vm.reconcile(.videoStarted)
+        await settle()
+        #expect(vm.pausedForCast)
+
+        // The session ends while the screen never left. Nothing of ours ever reached the receiver
+        // (no `recordLoad`), so this is a `.dropClaim`, not a hand-back — and the trigger that
+        // discovers it is this screen's own `.appear`.
+        cast.sessionDidEnd()
+        vm.reconcile(.appear)
+
+        #expect(vm.claimedVideoId == nil, "the spent claim goes either way")
+        #expect(vm.pausedForCast == false)
+        #expect(player.rate == 1, "a drop decided while the screen is visible resumes in that step")
+
+        player.pause()                                   // the user's own pause, not cast's
+        vm.reconcile(.appear)
+        #expect(player.rate == 0, "and nothing was left armed for a later appearance to spend")
     }
 
     /// R7-8: A casts X and tab-switches (stamp released, claim kept), B casts Y, the receiver

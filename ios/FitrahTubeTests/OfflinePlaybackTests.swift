@@ -370,6 +370,7 @@ struct OfflinePlaybackTests {
                                status: OfflineStatus.failed.rawValue, errorCode: "NETWORK")
         try rig.store.insert(item)
         let engine = FakeOfflineEngine()
+        engine.pauseResumeData = nil   // the deleted `NullEngine.start` answered nil; keep the input
         let manager = makeManager(rig, gate: GateLog(), engine: engine, downloadsEnabled: { true })
         await manager.retry(item.id)
         for _ in 0..<2000 {
@@ -390,6 +391,7 @@ struct OfflinePlaybackTests {
                                status: OfflineStatus.queued.rawValue)
         try rig.store.insert(item)
         let engine = FakeOfflineEngine()
+        engine.pauseResumeData = nil   // the deleted `NullEngine.start` answered nil; keep the input
         let killSwitch = KillSwitch(false)
         let manager = makeManager(rig, gate: GateLog(), engine: engine,
                                   downloadsEnabled: { killSwitch.enabled })

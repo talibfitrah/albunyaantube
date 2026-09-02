@@ -165,14 +165,18 @@ actor OfflineManager: OfflineSaving {
     /// nothing else does.
     @discardableResult
     private func pauseIfRunning(_ id: String) async -> Bool {
-        guard let row = await read(id: id), row.status == .running else { return false }
-        // A USER pause outranks any gate bookkeeping: whatever the
-        // gate still believes it parked, this row now waits for the user's Resume. `gateDidChange`
-        // re-inserts right after its own call returns TRUE, so the gate's leg is unaffected;
-        // this is what stops a STALE entry (an id that left `.paused` by another route, or one the
-        // refuse leg inserted after a pause that no-oped inside its own suspension) turning the
-        // next gate re-open into an unrequested resume.
+        // A USER pause outranks any gate bookkeeping — ABOVE the guard below, because it outranks it
+        // whether or not there is any work left to do. The gate's close leg may have paused this row
+        // a moment earlier (its own `await engine.pause` is a whole suspension long, and the tap was
+        // made while the row still read `.running`), and returning `false` without dropping the id
+        // left the gate believing IT parked a row the user asked to stop: the next re-open resumed
+        // it. Whatever the gate still believes it parked, this row now waits for the user's Resume.
+        // `gateDidChange` re-inserts right after its own call returns TRUE, so the gate's leg is
+        // unaffected; this is what stops a STALE entry (an id that left `.paused` by another route,
+        // or one the refuse leg inserted after a pause that no-oped inside its own suspension)
+        // turning the next gate re-open into an unrequested resume.
         gatePausedIds.remove(id)
+        guard let row = await read(id: id), row.status == .running else { return false }
         await transition(id, .pause)
         let resumeData = await engine.pause(id: id)
         active.remove(id)
@@ -233,9 +237,10 @@ actor OfflineManager: OfflineSaving {
         guard await downloadsEnabled() else { return }
         guard let row = await read(id: id), OfflineStateMachine.transition(from: row.status, on: .retry) != nil else { return }
         // Retry is a SAVE, so it consults the per-video gate on the Save affordance's fail-CLOSED
-        // table — nothing else revalidates a failed/cancelled row, so this is the only path that
-        // stops a re-download after an admin flips `offlineAllowed` off (fork C's same-day
-        // remedy). `notAllowed`/`gone` take the row and its partial with them, the way the sweep
+        // table — so nothing else revalidates a failed/cancelled row before it re-queues after an
+        // admin flips `offlineAllowed` off (fork C's same-day remedy). `begin`'s own fail-closed
+        // consult and the belted sweep stop the re-download too; this is the one that stops it
+        // HERE, with the row's own status and partial still to answer for. `notAllowed`/`gone` take the row and its partial with them, the way the sweep
         // does for a completed copy; `unreachable` is no answer, so the retry is refused and the
         // row stays exactly as it was.
         //
@@ -653,7 +658,17 @@ actor OfflineManager: OfflineSaving {
     /// to Saved on its own. `pause` rather than `cancel` for a deleted row too: the bump is what
     /// stops the walk, and `tearDown` already removed the files.
     private func stopWalkIfNotRunning(_ id: String, _ attempt: Int) async {
-        guard await read(id: id)?.status != .running || !stillCurrent(id, attempt) else { return }
+        // A non-current attempt touches NOTHING — not even a read. `stillCurrent` alone cannot say
+        // that: it is false both when this attempt's own claim was merely dropped (the pause below
+        // exists for exactly that) and when a NEWER attempt owns the row, and pausing in the second
+        // case bumps the generation out from under a walk that attempt just started, leaving a
+        // `.running`, claimed row with no live task and nothing left to reschedule it. Re-checked
+        // after the read for the same reason: the claim is free across that hop, so a re-claim
+        // lands precisely there. The pause this exists to catch still passes both — `pause` drops
+        // `active` without ever bumping `attempts`.
+        guard attempts[id] == attempt else { return }
+        let status = await read(id: id)?.status
+        guard attempts[id] == attempt, status != .running || !stillCurrent(id, attempt) else { return }
         _ = await engine.pause(id: id)
     }
 
@@ -731,14 +746,18 @@ actor OfflineManager: OfflineSaving {
             guard stillCurrent(row.id, attempt) else { return }
             await fail(row.id, Self.code(for: error)); return
         }
-        // The forced walk answered, so the 403 budget is spent — here rather than after the guard
-        // below, because a discarded attempt must not leave the intent armed for a resolve nobody
-        // asked to force.
-        if pendingForceRefresh.remove(row.id) != nil { reResolvedAfter403.insert(row.id) }
         // The resolve suspended for up to the whole ladder walk: a cancel/delete landing in that
         // window already tore the row down — starting the engine now would download a full file
         // for a dead row, in parallel with whatever the freed slot picked up next.
         guard stillCurrent(row.id, attempt) else { return }
+        // The forced walk answered AND it is still this attempt's row, so the 403 budget is spent.
+        // BELOW the currency guard, not above it: only `forget` clears `pendingForceRefresh`, so a
+        // row re-claimed through `pause`/`scheduleRetry`/`release` keeps the intent armed — and a
+        // DISCARDED attempt spending it there would leave the live attempt resolving unforced
+        // against the dead URL, the one thing the intent exists to survive. A discarded attempt
+        // spends nothing. Still bounded: a second 403 needs a walk, a walk needs a resolve that got
+        // past this line, and that resolve spent the intent.
+        if pendingForceRefresh.remove(row.id) != nil { reResolvedAfter403.insert(row.id) }
         guard let url = Self.sourceURL(resolved.stream, audioOnly: row.audioOnly) else {
             if case .embed = resolved.stream { await fail(row.id, .notSaveable); return }
             // An audio-only save resolves without `requiresMuxed`, so this answer may be

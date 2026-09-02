@@ -166,10 +166,15 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     /// an id was `X#1` — exactly what the PREVIOUS launch issued for it. A late `X#1` chunk from
     /// that launch then passed `isCurrent`'s equality, was taken as current, and its offset did not
     /// match the partial this launch is continuing: the mismatch threw and the `catch` deleted the
-    /// whole `.tmp`. The base is drawn once per PROCESS, so no two launches issue the same
-    /// `<id>#<generation>`; inside a launch the counter still just increments, which is all
-    /// `isCurrent` compares. ≥ 1, so a generation is never 0 — the value `taskKey` gives a
-    /// description from a build before this scheme, which any live walk must supersede.
+    /// whole `.tmp`. The base is drawn once per PROCESS; inside a launch the counter still just
+    /// increments, which is all `isCurrent` compares. ≥ 1, so a generation is never 0 — the value
+    /// `taskKey` gives a description from a build before this scheme, which any live walk must
+    /// supersede.
+    ///
+    /// The odds are per LAUNCH PAIR, not per id: one base is shared by every id, so two launches
+    /// whose bases fall within N of each other (N = bumps for that id) collide for all of them at
+    /// once — ~2N/2³² for a handful of bumps. Negligible, and the failure it degrades to is the
+    /// pre-fix one, not a worse one.
     private let generationBase = Int(UInt32.random(in: 1...UInt32.max))
 
     /// Call with `stateLock` held.
@@ -183,6 +188,12 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     /// generation for `id` at all, which is exactly the relaunch case: the background session
     /// re-delivers a previous launch's chunk before any `start`/`resume` runs this session, and
     /// that walk must continue from its `.tmp` rather than be dropped as an orphan.
+    ///
+    /// Adoption takes ANY value, by ruling — the whole point is that this launch cannot know which
+    /// number the last one was on. The residual: adopting a non-newest `b+k` makes the next bump
+    /// `b+k+1`, a number that launch DID issue, so a further out-of-order re-delivery from it could
+    /// read as current. It needs ≥2 bumps last launch plus re-delivery in the wrong order, and it
+    /// degrades to the pre-`generationBase` behaviour rather than anything new.
     private func isCurrent(_ id: String, _ generation: Int) -> Bool {
         stateLock.withLock {
             guard let current = generations[id] else { generations[id] = generation; return true }
