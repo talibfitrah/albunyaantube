@@ -40,16 +40,17 @@ nonisolated protocol OfflineEngine: Sendable {
 /// One request per file is NOT an option: googlevideo throttles a single long GET on an adaptive
 /// format to roughly playback rate (measured 2026-09-01 on the itag-140 URL of `xc7keR2piUM`:
 /// 31 KB/s plain vs 11.4 MB/s for a 10 MB `Range` — yt-dlp's `http_chunk_size` exists for the
-/// same reason). Each chunk is its own background task with `taskDescription = item.id` (the
-/// re-attach key); a finished chunk is appended to `<directory>/<id>.tmp` inside the delegate
-/// callback (the temp location does not survive it) and the next chunk is issued from the
-/// finished task's own request — so a relaunch resumes the walk with no state beyond the file.
-/// The resume token is `{url, userAgent}`; the resume point is the `.tmp` size.
+/// same reason). Each chunk is its own background task whose `taskDescription` is
+/// `<item.id>#<generation>` (the re-attach key plus the walk it belongs to); a finished chunk is
+/// appended to `<directory>/<id>.tmp` inside the delegate callback (the temp location does not
+/// survive it) and the next chunk is issued from the finished task's own request — so a relaunch
+/// resumes the walk with no state beyond the file. The resume token is `{url, userAgent}`; the
+/// resume point is the `.tmp` size.
 nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDownloadDelegate, @unchecked Sendable {
     static let backgroundSessionIdentifier = "com.albunyaan.tube.offline"
     static let chunkSize: Int64 = 10 * 1024 * 1024
 
-    private struct ResumeToken: Codable {
+    private struct ResumeToken: Codable, Equatable {
         var url: URL
         var userAgent: String
     }
@@ -69,7 +70,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     private let directory: URL
     private var session: URLSession!
 
-    /// Guards `walks` + `stoppedIds` — the ONLY authority on whether a walk may continue.
+    /// Guards `walks` + `generations` — the ONLY authority on whether a walk may continue.
     /// `task(id)` alone cannot be: at every ~10 MB chunk boundary the finished task is already
     /// `.completed` and the next task doesn't exist yet, so a cancel/pause landing there found
     /// nothing to stop and the delegate walked on.
@@ -80,17 +81,16 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     /// Cleared on `.finished` and on `cancel`; kept across a transient failure so a racing pause
     /// still gets its token.
     private var walks: [String: ResumeToken] = [:]
-    /// Ids whose walk is stopped (cancel or pause). The delegate consults this before touching a
-    /// finished chunk or issuing the next one; `start`/`resume` clear it (a fresh attempt).
-    /// ponytail: grows by one id per cancelled/paused item per session — trim on clear if that
-    /// ever matters.
-    private var stoppedIds: Set<String> = []
-    /// The TASKS we cancelled, which is the identity `didCompleteWithError` needs: `stoppedIds` is
-    /// keyed by ROW, and a `resume` clears the row's entry before the background daemon delivers
-    /// the paused task's late `.cancelled` — which then read as a system cancel and failed the
-    /// freshly resumed row while its new chunk kept downloading. Kept (never removed) so a
-    /// re-delivery stays silent too; one Int per pause/cancel per session.
-    private var stoppedTaskIds: Set<Int> = []
+    /// The row's live walk number, bumped by every `start`/`resume`/`pause`/`cancel`. Every chunk
+    /// carries the generation it was issued under in its `taskDescription`, and a callback from an
+    /// older one is dropped WHOLE — no append, no next chunk, no `.finished`, no `.failed`. That
+    /// one rule silences all three ways a superseded walk used to talk: the straggler chunk a
+    /// cancel-then-restart let through (a row-keyed stop set is cleared by the restart), the paused
+    /// task's late `.cancelled` that failed the freshly resumed walk (a stop set keyed by row
+    /// cannot tell the two tasks apart), and the relaunch orphan that raced a fresh `engine.start`.
+    /// ponytail: one Int per id per session, never cleared — clearing would reissue a live
+    /// generation to an older task.
+    private var generations: [String: Int] = [:]
 
     init(directory: URL, configuration: URLSessionConfiguration) {
         let (stream, continuation) = AsyncStream.makeStream(of: OfflineDownloadEvent.self)
@@ -108,12 +108,20 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     // MARK: - OfflineEngine
 
     func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async {
-        stateLock.withLock {
-            stoppedIds.remove(id)
-            walks[id] = ResumeToken(url: url, userAgent: userAgent)
+        let token = ResumeToken(url: url, userAgent: userAgent)
+        let (generation, continues) = stateLock.withLock { () -> (Int, Bool) in
+            // A start whose token IS the walk already registered for this id continues that walk's
+            // partial: with the generation silencing everything the old walk still had in flight,
+            // the bytes on disk are all that is left of it and they are this exact stream's. A
+            // start on any OTHER stream begins clean — two streams' bytes must never be spliced.
+            let continues = walks[id] == token
+            walks[id] = token
+            return (bumpLocked(id), continues)
         }
-        try? FileManager.default.removeItem(at: partialURL(id))
-        issueChunk(id: id, url: url, userAgent: userAgent, allowsCellular: allowsCellular, offset: 0)
+        let offset = continues ? partialSize(id) : 0
+        if offset == 0 { try? FileManager.default.removeItem(at: partialURL(id)) }
+        issueChunk(id: id, generation: generation, url: url, userAgent: userAgent,
+                   allowsCellular: allowsCellular, offset: offset)
     }
 
     func resume(id: String, resumeData: Data, allowsCellular: Bool) async {
@@ -121,21 +129,21 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             continuation.yield(.failed(id: id, failure: .network(resumeData: nil)))
             return
         }
-        stateLock.withLock {
-            stoppedIds.remove(id)
+        let generation = stateLock.withLock { () -> Int in
             walks[id] = token
+            return bumpLocked(id)
         }
-        issueChunk(id: id, url: token.url, userAgent: token.userAgent, allowsCellular: allowsCellular,
-                   offset: partialSize(id))
+        issueChunk(id: id, generation: generation, url: token.url, userAgent: token.userAgent,
+                   allowsCellular: allowsCellular, offset: partialSize(id))
     }
 
     func pause(id: String) async -> Data? {
         let walk = stateLock.withLock { () -> ResumeToken? in
-            stoppedIds.insert(id)   // authoritative: the delegate won't issue another chunk
+            _ = bumpLocked(id)   // authoritative: the delegate won't issue another chunk
             return walks[id]
         }
         let live = await task(id)
-        stop(live)
+        live?.cancel()
         // Walk state first; the live task is the fallback for a relaunch-re-attached walk that
         // never registered one. At a chunk boundary both `live` and the old task-only path are
         // nil — the walk state is what keeps the token.
@@ -144,29 +152,59 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
 
     func cancel(id: String) async {
         stateLock.withLock {
-            stoppedIds.insert(id)   // authoritative even when no task is live (chunk boundary)
+            _ = bumpLocked(id)   // authoritative even when no task is live (chunk boundary)
             walks[id] = nil
         }
-        stop(await task(id))
+        await task(id)?.cancel()
     }
 
-    /// Records the task as ours BEFORE cancelling it — the completion is delivered on the delegate
-    /// queue, so the other order races it.
-    private func stop(_ task: URLSessionTask?) {
-        guard let task else { return }
-        stateLock.withLock { _ = stoppedTaskIds.insert(task.taskIdentifier) }
-        task.cancel()
+    /// Call with `stateLock` held.
+    private func bumpLocked(_ id: String) -> Int {
+        let next = (generations[id] ?? 0) + 1
+        generations[id] = next
+        return next
+    }
+
+    /// True while `generation` is `id`'s live walk — and ADOPTS it when this engine holds no
+    /// generation for `id` at all, which is exactly the relaunch case: the background session
+    /// re-delivers a previous launch's chunk before any `start`/`resume` runs this session, and
+    /// that walk must continue from its `.tmp` rather than be dropped as an orphan.
+    private func isCurrent(_ id: String, _ generation: Int) -> Bool {
+        stateLock.withLock {
+            guard let current = generations[id] else { generations[id] = generation; return true }
+            return current == generation
+        }
+    }
+
+    /// `<id>#<generation>`. The generation rides on the TASK because it has to survive a relaunch:
+    /// an in-memory side table is empty when the background session re-delivers a previous
+    /// launch's callbacks, and the orphan would then read as current.
+    nonisolated static func taskKey(_ id: String, _ generation: Int) -> String { "\(id)#\(generation)" }
+
+    /// The inverse. A description with no generation suffix (a task from a build before this
+    /// scheme) is generation 0 — old enough that any live walk supersedes it, and adopted when
+    /// there is no live walk at all.
+    nonisolated static func taskKey(_ description: String?) -> (id: String, generation: Int)? {
+        guard let description else { return nil }
+        guard let hash = description.lastIndex(of: "#"),
+              let generation = Int(description[description.index(after: hash)...])
+        else { return (description, 0) }
+        return (String(description[..<hash]), generation)
     }
 
     func liveIds() async -> Set<String> {
-        Set(await session.allTasks.filter { $0.state != .completed }.compactMap(\.taskDescription))
+        Set(await session.allTasks.filter { $0.state != .completed }
+            .compactMap { Self.taskKey($0.taskDescription)?.id })
     }
 
     // MARK: - Chunk walk
 
-    private func issueChunk(id: String, url: URL, userAgent: String, allowsCellular: Bool, offset: Int64) {
+    private func issueChunk(id: String, generation: Int, url: URL, userAgent: String,
+                            allowsCellular: Bool, offset: Int64) {
         let proceed = stateLock.withLock { () -> Bool in
-            guard !stoppedIds.contains(id) else { return false }
+            // Re-checked under the lock, not just by the caller: a cancel/pause can land between
+            // the caller's check and this one, and the bump is what has to win.
+            guard generations[id] == generation else { return false }
             // Register on every chunk, not just in start/resume — a relaunch-re-attached
             // walk enters here from the delegate without ever passing either, and a boundary
             // `pause` without the token restarts the walk from zero (deleting the `.tmp`).
@@ -179,7 +217,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
         request.setValue(Self.rangeHeader(offset: offset), forHTTPHeaderField: "Range")
         request.allowsCellularAccess = allowsCellular
         let task = session.downloadTask(with: request)
-        task.taskDescription = id
+        task.taskDescription = Self.taskKey(id, generation)
         task.resume()
     }
 
@@ -212,17 +250,19 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     }
 
     private func task(_ id: String) async -> URLSessionTask? {
-        await session.allTasks.first { $0.taskDescription == id && $0.state != .completed }
+        await session.allTasks.first { Self.taskKey($0.taskDescription)?.id == id && $0.state != .completed }
     }
 
     // MARK: - URLSessionDownloadDelegate
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let id = downloadTask.taskDescription, let request = downloadTask.originalRequest, let url = request.url else { return }
-        // Kill switch first: a chunk finishing after a cancel/pause must neither append its bytes
-        // (a cancel already deleted the tmp) nor issue the next chunk. Pause discards this chunk
-        // too — resume re-fetches it from the tmp size, ≤10 MB of re-download for a simple rule.
-        guard stateLock.withLock({ !stoppedIds.contains(id) }) else { return }
+        guard let (id, generation) = Self.taskKey(downloadTask.taskDescription),
+              let request = downloadTask.originalRequest, let url = request.url else { return }
+        // Generation first: a chunk finishing after a cancel/pause/restart must neither append its
+        // bytes (a cancel already deleted the tmp) nor issue the next chunk. Pause discards this
+        // chunk too — resume re-fetches it from the tmp size, ≤10 MB of re-download for a simple
+        // rule.
+        guard isCurrent(id, generation) else { return }
         let response = downloadTask.response as? HTTPURLResponse
         let status = response?.statusCode ?? 200
         guard (200..<300).contains(status) else {
@@ -263,7 +303,8 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
                 return
             }
             if written < total {
-                issueChunk(id: id, url: url, userAgent: request.value(forHTTPHeaderField: "User-Agent") ?? "",
+                issueChunk(id: id, generation: generation, url: url,
+                           userAgent: request.value(forHTTPHeaderField: "User-Agent") ?? "",
                            allowsCellular: request.allowsCellularAccess, offset: written)
             } else {
                 stateLock.withLock { walks[id] = nil }
@@ -277,23 +318,22 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                     totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        guard let id = downloadTask.taskDescription else { return }
+        guard let (id, generation) = Self.taskKey(downloadTask.taskDescription),
+              isCurrent(id, generation) else { return }
         let offset = Self.offset(fromRangeHeader: downloadTask.originalRequest?.value(forHTTPHeaderField: "Range"))
         let total = Self.total(fromContentRange: (downloadTask.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Range"))
         continuation.yield(.progress(id: id, bytesWritten: offset + totalBytesWritten, totalBytes: total))
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let error, let id = task.taskDescription else { return }
-        // Our own pause/cancel: `pause` already returned its token. But iOS cancels background
-        // tasks WE never stopped too (force-quit, background-session disconnect), and swallowing
-        // those left the row at "Saving…" with no task — the manager's `active` claim was never
-        // released, so `schedule()` refused every other queued row for the session. The engine's
-        // own stop sets are what make a cancellation ours: the TASK we stopped (a resume clears
-        // the row long before this arrives), or the ROW, for a stop issued at a chunk boundary
-        // where there was no task to name.
-        if (error as? URLError)?.code == .cancelled,
-           stateLock.withLock({ stoppedTaskIds.contains(task.taskIdentifier) || stoppedIds.contains(id) }) { return }
+        // The generation is what makes a cancellation OURS: every pause/cancel bumps it, so the
+        // task we stopped is stale by the time its completion lands — including the paused task's
+        // late `.cancelled` that a resume used to un-silence (the row was cleared, the task was
+        // not). iOS also cancels tasks we never stopped (force-quit, background-session
+        // disconnect); those carry the LIVE generation and must fail the row, or it sits at
+        // "Saving…" with no task and the manager's serial claim is never released.
+        guard let error, let (id, generation) = Self.taskKey(task.taskDescription),
+              isCurrent(id, generation) else { return }
         continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: task))))
     }
 

@@ -72,11 +72,13 @@ EXTRA_KEYS = {
     "filter_label_parent_child": "⁨%1$@⁩ › ⁨%2$@⁩",
     # share_app_promo: REFUSED above and re-authored here. Android's value claims "ad-free",
     # which spec D10 / 12 require dropping and which the embed rung (B3) makes false -- rung 3
-    # plays YouTube's own player, ads included.
+    # plays YouTube's own player, ads included. The nl verb is "haal" (get), not "download": the
+    # ban on that word is stated absolutely and this is the one string outside the offline surface
+    # that still rendered it (gstack r1 P2).
     "share_app_promo": {
         "en": "Get FitrahTube for curated Islamic content!",
         "ar": "حمّل فطرة تيوب لمحتوى إسلامي منتقى!",
-        "nl": "Download FitrahTube voor geselecteerde islamitische content!",
+        "nl": "Haal FitrahTube voor geselecteerde islamitische content!",
     },
     # report_reason_limit (Plan C task 3): the disabled-row hint once 10 reasons are selected.
     # iOS-only -- Android has no cap and eats the backend's 400 (ContentReportController.java:161
@@ -365,10 +367,13 @@ EXTRA_KEYS = {
         "ar": "تعذّر حفظ هذا الفيديو",
         "nl": "Kan deze video niet opslaan",
     },
+    # WHAT, never WHY (owner directive): "Too many requests" named upstream throttling, i.e. how
+    # the app talks to YouTube. `offline_error_network` below stays as it is -- "check your
+    # connection" is actionable transport copy, not a refusal reason.
     "offline_error_429": {
-        "en": "Too many requests. Try again later",
-        "ar": "طلبات كثيرة جدًا. حاول مرة أخرى لاحقًا",
-        "nl": "Te veel verzoeken. Probeer het later opnieuw",
+        "en": "Couldn't save right now. Try again later",
+        "ar": "تعذّر الحفظ الآن. حاول مرة أخرى لاحقًا",
+        "nl": "Kan nu niet opslaan. Probeer het later opnieuw",
     },
     "offline_error_network": {
         "en": "Network error. Check your connection",

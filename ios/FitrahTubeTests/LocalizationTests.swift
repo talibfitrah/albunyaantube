@@ -146,5 +146,19 @@ struct LocalizationTests {
         }
         #expect(string("offline_save", locale: "en") == "Save for offline")
         #expect(string("offline_not_saveable", locale: "en") == "This video can't be saved for offline")
+        // gstack P3: the 429 copy named upstream throttling ("Too many requests"), which tells the
+        // user how the app talks to YouTube. A failure string says WHAT, never WHY.
+        #expect(string("offline_error_429", locale: "en") == "Couldn't save right now. Try again later")
+    }
+
+    /// gstack P2: the promo's Dutch value shipped the literal word "Download" — the last hit in a
+    /// string any surface renders. The directive is stated absolutely, so it holds here too.
+    @Test func theSharePromoNeverSaysDownloadOrAdFree() throws {
+        for locale in ["en", "ar", "nl"] {
+            let value = try Self.lproj(locale).localizedString(forKey: "share_app_promo", value: nil, table: nil)
+            #expect(value != "share_app_promo", "\(locale) has no share_app_promo")
+            #expect(!value.localizedCaseInsensitiveContains("download"), "\(locale) says Download: \(value)")
+            #expect(!value.localizedCaseInsensitiveContains("ad-free"), "\(locale) says ad-free: \(value)")
+        }
     }
 }

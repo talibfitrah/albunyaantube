@@ -26,6 +26,10 @@ nonisolated enum OfflineStateMachine {
         case (.running, .complete): .completed
         case (.running, .fail): .failed
         case (.paused, .resume): .running
+        // A resolve can fail for a PAUSED row too: the cellular gate can pause one between its
+        // `.running` transition and `engine.start`. Without this arm `fail()` wrote neither status
+        // nor error code and the row sat at "Paused" as if nothing had happened.
+        case (.paused, .fail): .failed
         case (.failed, .retry), (.cancelled, .retry): .queued
         // Anything cancels except completed (completed is terminal; Delete is not a transition).
         case (.queued, .cancel), (.running, .cancel), (.paused, .cancel), (.failed, .cancel): .cancelled

@@ -8883,19 +8883,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "طلبات كثيرة جدًا. حاول مرة أخرى لاحقًا"
+            "value": "تعذّر الحفظ الآن. حاول مرة أخرى لاحقًا"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Too many requests. Try again later"
+            "value": "Couldn't save right now. Try again later"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Te veel verzoeken. Probeer het later opnieuw"
+            "value": "Kan nu niet opslaan. Probeer het later opnieuw"
           }
         }
       }
@@ -15907,7 +15907,7 @@
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download FitrahTube voor geselecteerde islamitische content!"
+            "value": "Haal FitrahTube voor geselecteerde islamitische content!"
           }
         }
       }

@@ -195,6 +195,17 @@ actor OfflineManager: OfflineSaving {
         // cancelled as it was — not silently re-queued for a start that will never come.
         guard await downloadsEnabled() else { return }
         guard let row = await read(id: id), OfflineStateMachine.transition(from: row.status, on: .retry) != nil else { return }
+        // Retry is a SAVE, so it consults the per-video gate on the Save affordance's fail-CLOSED
+        // table — nothing else revalidates a failed/cancelled row, so without this an admin
+        // flipping `offlineAllowed` off (fork C's same-day remedy) had no path that stopped the
+        // re-download. `notAllowed`/`gone` take the row and its partial with them, the way the
+        // sweep does for a completed copy; `unreachable` is no answer, so the retry is refused and
+        // the row stays exactly as it was.
+        switch await gate(row.videoId) {
+        case .allowed: break
+        case .notAllowed, .gone: await delete(row.id); return
+        case .unreachable: return
+        }
         await write { store in
             guard let item = store.item(id: id) else { return }
             item.status = OfflineStatus.queued.rawValue
@@ -253,20 +264,28 @@ actor OfflineManager: OfflineSaving {
         await schedule()
     }
 
+    /// EVERY row, not only completed ones: a video pulled from the catalog while its save was
+    /// queued/running/paused/failed was invisible here, so `reattach()` resumed it on the next
+    /// launch and only the sweep AFTER that finally deleted it — the ruling's auto-delete honoured
+    /// for finished copies alone. The TTL half still needs a `completedAt`, which is exactly what
+    /// an unfinished row does not have; the gate half applies to all of them.
     func sweep() async {
         let current = now()
-        for row in await readAll() where row.status == .completed {
-            guard let completedAt = row.completedAt else { continue }
+        var doomed: [String] = []
+        for row in await readAll() {
             let action: SweepAction
-            if OfflineSweep.isExpired(completedAt: completedAt, now: current) {
+            if let completedAt = row.completedAt, OfflineSweep.isExpired(completedAt: completedAt, now: current) {
                 action = .deleteExpired   // TTL first, before any network
             } else {
-                action = OfflineSweep.decide(completedAt: completedAt, now: current, gate: await gate(row.videoId))
+                action = OfflineSweep.decide(completedAt: row.completedAt, now: current, gate: await gate(row.videoId))
             }
-            // Through `delete` (Task 7): files + row together, the same teardown a user Delete
-            // runs — never a second removal path.
-            if action != .keep { await delete(row.id) }
+            if action != .keep { doomed.append(row.id) }
         }
+        // Through `deleteAll` (Task 7): files + rows together, the same teardown a user Delete
+        // runs — never a second removal path — and ONE `schedule()`. A per-row `delete` re-ran the
+        // scheduler between deletions, which picks a still-existing queued row and begins its
+        // resolve: a real, rate-limited InnerTube POST for a row this same loop then deletes.
+        await deleteAll(doomed)
     }
 
     /// Reconciliation note 6: re-evaluate the cellular gate after `wifiOnlyDownloads` or the path
@@ -308,15 +327,17 @@ actor OfflineManager: OfflineSaving {
         switch event {
         case .progress(let id, let bytesWritten, let totalBytes):
             let current = now()
-            // ponytail: persist at most twice a second; the in-memory @Model mutation already
-            // re-renders an observing row, the save is for relaunch/footer accuracy.
-            let persist = current.timeIntervalSince(lastProgressPersist[id] ?? .distantPast) >= 0.5
-            if persist { lastProgressPersist[id] = current }
+            // ponytail: at most twice a second, and the WHOLE hop — the throttle used to cover
+            // only `store.save()`, so every engine packet still hopped to the main actor for a
+            // `store.item(id:)` predicate fetch. 2 Hz is a live enough bar for the row; per-packet
+            // main-thread fetches for the length of a save are not free.
+            guard current.timeIntervalSince(lastProgressPersist[id] ?? .distantPast) >= 0.5 else { return }
+            lastProgressPersist[id] = current
             await write { store in
                 guard let item = store.item(id: id), item.status == OfflineStatus.running.rawValue else { return }
                 item.bytesWritten = bytesWritten
                 if let totalBytes { item.totalBytes = totalBytes }
-                if persist { try store.save() }
+                try store.save()
             }
 
         case .finished(let id):
@@ -329,8 +350,7 @@ actor OfflineManager: OfflineSaving {
             // the final chunk's finish can land AFTER `reattach()` already found no live task and
             // queued the row — deleting a file that is complete costs a full re-download.
             // Only a cancelled/deleted row's bytes are actually garbage.
-            guard let row = await read(id: id),
-                  row.status == .running || row.status == .paused || row.status == .queued else {
+            guard let row = await read(id: id), Self.acceptsCompletion(row.status) else {
                 try? FileManager.default.removeItem(at: tmp)   // cancelled/deleted while finishing
                 return
             }
@@ -350,7 +370,16 @@ actor OfflineManager: OfflineSaving {
             let completedAt = now()
             forget(id)
             await write { store in
-                guard let item = store.item(id: id) else { return }
+                // `localPath` is written on the NEXT line and nowhere else, so a Delete/Cancel that
+                // landed while this completion was suspended leaves `<id>.<ext>` named by nothing:
+                // `removeFiles` never sees a path the row does not carry yet, and nothing in the
+                // app enumerates the offline directory. Unlike CF-D-10's `.tmp` orphan (the next
+                // `engine.start` deletes that one) this has no healer, so the bytes go here.
+                guard let item = store.item(id: id), let status = OfflineStatus(rawValue: item.status),
+                      Self.acceptsCompletion(status) else {
+                    try? FileManager.default.removeItem(at: destination)
+                    return
+                }
                 item.status = OfflineStatus.completed.rawValue
                 item.localPath = name
                 item.bytesWritten = size
@@ -381,7 +410,9 @@ actor OfflineManager: OfflineSaving {
                 guard let requeued = await read(id: id) else { return }
                 await resolveAndStart(requeued, forceRefresh: true)
             case .http(403, _): await fail(id, .http403)
-            case .http(429, _): await fail(id, .http429)
+            // A throttle leaves the `.tmp` untouched like any other transient status, so the token
+            // rides the failure and the retry continues the walk instead of re-downloading it.
+            case .http(429, let resumeData): await fail(id, .http429, resumeData: resumeData)
             // A transient status (5xx, 416) is a transport failure like any other: the `.tmp` is
             // untouched, so keep the token — `retry` → `begin` resumes only when the row carries
             // one, and `engine.start` deletes the partial.
@@ -442,8 +473,12 @@ actor OfflineManager: OfflineSaving {
         if let resumeData = row.resumeData {
             await transition(row.id, row.status == .paused ? .resume : .start)
             try? Self.prepareDirectory(directory)
+            // The cellular read is its own main-actor hop, so it goes ABOVE the guard: evaluated
+            // inside the engine call's argument list it suspended AFTER the last check, and a
+            // cancel completing in that window found nothing behind it.
+            let allowsCellular = !(await wifiOnly())
             guard stillCurrent(row.id, attempt) else { return }
-            await engine.resume(id: row.id, resumeData: resumeData, allowsCellular: !(await wifiOnly()))
+            await engine.resume(id: row.id, resumeData: resumeData, allowsCellular: allowsCellular)
             return
         }
         await resolveAndStart(row, forceRefresh: false)
@@ -537,8 +572,10 @@ actor OfflineManager: OfflineSaving {
         } catch {
             await fail(row.id, .unknown); return
         }
+        // Above the guard, not inside the call's argument list — see `begin`'s resume leg.
+        let allowsCellular = !(await wifiOnly())
         guard stillCurrent(row.id, attempt) else { return }   // cancel during the transition hop
-        await engine.start(id: row.id, url: url, userAgent: resolved.userAgent, allowsCellular: !(await wifiOnly()))
+        await engine.start(id: row.id, url: url, userAgent: resolved.userAgent, allowsCellular: allowsCellular)
     }
 
     /// itag 140 for audio-only (only the VISIONOS `.hls` rung carries it), itag 18 for video (the
@@ -615,11 +652,22 @@ actor OfflineManager: OfflineSaving {
         lastProgressPersist[id] = nil
     }
 
+    /// Every name this id can own, not just the one the row SNAPSHOT carried: a delete whose read
+    /// predates a completion's `localPath` write saw nil there and left the finished file behind
+    /// (the other half of the orphan the completion's own guard closes). The names are derived,
+    /// not stored, so asking for all three costs three `unlink`s that miss.
     private func removeFiles(_ row: Row) {
         try? FileManager.default.removeItem(at: directory.appending(path: "\(row.id).tmp"))
-        if let localPath = row.localPath {
-            try? FileManager.default.removeItem(at: directory.appending(path: localPath))
+        for kind in OfflineFileKind.allCases {
+            try? FileManager.default.removeItem(
+                at: directory.appending(path: OfflineStorage.fileName(itemId: row.id, kind: kind)))
         }
+    }
+
+    /// The statuses whose bytes a `.finished` may still claim — re-read after the file move, so the
+    /// two checks cannot drift.
+    nonisolated private static func acceptsCompletion(_ status: OfflineStatus) -> Bool {
+        status == .running || status == .paused || status == .queued
     }
 
     /// `Application Support/offline/`, excluded from backup (owner ruling; pinned in Task 7).

@@ -16,7 +16,7 @@ nonisolated enum OfflineStatus: String, CaseIterable, Sendable {
 @Model final class OfflineItem {
     #Unique<OfflineItem>([\.videoId])
 
-    /// UUID string — the background task re-attach key (`taskDescription`, Task 4) and the
+    /// UUID string — the background task re-attach key (the `taskDescription` stem, Task 4) and the
     /// saved file's name stem (`OfflineStorage.fileName`). Not SwiftData's `persistentModelID`:
     /// this one is stable across store rebuilds and legal inside a `taskDescription`.
     var id: String

@@ -22,6 +22,10 @@ struct OfflineEngineTests {
         #expect(OfflineStateMachine.transition(from: .failed, on: .retry) == .queued)
         // Resolve can fail before the engine ever starts (Task 4's embed outcome).
         #expect(OfflineStateMachine.transition(from: .queued, on: .fail) == .failed)
+        // Cubic R4-7: a gate pause landing between the `.running` transition and `engine.start`
+        // leaves a PAUSED row whose resolve then fails. Without this arm `fail()` wrote neither
+        // status nor error code and the row sat at "Paused" as if nothing had happened.
+        #expect(OfflineStateMachine.transition(from: .paused, on: .fail) == .failed)
         // A queued row's button reads Resume (DownloadsAdapter parity); resuming one starts it.
         #expect(OfflineStateMachine.transition(from: .queued, on: .resume) == .running)
     }

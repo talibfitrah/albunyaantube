@@ -2,7 +2,7 @@ import Foundation
 
 /// The three on-disk shapes a save can land as: HLS movpkg (engine dormant until hardware
 /// proves it — `OfflineEngineSupport`), progressive itag 18 video, itag 140 audio-only.
-nonisolated enum OfflineFileKind: String, Sendable {
+nonisolated enum OfflineFileKind: String, CaseIterable, Sendable {
     case movpkg, mp4, m4a
 }
 

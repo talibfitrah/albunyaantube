@@ -12,6 +12,13 @@ struct SavedScreen: View {
     @Environment(\.locale) private var locale
     @Environment(\.widthClass) private var widthClass
 
+    /// Free-space capacity, read once per appearance instead of once per `body`. It used to be
+    /// computed inline in the footer, and `body` re-runs on every persisted progress tick while a
+    /// save is running — a `volumeAvailableCapacityForImportantUsage` stat twice a second. Nil
+    /// only until the first `.task` lands; the footer falls back to a single read so the first
+    /// frame never renders "Zero KB available".
+    @State private var availableBytes: Int64?
+
     var body: some View {
         Group {
             if container.offlineStore.items.isEmpty {
@@ -36,6 +43,9 @@ struct SavedScreen: View {
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(String(localized: "offline_saved_title"))
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: container.offlineStore.items.count) {
+            availableBytes = OfflineStorage.availableBytes(base: container.offlineBase)
+        }
     }
 
     /// "%lld saved • %@ used • %@ available" — digits localized (ar numerals) via `Format`,
@@ -44,7 +54,8 @@ struct SavedScreen: View {
         let items = container.offlineStore.items
         return Text(OfflineStorage.footer(count: items.count,
                                           used: OfflineStorage.usedBytes(items: items),
-                                          available: OfflineStorage.availableBytes(base: container.offlineBase),
+                                          available: availableBytes
+                                              ?? OfflineStorage.availableBytes(base: container.offlineBase),
                                           locale: locale))
             .font(TypeScale.caption)
             .foregroundStyle(Color.textSecondary)
