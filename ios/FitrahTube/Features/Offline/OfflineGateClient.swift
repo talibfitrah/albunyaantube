@@ -6,13 +6,14 @@ import InnerTubeKit
 /// with ONE `GET /api/v1/videos/{id}` per player open. Hand-written over `HTTPTransport` (the
 /// `PublicHeaders` shape, `X-Device-Id` included) because the generated client cannot decode the
 /// raw Firestore `Video` model that endpoint returns (contradiction 5, Timestamp objects) — this
-/// decodes ONLY `{offlineAllowed}` and ignores everything else.
+/// decodes ONLY `{youtubeId, offlineAllowed}` and ignores everything else.
 ///
 /// Mapping (save-time fail-closed; sweep-time semantics live in `OfflineSweep.decide`):
-/// 200 + `offlineAllowed: true` → `.allowed`; 200 with the flag false or ABSENT → `.notAllowed`
-/// (the ruling's default-false — channel-sourced videos were never admin-flagged); 410, and a 404
-/// carrying the BACKEND'S OWN error envelope, → `.gone` (left the catalog); anything else — 5xx,
-/// other 4xx, a 404 from anyone but the backend, transport error, undecodable 200 → `.unreachable`,
+/// a 200 that IS this video's Video model (JSON content type + a matching `youtubeId`) reads its
+/// flag — true → `.allowed`, false or ABSENT → `.notAllowed` (the ruling's default-false —
+/// channel-sourced videos were never admin-flagged); 410, and a 404 carrying the BACKEND'S OWN
+/// error envelope, → `.gone` (left the catalog); anything else — 5xx, other 4xx, a 404 from anyone
+/// but the backend, transport error, a 200 that is not this video's model → `.unreachable`,
 /// NEVER `.gone`: a mistaken `.gone` mass-deletes the library at sweep time.
 nonisolated struct OfflineGateClient: Sendable {
     private let transport: HTTPTransport
@@ -25,8 +26,14 @@ nonisolated struct OfflineGateClient: Sendable {
         self.deviceId = deviceId
     }
 
-    /// Only the field the gate reads; everything else in the Video model is ignored.
+    /// Only the two fields the gate reads; everything else in the Video model is ignored.
+    /// `youtubeId` is the MARKER, not data: it is the field
+    /// `PublicContentService.getVideoDetails` looks the row up by, so the backend's own answer for
+    /// this path always carries it and it always equals the id we asked for. (`Video.id` is the
+    /// Firestore document id — `VideoRepository.save` takes it from `getCollection().document()` —
+    /// and never equals the requested YouTube id.)
     private struct VideoDTO: Decodable {
+        var youtubeId: String?
         var offlineAllowed: Bool?
     }
 
@@ -44,10 +51,16 @@ nonisolated struct OfflineGateClient: Sendable {
     /// comes back as JSON carrying its own `status`/`error`; an HTML error page, an empty body, or
     /// somebody else's JSON does not, and reads as `.unreachable` (keep, and retry next sweep).
     private static func isBackendNotFound(_ response: HTTPResponse) -> Bool {
-        guard response.headers.contains(where: {
-            $0.key.lowercased() == "content-type" && $0.value.lowercased().contains("application/json")
-        }), let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: response.body) else { return false }
+        guard isJSON(response),
+              let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: response.body) else { return false }
         return envelope.status == 404 && envelope.error != nil
+    }
+
+    /// Both legs' first question, shared: did whoever answered claim to be speaking JSON at all.
+    private static func isJSON(_ response: HTTPResponse) -> Bool {
+        response.headers.contains {
+            $0.key.lowercased() == "content-type" && $0.value.lowercased().contains("application/json")
+        }
     }
 
     func answer(_ videoId: String) async -> GateAnswer {
@@ -56,10 +69,15 @@ nonisolated struct OfflineGateClient: Sendable {
         guard let response = try? await transport.send(request) else { return .unreachable }
         switch response.status {
         case 200:
-            guard let dto = try? JSONDecoder().decode(VideoDTO.self, from: response.body) else {
-                // A 200 that can't decode (captive portal, proxy junk) is no answer, not a "no".
-                return .unreachable
-            }
+            // Security r1 P0-1: `VideoDTO` decodes ANY JSON object, so `{}`, an auth envelope, a WAF
+            // block page or a captive portal's 200 all read as "the flag is absent" → `.notAllowed`
+            // → `deleteGateRevoked` → the sweep erases the library. The 404 leg's discipline applies
+            // here too: the backend's own content type AND an affirmative marker that this body is
+            // the Video model FOR THE VIDEO WE ASKED ABOUT. Only then does an absent/false flag mean
+            // "no" — anything else is no answer at all.
+            guard Self.isJSON(response),
+                  let dto = try? JSONDecoder().decode(VideoDTO.self, from: response.body),
+                  dto.youtubeId == videoId else { return .unreachable }
             return dto.offlineAllowed == true ? .allowed : .notAllowed
         case 404:
             return Self.isBackendNotFound(response) ? .gone : .unreachable

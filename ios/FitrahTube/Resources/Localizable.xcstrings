@@ -9565,19 +9565,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "حمّل للمشاهدة بدون إنترنت"
+            "value": "احفظ للمشاهدة بدون إنترنت"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download for offline"
+            "value": "Save for offline"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download voor offline"
+            "value": "Bewaar voor offline"
           }
         }
       }

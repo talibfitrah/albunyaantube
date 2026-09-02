@@ -350,6 +350,22 @@ struct OfflinePlaybackTests {
         #expect(FragmentedMP4Durations.durationFieldRanges(in: original).isEmpty)
     }
 
+    /// Security r1 P3-1: the `trak`/`mdia` recursion had no depth cap, so a head that nests `trak`
+    /// inside `trak` recurses once per 8 bytes of header — up to ~500 k frames within the 4 MB head
+    /// limit, far past the 512 KB stack of the cooperative thread the actor runs `normalize` on.
+    /// A hard crash at save completion, repeatable on every retry of the same URL. Real MP4 nesting
+    /// is `moov/trak/mdia` deep, so anything past 8 is not a movie header: the walk stops and the
+    /// file is left alone (the fail-safe no-op the rest of this walk already takes).
+    @Test func aPathologicallyNestedHeadIsWalkedNoDeeperThanRealMP4Nesting() {
+        let mvex = box("mvex", box("trex", [UInt8](repeating: 0, count: 24)))
+        var nested = box("mdhd", headerPayload(timescale: 44_100, duration: 372_911_104))
+        for _ in 0..<2_000 { nested = box("trak", nested) }
+        let head = Data(box("ftyp", Array("mp42".utf8)) + box("moov", mvex + nested))
+
+        #expect(FragmentedMP4Durations.durationFieldRanges(in: head).isEmpty,
+                "a duration field 2000 boxes deep is not a movie header, and reaching it is a crash")
+    }
+
     // MARK: - Kill-switch (Task 6 review fold-in)
 
     /// `downloadsEnabled == false` must refuse to START new work everywhere, not just hide the

@@ -97,8 +97,9 @@ struct FitrahTubeApp: App {
     /// the UI on a network round trip.
     private func refreshRemoteConfigIfDue() {
         let now = Date()
-        guard Self.isRemoteConfigRefreshDue(
-            now: now, last: lastRemoteConfigRefresh, spacing: Self.remoteConfigRefreshSpacing) else { return }
+        let due = Self.isRemoteConfigRefreshDue(
+            now: now, last: lastRemoteConfigRefresh, spacing: Self.remoteConfigRefreshSpacing)
+        guard due else { return }
         lastRemoteConfigRefresh = now
         // Task 7 (reconciliation note 7): the revalidation sweep shares this hook's cadence —
         // launch + `willEnterForeground` (the `DownloadExpiryPolicy.kt:23-28` cadence), spaced by
@@ -110,7 +111,9 @@ struct FitrahTubeApp: App {
             // the screenshot rig must make none. `current()` still runs — it reads the persisted
             // last-known-good or InnerTubeKit's bundled default, no transport — so the kill-switch
             // and the forced-update decision below behave exactly as they do live.
-            if !container.isFixture { await container.innerTube.remoteConfig.refresh() }
+            if Self.shouldFetchRemoteConfig(isFixture: container.isFixture, due: due) {
+                await container.innerTube.remoteConfig.refresh()
+            }
             let config = await container.innerTube.remoteConfig.current()
             // Cubic P3-1: the kill-switch flipping back ON is observed by nothing — a row saved
             // during an off-window stays queued until the next launch. The refresh above is where
@@ -134,6 +137,12 @@ struct FitrahTubeApp: App {
             #endif
         }
     }
+
+    /// RR-m6: the launch path's ONE remaining network call, as a decision instead of an inline
+    /// `if` — the screenshot rig must make none (R5-1), and the skip was pinned by nothing.
+    /// `current()` runs either way (persisted last-known-good, else InnerTubeKit's bundled
+    /// default, no transport), so the kill-switch and forced-update decisions are unaffected.
+    static func shouldFetchRemoteConfig(isFixture: Bool, due: Bool) -> Bool { due && !isFixture }
 
     /// CF-B1-13: the spacing decision, extracted so it is testable without a running scene.
     static func isRemoteConfigRefreshDue(now: Date, last: Date?, spacing: TimeInterval) -> Bool {

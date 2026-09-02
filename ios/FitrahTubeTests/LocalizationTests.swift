@@ -124,6 +124,12 @@ struct LocalizationTests {
         "settings_offline_storage", "settings_offline_clear", "settings_offline_clear_confirm",
         "settings_downloads", "settings_download_quality", "settings_download_quality_title",
         "settings_wifi_only", "settings_wifi_only_desc",
+        // Security r1 P1-1: the first-run carousel's third page (`OnboardingView.swift:14`) shipped
+        // Android's "Download for offline" title under a download glyph — the banned word verbatim,
+        // on the screen every first-run user and every App Review pass sees, while its own sibling
+        // `onboarding_page3_desc` had already been re-authored. The net covered three sets and not
+        // this key; now it does.
+        "onboarding_page3_title", "onboarding_page3_desc",
     ]
 
     @Test func everyOfflineKeyExistsInAllLocalesWithoutDownloadOrAdFree() throws {

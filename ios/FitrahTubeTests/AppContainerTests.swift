@@ -173,4 +173,13 @@ struct AppContainerTests {
         #expect(FitrahTubeApp.isRemoteConfigRefreshDue(now: now, last: now.addingTimeInterval(-900), spacing: 900))
         #expect(FitrahTubeApp.isRemoteConfigRefreshDue(now: now, last: now.addingTimeInterval(-899), spacing: 900) == false)
     }
+
+    /// RR-m6: the fixture skip on the launch path (R5-1 — the screenshot rig makes no network
+    /// call) was named by no test in either target. Both arms, plus the due-gate it rides.
+    @Test func theLaunchPathFetchesRemoteConfigOnlyWhenDueAndNotAFixture() {
+        #expect(FitrahTubeApp.shouldFetchRemoteConfig(isFixture: false, due: true))
+        #expect(FitrahTubeApp.shouldFetchRemoteConfig(isFixture: true, due: true) == false)
+        #expect(FitrahTubeApp.shouldFetchRemoteConfig(isFixture: false, due: false) == false)
+        #expect(FitrahTubeApp.shouldFetchRemoteConfig(isFixture: true, due: false) == false)
+    }
 }

@@ -42,7 +42,8 @@ import Testing
         """
 
     @Test func a200WithOfflineAllowedTrueIsAllowed() async {
-        #expect(await client(json: #"{"offlineAllowed":true}"#).answer("xc7keR2piUM") == .allowed)
+        #expect(await client(json: #"{"youtubeId":"xc7keR2piUM","offlineAllowed":true}"#)
+                    .answer("xc7keR2piUM") == .allowed)
     }
 
     /// Contradiction 5: production returns the raw Firestore `Video` model, Timestamp objects
@@ -57,13 +58,38 @@ import Testing
     }
 
     @Test func a200WithTheFlagFalseIsNotAllowed() async {
-        #expect(await client(json: #"{"offlineAllowed":false}"#).answer("xc7keR2piUM") == .notAllowed)
+        #expect(await client(json: #"{"youtubeId":"xc7keR2piUM","offlineAllowed":false}"#)
+                    .answer("xc7keR2piUM") == .notAllowed)
     }
 
     /// The ruling's default-false: a 200 without the field (a video registered before the flag
     /// existed) was never admin-flagged — not saveable.
     @Test func a200WithoutTheFlagIsNotAllowed() async {
-        #expect(await client(json: "{}").answer("xc7keR2piUM") == .notAllowed)
+        #expect(await client(json: #"{"youtubeId":"xc7keR2piUM"}"#).answer("xc7keR2piUM") == .notAllowed)
+    }
+
+    /// Security r1 P0-1, the mass-delete pin on the OTHER leg: `VideoDTO` decodes ANY JSON object,
+    /// so `{}`, an auth envelope, a WAF block page or a captive portal's 200 all read as "the flag
+    /// is absent" → `.notAllowed` → `deleteGateRevoked` → the sweep erases the library. The 200 leg
+    /// gets the 404 leg's discipline: the backend's own JSON content type AND an affirmative marker
+    /// that the body is the Video model for the video we asked about. `youtubeId` is that marker —
+    /// `PublicContentService.getVideoDetails` looks the row up BY it, while `id` is a Firestore
+    /// auto-id (`VideoRepository.save` → `getCollection().document()`) that never equals the
+    /// requested id.
+    @Test func a200ThatIsNotThisVideosModelIsUnreachableNeverNotAllowed() async {
+        // An empty object: decodes, marker absent.
+        #expect(await client(json: "{}").answer("xc7keR2piUM") == .unreachable)
+        // Somebody else's JSON (an auth envelope, a WAF block page).
+        #expect(await client(json: #"{"message":"login required"}"#).answer("xc7keR2piUM") == .unreachable)
+        // The Video model — for a DIFFERENT video (a proxy serving a cached or default document).
+        #expect(await client(json: #"{"id":"abc","youtubeId":"otherVideo1","offlineAllowed":false}"#)
+                    .answer("xc7keR2piUM") == .unreachable)
+        // The right body served with the wrong content type: an edge echoing JSON is not the backend.
+        #expect(await client(json: #"{"youtubeId":"xc7keR2piUM","offlineAllowed":false}"#,
+                             contentType: "text/html").answer("xc7keR2piUM") == .unreachable)
+        // A 200 with no content type at all.
+        #expect(await client(json: #"{"youtubeId":"xc7keR2piUM"}"#, contentType: nil)
+                    .answer("xc7keR2piUM") == .unreachable)
     }
 
     /// A 404 the BACKEND produced: the video left the catalog, and the sweep deletes the copy.

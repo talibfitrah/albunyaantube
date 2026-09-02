@@ -275,8 +275,8 @@ actor OfflineManager: OfflineSaving {
     /// an unfinished row does not have; the gate half applies to all of them.
     func sweep() async {
         let current = now()
-        var doomed: [String] = []
-        var removed: [String] = []
+        var expired: [String] = []
+        var gateDeletes: [String] = []
         var checked = 0
         var unreachable = 0
         for row in await readAll() {
@@ -291,27 +291,33 @@ actor OfflineManager: OfflineSaving {
             }
             switch action {
             case .keep: break
-            case .deleteRemoved: removed.append(row.id)
-            case .deleteExpired, .deleteGateRevoked: doomed.append(row.id)
+            // Security r1 P0-1: both gate DELETE verdicts share one bucket, so the belt below
+            // covers both. `.notAllowed` is the likelier drift of the two — `Video.offlineAllowed`
+            // is a boxed `Boolean` and `VideoUpdateRequest` carries it nullable, so one admin edit
+            // or migration can null it across every video at once, and an absent flag is the
+            // ruling's default-false.
+            case .deleteRemoved, .deleteGateRevoked: gateDeletes.append(row.id)
+            // The TTL is a LOCAL decision — no network said anything — so it is never belted.
+            case .deleteExpired: expired.append(row.id)
             }
         }
-        // Cubic R5-2's belt, behind the gate client's envelope check: EVERY gate-checked row in one
-        // pass answering gone is not a same-day whole-catalog removal, it is a broken edge — the
-        // 404 shape this deletion is most likely to be wrong about. Keep them all and let the next
-        // sweep retry; the delete is irreversible, the wait is not. One row alone still goes: a
-        // single video really does leave the catalog.
+        // Cubic R5-2's belt, behind the gate client's envelope + Video-model checks: EVERY
+        // gate-checked row in one pass answering DELETE is not a same-day whole-catalog removal, it
+        // is a broken edge or backend drift. Keep them all and let the next sweep retry; the delete
+        // is irreversible, the wait is not. One row alone still goes: a single video really does
+        // leave the catalog, and a single admin revocation really is fork C's same-day remedy.
         //
         // Review Minor 1: `.unreachable` rows are discounted from the denominator, because a broken
         // edge does not have to answer uniformly — 404 for some rows and a transport error for
-        // others would otherwise leave `removed.count < checked` and delete the 404 half. What is
-        // being asked is "did every row that got an ANSWER say gone", not "did every row say gone".
+        // others would otherwise leave `gateDeletes.count < checked` and delete the 404 half. What
+        // is being asked is "did every row that got an ANSWER say delete", not "did every row".
         let answered = checked - unreachable
-        if answered >= 2 && removed.count == answered { removed = [] }
+        if answered >= 2 && gateDeletes.count == answered { gateDeletes = [] }
         // Through `deleteAll` (Task 7): files + rows together, the same teardown a user Delete
         // runs — never a second removal path — and ONE `schedule()`. A per-row `delete` re-ran the
         // scheduler between deletions, which picks a still-existing queued row and begins its
         // resolve: a real, rate-limited InnerTube POST for a row this same loop then deletes.
-        await deleteAll(doomed + removed)
+        await deleteAll(expired + gateDeletes)
     }
 
     /// Reconciliation note 6: re-evaluate the cellular gate after `wifiOnlyDownloads` or the path
@@ -661,19 +667,35 @@ actor OfflineManager: OfflineSaving {
     /// pick it up, which is the broken-button shape R5-3 set out to remove. Wait-don't-skip, exactly
     /// like a save: the row becomes `.queued` ("Waiting", not an error) and the existing queued-row
     /// mechanism resumes it when the timer fires. Here rather than at the four call sites: every
-    /// park routes through this one function, and a `.queued` row's write is a no-op.
+    /// park routes through this one function, and a row that is already `.queued` only needs its
+    /// stale reason cleared (RR-I1 below).
     private func scheduleRetry(_ id: String, after delay: Duration) async {
         active.remove(id)
-        await write { store in
-            guard let item = store.item(id: id), item.status == OfflineStatus.paused.rawValue else { return }
-            item.status = OfflineStatus.queued.rawValue
-            try store.save()
-        }
+        // RR-m1: armed BEFORE the write. `active.remove` and the write's MainActor hop otherwise
+        // left one suspension in which the row was neither `active` nor in `pendingRetryIds`, and a
+        // concurrent `schedule()` could `begin` an already-`.queued` row despite the limiter's
+        // answer. ponytail: this assumes a park delay outlasts one MainActor hop (the shortest is
+        // `.seconds(1)`); a zero delay could fire the timer into a row still reading `.paused`,
+        // which `schedule()` skips — pass the park through a single write if a caller ever needs one.
         retries[id]?.cancel()
         retries[id] = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
             await self?.retryNow(id)
+        }
+        await write { store in
+            // `.queued` too, not `.paused` alone: `resume()` admits queued rows, so a queued row can
+            // reach a park carrying a noted code and the paused-only guard skipped it entirely.
+            guard let item = store.item(id: id),
+                  item.status == OfflineStatus.paused.rawValue || item.status == OfflineStatus.queued.rawValue
+            else { return }
+            item.status = OfflineStatus.queued.rawValue
+            // RR-I1: parking is not an error, and `captionKey` lets ANY non-nil code outrank the
+            // status — so a row parked on a limiter after a refused Resume (which notes NETWORK)
+            // read "Network error. Check your connection" for the whole cooldown. The old reason is
+            // stale the moment work re-queues, exactly as it is when work starts (R6-1).
+            item.errorCode = nil
+            try store.save()
         }
     }
 
@@ -707,12 +729,21 @@ actor OfflineManager: OfflineSaving {
 
     private func fail(_ id: String, _ code: ErrorCode, resumeData: Data? = nil) async {
         forget(id)
+        // RR-m3: `bytesWritten` feeds both the progress bar and the storage footer
+        // (`OfflineStorage.usedBytes`), so a failure must leave it describing what is ACTUALLY on
+        // disk. Most arms leave the partial untouched — but the engine's one-time 416 restart
+        // deletes it (R6-3), and the row then read near-full for a file that was gone until the
+        // restarted walk's first tick. The `.tmp`'s own size answers for every arm at once
+        // (0 when it is gone), where "clear it when there is no resume token" would silently
+        // under-report the footer for a 403/network failure whose partial IS still there.
+        let partial = Int64((try? directory.appending(path: "\(id).tmp")
+            .resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         await write { store in
             guard let item = store.item(id: id), let status = OfflineStatus(rawValue: item.status),
                   let next = OfflineStateMachine.transition(from: status, on: .fail) else { return }
             item.status = next.rawValue
             item.errorCode = code.rawValue
-            // `bytesWritten` stays: the partial `.tmp` is still on disk (the engine's resume point).
+            item.bytesWritten = partial
             item.resumeData = resumeData
             try store.save()
         }

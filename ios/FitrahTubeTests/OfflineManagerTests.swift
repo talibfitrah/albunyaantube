@@ -393,15 +393,35 @@ struct OfflineManagerTests {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         rig.flags.gate = .allowed   // retry re-consults the per-video gate (gstack P0)
         let id = await save(rig)
+        try Data(repeating: 7, count: 500).write(to: rig.directory.appending(path: "\(id).tmp"))
         await rig.manager.handle(.failed(id: id, failure: .http(status: 503, resumeData: Data("RD".utf8))))
         let row = try #require(rig.persisted(id: id))
         #expect(row.status == OfflineStatus.failed.rawValue)
         #expect(row.errorCode == "NETWORK")
         #expect(row.resumeData == Data("RD".utf8), "without the token the retry restarts the walk from zero")
+        #expect(row.bytesWritten == 500, "this failure kept its partial, so the footer still counts it")
 
         await rig.manager.retry(id)
         #expect(rig.engine.resumes.map(\.id) == [id])
         #expect(rig.engine.starts.count == 1, "the retry continues the walk, it does not re-start it")
+    }
+
+    /// The 416 leftover from `86affdc8` (= re-review RR-m3): 416 is the ONE http failure whose
+    /// partial the engine has already deleted (its one-time clean restart, `ProgressiveEngine`
+    /// R6-3) — so unlike every other transient status the row's `bytesWritten` no longer describes
+    /// anything on disk, and the Saved row's bar read near-full (and the storage footer counted
+    /// bytes that were gone) until the restarted walk's first tick. Fixed at the `fail()` funnel,
+    /// which now reads the `.tmp`'s own size; the 503 test above pins the other direction.
+    @Test func a416ZeroesTheByteCountBecauseTheEngineDroppedThePartial() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.handle(.progress(id: id, bytesWritten: 900, totalBytes: 1_000))
+        await rig.manager.handle(.failed(id: id, failure: .http(status: 416, resumeData: nil)))
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.failed.rawValue)
+        #expect(row.errorCode == "NETWORK")
+        #expect(row.resumeData == nil)
+        #expect(row.bytesWritten == 0, "the partial is gone, so the bar must not still read 900")
     }
 
     @Test func a429FailsHTTP429() async throws {
@@ -598,6 +618,35 @@ struct OfflineManagerTests {
         #expect(row.errorCode == nil, "waiting is not an error")
         #expect(await rig.manager.pendingRetryIds == [id], "and it must actually be on a timer")
         #expect(SavedRowText.captionKey(status: .queued, errorCode: row.errorCode) == "offline_status_queued")
+    }
+
+    /// Re-review RR-I1: R6-1 (work STARTING clears the code) and R6-2 (a parked Resume becomes
+    /// `.queued`) are individually green and jointly broken — a park is not a start, so the code
+    /// noted by the Wi-Fi-only refusal rode the promotion, and `captionKey` lets any non-nil code
+    /// outrank any status. The row sat "Waiting" while rendering "Network error. Check your
+    /// connection", for as long as the limiter or resolver cooldown kept re-parking it.
+    @Test func aParkedResumeDropsTheReasonTheEarlierRefusalNoted() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.pause(id)
+        // No token: the row whose pause landed during the resolve, which is the one that reaches
+        // `resolveAndStart` (and therefore the limiter) on Resume.
+        rig.store.item(id: id)?.resumeData = nil
+        try rig.store.save()
+        rig.flags.wifiOnly = true
+        rig.flags.cellular = true
+        await rig.manager.resume(id)                       // refused: the row now carries NETWORK
+        #expect(rig.persisted(id: id)?.errorCode == "NETWORK")
+
+        rig.flags.cellular = false                         // the user joins Wi-Fi and taps Resume
+        rig.flags.decision = .delayed(.seconds(30), reason: "prefetch delayed")
+        await rig.manager.resume(id)
+
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.queued.rawValue)
+        #expect(row.errorCode == nil, "parking is not an error and the old reason is stale")
+        #expect(SavedRowText.captionKey(status: .queued, errorCode: row.errorCode) == "offline_status_queued")
+        #expect(await rig.manager.pendingRetryIds == [id])
     }
 
     /// The same drop through the resolver's own cooldown arm (CF-D-9's direction).
@@ -1993,6 +2042,72 @@ struct OfflineManagerTests {
         await rig.manager.sweep()
 
         #expect(rig.rowCount() == 3, "an edge that 404s some rows and drops others is still one edge")
+    }
+
+    /// Security r1 P0-1, second half: the belt covered the `.gone` bucket only, so a backend that
+    /// answers 200-with-no-flag for every row (a deploy serving a different model, a migration that
+    /// nulled the boxed `Boolean`, a WAF's JSON) still deleted the whole library — the SAME
+    /// whole-library-in-one-pass shape, through `deleteGateRevoked` instead of `deleteRemoved`.
+    /// A gate DELETE verdict is a gate delete verdict: `.gone` and `.notAllowed` are belted
+    /// together, on the same answered denominator.
+    @Test(arguments: [GateAnswer.notAllowed, .gone])
+    func aSweepWhereEveryAnsweringRowSaysDeleteKeepsThemAll(gate: GateAnswer) async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        for index in 0..<2 {
+            let item = OfflineItem(videoId: "vidRevoked\(index)", title: "Lecture \(index)",
+                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
+                                   audioOnly: true, status: OfflineStatus.completed.rawValue,
+                                   completedAt: rig.flags.now)
+            try rig.store.insert(item)
+        }
+        rig.flags.gate = gate
+
+        await rig.manager.sweep()
+
+        #expect(rig.rowCount() == 2, "a whole-library gate verdict in one pass is drift, not a purge")
+    }
+
+    /// The bound, on the gate-revoked half too: two rows, one allowed and one revoked, is a real
+    /// per-video revocation and the revoked row goes.
+    @Test func aSweepWithOneAllowedRowStillDeletesTheRevokedOne() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        for name in ["vidRevokedOne", "vidAllowedOne"] {
+            let item = OfflineItem(videoId: name, title: name, channelName: nil, thumbnailUrl: nil,
+                                   qualityLabel: "360p", audioOnly: true,
+                                   status: OfflineStatus.completed.rawValue, completedAt: rig.flags.now)
+            try rig.store.insert(item)
+        }
+        rig.flags.gate = .notAllowed
+        rig.flags.gates = ["vidAllowedOne": .allowed]
+
+        await rig.manager.sweep()
+
+        #expect(rig.rowCount() == 1)
+        #expect(rig.persisted(videoId: "vidAllowedOne") != nil)
+    }
+
+    /// The TTL half is a LOCAL decision — nothing the network said — so the belt never covers it:
+    /// an expired row goes even in the pass where every gate answer is belted.
+    @Test func anExpiredRowStillDeletesWhileTheGateVerdictsAreBelted() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let expired = OfflineItem(videoId: "vidTTLExpired", title: "Lecture", channelName: nil,
+                                  thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
+                                  status: OfflineStatus.completed.rawValue,
+                                  completedAt: rig.flags.now.addingTimeInterval(-40 * 86_400))
+        try rig.store.insert(expired)
+        for index in 0..<2 {
+            let item = OfflineItem(videoId: "vidBelted\(index)", title: "Lecture \(index)",
+                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
+                                   audioOnly: true, status: OfflineStatus.completed.rawValue,
+                                   completedAt: rig.flags.now)
+            try rig.store.insert(item)
+        }
+        rig.flags.gate = .notAllowed
+
+        await rig.manager.sweep()
+
+        #expect(rig.persisted(id: expired.id) == nil, "the TTL is local: no gate answer belts it")
+        #expect(rig.rowCount() == 2)
     }
 
     /// The bound: ONE row really can leave the catalog, and it still goes.

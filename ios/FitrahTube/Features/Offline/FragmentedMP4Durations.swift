@@ -25,13 +25,18 @@ nonisolated enum FragmentedMP4Durations {
             String(data: data[(offset + 4)..<(offset + 8)], encoding: .ascii)
         }
 
-        func walk(_ lower: Int, _ upper: Int) {
+        // `depth` caps the recursion: real nesting is `moov/trak/mdia` deep, so a head that nests
+        // `trak` inside `trak` (once per 8 bytes, ~500 k frames within `headLimit`) is not a movie
+        // header — it is a stack overflow on the cooperative thread `normalize` runs on, and a hard
+        // crash at save completion that repeats on every retry (security r1 P3-1).
+        func walk(_ lower: Int, _ upper: Int, _ depth: Int = 0) {
+            guard depth < 8 else { return }
             var offset = lower
             while offset + 8 <= upper {
                 let size = Int(readUInt32(data, at: offset) ?? 0)
                 guard size >= 8, offset + size <= upper, let type = boxType(at: offset) else { return }
                 if type == "trak" || type == "mdia" {
-                    walk(offset + 8, offset + size)
+                    walk(offset + 8, offset + size, depth + 1)
                 }
                 if type == "mvex" { fragmented = true }
                 if type == "mvhd" || type == "mdhd", offset + 9 <= upper {

@@ -278,6 +278,10 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
         // Remove plus a full re-download.
         if status == 416 {
             // The 416 response's own `Content-Range: bytes */<total>` is the authority on the size.
+            // ponytail: `Content-Range` is a SHOULD on 416 (RFC 7233), so a proxy that omits it
+            // sends a COMPLETE partial down the restart arm below — one wasted re-download. The
+            // engine has no other authority on the total; the upgrade path is the manager passing
+            // the row's persisted `totalBytes` in and comparing here.
             let total = Self.total(fromContentRange: response?.value(forHTTPHeaderField: "Content-Range"))
             if let total, partialSize(id) == total {
                 // The file IS complete — the walk simply never got to say so. Finish it.

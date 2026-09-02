@@ -28,7 +28,12 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # are NOT ported to any iOS caller and stay orphaned in the catalog (pruning them is a
           # converter change with its own blast radius -- out of scope).
           "settings_downloads", "settings_download_quality", "settings_download_quality_title",
-          "settings_wifi_only", "settings_wifi_only_desc"}
+          "settings_wifi_only", "settings_wifi_only_desc",
+          # Owner directive (security r1 P1-1): the first-run carousel's third page said
+          # "Download for offline" / "Download voor offline" verbatim, on the screen every first-run
+          # user (and every App Review pass) sees, while its own sibling onboarding_page3_desc was
+          # already re-authored. Refused here and re-authored under EXTRA_KEYS.
+          "onboarding_page3_title"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -272,6 +277,15 @@ EXTRA_KEYS = {
         "en": "Save for offline",
         "ar": "الحفظ دون اتصال",
         "nl": "Offline opslaan",
+    },
+    # onboarding_page3_title: REFUSED above and re-authored here (security r1 P1-1). The
+    # download-arrow glyph on that page stays -- the directive is about the word. The desc beside
+    # it ("Save your favorite content to watch or listen offline...") was already clean and is
+    # still imported from Android unchanged.
+    "onboarding_page3_title": {
+        "en": "Save for offline",
+        "ar": "احفظ للمشاهدة بدون إنترنت",
+        "nl": "Bewaar voor offline",
     },
     "settings_download_quality": {
         "en": "Offline quality",
