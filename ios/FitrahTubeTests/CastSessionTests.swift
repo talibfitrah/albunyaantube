@@ -439,7 +439,8 @@ struct CastSessionTests {
         #expect(CastOwnership.decide(state: ownership(sessionActive: false), trigger: .disappear)
                 == .release(videoId: Self.claimed))
         #expect(CastOwnership.decide(state: ownership(loaded: nil, failure: Self.claimed),
-                                     trigger: .loadFailed) == .reportFailure(videoId: Self.claimed))
+                                     trigger: .loadFailed)
+                == .reportFailure(videoId: Self.claimed, resume: false))
         #expect(CastOwnership.decide(state: ownership(stamp: Self.other, failure: Self.claimed),
                                      trigger: .loadFailed)
                 == .dropClaim(videoId: Self.claimed, resume: false))
@@ -458,8 +459,14 @@ struct CastSessionTests {
                                      trigger: .loadFailed) == .none,
                 "another screen's failure must not be reported by the stamped claimant")
         #expect(CastOwnership.decide(state: ownership(failure: Self.claimed), trigger: .loadFailed)
-                == .reportFailure(videoId: Self.claimed),
+                == .reportFailure(videoId: Self.claimed, resume: false),
                 "our own failure while stamped still takes the banner path")
+        // I1: and the banner path plays the phone only where somebody is looking — the same rule
+        // the two arms above already carry. A claimless hidden screen answers a receiver reconnect
+        // (`.sessionChanged` fires at `opacity(0)`), claims, pauses and gets refused, all unseen.
+        #expect(CastOwnership.decide(state: ownership(failure: Self.claimed, visible: true),
+                                     trigger: .loadFailed)
+                == .reportFailure(videoId: Self.claimed, resume: true))
         // Someone else's failure, and a failure with no claim behind it, are nothing of ours.
         #expect(CastOwnership.decide(state: ownership(stamp: nil, failure: Self.other),
                                      trigger: .loadFailed) == .none)
@@ -1012,6 +1019,11 @@ struct CastSessionTests {
     /// phone is silently paused with no banner and no re-cast. RULING: a screen that dropped its
     /// claim while paused RESUMES on its next `.appear` (it is visible then -- no hidden-tab audio
     /// to protect); a second `.appear` must not fight a pause the user made themselves in between.
+    ///
+    /// T0-1: `.onDisappear`/`.onAppear` are not the only producers of these two triggers. On iPad
+    /// regular width the rail keeps this tab mounted at `opacity(0)` and publishes
+    /// `\.tabIsSelected` instead, which `PlayerScreen`'s `.onChange` turns into the same
+    /// `.disappear`/`.appear` pair -- so this sequence is the cross-tab case there as well.
     @Test func aClaimantThatDroppedWhilePausedResumesOnlyOnTheNextAppear() async throws {
         let cast = CastController()
         let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
@@ -1258,6 +1270,9 @@ struct CastSessionTests {
         // The enqueued start for A never gets the actor before the tap: `play(at:)` is same-actor
         // async, so its `swapArgs` runs before the `Task` `reconcile` created can be scheduled.
         vm.reconcile(.videoStarted)
+        // m2: the premise, pinned. If a scheduling change ever lets that task run first, A IS
+        // claimed here and the assertions below would pass for the wrong reason.
+        #expect(cast.castingClaim == nil, "the start for A has not run yet — that is the race")
         await vm.play(at: 1)
         await settle()
 
@@ -1312,6 +1327,11 @@ struct CastSessionTests {
     /// see is the audio bug it exists to avoid — while `.handBack` beside it seeked AND played
     /// unconditionally. Same rule for both: the SEEK is position, which is state, so it always
     /// happens; the PLAY waits for the screen to be the one on screen.
+    ///
+    /// T0-1: the `.disappear` below is `.onDisappear` in the compact layout and the rail's
+    /// `\.tabIsSelected` going false in the regular one (`MainShellView.railStacks` →
+    /// `PlayerScreen`'s `.onChange`), which is where this case bit hardest — an opacity change
+    /// fires no appearance callback at all, so the claimant never knew it was hidden.
     @Test func aHiddenClaimantsHandBackSeeksNowAndPlaysOnTheNextAppear() async throws {
         let cast = CastController()
         let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
@@ -1332,6 +1352,43 @@ struct CastSessionTests {
 
         #expect(vm.currentTime == 512, "position is state: the seek is owed either way")
         #expect(player.rate == 0, "but a tab nobody is looking at must not start playing")
+
+        vm.reconcile(.appear)
+        #expect(player.rate == 1, "the next appearance is what plays it")
+        player.pause()                                       // the user's own pause
+        vm.reconcile(.appear)
+        #expect(player.rate == 0, "and the flag is spent exactly once")
+    }
+
+    /// Fix round 1, I1: the third arm that resumes, and the last one without the visibility rule.
+    /// A hidden screen can reach it — it is claimless after its hand-back, but `.sessionChanged`
+    /// still fires on an opacity-0 rail tab (T0-1's whole premise), so a receiver RECONNECT makes
+    /// it claim, pause and load from a tab nobody is looking at; the refusal then banner'd and
+    /// played it. Same rule as `.dropClaim`/`.handBack`: the claim and the pause always go, the
+    /// audio waits for the next `.appear`.
+    @Test func aHiddenScreensRefusedCastNeverPlaysOnTheTabNobodyCanSee() async throws {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
+        await vm.open()
+        let player = try #require(phonePlayer(vm))
+        vm.currentPlayer = player
+        vm.reconcile(.appear)
+        vm.reconcile(.disappear)        // the rail selects another tab; this one stays mounted
+
+        cast.sessionDidBegin(deviceName: "Living Room TV")   // the receiver (re)connects
+        vm.reconcile(.sessionChanged)                        // fires on the hidden tab all the same
+        await settle()
+        #expect(vm.pausedForCast, "a hidden screen still claims and pauses for its cast")
+        #expect(player.rate == 0)
+
+        cast.lastLoadFailure = CastLoadFailure(device: "Living Room TV",
+                                               claim: CastClaim(videoId: Self.claimed,
+                                                                owner: vm.castOwner))
+        vm.reconcile(.loadFailed)
+        #expect(vm.claimedVideoId == nil, "the spent claim goes either way")
+        #expect(vm.pausedForCast == false)
+        #expect(player.rate == 0, "the phone must not start under a tab nobody is looking at")
+        #expect(vm.banner != nil, "the banner is still raised — it is what the user sees on return")
 
         vm.reconcile(.appear)
         #expect(player.rate == 1, "the next appearance is what plays it")

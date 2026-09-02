@@ -121,8 +121,11 @@ nonisolated enum CastAction: Sendable, Equatable {
     /// a mounted tab the user cannot see is the audio bug both arms exist to avoid, so a hidden
     /// claimant arms `droppedWhilePaused` for its next `.appear` instead.
     case handBack(videoId: String, resume: Bool)
-    /// Banner, resume the phone, drop the spent claim.
-    case reportFailure(videoId: String)
+    /// Banner, resume the phone, drop the spent claim. `resume` is the same rule as the two arms
+    /// above (fix round 1, I1): a claimless hidden screen still reacts to a receiver RECONNECT
+    /// (`.sessionChanged` fires on an opacity-0 rail tab), so it can claim, pause and be refused
+    /// without ever being on screen -- and this was the last arm that played the phone anyway.
+    case reportFailure(videoId: String, resume: Bool)
 }
 
 /// Who owns the cast session, as a pure table. It lives outside the view model on purpose: spread
@@ -162,7 +165,9 @@ nonisolated enum CastOwnership {
             guard state.isOurs(state.failure, claimed) else { return .none }
             // The banner belongs to the claimant that is still stamped, or several mounted screens
             // each raise it and each write the device name back.
-            if state.isOurs(state.stamp, claimed) { return .reportFailure(videoId: claimed) }
+            if state.isOurs(state.stamp, claimed) {
+                return .reportFailure(videoId: claimed, resume: state.isVisible)
+            }
             // OUR load was refused while we were off screen (the stamp went back on the way out),
             // so there is no banner to raise on a screen nobody is looking at -- but nothing of
             // ours reached the receiver either, and holding the spent claim and the pause would

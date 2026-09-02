@@ -810,10 +810,14 @@ extension StreamState {
             resumeAfterCast(at: cast.receiverPosition(for: videoId, owner: castOwner), resume: resume)
             cast.finishClaim(videoId, owner: castOwner)
             claimedVideoId = nil
-        case .reportFailure(let videoId):
+        case .reportFailure(let videoId, let resume):
             // Spec §10: "observe the load result and surface 'Couldn't play on {device}'" (Android
             // swallows it). Consumed and cleared here; a nameless failure (no session left to ask)
             // still resumes and drops the claim below -- there is just nothing honest to say.
+            //
+            // Raised even when this screen is hidden (I1): the banner is state, not sound, and it
+            // surfaces on the next visible presentation -- `banner` lives on the view model, and a
+            // failure left unconsumed instead would never fire `.onChange` again once cleared.
             if let device = cast.lastLoadFailure?.device {
                 banner = BannerMessage(text: String(format: String(localized: "cast_error_format"), device))
             }
@@ -821,7 +825,13 @@ extension StreamState {
             // `startCast` pauses the local player before the load, so without this the user taps
             // Cast, gets a toast, and their video has silently stopped on the phone too. A no-op
             // for the "nothing castable" path, which never paused.
-            resumeAfterCast(at: nil)
+            //
+            // I1: and only where somebody is looking. A claimless hidden screen still answers a
+            // receiver reconnect (`.sessionChanged` fires on an opacity-0 rail tab), so this arm is
+            // reachable off screen -- where it played audio under whatever tab the user is actually
+            // on. Same consumed-once flag as its two siblings.
+            droppedWhilePaused = pausedForCast && !resume
+            resumeAfterCast(at: nil, resume: resume)
             // Nothing of ours reached the receiver, so this screen owns nothing -- and holding a
             // spent claim would both block its own next cast and keep every other screen out.
             cast.finishClaim(videoId, owner: castOwner)
