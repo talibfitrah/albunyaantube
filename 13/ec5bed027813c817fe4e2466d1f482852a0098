@@ -1,0 +1,36 @@
+backend/src/main/java/com/albunyaan/tube/config/IosProperties.java
+  s_66ddb7c44de816::t_0595df107a4f87 1-36
+backend/src/test/java/com/albunyaan/tube/controller/WellKnownControllerFingerprintTest.java
+  s_66ddb7c44de816::t_205f916c6f1a27 29,31
+  s_66ddb7c44de816::t_e0a1aa02a63442 3-4
+backend/src/test/java/com/albunyaan/tube/controller/WellKnownControllerTest.java
+  s_66ddb7c44de816::t_91d5d6a715d153 46
+  s_66ddb7c44de816::t_8e5e6746c947b0 3-4
+backend/src/main/resources/application.yml
+  s_66ddb7c44de816::t_a262a0e72dd4cb 155-158,161
+backend/src/main/java/com/albunyaan/tube/controller/WellKnownController.java
+  s_66ddb7c44de816::t_70c5fd1fcda66e 74
+  s_66ddb7c44de816::t_3d97287812c917 3-4
+  s_66ddb7c44de816::t_2588839a8b00e0 30
+  s_66ddb7c44de816::t_356513afacf9bb 49-50,52-54,60
+backend/src/main/java/com/albunyaan/tube/config/AndroidProperties.java
+  s_66ddb7c44de816::t_2ac039c668ec3b 9-10,14-15,19-22,24,26-27,30-31
+backend/src/test/java/com/albunyaan/tube/controller/WellKnownControllerMultiFingerprintTest.java
+  s_66ddb7c44de816::t_c5f983103d65d4 1-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "13ec5bed027813c817fe4e2466d1f482852a0098",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
