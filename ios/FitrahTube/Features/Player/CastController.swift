@@ -10,7 +10,7 @@ import SwiftUI
 ///
 /// It PUBLISHES; it never drives. The controller holds no `PlayerViewModel` and knows nothing
 /// about the local player: `PlayerViewModel.reconcile(_:)` reads `isSessionActive` /
-/// `castingClaim` / `loadedClaim` / `lastStreamPosition` / `lastLoadFailureDevice`, asks
+/// `castingClaim` / `loadedClaim` / `lastStreamPosition` / `lastLoadFailure`, asks
 /// `CastOwnership.decide` what is owed, and does the resolving, pausing and seeking through the
 /// seams it already owns. A session that ends with no player mounted (the mini controller outlives
 /// the player route) is therefore a natural no-op -- there is no local player to hand the position
@@ -97,10 +97,14 @@ import SwiftUI
     /// this flag would have made it its own precondition.
     private(set) var miniControlsActive = false
 
-    /// The device a load failed on, for the "Couldn't play on %@" banner (`cast_error_format`).
+    /// The most recent rejected load, for the "Couldn't play on %@" banner (`cast_error_format`).
     /// Android swallows this failure; spec §10 says to surface it. Consumed and cleared by the
     /// screen that shows the banner.
-    var lastLoadFailureDevice: String?
+    ///
+    /// R7-3: a VALUE per failure, not the device's name -- `PlayerScreen` watches this with
+    /// `.onChange`, and two failures on one receiver wrote the same name, so the second never fired
+    /// and its claimant stayed paused with the stamp held for the rest of the session.
+    var lastLoadFailure: CastLoadFailure?
 
     /// Held only until its delegate callback lands -- `GCKRequest.delegate` is weak and the
     /// request is the only thing carrying the load's outcome.
@@ -251,10 +255,9 @@ import SwiftUI
         castingClaim = nil
         // Nothing of ours is on this receiver yet, whatever the last one was playing.
         loadedClaim = nil
-        // A failure that landed with no claimant mounted is never consumed, and `.onChange` does
-        // not fire again for the same device name -- so the NEXT failure on that device would be
-        // silent. A new session is the natural place to drop an unread one.
-        lastLoadFailureDevice = nil
+        // A failure that landed with no claimant mounted is never consumed, and it belongs to a
+        // session that is over. A new session is the natural place to drop an unread one.
+        lastLoadFailure = nil
         connectedDeviceName = deviceName
         isSessionActive = true
     }
@@ -303,9 +306,9 @@ import SwiftUI
         guard castAvailable,
               let session = GCKCastContext.sharedInstance().sessionManager.currentSession,
               let client = session.remoteMediaClient else {
-            // Not silent: `reportLoadFailure` needs a named device and there is no session to
-            // name, so the banner cannot fire -- say so somewhere, and clear any in-flight request
-            // rather than leaving one pointed at a session that is gone.
+            // Not silent: there is no session left to name, so the banner cannot fire (the failure
+            // still publishes, and still releases the claimant) -- say so somewhere, and clear any
+            // in-flight request rather than leaving one pointed at a session that is gone.
             #if DEBUG
             print("CastController: load with no current session/remote media client")
             #endif
@@ -382,15 +385,30 @@ import SwiftUI
     func reportLoadFailure(claim: CastClaim?) {
         // Nothing of OURS ended up on the receiver -- so the position sampled at the next
         // disconnect belongs to whatever the receiver kept playing, and the screen whose load
-        // failed must not reclaim on the strength of a load that never landed. Ahead of the guard
-        // below: the banner is optional, this is not.
+        // failed must not reclaim on the strength of a load that never landed.
         if loadedClaim == claim { loadedClaim = nil }
-        // No named device means no session left to blame — and `cast_error_format` is built around
-        // the device's name, so there is nothing honest to say. Silence beats "Couldn't play on ".
+        // R7-3: published even when there is no device to name. The banner is optional (the
+        // claimant skips it for a nil name -- "Couldn't play on " is not worth saying); RELEASING
+        // the claim and the pause is not, and a silent failure is exactly what left the phone
+        // paused with the stamp held for the rest of the session.
+        lastLoadFailure = CastLoadFailure(device: currentDeviceLabel(), claim: claim)
+    }
+
+    /// What to call the receiver in `cast_error_format`, or nil when no session is left to ask.
+    private func currentDeviceLabel() -> String? {
         guard castAvailable,
-              let name = GCKCastContext.sharedInstance().sessionManager.currentSession?.device.friendlyName,
-              !name.isEmpty else { return }
-        lastLoadFailureDevice = name
+              let device = GCKCastContext.sharedInstance().sessionManager.currentSession?.device
+        else { return nil }
+        return Self.deviceLabel(friendlyName: device.friendlyName, modelName: device.modelName)
+    }
+
+    /// R7-17: `GCKDevice.friendlyName` is nullable (and empty on some receivers), and a load
+    /// rejected by an unnamed device used to go unreported entirely. `modelName` is the SDK's own
+    /// second-best name; "Chromecast" is the product name every one of these devices answers to --
+    /// a proper noun, not user-facing copy, so it needs no string key. Static and pure: `GCKDevice`
+    /// cannot be constructed in a test, same reason `loadCallbackOutcome` is shaped this way.
+    static func deviceLabel(friendlyName: String?, modelName: String?) -> String {
+        [friendlyName, modelName].compactMap { $0 }.first { !$0.isEmpty } ?? "Chromecast"
     }
 }
 

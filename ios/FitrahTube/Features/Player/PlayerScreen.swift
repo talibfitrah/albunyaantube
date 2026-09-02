@@ -100,9 +100,10 @@ struct PlayerScreen: View {
         }
         // Spec §10: "observe the load result and surface 'Couldn't play on {device}' on failure
         // (Android swallows it)". Only a non-nil write is news — the reconcile that shows the
-        // banner clears it, and that clear re-fires this.
-        .onChange(of: container.castController.lastLoadFailureDevice) { _, device in
-            guard device != nil else { return }
+        // banner clears it, and that clear re-fires this. R7-3: every failure is a distinct value
+        // (`CastLoadFailure.id`), so a second refusal by the same receiver fires this too.
+        .onChange(of: container.castController.lastLoadFailure) { _, failure in
+            guard failure != nil else { return }
             model?.reconcile(.loadFailed)
         }
         .task {

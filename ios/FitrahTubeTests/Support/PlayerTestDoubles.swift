@@ -21,7 +21,9 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         var requiresMuxed: Bool = false
     }
 
-    enum Outcome { case hls, progressive, embed, failure(ExtractionError) }
+    /// `liveHLS` is `hls` with `isLive` set -- the only thing that separates a live rung 1 from a
+    /// VOD one, and what the cast hand-back's seek has to refuse (R7-18).
+    enum Outcome { case hls, liveHLS, progressive, embed, failure(ExtractionError) }
 
     private let holdsUntilReleased: Bool
     private let lock = NSLock()
@@ -134,6 +136,10 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         case .hls:
             return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: URL(string: "https://r1/a140")!,
                                          captionTracks: []),
+                            client: .visionos, userAgent: "UA", resolvedAt: Date(),
+                            expiresAt: expiresAt)
+        case .liveHLS:
+            return Resolved(stream: .hls(url: url, isLive: true, audioOnlyURL: nil, captionTracks: []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
                             expiresAt: expiresAt)
         case .progressive:

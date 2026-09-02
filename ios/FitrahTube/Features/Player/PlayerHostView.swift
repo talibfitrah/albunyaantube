@@ -45,7 +45,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         controller.delegate = context.coordinator
         controller.player = Self.player(for: state, replacing: nil, audioOnly: audioOnly,
                                         continuesCurrentVideo: continuesCurrentVideo(context),
-                                        resumeFallback: model.currentTime)
+                                        resumeFallback: model.currentTime,
+                                        pausedForCast: model.pausedForCast)
         context.coordinator.lastVideoId = model.hostVideoId
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
         applyBackgroundController(to: controller, context: context)
@@ -83,7 +84,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly,
                                         continuesCurrentVideo: continuesCurrentVideo(context),
-                                        resumeFallback: model.currentTime)
+                                        resumeFallback: model.currentTime,
+                                        pausedForCast: model.pausedForCast)
         context.coordinator.lastVideoId = model.hostVideoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
         // M6 (B4 final review): write only on change -- an unconditional write would churn AVKit's
@@ -148,7 +150,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             context.coordinator.stopObserving()
             return
         }
-        context.coordinator.observe(item: item, player: player, model: model, isLive: Self.isLive(state),
+        context.coordinator.observe(item: item, player: player, model: model, isLive: state.isLive,
                                     playToEnd: presentation.actionOnPlayToEnd)
     }
 
@@ -242,7 +244,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 // reconciliation note 2 promises. `.shorts` never reaches this path anyway
                 // (`AudioSessionPolicy.decide(.enteredBackground, …)` needs backgroundPlay true).
                 if let item = player.currentItem, let coordinator {
-                    coordinator.observe(item: item, player: player, model: model, isLive: Self.isLive(state),
+                    coordinator.observe(item: item, player: player, model: model, isLive: state.isLive,
                                         playToEnd: coordinator.playToEnd)
                 }
             }
@@ -277,13 +279,6 @@ struct PlayerHostView: UIViewControllerRepresentable {
     static func configurePictureInPicture(_ controller: AVPlayerViewController, backgroundPlay: Bool) {
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = backgroundPlay
-    }
-
-    private static func isLive(_ state: StreamState) -> Bool {
-        guard let resolved = state.resolved, case .hls(_, let isLive, _, _) = resolved.stream else {
-            return false
-        }
-        return isLive
     }
 
     /// Fix-round-1 F1: `controller.view.bounds.size` is POINTS; `QualityOption.apply`'s
@@ -661,8 +656,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// replacement at 0; `resumeFallback` is the VM's hoisted `currentTime` (CF-B1-8) for a fresh
     /// player built after a non-playable state dismantled the host. Both defaulted, so every
     /// existing call site is unchanged.
+    /// R7-2: `pausedForCast` is the receiver-owns-playback flag (`PlayerViewModel`). With a session
+    /// already live the `.task` arm's `reconcile(.videoStarted)` -- and every Up Next hop through
+    /// `.loading` -- runs `startCast` BEFORE this builds the player, so `pauseForCast` finds
+    /// `currentPlayer == nil` and can only record the intent; without consulting it here the host
+    /// then autoplayed the phone alongside the TV and nothing ever re-paused it. Only the autoplay
+    /// is gated: the URL, the position carry and `allowsExternalPlayback` are unchanged.
     static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false,
-                       continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0) -> AVPlayer? {
+                       continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0,
+                       pausedForCast: Bool = false) -> AVPlayer? {
         guard let resolved = state.resolved,
               let url = streamURL(resolved.stream, audioOnly: audioOnly) else {
             existing?.pause()
@@ -705,7 +707,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // offline fork.
             player.allowsExternalPlayback = !url.isFileURL
             if resume > 0 { player.seek(to: resumeTime) }
-            player.play()
+            if !pausedForCast { player.play() }
             return player
         }
         // I5 (player.md §3.2: a re-resolve saves position AND playWhenReady): resuming a stream the
@@ -713,7 +715,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // paused player just as readily as under a playing one.
         // B5 Task 4: a DIFFERENT video always starts -- an ended item leaves the player `.paused`,
         // so an auto-advance under this rule alone swapped the item in and never played it.
-        let wasPlaying = existing.timeControlStatus != .paused || !continuesCurrentVideo
+        // R7-2's other half: a DIFFERENT video always starts -- unless the receiver owns playback,
+        // where the advance's own `reconcile(.videoStarted)` has already claimed the cast.
+        let wasPlaying = (existing.timeControlStatus != .paused || !continuesCurrentVideo) && !pausedForCast
         // AC-P3-3: the flag above is written only on a FRESH player, so a `file://` item swapped
         // into a player a remote item had been granted an external route on kept that route -- the
         // saved file going out over AirPlay, which is the export Task 7 blocks three ways over.
