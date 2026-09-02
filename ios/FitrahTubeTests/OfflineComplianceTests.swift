@@ -59,4 +59,24 @@ struct OfflineComplianceTests {
         #expect(PlayerHostView.player(for: .ready(streamed), replacing: nil)?
             .allowsExternalPlayback == true)
     }
+
+    /// AC-P3-3 (adversarial r1): the flag above was written ONLY on a freshly built `AVPlayer` —
+    /// `player(for:replacing:)`'s `replaceCurrentItem` reuse branch never touched it, so a `file://`
+    /// item swapped into a player the previous REMOTE item had been granted an external route on
+    /// kept that route, and the saved file went out over AirPlay. Latent only because an offline
+    /// `PlayerScreen` is handed no `queueSource`, so `swapArgs` (the one site that flips
+    /// `isOfflinePlayback` false under a live `file://` player) cannot run there — the whole
+    /// compliance pin rested on that construction accident.
+    @Test func aSavedFileSwappedIntoALivePlayerLosesTheExternalRoute() {
+        let streamed = Resolved(stream: .hls(url: URL(string: "https://example.invalid/v.m3u8")!, isLive: false,
+                                             audioOnlyURL: nil, captionTracks: []),
+                                client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
+        let live = PlayerHostView.player(for: .ready(streamed), replacing: nil)
+        #expect(live?.allowsExternalPlayback == true)
+
+        let saved = Resolved(stream: .progressive(url: URL(filePath: "/tmp/fitrah-offline.m4a"), label: "360p"),
+                             client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
+        #expect(PlayerHostView.player(for: .rung2Progressive(saved), replacing: live)?
+            .allowsExternalPlayback == false)
+    }
 }

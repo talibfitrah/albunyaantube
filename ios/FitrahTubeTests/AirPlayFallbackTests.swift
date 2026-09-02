@@ -1,4 +1,6 @@
+import AVFoundation
 import Foundation
+import InnerTubeKit
 import Testing
 @testable import FitrahTube
 
@@ -26,5 +28,22 @@ struct AirPlayFallbackTests {
     @Test func aStallNeverTriggersMirroring() {
         #expect(!AirPlayFallback.shouldMirror(event: .stall, externalPlaybackActive: true, alreadyFellBack: false))
         #expect(!AirPlayFallback.shouldMirror(event: .stall, externalPlaybackActive: true, alreadyFellBack: true))
+    }
+
+    /// AC-P3-3's other direction, and the reason the reuse branch's new write is ONE-DIRECTIONAL:
+    /// the fallback's own `allowsExternalPlayback = false` lives on the `AVPlayer`, and the
+    /// re-resolve it fires comes straight back through `PlayerHostView.player(for:replacing:)`'s
+    /// reuse branch. An unconditional write there would undo the fallback in the same turn it was
+    /// made, so that branch only ever turns the route OFF (for a `file://` item) and never back on.
+    /// `swapArgs` is what re-enables it, per stream.
+    @Test func aReResolveNeverUndoesTheMirroringFallbackOnTheReusedPlayer() {
+        let player = AVPlayer(playerItem: AVPlayerItem(url: URL(string: "https://example.invalid/old.m3u8")!))
+        player.allowsExternalPlayback = false          // what the fallback wrote for THIS stream
+        let streamed = Resolved(stream: .hls(url: URL(string: "https://example.invalid/new.m3u8")!,
+                                             isLive: false, audioOnlyURL: nil, captionTracks: []),
+                                client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
+        #expect(PlayerHostView.player(for: .ready(streamed), replacing: player)?
+            .allowsExternalPlayback == false,
+                "the mirroring fallback must survive its own re-resolve")
     }
 }

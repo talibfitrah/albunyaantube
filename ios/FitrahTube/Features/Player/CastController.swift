@@ -39,18 +39,25 @@ import SwiftUI
     /// `lastStreamPosition` and resume.
     private(set) var isSessionActive = false
 
-    /// The videoId of the screen this session belongs to. Claimed by the first `PlayerScreen` to
-    /// react to a session start (`claimCastSource`), cleared by that screen's hand-back
-    /// (`finishClaim`) or by the next session beginning. Survives `sessionDidEnd` on purpose:
-    /// SwiftUI runs `.onChange` after the callback returns, so the end reaction still has to be
-    /// able to identify its owner.
+    /// The screen this session belongs to, and the video it claimed it for. Claimed by the first
+    /// `PlayerScreen` to react to a session start (`claimCastSource`), cleared by that screen's
+    /// hand-back (`finishClaim`) or by the next session beginning. Survives `sessionDidEnd` on
+    /// purpose: SwiftUI runs `.onChange` after the callback returns, so the end reaction still has
+    /// to be able to identify its owner.
+    ///
+    /// AC-P2-1: the OWNER, not just the video. Two mounted screens on the same video read a
+    /// videoId-only stamp as theirs alike, so both paused for the cast, both loaded the receiver
+    /// and both resumed on hand-back.
     ///
     /// ponytail: first-writer-wins. With two players mounted (CF-D-12's stacked case) the screen
     /// whose `.onChange` SwiftUI runs first claims the session, and that order is not defined.
     /// Both candidates are the user's own player screens and only one resolves/loads either way;
     /// naming the visible one needs a visibility signal SwiftUI does not reliably give a pushed
     /// destination on an unselected tab.
-    private(set) var castingVideoId: String?
+    private(set) var castingClaim: CastClaim?
+
+    /// The video half of the stamp, for readers that only need to know WHAT is claimed.
+    var castingVideoId: String? { castingClaim?.videoId }
 
     /// The receiver's `approximateStreamPosition`, sampled in `willEndSession` while the remote
     /// media client is still connected (by `didEndSession` it may already be gone), and published
@@ -58,14 +65,21 @@ import SwiftUI
     /// seek to a previous session's position.
     private(set) var lastStreamPosition: TimeInterval?
 
-    /// The videoId the receiver was actually asked to play, `nil` when nothing of ours is on it.
-    /// The stamp says WHO may act on the session; this says WHAT the receiver's position belongs
-    /// to, and the two genuinely diverge: a claimant that goes off screen surrenders the stamp
-    /// while the receiver keeps playing its video, so the next screen can claim, load its own — and
-    /// the first screen's hand-back would then seek it to a position that was never its own.
+    /// What the receiver was actually asked to play, and by which screen; `nil` when nothing of ours
+    /// is on it. The stamp says WHO may act on the session; this says WHAT the receiver's position
+    /// belongs to, and the two genuinely diverge: a claimant that goes off screen surrenders the
+    /// stamp while the receiver keeps playing its video, so the next screen can claim, load its own
+    /// — and the first screen's hand-back would then seek it to a position that was never its own.
     /// Cleared by a rejected load (nothing of ours landed), by a new session, and by the hand-back
     /// that spends it.
-    private(set) var loadedVideoId: String?
+    ///
+    /// AC-P2-1 carries the owner here too: with two screens on the SAME video the videoId alone
+    /// cannot say whose load the receiver is playing, so the screen whose load was superseded would
+    /// hand its player the other screen's receiver position.
+    private(set) var loadedClaim: CastClaim?
+
+    /// The video half, same reason as `castingVideoId`.
+    var loadedVideoId: String? { loadedClaim?.videoId }
 
     /// The receiver currently connected, for the cast slot's accessibility value. `nil` when no
     /// session is up.
@@ -149,15 +163,18 @@ import SwiftUI
 
     // MARK: - Session ownership
 
-    /// Claims this session for `videoId`. `false` means another mounted `PlayerScreen` already
-    /// owns it and this one must not resolve, load or pause anything.
+    /// Claims this session for `owner`'s `videoId`. `false` means another mounted `PlayerScreen`
+    /// already owns it and this one must not resolve, load or pause anything -- including a screen
+    /// showing the SAME video (AC-P2-1), which is a non-owner like any other. The owner's own
+    /// re-claim on re-appear still succeeds.
     @discardableResult
-    func claimCastSource(_ videoId: String) -> Bool {
-        guard let castingVideoId else {
-            self.castingVideoId = videoId
+    func claimCastSource(videoId: String, owner: UUID) -> Bool {
+        let claim = CastClaim(videoId: videoId, owner: owner)
+        guard let castingClaim else {
+            self.castingClaim = claim
             return true
         }
-        return castingVideoId == videoId
+        return castingClaim == claim
     }
 
     /// The ONE start decision, run both by the session TRANSITION and by a screen that MOUNTS
@@ -168,9 +185,9 @@ import SwiftUI
     /// Casting used to hang off `.onChange(of: isSessionActive)` alone, which fires only on
     /// transitions -- so connecting to a receiver and then opening another video left the phone
     /// playing locally while the TV kept the old one.
-    func claimForCast(videoId: String, isOfflinePlayback: Bool) -> Bool {
+    func claimForCast(videoId: String, owner: UUID, isOfflinePlayback: Bool) -> Bool {
         guard isSessionActive, !isOfflinePlayback else { return false }
-        return claimCastSource(videoId)
+        return claimCastSource(videoId: videoId, owner: owner)
     }
 
     /// The claiming screen went OFF SCREEN: give the stamp back so the next video opened during
@@ -182,23 +199,23 @@ import SwiftUI
     /// The STAMP only: `lastStreamPosition` is the receiver's position and the hand-back still
     /// needs it -- `onDisappear` fires for a screen that is merely covered or tab-switched, not
     /// just a popped one. `finishClaim(_:)` is what consumes both.
-    func releaseClaim(_ videoId: String) {
-        guard castingVideoId == videoId else { return }
-        castingVideoId = nil
+    func releaseClaim(_ videoId: String, owner: UUID) {
+        guard castingClaim == CastClaim(videoId: videoId, owner: owner) else { return }
+        castingClaim = nil
     }
 
     /// The receiver's position, but only for the screen whose video the receiver actually played.
     /// `lastStreamPosition` is sampled off the session, not off a video, so it belongs to whatever
     /// was loaded last -- handing it to any claimant seeks that player to a stranger's position.
     /// `nil` means "resume where you were", which is what the hand-back does with it.
-    func receiverPosition(for videoId: String) -> TimeInterval? {
-        loadedVideoId == videoId ? lastStreamPosition : nil
+    func receiverPosition(for videoId: String, owner: UUID) -> TimeInterval? {
+        loadedClaim == CastClaim(videoId: videoId, owner: owner) ? lastStreamPosition : nil
     }
 
     /// Still ours to act on: `PlayerViewModel.startCast` can await a resolve before it pauses
     /// the local player, and both the session and the claim can be gone by the time that lands.
-    func stillCasting(_ videoId: String) -> Bool {
-        isSessionActive && castingVideoId == videoId
+    func stillCasting(_ videoId: String, owner: UUID) -> Bool {
+        isSessionActive && castingClaim == CastClaim(videoId: videoId, owner: owner)
     }
 
     /// The claimant has consumed its hand-back: give back what is actually ours to give. The stamp
@@ -210,10 +227,11 @@ import SwiftUI
     /// return leg and a clear-everything call on the session-end arm -- so which fields a hand-back
     /// spent depended on which arm ran: a spent position could linger until the next session began,
     /// and the other arm could clear a live claimant's.
-    func finishClaim(_ videoId: String) {
-        if castingVideoId == videoId { castingVideoId = nil }
-        if loadedVideoId == videoId {
-            loadedVideoId = nil
+    func finishClaim(_ videoId: String, owner: UUID) {
+        let claim = CastClaim(videoId: videoId, owner: owner)
+        if castingClaim == claim { castingClaim = nil }
+        if loadedClaim == claim {
+            loadedClaim = nil
             lastStreamPosition = nil
         }
     }
@@ -229,9 +247,9 @@ import SwiftUI
         // A new session inherits nothing from the last one: a stale position would show up as a
         // silent wrong seek that looks like a playback bug, not a cast bug.
         lastStreamPosition = nil
-        castingVideoId = nil
+        castingClaim = nil
         // Nothing of ours is on this receiver yet, whatever the last one was playing.
-        loadedVideoId = nil
+        loadedClaim = nil
         // A failure that landed with no claimant mounted is never consumed, and `.onChange` does
         // not fire again for the same device name -- so the NEXT failure on that device would be
         // silent. A new session is the natural place to drop an unread one.
@@ -277,7 +295,8 @@ import SwiftUI
 
     /// Session start/resume's load (spec §10): autoplay, at the local player's position. Live
     /// streams keep the builder's default `startTime` (`kGCKInvalidTimeInterval` = live edge).
-    func load(_ media: CastMediaInfo, videoId: String, at position: TimeInterval) {
+    func load(_ media: CastMediaInfo, videoId: String, owner: UUID, at position: TimeInterval) {
+        let claim = CastClaim(videoId: videoId, owner: owner)
         // `sharedInstance()` raises if no context was ever created, so every SDK read in this type
         // goes through `castAvailable` first.
         guard castAvailable,
@@ -290,7 +309,7 @@ import SwiftUI
             print("CastController: load with no current session/remote media client")
             #endif
             cancelLoadRequest()
-            reportLoadFailure(videoId: videoId)
+            reportLoadFailure(claim: claim)
             return
         }
         // A second load issued while the first is in flight would otherwise drop the only strong
@@ -303,14 +322,14 @@ import SwiftUI
         let request = client.loadMedia(with: builder.build())
         request.delegate = self
         loadRequest = request
-        recordLoad(videoId)
+        recordLoad(videoId, owner: owner)
     }
 
     /// What `load()` records once the request is on the wire -- and the only way `CastSessionTests`
     /// can set it, since `load()` itself needs a `GCKCastContext` no test can create. Same seam
     /// shape as the session callbacks above.
-    func recordLoad(_ videoId: String) {
-        loadedVideoId = videoId
+    func recordLoad(_ videoId: String, owner: UUID) {
+        loadedClaim = CastClaim(videoId: videoId, owner: owner)
     }
 
     private func cancelLoadRequest() {
@@ -354,18 +373,17 @@ import SwiftUI
     /// the same banner rather than copy of its own -- and, per the copy rule, it says WHAT, never
     /// why.
     ///
-    /// Cubic R6-4: `videoId` is the video whose load failed, and only THAT video's stamp is this
-    /// call's to clear. Screen A casts and goes off-screen (stamp released, receiver still playing
-    /// A); screen B mounts on an embed rung, gets no media and lands here — clearing
-    /// `loadedVideoId` unconditionally erased A's presence on the receiver, so A returning
-    /// re-resolved and reloaded it at the phone's stale `currentTime` and the hand-back lost the
-    /// receiver's position.
-    func reportLoadFailure(videoId: String?) {
+    /// Cubic R6-4: `claim` is the load that failed, and only THAT claim is this call's to clear.
+    /// Screen A casts and goes off-screen (stamp released, receiver still playing A); screen B
+    /// mounts on an embed rung, gets no media and lands here — clearing `loadedClaim`
+    /// unconditionally erased A's presence on the receiver, so A returning re-resolved and reloaded
+    /// it at the phone's stale `currentTime` and the hand-back lost the receiver's position.
+    func reportLoadFailure(claim: CastClaim?) {
         // Nothing of OURS ended up on the receiver -- so the position sampled at the next
         // disconnect belongs to whatever the receiver kept playing, and the screen whose load
         // failed must not reclaim on the strength of a load that never landed. Ahead of the guard
         // below: the banner is optional, this is not.
-        if loadedVideoId == videoId { loadedVideoId = nil }
+        if loadedClaim == claim { loadedClaim = nil }
         // No named device means no session left to blame — and `cast_error_format` is built around
         // the device's name, so there is nothing honest to say. Silence beats "Couldn't play on ".
         guard castAvailable,
@@ -465,10 +483,10 @@ private extension CastController {
             loadRequest = nil
         case .clearAndReport:
             loadRequest = nil
-            // The failed request's video: `load` stamps it via `recordLoad` at issue time, and a
+            // The failed request's claim: `load` stamps it via `recordLoad` at issue time, and a
             // later `load` cancels this request, whose callback then takes `.ignore` above — so
-            // `loadedVideoId` here is still this request's own.
-            reportLoadFailure(videoId: loadedVideoId)
+            // `loadedClaim` here is still this request's own.
+            reportLoadFailure(claim: loadedClaim)
         }
     }
 }

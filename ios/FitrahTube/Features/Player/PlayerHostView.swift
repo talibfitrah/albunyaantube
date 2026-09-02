@@ -714,6 +714,14 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // B5 Task 4: a DIFFERENT video always starts -- an ended item leaves the player `.paused`,
         // so an auto-advance under this rule alone swapped the item in and never played it.
         let wasPlaying = existing.timeControlStatus != .paused || !continuesCurrentVideo
+        // AC-P3-3: the flag above is written only on a FRESH player, so a `file://` item swapped
+        // into a player a remote item had been granted an external route on kept that route -- the
+        // saved file going out over AirPlay, which is the export Task 7 blocks three ways over.
+        // ONE-DIRECTIONAL on purpose: a file URL always turns the route off, a remote URL leaves the
+        // flag alone, because `PlayerViewModel`'s mirroring fallback clears it on this same live
+        // player and re-resolves straight back through here -- an unconditional write would undo the
+        // fallback in the turn it was made. `swapArgs` is what re-enables it, per stream.
+        if url.isFileURL { existing.allowsExternalPlayback = false }
         existing.replaceCurrentItem(with: item)
         if resume > 0 { existing.seek(to: resumeTime) }
         if wasPlaying { existing.play() }

@@ -144,8 +144,18 @@ nonisolated enum CastTrigger: Sendable, Equatable, CaseIterable {
     case loadFailed
 }
 
+/// WHICH screen claimed WHAT (AC-P2-1). `MainShellView` keeps every visited tab's stack mounted, so
+/// two `PlayerScreen`s can be up on the SAME video -- a Home stack and a Search stack both on X --
+/// and a stamp keyed on the videoId alone read as theirs to BOTH: both paused for the cast, both
+/// loaded the receiver, and both resumed on hand-back (double audio). `owner` is a `UUID` each
+/// `PlayerViewModel` mints at init, so one screen's claim can never be mistaken for another's.
+nonisolated struct CastClaim: Sendable, Equatable {
+    var videoId: String
+    var owner: UUID
+}
+
 /// Everything the cast decision reads, from all three of its owners: this screen's claim and pause
-/// (`PlayerViewModel`), what it plays now (`args`), and the controller's session/stamp/loaded-id.
+/// (`PlayerViewModel`), what it plays now (`args`), and the controller's session/stamp/loaded claim.
 nonisolated struct CastOwnershipState: Sendable, Equatable {
     /// The video THIS screen claimed the session for; nil when it holds no claim.
     var claimedVideoId: String?
@@ -154,10 +164,19 @@ nonisolated struct CastOwnershipState: Sendable, Equatable {
     var isOfflinePlayback: Bool
     var pausedForCast: Bool
     var sessionActive: Bool
-    /// `CastController.castingVideoId`: the ONE screen this session belongs to.
-    var stampedVideoId: String?
-    /// `CastController.loadedVideoId`: what the receiver was actually asked to play.
-    var loadedVideoId: String?
+    /// THIS screen's identity (`PlayerViewModel.castOwner`), which is what makes the two claims
+    /// below answerable at all: "is this ours?" is a question about a screen, not about a video.
+    var owner: UUID
+    /// `CastController.castingClaim`: the ONE screen this session belongs to.
+    var stamp: CastClaim?
+    /// `CastController.loadedClaim`: what the receiver was asked to play, and who put it there.
+    var loaded: CastClaim?
+
+    /// Ours, meaning THIS screen's claim on `videoId` -- never merely "the same video", which is
+    /// what let a second screen on the same video act on the first screen's session.
+    func isOurs(_ claim: CastClaim?, _ videoId: String) -> Bool {
+        claim == CastClaim(videoId: videoId, owner: owner)
+    }
 }
 
 /// The one thing a reaction can be owed. Each carries the id it acts on, because acting on the
@@ -204,17 +223,18 @@ nonisolated enum CastOwnership {
             // The banner belongs to the claimant that is still stamped, or several mounted screens
             // each raise it and each write the device name back (and `.onChange` does not fire
             // twice for the same name, so the next failure would be silent).
-            return state.stampedVideoId == claimed ? .reportFailure(videoId: claimed) : .none
+            return state.isOurs(state.stamp, claimed) ? .reportFailure(videoId: claimed) : .none
         case .appear, .sessionChanged, .videoStarted:
             // The session is over: resume whatever we paused and let the claim go. A claim that
             // outlives its session is what stops this screen ever casting this video again.
             guard state.sessionActive else { return .handBack(videoId: claimed) }
             // Another screen owns the live session now: not ours to reconcile, and its own claimant
-            // pays its own hand-back.
-            guard state.stampedVideoId == nil || state.stampedVideoId == claimed else { return .none }
-            // The receiver is still playing what we put there and our player is still paused for
+            // pays its own hand-back. AC-P2-1: another SCREEN, so a second screen mounted on the
+            // same video is a non-owner here exactly like one on any other video.
+            guard state.stamp == nil || state.isOurs(state.stamp, claimed) else { return .none }
+            // The receiver is still playing what WE put there and our player is still paused for
             // it: taking the stamp back is the whole job.
-            if state.loadedVideoId == claimed, state.pausedForCast { return .reclaim(videoId: claimed) }
+            if state.isOurs(state.loaded, claimed), state.pausedForCast { return .reclaim(videoId: claimed) }
             // Anything else means the TV is NOT playing what this screen holds a claim for -- our
             // load was rejected, or another screen cast its own video and popped. Resuming locally
             // there leaves the phone playing one video audibly while the TV plays another, with the
@@ -228,7 +248,7 @@ nonisolated enum CastOwnership {
     /// hides its cast slot), and a stamp that is free or already this video's.
     private static func canStart(_ state: CastOwnershipState) -> Bool {
         guard state.sessionActive, !state.isOfflinePlayback else { return false }
-        return state.stampedVideoId == nil || state.stampedVideoId == state.videoId
+        return state.stamp == nil || state.isOurs(state.stamp, state.videoId)
     }
 }
 
@@ -538,7 +558,7 @@ nonisolated enum CastOwnership {
         // to A's receiver position and played it, and nothing ever cast B -- phone and TV on
         // different videos for the rest of the session. Released with the id actually claimed,
         // before `args` moves off it.
-        if let claimedVideoId { cast?.releaseClaim(claimedVideoId) }
+        if let claimedVideoId { cast?.releaseClaim(claimedVideoId, owner: castOwner) }
         claimedVideoId = nil
         pausedForCast = false
         var next = PlayerArgs(item: item)
@@ -671,6 +691,27 @@ nonisolated enum CastOwnership {
     /// the receiver the URL the phone is already playing.
     static let castExpiryMargin: TimeInterval = 600
 
+    /// The slack on top of the remaining playback in `castStreamCoversPlayback`: a receiver's clock,
+    /// its buffering and the seconds between this decision and the load all have to fit inside it.
+    static let castLifetimeFloor: TimeInterval = 60
+
+    /// AC-P2-3: may a NEAR-EXPIRY stream be handed to a receiver at all? Nothing re-resolves for the
+    /// receiver -- `reResolveIfExpiring` drives the LOCAL player, and `CastController` publishes
+    /// rather than drives -- so a URL that dies mid-playback dies there with no recovery and no
+    /// banner. It is usable only while its remaining lifetime plausibly covers what is left of the
+    /// video, with `castLifetimeFloor` to spare. An unknown duration is never covered: guessing in
+    /// the receiver's favour is guessing at exactly the failure this bound exists to prevent.
+    ///
+    /// Only the fallback below calls this, and only for a stream `currentCastStream` already
+    /// refused as near-expiry -- a stream that is NOT near expiry never reaches it.
+    static func castStreamCoversPlayback(expiresAt: Date?, now: Date, durationSeconds: Int?,
+                                         position: TimeInterval) -> Bool {
+        guard let expiresAt else { return true }      // no expiry to outlive
+        guard let durationSeconds else { return false }
+        return expiresAt.timeIntervalSince(now)
+            >= max(0, Double(durationSeconds) - position) + castLifetimeFloor
+    }
+
     /// The stream to cast. Side-band on purpose -- NOT through `resolve()`, whose `state` write
     /// would dismantle `PlayerHostView` and drop the very local player this screen is about to
     /// pause and hand back to on session end.
@@ -713,7 +754,15 @@ nonisolated enum CastOwnership {
             // ponytail: a refusal with no stream for THIS video yet still banners -- reachable when
             // a cast is refused for a video whose own resolve also failed. Closing it would mean
             // giving the cast its own limiter lane, which is a rate-limit decision, not this one.
-            guard let playing = currentCastStream(now: now, allowNearExpiry: true) else { return nil }
+            //
+            // AC-P2-3: BOUNDED. "Refused AND about to die on the receiver" is not a fallback, it is
+            // a doomed load with no recovery and no banner -- so it takes the honest failure path
+            // (`startCast`'s `reportLoadFailure` -> the existing `cast_error_format`) instead.
+            guard let playing = currentCastStream(now: now, allowNearExpiry: true),
+                  Self.castStreamCoversPlayback(expiresAt: playing.expiresAt, now: now,
+                                                durationSeconds: args.durationSeconds,
+                                                position: currentTime)
+            else { return nil }
             return CastMedia.make(resolved: playing, args: args)
         }
     }
@@ -744,6 +793,14 @@ nonisolated enum CastOwnership {
     /// hand-back bug in this feature was one of the three being reset without the others.
     private(set) var claimedVideoId: String?
 
+    /// AC-P2-1: THIS screen's identity in the cast stamp, minted per view model -- which is exactly
+    /// per `PlayerScreen`, since the screen owns its model. `MainShellView` keeps every visited
+    /// tab's stack mounted, so two screens can be up on the same video; without this the stamp read
+    /// as theirs to both and both paused, loaded and resumed (double audio). Readable so
+    /// `CastSessionTests` can record a load AS this screen -- `load()` itself needs a
+    /// `GCKCastContext` no test can create, same reason `recordLoad` exists.
+    let castOwner = UUID()
+
     /// The video a cast start is currently walking for. Keyed on the id rather than a flag: a
     /// mount and a session transition landing together for one screen must open ONE walk, while an
     /// advance's start for the NEXT video must not be blocked by the outgoing one still in flight.
@@ -759,9 +816,8 @@ nonisolated enum CastOwnership {
         let action = CastOwnership.decide(
             state: CastOwnershipState(claimedVideoId: claimedVideoId, videoId: args.videoId,
                                       isOfflinePlayback: isOfflinePlayback, pausedForCast: pausedForCast,
-                                      sessionActive: cast.isSessionActive,
-                                      stampedVideoId: cast.castingVideoId,
-                                      loadedVideoId: cast.loadedVideoId),
+                                      sessionActive: cast.isSessionActive, owner: castOwner,
+                                      stamp: cast.castingClaim, loaded: cast.loadedClaim),
             trigger: trigger)
         switch action {
         case .none:
@@ -770,9 +826,9 @@ nonisolated enum CastOwnership {
             Task { await startCast(videoId) }
         case .reclaim(let videoId):
             // No re-resolve and no second `load()`: the receiver is already playing this.
-            cast.claimCastSource(videoId)
+            cast.claimCastSource(videoId: videoId, owner: castOwner)
         case .release(let videoId):
-            cast.releaseClaim(videoId)
+            cast.releaseClaim(videoId, owner: castOwner)
         case .handBack(let videoId):
             // The receiver's position only if the receiver actually played OUR video -- it is
             // sampled off the session, so after another screen cast and popped it belongs to that
@@ -780,8 +836,8 @@ nonisolated enum CastOwnership {
             // place. This arm also runs for a claim that has simply gone stale, where its whole job
             // is to let the claim go: one that outlives its session is what stops this screen ever
             // casting this video again.
-            resumeAfterCast(at: cast.receiverPosition(for: videoId))
-            cast.finishClaim(videoId)
+            resumeAfterCast(at: cast.receiverPosition(for: videoId, owner: castOwner))
+            cast.finishClaim(videoId, owner: castOwner)
             claimedVideoId = nil
         case .reportFailure(let videoId):
             // Spec §10: "observe the load result and surface 'Couldn't play on {device}'" (Android
@@ -797,7 +853,7 @@ nonisolated enum CastOwnership {
             resumeAfterCast(at: nil)
             // Nothing of ours reached the receiver, so this screen owns nothing -- and holding a
             // spent claim would both block its own next cast and keep every other screen out.
-            cast.finishClaim(videoId)
+            cast.finishClaim(videoId, owner: castOwner)
             claimedVideoId = nil
         }
     }
@@ -810,7 +866,8 @@ nonisolated enum CastOwnership {
               // Every remaining precondition in one call: a live session, an online player (a
               // sandbox `file://` is never castable, and its cast slot is hidden for the same
               // reason), and a claim no other mounted `PlayerScreen` already holds.
-              cast.claimForCast(videoId: videoId, isOfflinePlayback: isOfflinePlayback) else { return }
+              cast.claimForCast(videoId: videoId, owner: castOwner,
+                                isOfflinePlayback: isOfflinePlayback) else { return }
         startingCastVideoId = videoId
         defer { if startingCastVideoId == videoId { startingCastVideoId = nil } }
         claimedVideoId = videoId
@@ -820,16 +877,17 @@ nonisolated enum CastOwnership {
         // hand-back, and an advance means the stamp names a video this screen no longer plays.
         // Ahead of the no-media branch too -- a cancelled walk must not raise "Couldn't play on
         // {TV}" for a cast that was never attempted.
-        guard args.videoId == videoId, cast.stillCasting(videoId) else { return }
+        guard args.videoId == videoId, cast.stillCasting(videoId, owner: castOwner) else { return }
         guard let media else {
-            // Nothing castable: the embed rung (never castable -- the no-hand-off directive) or a
-            // resolve that did not come back. Same outcome for the user as a receiver refusing the
-            // load, so it gets the same banner rather than copy of its own.
-            cast.reportLoadFailure(videoId: videoId)
+            // Nothing castable: the embed rung (never castable -- the no-hand-off directive), a
+            // resolve that did not come back, or (AC-P2-3) a near-expiry URL that could not outlive
+            // what is left to play. Same outcome for the user as a receiver refusing the load, so
+            // it gets the same banner rather than copy of its own.
+            cast.reportLoadFailure(claim: CastClaim(videoId: videoId, owner: castOwner))
             return
         }
         pauseForCast()
-        cast.load(media, videoId: videoId, at: currentTime)
+        cast.load(media, videoId: videoId, owner: castOwner, at: currentTime)
     }
 
     /// The receiver owns playback now. Goes through the host's `currentPlayer` hand-off slot --
