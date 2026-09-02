@@ -33,7 +33,16 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # "Download for offline" / "Download voor offline" verbatim, on the screen every first-run
           # user (and every App Review pass) sees, while its own sibling onboarding_page3_desc was
           # already re-authored. Refused here and re-authored under EXTRA_KEYS.
-          "onboarding_page3_title"}
+          "onboarding_page3_title",
+          # Task 3 + Task 18 (ruling C8): Android's value says "downloaded"/"تم تنزيله"/"gedownload"
+          # -- a banned stem in all three locales. Refused here and re-authored under EXTRA_KEYS.
+          "profile_delete_account_dialog_message",
+          # Task 3, spec §3 Out / ruling C1: ported but permanently unreachable on iOS, so dead
+          # copy. Microsoft auth was never wired up (spec §3 Out); the phone-country keys assumed a
+          # picker Android never had here either -- bootstrap's and the profile edit sheet's phone
+          # field are both one free-text "+" field, no country selector.
+          "auth_microsoft_button", "auth_microsoft_unavailable_tv", "auth_error_microsoft",
+          "bootstrap_phone_country_label", "bootstrap_error_invalid_phone_country", "edit_phone_country"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -487,6 +496,15 @@ EXTRA_KEYS = {
         "en": "Casting needs your phone and the TV device on the same Wi-Fi network. It won't work over mobile data, or on networks that only use IPv6.",
         "ar": "يتطلب البث وجود هاتفك وجهاز التلفزيون على شبكة Wi-Fi نفسها. لن يعمل عبر بيانات الجوال أو على الشبكات التي تستخدم IPv6 فقط.",
         "nl": "Casten werkt alleen als je telefoon en het tv-apparaat op hetzelfde wifi-netwerk zitten. Het werkt niet via mobiele data of op netwerken die alleen IPv6 gebruiken.",
+    },
+    # Task 3 + Task 18 (ruling C8): the delete-account confirmation, live from Task 18. Android's
+    # sentence verbatim except "every video downloaded on this device" -> the offline wording, in
+    # all three locales — the ar `تم تنزيله` is a banned stem the net catches the moment
+    # DeleteAccountViewModel names this key.
+    "profile_delete_account_dialog_message": {
+        "en": "This permanently deletes your FitrahTube account. Your name, email, phone number and date of birth are erased, along with your subscriptions, saved playlists, favourites and every video saved for offline on this device. This cannot be undone.",
+        "ar": "سيؤدي هذا إلى حذف حسابك في فطرة تيوب نهائيًا. سيتم محو اسمك وبريدك الإلكتروني ورقم هاتفك وتاريخ ميلادك، إلى جانب اشتراكاتك وقوائم التشغيل المحفوظة والمفضلة وكل فيديو محفوظ دون اتصال على هذا الجهاز. لا يمكن التراجع عن هذا الإجراء.",
+        "nl": "Hiermee wordt je FitrahTube-account definitief verwijderd. Je naam, e-mailadres, telefoonnummer en geboortedatum worden gewist, samen met je abonnementen, opgeslagen afspeellijsten, favorieten en elke video die op dit apparaat offline is opgeslagen. Dit kan niet ongedaan worden gemaakt.",
     },
 }
 

@@ -728,28 +728,6 @@
         }
       }
     },
-    "auth_error_microsoft": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Microsoft sign-in failed"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Microsoft sign-in failed"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Microsoft sign-in failed"
-          }
-        }
-      }
-    },
     "auth_error_network": {
       "localizations": {
         "ar": {
@@ -966,50 +944,6 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Already have an account? Sign in"
-          }
-        }
-      }
-    },
-    "auth_microsoft_button": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Continue with Microsoft"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Continue with Microsoft"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Continue with Microsoft"
-          }
-        }
-      }
-    },
-    "auth_microsoft_unavailable_tv": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Microsoft sign-in is not available on TV. Use Google or email instead."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Microsoft sign-in is not available on TV. Use Google or email instead."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Microsoft sign-in is not available on TV. Use Google or email instead."
           }
         }
       }
@@ -1366,28 +1300,6 @@
         }
       }
     },
-    "bootstrap_error_invalid_phone_country": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "اختر دولتك"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pick your country"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kies je land"
-          }
-        }
-      }
-    },
     "bootstrap_error_password_mismatch": {
       "localizations": {
         "ar": {
@@ -1538,28 +1450,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wachtwoord"
-          }
-        }
-      }
-    },
-    "bootstrap_phone_country_label": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الدولة"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Country"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Land"
           }
         }
       }
@@ -5182,28 +5072,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Huidig wachtwoord is onjuist"
-          }
-        }
-      }
-    },
-    "edit_phone_country": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الدولة"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Country"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Land"
           }
         }
       }
@@ -12815,19 +12683,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "سيؤدي هذا إلى حذف حسابك في FitrahTube نهائيًا. سيتم محو اسمك وبريدك الإلكتروني ورقم هاتفك وتاريخ ميلادك، إلى جانب اشتراكاتك وقوائم التشغيل المحفوظة والمفضلة وكل فيديو تم تنزيله على هذا الجهاز. لا يمكن التراجع عن هذا الإجراء."
+            "value": "سيؤدي هذا إلى حذف حسابك في فطرة تيوب نهائيًا. سيتم محو اسمك وبريدك الإلكتروني ورقم هاتفك وتاريخ ميلادك، إلى جانب اشتراكاتك وقوائم التشغيل المحفوظة والمفضلة وكل فيديو محفوظ دون اتصال على هذا الجهاز. لا يمكن التراجع عن هذا الإجراء."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This permanently deletes your FitrahTube account. Your name, email, phone number and date of birth are erased, along with your subscriptions, saved playlists, favourites and every video downloaded on this device. This cannot be undone."
+            "value": "This permanently deletes your FitrahTube account. Your name, email, phone number and date of birth are erased, along with your subscriptions, saved playlists, favourites and every video saved for offline on this device. This cannot be undone."
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hiermee wordt je FitrahTube-account definitief verwijderd. Je naam, e-mailadres, telefoonnummer en geboortedatum worden gewist, samen met je abonnementen, opgeslagen afspeellijsten, favorieten en elke video die op dit apparaat is gedownload. Dit kan niet ongedaan worden gemaakt."
+            "value": "Hiermee wordt je FitrahTube-account definitief verwijderd. Je naam, e-mailadres, telefoonnummer en geboortedatum worden gewist, samen met je abonnementen, opgeslagen afspeellijsten, favorieten en elke video die op dit apparaat offline is opgeslagen. Dit kan niet ongedaan worden gemaakt."
           }
         }
       }
