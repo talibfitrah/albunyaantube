@@ -66,6 +66,35 @@ func items(count: Int, prefix: String) -> [ContentItem] {
 /// Debounce-clock stub: tests assert on the requested `Duration`, never wait out real time.
 func noSleep(_ duration: Duration) async throws {}
 
+/// Task 5: the `OAuthSignInProvider` double. Canned credential, no SDK, no UI, no network.
+///
+/// `isAvailable == false` FAILS instead of returning a credential, so "an unavailable provider is
+/// never asked" (ruling F11) is a property a caller's test can actually break: a screen that asks
+/// one anyway gets an error, not a silent success. `presentCount` is how a caller's test proves it
+/// was not asked at all.
+@MainActor final class FakeOAuthProvider: OAuthSignInProvider {
+    let isAvailable: Bool
+    let credential: OAuthCredential
+    let error: AuthErrorCode
+    private(set) var presentCount = 0
+
+    init(isAvailable: Bool = true,
+         credential: OAuthCredential = OAuthCredential(providerID: "google.com",
+                                                       idToken: "fake-id-token",
+                                                       accessTokenOrNonce: "fake-access-token"),
+         error: AuthErrorCode = .googleSignInFailed) {
+        self.isAvailable = isAvailable
+        self.credential = credential
+        self.error = error
+    }
+
+    func presentSignIn() async throws(AuthErrorCode) -> OAuthCredential {
+        presentCount += 1
+        guard isAvailable else { throw error }
+        return credential
+    }
+}
+
 // MARK: - Live-leg InnerTube doubles (three byte-identical copies before the Phase 3 fold-in)
 
 /// The backend availability gate, always affirmative — the live-gated suites talk to YouTube

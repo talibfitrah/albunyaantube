@@ -152,6 +152,15 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var auth: any AuthClient = injectedAuth ?? FirebaseAuthClient() ?? UnavailableAuthClient()
     private let injectedAuth: (any AuthClient)?
 
+    /// Phase 4 Task 5: the two federated sign-in seams and the F11 capability answer Task 10 renders
+    /// from. Unlike `auth` these need NO fixture override — neither constructor touches Firebase, a
+    /// network or an SDK singleton (both read their availability lazily, and with no
+    /// `GoogleService-Info.plist` both report unavailable), so a fake container gets the real ones
+    /// and `AppContainerTests` pins that they stay inert.
+    private(set) lazy var googleSignIn: any OAuthSignInProvider = GoogleAuthProvider()
+    private(set) lazy var appleSignIn: any OAuthSignInProvider = AppleAuthProvider()
+    private(set) lazy var capabilities: SignInCapabilities = .current()
+
     private func makeOfflineManager() -> OfflineManager {
         let base = offlineBase
         let manager = OfflineManager(

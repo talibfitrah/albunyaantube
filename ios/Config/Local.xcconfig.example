@@ -2,5 +2,11 @@
 // to sign+run on a physical device. Not needed for simulator builds.
 FITRAH_TEAM_ID = ABCDE12345
 
+// Google Sign-In's OAuth callback scheme. Copy it VERBATIM from the REVERSED_CLIENT_ID key of your
+// GoogleService-Info.plist (the git-ignored Firebase options file; it looks like
+// com.googleusercontent.apps.123456789012-abcdef...). Without this override the tracked xcconfigs
+// ship a placeholder scheme and Google sign-in cannot come back into the app.
+GID_REVERSED_CLIENT_ID = com.googleusercontent.apps.000000000000-replaceme
+
 // Debug builds may override API_BASE_URL via Local.xcconfig (simulator, http://localhost or
 // https only — ATS blocks plain-http LAN hosts on devices).

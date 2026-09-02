@@ -16,6 +16,12 @@
 # number configured (FitrahTube.xctestplan sets 60 to match); CLAUDE.md's 30s note is a
 # cross-platform default this iOS suite can't hit and is amended separately. Wall-clock: 300s per
 # watchdog window (gate; Release gets its own when requested).
+# FAILURE MODE of -onlyUsePackageVersionsFromResolvedFile (used on both xcodebuild invocations
+# below): on a -derivedDataPath whose SourcePackages cache is EMPTY -- a fresh checkout, or after
+# deleting ios/DerivedData or ios/DerivedData-Release -- the pin blocks the package checkout instead
+# of fetching it, and xcodebuild fails with no obvious cause. One-time bootstrap for that directory:
+#   xcodebuild -resolvePackageDependencies -project ios/FitrahTube.xcodeproj -derivedDataPath <dir>
+# (~44 s, ~1.6 GB per directory). See also: never delete ios/DerivedData/SourcePackages.
 # $RESULTS (xcresult bundle + watchdog marker) is removed on exit unless KEEP_RESULTS=1 is set.
 # Override simulators with IPHONE_SIM / IPAD_SIM env vars, e.g. IPHONE_SIM="iPhone 16" ./test.sh.
 # IPAD_SIM="" (explicitly empty, not just unset) drops the iPad destination and runs iPhone only.

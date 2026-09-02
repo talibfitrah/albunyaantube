@@ -2,9 +2,13 @@
 // Info.plist's FITRAH_APPLE_SIGNIN, whether the app offers Sign in with Apple at all.
 FITRAH_TEAM_ID = 72PF8SBQR6
 // Google Sign-In's OAuth callback scheme (the REVERSED_CLIENT_ID out of GoogleService-Info.plist).
-// Empty here because that file is USER-BLOCKED and git-ignored: Local.xcconfig supplies the real
-// value the day the plist lands.
-GID_REVERSED_CLIENT_ID =
+// That file is USER-BLOCKED and git-ignored, so Local.xcconfig supplies the real value the day it
+// lands. Task 5: the default is a PLACEHOLDER, not empty -- Info.plist substitution cannot omit a
+// CFBundleURLTypes entry conditionally, and an empty CFBundleURLSchemes string ships in every
+// build and is a plausible App Store validation rejection. Nothing can arrive on this scheme: no
+// server is configured to redirect to it, and GIDSignIn.handle() refuses any URL that is not its
+// own configured /oauth2callback. WHOEVER CUTS THE FIRST SIGNED BUILD must override it.
+GID_REVERSED_CLIENT_ID = com.googleusercontent.apps.fitrahtube-no-client-id
 // Local.xcconfig may set FITRAH_TEAM_ID and GID_REVERSED_CLIENT_ID only; API_BASE_URL is fixed for
 // Release.
 #include? "Local.xcconfig"

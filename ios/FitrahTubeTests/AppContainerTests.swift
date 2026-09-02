@@ -141,6 +141,37 @@ struct AppContainerTests {
         #expect(AppContainer.fake().auth is FakeAuthClient)
     }
 
+    /// Task 5: the two OAuth seams are ordinary container members, not globals — Task 10's
+    /// ViewModel takes them from here. Neither constructor touches Firebase, a network or an SDK
+    /// singleton, which is why a fixture container needs no override for them (unlike `auth`).
+    @Test func theFakeContainerExposesBothOAuthProvidersUnavailable() {
+        let container = AppContainer.fake()
+        #expect(container.googleSignIn is GoogleAuthProvider)
+        #expect(container.appleSignIn is AppleAuthProvider)
+        #expect(container.googleSignIn.isAvailable == SignInCapabilities.current().google)
+        #expect(container.appleSignIn.isAvailable == SignInCapabilities.current().apple)
+    }
+
+    /// Ruling F11 at container level: with no `GoogleService-Info.plist` the sign-in screen has
+    /// nothing to render at all.
+    @Test func theFakeContainersCapabilitiesAreAllFalseWithNoOptionsFile() {
+        let container = AppContainer.fake()
+        #expect(container.capabilities == SignInCapabilities.current())
+        if !FirebaseBootstrap.optionsFileExists {
+            #expect(container.capabilities == SignInCapabilities(emailPassword: false, google: false, apple: false))
+            #expect(SignInCapabilities.visibleProviders(container.capabilities).isEmpty)
+        }
+    }
+
+    /// The same answer from the LIVE container the app actually launched with (`AppContainer.current`,
+    /// set by `FitrahTubeApp.init`) — the fixture path above could otherwise be hiding a difference.
+    @Test func theLiveContainerReportsTheSameCapabilitiesAndProviders() throws {
+        let container = try #require(AppContainer.current, "FitrahTubeApp.init must set AppContainer.current")
+        #expect(container.capabilities == SignInCapabilities.current())
+        #expect(container.googleSignIn.isAvailable == SignInCapabilities.current().google)
+        #expect(container.appleSignIn.isAvailable == SignInCapabilities.current().apple)
+    }
+
     @Test func fakeContainerServesCannedCategories() async throws {
         let container = AppContainer.fake()
         let categories = try await container.catalog.categories()

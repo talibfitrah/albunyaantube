@@ -118,9 +118,12 @@ nonisolated final class FirebaseAuthClient: AuthClient {
     /// Spec §3: exactly two federated providers reach this app. Google hands back an access token,
     /// Apple a raw nonce — which is why `OAuthCredential` carries one field for both.
     private static func firebaseCredential(_ credential: FitrahTube.OAuthCredential) -> AuthCredential {
-        if credential.providerID == GoogleAuthProvider.id {
-            return GoogleAuthProvider.credential(withIDToken: credential.idToken,
-                                                 accessToken: credential.accessTokenOrNonce ?? "")
+        // MODULE-QUALIFIED (Task 5): the app now has its own `GoogleAuthProvider` — the
+        // `OAuthSignInProvider` conformer — which shadows the SDK's inside this module. Same
+        // defence this file already applies to `FitrahTube.OAuthCredential`, in the other direction.
+        if credential.providerID == FirebaseAuth.GoogleAuthProvider.id {
+            return FirebaseAuth.GoogleAuthProvider.credential(withIDToken: credential.idToken,
+                                                              accessToken: credential.accessTokenOrNonce ?? "")
         }
         return OAuthProvider.credential(providerID: .apple, idToken: credential.idToken,
                                         rawNonce: credential.accessTokenOrNonce ?? "")

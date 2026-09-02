@@ -134,10 +134,11 @@ targets:
             CFBundleURLSchemes: [albunyaantube]
           # Phase 4 Task 2: Google Sign-In's OAuth callback comes back on the reversed client id,
           # which lives in the (USER-BLOCKED, git-ignored) GoogleService-Info.plist -- so the
-          # scheme is a build setting, empty in both tracked xcconfigs and supplied by
-          # Config/Local.xcconfig the day the plist lands. Empty today means one unusable scheme in
-          # the built plist, which iOS ignores; Google sign-in is unreachable without the plist
-          # anyway (`FirebaseBootstrap.googleClientID` is nil).
+          # scheme is a build setting, supplied by Config/Local.xcconfig the day the plist lands.
+          # Task 5: the tracked default is a PLACEHOLDER scheme, not an empty string -- this list
+          # cannot be omitted conditionally, and an empty CFBundleURLSchemes entry shipped in every
+          # build. Nothing can arrive on the placeholder; Google sign-in is unreachable without the
+          # plist anyway (`FirebaseBootstrap.googleClientID` is nil).
           - CFBundleURLName: com.googleusercontent.apps
             CFBundleURLSchemes: [$(GID_REVERSED_CLIENT_ID)]
         API_BASE_URL: $(API_BASE_URL)
