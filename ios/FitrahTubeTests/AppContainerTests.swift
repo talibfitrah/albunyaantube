@@ -131,6 +131,16 @@ struct AppContainerTests {
                 "wait-don't-skip: parked on a timer, not dropped")
     }
 
+    /// Task 4 acceptance: a fixture container provably builds NO Firebase object. `fake()` passes
+    /// its own `FakeAuthClient` (the `injectedBrowse` idiom), so `auth`'s lazy initializer — the
+    /// one place that could call `FirebaseBootstrap.configureIfPossible()` and construct
+    /// `FirebaseAuthClient` — never runs under a fixture. Naming the DEBUG app-target type is the
+    /// point: `FitrahTubeTests` cannot see a test-target double, and neither can Task 13's
+    /// screenshot rig.
+    @Test func theFakeContainerBuildsTheDebugFakeAuthClientAndNoFirebaseObject() {
+        #expect(AppContainer.fake().auth is FakeAuthClient)
+    }
+
     @Test func fakeContainerServesCannedCategories() async throws {
         let container = AppContainer.fake()
         let categories = try await container.catalog.categories()

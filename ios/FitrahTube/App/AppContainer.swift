@@ -140,6 +140,18 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// spec §10's "not loaded at all" clause, and the fixture containers' default.
     private(set) lazy var castController = CastController()
 
+    /// Phase 4 Task 4: the app's ONE auth seam, and the ONE token source `AuthMiddleware` (Task 6)
+    /// and `AuthorizedTransport` (Task 7) are handed (ruling F12 — `AuthClient` refines
+    /// `AuthTokenProviding`, so no adapter sits between them).
+    ///
+    /// This calls `FirebaseBootstrap.configureIfPossible()` ITSELF (through `FirebaseAuthClient`'s
+    /// failable init) rather than assuming `FitrahTubeApp.init()`'s warm-up already ran: `live()` is
+    /// evaluated from a stored-property initializer, which Swift runs BEFORE that body. The call is
+    /// idempotent. With no `GoogleService-Info.plist` — this machine, CI and every fresh checkout —
+    /// it returns nil and the app gets `UnavailableAuthClient`, i.e. a guest that cannot sign in.
+    private(set) lazy var auth: any AuthClient = injectedAuth ?? FirebaseAuthClient() ?? UnavailableAuthClient()
+    private let injectedAuth: (any AuthClient)?
+
     private func makeOfflineManager() -> OfflineManager {
         let base = offlineBase
         let manager = OfflineManager(
@@ -234,7 +246,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
          browse: (any BrowseSource)? = nil, degradedHeader: (@Sendable (String) async throws -> ChannelHeader)? = nil,
          playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)? = nil,
          gateTransport: any HTTPTransport = URLSessionTransport(),
+         auth: (any AuthClient)? = nil,
          isFixture: Bool = false) {
+        self.injectedAuth = auth
         self.catalog = catalog
         self.userDefaults = userDefaults
         self.modelContainer = modelContainer
@@ -279,7 +293,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // bundle identifier or a reserved domain -- a trap in a default-argument position, far
         // from any call site (gate A-M15). "fitrahtube.fake" is safe today; this keeps it latent.
         defaults: UserDefaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard,
-        browse: any BrowseSource = FakeBrowseSource()
+        browse: any BrowseSource = FakeBrowseSource(),
+        // Task 4: the `injectedBrowse` idiom again. Passing it explicitly is what makes "a fixture
+        // container builds no Firebase object" structural rather than incidental — `auth`'s lazy
+        // initializer, the only caller of `FirebaseBootstrap.configureIfPossible()` outside the
+        // App's warm-up, never runs. Task 13's launch hook selects the state HERE, at construction,
+        // instead of mutating a built container.
+        auth: any AuthClient = FakeAuthClient(state: .signedOut)
     ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
         // defaults domain. Does NOT wipe the suite -- callers that write through the returned
@@ -301,7 +321,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // construction: hidden Save button, keep-on-sweep, zero requests.
         AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true),
                      apiBaseURL: AppConfig.apiBaseURL, browse: browse,
-                     gateTransport: FixedStatusTransport(status: 503), isFixture: true)
+                     gateTransport: FixedStatusTransport(status: 503), auth: auth, isFixture: true)
     }
     #endif
 
