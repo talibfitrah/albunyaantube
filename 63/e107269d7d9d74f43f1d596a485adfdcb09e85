@@ -1,0 +1,42 @@
+ios/FitrahTubeTests/AuthErrorMappingTests.swift
+  s_66ddb7c44de816::t_8e24d76d92f8d1 1-78
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/BearerScopeTests.swift
+  s_66ddb7c44de816::t_f9f707ad12417f 1-28
+ios/FitrahTube/Features/Auth/FirebaseAuthClient.swift
+  s_66ddb7c44de816::t_a6ecc83a705e15 1-56,58-60,66-68,76-78,80-82,84-86,88-97,103-129,133-137
+  s_66ddb7c44de816::t_e880fd8bad3a33 57,61-65,69-75,79,83,87
+  s_66ddb7c44de816::t_2491b9f5c7e624 98-102
+  s_66ddb7c44de816::t_8505c5b8e229b7 130-132
+ios/FitrahTubeTests/AuthClientTests.swift
+  s_66ddb7c44de816::t_1100bfa5160794 40-41
+  s_66ddb7c44de816::t_7dc6686970bc09 1-39,42-103
+ios/FitrahTube/Features/Auth/AuthClient.swift
+  s_66ddb7c44de816::t_bfa3871ea5f15d 1-118
+ios/Packages/FitrahAPI/Sources/FitrahAPI/AuthTokenProviding.swift
+  s_66ddb7c44de816::t_02b5b24815b8eb 1-23
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_66ddb7c44de816::t_f6a8e6264870d9 134-143
+ios/FitrahTube/App/FakeAuthClient.swift
+  s_66ddb7c44de816::t_cbd7209322119c 1-108
+ios/FitrahTube/App/AppContainer.swift
+  s_66ddb7c44de816::t_fcc110f03419c2 249,251
+  s_66ddb7c44de816::t_b8e5dc113ffbb1 324
+  s_66ddb7c44de816::t_2f0806d207534d 296-302
+  s_66ddb7c44de816::t_50802c4a68fdfe 143-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "63e107269d7d9d74f43f1d596a485adfdcb09e85",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
