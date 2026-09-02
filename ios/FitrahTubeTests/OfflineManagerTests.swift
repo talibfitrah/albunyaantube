@@ -173,7 +173,22 @@ struct OfflineManagerTests {
         /// the rest: the closure appends on the actor while the test reads.
         private var _gateCalls: [String] = []
         var gateCalls: [String] { lock.withLock { _gateCalls } }
-        func recordGateCall(_ videoId: String) { lock.withLock { _gateCalls.append(videoId) } }
+        /// Appends and returns the new count in one critical section (the `countKillSwitchCall`
+        /// shape) — the hold below keys off "is this the FIRST consult", so it cannot read a count
+        /// it then acts on out of date.
+        @discardableResult
+        func recordGateCall(_ videoId: String) -> Int {
+            lock.withLock { _gateCalls.append(videoId); return _gateCalls.count }
+        }
+        /// Ids whose FIRST gate consult suspends until released — the gate GET is a third, longer
+        /// await inside `begin`'s claim window, and review I1 needs a cancel+retry to land in it.
+        /// Only the first: the retry's own consults must not block behind the attempt they replace.
+        private var _gateHeld: Set<String> = []
+        var gateHeld: Set<String> {
+            get { lock.withLock { _gateHeld } }
+            set { lock.withLock { _gateHeld = newValue } }
+        }
+        func gateIsHeld(_ videoId: String) -> Bool { lock.withLock { _gateHeld.contains(videoId) } }
     }
 
     private struct Rig {
@@ -229,7 +244,13 @@ struct OfflineManagerTests {
             },
             isOnCellular: { flags.cellular },
             baseDirectory: base,
-            gate: { flags.recordGateCall($0); return flags.gates[$0] ?? flags.gate },
+            gate: { videoId in
+                if flags.recordGateCall(videoId) == 1 {
+                    await FakeOfflineEngine.hold(while: { flags.gateIsHeld(videoId) },
+                                                 what: "gate consult of \(videoId)")
+                }
+                return flags.gates[videoId] ?? flags.gate
+            },
             now: {
                 if let onNow = flags.onNow { flags.onNow = nil; onNow() }
                 return flags.now
@@ -578,11 +599,13 @@ struct OfflineManagerTests {
         #expect(SavedRowText.captionKey(status: .queued, errorCode: row.errorCode) == "offline_status_queued")
     }
 
-    /// Fork C's same-day remedy on the start path, the table `retry` already used: a refusing gate
-    /// takes the row and its partial with it — the sweep would only get to it on the next launch,
-    /// and `reattach()` would have re-started the walk before that.
+    /// Review I2: `begin` REFUSES, it never deletes. A per-row delete here ends in `schedule()`,
+    /// which picks the next queued row and re-enters `begin` — so one drifted backend answer
+    /// cascaded through every queued/paused/failed row in a single pass, with none of the sweep's
+    /// whole-library belt, on exactly the boxed-`Boolean` drift that belt was built for. Every
+    /// refusal parks identically to `.unreachable`; the BELTED sweep owns every deletion.
     @Test(arguments: [GateAnswer.notAllowed, GateAnswer.gone])
-    func aStartWhoseGateRefusesDeletesTheRowAndItsPartial(gate: GateAnswer) async throws {
+    func aStartWhoseGateRefusesParksTheRowAndDeletesNothing(gate: GateAnswer) async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         let item = OfflineItem(videoId: "vidRevoked0", title: "Lecture", channelName: nil, thumbnailUrl: nil,
                                qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue)
@@ -594,10 +617,67 @@ struct OfflineManagerTests {
 
         await rig.manager.schedule()
 
-        #expect(rig.persisted(id: item.id) == nil, "a revoked gate removes the row, not just the start")
-        #expect(!FileManager.default.fileExists(atPath: tmp.path()))
-        #expect(rig.engine.starts.isEmpty)
+        let row = try #require(rig.persisted(id: item.id), "an unbelted per-row delete is the mass-delete vector")
+        #expect(row.status == OfflineStatus.queued.rawValue)
+        #expect(row.errorCode == nil, "waiting is not an error, and a refusal never says why")
+        #expect(await rig.manager.pendingRetryIds == [item.id])
+        #expect(FileManager.default.fileExists(atPath: tmp.path()), "the partial waits for the belted sweep")
+        #expect(rig.engine.starts.isEmpty, "fail-closed still holds: nothing is written")
         #expect(rig.resolver.calls.isEmpty)
+    }
+
+    /// The other half of I2: one refused row must not take its neighbours with it. `delete` ends in
+    /// `schedule()`, so a deleting `begin` re-entered itself once per queued row — the cascade.
+    @Test func aRefusedStartLeavesEveryOtherQueuedRowAlone() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        for index in 0..<3 {
+            let item = OfflineItem(videoId: "vidDrift\(index)", title: "Lecture \(index)", channelName: nil,
+                                   thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
+                                   status: OfflineStatus.queued.rawValue)
+            try rig.store.insert(item)
+        }
+        rig.flags.gate = .notAllowed   // the boxed-Boolean drift: every row answers the same way
+
+        await rig.manager.schedule()
+
+        #expect(rig.rowCount() == 3, "a drifted answer must not walk the queue deleting partials")
+        #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Review I1: the gate GET is a THIRD await inside `begin`'s claim window, and the park dropped
+    /// `active` unconditionally (`scheduleRetry`'s first statement) instead of through `release` —
+    /// so a cancel plus a retry that re-claims the row INSIDE the gate await had its claim stripped
+    /// by the older attempt's park, and its own `stillCurrent` then discarded its continuation:
+    /// the user's Retry did nothing for 60 s. Same finding as
+    /// `aRefusedStartNeverStripsANewerAttemptsClaim`, one await further in; that test only drives
+    /// the kill-switch path, so it never saw this one.
+    @Test func aParkedStartNeverStripsANewerAttemptsClaim() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let flags = rig.flags
+        flags.gate = .unreachable                       // the first consult parks…
+        flags.gateHeld = [Self.lectureVideoId]           // …once the test lets it out of the await
+
+        let saveTask = Task { await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p",
+                                                     audioOnly: true, metadata: Self.metadata) }
+        await waitUntil { flags.gateCalls.count == 1 }
+        let id = try #require(rig.persisted(videoId: Self.lectureVideoId)?.id)
+
+        await rig.manager.cancel(id)                     // drops the first attempt's claim
+        flags.gate = .allowed                            // the retry's own consults allow
+        rig.resolver.hold(Self.lectureVideoId)           // park the new attempt inside its resolve
+        let retryTask = Task { await rig.manager.retry(id) }
+        await rig.resolver.waitUntilCalled(count: 1)
+
+        flags.gateHeld = []                              // the park continuation runs now
+        await saveTask.value
+        rig.resolver.release(id: Self.lectureVideoId)
+        await retryTask.value
+
+        #expect(rig.engine.starts.map(\.id) == [id],
+                "the retry's claim must survive the older attempt's park")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+        #expect(await rig.manager.pendingRetryIds.isEmpty,
+                "and the stale attempt must not arm a timer over a row that is already running")
     }
 
     /// The cellular gate re-opening is a START. It used to walk straight into `resolveAndStart` on
@@ -617,7 +697,7 @@ struct OfflineManagerTests {
 
         #expect(rig.flags.gateCalls == [Self.lectureVideoId], "the re-open is a start, and a start asks")
         #expect(rig.engine.starts.isEmpty)
-        #expect(rig.persisted(id: id) == nil)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.queued.rawValue, "refused, parked, not deleted (I2)")
     }
 
     /// The kill-switch kick (`schedule()` after the remote-config refresh flips it back on) is the
@@ -639,7 +719,7 @@ struct OfflineManagerTests {
 
         #expect(rig.flags.gateCalls == ["vidQueued00"])
         #expect(rig.engine.starts.isEmpty)
-        #expect(rig.persisted(id: item.id) == nil)
+        #expect(rig.persisted(id: item.id)?.status == OfflineStatus.queued.rawValue, "refused, parked, not deleted (I2)")
     }
 
     /// `reattach()`'s orphan re-queue is the staleest start of all — the authorization is from
@@ -659,7 +739,8 @@ struct OfflineManagerTests {
         #expect(rig.flags.gateCalls == ["vidOrphan0D"])
         #expect(rig.engine.resumes.isEmpty, "the resume leg walks bytes like any other start")
         #expect(rig.engine.starts.isEmpty)
-        #expect(rig.persisted(id: item.id) == nil)
+        #expect(rig.persisted(id: item.id)?.status == OfflineStatus.queued.rawValue, "refused, parked, not deleted (I2)")
+        #expect(rig.persisted(id: item.id)?.resumeData == Data("RD".utf8), "and its resume point is untouched")
     }
 
     /// R5-3, the other refusal: a user Resume the cellular gate refuses left the row EXACTLY as it

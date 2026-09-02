@@ -146,6 +146,12 @@ struct LocalizationTests {
             let bundle = try Self.lproj(locale)
             for key in referenced.sorted() {
                 let value = bundle.localizedString(forKey: key, value: nil, table: nil)
+                // A key missing from this locale resolves to the key ITSELF, and three referenced
+                // keys carry "download" in their NAME (`settings_downloads`,
+                // `settings_download_quality`, `settings_download_quality_title`) — so without this
+                // a lost translation would be reported as banned copy instead of a missing string.
+                // `everyCatalogKeyResolvesInArabicAndDutch` is the test that owns that failure.
+                guard value != key else { continue }
                 if let stem = Self.bannedStem(in: value) {
                     Issue.record("\(locale)/\(key) carries the banned stem \"\(stem)\": \(value)")
                 }

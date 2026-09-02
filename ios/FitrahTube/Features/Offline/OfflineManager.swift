@@ -530,22 +530,34 @@ actor OfflineManager: OfflineSaving {
             if userInitiated { await note(row.id, .network) }
             return
         }
-        // The per-video gate, on `retry`'s fail-CLOSED table (adversarial r1 P0-2). This funnel
-        // consulted the kill-switch and the cellular gate but never `offlineAllowed`, so a
-        // scheduler pick, a user Resume, `reattach()`'s re-queue, a cellular re-open and the
-        // kill-switch kick all began byte-writing walks on authorization that could be hours stale
-        // — only `retry` and the sweep ever revalidated. BELOW the cellular gate on purpose: a row
-        // that gate refuses writes no bytes, so it needs no authorization and costs no GET.
-        switch await gate(row.videoId) {
-        case .allowed: break
-        // Fork C's same-day remedy, through the exact path `retry` uses: the row and its partial go.
-        // No `release` first — `delete` → `tearDown` → `forget` drops the claim itself, and a newer
-        // attempt that re-claimed inside the await must die with the row, not outlive it.
-        case .notAllowed, .gone: await delete(row.id); return
-        // No answer is not a "no": wait-don't-skip, like a limiter park. The row becomes `.queued`
-        // ("Waiting") with NO error code and a timer that re-runs `schedule()`. For a user's Resume
-        // that promotion IS the visible state change R5-3 asks for, so nothing is noted on top.
-        case .unreachable: await scheduleRetry(row.id, after: Self.gateRetryDelay); return
+        // The per-video gate, fail-CLOSED (adversarial r1 P0-2). This funnel consulted the
+        // kill-switch and the cellular gate but never `offlineAllowed`, so a scheduler pick, a user
+        // Resume, `reattach()`'s re-queue, a cellular re-open and the kill-switch kick all began
+        // byte-writing walks on authorization that could be hours stale — only `retry` and the
+        // sweep ever revalidated. BELOW the cellular gate on purpose: a row that gate refuses
+        // writes no bytes, so it needs no authorization and costs no GET.
+        //
+        // Only an affirmative answer starts bytes; EVERY other answer parks, and `begin` deletes
+        // NOTHING (review I2). A per-row delete here ends in `schedule()`, which picks the next
+        // queued row and re-enters this function — so one drifted backend answer cascaded through
+        // every queued/paused/failed row in a single pass, with none of the belt the sweep applies
+        // to the identical verdict 200 lines below. `Video.offlineAllowed` is a boxed `Boolean`
+        // that one migration can null across the whole catalog, which is precisely the drift the
+        // belt exists to refuse: under it the sweep keeps everything while this deleted every
+        // partial it could reach. Telling drift from a real revocation needs whole-library
+        // evidence, and only the sweep has it — so the sweep owns every deletion, at the next
+        // launch or foreground. `retry` keeps its own single user-initiated delete: with `begin`
+        // unable to delete there is no cascade behind it.
+        //
+        // The park is wait-don't-skip, like a limiter park: `.queued` ("Waiting"), NO error code
+        // (a refusal never says why), the partial and any resume token untouched. For a user's
+        // Resume that promotion IS the visible state change R5-3 asks for, so nothing is noted on
+        // top. Deliberately NO `schedule()` behind it, unlike the `.delayed`/`.blocked` arms: this
+        // wall is the gate's transport, which is global — the same reasoning as the `.cooldown`
+        // arm, where re-scheduling would only walk every younger row into the same dead edge.
+        guard case .allowed = await gate(row.videoId) else {
+            await scheduleRetry(row.id, attempt, after: Self.gateRetryDelay)
+            return
         }
         guard stillCurrent(row.id, attempt) else { return }   // cancelled/deleted during the hops
         if let resumeData = row.resumeData {
@@ -593,9 +605,9 @@ actor OfflineManager: OfflineSaving {
             // The head row parking on a timer frees the serial slot — re-run the scheduler so a
             // downloadable younger row proceeds instead of starving behind the timer. (Not in the
             // cooldown arm below: that cooldown is global, every row would hit the same wall.)
-            await scheduleRetry(row.id, after: delay); await schedule(); return
+            await scheduleRetry(row.id, attempt, after: delay); await schedule(); return
         case .blocked(_, let retryAfter):
-            await scheduleRetry(row.id, after: retryAfter); await schedule(); return
+            await scheduleRetry(row.id, attempt, after: retryAfter); await schedule(); return
         }
         // A VIDEO save needs the muxed itag 18 (save-purpose walk, owner ruling 2026-09-01);
         // an audio-only save stays on the plain walk — it needs visionos's itag-140 `audioOnlyURL`.
@@ -614,14 +626,14 @@ actor OfflineManager: OfflineSaving {
             resolved = first
         } catch ExtractionError.cooldown(let until) {
             // CF-D-9 reverse direction: never a failed row, never a retry into the cooldown.
-            await scheduleRetry(row.id, after: .seconds(max(1, until.timeIntervalSince(now())))); return
+            await scheduleRetry(row.id, attempt, after: .seconds(max(1, until.timeIntervalSince(now())))); return
         } catch ExtractionError.botCheck {
             // A bot-checked walk (the muxed save-walk's shape — its walk-end trip just
             // armed the persisted cooldown) is a temporary block, never a failed row. `.botCheck`
             // carries no date, so park briefly: the retry's own resolve hits the resolver's
             // cooldown self-gate BEFORE any rung or network call and lands in the `.cooldown` arm
             // above with the cooldown's exact end.
-            await scheduleRetry(row.id, after: .seconds(1)); return
+            await scheduleRetry(row.id, attempt, after: .seconds(1)); return
         } catch {
             await fail(row.id, Self.code(for: error)); return
         }
@@ -702,7 +714,18 @@ actor OfflineManager: OfflineSaving {
     /// mechanism resumes it when the timer fires. Here rather than at the four call sites: every
     /// park routes through this one function, and a row that is already `.queued` only needs its
     /// stale reason cleared (RR-I1 below).
-    private func scheduleRetry(_ id: String, after delay: Duration) async {
+    private func scheduleRetry(_ id: String, _ attempt: Int, after delay: Duration) async {
+        // Review I1: this used to drop the claim with an unconditional `active.remove(id)`, so a
+        // cancel plus a retry that re-claimed the row INSIDE the caller's own await had its claim
+        // stripped by the older attempt's park — and its `stillCurrent` then discarded its own
+        // continuation, leaving the row queued with nothing running. The claim is `attempt`'s to
+        // drop, exactly as in `begin`'s two other refusal paths (`release`).
+        //
+        // A stale attempt parks NOTHING at all, not just "keeps the claim": writing `.queued` and
+        // arming a timer over a walk the newer attempt has already started is the frozen-bar bug
+        // `reattach()` documents, and a cancelled or deleted row must not be re-queued behind a
+        // timer either (that leaked a live `Task` per abandoned park).
+        guard stillCurrent(id, attempt) else { return }
         active.remove(id)
         // RR-m1: armed BEFORE the write. `active.remove` and the write's MainActor hop otherwise
         // left one suspension in which the row was neither `active` nor in `pendingRetryIds`, and a

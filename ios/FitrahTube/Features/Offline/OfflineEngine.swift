@@ -333,9 +333,11 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             }
             let written = partialSize(id)
             let total = status == 200 ? written : Self.total(fromContentRange: response?.value(forHTTPHeaderField: "Content-Range"))
-            // The second half of the P3-5 re-check: a walk superseded during the append above says
-            // nothing at all — no progress, no failure, no `.finished`. The three yields below and
-            // `issueChunk` (which re-checks under the lock itself) are all it has left to talk with.
+            // The second half of the P3-5 re-check: a walk superseded during the append above emits
+            // none of the three yields below, and `issueChunk` re-checks under the lock itself, so
+            // it issues no next chunk either. What it CAN still leave behind is bytes appended into
+            // the `.tmp` before the bump landed — the orphan the next `start` deletes (CF-D-10) —
+            // so this is "says nothing", not "did nothing".
             guard isCurrent(id, generation) else { return }
             continuation.yield(.progress(id: id, bytesWritten: written, totalBytes: total))
             // No parseable total (missing `Content-Range`, or `bytes 0-x/*` from a proxy or CDN
@@ -355,6 +357,11 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
                 continuation.yield(.finished(id: id))
             }
         } catch {
+            // Review m2: the generation is the authority on this arm too. A LOSER that throws
+            // mid-append used to delete the `.tmp` and fail the row — a winner's fresh partial
+            // erased, and its row failed, by a walk that was already superseded. The restart-clean
+            // behaviour is only correct for the CURRENT walk.
+            guard isCurrent(id, generation) else { return }
             try? FileManager.default.removeItem(at: partialURL(id))
             continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: downloadTask))))
         }

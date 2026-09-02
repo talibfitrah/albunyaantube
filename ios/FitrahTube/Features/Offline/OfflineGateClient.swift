@@ -97,8 +97,13 @@ nonisolated enum SaveButtonState: Equatable, Sendable {
 }
 
 /// (gate × config × item-status) → button state.
-/// - An existing item outranks everything: its save was authorized at save time and the sweep owns
-///   revocation — a completed item must open OFFLINE, where the gate fetch never lands.
+/// - An existing item outranks everything: a completed item must open OFFLINE, where the gate fetch
+///   never lands. Revocation is re-checked in two places behind this view, neither of them here —
+///   `OfflineManager.begin` re-consults before every start and PARKS a refused one at "Waiting"
+///   (review I2: it never deletes, because telling backend drift from a real revocation needs the
+///   sweep's whole-library evidence), and the belted sweep is what actually removes the row and its
+///   bytes. So a `.progress` row can go back to "Waiting" while this button still reads `.progress`;
+///   it disappears when the sweep spends the verdict.
 /// - `downloadsEnabled == false` (the remote kill-switch) hides ONLY the `.save` state, silently
 ///   (fork D): the switch governs saving, not access to what's already
 ///   saved — a running save stays visible/cancellable, a completed item stays openable.
