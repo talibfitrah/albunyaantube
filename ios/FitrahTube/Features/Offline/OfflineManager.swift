@@ -237,12 +237,12 @@ actor OfflineManager: OfflineSaving {
         guard await downloadsEnabled() else { return }
         guard let row = await read(id: id), OfflineStateMachine.transition(from: row.status, on: .retry) != nil else { return }
         // Retry is a SAVE, so it consults the per-video gate on the Save affordance's fail-CLOSED
-        // table — so nothing else revalidates a failed/cancelled row before it re-queues after an
+        // table — nothing else revalidates a failed/cancelled row before it re-queues after an
         // admin flips `offlineAllowed` off (fork C's same-day remedy). `begin`'s own fail-closed
         // consult and the belted sweep stop the re-download too; this is the one that stops it
-        // HERE, with the row's own status and partial still to answer for. `notAllowed`/`gone` take the row and its partial with them, the way the sweep
-        // does for a completed copy; `unreachable` is no answer, so the retry is refused and the
-        // row stays exactly as it was.
+        // HERE, with the row's own status and partial still to answer for. `notAllowed`/`gone`
+        // take the row and its partial with them, the way the sweep does for a completed copy;
+        // `unreachable` is no answer, so the retry is refused and the row stays exactly as it was.
         //
         // Distinct from `begin`'s own consult: `begin` treats `.unreachable` as wait-don't-skip and
         // promotes the row to `.queued`, while a Retry must leave a FAILED row failed with its

@@ -130,7 +130,7 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
             }
             #expect(released || Task.isCancelled, "held resolve of \(videoId) was never released")
         }
-        // m6: every outcome answers a URL nothing can resolve. These are what
+        // m6: every outcome's played URL answers one nothing can resolve. These are what
         // `CastSessionTests.phonePlayer(_:)` and the offline rigs build real `AVPlayer`s and
         // `AVURLAsset`s from, and a real googlevideo host there started DNS from un-gated unit tests
         // (the class R7-22 fixed in `OfflineComplianceTests`). An address literal on the discard

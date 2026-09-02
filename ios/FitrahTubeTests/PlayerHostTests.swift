@@ -152,15 +152,15 @@ struct PlayerHostTests {
     // MARK: - Task 3: audio-only URL selection and the same-player swap
 
     @Test func audioOnlySelectsTheItag140URL() {
-        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
-        let audio = URL(string: "https://r1.googlevideo.com/a140")!
+        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
+        let audio = URL(string: "https://127.0.0.1:9/a140")!
         let stream = ResolvedStream.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])
         #expect(PlayerHostView.streamURL(stream, audioOnly: false) == video)
         #expect(PlayerHostView.streamURL(stream, audioOnly: true) == audio)
     }
 
     @Test func audioOnlyFallsBackToVideoWhenNoAudioTrackExists() {
-        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
+        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
         let stream = ResolvedStream.hls(url: video, isLive: false, audioOnlyURL: nil, captionTracks: [])
         #expect(PlayerHostView.streamURL(stream, audioOnly: true) == video)
         let progressive = ResolvedStream.progressive(url: video, label: "360p")
@@ -168,8 +168,8 @@ struct PlayerHostTests {
     }
 
     @Test func togglingAudioOnlyReplacesTheItemAndKeepsThePlayer() throws {
-        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
-        let audio = URL(string: "https://r1.googlevideo.com/a140")!
+        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
+        let audio = URL(string: "https://127.0.0.1:9/a140")!
         let resolved = Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: []))
         let state = StreamState.ready(resolved)
         let first = PlayerHostView.player(for: state, replacing: nil, audioOnly: false)
@@ -194,8 +194,8 @@ struct PlayerHostTests {
     /// against the stale `Resolved` and the foreground update pass would replace it a second time
     /// against the fresh one, restarting playback from 0. One replace, owned by the update pass.
     @Test func restoringVideoDoesNotReplaceTheItemSynchronously() throws {
-        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
-        let audio = URL(string: "https://r1.googlevideo.com/a140")!
+        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
+        let audio = URL(string: "https://127.0.0.1:9/a140")!
         let state = StreamState.ready(Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])))
         let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: true))
         let audioItem = try #require(player.currentItem)
@@ -211,8 +211,8 @@ struct PlayerHostTests {
     /// the outgoing item, an audio-only stream that dies in the background would never fire the
     /// recovery ladder.
     @Test func theBackgroundSwapReArmsTheRecoveryObserversOnTheNewItem() throws {
-        let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
-        let audio = URL(string: "https://r1.googlevideo.com/a140")!
+        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
+        let audio = URL(string: "https://127.0.0.1:9/a140")!
         let state = StreamState.ready(Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])))
         let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: false))
         let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)

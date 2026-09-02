@@ -437,6 +437,9 @@ struct CastSessionTests {
         #expect(CastOwnership.decide(state: ownership(stamp: nil, failure: Self.claimed),
                                      trigger: .loadFailed)
                 == .dropClaim(videoId: Self.claimed, resume: false))
+        #expect(CastOwnership.decide(state: ownership(stamp: nil, failure: Self.claimed, visible: true),
+                                     trigger: .loadFailed)
+                == .dropClaim(videoId: Self.claimed, resume: true))
         // Someone else's failure, and a failure with no claim behind it, are nothing of ours.
         #expect(CastOwnership.decide(state: ownership(stamp: nil, failure: Self.other),
                                      trigger: .loadFailed) == .none)

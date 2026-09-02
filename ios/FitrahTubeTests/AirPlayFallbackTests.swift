@@ -37,9 +37,9 @@ struct AirPlayFallbackTests {
     /// made, so that branch only ever turns the route OFF (for a `file://` item) and never back on.
     /// `swapArgs` is what re-enables it, per stream.
     @Test func aReResolveNeverUndoesTheMirroringFallbackOnTheReusedPlayer() {
-        let player = AVPlayer(playerItem: AVPlayerItem(url: URL(string: "https://example.invalid/old.m3u8")!))
+        let player = AVPlayer(playerItem: AVPlayerItem(url: URL(string: "https://127.0.0.1:9/old.m3u8")!))
         player.allowsExternalPlayback = false          // what the fallback wrote for THIS stream
-        let streamed = Resolved(stream: .hls(url: URL(string: "https://example.invalid/new.m3u8")!,
+        let streamed = Resolved(stream: .hls(url: URL(string: "https://127.0.0.1:9/new.m3u8")!,
                                              isLive: false, audioOnlyURL: nil, captionTracks: []),
                                 client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
         #expect(PlayerHostView.player(for: .ready(streamed), replacing: player)?
