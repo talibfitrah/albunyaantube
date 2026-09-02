@@ -42,6 +42,12 @@ actor OfflineManager: OfflineSaving {
     /// Below this remaining lifetime a resolved URL is refreshed once before the engine sees it.
     private static let minimumRemainingLifetime: TimeInterval = 10 * 60
 
+    /// How long a start the per-video gate could not answer waits before `schedule()` re-picks it.
+    /// ponytail: one flat delay, no escalation — the row reads "Waiting" either way and the sweep's
+    /// own 15-min cadence is the other prong; add a backoff curve if a long offline stretch ever
+    /// makes the once-a-minute re-ask visible.
+    private static let gateRetryDelay: Duration = .seconds(60)
+
     nonisolated private struct Row: Sendable {
         let id: String
         let videoId: String
@@ -201,6 +207,15 @@ actor OfflineManager: OfflineSaving {
         // re-download. `notAllowed`/`gone` take the row and its partial with them, the way the
         // sweep does for a completed copy; `unreachable` is no answer, so the retry is refused and
         // the row stays exactly as it was.
+        //
+        // KEPT after `begin` grew its own consult (adversarial r1 P0-2), because the two answers
+        // differ where it counts: `begin` treats `.unreachable` as wait-don't-skip and promotes the
+        // row to `.queued`, while a Retry must leave a FAILED row failed with its reason and its
+        // partial (R5-3; P3-6 rejected re-wording it). This one also sits ABOVE the `.queued` write
+        // below, so a refused Retry never re-queues for a start that will never come — and `retry`
+        // hands off to `schedule()`, which may pick an older row entirely. A Retry that proceeds
+        // therefore spends two gate GETs; caching the answer would be per-id state neither path
+        // has, and one extra conditional GET per tap is the cheaper side of that trade.
         switch await gate(row.videoId) {
         case .allowed: break
         case .notAllowed, .gone: await delete(row.id); return
@@ -484,7 +499,8 @@ actor OfflineManager: OfflineSaving {
         await begin(next)
     }
 
-    /// Runs one row: the cellular gate, then either a resume-data restart or the resolve path.
+    /// Runs one row: the kill-switch, the cellular gate and the per-video gate, then either a
+    /// resume-data restart or the resolve path.
     ///
     /// `userInitiated` is a USER's Resume, not a queue pick: only that one needs a refusal to leave
     /// a trace (R5-3). A queued row the scheduler picked already reads "Waiting", which is honest.
@@ -514,7 +530,24 @@ actor OfflineManager: OfflineSaving {
             if userInitiated { await note(row.id, .network) }
             return
         }
-        guard stillCurrent(row.id, attempt) else { return }   // cancelled/deleted during the hop
+        // The per-video gate, on `retry`'s fail-CLOSED table (adversarial r1 P0-2). This funnel
+        // consulted the kill-switch and the cellular gate but never `offlineAllowed`, so a
+        // scheduler pick, a user Resume, `reattach()`'s re-queue, a cellular re-open and the
+        // kill-switch kick all began byte-writing walks on authorization that could be hours stale
+        // — only `retry` and the sweep ever revalidated. BELOW the cellular gate on purpose: a row
+        // that gate refuses writes no bytes, so it needs no authorization and costs no GET.
+        switch await gate(row.videoId) {
+        case .allowed: break
+        // Fork C's same-day remedy, through the exact path `retry` uses: the row and its partial go.
+        // No `release` first — `delete` → `tearDown` → `forget` drops the claim itself, and a newer
+        // attempt that re-claimed inside the await must die with the row, not outlive it.
+        case .notAllowed, .gone: await delete(row.id); return
+        // No answer is not a "no": wait-don't-skip, like a limiter park. The row becomes `.queued`
+        // ("Waiting") with NO error code and a timer that re-runs `schedule()`. For a user's Resume
+        // that promotion IS the visible state change R5-3 asks for, so nothing is noted on top.
+        case .unreachable: await scheduleRetry(row.id, after: Self.gateRetryDelay); return
+        }
+        guard stillCurrent(row.id, attempt) else { return }   // cancelled/deleted during the hops
         if let resumeData = row.resumeData {
             await transition(row.id, row.status == .paused ? .resume : .start)
             try? Self.prepareDirectory(directory)
@@ -674,9 +707,17 @@ actor OfflineManager: OfflineSaving {
         // RR-m1: armed BEFORE the write. `active.remove` and the write's MainActor hop otherwise
         // left one suspension in which the row was neither `active` nor in `pendingRetryIds`, and a
         // concurrent `schedule()` could `begin` an already-`.queued` row despite the limiter's
-        // answer. ponytail: this assumes a park delay outlasts one MainActor hop (the shortest is
-        // `.seconds(1)`); a zero delay could fire the timer into a row still reading `.paused`,
-        // which `schedule()` skips — pass the park through a single write if a caller ever needs one.
+        // answer.
+        //
+        // A ~0 delay CAN fire this timer while the row below still reads `.paused`, which
+        // `schedule()` skips (batch A review SR-m1: `ExtractionRateLimiter.retryAfter` can return
+        // `.zero` at a window boundary, so "the shortest delay is 1 s" was never true). The park is
+        // not lost, because the two arms that can emit a ~0 delay — `.delayed` and `.blocked` —
+        // both `await schedule()` immediately after this returns, by which time the write below has
+        // landed and the row is `.queued`. The cooldown, bot-check and unreachable-gate arms all
+        // floor at ≥1 s and need no such argument.
+        // ponytail: pass the park through a single write if a caller ever parks with
+        // a ~0 delay and does NOT re-schedule behind it.
         retries[id]?.cancel()
         retries[id] = Task { [weak self] in
             try? await Task.sleep(for: delay)

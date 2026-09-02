@@ -360,9 +360,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
 
 /// A fixture container's download engine: records nothing, moves nothing, opens no background
 /// `URLSession` (a second one on `ProgressiveEngine.backgroundSessionIdentifier` is its own hazard).
-/// `AsyncStream { _ in }` discards the continuation, so `events` finishes immediately and the
-/// manager's consumer loop ends — it never yields an event either way (RR-m5: the comment used to
-/// say the loop "parks", which is the opposite of what happens).
+/// `events` never yields, so the manager's consumer loop simply parks. (RR-m5 rewrote this to say
+/// the stream "finishes immediately and the loop ends"; batch A review SR-I1 probed it on this
+/// toolchain and reverted — `AsyncStream { _ in }` discards the continuation into a build closure,
+/// but the stream VALUE retains the storage, so `for await` stays suspended for the container's
+/// life. Either way it yields nothing; the original wording is the accurate one.)
 nonisolated struct ParkedOfflineEngine: OfflineEngine {
     let events: AsyncStream<OfflineDownloadEvent> = AsyncStream { _ in }
     func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data? { nil }

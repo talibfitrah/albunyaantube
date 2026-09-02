@@ -80,9 +80,12 @@ EXTRA_KEYS = {
     # plays YouTube's own player, ads included. The nl verb is "haal" (get), not "download": the
     # ban on that word is stated absolutely and this is the one string outside the offline surface
     # that still rendered it (gstack r1 P2).
+    # Adversarial r1 P0-1b: en and nl were re-authored then, ar was missed -- it still opened with
+    # "حمّل" ("Download"), on EVERY outbound share message (ShareLinks.swift:42), i.e. the banned
+    # word leaving the device. "احصل على" is the same "Get" the other two locales carry.
     "share_app_promo": {
         "en": "Get FitrahTube for curated Islamic content!",
-        "ar": "حمّل فطرة تيوب لمحتوى إسلامي منتقى!",
+        "ar": "احصل على فطرة تيوب لمحتوى إسلامي منتقى!",
         "nl": "Haal FitrahTube voor geselecteerde islamitische content!",
     },
     # report_reason_limit (Plan C task 3): the disabled-row hint once 10 reasons are selected.

@@ -313,6 +313,14 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             guard status == 200 || partialSize(id) == expectedOffset else {
                 throw CocoaError(.fileWriteUnknown)   // restart cleanly
             }
+            // Adversarial r1 P3-5: `isCurrent` was consulted ONCE at entry and released
+            // `stateLock` immediately, so a `cancel`/`pause` arriving from the manager actor any
+            // time during the (unbounded, 10 MB) file work still appended its bytes and yielded.
+            // Re-checked here, immediately before the mutation, and again before the yields below.
+            // The lock is deliberately NOT held across file I/O — a 10 MB append would block every
+            // pause/cancel in the app on it — so this NARROWS the window rather than closing it;
+            // the `.tmp` a loser can still leave is deleted by the next `start` (CF-D-10).
+            guard isCurrent(id, generation) else { return }
             // A 200 means the server ignored the Range and sent the whole body: it replaces.
             if status == 200 || !FileManager.default.fileExists(atPath: partial.path()) {
                 try? FileManager.default.removeItem(at: partial)
@@ -325,6 +333,10 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             }
             let written = partialSize(id)
             let total = status == 200 ? written : Self.total(fromContentRange: response?.value(forHTTPHeaderField: "Content-Range"))
+            // The second half of the P3-5 re-check: a walk superseded during the append above says
+            // nothing at all — no progress, no failure, no `.finished`. The three yields below and
+            // `issueChunk` (which re-checks under the lock itself) are all it has left to talk with.
+            guard isCurrent(id, generation) else { return }
             continuation.yield(.progress(id: id, bytesWritten: written, totalBytes: total))
             // No parseable total (missing `Content-Range`, or `bytes 0-x/*` from a proxy or CDN
             // edge that strips the length): the walk cannot know it is done, and calling a 10 MB

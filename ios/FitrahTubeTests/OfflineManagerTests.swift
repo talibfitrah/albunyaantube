@@ -111,7 +111,11 @@ struct OfflineManagerTests {
     nonisolated final class Flags: @unchecked Sendable {
         nonisolated(unsafe) var wifiOnly = false
         nonisolated(unsafe) var cellular = false
-        nonisolated(unsafe) var gate: GateAnswer = .unreachable
+        /// `.allowed`, not `.unreachable` (adversarial r1 P0-2): the old default was harmless only
+        /// because `begin` never asked, and the suite grew around that — a fixture that answers
+        /// "no answer" while asserting a start is the violation written down as a baseline. Every
+        /// test that wants a refusal now says so.
+        nonisolated(unsafe) var gate: GateAnswer = .allowed
         /// Per-video overrides of `gate` (the sweep's whole-library belt needs one row to answer
         /// something other than `.gone`).
         nonisolated(unsafe) var gates: [String: GateAnswer] = [:]
@@ -164,6 +168,12 @@ struct OfflineManagerTests {
         /// value it then acts on out of date.
         func countKillSwitchCall() -> Int { lock.withLock { _killSwitchCalls += 1; return _killSwitchCalls } }
         nonisolated(unsafe) var killSwitchHeld = false
+        /// Every videoId the manager asked the per-video gate about, in order — how a test proves a
+        /// start path CONSULTED the gate rather than merely surviving it. Behind the same lock as
+        /// the rest: the closure appends on the actor while the test reads.
+        private var _gateCalls: [String] = []
+        var gateCalls: [String] { lock.withLock { _gateCalls } }
+        func recordGateCall(_ videoId: String) { lock.withLock { _gateCalls.append(videoId) } }
     }
 
     private struct Rig {
@@ -218,7 +228,8 @@ struct OfflineManagerTests {
                 return flags.wifiOnly
             },
             isOnCellular: { flags.cellular },
-            baseDirectory: base, gate: { flags.gates[$0] ?? flags.gate },
+            baseDirectory: base,
+            gate: { flags.recordGateCall($0); return flags.gates[$0] ?? flags.gate },
             now: {
                 if let onNow = flags.onNow { flags.onNow = nil; onNow() }
                 return flags.now
@@ -543,6 +554,114 @@ struct OfflineManagerTests {
         #expect(rig.resolver.calls.count == 1)
     }
 
+    // MARK: - The per-video gate at `begin` (adversarial r1 P0-2 — every start, one funnel)
+
+    /// `begin` consulted the kill-switch and the cellular gate but never `offlineAllowed`, so every
+    /// start that is not a Retry — a scheduler pick, a user Resume, `reattach()`'s re-queue, the
+    /// cellular re-open, the kill-switch kick — began writing bytes on authorization that could be
+    /// hours stale. `.unreachable` is no answer, so the row waits: `.queued` ("Waiting"), no error
+    /// code, a timer. This is also the fakes half of P1-2 — the live rigs used to assert a save
+    /// COMPLETING under exactly this gate answer.
+    @Test func aStartWhoseGateIsUnreachableParksTheRowInsteadOfWalking() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.gate = .unreachable
+
+        let id = await save(rig)
+
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.queued.rawValue, "no answer is wait-don't-skip, never a start")
+        #expect(row.errorCode == nil, "waiting is not an error")
+        #expect(await rig.manager.pendingRetryIds == [id], "and it must actually be on a timer")
+        #expect(rig.engine.starts.isEmpty)
+        #expect(rig.resolver.calls.isEmpty, "the refusal lands before the resolve, not after it")
+        #expect(rig.flags.gateCalls == [Self.lectureVideoId])
+        #expect(SavedRowText.captionKey(status: .queued, errorCode: row.errorCode) == "offline_status_queued")
+    }
+
+    /// Fork C's same-day remedy on the start path, the table `retry` already used: a refusing gate
+    /// takes the row and its partial with it — the sweep would only get to it on the next launch,
+    /// and `reattach()` would have re-started the walk before that.
+    @Test(arguments: [GateAnswer.notAllowed, GateAnswer.gone])
+    func aStartWhoseGateRefusesDeletesTheRowAndItsPartial(gate: GateAnswer) async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let item = OfflineItem(videoId: "vidRevoked0", title: "Lecture", channelName: nil, thumbnailUrl: nil,
+                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue)
+        try rig.store.insert(item)
+        try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
+        let tmp = rig.directory.appending(path: "\(item.id).tmp")
+        try Data("partial".utf8).write(to: tmp)
+        rig.flags.gate = gate
+
+        await rig.manager.schedule()
+
+        #expect(rig.persisted(id: item.id) == nil, "a revoked gate removes the row, not just the start")
+        #expect(!FileManager.default.fileExists(atPath: tmp.path()))
+        #expect(rig.engine.starts.isEmpty)
+        #expect(rig.resolver.calls.isEmpty)
+    }
+
+    /// The cellular gate re-opening is a START. It used to walk straight into `resolveAndStart` on
+    /// whatever authorization the save was granted under, however long ago the Wi-Fi-only park was.
+    @Test func theCellularGateReOpeningConsultsThePerVideoGate() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.wifiOnly = true
+        rig.flags.cellular = true
+        let id = await save(rig)
+        #expect(rig.flags.gateCalls.isEmpty,
+                "a row the CELLULAR gate refuses writes no bytes, so it needs no authorization and costs no GET")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.queued.rawValue)
+
+        rig.flags.gate = .notAllowed   // revoked while the phone sat on cellular
+        rig.flags.cellular = false
+        await rig.manager.gateDidChange()
+
+        #expect(rig.flags.gateCalls == [Self.lectureVideoId], "the re-open is a start, and a start asks")
+        #expect(rig.engine.starts.isEmpty)
+        #expect(rig.persisted(id: id) == nil)
+    }
+
+    /// The kill-switch kick (`schedule()` after the remote-config refresh flips it back on) is the
+    /// same shape: rows queued through an off-window are started by it, and the switch coming back
+    /// says nothing about whether those videos are still saveable.
+    @Test func theKillSwitchKickConsultsThePerVideoGate() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.downloadsEnabled = { false }
+        let item = OfflineItem(videoId: "vidQueued00", title: "Lecture", channelName: nil, thumbnailUrl: nil,
+                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue)
+        try rig.store.insert(item)
+
+        await rig.manager.schedule()
+        #expect(rig.flags.gateCalls.isEmpty, "the kill-switch is consulted first and refuses silently")
+
+        rig.flags.downloadsEnabled = { true }
+        rig.flags.gate = .notAllowed
+        await rig.manager.schedule()
+
+        #expect(rig.flags.gateCalls == ["vidQueued00"])
+        #expect(rig.engine.starts.isEmpty)
+        #expect(rig.persisted(id: item.id) == nil)
+    }
+
+    /// `reattach()`'s orphan re-queue is the staleest start of all — the authorization is from
+    /// whenever the previous launch saved the row — and it takes `begin`'s RESUME leg, which walks
+    /// bytes without resolving anything. It must ask too.
+    @Test func theReattachRequeueConsultsThePerVideoGate() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let item = OfflineItem(videoId: "vidOrphan0D", title: "t", channelName: nil, thumbnailUrl: nil,
+                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.running.rawValue,
+                               resumeData: Data("RD".utf8))
+        try rig.store.insert(item)
+        rig.engine.live = []
+        rig.flags.gate = .notAllowed
+
+        await rig.manager.reattach()
+
+        #expect(rig.flags.gateCalls == ["vidOrphan0D"])
+        #expect(rig.engine.resumes.isEmpty, "the resume leg walks bytes like any other start")
+        #expect(rig.engine.starts.isEmpty)
+        #expect(rig.persisted(id: item.id) == nil)
+    }
+
     /// R5-3, the other refusal: a user Resume the cellular gate refuses left the row EXACTLY as it
     /// was — Paused, no error, nothing started — so the Resume button read as broken too. The
     /// status is untouched (a paused row is still paused, waiting for the user) and the row gets
@@ -647,6 +766,31 @@ struct OfflineManagerTests {
         #expect(row.errorCode == nil, "parking is not an error and the old reason is stale")
         #expect(SavedRowText.captionKey(status: .queued, errorCode: row.errorCode) == "offline_status_queued")
         #expect(await rig.manager.pendingRetryIds == [id])
+    }
+
+    /// Batch A review SR-m2: the same RR-I1 drop through the OTHER mouth. `resume()` admits
+    /// `.queued` rows as well as `.paused` ones, and `scheduleRetry`'s write guard was
+    /// paused-only — so a queued row that had been noted by a refusal kept the stale code through
+    /// its park. The guard admits both; this is the queued half of it.
+    @Test func aQueuedRowParkedAfterARefusedResumeAlsoDropsTheStaleReason() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let item = OfflineItem(videoId: "vidQueuedRR", title: "Lecture", channelName: nil, thumbnailUrl: nil,
+                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue)
+        try rig.store.insert(item)
+        rig.flags.wifiOnly = true
+        rig.flags.cellular = true
+        await rig.manager.resume(item.id)                  // refused: the row now carries NETWORK
+        #expect(rig.persisted(id: item.id)?.errorCode == "NETWORK")
+
+        rig.flags.cellular = false                         // the user joins Wi-Fi and taps Resume
+        rig.flags.decision = .delayed(.seconds(30), reason: "prefetch delayed")
+        await rig.manager.resume(item.id)
+
+        let row = try #require(rig.persisted(id: item.id))
+        #expect(row.status == OfflineStatus.queued.rawValue)
+        #expect(row.errorCode == nil, "a queued row's park drops the stale reason too")
+        #expect(await rig.manager.pendingRetryIds == [item.id])
+        #expect(SavedRowText.captionKey(status: .queued, errorCode: row.errorCode) == "offline_status_queued")
     }
 
     /// The same drop through the resolver's own cooldown arm (CF-D-9's direction).
@@ -2067,9 +2211,12 @@ struct OfflineManagerTests {
         #expect(rig.rowCount() == 2, "a whole-library gate verdict in one pass is drift, not a purge")
     }
 
-    /// The bound, on the gate-revoked half too: two rows, one allowed and one revoked, is a real
-    /// per-video revocation and the revoked row goes.
-    @Test func aSweepWithOneAllowedRowStillDeletesTheRevokedOne() async throws {
+    /// The bound, on BOTH delete verdicts: two rows, one allowed and one refused, is a real
+    /// per-video revocation (or a real catalog removal) and the refused row goes. Parameterised —
+    /// adversarial r1 P2-2 asks for the `.gone`-plus-`.allowed` shape by name, and it is the same
+    /// belt arithmetic as `.notAllowed`, not a second rule.
+    @Test(arguments: [GateAnswer.notAllowed, GateAnswer.gone])
+    func aSweepWithOneAllowedRowStillDeletesTheRefusedOne(gate: GateAnswer) async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         for name in ["vidRevokedOne", "vidAllowedOne"] {
             let item = OfflineItem(videoId: name, title: name, channelName: nil, thumbnailUrl: nil,
@@ -2077,13 +2224,35 @@ struct OfflineManagerTests {
                                    status: OfflineStatus.completed.rawValue, completedAt: rig.flags.now)
             try rig.store.insert(item)
         }
-        rig.flags.gate = .notAllowed
+        rig.flags.gate = gate
         rig.flags.gates = ["vidAllowedOne": .allowed]
 
         await rig.manager.sweep()
 
         #expect(rig.rowCount() == 1)
         #expect(rig.persisted(videoId: "vidAllowedOne") != nil)
+    }
+
+    /// Batch A review SR-m2 / adversarial r1 P2-2: the belt's denominator is the ANSWERING rows,
+    /// and the two delete verdicts share ONE bucket — so a pass that answers `.gone` for one row,
+    /// `.notAllowed` for another and nothing else is still "every answer said delete", which is
+    /// drift, not a purge. Both stay. The per-verdict tests above only ever drive one answer, so
+    /// nothing pinned the mixed shape a half-broken backend actually produces.
+    @Test func aSweepMixingGoneAndNotAllowedWithNoAllowedRowKeepsThemAll() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        for name in ["vidGoneMix", "vidRevokedMix", "vidDeadEdgeMix"] {
+            let item = OfflineItem(videoId: name, title: name, channelName: nil, thumbnailUrl: nil,
+                                   qualityLabel: "360p", audioOnly: true,
+                                   status: OfflineStatus.completed.rawValue, completedAt: rig.flags.now)
+            try rig.store.insert(item)
+        }
+        rig.flags.gates = ["vidGoneMix": .gone, "vidRevokedMix": .notAllowed,
+                           // Discounted from the denominator, so it cannot rescue the other two.
+                           "vidDeadEdgeMix": .unreachable]
+
+        await rig.manager.sweep()
+
+        #expect(rig.rowCount() == 3, "404 for one row and no-flag for another is one broken edge, not two verdicts")
     }
 
     /// The TTL half is a LOCAL decision — nothing the network said — so the belt never covers it:
@@ -2154,7 +2323,11 @@ struct OfflineManagerTests {
             store: store, engine: engine, resolver: LiveStreamResolver(resolver: innerTube.resolver),
             limiterCheck: { await innerTube.rateLimiter.check($0, kind: .prefetch, now: innerTube.clock.now) },
             wifiOnly: { false }, isOnCellular: { false }, baseDirectory: base,
-            gate: { _ in .unreachable }, now: { Date() })
+            // `.allowed`, not `.unreachable` (adversarial r1 P1-2): this rig asserts the save
+            // COMPLETES, and a save that completes without an affirmative gate answer is the
+            // compliance violation, not the evidence. The refusal half is a fakes test
+            // (`aStartWhoseGateIsUnreachableParksTheRowInsteadOfWalking`), so it runs in every gate.
+            gate: { _ in .allowed }, now: { Date() })
 
         await manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: audioOnly, metadata: Self.metadata)
         let id = try #require(store.item(videoId: Self.lectureVideoId)?.id)

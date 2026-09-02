@@ -475,7 +475,13 @@ struct OfflinePlaybackTests {
             store: store, engine: engine, resolver: LiveStreamResolver(resolver: innerTube.resolver),
             limiterCheck: { await innerTube.rateLimiter.check($0, kind: .prefetch, now: innerTube.clock.now) },
             wifiOnly: { false }, isOnCellular: { false }, baseDirectory: base,
-            gate: { _ in .unreachable }, now: { Date() })
+            // `.allowed`, not `.unreachable` (adversarial r1 P1-2): this rig asserts the save
+            // COMPLETES at `:491`, so an `.unreachable` gate here encoded "a save succeeds with no
+            // authorization" as the expected result — the exact claim the batch restores. The
+            // refusal case is a FAKES test (`OfflineManagerTests`
+            // `aStartWhoseGateIsUnreachableParksTheRowInsteadOfWalking`) so it runs in every gate,
+            // not only under OFFLINE_LIVE.
+            gate: { _ in .allowed }, now: { Date() })
 
         await manager.save(videoId: Self.lectureVideoId, quality: "audio",
                            audioOnly: true, metadata: OfflineMetadata(title: "Lecture", channelName: nil, thumbnailUrl: nil))

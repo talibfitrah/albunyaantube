@@ -65,8 +65,7 @@ struct LocalizationTests {
             let value = try Self.lproj(locale).localizedString(forKey: key, value: nil, table: "InfoPlist")
             #expect(value != key, "\(locale) has no \(key): the prompt renders in English")
             #expect(value.contains(try #require(tvWord[locale])), "\(locale)/\(key) never names the TV: \(value)")
-            #expect(!value.localizedCaseInsensitiveContains("download"), "\(locale)/\(key) says Download")
-            #expect(!value.localizedCaseInsensitiveContains("ad-free"), "\(locale)/\(key) says ad-free")
+            #expect(Self.bannedStem(in: value) == nil, "\(locale)/\(key) carries a banned stem: \(value)")
             values.append(value)
         }
         // The English value is the source string `project.yml` puts in the plist, verbatim.
@@ -77,6 +76,97 @@ struct LocalizationTests {
 
     private static func lproj(_ locale: String) throws -> Bundle {
         try #require(Bundle.main.path(forResource: locale, ofType: "lproj").flatMap(Bundle.init(path:)))
+    }
+
+    // MARK: - The banned-word net (adversarial r1 P1-1)
+
+    /// Words no user-visible string may carry, in any locale (owner directives 2026-09-01 /
+    /// spec D10). The net was ASCII-only, so `حمّل` in `share_app_promo` rode every outbound share
+    /// message past a test literally named "never says Download".
+    ///
+    /// `تحميل` is deliberately ABSENT, and this is the one judgement call in the list: it is the
+    /// verbal noun of `حمّل` and means BOTH "downloading" and "loading", and eight keys with live
+    /// Swift callers use it for the second sense — `load_more` ("Load more"), `loading`/
+    /// `loading_more`/`home_loading_more` ("Loading…"), `list_error_title` ("Unable to load
+    /// content"), `load_more_error`, `channel_tab_error_generic`, `player_error_message` ("problem
+    /// loading this video"). Banning it would refuse eight correct translations to catch nothing:
+    /// zero keys use it in the download sense. `تنزيل` (48 catalog hits, all in the orphaned
+    /// Android `download_*` keys) and `حمل`/`حمّل` carry no such ambiguity.
+    private static let bannedStems = [
+        "download", "ad-free", "ad free",
+        // `حمّل` (with the shadda) is the promo's own spelling; `حمل` is the bare stem, zero hits
+        // in the catalog today, kept so an un-shadda'd re-authoring cannot slip through.
+        "حمّل", "حمل", "تنزيل",
+        // The ad-free directive in the other two locales. Zero hits today, same reason.
+        "advertentievrij", "reclamevrij", "بدون إعلانات",
+    ]
+
+    private static func bannedStem(in value: String) -> String? {
+        bannedStems.first { value.range(of: $0, options: .caseInsensitive) != nil }
+    }
+
+    /// Every catalog key with at least one Swift caller. The test bundle reaches the source tree
+    /// through `#filePath`; every `*.swift` under `ios/FitrahTube` is scanned for plain string
+    /// literals and the ones that name a catalog key are what "referenced" means.
+    ///
+    /// This distinction is the whole point (a flat catalog loop cannot make it): ~170 orphaned
+    /// Android `download_*`/`downloads_*` keys stay in the catalog on purpose — pruning them is a
+    /// converter change with its own blast radius — and they carry the banned words legitimately,
+    /// because nothing on iOS renders them. A key a Swift file names DOES reach a screen.
+    ///
+    /// A key built by interpolation is invisible here; every such builder in the app
+    /// (`SavedRowText.captionKey`, `OfflineStatus.captionKey`) returns whole literals, which are.
+    private static func referencedKeys() throws -> Set<String> {
+        let sources = URL(filePath: #filePath)          // …/ios/FitrahTubeTests/LocalizationTests.swift
+            .deletingLastPathComponent()                 // …/ios/FitrahTubeTests
+            .deletingLastPathComponent()                 // …/ios
+            .appending(path: "FitrahTube", directoryHint: .isDirectory)
+        let catalog = Set(try compiledKeys(locale: "en"))
+        let literal = try NSRegularExpression(pattern: "\"([^\"\\\\\n]*)\"")
+        let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+        var referenced: Set<String> = []
+        for case let url as URL in files where url.pathExtension == "swift" {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            for match in literal.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let range = Range(match.range(at: 1), in: text) else { continue }
+                let candidate = String(text[range])
+                if catalog.contains(candidate) { referenced.insert(candidate) }
+            }
+        }
+        return referenced
+    }
+
+    /// The durable half of P1-1: not a 33-key allowlist and not ASCII-only, but every key the app
+    /// can actually render, in all three locales, against every banned stem.
+    @Test func noKeyWithASwiftCallerCarriesABannedStemInAnyLocale() throws {
+        let referenced = try Self.referencedKeys()
+        #expect(referenced.count > 200,
+                "only \(referenced.count) keys matched a Swift caller — the source scan found nothing to check")
+        for locale in ["en", "ar", "nl"] {
+            let bundle = try Self.lproj(locale)
+            for key in referenced.sorted() {
+                let value = bundle.localizedString(forKey: key, value: nil, table: nil)
+                if let stem = Self.bannedStem(in: value) {
+                    Issue.record("\(locale)/\(key) carries the banned stem \"\(stem)\": \(value)")
+                }
+            }
+        }
+    }
+
+    /// The other side of the same net: an orphaned Android key that carries the word is NOT a
+    /// failure — it renders nowhere — and the net must not have quietly started checking the whole
+    /// catalog, which would be a 170-entry allowlist by another name.
+    @Test func theOrphanedAndroidDownloadKeysAreOutsideTheNet() throws {
+        let referenced = try Self.referencedKeys()
+        let catalog = try Self.compiledKeys(locale: "en")
+        let orphanedOffenders = catalog.filter { key in
+            guard !referenced.contains(key) else { return false }
+            let value = (try? Self.lproj("en"))?.localizedString(forKey: key, value: nil, table: nil) ?? key
+            return Self.bannedStem(in: value) != nil
+        }
+        // Pruned on purpose one day -> delete this test. Failing with them still in the catalog
+        // means the source scan broke and every key now looks referenced.
+        #expect(!orphanedOffenders.isEmpty, "no unreferenced key carries a banned stem any more")
     }
 
     /// Every key the String Catalog compiled for `locale`, read straight off the built `.app` --
@@ -138,8 +228,7 @@ struct LocalizationTests {
             for key in Self.offlineRulingKeys {
                 let value = bundle.localizedString(forKey: key, value: nil, table: nil)
                 #expect(value != key, "\(locale)/\(key) is missing from the catalog")
-                #expect(!value.localizedCaseInsensitiveContains("download"), "\(locale)/\(key) says Download: \(value)")
-                #expect(!value.localizedCaseInsensitiveContains("ad-free"), "\(locale)/\(key) says ad-free: \(value)")
+                #expect(Self.bannedStem(in: value) == nil, "\(locale)/\(key) carries a banned stem: \(value)")
             }
         }
     }
@@ -157,14 +246,20 @@ struct LocalizationTests {
         #expect(string("offline_error_429", locale: "en") == "Couldn't save right now. Try again later")
     }
 
-    /// gstack P2: the promo's Dutch value shipped the literal word "Download" — the last hit in a
-    /// string any surface renders. The directive is stated absolutely, so it holds here too.
+    /// gstack P2: the promo's Dutch value shipped the literal word "Download" — the string that
+    /// leaves the device on every share (`ShareLinks.swift:42`). The comment here used to call it
+    /// "the last hit in a string any surface renders", which was false twice over: the ASCII-only
+    /// check could not see the Arabic value's own `حمّل` (adversarial r1 P0-1b), and the first-run
+    /// onboarding headline was rendering the word too. Both are fixed; the stems are shared with
+    /// the caller-aware net above, so this key can never regress behind a locale the check can't read.
     @Test func theSharePromoNeverSaysDownloadOrAdFree() throws {
         for locale in ["en", "ar", "nl"] {
             let value = try Self.lproj(locale).localizedString(forKey: "share_app_promo", value: nil, table: nil)
             #expect(value != "share_app_promo", "\(locale) has no share_app_promo")
-            #expect(!value.localizedCaseInsensitiveContains("download"), "\(locale) says Download: \(value)")
-            #expect(!value.localizedCaseInsensitiveContains("ad-free"), "\(locale) says ad-free: \(value)")
+            #expect(Self.bannedStem(in: value) == nil, "\(locale) carries a banned stem: \(value)")
         }
+        // The exact re-authored Arabic verb, so a well-meaning revert to "حمّل" is a named failure.
+        #expect(try Self.lproj("ar").localizedString(forKey: "share_app_promo", value: nil, table: nil)
+                    .hasPrefix("احصل على"))
     }
 }
