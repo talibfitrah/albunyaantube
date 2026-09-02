@@ -150,6 +150,14 @@ app:
   migrations:
     user-backfill:
       enabled: false
+  # iOS Universal Links (AASA) + Android App Links (assetlinks.json) --
+  # WellKnownController, spec docs/superpowers/specs/2026-08-23-ios-app-design.md §12.
+  universal-links:
+    apple-team-id: ${APP_UNIVERSAL_LINKS_APPLE_TEAM_ID:72PF8SBQR6}
+    ios-bundle-id: ${APP_UNIVERSAL_LINKS_IOS_BUNDLE_ID:com.albunyaan.tube}
+    # Comma-separated SHA-256 signing cert fingerprints. Empty until Play App
+    # Signing is configured -- assetlinks.json responds 404 while empty.
+    android-sha256-fingerprints: ${APP_UNIVERSAL_LINKS_ANDROID_SHA256_FINGERPRINTS:}
   security:
     cors:
       # Override in production via env var: APP_SECURITY_CORS_ALLOWED_ORIGINS
