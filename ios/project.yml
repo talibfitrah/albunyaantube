@@ -97,6 +97,9 @@ targets:
         NSBonjourServices:
           - _googlecast._tcp
           - _CC1AD845._googlecast._tcp
+        # The SOURCE string only. `FitrahTube/Resources/InfoPlist.xcstrings` carries en/ar/nl and
+        # compiles to a per-locale `InfoPlist.strings`, which is what iOS actually shows -- this
+        # value is the en fallback and the string the catalog is keyed off.
         NSLocalNetworkUsageDescription: FitrahTube finds Chromecast and other TV devices on your local network so you can play videos on your TV.
         CFBundleURLTypes:
           - CFBundleURLName: com.albunyaan.tube

@@ -1,0 +1,30 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "Shown by iOS on the first cast-button tap, when Cast discovery starts mDNS on the local network. The English value is the source string in ios/project.yml. Hand-authored: this catalog is for Info.plist keys and is NOT produced by scripts/convert-strings.py, which owns Localizable.xcstrings alone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبحث تطبيق فطرة تيوب عن أجهزة Chromecast وأجهزة التلفزيون الأخرى على شبكتك المحلية لتتمكن من تشغيل الفيديوهات على التلفزيون."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FitrahTube finds Chromecast and other TV devices on your local network so you can play videos on your TV."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FitrahTube zoekt Chromecast- en andere tv-apparaten op je lokale netwerk, zodat je video's op je tv kunt afspelen."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

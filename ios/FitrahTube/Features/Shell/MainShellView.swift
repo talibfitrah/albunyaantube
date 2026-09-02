@@ -110,22 +110,22 @@ struct MainShellView: View {
         // layouts, and the inset also lifts the tab's own scroll content clear of it. Only the
         // SELECTED tab mounts one -- every mounted stack would otherwise hold its own controller.
         // Renders UI only: it drives the receiver, never this app's audio session or local player.
-        // Fix round 2 (re-review Important 2): MOUNTED on the session, so the SDK's view controller
-        // actually loads its view — `miniControlsActive` is written only by that controller's own
-        // delegate, so mounting on it made the flag its own precondition and the strip could never
-        // appear. The flag now drives HEIGHT instead, which still closes fix round 1's complaint:
-        // a connected session with nothing loaded on the receiver (the shape a rejected load leaves
+        // MOUNTED on the session, so the SDK's view controller actually loads its view —
+        // `miniControlsActive` is written only by that controller's own delegate, so mounting on it
+        // made the flag its own precondition and the strip could never appear. The flag drives
+        // HEIGHT instead, which still closes the complaint the mount was meant to answer: a
+        // connected session with nothing loaded on the receiver (the shape a rejected load leaves
         // behind) collapses to zero height rather than parking an empty strip above the tab bar.
-        // Cubic R2-9: each of these representables now makes its OWN controller
-        // (`CastController.makeMiniControls`), so a tab switch — which dismantles one wrapper and
-        // creates the other in an order SwiftUI does not define — can no longer have the outgoing
-        // wrapper's teardown pull a SHARED view controller out of its new parent.
+        // Each of these representables makes its OWN controller (`CastController.makeMiniControls`),
+        // so a tab switch — which dismantles one wrapper and creates the other in an order SwiftUI
+        // does not define — can no longer have the outgoing wrapper's teardown pull a SHARED view
+        // controller out of its new parent.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if container.castController.isSessionActive, tab == router.selectedTab,
                !router.isFullscreen {
                 CastMiniControls(controller: container.castController)
                     .frame(height: container.castController.miniControlsActive ? nil : 0)
-                    // Re-review Minor 3: still needed, and not because of the shared instance —
+                    // Needed, and not because of the shared instance —
                     // `CastMiniControls.sizeThatFits` reports the SDK's own `minHeight` whatever
                     // height is proposed (there is no smaller size the control bar is willing to
                     // draw), so at `height: 0` the hosted view overflows and only this keeps it off

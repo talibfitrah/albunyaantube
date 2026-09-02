@@ -31,9 +31,9 @@ struct PlayerScreen: View {
     @State private var saveGate: GateAnswer?
     /// The remote kill-switch (`RemoteConfig.isDownloadsEnabled`), read per open.
     @State private var saveEnabled = true
-    /// The videoId THIS screen claimed the cast session for (Part B review, Important 1) — never a
-    /// re-read `model.args.videoId`, which `swapArgs` replaces on every auto-advance, Up Next tap
-    /// and auto-skip while the stamp keeps the id that was claimed. Every cast reaction below is
+    /// The videoId THIS screen claimed the cast session for — never a re-read
+    /// `model.args.videoId`, which `swapArgs` replaces on every auto-advance, Up Next tap and
+    /// auto-skip while the stamp keeps the id that was claimed. Every cast reaction below is
     /// keyed on this: releasing by the advanced-to id released nothing (so the stamp stuck for the
     /// rest of the session and no later video could claim it), and matching the hand-back on it let
     /// an offline twin of the same video drop the real claimant's stamp. A screen that never
@@ -66,22 +66,20 @@ struct PlayerScreen: View {
         // the app with no tab bar.
         .onDisappear {
             router.isFullscreen = false
-            // Cubic R2-5: the claim is the screen's, not the session's. A claimant that goes away
-            // must give its stamp back, or the NEXT video the user opens during the same session
-            // cannot claim it and never casts — the phone plays locally while the TV keeps the old
-            // video.
+            // The claim is the screen's, not the session's. A claimant that goes away must give
+            // its stamp back, or the NEXT video the user opens during the same session cannot claim
+            // it and never casts — the phone plays locally while the TV keeps the old video.
             //
-            // This is a WENT-OFF-SCREEN seam, not a teardown one (Part B review, Important 2): a
-            // push-over and a compact-layout tab switch both fire it on a screen that is still
-            // alive and still paused for its cast — and browsing other tabs mid-cast is exactly
-            // what the mini strip exists for. So the release surrenders the STAMP only
-            // (`lastStreamPosition` survives for the hand-back) and `.onAppear` below reconciles
-            // on the way back.
+            // This is a WENT-OFF-SCREEN seam, not a teardown one: a push-over and a compact-layout
+            // tab switch both fire it on a screen that is still alive and still paused for its cast
+            // — and browsing other tabs mid-cast is exactly what the mini strip exists for. So the
+            // release surrenders the STAMP only (`lastStreamPosition` survives for the hand-back)
+            // and `.onAppear` below reconciles on the way back.
             // ponytail: the regular-width shell keeps non-selected tabs mounted at `opacity(0)`
             // (`MainShellView.railStacks`), which never fires this — so on iPad a claimant on
-            // another tab keeps its claim and R2-5's cross-tab case still waits for the user to
-            // return to the player (Part B review, Minor 4). Closing that needs a visibility
-            // signal the rail layout does not publish.
+            // another tab keeps its claim and the cross-tab case still waits for the user to return
+            // to the player. Closing that needs a visibility signal the rail layout does not
+            // publish.
             if let claimedVideoId { container.castController.releaseClaim(claimedVideoId) }
         }
         // The return leg of the release above: take the claim back if the cast is still running, or
@@ -92,14 +90,21 @@ struct PlayerScreen: View {
             let cast = container.castController
             switch CastController.returnAction(pausedForCast: model.pausedForCast,
                                                sessionActive: cast.isSessionActive,
-                                               stampIsFree: cast.castingVideoId == nil) {
+                                               stampIsFree: cast.castingVideoId == nil,
+                                               receiverPlaysOurVideo: cast.loadedVideoId == claimed) {
             case .none:
                 break
             case .reclaim:
                 // No re-resolve and no second `load()`: the receiver is already playing this.
                 cast.claimCastSource(claimed)
             case .handBack:
-                model.resumeAfterCast(at: cast.lastStreamPosition)
+                // The receiver's position only if the receiver actually played OUR video — it is
+                // sampled off the session, so after another screen cast and popped it belongs to
+                // that video and seeking to it is a silent jump to a stranger's timestamp. `nil`
+                // resumes in place. This arm also runs for a claim that has simply gone stale
+                // (a rejected load, or session churn while off screen), where its whole job is to
+                // let the claim go.
+                model.resumeAfterCast(at: cast.receiverPosition(for: claimed))
                 cast.releaseClaim(claimed)   // no-op unless the stamp is still ours
                 claimedVideoId = nil
             }
@@ -116,8 +121,8 @@ struct PlayerScreen: View {
         // screen simply has no reader. `.onChange` (not `.task(id:)`) so only real transitions
         // fire: no spurious hand-back on mount, where there was never a session to come back from.
         //
-        // Fix round 1 (review Important 1): `isSessionActive` is app-wide and `MainShellView`
-        // keeps every visited tab's stack mounted, so SEVERAL `PlayerScreen`s can read this. The
+        // `isSessionActive` is app-wide and `MainShellView` keeps every visited tab's stack
+        // mounted, so SEVERAL `PlayerScreen`s can read this. The
         // start side claims the session (first writer wins); the end side only reacts for the
         // claimant, or an unrelated — possibly offline — video gets seeked to another video's
         // receiver position and force-played.
@@ -127,7 +132,9 @@ struct PlayerScreen: View {
             if active {
                 Task { await startCastingIfClaimed(model) }
             } else if let claimed = claimedVideoId, cast.castingVideoId == claimed {
-                model.resumeAfterCast(at: cast.lastStreamPosition)
+                // Same identity rule as the return leg above: our own load may have been rejected,
+                // leaving a position that belongs to whatever the receiver kept playing.
+                model.resumeAfterCast(at: cast.receiverPosition(for: claimed))
                 cast.finishCasting()
                 claimedVideoId = nil
             }
@@ -142,10 +149,10 @@ struct PlayerScreen: View {
             model.banner = BannerMessage(
                 text: String(format: String(localized: "cast_error_format"), device))
             container.castController.lastLoadFailureDevice = nil
-            // Review Important 4: `startCasting` already paused the local player by the time a
-            // receiver rejects the load, so without this the user taps Cast, gets a toast, and
-            // their video has silently stopped on the phone too. `resumeAfterCast` no-ops unless
-            // THIS screen is the one that paused.
+            // `startCasting` already paused the local player by the time a receiver rejects the
+            // load, so without this the user taps Cast, gets a toast, and their video has silently
+            // stopped on the phone too. `resumeAfterCast` no-ops unless THIS screen is the one that
+            // paused.
             model.resumeAfterCast(at: nil)
         }
         .task {
@@ -175,10 +182,10 @@ struct PlayerScreen: View {
                 vm.debugForceRecoveryExhausted()
             }
             #endif
-            // Cubic R2-5: `.onChange` fires only on TRANSITIONS, so a screen that mounts with the
-            // session already up had nothing to react to — the user connected to a receiver, then
-            // opened another video, and the phone played it locally while the TV kept the old one.
-            // The same start path the transition runs, once, on mount.
+            // `.onChange` fires only on TRANSITIONS, so a screen that mounts with the session
+            // already up had nothing to react to — the user connected to a receiver, then opened
+            // another video, and the phone played it locally while the TV kept the old one. The
+            // same start path the transition runs, once, on mount.
             await startCastingIfClaimed(vm)
         }
         // Phase 3 Task 5: one gate fetch per player open, re-run when the queue advances to a new
@@ -210,16 +217,16 @@ struct PlayerScreen: View {
         .rungAnnouncements(state: model?.state, isOnline: container.network.isOnline)
     }
 
-    /// The ONE cast start path (cubic R2-5): run by the session transition AND by a screen that
-    /// mounts into a live session. `claimForCast` carries every precondition — a live session, an
-    /// online player (m1: a sandbox `file://` is never castable, and its cast slot is hidden for
-    /// the same reason), and a claim no other mounted `PlayerScreen` already holds.
+    /// The ONE cast start path: run by the session transition AND by a screen that mounts into a
+    /// live session. `claimForCast` carries every precondition — a live session, an online player
+    /// (a sandbox `file://` is never castable, and its cast slot is hidden for the same reason),
+    /// and a claim no other mounted `PlayerScreen` already holds.
     private func startCastingIfClaimed(_ model: PlayerViewModel) async {
         let cast = container.castController
         // Read the id ONCE: it is both what we claim and what we remember claiming, so the two can
-        // never drift apart when `swapArgs` moves `args` (Part B review, Important 1).
+        // never drift apart when `swapArgs` moves `args`.
         let videoId = model.args.videoId
-        // Idempotent per video (Part B review, Minor 2): when the session goes active while
+        // Idempotent per video: when the session goes active while
         // `.task` is still inside `vm.open()`, the transition arm and the mount arm both reach
         // here for one screen, and `claimForCast` answers true for an id that already holds the
         // stamp — two forced resolves and two `load()`s, the second cancelling the first. Both the
@@ -239,14 +246,14 @@ struct PlayerScreen: View {
     private func startCasting(_ model: PlayerViewModel) async {
         let cast = container.castController
         let media = await model.castMedia()
-        // Cubic R2-8: that resolve is a forced network walk and can take seconds. If the session
-        // ended inside it the end reaction already ran (`pausedForCast` was false, so it resumed
+        // That resolve is a forced network walk and can take seconds. If the session ended inside
+        // it the end reaction already ran (`pausedForCast` was false, so it resumed
         // nothing) and `finishCasting()` cleared the stamp — `load()` would then find no session,
         // `reportLoadFailure()` would have no device to name, and nothing would ever undo the
         // pause below. Same for a queue advance in that window: the stamp names a video this
         // screen no longer plays, which is why this reads `args`, not the claimed id.
         //
-        // Ahead of the no-media branch too (Part B review, Minor 3): `.task` is cancelled when the
+        // Ahead of the no-media branch too: `.task` is cancelled when the
         // screen disappears, so a tab switch during the resolve would otherwise turn a cancelled
         // walk into a "Couldn't play on {TV}" banner for a cast that was never attempted — stamped
         // on whatever session happens to be up, for a screen that has since released its claim.
@@ -259,7 +266,7 @@ struct PlayerScreen: View {
             return
         }
         model.pauseForCast()
-        cast.load(media, at: model.currentTime)
+        cast.load(media, videoId: model.args.videoId, at: model.currentTime)
     }
 
     /// What a transition INTO `state` says out loud, or nil for silence. Pure, so
@@ -267,7 +274,7 @@ struct PlayerScreen: View {
     static func transitionAnnouncement(for state: StreamState?, isOnline: Bool) -> String? {
         switch state {
         case .rung2Progressive:
-            // M1 (B1 final review): the announcement is a sentence about what just happened
+            // The announcement is a sentence about what just happened
             // ("Playing in standard quality", spec §6.6 Transitions row, verbatim); the PILL is a
             // standing label ("Standard quality (360p)"). Reading the pill's noun phrase out as an
             // event was the wrong register -- two different strings, deliberately.
@@ -278,7 +285,7 @@ struct PlayerScreen: View {
             // ("Playing in YouTube's player") rather than a second string, because the caption
             // already IS a statement of what just happened.
             //
-            // I2 (Task 4 review): ONLINE only. Offline, `.embed` never mounts `EmbedRungView` at all
+            // ONLINE only. Offline, `.embed` never mounts `EmbedRungView` at all
             // -- the branch below routes it to the offline card -- so this announced a player that
             // is not on screen, over a card that says the opposite.
             return isOnline ? String(localized: "player_embed_caption") : nil
@@ -324,11 +331,11 @@ struct PlayerScreen: View {
                     ZStack(alignment: .topTrailing) {
                         PlayerHostView(state: state, quality: model.selectedQuality,
                                        audioOnly: model.audioOnly, model: model, isFullscreen: fullscreen)
-                        // I8 (B1 final review): a mid-play rung-2 demotion empties `tracks` and
+                        // A mid-play rung-2 demotion empties `tracks` and
                         // hides the captions menu -- but the selection survives (session-only
                         // state, deliberately), so the overlay used to keep rendering cues with no
                         // menu left to turn them off. Render only a selection the CURRENT menu
-                        // still offers. I4: the resolve's own User-Agent goes on the cue fetch.
+                        // still offers. The resolve's own User-Agent goes on the cue fetch.
                         if let selected = Self.activeCaptionTrack(selected: model.selectedCaptionTrack, tracks: tracks) {
                             CaptionOverlay(model: model, track: selected, userAgent: resolved.userAgent)
                         }
@@ -344,7 +351,7 @@ struct PlayerScreen: View {
                             // these controls would be inert, so none of them is shown. The
                             // audio-only button itself stays, so the user can get back out.
                             if model.audioOnly {
-                                // Fix round 1, C1: a status PILL, stacked with the rest of this
+                                // A status PILL, stacked with the rest of this
                                 // column, never a fill over the video surface. The surface is
                                 // AVKit's own -- an opaque full-bleed status sat on top of the
                                 // stock transport, so while audio-only there was no way to pause.
@@ -395,9 +402,9 @@ struct PlayerScreen: View {
 
                     // Task 10 (spec §6.11): compact-height landscape (iPhone landscape) hides the
                     // METADATA panel only -- the toolbar (favorite/share/report) stays available,
-                    // which is what the comment always claimed and I1 (B1 final review) found the
-                    // code never did. Favorite is the one action with no other route in from the
-                    // player, so hiding it in landscape lost it entirely.
+                    // which is what the comment always claimed and the code never did. Favorite is
+                    // the one action with no other route in from the player, so hiding it in
+                    // landscape lost it entirely.
                     // B5: `model.args`, never this screen's own `args` -- after an advance the
                     // screen's value is only the INITIAL video.
                     PlayerToolbar(args: model.args, saveGate: saveGate, saveEnabled: saveEnabled,
@@ -439,8 +446,8 @@ struct PlayerScreen: View {
         // surface with no `AVPlayer` to preserve across a transition, which is the only thing the
         // shared branch above exists to protect. It never mounts `PlayerHostView`.
         case .embed(let resolved):
-            // Offline gate, same rule the `.idle`/`.loading`/`.error` states already follow (I2, B1
-            // final review): a `WKWebView` pointed at `youtube-nocookie.com` with no network renders
+            // Offline gate, same rule the `.idle`/`.loading`/`.error` states already follow: a
+            // `WKWebView` pointed at `youtube-nocookie.com` with no network renders
             // a black frame under a caption claiming something is playing. One offline surface with
             // a Retry, not a lie plus a spinner. `PlayerStateCopy.map` answers the offline copy for
             // `.embed` and `preconditionFailure`s for it online, where this branch owns the screen.
@@ -554,7 +561,7 @@ struct PlayerScreen: View {
     }
 
     /// Only `.hls` carries `captionTracks` (rung-2 progressive has none), so this doubles as the
-    /// "hide the captions toggle on rung 2" rule. Fix round 1 F1: `captionTracks` mixes manual and
+    /// "hide the captions toggle on rung 2" rule. `captionTracks` mixes manual and
     /// auto-generated (`kind=asr`) tracks -- manual ones already ride AVKit's stock subtitle menu,
     /// so this menu (and its `tracks.first` auto-enable pick, `CaptionsMenu`) must only ever
     /// see the auto-generated ones. Not `private`: `CaptionsProviderTests` pins the filter
@@ -564,7 +571,7 @@ struct PlayerScreen: View {
         return tracks.filter(\.isAutoGenerated)
     }
 
-    /// I8: the selected track, but only while the captions menu still lists it. A rung-2
+    /// The selected track, but only while the captions menu still lists it. A rung-2
     /// demotion (or any re-resolve to a stream with different tracks) empties/changes the list
     /// while `selectedCaptionTrack` -- session state that deliberately survives a re-resolve --
     /// still points at the old one; rendering that would leave cues on screen with no menu to
@@ -626,7 +633,7 @@ struct PlayerScreen: View {
 
     /// The shared status-pill chrome (rung-2 badge, audio-only status). Sized to its own text and
     /// only translucent, so whatever it sits over -- here, AVKit's stock transport -- stays visible
-    /// and usable underneath (fix round 1, C1).
+    /// and usable underneath.
     private func statusPill(_ text: String, identifier: String) -> some View {
         Text(text)
             .font(.caption)

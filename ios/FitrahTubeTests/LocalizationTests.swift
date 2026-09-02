@@ -50,6 +50,31 @@ struct LocalizationTests {
         }
     }
 
+    /// The local-network prompt is the app's one Info.plist usage description, and iOS shows it on
+    /// the first cast-button tap — an English sentence in front of an Arabic or Dutch user, while
+    /// every other user-facing string is en/ar/nl. It lives in `Resources/InfoPlist.xcstrings`,
+    /// which compiles to a per-locale `InfoPlist.strings` table (NOT `Localizable`), and the
+    /// English value is the one `project.yml` writes into the plist. Each translation has to name
+    /// TV playback — the prompt is asking for the local network, so "why" is the whole point — and
+    /// obeys the copy rule: never "Download", never "ad-free".
+    @Test func theLocalNetworkPromptIsLocalizedAndNamesTVPlayback() throws {
+        let key = "NSLocalNetworkUsageDescription"
+        let tvWord = ["en": "TV", "ar": "التلفزيون", "nl": "tv"]
+        var values: [String] = []
+        for locale in ["en", "ar", "nl"] {
+            let value = try Self.lproj(locale).localizedString(forKey: key, value: nil, table: "InfoPlist")
+            #expect(value != key, "\(locale) has no \(key): the prompt renders in English")
+            #expect(value.contains(try #require(tvWord[locale])), "\(locale)/\(key) never names the TV: \(value)")
+            #expect(!value.localizedCaseInsensitiveContains("download"), "\(locale)/\(key) says Download")
+            #expect(!value.localizedCaseInsensitiveContains("ad-free"), "\(locale)/\(key) says ad-free")
+            values.append(value)
+        }
+        // The English value is the source string `project.yml` puts in the plist, verbatim.
+        #expect(values[0] == "FitrahTube finds Chromecast and other TV devices on your local "
+                + "network so you can play videos on your TV.")
+        #expect(Set(values).count == 3, "ar/nl are still the English sentence")
+    }
+
     private static func lproj(_ locale: String) throws -> Bundle {
         try #require(Bundle.main.path(forResource: locale, ofType: "lproj").flatMap(Bundle.init(path:)))
     }

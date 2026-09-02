@@ -5,11 +5,14 @@ import SwiftUI
 /// What a `PlayerScreen` that claimed a cast does when it comes back on screen
 /// (`CastController.returnAction`).
 nonisolated enum CastReturnAction: Sendable, Equatable {
-    /// Nothing to reconcile.
+    /// Nothing to reconcile: another screen owns the live session now.
     case none
-    /// The session is still up and the stamp is free: take back the claim we surrendered.
+    /// The session is still up, the stamp is free, and the receiver is still playing OUR video:
+    /// take back the claim we surrendered.
     case reclaim
-    /// The session ended while we were away: seek local to the receiver's position and resume.
+    /// Reconcile and let go -- seek local to the receiver's position (only if the receiver played
+    /// our video) and resume, then drop the claim. Covers both a session that ended while we were
+    /// away and a claim that has simply gone stale.
     case handBack
 }
 
@@ -27,7 +30,7 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
 /// to hand the position back to, and resurrecting the popped route to seek it would be worse than
 /// doing nothing. Deliberate.
 ///
-/// The session is app-wide but the player it drives is not (fix round 1, review Important 1):
+/// The session is app-wide but the player it drives is not:
 /// `MainShellView` keeps every visited tab's stack mounted, so several `PlayerScreen`s can read
 /// one `isSessionActive`. `castingVideoId` is the stamp that names the ONE screen this session
 /// belongs to; every reaction is gated on it.
@@ -65,8 +68,17 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
     /// The receiver's `approximateStreamPosition`, sampled in `willEndSession` while the remote
     /// media client is still connected (by `didEndSession` it may already be gone), and published
     /// when the session actually ends. Cleared when a new session begins so a hand-back can never
-    /// seek to a previous session's position (review Important 2).
+    /// seek to a previous session's position.
     private(set) var lastStreamPosition: TimeInterval?
+
+    /// The videoId the receiver was actually asked to play, `nil` when nothing of ours is on it.
+    /// The stamp says WHO may act on the session; this says WHAT the receiver's position belongs
+    /// to, and the two genuinely diverge: a claimant that goes off screen surrenders the stamp
+    /// while the receiver keeps playing its video, so the next screen can claim, load its own — and
+    /// the first screen's hand-back would then seek it to a position that was never its own.
+    /// Cleared by a rejected load (nothing of ours landed), by a new session, and by the hand-back
+    /// that spends it.
+    private(set) var loadedVideoId: String?
 
     /// The receiver currently connected, for the cast slot's accessibility value. `nil` when no
     /// session is up.
@@ -76,7 +88,7 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
     /// hidden", `:43-48`) -- true only once there is media on the receiver to control, so a
     /// connected session with nothing loaded parks no empty strip above the tab bar.
     ///
-    /// Drives the strip's HEIGHT, never whether `MainShellView` mounts it (re-review Important 2):
+    /// Drives the strip's HEIGHT, never whether `MainShellView` mounts it:
     /// the SDK's own container embeds the mini controller permanently and uses the delegate only
     /// to show/hide it (`GCKUICastContainerViewController.h:27-39`), and nothing in the headers
     /// promises `active` updates for a view controller whose view was never loaded. Mounting on
@@ -94,10 +106,10 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
 
     /// The mini controller most recently handed to a representable. Identity only (an
     /// `ObjectIdentifier` is `Sendable`; the view controller is not, so it cannot cross the
-    /// delegate's actor hop). Part B review, Minor 1: with one controller per representable (R2-9)
-    /// a tab switch has two alive at once in an order SwiftUI does not define, so a
-    /// `shouldAppear: false` from the OUTGOING one would clear the flag the incoming strip is being
-    /// shown under -- the R2-9 symptom relocated from view parenting to the delegate.
+    /// delegate's actor hop). With one controller per representable a tab switch has two alive at
+    /// once in an order SwiftUI does not define, so a `shouldAppear: false` from the OUTGOING one
+    /// would clear the flag the incoming strip is being shown under -- the blank-strip symptom
+    /// relocated from view parenting to the delegate.
     private var currentMiniControls: ObjectIdentifier?
 
     /// Creates the shared `GCKCastContext`, once per process. Idempotent and non-throwing: the
@@ -131,7 +143,7 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
         GCKCastContext.sharedInstance().sessionManager.add(self)
     }
 
-    /// A FRESH mini controller per mount (cubic R2-9). `MainShellView` wraps one of these in a
+    /// A FRESH mini controller per mount. `MainShellView` wraps one of these in a
     /// `UIViewControllerRepresentable` inside the SELECTED tab's stack, so a tab switch dismantles
     /// one wrapper and creates another in an order SwiftUI does not define -- and while a single
     /// owned controller was handed to both, the old wrapper's teardown could remove it from its
@@ -148,7 +160,7 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
         return controls
     }
 
-    // MARK: - Session ownership (review Important 1)
+    // MARK: - Session ownership
 
     /// Claims this session for `videoId`. `false` means another mounted `PlayerScreen` already
     /// owns it and this one must not resolve, load or pause anything.
@@ -161,10 +173,10 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
         return castingVideoId == videoId
     }
 
-    /// The ONE start decision (cubic R2-5), run both by the session TRANSITION and by a screen
-    /// that MOUNTS into a live session: a session is up, this is not an offline player (m1: a
-    /// sandbox file is never castable), and the claim is winnable. Claims as a side effect when it
-    /// answers true, exactly like `claimCastSource`.
+    /// The ONE start decision, run both by the session TRANSITION and by a screen that MOUNTS
+    /// into a live session: a session is up, this is not an offline player (a sandbox file is never
+    /// castable), and the claim is winnable. Claims as a side effect when it answers true, exactly
+    /// like `claimCastSource`.
     ///
     /// Casting used to hang off `.onChange(of: isSessionActive)` alone, which fires only on
     /// transitions -- so connecting to a receiver and then opening another video left the phone
@@ -174,36 +186,56 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
         return claimCastSource(videoId)
     }
 
-    /// The claiming screen went OFF SCREEN (cubic R2-5): give the stamp back so the next video
-    /// opened during the same session can claim it. Only the owner may release, and the caller must
-    /// pass the id it actually claimed -- never a re-read `args.videoId`, which `swapArgs` moves on
-    /// every advance (Part B review, Important 1). A screen that never claimed holds nothing and so
-    /// can never release someone else's session.
+    /// The claiming screen went OFF SCREEN: give the stamp back so the next video opened during
+    /// the same session can claim it. Only the owner may release, and the caller must pass the id
+    /// it actually claimed -- never a re-read `args.videoId`, which `swapArgs` moves on every
+    /// advance. A screen that never claimed holds nothing and so can never release someone else's
+    /// session.
     ///
     /// The STAMP only: `lastStreamPosition` is the receiver's position and the hand-back still
-    /// needs it (Part B review, Important 2 -- `onDisappear` fires for a screen that is merely
-    /// covered or tab-switched, not just a popped one). `finishCasting()` is what consumes both.
+    /// needs it -- `onDisappear` fires for a screen that is merely covered or tab-switched, not
+    /// just a popped one. `finishCasting()` is what consumes both.
     func releaseClaim(_ videoId: String) {
         guard castingVideoId == videoId else { return }
         castingVideoId = nil
     }
 
-    /// What a claimant that comes BACK on screen should do (Part B review, Important 2). Pure, so
-    /// the three-way reconcile is pinned without driving SwiftUI's appearance callbacks.
+    /// What a claimant that comes BACK on screen should do. Pure, so the three-way reconcile is
+    /// pinned without driving SwiftUI's appearance callbacks.
     ///
     /// A re-claim costs no re-resolve and no second `load()` -- it only takes back the stamp the
     /// screen surrendered on its way off. The hand-back arm exists because a session that ends
     /// while the claimant is away leaves its `.onChange` with no stamp to match, so the phone would
     /// stay paused at the pre-cast position with the receiver's position unspent.
     nonisolated static func returnAction(pausedForCast: Bool, sessionActive: Bool,
-                                         stampIsFree: Bool) -> CastReturnAction {
-        if sessionActive { return stampIsFree ? .reclaim : .none }
-        return pausedForCast ? .handBack : .none
+                                         stampIsFree: Bool,
+                                         receiverPlaysOurVideo: Bool) -> CastReturnAction {
+        // Another screen owns the live session now: not ours to reconcile, and its claimant is the
+        // one that pays its own hand-back.
+        if sessionActive, !stampIsFree { return .none }
+        // A free stamp is not evidence that the session is still OURS. Reclaiming needs both halves
+        // of the claim to still hold: our player is paused for this cast, and the receiver is still
+        // playing the video we put there. Without them a screen that is not casting silently owns
+        // the session -- phone paused, receiver playing someone else's video (or nothing), and no
+        // other screen able to claim.
+        if sessionActive, pausedForCast, receiverPlaysOurVideo { return .reclaim }
+        // Everything else is "reconcile and let go": resume whatever we paused (at the receiver's
+        // position only if it is ours -- `receiverPosition(for:)` decides), give the stamp back,
+        // and drop the claim. Dropping it matters even when there is nothing to resume: a claim
+        // that outlives its session is what stops this screen ever casting this video again.
+        return .handBack
     }
 
-    /// Still ours to act on (cubic R2-8): `PlayerScreen.startCasting` awaits a forced resolve
-    /// before it pauses the local player, and both the session and the claim can be gone by the
-    /// time that lands.
+    /// The receiver's position, but only for the screen whose video the receiver actually played.
+    /// `lastStreamPosition` is sampled off the session, not off a video, so it belongs to whatever
+    /// was loaded last -- handing it to any claimant seeks that player to a stranger's position.
+    /// `nil` means "resume where you were", which is what the hand-back does with it.
+    func receiverPosition(for videoId: String) -> TimeInterval? {
+        loadedVideoId == videoId ? lastStreamPosition : nil
+    }
+
+    /// Still ours to act on: `PlayerScreen.startCasting` awaits a forced resolve before it pauses
+    /// the local player, and both the session and the claim can be gone by the time that lands.
     func stillCasting(_ videoId: String) -> Bool {
         isSessionActive && castingVideoId == videoId
     }
@@ -212,6 +244,7 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
     func finishCasting() {
         castingVideoId = nil
         lastStreamPosition = nil
+        loadedVideoId = nil
     }
 
     // MARK: - Session lifecycle seams
@@ -222,14 +255,24 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
     // seams are also the only way `CastSessionTests` can drive the lifecycle at all.
 
     func sessionDidBegin(deviceName: String?) {
-        // A new session inherits nothing from the last one (review Important 2): a stale position
-        // would show up as a silent wrong seek that looks like a playback bug, not a cast bug.
+        // A new session inherits nothing from the last one: a stale position would show up as a
+        // silent wrong seek that looks like a playback bug, not a cast bug.
         lastStreamPosition = nil
         castingVideoId = nil
-        // Re-review Minor 2: a failure that landed with no claimant mounted is never consumed, and
-        // `.onChange` does not fire again for the same device name -- so the NEXT failure on that
-        // device would be silent. A new session is the natural place to drop an unread one.
+        // Nothing of ours is on this receiver yet, whatever the last one was playing.
+        loadedVideoId = nil
+        // A failure that landed with no claimant mounted is never consumed, and `.onChange` does
+        // not fire again for the same device name -- so the NEXT failure on that device would be
+        // silent. A new session is the natural place to drop an unread one.
         lastLoadFailureDevice = nil
+        connectedDeviceName = deviceName
+        isSessionActive = true
+    }
+
+    /// The SAME session coming back from a background suspension, which is NOT a new one -- so it
+    /// inherits everything: the claim, the receiver's position and an unread load failure all still
+    /// stand. Only the two flags the app could have missed while suspended are re-asserted.
+    func sessionDidResume(deviceName: String?) {
         connectedDeviceName = deviceName
         isSessionActive = true
     }
@@ -241,8 +284,8 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
 
     /// The mini controller's `active` flag, from its delegate (same seam shape as the session
     /// callbacks above, and the only way a test can set it without an SDK view controller).
-    /// `from` identifies the sender so a controller we no longer hand out cannot write the flag
-    /// (Part B review, Minor 1); nil is the test seam's "no sender to check".
+    /// `from` identifies the sender so a controller we no longer hand out cannot write the flag;
+    /// nil is the test seam's "no sender to check".
     func miniMediaControlsViewControllerDidChangeActive(_ active: Bool, from sender: ObjectIdentifier? = nil) {
         guard sender == nil || sender == currentMiniControls else { return }
         miniControlsActive = active
@@ -251,9 +294,9 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
     func sessionDidEnd() {
         isSessionActive = false
         connectedDeviceName = nil
-        // Re-review Important 2, other direction: nothing else clears this, so a strip stuck above
-        // the tab bar after the session ends would be just as SDK-dependent as one that never
-        // appears. One assignment removes the dependency.
+        // The other direction: nothing else clears this, so a strip stuck above the tab bar after
+        // the session ends would be just as SDK-dependent as one that never appears. One assignment
+        // removes the dependency.
         miniControlsActive = false
         // `castingVideoId`/`lastStreamPosition` deliberately survive: the owning screen's
         // `.onChange` has not run yet and needs both. `finishCasting()` clears them.
@@ -263,15 +306,15 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
 
     /// Session start/resume's load (spec §10): autoplay, at the local player's position. Live
     /// streams keep the builder's default `startTime` (`kGCKInvalidTimeInterval` = live edge).
-    func load(_ media: CastMediaInfo, at position: TimeInterval) {
+    func load(_ media: CastMediaInfo, videoId: String, at position: TimeInterval) {
         // `sharedInstance()` raises if no context was ever created, so every SDK read in this type
         // goes through `castAvailable` first.
         guard castAvailable,
               let session = GCKCastContext.sharedInstance().sessionManager.currentSession,
               let client = session.remoteMediaClient else {
-            // Not silent (review Minor 2): `reportLoadFailure` needs a named device and there is
-            // no session to name, so the banner cannot fire -- say so somewhere, and clear any
-            // in-flight request rather than leaving one pointed at a session that is gone.
+            // Not silent: `reportLoadFailure` needs a named device and there is no session to
+            // name, so the banner cannot fire -- say so somewhere, and clear any in-flight request
+            // rather than leaving one pointed at a session that is gone.
             #if DEBUG
             print("CastController: load with no current session/remote media client")
             #endif
@@ -279,9 +322,8 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
             reportLoadFailure()
             return
         }
-        // Minor 4: a second load issued while the first is in flight would otherwise drop the only
-        // strong reference to it (`GCKRequest.delegate` is weak) and its outcome would go
-        // unobserved.
+        // A second load issued while the first is in flight would otherwise drop the only strong
+        // reference to it (`GCKRequest.delegate` is weak) and its outcome would go unobserved.
         cancelLoadRequest()
         let builder = GCKMediaLoadRequestDataBuilder()
         builder.mediaInformation = CastMedia.gckMediaInformation(from: media)
@@ -290,6 +332,14 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
         let request = client.loadMedia(with: builder.build())
         request.delegate = self
         loadRequest = request
+        recordLoad(videoId)
+    }
+
+    /// What `load()` records once the request is on the wire -- and the only way `CastSessionTests`
+    /// can set it, since `load()` itself needs a `GCKCastContext` no test can create. Same seam
+    /// shape as the session callbacks above.
+    func recordLoad(_ videoId: String) {
+        loadedVideoId = videoId
     }
 
     private func cancelLoadRequest() {
@@ -309,7 +359,7 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
 
     /// Both of the load-callback guards, as one pure decision over request ids.
     ///
-    /// Re-review Important 1: `GCKRequest.cancel()` aborts with `.cancelled` and tells the delegate
+    /// `GCKRequest.cancel()` aborts with `.cancelled` and tells the delegate
     /// (`GCKRequest.h:23-24,142-148`), so `cancelLoadRequest()` fed its own abort straight into the
     /// failure handler -- every second load raised "Couldn't play on {TV}" for a request the app
     /// itself cancelled, and (via the Important-4 resume) restarted the phone's player while the
@@ -319,9 +369,9 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
     /// and it is also what stops the handler nil-ing the NEW request's only strong reference, since
     /// `GCKRequest.delegate` is weak).
     ///
-    /// Re-review Minor 1: that identity guard used to live in `finishLoad` AHEAD of this helper, so
-    /// no test could ever watch it answer false -- deleting it left every test green. Taking the
-    /// current id as an argument is what makes it testable.
+    /// That identity guard used to live in `finishLoad` AHEAD of this helper, so no test could
+    /// ever watch it answer false -- deleting it left every test green. Taking the current id as an
+    /// argument is what makes it testable.
     static func loadCallbackOutcome(callbackID: GCKRequestID, currentID: GCKRequestID?,
                                     reportFailure: Bool, cancelledByUs: Bool) -> LoadCallbackOutcome {
         guard currentID == callbackID else { return .ignore }
@@ -333,6 +383,11 @@ nonisolated enum CastReturnAction: Sendable, Equatable {
     /// the same banner rather than copy of its own -- and, per the copy rule, it says WHAT, never
     /// why.
     func reportLoadFailure() {
+        // Whatever else this does, nothing of ours ended up on the receiver -- so the position
+        // sampled at the next disconnect belongs to whatever the receiver kept playing, and the
+        // screen whose load failed must not reclaim on the strength of a load that never landed.
+        // Ahead of the guard below: the banner is optional, this is not.
+        loadedVideoId = nil
         // No named device means no session left to blame — and `cast_error_format` is built around
         // the device's name, so there is nothing honest to say. Silence beats "Couldn't play on ".
         guard castAvailable,
@@ -352,9 +407,18 @@ extension CastController: GCKSessionManagerListener {
         MainActor.assumeIsolated { sessionDidBegin(deviceName: name) }
     }
 
+    /// A RESUMED session is the SAME session, not a new one. `suspendSessionsWhenBackgrounded`
+    /// defaults to YES (`GCKCastOptions.h:92-100`), so every Home-press and return during a cast
+    /// fires suspend/resume -- and routing this into `sessionDidBegin` cleared the claim and the
+    /// receiver's position on a session that never went anywhere, so the eventual disconnect found
+    /// no stamp and the phone stayed paused with no seek.
+    ///
+    /// `didSuspendSession` is deliberately NOT implemented: the receiver keeps playing across the
+    /// suspension, so the claim, the position and `isSessionActive` must all stay exactly as they
+    /// are. Flipping `isSessionActive` there would fire the hand-back on every Home press.
     nonisolated func sessionManager(_ sessionManager: GCKSessionManager, didResumeSession session: GCKSession) {
         let name = session.device.friendlyName
-        MainActor.assumeIsolated { sessionDidBegin(deviceName: name) }
+        MainActor.assumeIsolated { sessionDidResume(deviceName: name) }
     }
 
     /// WILL, not DID: the remote media client is still connected here, so this is the last moment
@@ -370,7 +434,7 @@ extension CastController: GCKSessionManagerListener {
     }
 }
 
-// MARK: - Mini controller visibility (review Minor 1)
+// MARK: - Mini controller visibility
 
 extension CastController: GCKUIMiniMediaControlsViewControllerDelegate {
     nonisolated func miniMediaControlsViewController(
@@ -431,7 +495,7 @@ private extension CastController {
 // MARK: - SwiftUI wrappers (the only cast UI in the app)
 
 /// Reaches the hosted `GCKUICastButton` so the toolbar slot's own `Button` can replay a tap into
-/// it (cubic R2-6 / re-review m3). Weak: the SDK button belongs to the view hierarchy.
+/// it. Weak: the SDK button belongs to the view hierarchy.
 @MainActor final class CastButtonHandle {
     fileprivate weak var button: GCKUICastButton?
 
@@ -446,8 +510,8 @@ private extension CastController {
 /// states -- connected / connecting / not connected -- and presents the device chooser itself; the
 /// first tap is also what starts discovery.
 ///
-/// It renders only. Cubic R2-6 / re-review m3: the toolbar's other four slots wrap icon AND caption
-/// in a `Button`, so the whole slot is tappable and the accessibility element is a real button at
+/// It renders only. The toolbar's other four slots wrap icon AND caption in a `Button`, so the
+/// whole slot is tappable and the accessibility element is a real button at
 /// the ≥44 pt floor. This view is a 24 pt `UIView`, and neither way of enlarging it in place works:
 /// `.frame(minWidth: 44, minHeight: 44)` only pads the SwiftUI layout box (the `UIButton`'s own
 /// rect -- its hit area AND its accessibility frame -- stays 24×24), while resizing the `UIButton`
