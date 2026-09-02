@@ -163,6 +163,26 @@ struct AppContainerTests {
         }
     }
 
+    /// Fix round 1 / I1: the three sign-in dependencies must be SUBSTITUTABLE, not merely inert.
+    /// `GoogleService-Info.plist` is USER-BLOCKED, so `capabilities` hard-wired to `.current()` is
+    /// all-false permanently on this machine — Task 10's previews and Task 13's screenshot rig could
+    /// never render a sign-in screen with a Google or Apple button. The `injectedAuth` idiom fixes
+    /// it, and `FakeOAuthProvider` is what a caller injects.
+    @Test func theFakeContainerTakesInjectedCapabilitiesAndProviders() {
+        let google = FakeOAuthProvider()
+        let apple = FakeOAuthProvider(credential: OAuthCredential(providerID: "apple.com",
+                                                                  idToken: "fake-id-token",
+                                                                  accessTokenOrNonce: "fake-nonce"))
+        let everything = SignInCapabilities(emailPassword: true, google: true, apple: true)
+        let container = AppContainer.fake(capabilities: everything, googleSignIn: google, appleSignIn: apple)
+
+        #expect(container.capabilities == everything)
+        #expect(SignInCapabilities.visibleProviders(container.capabilities) == [.emailPassword, .google, .apple],
+                "a fixture container must be able to render a fully populated sign-in screen")
+        #expect(container.googleSignIn === google)
+        #expect(container.appleSignIn === apple)
+    }
+
     /// The same answer from the LIVE container the app actually launched with (`AppContainer.current`,
     /// set by `FitrahTubeApp.init`) — the fixture path above could otherwise be hiding a difference.
     @Test func theLiveContainerReportsTheSameCapabilitiesAndProviders() throws {

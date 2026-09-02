@@ -16,15 +16,39 @@ import UIKit
     /// available — there is no runtime entitlement API) AND Firebase can redeem the credential.
     var isAvailable: Bool { SignInCapabilities.current().apple }
 
+    /// ONE flow at a time. `pending` is a single continuation slot, so a second `presentSignIn()`
+    /// while one is in flight used to overwrite it and orphan the first — never resumed,
+    /// `SWIFT TASK CONTINUATION MISUSE`, and a double-tap on the Apple button is all it takes.
+    /// `@MainActor` prevents a data race but not re-entrancy across the flow's suspension.
+    ///
+    /// Internal, not private, and a plain `Bool` rather than `pending != nil`: it is the only
+    /// observable an in-gate test has. With no `GoogleService-Info.plist` `presentSignIn()` stops at
+    /// its configure guard and never reaches the flow, so the latch cannot be claimed from outside.
+    var isPresenting = false
+
     /// The in-flight flow. `ASAuthorizationController` must be retained until it calls back, and the
     /// continuation must be resumed exactly once — `finish` is the single resume site.
     private var controller: ASAuthorizationController?
     private var pending: CheckedContinuation<ASAuthorization, any Error>?
+    /// The window the sheet is presented over. Set from the guard below before every
+    /// `performRequests()`, so `presentationAnchor(for:)` never has to invent one.
+    private var anchor: ASPresentationAnchor!
 
     func presentSignIn() async throws(AuthErrorCode) -> OAuthCredential {
+        // BEFORE the claim below, so a refused re-entrant call never runs the release path and
+        // clears the first flow's latch.
+        guard !isPresenting else { throw .appleSignInFailed }
+        isPresenting = true
+        defer { isPresenting = false }
         // Same configure-first rule as Google's: the credential is only worth anything if Firebase
-        // is there to redeem it, and `AuthClient` is unavailable otherwise.
-        guard FirebaseBootstrap.configureIfPossible() else { throw .appleSignInFailed }
+        // is there to redeem it, and `AuthClient` is unavailable otherwise. The key window is
+        // guarded here rather than substituted in `presentationAnchor(for:)`: a DETACHED anchor
+        // does not guarantee Apple ever calls back, which is the same orphaned-continuation hang by
+        // another route. Refuse before `performRequests()`, never during.
+        guard FirebaseBootstrap.configureIfPossible(), let window = Self.keyWindow else {
+            throw .appleSignInFailed
+        }
+        anchor = window
         let rawNonce = Self.randomNonce()
         do {
             let request = ASAuthorizationAppleIDProvider().createRequest()
@@ -68,6 +92,13 @@ import UIKit
     private static func sha256(_ input: String) -> String {
         SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
     }
+
+    private static var keyWindow: UIWindow? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+    }
 }
 
 extension AppleAuthProvider: ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
@@ -80,12 +111,10 @@ extension AppleAuthProvider: ASAuthorizationControllerDelegate, ASAuthorizationC
         finish(.failure(error))
     }
 
-    /// `ASPresentationAnchor` is `UIWindow` on iOS. The fallback is an empty window rather than a
-    /// trap: a sign-in sheet with nowhere to appear should fail the flow, not the process.
+    /// `ASPresentationAnchor` is `UIWindow` on iOS. Non-nil for the life of a flow: `presentSignIn()`
+    /// refuses before `performRequests()` when there is no key window, and this is only called
+    /// during a flow it started — so there is no detached-window arm to hang on.
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow) ?? ASPresentationAnchor()
+        anchor
     }
 }

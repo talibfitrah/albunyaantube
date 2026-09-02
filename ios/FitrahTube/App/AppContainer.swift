@@ -153,13 +153,16 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private let injectedAuth: (any AuthClient)?
 
     /// Phase 4 Task 5: the two federated sign-in seams and the F11 capability answer Task 10 renders
-    /// from. Unlike `auth` these need NO fixture override — neither constructor touches Firebase, a
-    /// network or an SDK singleton (both read their availability lazily, and with no
-    /// `GoogleService-Info.plist` both report unavailable), so a fake container gets the real ones
-    /// and `AppContainerTests` pins that they stay inert.
-    private(set) lazy var googleSignIn: any OAuthSignInProvider = GoogleAuthProvider()
-    private(set) lazy var appleSignIn: any OAuthSignInProvider = AppleAuthProvider()
-    private(set) lazy var capabilities: SignInCapabilities = .current()
+    /// from. All three take the `injectedAuth` idiom — not because the real ones are unsafe (neither
+    /// constructor touches Firebase, a network or an SDK singleton) but because SUBSTITUTABILITY is
+    /// what the constraint is for: `GoogleService-Info.plist` is USER-BLOCKED, so a hard-wired
+    /// `.current()` is all-false permanently here and Task 10's previews and Task 13's screenshot rig
+    /// could never render a populated sign-in screen.
+    private(set) lazy var googleSignIn: any OAuthSignInProvider = injectedGoogleSignIn ?? GoogleAuthProvider()
+    private(set) lazy var appleSignIn: any OAuthSignInProvider = injectedAppleSignIn ?? AppleAuthProvider()
+    let capabilities: SignInCapabilities
+    private let injectedGoogleSignIn: (any OAuthSignInProvider)?
+    private let injectedAppleSignIn: (any OAuthSignInProvider)?
 
     private func makeOfflineManager() -> OfflineManager {
         let base = offlineBase
@@ -256,8 +259,14 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
          playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)? = nil,
          gateTransport: any HTTPTransport = URLSessionTransport(),
          auth: (any AuthClient)? = nil,
+         capabilities: SignInCapabilities? = nil,
+         googleSignIn: (any OAuthSignInProvider)? = nil,
+         appleSignIn: (any OAuthSignInProvider)? = nil,
          isFixture: Bool = false) {
         self.injectedAuth = auth
+        self.capabilities = capabilities ?? .current()
+        self.injectedGoogleSignIn = googleSignIn
+        self.injectedAppleSignIn = appleSignIn
         self.catalog = catalog
         self.userDefaults = userDefaults
         self.modelContainer = modelContainer
@@ -308,7 +317,14 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // initializer, the only caller of `FirebaseBootstrap.configureIfPossible()` outside the
         // App's warm-up, never runs. Task 13's launch hook selects the state HERE, at construction,
         // instead of mutating a built container.
-        auth: any AuthClient = FakeAuthClient(state: .signedOut)
+        auth: any AuthClient = FakeAuthClient(state: .signedOut),
+        // Fix round 1 / I1: nil keeps the real (and, with no plist, permanently unavailable) sign-in
+        // stack, so every existing call site is unchanged; a preview or screenshot run that needs a
+        // populated sign-in screen passes an all-true `SignInCapabilities` and two
+        // `FakeOAuthProvider`s.
+        capabilities: SignInCapabilities? = nil,
+        googleSignIn: (any OAuthSignInProvider)? = nil,
+        appleSignIn: (any OAuthSignInProvider)? = nil
     ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
         // defaults domain. Does NOT wipe the suite -- callers that write through the returned
@@ -330,7 +346,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // construction: hidden Save button, keep-on-sweep, zero requests.
         AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true),
                      apiBaseURL: AppConfig.apiBaseURL, browse: browse,
-                     gateTransport: FixedStatusTransport(status: 503), auth: auth, isFixture: true)
+                     gateTransport: FixedStatusTransport(status: 503), auth: auth,
+                     capabilities: capabilities, googleSignIn: googleSignIn, appleSignIn: appleSignIn,
+                     isFixture: true)
     }
     #endif
 

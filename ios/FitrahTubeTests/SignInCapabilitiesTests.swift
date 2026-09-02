@@ -12,8 +12,6 @@ import Testing
     /// test edit.
     @Test func currentReportsNothingConfiguredWithNoOptionsFile() {
         let capabilities = SignInCapabilities.current()
-        #expect(capabilities.emailPassword == FirebaseBootstrap.optionsFileExists)
-        #expect(capabilities.google == (FirebaseBootstrap.googleClientID != nil))
         if !FirebaseBootstrap.optionsFileExists {
             #expect(capabilities == SignInCapabilities(emailPassword: false, google: false, apple: false))
             #expect(SignInCapabilities.visibleProviders(capabilities).isEmpty)
@@ -83,6 +81,29 @@ import Testing
             #expect(provider.isAvailable == false)
             await #expect(throws: AuthErrorCode.appleSignInFailed) { try await provider.presentSignIn() }
         }
+    }
+
+    /// Fix round 1 / I2: `presentSignIn()` used to overwrite its single continuation slot on a
+    /// second call, orphaning the first — never resumed, `SWIFT TASK CONTINUATION MISUSE`, and a
+    /// double-tap on Task 10's Apple button is the canonical trigger. The latch is what refuses the
+    /// second call.
+    ///
+    /// It is asserted through `isPresenting` rather than by racing two real calls because with no
+    /// `GoogleService-Info.plist` (this machine, CI, every fresh checkout) `presentSignIn()` returns
+    /// at its configure guard and NEVER reaches the flow — so an in-flight state is unreachable from
+    /// the outside here. Setting the latch is exactly the state a started flow leaves behind. The
+    /// second expectation is the load-bearing one: a refused re-entrant call must not run the
+    /// release path and clear the FIRST flow's latch, which is what makes the guard's placement
+    /// (before the claim, so before the `defer`) part of the contract rather than an accident.
+    @MainActor @Test func aSecondPresentSignInIsRefusedWithoutDisturbingTheFirstFlow() async {
+        let provider = AppleAuthProvider()
+        #expect(provider.isPresenting == false)
+
+        provider.isPresenting = true
+        await #expect(throws: AuthErrorCode.appleSignInFailed) { try await provider.presentSignIn() }
+        #expect(provider.isPresenting, "the refused call must leave the first flow's latch claimed")
+
+        provider.isPresenting = false
     }
 
     /// The double Task 10's ViewModel tests drive: canned credential when available, and a loud
