@@ -26,10 +26,10 @@ struct CastSessionTests {
     @Test func onlyTheFirstScreenToClaimOwnsTheCastSession() {
         let cast = CastController()
         #expect(cast.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
-        #expect(cast.castingVideoId == "xc7keR2piUM")
+        #expect(cast.castingClaim?.videoId == "xc7keR2piUM")
         // A second mounted PlayerScreen reacting to the same session flag must NOT resolve or load.
         #expect(cast.claimCastSource(videoId: "other-video", owner: Self.otherOwner) == false)
-        #expect(cast.castingVideoId == "xc7keR2piUM")
+        #expect(cast.castingClaim?.videoId == "xc7keR2piUM")
         // Idempotent for the owner: a resumed session re-claims without losing the stamp.
         #expect(cast.claimCastSource(videoId: "xc7keR2piUM", owner: Self.owner))
     }
@@ -55,14 +55,14 @@ struct CastSessionTests {
         #expect(cast.receiverPosition(for: Self.claimed, owner: Self.otherOwner) == nil,
                 "only the screen whose load the receiver played may have its position")
         cast.releaseClaim(Self.claimed, owner: Self.otherOwner)
-        #expect(cast.castingVideoId == Self.claimed)
+        #expect(cast.castingClaim?.videoId == Self.claimed)
         cast.finishClaim(Self.claimed, owner: Self.otherOwner)
-        #expect(cast.castingVideoId == Self.claimed)
-        #expect(cast.loadedVideoId == Self.claimed)
+        #expect(cast.castingClaim?.videoId == Self.claimed)
+        #expect(cast.loadedClaim?.videoId == Self.claimed)
         #expect(cast.receiverPosition(for: Self.claimed, owner: Self.owner) == 300)
         // The owner's own off-screen release and re-appear re-claim still work.
         cast.releaseClaim(Self.claimed, owner: Self.owner)
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
         #expect(cast.claimCastSource(videoId: Self.claimed, owner: Self.owner))
     }
 
@@ -74,12 +74,12 @@ struct CastSessionTests {
         cast.sessionDidEnd()
         #expect(cast.isSessionActive == false)
         // Still stamped: the end reaction is what reads it, and `.onChange` runs after the callback.
-        #expect(cast.castingVideoId == "xc7keR2piUM")
+        #expect(cast.castingClaim?.videoId == "xc7keR2piUM")
         #expect(cast.lastStreamPosition == 120)
         cast.finishClaim("xc7keR2piUM", owner: Self.owner)
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
         #expect(cast.lastStreamPosition == nil)
-        #expect(cast.loadedVideoId == nil)
+        #expect(cast.loadedClaim?.videoId == nil)
     }
 
     /// `finishClaim` gives back only what is this screen's to give. A claimant handing back while
@@ -95,13 +95,13 @@ struct CastSessionTests {
         cast.sessionWillEnd(position: 300)
 
         cast.finishClaim("xc7keR2piUM", owner: Self.owner)
-        #expect(cast.castingVideoId == nil, "our stamp goes")
-        #expect(cast.loadedVideoId == "other-video", "the receiver's video is not ours to forget")
+        #expect(cast.castingClaim?.videoId == nil, "our stamp goes")
+        #expect(cast.loadedClaim?.videoId == "other-video", "the receiver's video is not ours to forget")
         #expect(cast.lastStreamPosition == 300, "nor is the position that belongs to it")
 
         // And a screen that holds neither takes nothing.
         cast.finishClaim("no-such-video", owner: Self.owner)
-        #expect(cast.loadedVideoId == "other-video")
+        #expect(cast.loadedClaim?.videoId == "other-video")
         #expect(cast.lastStreamPosition == 300)
     }
 
@@ -116,7 +116,7 @@ struct CastSessionTests {
 
         cast.sessionDidBegin(deviceName: "Living Room TV")
         #expect(cast.lastStreamPosition == nil, "a new session must not inherit the old position")
-        #expect(cast.castingVideoId == nil, "a new session must not inherit the old cast source")
+        #expect(cast.castingClaim?.videoId == nil, "a new session must not inherit the old cast source")
         #expect(cast.isSessionActive)
         #expect(cast.connectedDeviceName == "Living Room TV")
 
@@ -218,7 +218,7 @@ struct CastSessionTests {
                                   isOfflinePlayback: false) == false)
         // The claimant goes away: its claim goes with it, and the next screen mounts and casts.
         cast.releaseClaim("xc7keR2piUM", owner: Self.owner)
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
         #expect(cast.claimForCast(videoId: "other-video", owner: Self.otherOwner, isOfflinePlayback: false))
     }
 
@@ -229,7 +229,7 @@ struct CastSessionTests {
         cast.sessionDidBegin(deviceName: "Living Room TV")
         #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner,
                                   isOfflinePlayback: true) == false)
-        #expect(cast.castingVideoId == nil, "an offline screen must not even take the stamp")
+        #expect(cast.castingClaim?.videoId == nil, "an offline screen must not even take the stamp")
 
         cast.sessionDidEnd()
         #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner,
@@ -243,7 +243,7 @@ struct CastSessionTests {
         cast.sessionDidBegin(deviceName: "Living Room TV")
         #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
         cast.releaseClaim("other-video", owner: Self.otherOwner)
-        #expect(cast.castingVideoId == "xc7keR2piUM")
+        #expect(cast.castingClaim?.videoId == "xc7keR2piUM")
     }
 
     // MARK: - Part B fix round 1
@@ -262,11 +262,11 @@ struct CastSessionTests {
 
         // The queue advanced: the screen plays another video now, the stamp still names the claim.
         cast.releaseClaim("other-video", owner: Self.owner)
-        #expect(cast.castingVideoId == "xc7keR2piUM",
+        #expect(cast.castingClaim?.videoId == "xc7keR2piUM",
                 "an advanced-to id must never release a claim taken for another video")
 
         cast.releaseClaim("xc7keR2piUM", owner: Self.owner)
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
         #expect(cast.claimForCast(videoId: "other-video", owner: Self.owner, isOfflinePlayback: false),
                 "the next video opened during the same session must be able to claim it")
     }
@@ -284,7 +284,7 @@ struct CastSessionTests {
         cast.sessionWillEnd(position: 300)
 
         cast.releaseClaim("xc7keR2piUM", owner: Self.owner)
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
         #expect(cast.lastStreamPosition == 300, "the hand-back still needs the receiver's position")
     }
 
@@ -582,15 +582,15 @@ struct CastSessionTests {
         cast.sessionDidResume(deviceName: "Living Room TV")
         #expect(cast.isSessionActive)
         #expect(cast.connectedDeviceName == "Living Room TV")
-        #expect(cast.castingVideoId == "xc7keR2piUM", "a resumed session is the same session")
-        #expect(cast.loadedVideoId == "xc7keR2piUM", "the receiver kept playing across the suspension")
+        #expect(cast.castingClaim?.videoId == "xc7keR2piUM", "a resumed session is the same session")
+        #expect(cast.loadedClaim?.videoId == "xc7keR2piUM", "the receiver kept playing across the suspension")
         #expect(cast.lastStreamPosition == 240)
         #expect(cast.lastLoadFailure?.device == "Living Room TV", "an unread failure is still owed")
 
         // A genuinely new session still inherits nothing.
         cast.sessionDidBegin(deviceName: "Kitchen TV")
-        #expect(cast.castingVideoId == nil)
-        #expect(cast.loadedVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
+        #expect(cast.loadedClaim?.videoId == nil)
         #expect(cast.lastStreamPosition == nil)
         #expect(cast.lastLoadFailure == nil)
     }
@@ -626,7 +626,7 @@ struct CastSessionTests {
 
         // B's own hand-back spends both.
         cast.finishClaim("other-video", owner: Self.owner)
-        #expect(cast.loadedVideoId == nil)
+        #expect(cast.loadedClaim?.videoId == nil)
         #expect(cast.receiverPosition(for: "other-video", owner: Self.owner) == nil)
     }
 
@@ -651,45 +651,28 @@ struct CastSessionTests {
         }
     }
 
-    /// A limiter refusal is not a dead stream. When the re-resolve a near-expiry URL asked for is
-    /// turned away, the URL the phone is playing is still the best thing we have — casting it is
-    /// strictly better than a banner for a stream that works, AS LONG AS it can still reach the end
-    /// of the video (AC-P2-3): 120 s of lifetime left over a 30 s video clears the bound.
-    @Test func aRefusedCastResolveFallsBackToTheStreamAlreadyPlaying() async {
+    /// A limiter refusal is not a dead stream: when the re-resolve a near-expiry URL asked for is
+    /// turned away, the URL the phone is playing is still the best thing we have — casting it beats
+    /// a banner for a stream that works, AS LONG AS it can still reach the end of the video. The
+    /// bound is what makes that safe: nothing re-resolves for the receiver (`CastController`
+    /// publishes, it does not drive), so a URL that dies mid-playback dies there with no recovery
+    /// and no banner. 120 s of lifetime carries a 30 s video, not a 600 s one — and an unknown
+    /// duration is never covered, because guessing in the receiver's favour guesses at exactly this
+    /// failure.
+    @Test(arguments: [(30, true), (600, false), (nil, false)] as [(Int?, Bool)])
+    func aRefusedCastResolveFallsBackOnlyToAStreamThatOutlivesTheVideo(
+        durationSeconds: Int?, expectMedia: Bool
+    ) async {
         let resolver = RecordingResolver(.hls)
         resolver.expiresIn = 120
-        let vm = makeCastModel(resolver, args: PlayerArgs(videoId: Self.claimed, durationSeconds: 30))
+        let vm = makeCastModel(resolver, args: PlayerArgs(videoId: Self.claimed,
+                                                          durationSeconds: durationSeconds))
         await vm.open()
         resolver.outcome = .failure(.cooldown(until: Date().addingTimeInterval(30)))
         let media = await vm.castMedia()
         #expect(resolver.calls.count == 2)
-        #expect(media != nil, "a refused refresh must not throw away a stream that still plays")
-    }
-
-    /// AC-P2-3: the fallback is BOUNDED. Nothing re-resolves for the receiver — `CastController`
-    /// publishes, it does not drive — so a near-expiry URL handed to a TV dies mid-playback with no
-    /// recovery and no banner. A stream that cannot outlive what is left to play is not a fallback,
-    /// it is a doomed load: refuse it and take the honest failure path instead.
-    @Test func aRefusedCastResolveRefusesAStreamThatWouldDieMidPlayback() async {
-        let resolver = RecordingResolver(.hls)
-        resolver.expiresIn = 120
-        let vm = makeCastModel(resolver, args: PlayerArgs(videoId: Self.claimed, durationSeconds: 600))
-        await vm.open()
-        resolver.outcome = .failure(.cooldown(until: Date().addingTimeInterval(30)))
-        #expect(await vm.castMedia() == nil,
-                "120 s of URL left cannot carry 600 s of video on a receiver that cannot re-resolve")
-    }
-
-    /// The unknown-duration row: with no duration there is nothing to compare the remaining
-    /// lifetime against, and guessing in the receiver's favour is guessing the failure the bound
-    /// exists to prevent. Unknown counts as NOT covered.
-    @Test func aRefusedCastResolveWithAnUnknownDurationIsNeverCovered() async {
-        let resolver = RecordingResolver(.hls)
-        resolver.expiresIn = 120
-        let vm = makeCastModel(resolver, args: PlayerArgs(videoId: Self.claimed))
-        await vm.open()
-        resolver.outcome = .failure(.cooldown(until: Date().addingTimeInterval(30)))
-        #expect(await vm.castMedia() == nil, "an unknown duration cannot clear the bound")
+        #expect((media != nil) == expectMedia,
+                "120 s of URL left against \(durationSeconds.map(String.init) ?? "an unknown") s of video")
     }
 
     /// The bound itself, at its edges: 30 s into a 600 s video the receiver still has 570 s to
@@ -742,7 +725,7 @@ struct CastSessionTests {
         vm.reconcile(.loadFailed)
         #expect(vm.banner?.text.contains("Living Room TV") == true, "the existing cast_error_format")
         #expect(vm.claimedVideoId == nil, "a spent claim would block this screen's own next cast")
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
     }
 
     /// The other direction: a refusal with nothing castable behind it still surfaces. The embed
@@ -778,7 +761,7 @@ struct CastSessionTests {
 
     /// R4-2 end to end. `swapArgs` reset `currentTime` and the per-stream flags but neither the
     /// claim nor the pause, so after an Up Next tap mid-cast the phone played B while
-    /// `claimedVideoId == castingVideoId == loadedVideoId == A` — the session's end then seeked B
+    /// `claimedVideoId`, `castingClaim` and `loadedClaim` all still named A — the session's end then seeked B
     /// to A's receiver position and played it, and nothing ever cast B, leaving phone and TV on
     /// different videos for the rest of the session.
     @Test func anAdvanceDuringACastMovesTheClaimToTheNewVideoAndReCastsIt() async {
@@ -792,7 +775,7 @@ struct CastSessionTests {
         await settle()
         #expect(vm.claimedVideoId == "a")
         #expect(vm.pausedForCast)
-        #expect(cast.castingVideoId == "a")
+        #expect(cast.castingClaim?.videoId == "a")
         // the receiver took A (`load()` itself needs a `GCKCastContext`)
         cast.recordLoad("a", owner: vm.castOwner)
 
@@ -800,7 +783,7 @@ struct CastSessionTests {
         await settle()
         #expect(vm.args.videoId == "b")
         #expect(vm.claimedVideoId == "b", "the claim follows the video the screen actually plays")
-        #expect(cast.castingVideoId == "b", "A's stamp was given back and B took it")
+        #expect(cast.castingClaim?.videoId == "b", "A's stamp was given back and B took it")
         #expect(vm.pausedForCast, "B is the video being cast now, so B's player is the paused one")
 
         // The session ends carrying A's receiver position. B must not inherit it -- though B's own
@@ -814,7 +797,7 @@ struct CastSessionTests {
         vm.reconcile(.sessionChanged)
         #expect(vm.currentTime == 0, "B must never be seeked to A's receiver position")
         #expect(vm.claimedVideoId == nil, "the claim is spent either way (`.dropClaim` here, not a hand-back)")
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
     }
 
     /// R4-5 end to end: another screen cast its own video and popped, so the session is live, the
@@ -833,13 +816,13 @@ struct CastSessionTests {
 
         // Off screen: the stamp goes back so the next video can claim it, the claim stays.
         vm.reconcile(.disappear)
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
         #expect(vm.claimedVideoId == Self.claimed)
 
         cast.recordLoad(Self.other, owner: Self.otherOwner)
         vm.reconcile(.appear)
         await settle()
-        #expect(cast.castingVideoId == Self.claimed, "a live free session is this claimant's to use")
+        #expect(cast.castingClaim?.videoId == Self.claimed, "a live free session is this claimant's to use")
         #expect(vm.pausedForCast, "a hand-back would have spent the pause and resumed the phone")
     }
 
@@ -868,7 +851,7 @@ struct CastSessionTests {
         await settle()
         #expect(second.claimedVideoId == nil, "a same-video screen must claim nothing")
         #expect(second.pausedForCast == false, "two paused players is two resumes: double audio")
-        #expect(cast.castingVideoId == Self.claimed)
+        #expect(cast.castingClaim?.videoId == Self.claimed)
         #expect(first.pausedForCast, "the owner's cast survives the other screen's reactions")
         #expect(cast.receiverPosition(for: Self.claimed, owner: second.castOwner) == nil,
                 "the receiver's position belongs to the screen whose load it played")
@@ -906,7 +889,7 @@ struct CastSessionTests {
                 "consumed, so a second failure on the same device still announces itself")
         #expect(vm.pausedForCast == false, "the phone keeps playing under the banner")
         #expect(vm.claimedVideoId == nil)
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
     }
 
     /// The other half of the same identity rule: a load the receiver REJECTED means nothing of ours
@@ -919,7 +902,7 @@ struct CastSessionTests {
         #expect(cast.claimForCast(videoId: "xc7keR2piUM", owner: Self.owner, isOfflinePlayback: false))
         cast.recordLoad("xc7keR2piUM", owner: Self.owner)
         cast.reportLoadFailure(claim: CastClaim(videoId: "xc7keR2piUM", owner: Self.owner))
-        #expect(cast.loadedVideoId == nil)
+        #expect(cast.loadedClaim?.videoId == nil)
 
         cast.sessionWillEnd(position: 77)
         #expect(cast.receiverPosition(for: "xc7keR2piUM", owner: Self.owner) == nil)
@@ -976,7 +959,7 @@ struct CastSessionTests {
         #expect(vm.pausedForCast)
 
         vm.reconcile(.disappear)                        // a tab switch: the stamp goes back
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
         #expect(vm.claimedVideoId == Self.claimed)
 
         cast.reportLoadFailure(claim: CastClaim(videoId: Self.claimed, owner: vm.castOwner))
@@ -1107,7 +1090,7 @@ struct CastSessionTests {
         vm.reconcile(.videoStarted)                     // walk 1 suspends inside `castMedia()`
         await resolver.waitUntilCalled(count: 2)
         vm.reconcile(.disappear)                        // off screen: the stamp goes back
-        #expect(cast.castingVideoId == nil)
+        #expect(cast.castingClaim?.videoId == nil)
 
         vm.reconcile(.appear)                           // the return leg
         await resolver.waitUntilCalled(count: 3)
@@ -1121,7 +1104,7 @@ struct CastSessionTests {
             if vm.pausedForCast { break }
             try? await Task.sleep(for: .milliseconds(1))
         }
-        #expect(cast.castingVideoId == Self.claimed, "the return leg has to actually cast")
+        #expect(cast.castingClaim?.videoId == Self.claimed, "the return leg has to actually cast")
         #expect(vm.claimedVideoId == Self.claimed)
         #expect(vm.pausedForCast, "and pause the phone it cast from")
     }
@@ -1144,7 +1127,7 @@ struct CastSessionTests {
     /// Cubic R6-4: the failure belongs to ONE video, and only that video's stamp is its to clear.
     /// Screen A casts and goes off-screen (stamp released, receiver still playing A); screen B
     /// mounts on an embed rung, `startCast` finds nothing castable and reports the failure.
-    /// Clearing `loadedVideoId` unconditionally erased A's presence on the receiver, so A returning
+    /// Clearing `loadedClaim` unconditionally erased A's presence on the receiver, so A returning
     /// re-resolved and reloaded it at the phone's stale position — and the hand-back then handed
     /// back a position the receiver never had.
     @Test func aLoadFailureLeavesAnotherScreensVideoOnTheReceiver() {
@@ -1158,7 +1141,7 @@ struct CastSessionTests {
         // B has nothing castable
         cast.reportLoadFailure(claim: CastClaim(videoId: Self.other, owner: Self.otherOwner))
 
-        #expect(cast.loadedVideoId == Self.claimed,
+        #expect(cast.loadedClaim?.videoId == Self.claimed,
                 "another screen's failure must not erase what the receiver is actually playing")
         cast.sessionWillEnd(position: 77)
         #expect(cast.receiverPosition(for: Self.claimed, owner: Self.owner) == 77)

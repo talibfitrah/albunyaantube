@@ -107,11 +107,19 @@ struct FitrahTubeApp: App {
         // and fail-open: an unreachable gate keeps every row (`OfflineSweep.decide`).
         Task { await container.offlineManager.sweep() }
         Task {
-            // R5-1, fix round 1: `refresh()` is the launch path's one remaining network call, and
-            // the screenshot rig must make none. `current()` still runs — it reads the persisted
-            // last-known-good or InnerTubeKit's bundled default, no transport — so the kill-switch
-            // and the forced-update decision below behave exactly as they do live.
-            if Self.shouldFetchRemoteConfig(isFixture: container.isFixture, due: due) {
+            // `refresh()` is the launch path's one remaining network call, and the screenshot rig
+            // must make none. `current()` still runs — it reads the persisted last-known-good or
+            // InnerTubeKit's bundled default, no transport — so the kill-switch and the
+            // forced-update decision below behave exactly as they do live.
+            //
+            // `isFixture` is DEBUG-only (there is no fixture container in Release), so Release has
+            // only the `due` half to consult.
+            #if DEBUG
+            let shouldFetch = Self.shouldFetchRemoteConfig(isFixture: container.isFixture, due: due)
+            #else
+            let shouldFetch = due
+            #endif
+            if shouldFetch {
                 await container.innerTube.remoteConfig.refresh()
             }
             let config = await container.innerTube.remoteConfig.current()
@@ -138,10 +146,10 @@ struct FitrahTubeApp: App {
         }
     }
 
-    /// RR-m6: the launch path's ONE remaining network call, as a decision instead of an inline
-    /// `if` — the screenshot rig must make none (R5-1), and the skip was pinned by nothing.
-    /// `current()` runs either way (persisted last-known-good, else InnerTubeKit's bundled
-    /// default, no transport), so the kill-switch and forced-update decisions are unaffected.
+    /// The launch path's ONE remaining network call, as a decision instead of an inline `if` so the
+    /// skip is pinned: the screenshot rig must make no network call at all. `current()` runs either
+    /// way (persisted last-known-good, else InnerTubeKit's bundled default, no transport), so the
+    /// kill-switch and forced-update decisions are unaffected.
     static func shouldFetchRemoteConfig(isFixture: Bool, due: Bool) -> Bool { due && !isFixture }
 
     /// CF-B1-13: the spacing decision, extracted so it is testable without a running scene.

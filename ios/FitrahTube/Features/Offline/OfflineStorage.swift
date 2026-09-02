@@ -50,11 +50,20 @@ enum OfflineStorage {
     /// moves, add an `NSHomeDirectory()` fallback; until then it's a
     /// fallback nothing can reach.
     ///
-    /// `base` is required, with no default: the default used to be a SECOND spelling of
+    /// `base` is required, with no default: a default would be a SECOND spelling of
     /// `AppContainer.offlineBase`, which documents itself as the ONE spelling of this directory.
     nonisolated static func availableBytes(base: URL) -> Int64 {
         let values = try? base.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         return values?.volumeAvailableCapacityForImportantUsage ?? 0
+    }
+
+    /// The Saved footer's and Settings' Storage row's shared read. Both cache the capacity in
+    /// `@State` off a `.task`, because their `body` re-runs on every persisted progress tick while
+    /// a save is running and a stat of the volume twice a second is not free; both still need a
+    /// real number on the FIRST frame, before that task lands, or the row renders
+    /// "Zero KB available".
+    nonisolated static func availableBytes(cached: Int64?, base: URL) -> Int64 {
+        cached ?? availableBytes(base: base)
     }
 
     /// The Settings Storage row's value — "%@ used • %@ available" (no count; the Saved screen's

@@ -185,12 +185,8 @@ struct SettingsView: View {
     @State private var showQualityPicker = false
     /// Phase 3 Task 6 (CF-B3-11): Clear saved videos requires an explicit confirm.
     @State private var showClearOfflineConfirm = false
-    /// Free-space capacity, read once per appearance instead of once per `body` — the same move
-    /// `SavedScreen` makes for its footer. The Storage row computed it inline, and `body` re-runs
-    /// on every persisted progress tick while a save is running, so a
-    /// `volumeAvailableCapacityForImportantUsage` syscall fired twice a second for the whole
-    /// download. Nil only until the first `.task` lands; the row falls back to a single read so the
-    /// first frame never shows "Zero KB available".
+    /// Free-space capacity, read once per appearance instead of once per `body` — see
+    /// `OfflineStorage.availableBytes(cached:base:)`, which the Storage row reads it through.
     @State private var availableBytes: Int64?
     /// task-14 (`screenshots/task-14/iphone-17/settings-en-light-a11y3-portrait.png`): the row
     /// symbol scales with Dynamic Type but its 28 pt circular plate did not, so at
@@ -279,7 +275,7 @@ struct SettingsView: View {
         case .storage:
             valueRow(row, value: OfflineStorage.storageValue(
                 used: OfflineStorage.usedBytes(items: container.offlineStore.items),
-                available: availableBytes ?? OfflineStorage.availableBytes(base: container.offlineBase),
+                available: OfflineStorage.availableBytes(cached: availableBytes, base: container.offlineBase),
                 locale: locale))
         case .clearOffline:
             actionRow(row, value: nil) { showClearOfflineConfirm = true }

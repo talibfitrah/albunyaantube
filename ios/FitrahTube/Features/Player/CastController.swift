@@ -35,7 +35,7 @@ import SwiftUI
     /// hook, and a container that never did (every fixture container) reports false forever.
     private(set) var castAvailable = false
 
-    /// A Cast session is connected. The `PlayerScreen` that owns `castingVideoId` reacts to the
+    /// A Cast session is connected. The `PlayerScreen` that owns `castingClaim` reacts to the
     /// transitions: true -> fresh resolve + load + pause local; false -> seek local to
     /// `lastStreamPosition` and resume.
     private(set) var isSessionActive = false
@@ -46,9 +46,9 @@ import SwiftUI
     /// purpose: SwiftUI runs `.onChange` after the callback returns, so the end reaction still has
     /// to be able to identify its owner.
     ///
-    /// AC-P2-1: the OWNER, not just the video. Two mounted screens on the same video read a
-    /// videoId-only stamp as theirs alike, so both paused for the cast, both loaded the receiver
-    /// and both resumed on hand-back.
+    /// The OWNER, not just the video: two mounted screens on the same video would read a
+    /// videoId-only stamp as theirs alike, and both would pause for the cast, load the receiver
+    /// and resume on hand-back.
     ///
     /// ponytail: first-writer-wins. With two players mounted (CF-D-12's stacked case) the screen
     /// whose `.onChange` SwiftUI runs first claims the session, and that order is not defined.
@@ -56,9 +56,6 @@ import SwiftUI
     /// naming the visible one needs a visibility signal SwiftUI does not reliably give a pushed
     /// destination on an unselected tab.
     private(set) var castingClaim: CastClaim?
-
-    /// The video half of the stamp, for readers that only need to know WHAT is claimed.
-    var castingVideoId: String? { castingClaim?.videoId }
 
     /// The receiver's `approximateStreamPosition`, sampled in `willEndSession` while the remote
     /// media client is still connected (by `didEndSession` it may already be gone), and published
@@ -74,13 +71,10 @@ import SwiftUI
     /// Cleared by a rejected load (nothing of ours landed), by a new session, and by the hand-back
     /// that spends it.
     ///
-    /// AC-P2-1 carries the owner here too: with two screens on the SAME video the videoId alone
-    /// cannot say whose load the receiver is playing, so the screen whose load was superseded would
-    /// hand its player the other screen's receiver position.
+    /// The owner belongs here too: with two screens on the SAME video the videoId alone cannot say
+    /// whose load the receiver is playing, so the screen whose load was superseded would hand its
+    /// player the other screen's receiver position.
     private(set) var loadedClaim: CastClaim?
-
-    /// The video half, same reason as `castingVideoId`.
-    var loadedVideoId: String? { loadedClaim?.videoId }
 
     /// The receiver currently connected, for the cast slot's accessibility value. `nil` when no
     /// session is up.
@@ -101,9 +95,9 @@ import SwiftUI
     /// Android swallows this failure; spec §10 says to surface it. Consumed and cleared by the
     /// screen that shows the banner.
     ///
-    /// R7-3: a VALUE per failure, not the device's name -- `PlayerScreen` watches this with
-    /// `.onChange`, and two failures on one receiver wrote the same name, so the second never fired
-    /// and its claimant stayed paused with the stamp held for the rest of the session.
+    /// A VALUE per failure, not the device's name -- `PlayerScreen` watches this with `.onChange`,
+    /// and two failures on one receiver would write the same name, so the second would never fire
+    /// and its claimant would stay paused with the stamp held for the rest of the session.
     var lastLoadFailure: CastLoadFailure?
 
     /// Held only until its delegate callback lands -- `GCKRequest.delegate` is weak and the
@@ -170,8 +164,8 @@ import SwiftUI
 
     /// Claims this session for `owner`'s `videoId`. `false` means another mounted `PlayerScreen`
     /// already owns it and this one must not resolve, load or pause anything -- including a screen
-    /// showing the SAME video (AC-P2-1), which is a non-owner like any other. The owner's own
-    /// re-claim on re-appear still succeeds.
+    /// showing the SAME video, which is a non-owner like any other. The owner's own re-claim on
+    /// re-appear still succeeds.
     @discardableResult
     func claimCastSource(videoId: String, owner: UUID) -> Bool {
         let claim = CastClaim(videoId: videoId, owner: owner)
@@ -187,9 +181,9 @@ import SwiftUI
     /// castable), and the claim is winnable. Claims as a side effect when it answers true, exactly
     /// like `claimCastSource`.
     ///
-    /// Casting used to hang off `.onChange(of: isSessionActive)` alone, which fires only on
-    /// transitions -- so connecting to a receiver and then opening another video left the phone
-    /// playing locally while the TV kept the old one.
+    /// Both callers are needed because `.onChange(of: isSessionActive)` fires only on transitions:
+    /// on its own it leaves the phone playing locally while the TV keeps the old video whenever the
+    /// receiver was connected before this video was opened.
     func claimForCast(videoId: String, owner: UUID, isOfflinePlayback: Bool) -> Bool {
         guard isSessionActive, !isOfflinePlayback else { return false }
         return claimCastSource(videoId: videoId, owner: owner)
@@ -228,10 +222,9 @@ import SwiftUI
     /// if what the receiver played was this screen's video -- a claimant handing back while another
     /// screen's video is on the receiver must not clear the position that belongs to that screen.
     ///
-    /// One call for both halves. They used to be two -- an unguarded stamp-only release on the
-    /// return leg and a clear-everything call on the session-end arm -- so which fields a hand-back
-    /// spent depended on which arm ran: a spent position could linger until the next session began,
-    /// and the other arm could clear a live claimant's.
+    /// One call for both halves, so which fields a hand-back spends never depends on which arm ran
+    /// it -- split into a stamp-only release and a clear-everything call, one arm leaves a spent
+    /// position lingering until the next session begins and the other clears a live claimant's.
     func finishClaim(_ videoId: String, owner: UUID) {
         let claim = CastClaim(videoId: videoId, owner: owner)
         if castingClaim == claim { castingClaim = nil }
@@ -291,7 +284,7 @@ import SwiftUI
         // the session ends would be just as SDK-dependent as one that never appears. One assignment
         // removes the dependency.
         miniControlsActive = false
-        // `castingVideoId`/`lastStreamPosition` deliberately survive: the owning screen's
+        // `castingClaim`/`lastStreamPosition` deliberately survive: the owning screen's
         // `.onChange` has not run yet and needs both. `finishClaim(_:)` clears them.
     }
 
@@ -354,18 +347,17 @@ import SwiftUI
     /// Both of the load-callback guards, as one pure decision over request ids.
     ///
     /// `GCKRequest.cancel()` aborts with `.cancelled` and tells the delegate
-    /// (`GCKRequest.h:23-24,142-148`), so `cancelLoadRequest()` fed its own abort straight into the
-    /// failure handler -- every second load raised "Couldn't play on {TV}" for a request the app
-    /// itself cancelled, and (via the Important-4 resume) restarted the phone's player while the
-    /// real load was still in flight. Neither guard subsumes the other: a SYNCHRONOUS abort arrives
+    /// (`GCKRequest.h:23-24,142-148`), so without the reason guard `cancelLoadRequest()` feeds its
+    /// own abort straight into the failure handler: every second load raises "Couldn't play on
+    /// {TV}" for a request the app itself cancelled, and resumes the phone's player while the real
+    /// load is still in flight. Neither guard subsumes the other: a SYNCHRONOUS abort arrives
     /// while `loadRequest` is still the cancelled request (identity passes, only the reason saves
     /// it), an ASYNCHRONOUS one arrives after the new request is stored (only identity saves it --
     /// and it is also what stops the handler nil-ing the NEW request's only strong reference, since
     /// `GCKRequest.delegate` is weak).
     ///
-    /// That identity guard used to live in `finishLoad` AHEAD of this helper, so no test could
-    /// ever watch it answer false -- deleting it left every test green. Taking the current id as an
-    /// argument is what makes it testable.
+    /// Taking the current id as an ARGUMENT is what makes the identity guard testable: inside
+    /// `finishLoad`, ahead of this helper, no test can watch it answer false.
     static func loadCallbackOutcome(callbackID: GCKRequestID, currentID: GCKRequestID?,
                                     reportFailure: Bool, cancelledByUs: Bool) -> LoadCallbackOutcome {
         guard currentID == callbackID else { return .ignore }
@@ -377,20 +369,20 @@ import SwiftUI
     /// the same banner rather than copy of its own -- and, per the copy rule, it says WHAT, never
     /// why.
     ///
-    /// Cubic R6-4: `claim` is the load that failed, and only THAT claim is this call's to clear.
-    /// Screen A casts and goes off-screen (stamp released, receiver still playing A); screen B
-    /// mounts on an embed rung, gets no media and lands here — clearing `loadedClaim`
-    /// unconditionally erased A's presence on the receiver, so A returning re-resolved and reloaded
-    /// it at the phone's stale `currentTime` and the hand-back lost the receiver's position.
+    /// `claim` is the load that failed, and only THAT claim is this call's to clear. Screen A casts
+    /// and goes off-screen (stamp released, receiver still playing A); screen B mounts on an embed
+    /// rung, gets no media and lands here — clearing `loadedClaim` unconditionally would erase A's
+    /// presence on the receiver, so A returning would re-resolve and reload it at the phone's stale
+    /// `currentTime` and the hand-back would lose the receiver's position.
     func reportLoadFailure(claim: CastClaim?) {
         // Nothing of OURS ended up on the receiver -- so the position sampled at the next
         // disconnect belongs to whatever the receiver kept playing, and the screen whose load
         // failed must not reclaim on the strength of a load that never landed.
         if loadedClaim == claim { loadedClaim = nil }
-        // R7-3: published even when there is no device to name. The banner is optional (the
-        // claimant skips it for a nil name -- "Couldn't play on " is not worth saying); RELEASING
-        // the claim and the pause is not, and a silent failure is exactly what left the phone
-        // paused with the stamp held for the rest of the session.
+        // Published even when there is no device to name. The banner is optional (the claimant
+        // skips it for a nil name -- "Couldn't play on " is not worth saying); RELEASING the claim
+        // and the pause is not, and a silent failure leaves the phone paused with the stamp held
+        // for the rest of the session.
         lastLoadFailure = CastLoadFailure(device: currentDeviceLabel(), claim: claim)
     }
 
@@ -402,9 +394,9 @@ import SwiftUI
         return Self.deviceLabel(friendlyName: device.friendlyName, modelName: device.modelName)
     }
 
-    /// R7-17: `GCKDevice.friendlyName` is nullable (and empty on some receivers), and a load
-    /// rejected by an unnamed device used to go unreported entirely. `modelName` is the SDK's own
-    /// second-best name; "Chromecast" is the product name every one of these devices answers to --
+    /// `GCKDevice.friendlyName` is nullable (and empty on some receivers), so a load rejected by an
+    /// unnamed device would otherwise go unreported. `modelName` is the SDK's own second-best name;
+    /// "Chromecast" is the product name every one of these devices answers to --
     /// a proper noun, not user-facing copy, so it needs no string key. Static and pure: `GCKDevice`
     /// cannot be constructed in a test, same reason `loadCallbackOutcome` is shaped this way.
     static func deviceLabel(friendlyName: String?, modelName: String?) -> String {
@@ -424,9 +416,9 @@ extension CastController: GCKSessionManagerListener {
 
     /// A RESUMED session is the SAME session, not a new one. `suspendSessionsWhenBackgrounded`
     /// defaults to YES (`GCKCastOptions.h:92-100`), so every Home-press and return during a cast
-    /// fires suspend/resume -- and routing this into `sessionDidBegin` cleared the claim and the
-    /// receiver's position on a session that never went anywhere, so the eventual disconnect found
-    /// no stamp and the phone stayed paused with no seek.
+    /// fires suspend/resume -- and routing this into `sessionDidBegin` would clear the claim and
+    /// the receiver's position on a session that never went anywhere, leaving the eventual
+    /// disconnect with no stamp and the phone paused with no seek.
     ///
     /// `didSuspendSession` is deliberately NOT implemented: the receiver keeps playing across the
     /// suspension, so the claim, the position and `isSessionActive` must all stay exactly as they

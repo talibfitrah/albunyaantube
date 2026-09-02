@@ -192,27 +192,6 @@ struct OfflinePlaybackTests {
         nonisolated(unsafe) var answer: GateAnswer = .allowed
     }
 
-    /// The sweep never moves bytes; the kill-switch tests only need to know whether the engine
-    /// was ever asked to.
-    private nonisolated final class NullEngine: OfflineEngine, @unchecked Sendable {
-        private let lock = NSLock()
-        private var _starts: [String] = []
-        private var _resumes: [String] = []
-        var starts: [String] { lock.withLock { _starts } }
-        var resumes: [String] { lock.withLock { _resumes } }
-        let events: AsyncStream<OfflineDownloadEvent> = AsyncStream { _ in }
-        func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data? {
-            lock.withLock { _starts.append(id) }
-            return nil
-        }
-        func resume(id: String, resumeData: Data, allowsCellular: Bool) async {
-            lock.withLock { _resumes.append(id) }
-        }
-        func pause(id: String) async -> Data? { nil }
-        func cancel(id: String) async {}
-        func liveIds() async -> Set<String> { [] }
-    }
-
     /// The remote kill-switch as the manager reads it — live, so a test can flip it mid-run
     /// (the `GateLog` idiom).
     private final class KillSwitch: @unchecked Sendable {
@@ -220,7 +199,10 @@ struct OfflinePlaybackTests {
         init(_ enabled: Bool) { self.enabled = enabled }
     }
 
-    private func makeManager(_ rig: Rig, gate: GateLog, engine: NullEngine = NullEngine(),
+    /// The sweep never moves bytes; these tests only need to know whether the engine was ever
+    /// asked to. `FakeOfflineEngine` yields no events unless a test emits one, so it is that
+    /// engine too.
+    private func makeManager(_ rig: Rig, gate: GateLog, engine: FakeOfflineEngine = FakeOfflineEngine(),
                              downloadsEnabled: @escaping @Sendable () async -> Bool = { true },
                              now: Date = Date()) -> OfflineManager {
         OfflineManager(store: rig.store, engine: engine, resolver: RecordingResolver(.hls),
@@ -247,33 +229,17 @@ struct OfflinePlaybackTests {
         #expect(!fileExists(rig, item))
     }
 
-    /// Fork C: an admin flipping `offlineAllowed` off is the same-day remedy path.
-    @Test func theSweepDeletesAGateRevokedRow() async throws {
+    /// The one-row verdict table. `.notAllowed` is fork C's same-day remedy (an admin flipping
+    /// `offlineAllowed` off); `.unreachable` is the fail-open half (CF-D-3) — never mass-delete a
+    /// library because the phone was offline. The `.gone` row is above, with the fork-D arm.
+    @Test(arguments: [(GateAnswer.notAllowed, false), (.allowed, true), (.unreachable, true)])
+    func theSweepKeepsARowOnlyWhenTheGateSaysSo(answer: GateAnswer, keeps: Bool) async throws {
         let rig = makeRig(); defer { rig.cleanUp() }
         let item = try completed(rig, ext: "m4a", audioOnly: true)
-        let gate = GateLog(); gate.answer = .notAllowed
+        let gate = GateLog(); gate.answer = answer
         await makeManager(rig, gate: gate).sweep()
-        #expect(rig.store.item(id: item.id) == nil)
-        #expect(!fileExists(rig, item))
-    }
-
-    @Test func theSweepKeepsAnAllowedRow() async throws {
-        let rig = makeRig(); defer { rig.cleanUp() }
-        let item = try completed(rig, ext: "m4a", audioOnly: true)
-        let gate = GateLog(); gate.answer = .allowed
-        await makeManager(rig, gate: gate).sweep()
-        #expect(rig.store.item(id: item.id) != nil)
-        #expect(fileExists(rig, item))
-    }
-
-    /// Fail-open: never mass-delete a library because the phone was offline (CF-D-3).
-    @Test func theSweepKeepsAnUnreachableRow() async throws {
-        let rig = makeRig(); defer { rig.cleanUp() }
-        let item = try completed(rig, ext: "m4a", audioOnly: true)
-        let gate = GateLog(); gate.answer = .unreachable
-        await makeManager(rig, gate: gate).sweep()
-        #expect(rig.store.item(id: item.id) != nil)
-        #expect(fileExists(rig, item))
+        #expect((rig.store.item(id: item.id) != nil) == keeps)
+        #expect(fileExists(rig, item) == keeps)
     }
 
     /// TTL first, before any network: an expired row is deleted WITHOUT a gate call.
@@ -377,7 +343,7 @@ struct OfflinePlaybackTests {
                                thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
                                status: OfflineStatus.failed.rawValue, errorCode: "NETWORK")
         try rig.store.insert(item)
-        let engine = NullEngine()
+        let engine = FakeOfflineEngine()
         let manager = makeManager(rig, gate: GateLog(), engine: engine, downloadsEnabled: { false })
         await manager.retry(item.id)
         #expect(rig.store.item(id: item.id)?.status == OfflineStatus.failed.rawValue)
@@ -390,7 +356,7 @@ struct OfflinePlaybackTests {
                                thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
                                status: OfflineStatus.paused.rawValue, resumeData: Data("RD".utf8))
         try rig.store.insert(item)
-        let engine = NullEngine()
+        let engine = FakeOfflineEngine()
         let manager = makeManager(rig, gate: GateLog(), engine: engine, downloadsEnabled: { false })
         await manager.resume(item.id)
         #expect(rig.store.item(id: item.id)?.status == OfflineStatus.paused.rawValue)
@@ -403,14 +369,14 @@ struct OfflinePlaybackTests {
                                thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
                                status: OfflineStatus.failed.rawValue, errorCode: "NETWORK")
         try rig.store.insert(item)
-        let engine = NullEngine()
+        let engine = FakeOfflineEngine()
         let manager = makeManager(rig, gate: GateLog(), engine: engine, downloadsEnabled: { true })
         await manager.retry(item.id)
         for _ in 0..<2000 {
             if !engine.starts.isEmpty { break }
             try? await Task.sleep(for: .milliseconds(1))
         }
-        #expect(engine.starts == [item.id])
+        #expect(engine.starts.map(\.id) == [item.id])
     }
 
     /// Cubic P3-1: a row saved during an off-window stays queued, and NOTHING observed the switch
@@ -423,7 +389,7 @@ struct OfflinePlaybackTests {
                                thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
                                status: OfflineStatus.queued.rawValue)
         try rig.store.insert(item)
-        let engine = NullEngine()
+        let engine = FakeOfflineEngine()
         let killSwitch = KillSwitch(false)
         let manager = makeManager(rig, gate: GateLog(), engine: engine,
                                   downloadsEnabled: { killSwitch.enabled })
@@ -436,7 +402,7 @@ struct OfflinePlaybackTests {
             if !engine.starts.isEmpty { break }
             try? await Task.sleep(for: .milliseconds(1))
         }
-        #expect(engine.starts == [item.id])
+        #expect(engine.starts.map(\.id) == [item.id])
     }
 
     // MARK: - Sweep cadence

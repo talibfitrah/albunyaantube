@@ -72,15 +72,16 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private let userDefaults: UserDefaults
     private let modelContainer: ModelContainer
     private let apiBaseURL: URL
-    /// What `offlineGate` sends over. Not private, and not a detail: R5-1: `fake()` used to build
-    /// the gate client over the network against `AppConfig.apiBaseURL`, so `AppContainerTests` pins
-    /// which transport a fixture container actually got.
+    /// What `offlineGate` sends over. Not private, and not a detail: a fixture container's gate
+    /// client must never reach the network, so `AppContainerTests` pins which transport it got.
     let gateTransport: any HTTPTransport
+    #if DEBUG
     /// A previews/tests/screenshot-rig container (`fake()`), whose offline stack must reach the
     /// network NOWHERE: the gate transport is canned, `offlineEngine`/`offlineResolver` are parked
-    /// stubs, and `FitrahTubeApp` skips the remote-config fetch. Always false in Release — nothing
-    /// outside the `#if DEBUG` `fake()` sets it.
+    /// stubs, and `FitrahTubeApp` skips the remote-config fetch. DEBUG-only, with it the whole
+    /// fixture surface: nothing outside `fake()` can set it, so Release has no fixture path at all.
     let isFixture: Bool
+    #endif
 
     private(set) lazy var settings: any SettingsStore = UserDefaultsSettingsStore(defaults: userDefaults)
     private(set) lazy var filters: any FilterStore = UserDefaultsFilterStore(defaults: userDefaults)
@@ -112,22 +113,25 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// The download engine and the resolver `offlineManager` gets, as their own properties so
     /// `AppContainerTests` can name what a fixture container was actually handed.
     ///
-    /// R5-1, fix round 1: stubbing the GATE closed the deletion vector but not the constraint —
-    /// `fake()` still built `LiveStreamResolver` over the real InnerTubeKit resolver, so a
-    /// `-fitrah-seed-offline` launch's `.queued` seed row went straight through `schedule()` →
-    /// `begin` → a REAL InnerTube resolve for `seed-offline-0`, which failed and flipped the row to
-    /// `.failed` — the screenshot's caption and action buttons decided by the network, which is the
-    /// instability R5-1 exists to remove, just relocated from the gate to the resolver.
-    private(set) lazy var offlineEngine: any OfflineEngine = isFixture
-        ? ParkedOfflineEngine()
-        : {
-            let configuration = URLSessionConfiguration.background(withIdentifier: ProgressiveEngine.backgroundSessionIdentifier)
-            configuration.sessionSendsLaunchEvents = true
-            return ProgressiveEngine(directory: OfflineStorage.directoryURL(base: offlineBase), configuration: configuration)
-        }()
-    private(set) lazy var offlineResolver: any StreamResolving = isFixture
-        ? ParkedStreamResolver()
-        : LiveStreamResolver(resolver: resolver)
+    /// A fixture's RESOLVER has to be parked as well as its gate: over the real InnerTubeKit
+    /// resolver a `-fitrah-seed-offline` launch's `.queued` seed row goes straight through
+    /// `schedule()` → `begin` → a REAL InnerTube resolve for `seed-offline-0`, which fails and
+    /// flips the row to `.failed` — the screenshot's caption and action buttons decided by the
+    /// network.
+    private(set) lazy var offlineEngine: any OfflineEngine = { () -> any OfflineEngine in
+        #if DEBUG
+        if isFixture { return ParkedOfflineEngine() }
+        #endif
+        let configuration = URLSessionConfiguration.background(withIdentifier: ProgressiveEngine.backgroundSessionIdentifier)
+        configuration.sessionSendsLaunchEvents = true
+        return ProgressiveEngine(directory: OfflineStorage.directoryURL(base: offlineBase), configuration: configuration)
+    }()
+    private(set) lazy var offlineResolver: any StreamResolving = { () -> any StreamResolving in
+        #if DEBUG
+        if isFixture { return ParkedStreamResolver() }
+        #endif
+        return LiveStreamResolver(resolver: resolver)
+    }()
 
     /// Phase 3 Task 8: the app's ONE Cast seam. `lazy` like the stores above — building it is free
     /// and side-effect-free; `setUp()` (from `AppDelegate.didFinishLaunchingWithOptions`, through
@@ -236,7 +240,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         self.modelContainer = modelContainer
         self.apiBaseURL = apiBaseURL
         self.injectedBrowse = browse
+        #if DEBUG
         self.isFixture = isFixture
+        #endif
         self.degradedHeader = degradedHeader
         self.playlistHeader = playlistHeader
         self.gateTransport = gateTransport
@@ -286,14 +292,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // touch them pay nothing (`lazy`); one that does gets `BackendAvailabilityGate`'s fail-open
         // behaviour against an unreachable host instead of a crash.
         //
-        // `gateTransport`: Cubic R5-1. This used to build the REAL `OfflineGateClient` against
-        // `AppConfig.apiBaseURL` (Debug: `http://localhost:8080/`), and the comment claimed an
-        // "unreachable host" — which is only true while nothing is listening on 8080. With the
-        // documented dev backend running, the launch sweep got a real 404 for every
-        // `-fitrah-seed-offline` row and deleted the whole screenshot fixture before the rig could
-        // photograph it, and every `PlayerScreen` gate fetch under a fake container hit the
-        // network. A canned 503 is `.unreachable` by construction: hidden Save button,
-        // keep-on-sweep, zero requests.
+        // `gateTransport`: a CANNED 503, never the real `OfflineGateClient` against
+        // `AppConfig.apiBaseURL` (Debug: `http://localhost:8080/`) — that host is only unreachable
+        // while nothing is listening on 8080, and with the documented dev backend running the
+        // launch sweep gets a real 404 for every `-fitrah-seed-offline` row and deletes the whole
+        // screenshot fixture before the rig can photograph it, while every `PlayerScreen` gate
+        // fetch under a fake container hits the network. A canned 503 is `.unreachable` by
+        // construction: hidden Save button, keep-on-sweep, zero requests.
         AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true),
                      apiBaseURL: AppConfig.apiBaseURL, browse: browse,
                      gateTransport: FixedStatusTransport(status: 503), isFixture: true)
@@ -358,13 +363,12 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     #endif
 }
 
+#if DEBUG
 /// A fixture container's download engine: records nothing, moves nothing, opens no background
 /// `URLSession` (a second one on `ProgressiveEngine.backgroundSessionIdentifier` is its own hazard).
-/// `events` never yields, so the manager's consumer loop simply parks. (RR-m5 rewrote this to say
-/// the stream "finishes immediately and the loop ends"; batch A review SR-I1 probed it on this
-/// toolchain and reverted — `AsyncStream { _ in }` discards the continuation into a build closure,
-/// but the stream VALUE retains the storage, so `for await` stays suspended for the container's
-/// life. Either way it yields nothing; the original wording is the accurate one.)
+/// `events` never yields, so the manager's consumer loop simply parks — `AsyncStream { _ in }`
+/// discards the continuation into a build closure, but the stream VALUE retains the storage, so
+/// `for await` stays suspended for the container's life (probed on this toolchain).
 nonisolated struct ParkedOfflineEngine: OfflineEngine {
     let events: AsyncStream<OfflineDownloadEvent> = AsyncStream { _ in }
     func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data? { nil }
@@ -386,9 +390,8 @@ nonisolated struct ParkedStreamResolver: StreamResolving {
     }
 }
 
-#if DEBUG
 /// `-fitrah-fake-report <status>`: one canned status for every request, no network. Also the fake
-/// container's offline-gate transport (R5-1) — `AppContainerTests` names the type, so not private.
+/// container's offline-gate transport — `AppContainerTests` names the type, so not private.
 struct FixedStatusTransport: HTTPTransport {
     let status: Int
     func send(_ request: HTTPRequest) async throws -> HTTPResponse { HTTPResponse(status: status, headers: [:], body: Data()) }

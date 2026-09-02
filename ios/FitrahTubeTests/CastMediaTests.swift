@@ -23,9 +23,14 @@ struct CastMediaTests {
     private let hlsURL = URL(string: "https://manifest.example/hls.m3u8")!
     private let progressiveURL = URL(string: "https://progressive.example/itag18.mp4")!
 
+    /// The rung-1 manifest: two tests below assert different field groups of this one value.
+    private var hlsMedia: CastMediaInfo? {
+        CastMedia.make(resolved: resolved(.hls(url: hlsURL, isLive: false, audioOnlyURL: nil,
+                                               captionTracks: [])), args: args)
+    }
+
     @Test func anHLSStreamCastsWithTheHLSManifestContentType() throws {
-        let media = try #require(CastMedia.make(resolved: resolved(
-            .hls(url: hlsURL, isLive: false, audioOnlyURL: nil, captionTracks: [])), args: args))
+        let media = try #require(hlsMedia)
         #expect(media.contentURL == hlsURL)
         #expect(media.contentType == "application/x-mpegurl")
         #expect(media.streamType == .buffered)
@@ -40,11 +45,11 @@ struct CastMediaTests {
         #expect(media.streamType == .buffered)
     }
 
+    /// Liveness is the only thing this adds; the content type is the HLS test's above.
     @Test func aLiveHLSStreamCastsAsALiveStream() throws {
         let media = try #require(CastMedia.make(resolved: resolved(
             .hls(url: hlsURL, isLive: true, audioOnlyURL: nil, captionTracks: [])), args: args))
         #expect(media.streamType == .live)
-        #expect(media.contentType == "application/x-mpegurl")
     }
 
     /// The no-hand-off directive's cast-shaped edge: rung 3 plays inside a `WKWebView` pointed at
@@ -67,8 +72,7 @@ struct CastMediaTests {
     }
 
     @Test func theMetadataFieldsAreCarriedFromTheArgs() throws {
-        let media = try #require(CastMedia.make(resolved: resolved(
-            .hls(url: hlsURL, isLive: false, audioOnlyURL: nil, captionTracks: [])), args: args))
+        let media = try #require(hlsMedia)
         #expect(media.title == "Tafsir of Surah Al-Kahf")
         #expect(media.channelName == "Fixture Channel")
         #expect(media.thumbnailURL == URL(string: "https://i.example/thumb.jpg"))

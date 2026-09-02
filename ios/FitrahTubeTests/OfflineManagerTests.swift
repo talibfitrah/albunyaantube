@@ -13,111 +13,6 @@ import Testing
 struct OfflineManagerTests {
     private static let lectureVideoId = "xc7keR2piUM"
 
-    /// Records every engine call; a test drives completions by calling `manager.handle(_:)`
-    /// directly (deterministic) or by `emit(_:)` into the stream (proves the consumer loop).
-    nonisolated final class FakeOfflineEngine: OfflineEngine, @unchecked Sendable {
-        struct Start: Equatable, Sendable { var id: String; var url: URL; var userAgent: String; var allowsCellular: Bool }
-        private let lock = NSLock()
-        private var _starts: [Start] = []
-        private var _resumes: [(id: String, resumeData: Data)] = []
-        private var _pauses: [String] = []
-        private var _cancels: [String] = []
-        private var _live: Set<String> = []
-        /// What `pause` — and, since R5-8, `start` — hands back (canned resume data).
-        var pauseResumeData: Data? = Data("RD".utf8)
-        /// Ids whose `pause` suspends until released (the gate-flap interleaving); `pauseEntered`
-        /// records arrival so a test can wait for the close leg to be inside its own `await`.
-        var pauseHeld: Set<String> {
-            get { lock.withLock { _pauseHeld } }
-            set { lock.withLock { _pauseHeld = newValue } }
-        }
-        var pauseEntered: Set<String> { lock.withLock { _pauseEntered } }
-        private var _pauseHeld: Set<String> = []
-        private var _pauseEntered: Set<String> = []
-        /// The same shape for `resume`, and the ONE seam that parks a caller INSIDE the engine
-        /// start (R7-14): the hold sits before the walk is recorded, so a test can land a `pause()`
-        /// in the window `begin` used to leave unguarded.
-        var resumeHeld: Set<String> {
-            get { lock.withLock { _resumeHeld } }
-            set { lock.withLock { _resumeHeld = newValue } }
-        }
-        var resumeEntered: Set<String> { lock.withLock { _resumeEntered } }
-        private var _resumeHeld: Set<String> = []
-        private var _resumeEntered: Set<String> = []
-        /// Same shape for `cancel`: the R4-4 interleaving needs a cancel parked mid-flight, past
-        /// its own row read but before it drops the manager's claim.
-        var cancelHeld: Set<String> {
-            get { lock.withLock { _cancelHeld } }
-            set { lock.withLock { _cancelHeld = newValue } }
-        }
-        var cancelEntered: Set<String> { lock.withLock { _cancelEntered } }
-        private var _cancelHeld: Set<String> = []
-        private var _cancelEntered: Set<String> = []
-        let events: AsyncStream<OfflineDownloadEvent>
-        private let continuation: AsyncStream<OfflineDownloadEvent>.Continuation
-
-        init() {
-            (events, continuation) = AsyncStream.makeStream(of: OfflineDownloadEvent.self)
-        }
-
-        var starts: [Start] { lock.withLock { _starts } }
-        var resumes: [(id: String, resumeData: Data)] { lock.withLock { _resumes } }
-        var pauses: [String] { lock.withLock { _pauses } }
-        var cancels: [String] { lock.withLock { _cancels } }
-        var live: Set<String> {
-            get { lock.withLock { _live } }
-            set { lock.withLock { _live = newValue } }
-        }
-
-        func emit(_ event: OfflineDownloadEvent) { continuation.yield(event) }
-
-        func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data? {
-            lock.withLock { _starts.append(Start(id: id, url: url, userAgent: userAgent, allowsCellular: allowsCellular)); _ = _live.insert(id) }
-            return pauseResumeData
-        }
-        func resume(id: String, resumeData: Data, allowsCellular: Bool) async {
-            lock.withLock { _ = _resumeEntered.insert(id) }
-            await Self.hold(while: { self.lock.withLock { self._resumeHeld.contains(id) } }, what: "resume of \(id)")
-            lock.withLock { _resumes.append((id, resumeData)); _ = _live.insert(id) }
-        }
-        func pause(id: String) async -> Data? {
-            lock.withLock { _pauses.append(id); _live.remove(id); _ = _pauseEntered.insert(id) }
-            await Self.hold(while: { self.lock.withLock { self._pauseHeld.contains(id) } }, what: "pause of \(id)")
-            return pauseResumeData
-        }
-        func cancel(id: String) async {
-            lock.withLock { _cancels.append(id); _live.remove(id); _ = _cancelEntered.insert(id) }
-            await Self.hold(while: { self.lock.withLock { self._cancelHeld.contains(id) } }, what: "cancel of \(id)")
-        }
-        func liveIds() async -> Set<String> { live }
-
-        /// Cubic R5-10: these holds were `while held { Task.sleep(1ms) }` with no deadline, so a
-        /// `#require` failing before the release line left an unstructured task polling at 1 ms for
-        /// the whole process. Capped like `RecordingResolver.hold`, and it reports rather than
-        /// spinning forever.
-        static func hold(while held: @Sendable () -> Bool, what: String,
-                         sourceLocation: SourceLocation = #_sourceLocation) async {
-            for _ in 0..<2000 {
-                if !held() { return }
-                do { try await Task.sleep(for: .milliseconds(1)) } catch { return }
-            }
-            #expect(!held(), "held \(what) was never released", sourceLocation: sourceLocation)
-        }
-    }
-
-    /// Drains an engine's event stream so a test can assert what it emitted — and, just as
-    /// importantly, what it did NOT (the `.cancelled` and no-total findings are both "one event
-    /// too many/few").
-    nonisolated final class EventCollector: @unchecked Sendable {
-        private let lock = NSLock()
-        private var _events: [OfflineDownloadEvent] = []
-        var events: [OfflineDownloadEvent] { lock.withLock { _events } }
-
-        func consume(_ stream: AsyncStream<OfflineDownloadEvent>) -> Task<Void, Never> {
-            Task { for await event in stream { self.lock.withLock { self._events.append(event) } } }
-        }
-    }
-
     /// Cellular-gate inputs the closures read live. `nonisolated` (the `FakeOfflineEngine` shape):
     /// the manager's closures call into it from the actor, not from the main actor.
     nonisolated final class Flags: @unchecked Sendable {
@@ -748,9 +643,7 @@ struct OfflineManagerTests {
     @Test(arguments: [GateAnswer.notAllowed, GateAnswer.gone])
     func aStartWhoseGateRefusesFailsTheRowAndDeletesNothing(gate: GateAnswer) async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        let item = OfflineItem(videoId: "vidRevoked0", title: "Lecture", channelName: nil, thumbnailUrl: nil,
-                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue,
-                               resumeData: Data("RD".utf8))
+        let item = makeOfflineItem("vidRevoked0", resumeData: Data("RD".utf8))
         try rig.store.insert(item)
         try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
         let tmp = rig.directory.appending(path: "\(item.id).tmp")
@@ -775,9 +668,7 @@ struct OfflineManagerTests {
     @Test func aRefusedStartLeavesEveryOtherQueuedRowAlone() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         for index in 0..<3 {
-            let item = OfflineItem(videoId: "vidDrift\(index)", title: "Lecture \(index)", channelName: nil,
-                                   thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
-                                   status: OfflineStatus.queued.rawValue)
+            let item = makeOfflineItem("vidDrift\(index)", title: "Lecture \(index)")
             try rig.store.insert(item)
         }
         rig.flags.gate = .notAllowed   // the boxed-Boolean drift: every row answers the same way
@@ -797,9 +688,8 @@ struct OfflineManagerTests {
     @Test func aRefusedHeadRowDoesNotStarveAYoungerQueuedRow() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         func insert(_ videoId: String, ageInSeconds: TimeInterval) throws -> String {
-            let item = OfflineItem(videoId: videoId, title: videoId, channelName: nil, thumbnailUrl: nil,
-                                   qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue,
-                                   createdAt: rig.flags.now.addingTimeInterval(-ageInSeconds))
+            let item = makeOfflineItem(videoId, title: videoId,
+                                       createdAt: rig.flags.now.addingTimeInterval(-ageInSeconds))
             try rig.store.insert(item)
             return item.id
         }
@@ -907,8 +797,7 @@ struct OfflineManagerTests {
     @Test func theKillSwitchKickConsultsThePerVideoGate() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         rig.flags.downloadsEnabled = { false }
-        let item = OfflineItem(videoId: "vidQueued00", title: "Lecture", channelName: nil, thumbnailUrl: nil,
-                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue)
+        let item = makeOfflineItem("vidQueued00")
         try rig.store.insert(item)
 
         await rig.manager.schedule()
@@ -928,9 +817,8 @@ struct OfflineManagerTests {
     /// bytes without resolving anything. It must ask too.
     @Test func theReattachRequeueConsultsThePerVideoGate() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        let item = OfflineItem(videoId: "vidOrphan0D", title: "t", channelName: nil, thumbnailUrl: nil,
-                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.running.rawValue,
-                               resumeData: Data("RD".utf8))
+        let item = makeOfflineItem("vidOrphan0D", title: "t", status: .running,
+                                   resumeData: Data("RD".utf8))
         try rig.store.insert(item)
         rig.engine.live = []
         rig.flags.gate = .notAllowed
@@ -1056,8 +944,7 @@ struct OfflineManagerTests {
     /// its park. The guard admits both; this is the queued half of it.
     @Test func aQueuedRowParkedAfterARefusedResumeAlsoDropsTheStaleReason() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        let item = OfflineItem(videoId: "vidQueuedRR", title: "Lecture", channelName: nil, thumbnailUrl: nil,
-                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue)
+        let item = makeOfflineItem("vidQueuedRR")
         try rig.store.insert(item)
         rig.flags.wifiOnly = true
         rig.flags.cellular = true
@@ -1080,9 +967,7 @@ struct OfflineManagerTests {
         let rig = makeRig(.failure(.cooldown(until: Date().addingTimeInterval(1800))))
         defer { rig.cleanUp() }
         // A row the user paused mid-resolve: `.paused`, no token, so Resume takes the resolve leg.
-        let item = OfflineItem(videoId: Self.lectureVideoId, title: "Lecture", channelName: nil,
-                               thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
-                               status: OfflineStatus.paused.rawValue)
+        let item = makeOfflineItem(Self.lectureVideoId, status: .paused)
         try rig.store.insert(item)
         let id = item.id
 
@@ -1234,9 +1119,7 @@ struct OfflineManagerTests {
     @Test func reattachKeepsLiveTasksAndDemotesOrphanedRunningRows() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         func insert(_ videoId: String, resumeData: Data?) throws -> String {
-            let item = OfflineItem(videoId: videoId, title: videoId, channelName: nil, thumbnailUrl: nil,
-                                   qualityLabel: "360p", audioOnly: true, status: OfflineStatus.running.rawValue,
-                                   resumeData: resumeData)
+            let item = makeOfflineItem(videoId, title: videoId, status: .running, resumeData: resumeData)
             try rig.store.insert(item)
             return item.id
         }
@@ -1264,9 +1147,8 @@ struct OfflineManagerTests {
     /// from its `.tmp` on its own.
     @Test func reattachContinuesAnOrphanedRowThatCarriesResumeData() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        let item = OfflineItem(videoId: "vidOrphan0C", title: "t", channelName: nil, thumbnailUrl: nil,
-                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.running.rawValue,
-                               resumeData: Data("RD".utf8))
+        let item = makeOfflineItem("vidOrphan0C", title: "t", status: .running,
+                                   resumeData: Data("RD".utf8))
         try rig.store.insert(item)
         rig.engine.live = []
 
@@ -1306,8 +1188,7 @@ struct OfflineManagerTests {
     /// COMPLETE file for a full re-download.
     @Test func aFinishedEventForAQueuedRowCompletesItInsteadOfDeletingTheFile() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        let item = OfflineItem(videoId: "vidRelaunch", title: "t", channelName: nil, thumbnailUrl: nil,
-                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue)
+        let item = makeOfflineItem("vidRelaunch", title: "t")
         try rig.store.insert(item)
         try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
         try Data(repeating: 7, count: 2_048).write(to: rig.directory.appending(path: "\(item.id).tmp"))
@@ -1328,9 +1209,7 @@ struct OfflineManagerTests {
     /// later save wedges behind `schedule()`'s serial guard for the whole session.
     @Test func aReattached403SurvivorReResolvesAndTheSchedulerIsNotWedged() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        let item = OfflineItem(videoId: "vidRelaunch", title: "t", channelName: nil, thumbnailUrl: nil,
-                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.running.rawValue,
-                               resumeData: nil)
+        let item = makeOfflineItem("vidRelaunch", title: "t", status: .running, resumeData: nil)
         try rig.store.insert(item)
         rig.engine.live = [item.id]
         await rig.manager.reattach()
@@ -1356,8 +1235,7 @@ struct OfflineManagerTests {
     /// "Waiting" with a frozen bar until `.finished`. A row in `active` belongs to a live attempt.
     @Test func aSecondReattachLeavesAnAlreadyClaimedRowAlone() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        let item = OfflineItem(videoId: "vidRelaunch", title: "t", channelName: nil, thumbnailUrl: nil,
-                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.running.rawValue)
+        let item = makeOfflineItem("vidRelaunch", title: "t", status: .running)
         try rig.store.insert(item)
         rig.engine.live = [item.id]
         await rig.manager.reattach()   // claims the live row
@@ -1383,9 +1261,7 @@ struct OfflineManagerTests {
     /// never survived is a row that changed under a claim its owner still holds.
     @Test func aRowThatCompletedUnderTheClaimIsNotWalkedAgain() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        let item = OfflineItem(videoId: "vidRelaunch", title: "t", channelName: nil, thumbnailUrl: nil,
-                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue,
-                               resumeData: Data("RD".utf8))
+        let item = makeOfflineItem("vidRelaunch", title: "t", resumeData: Data("RD".utf8))
         try rig.store.insert(item)
         rig.flags.gateHeld = ["vidRelaunch"]   // park `begin` inside its per-video gate GET
 
@@ -1412,10 +1288,8 @@ struct OfflineManagerTests {
     @Test func aRowThatCompletedUnderTheClaimReleasesTheSlotForTheNextRow() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         func insert(_ videoId: String, ageInSeconds: TimeInterval, resumeData: Data?) throws -> String {
-            let item = OfflineItem(videoId: videoId, title: videoId, channelName: nil, thumbnailUrl: nil,
-                                   qualityLabel: "360p", audioOnly: true,
-                                   status: OfflineStatus.queued.rawValue, resumeData: resumeData,
-                                   createdAt: rig.flags.now.addingTimeInterval(-ageInSeconds))
+            let item = makeOfflineItem(videoId, title: videoId, resumeData: resumeData,
+                                       createdAt: rig.flags.now.addingTimeInterval(-ageInSeconds))
             try rig.store.insert(item)
             return item.id
         }
@@ -1604,8 +1478,7 @@ struct OfflineManagerTests {
         // `store.items` sorts by TITLE, so "A" is the row the leg pauses first and holds inside.
         // A user Resume bypasses the serial floor (CF-D-5), which is how both rows come to run.
         func insert(_ videoId: String, title: String) throws -> String {
-            let item = OfflineItem(videoId: videoId, title: title, channelName: nil, thumbnailUrl: nil,
-                                   qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue)
+            let item = makeOfflineItem(videoId, title: title)
             try rig.store.insert(item)
             return item.id
         }
@@ -1880,20 +1753,21 @@ struct OfflineManagerTests {
 
     /// URLProtocol that fails every load immediately — drives a started walk into the
     /// no-live-task state while its walk bookkeeping still exists.
-    nonisolated final class FailingURLProtocol: URLProtocol {
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    nonisolated final class FailingURLProtocol: StubURLProtocol {
         override func startLoading() {
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
         }
-        override func stopLoading() {}
     }
 
-    private func makeStubbedEngine() -> (engine: ProgressiveEngine, directory: URL) {
+    /// A `ProgressiveEngine` whose session is driven by `protocolClass`, in a temp directory of
+    /// its own — `directory.deletingLastPathComponent()` is the base each caller cleans up.
+    private func makeStubbedEngine(_ protocolClass: AnyClass = FailingURLProtocol.self,
+                                   name: String = "OfflineEngineKillSwitch")
+        -> (engine: ProgressiveEngine, directory: URL) {
         let base = FileManager.default.temporaryDirectory
-            .appending(path: "OfflineEngineKillSwitch-\(UUID().uuidString)", directoryHint: .isDirectory)
+            .appending(path: "\(name)-\(UUID().uuidString)", directoryHint: .isDirectory)
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FailingURLProtocol.self]
+        configuration.protocolClasses = [protocolClass]
         let directory = OfflineStorage.directoryURL(base: base)
         return (ProgressiveEngine(directory: directory, configuration: configuration), directory)
     }
@@ -1941,8 +1815,7 @@ struct OfflineManagerTests {
         #expect(await engine.liveIds().isEmpty)
 
         let token = try #require(await engine.pause(id: id))
-        struct Token: Decodable { var url: URL; var userAgent: String }
-        let decoded = try JSONDecoder().decode(Token.self, from: token)
+        let decoded = try JSONDecoder().decode(WireToken.self, from: token)
         #expect(decoded.url == url)
         #expect(decoded.userAgent == "UA")
     }
@@ -1950,9 +1823,7 @@ struct OfflineManagerTests {
     /// Serves a five-byte 206 chunk AT THE REQUEST'S OWN `Range` offset (with a Content-Range
     /// naming more to come) so a side-session task carries the real response shape a mid-walk
     /// chunk has — at offset 0 for the first chunk, mid-stream for a stale one.
-    nonisolated final class PartialChunkURLProtocol: URLProtocol {
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    nonisolated final class PartialChunkURLProtocol: StubURLProtocol {
         override func startLoading() {
             let offset = ProgressiveEngine.offset(fromRangeHeader: request.value(forHTTPHeaderField: "Range"))
             let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil,
@@ -1961,7 +1832,6 @@ struct OfflineManagerTests {
             client?.urlProtocol(self, didLoad: Data("chunk".utf8))
             client?.urlProtocolDidFinishLoading(self)
         }
-        override func stopLoading() {}
     }
 
     /// Review F4: only `start`/`resume` registered `walks[id]` — a relaunch-re-attached walk
@@ -1974,22 +1844,8 @@ struct OfflineManagerTests {
         let id = "boundary-reattach"
         let url = URL(string: "https://example.invalid/media?itag=140")!
 
-        // The live task from the PREVIOUS launch — `start` was never called this session. Run it
-        // on a side session so it carries a real 206 + Content-Range when the delegate sees it.
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [PartialChunkURLProtocol.self]
-        let side = URLSession(configuration: configuration)
-        var request = URLRequest(url: url)
-        request.setValue("bytes=0-10485759", forHTTPHeaderField: "Range")
-        request.setValue("UA", forHTTPHeaderField: "User-Agent")
-        let task = side.downloadTask(with: request) { _, _, _ in }
-        task.taskDescription = id
-        task.resume()
-        for _ in 0..<2000 {
-            if task.state == .completed { break }
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        #expect(task.state == .completed)
+        // The live task from the PREVIOUS launch — `start` was never called this session.
+        let (task, side) = await runSideTask(PartialChunkURLProtocol.self, url: url, description: id)
 
         // The delegate appends the chunk and crosses the boundary (issues the next chunk, which
         // the engine's failing protocol immediately retires — the no-live-task window).
@@ -2002,8 +1858,7 @@ struct OfflineManagerTests {
         }
 
         let token = try #require(await engine.pause(id: id), "boundary pause on a reattached walk lost its token")
-        struct Token: Decodable { var url: URL; var userAgent: String }
-        let decoded = try JSONDecoder().decode(Token.self, from: token)
+        let decoded = try JSONDecoder().decode(WireToken.self, from: token)
         #expect(decoded.url == url)
         #expect(decoded.userAgent == "UA")
 
@@ -2013,10 +1868,30 @@ struct OfflineManagerTests {
         #expect((try? Data(contentsOf: tmp))?.count == 5)
     }
 
+    /// A real `URLSessionDownloadTask` that has ALREADY run against `protocolClass` on its own
+    /// side session, so the response the engine's delegate then reads off it (a 206 and its
+    /// `Content-Range`) is the real thing rather than a stub. The session comes back with it — the
+    /// delegate entry points take it as their first argument.
+    private func runSideTask(_ protocolClass: AnyClass, url: URL, offset: Int64 = 0,
+                             description: String) async
+        -> (task: URLSessionDownloadTask, session: URLSession) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [protocolClass]
+        let session = URLSession(configuration: configuration)
+        var request = URLRequest(url: url)
+        request.setValue(ProgressiveEngine.rangeHeader(offset: offset), forHTTPHeaderField: "Range")
+        request.setValue("UA", forHTTPHeaderField: "User-Agent")
+        let task = session.downloadTask(with: request) { _, _, _ in }
+        task.taskDescription = description
+        task.resume()
+        await waitUntil { task.state == .completed }
+        return (task, session)
+    }
+
     /// A chunk request that never answers — the task stays live so a test can pause it — and
     /// records the engine's OWN `URLSessionTask` (keyed by `taskDescription`) so the test can hand
     /// the delegate that exact task's late completion.
-    nonisolated final class HangingURLProtocol: URLProtocol {
+    nonisolated final class HangingURLProtocol: StubURLProtocol {
         private static let lock = NSLock()
         nonisolated(unsafe) private static var tasks: [String: URLSessionTask] = [:]
 
@@ -2027,13 +1902,10 @@ struct OfflineManagerTests {
             lock.withLock { tasks.first { $0.key == id || $0.key.hasPrefix("\(id)#") }?.value }
         }
 
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
         override func startLoading() {
             guard let task, let id = task.taskDescription else { return }
             Self.lock.withLock { Self.tasks[id] = task }
         }
-        override func stopLoading() {}
     }
 
     /// Stop identity is the TASK, not the row: `resume` clears the row from the engine's stop set
@@ -2042,12 +1914,8 @@ struct OfflineManagerTests {
     /// chunk `resume` had just issued kept downloading until `.finished` deleted it as garbage.
     /// (A Wi-Fi/cellular flap driving the gate closed then open back-to-back reaches this.)
     @Test func aLateCancelFromThePausedTaskNeverFailsTheResumedWalk() async throws {
-        let base = FileManager.default.temporaryDirectory
-            .appending(path: "OfflineEngineStopIdentity-\(UUID().uuidString)", directoryHint: .isDirectory)
-        defer { try? FileManager.default.removeItem(at: base) }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [HangingURLProtocol.self]
-        let engine = ProgressiveEngine(directory: OfflineStorage.directoryURL(base: base), configuration: configuration)
+        let (engine, directory) = makeStubbedEngine(HangingURLProtocol.self, name: "OfflineEngineStopIdentity")
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
         let collector = EventCollector()
         let consumer = collector.consume(engine.events)
         defer { consumer.cancel() }
@@ -2092,13 +1960,8 @@ struct OfflineManagerTests {
     /// was issued under, and a callback from an older one is dropped whole — no append, no next
     /// chunk, no `.finished`, no `.failed`.
     @Test func aStragglerChunkFromASupersededWalkIsDroppedWhole() async throws {
-        let base = FileManager.default.temporaryDirectory
-            .appending(path: "OfflineEngineGenerations-\(UUID().uuidString)", directoryHint: .isDirectory)
-        defer { try? FileManager.default.removeItem(at: base) }
-        let directory = OfflineStorage.directoryURL(base: base)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [HangingURLProtocol.self]
-        let engine = ProgressiveEngine(directory: directory, configuration: configuration)
+        let (engine, directory) = makeStubbedEngine(HangingURLProtocol.self, name: "OfflineEngineGenerations")
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
         let collector = EventCollector()
         let consumer = collector.consume(engine.events)
         defer { consumer.cancel() }
@@ -2145,29 +2008,17 @@ struct OfflineManagerTests {
     /// for that id. That callback must be ADOPTED, not dropped — the walk's `.tmp` is the only
     /// thing that survived the launch and it continues from there to completion.
     @Test func aRelaunchChunkWithNoGenerationContinuesTheWalkToCompletion() async throws {
-        let base = FileManager.default.temporaryDirectory
-            .appending(path: "OfflineEngineRelaunch-\(UUID().uuidString)", directoryHint: .isDirectory)
-        defer { try? FileManager.default.removeItem(at: base) }
-        let directory = OfflineStorage.directoryURL(base: base)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [SplitFileURLProtocol.self]
-        let engine = ProgressiveEngine(directory: directory, configuration: configuration)
+        let (engine, directory) = makeStubbedEngine(SplitFileURLProtocol.self, name: "OfflineEngineRelaunch")
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
         let collector = EventCollector()
         let consumer = collector.consume(engine.events)
         defer { consumer.cancel() }
 
         let id = "relaunch-\(UUID().uuidString)"
         let url = URL(string: "https://example.invalid/media?itag=140")!
-        // The previous launch's chunk 0, run on a side session so it carries a real 206 +
-        // Content-Range; its description carries no generation, exactly like a pre-relaunch task.
-        let side = URLSession(configuration: configuration)
-        var request = URLRequest(url: url)
-        request.setValue(ProgressiveEngine.rangeHeader(offset: 0), forHTTPHeaderField: "Range")
-        request.setValue("UA", forHTTPHeaderField: "User-Agent")
-        let task = side.downloadTask(with: request) { _, _, _ in }
-        task.taskDescription = id
-        task.resume()
-        await waitUntil { task.state == .completed }
+        // The previous launch's chunk 0; its description carries no generation, exactly like a
+        // pre-relaunch task.
+        let (task, side) = await runSideTask(SplitFileURLProtocol.self, url: url, description: id)
 
         let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
         try Data("chunk".utf8).write(to: location)
@@ -2187,13 +2038,8 @@ struct OfflineManagerTests {
     /// issued is simply stale. (Adoption is unchanged: an id with NO generation here still adopts —
     /// `aRelaunchChunkWithNoGenerationContinuesTheWalkToCompletion` above.)
     @Test func aPreviousLaunchsChunkNeverCollidesWithThisLaunchsWalk() async throws {
-        let base = FileManager.default.temporaryDirectory
-            .appending(path: "OfflineEngineLaunchGen-\(UUID().uuidString)", directoryHint: .isDirectory)
-        defer { try? FileManager.default.removeItem(at: base) }
-        let directory = OfflineStorage.directoryURL(base: base)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [HangingURLProtocol.self]
-        let engine = ProgressiveEngine(directory: directory, configuration: configuration)
+        let (engine, directory) = makeStubbedEngine(HangingURLProtocol.self, name: "OfflineEngineLaunchGen")
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
         let collector = EventCollector()
         let consumer = collector.consume(engine.events)
         defer { consumer.cancel() }
@@ -2210,16 +2056,8 @@ struct OfflineManagerTests {
 
         // The PREVIOUS launch's chunk 0, described with the generation that launch's first walk
         // was issued under — the one a per-process counter starting at 1 reissues here.
-        let sideConfiguration = URLSessionConfiguration.ephemeral
-        sideConfiguration.protocolClasses = [PartialChunkURLProtocol.self]
-        let side = URLSession(configuration: sideConfiguration)
-        var request = URLRequest(url: url)
-        request.setValue(ProgressiveEngine.rangeHeader(offset: 0), forHTTPHeaderField: "Range")
-        request.setValue("UA", forHTTPHeaderField: "User-Agent")
-        let stale = side.downloadTask(with: request) { _, _, _ in }
-        stale.taskDescription = ProgressiveEngine.taskKey(id, 1)
-        stale.resume()
-        await waitUntil { stale.state == .completed }
+        let (stale, side) = await runSideTask(PartialChunkURLProtocol.self, url: url,
+                                              description: ProgressiveEngine.taskKey(id, 1))
 
         let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
         try Data("chunk".utf8).write(to: location)
@@ -2228,6 +2066,8 @@ struct OfflineManagerTests {
 
         // FIFO sentinel: the stream preserves order, so once this arrives anything the straggler
         // yielded has been collected too.
+        var request = URLRequest(url: url)
+        request.setValue("UA", forHTTPHeaderField: "User-Agent")
         let sentinel = side.downloadTask(with: request)   // never resumed; carries the request shape
         sentinel.taskDescription = "sentinel"
         engine.urlSession(side, task: sentinel, didCompleteWithError: URLError(.timedOut))
@@ -2272,9 +2112,7 @@ struct OfflineManagerTests {
 
     /// Serves a five-byte 206 chunk at the request's own offset out of a TEN-byte file, so a
     /// two-chunk walk actually completes.
-    nonisolated final class SplitFileURLProtocol: URLProtocol {
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    nonisolated final class SplitFileURLProtocol: StubURLProtocol {
         override func startLoading() {
             let offset = ProgressiveEngine.offset(fromRangeHeader: request.value(forHTTPHeaderField: "Range"))
             let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil,
@@ -2283,7 +2121,6 @@ struct OfflineManagerTests {
             client?.urlProtocol(self, didLoad: Data("chunk".utf8))
             client?.urlProtocolDidFinishLoading(self)
         }
-        override func stopLoading() {}
     }
 
     /// The missing-partial branch took ANY chunk as the file start: the offset guard lived only in
@@ -2297,20 +2134,9 @@ struct OfflineManagerTests {
         defer { consumer.cancel() }
         let id = "stale-offset"
 
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [PartialChunkURLProtocol.self]
-        let side = URLSession(configuration: configuration)
-        var request = URLRequest(url: URL(string: "https://example.invalid/media?itag=140")!)
-        request.setValue(ProgressiveEngine.rangeHeader(offset: 10_485_760), forHTTPHeaderField: "Range")
-        request.setValue("UA", forHTTPHeaderField: "User-Agent")
-        let task = side.downloadTask(with: request) { _, _, _ in }
-        task.taskDescription = id
-        task.resume()
-        for _ in 0..<2000 {
-            if task.state == .completed { break }
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        #expect(task.state == .completed)
+        let (task, side) = await runSideTask(PartialChunkURLProtocol.self,
+                                            url: URL(string: "https://example.invalid/media?itag=140")!,
+                                            offset: 10_485_760, description: id)
 
         let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
         try Data("chunk".utf8).write(to: location)
@@ -2337,19 +2163,9 @@ struct OfflineManagerTests {
         defer { consumer.cancel() }
         let id = "server-error"
 
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ServerErrorURLProtocol.self]
-        let side = URLSession(configuration: configuration)
-        var request = URLRequest(url: URL(string: "https://example.invalid/media?itag=140")!)
-        request.setValue(ProgressiveEngine.rangeHeader(offset: 0), forHTTPHeaderField: "Range")
-        request.setValue("UA", forHTTPHeaderField: "User-Agent")
-        let task = side.downloadTask(with: request) { _, _, _ in }
-        task.taskDescription = id
-        task.resume()
-        for _ in 0..<2000 {
-            if task.state == .completed { break }
-            try await Task.sleep(for: .milliseconds(1))
-        }
+        let (task, side) = await runSideTask(ServerErrorURLProtocol.self,
+                                            url: URL(string: "https://example.invalid/media?itag=140")!,
+                                            description: id)
         let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
         try Data("body".utf8).write(to: location)
         defer { try? FileManager.default.removeItem(at: location) }
@@ -2371,9 +2187,7 @@ struct OfflineManagerTests {
     /// Serves a 416 with `Content-Range: bytes */<total>` — what googlevideo answers when the walk
     /// asks for an offset at or past the end of the file. The total rides in the URL's `total`
     /// query item rather than a static, so two tests can drive different totals in parallel.
-    nonisolated final class RangeNotSatisfiableURLProtocol: URLProtocol {
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    nonisolated final class RangeNotSatisfiableURLProtocol: StubURLProtocol {
         override func startLoading() {
             let total = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
                 .queryItems?.first { $0.name == "total" }?.value ?? "0"
@@ -2382,13 +2196,7 @@ struct OfflineManagerTests {
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocolDidFinishLoading(self)
         }
-        override func stopLoading() {}
     }
-
-    /// The engine's resume-token wire format, mirroring the `Token: Decodable` the boundary-pause
-    /// tests already use — the engine's own struct is private, and `start` cannot hand one back
-    /// without first deleting the partial these tests are about.
-    private struct WireToken: Encodable { var url: URL; var userAgent: String }
 
     /// Cubic R6-3: if the app dies between the engine's `.finished` and the manager's file move,
     /// the row is re-queued carrying a token for a `.tmp` that is ALREADY whole — and `resume`
@@ -2396,7 +2204,8 @@ struct OfflineManagerTests {
     /// re-issue the same 416 forever; the only exit was Remove plus a full re-download. A partial
     /// that matches the total is simply finished.
     @Test func a416OnACompletePartialFinishesTheWalkInsteadOfLooping() async throws {
-        let (engine, directory) = makeStubbed416Engine()
+        let (engine, directory) = makeStubbedEngine(RangeNotSatisfiableURLProtocol.self,
+                                                    name: "OfflineEngine416")
         defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
         let collector = EventCollector()
         let consumer = collector.consume(engine.events)
@@ -2423,7 +2232,8 @@ struct OfflineManagerTests {
     /// all) restarts clean ONCE — the `.tmp` and the token both go, so the next attempt walks from
     /// offset 0 and a second 416 is impossible.
     @Test func a416OnAMismatchedPartialRestartsCleanWithNoToken() async throws {
-        let (engine, directory) = makeStubbed416Engine()
+        let (engine, directory) = makeStubbedEngine(RangeNotSatisfiableURLProtocol.self,
+                                                    name: "OfflineEngine416")
         defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
         let collector = EventCollector()
         let consumer = collector.consume(engine.events)
@@ -2451,26 +2261,14 @@ struct OfflineManagerTests {
                 "the unusable partial must go, or the restart is not a restart")
     }
 
-    private func makeStubbed416Engine() -> (engine: ProgressiveEngine, directory: URL) {
-        let base = FileManager.default.temporaryDirectory
-            .appending(path: "OfflineEngine416-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RangeNotSatisfiableURLProtocol.self]
-        let directory = OfflineStorage.directoryURL(base: base)
-        return (ProgressiveEngine(directory: directory, configuration: configuration), directory)
-    }
-
     /// Serves a 503 with a body — the shape a transient googlevideo error has.
-    nonisolated final class ServerErrorURLProtocol: URLProtocol {
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    nonisolated final class ServerErrorURLProtocol: StubURLProtocol {
         override func startLoading() {
             let response = HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: [:])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data("body".utf8))
             client?.urlProtocolDidFinishLoading(self)
         }
-        override func stopLoading() {}
     }
 
     /// Cubic R2-1: iOS cancels background tasks the engine never asked to stop (force-quit, a
@@ -2520,9 +2318,7 @@ struct OfflineManagerTests {
 
     /// Serves a 206 whose `Content-Range` names no total (`bytes 0-4/*` — what a proxy or a CDN
     /// edge that strips the length produces).
-    nonisolated final class UnboundedChunkURLProtocol: URLProtocol {
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    nonisolated final class UnboundedChunkURLProtocol: StubURLProtocol {
         override func startLoading() {
             let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil,
                                            headerFields: ["Content-Range": "bytes 0-4/*"])!
@@ -2530,7 +2326,6 @@ struct OfflineManagerTests {
             client?.urlProtocol(self, didLoad: Data("chunk".utf8))
             client?.urlProtocolDidFinishLoading(self)
         }
-        override func stopLoading() {}
     }
 
     /// Cubic R2-7: `total(fromContentRange:)` is nil for `bytes 0-x/*` (and for a missing
@@ -2546,20 +2341,7 @@ struct OfflineManagerTests {
         let id = "unbounded-total"
         let url = URL(string: "https://example.invalid/media?itag=140")!
 
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [UnboundedChunkURLProtocol.self]
-        let side = URLSession(configuration: configuration)
-        var request = URLRequest(url: url)
-        request.setValue("bytes=0-10485759", forHTTPHeaderField: "Range")
-        request.setValue("UA", forHTTPHeaderField: "User-Agent")
-        let task = side.downloadTask(with: request) { _, _, _ in }
-        task.taskDescription = id
-        task.resume()
-        for _ in 0..<2000 {
-            if task.state == .completed { break }
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        #expect(task.state == .completed)
+        let (task, side) = await runSideTask(UnboundedChunkURLProtocol.self, url: url, description: id)
 
         let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
         try Data("chunk".utf8).write(to: location)
@@ -2626,9 +2408,7 @@ struct OfflineManagerTests {
         let rig = makeRig(); defer { rig.cleanUp() }
         var ids: [String] = []
         for index in 0..<3 {
-            let item = OfflineItem(videoId: "vid-queued-\(index)", title: "Lecture \(index)",
-                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
-                                   audioOnly: true, status: OfflineStatus.queued.rawValue)
+            let item = makeOfflineItem("vid-queued-\(index)", title: "Lecture \(index)")
             try rig.store.insert(item)
             ids.append(item.id)
         }
@@ -2643,9 +2423,8 @@ struct OfflineManagerTests {
     @Test func sweepDeletesExpiredAndGoneAndKeepsUnreachable() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         func completed(_ videoId: String, daysAgo: Double) throws -> (id: String, file: URL) {
-            let item = OfflineItem(videoId: videoId, title: videoId, channelName: nil, thumbnailUrl: nil,
-                                   qualityLabel: "360p", audioOnly: true, status: OfflineStatus.completed.rawValue,
-                                   completedAt: rig.flags.now.addingTimeInterval(-daysAgo * 86_400))
+            let item = makeOfflineItem(videoId, title: videoId, status: .completed,
+                                       completedAt: rig.flags.now.addingTimeInterval(-daysAgo * 86_400))
             item.localPath = "\(item.id).m4a"
             try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
             let file = OfflineStorage.fileURL(relativePath: item.localPath!, base: rig.base)
@@ -2681,15 +2460,11 @@ struct OfflineManagerTests {
     func theSweepAppliesTheGateTableToEveryRowNotOnlyCompletedOnes(gate: GateAnswer) async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         for (index, status) in [OfflineStatus.queued, .paused, .failed, .running].enumerated() {
-            let item = OfflineItem(videoId: "vidSweep\(index)", title: "Lecture \(index)",
-                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
-                                   audioOnly: true, status: status.rawValue)
+            let item = makeOfflineItem("vidSweep\(index)", title: "Lecture \(index)", status: status)
             try rig.store.insert(item)
         }
         // One survivor, so the pass is not a WHOLE-library removal — R5-2's belt refuses those.
-        let survivor = OfflineItem(videoId: "vidSurvivor", title: "Lecture", channelName: nil,
-                                   thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
-                                   status: OfflineStatus.paused.rawValue)
+        let survivor = makeOfflineItem("vidSurvivor", status: .paused)
         try rig.store.insert(survivor)
         rig.flags.gate = gate
         rig.flags.gates = ["vidSurvivor": .allowed]
@@ -2702,37 +2477,15 @@ struct OfflineManagerTests {
         #expect(rig.engine.starts.isEmpty)
     }
 
-    /// Cubic R5-2's belt, behind the gate client's envelope check: if EVERY row the gate was asked
-    /// about in one pass answers gone, that is a broken edge answering 404 for `/api/v1/videos/*`,
-    /// not a same-day whole-catalog purge. Keep them all and let the next sweep retry — the delete
-    /// is irreversible, the wait is not.
-    @Test func aSweepWhereEveryCheckedRowAnswersGoneDeletesNothing() async throws {
-        let rig = makeRig(.hls); defer { rig.cleanUp() }
-        for index in 0..<3 {
-            let item = OfflineItem(videoId: "vidGone\(index)", title: "Lecture \(index)",
-                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
-                                   audioOnly: true, status: OfflineStatus.completed.rawValue,
-                                   completedAt: rig.flags.now)
-            try rig.store.insert(item)
-        }
-        rig.flags.gate = .gone
-
-        await rig.manager.sweep()
-
-        #expect(rig.rowCount() == 3, "a whole-library removal in one pass is an edge, not a purge")
-    }
-
-    /// Review Minor 1: a broken edge does not have to answer uniformly. With 404s on some rows and
+    /// A broken edge does not have to answer uniformly. With 404s on some rows and
     /// a transport error on others, `removed.count < checked` and the belt used to stand down —
     /// deleting the 404 half of a library on exactly the failure it exists to survive. The
     /// denominator is the rows that got an ANSWER, not every row asked.
     @Test func aSweepWhereEveryAnsweringRowIsGoneKeepsThemEvenAlongsideUnreachableRows() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         for index in 0..<3 {
-            let item = OfflineItem(videoId: "vidMixed\(index)", title: "Lecture \(index)",
-                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
-                                   audioOnly: true, status: OfflineStatus.completed.rawValue,
-                                   completedAt: rig.flags.now)
+            let item = makeOfflineItem("vidMixed\(index)", title: "Lecture \(index)",
+                                       status: .completed, completedAt: rig.flags.now)
             try rig.store.insert(item)
         }
         rig.flags.gate = .gone
@@ -2753,10 +2506,8 @@ struct OfflineManagerTests {
     func aSweepWhereEveryAnsweringRowSaysDeleteKeepsThemAll(gate: GateAnswer) async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         for index in 0..<2 {
-            let item = OfflineItem(videoId: "vidRevoked\(index)", title: "Lecture \(index)",
-                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
-                                   audioOnly: true, status: OfflineStatus.completed.rawValue,
-                                   completedAt: rig.flags.now)
+            let item = makeOfflineItem("vidRevoked\(index)", title: "Lecture \(index)",
+                                       status: .completed, completedAt: rig.flags.now)
             try rig.store.insert(item)
         }
         rig.flags.gate = gate
@@ -2774,9 +2525,7 @@ struct OfflineManagerTests {
     func aSweepWithOneAllowedRowStillDeletesTheRefusedOne(gate: GateAnswer) async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         for name in ["vidRevokedOne", "vidAllowedOne"] {
-            let item = OfflineItem(videoId: name, title: name, channelName: nil, thumbnailUrl: nil,
-                                   qualityLabel: "360p", audioOnly: true,
-                                   status: OfflineStatus.completed.rawValue, completedAt: rig.flags.now)
+            let item = makeOfflineItem(name, title: name, status: .completed, completedAt: rig.flags.now)
             try rig.store.insert(item)
         }
         rig.flags.gate = gate
@@ -2796,9 +2545,7 @@ struct OfflineManagerTests {
     @Test func aSweepMixingGoneAndNotAllowedWithNoAllowedRowKeepsThemAll() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         for name in ["vidGoneMix", "vidRevokedMix", "vidDeadEdgeMix"] {
-            let item = OfflineItem(videoId: name, title: name, channelName: nil, thumbnailUrl: nil,
-                                   qualityLabel: "360p", audioOnly: true,
-                                   status: OfflineStatus.completed.rawValue, completedAt: rig.flags.now)
+            let item = makeOfflineItem(name, title: name, status: .completed, completedAt: rig.flags.now)
             try rig.store.insert(item)
         }
         rig.flags.gates = ["vidGoneMix": .gone, "vidRevokedMix": .notAllowed,
@@ -2814,16 +2561,12 @@ struct OfflineManagerTests {
     /// an expired row goes even in the pass where every gate answer is belted.
     @Test func anExpiredRowStillDeletesWhileTheGateVerdictsAreBelted() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        let expired = OfflineItem(videoId: "vidTTLExpired", title: "Lecture", channelName: nil,
-                                  thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
-                                  status: OfflineStatus.completed.rawValue,
-                                  completedAt: rig.flags.now.addingTimeInterval(-40 * 86_400))
+        let expired = makeOfflineItem("vidTTLExpired", status: .completed,
+                                      completedAt: rig.flags.now.addingTimeInterval(-40 * 86_400))
         try rig.store.insert(expired)
         for index in 0..<2 {
-            let item = OfflineItem(videoId: "vidBelted\(index)", title: "Lecture \(index)",
-                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
-                                   audioOnly: true, status: OfflineStatus.completed.rawValue,
-                                   completedAt: rig.flags.now)
+            let item = makeOfflineItem("vidBelted\(index)", title: "Lecture \(index)",
+                                       status: .completed, completedAt: rig.flags.now)
             try rig.store.insert(item)
         }
         rig.flags.gate = .notAllowed
@@ -2837,9 +2580,7 @@ struct OfflineManagerTests {
     /// The bound: ONE row really can leave the catalog, and it still goes.
     @Test func aSweepWhereTheOnlyCheckedRowIsGoneStillDeletesIt() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        let item = OfflineItem(videoId: "vidGoneOnly", title: "Lecture", channelName: nil,
-                               thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
-                               status: OfflineStatus.completed.rawValue, completedAt: rig.flags.now)
+        let item = makeOfflineItem("vidGoneOnly", status: .completed, completedAt: rig.flags.now)
         try rig.store.insert(item)
         rig.flags.gate = .gone
 
