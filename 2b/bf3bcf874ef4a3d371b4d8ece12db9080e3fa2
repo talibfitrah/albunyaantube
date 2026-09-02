@@ -1,0 +1,29 @@
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_66ddb7c44de816::t_c8406608e820a8 813,817-820,828-834
+ios/FitrahTubeTests/CastSessionTests.swift
+  s_66ddb7c44de816::t_c70f33c01ac208 1330-1334
+  s_66ddb7c44de816::t_ddc648b9da8d06 462,464-469
+  s_66ddb7c44de816::t_2203de9fef532f 1022-1026
+  s_66ddb7c44de816::t_a20e5483f8bddc 1273-1275
+  s_66ddb7c44de816::t_59ceab0788d836 442-443
+  s_66ddb7c44de816::t_a850b893e52d2e 1362-1398
+ios/FitrahTube/Features/Player/CastOwnership.swift
+  s_66ddb7c44de816::t_9ac5bd4c9202c4 168-170
+  s_66ddb7c44de816::t_2901713529ae95 124-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2bbf3bcf874ef4a3d371b4d8ece12db9080e3fa2",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
