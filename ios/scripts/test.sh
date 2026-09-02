@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
-# Runs the full iOS Phase 0 test suite under a 300s wall-clock watchdog (AGENTS.md mandate):
+# Runs the iOS per-task gate under a 300s wall-clock watchdog (AGENTS.md mandate):
 #   convert-strings.py --check (catalog must already be up to date) -> xcodegen generate ->
-#   xcodebuild test (iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test
-#   (FitrahAPI + InnerTubeKit packages) -> xcodebuild build (Release, simulator SDK -- compiles the
-#   non-DEBUG paths).
+#   xcodebuild test (Debug, iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test
+#   (FitrahAPI + InnerTubeKit packages). Ordinary tasks stop here.
+# RELEASE=1 bash ios/scripts/test.sh additionally builds Release (simulator SDK -- compiles the
+# non-DEBUG paths) after the gate passes, in its own separate 300s watchdog window: the
+# Debug->Release flip invalidates the ~320 SPM package compile units the gate just built, and
+# charging that recompile to the gate's window is what pushed a combined run past 300s once
+# Firebase/GoogleSignIn landed (Phase 4 Task 1). REQUIRED for the Phase 4 gate tasks (19, 31) and
+# any task touching ios/project.yml, an xcconfig, entitlements, or Info.plist keys; ordinary
+# tasks run the Debug gate only. Prints "RELEASE: built" or "RELEASE: skipped (set RELEASE=1)".
 # Per-test limit: 60s -- XCTest rounds `defaultTestExecutionTimeAllowance` up to 60s and Swift
 # Testing's own floor is also one minute, so 60s is the real effective limit regardless of the
 # number configured (FitrahTube.xctestplan sets 60 to match); CLAUDE.md's 30s note is a
-# cross-platform default this iOS suite can't hit and is amended separately. Wall-clock: 300s.
+# cross-platform default this iOS suite can't hit and is amended separately. Wall-clock: 300s per
+# watchdog window (gate; Release gets its own when requested).
 # $RESULTS (xcresult bundle + watchdog marker) is removed on exit unless KEEP_RESULTS=1 is set.
 # Override simulators with IPHONE_SIM / IPAD_SIM env vars, e.g. IPHONE_SIM="iPhone 16" ./test.sh.
 # Invoke from the repo root (`ios/scripts/test.sh`) -- the first stage's path is repo-root-relative.
@@ -62,7 +69,7 @@ walk(data.get("testNodes", []))
 '
 }
 
-run_all() {
+run_gate() {
     # Phase 4 Task 1: must precede `xcodegen generate` below -- that is what makes the app target's
     # `sources` glob pick the plist up. Exits 0 with a notice when the (USER-BLOCKED, git-ignored)
     # source file is absent, so a checkout without it gates green.
@@ -115,9 +122,20 @@ run_all() {
         return "$innertube_status"
     fi
 
-    # Debug is what the test steps above compile; Release flips DEBUG off (AppContainer.swift's
-    # #else branch, FitrahTubeApp.swift's #else branch) so it must build too. Simulator SDK ->
-    # no code signing required.
+    return 0
+}
+
+# Split out of run_gate (2026-09-02 gate-restructure): the Debug->Release configuration flip
+# invalidates the SPM package targets run_gate just built, so running this in the same watchdog
+# window as the gate recompiles ~320 compile units on top of an already-full window. Only invoked
+# when RELEASE=1 -- see the header comment. Runs in its own background job, so it re-does the same
+# repo-root -> ios/ cd run_gate did (that cd does not survive across separate background jobs).
+run_release() {
+    cd "$(dirname "$0")/.."
+
+    # Debug is what the gate compiles; Release flips DEBUG off (AppContainer.swift's #else branch,
+    # FitrahTubeApp.swift's #else branch) so it must build too. Simulator SDK -> no code signing
+    # required.
     echo "== Release build (simulator SDK) =="
     xcodebuild build \
         -project FitrahTube.xcodeproj \
@@ -135,7 +153,7 @@ if [ "${KEEP_RESULTS:-0}" != "1" ]; then
     trap 'rm -rf "$RESULTS"' EXIT
 fi
 
-run_all &
+run_gate &
 pid=$!
 # A-M13: re-check the job group is still alive before claiming a timeout. If `sleep 300` expires in
 # the window between `wait "$pid"` returning and the `kill` on the watchdog below, the marker was
@@ -155,6 +173,41 @@ if [ -e "$RESULTS/killed" ]; then
     trap - EXIT
     echo "results kept at $RESULTS"
     exit 124
+fi
+
+if [ "$rc" -ne 0 ]; then
+    exit "$rc"
+fi
+
+if [ "${RELEASE:-0}" != "1" ]; then
+    echo "RELEASE: skipped (set RELEASE=1)"
+    exit 0
+fi
+
+# Release build: same race-safe watchdog shape as the gate above, but its own separate 300s
+# window -- see header comment for why it can't share the gate's window.
+run_release &
+pid=$!
+( sleep 300; kill -0 -"$pid" 2>/dev/null || exit 0; touch "$RESULTS/killed"; kill -TERM -- -"$pid" 2>/dev/null ) &
+wd=$!
+
+trap 'kill -- -"$pid" -"$wd" 2>/dev/null; exit 130' INT TERM
+
+wait "$pid"
+rc=$?
+kill -- -"$wd" 2>/dev/null || true
+
+if [ -e "$RESULTS/killed" ]; then
+    echo "test.sh: 300s wall-clock watchdog killed the Release build" >&2
+    trap - EXIT
+    echo "results kept at $RESULTS"
+    exit 124
+fi
+
+if [ "$rc" -eq 0 ]; then
+    echo "RELEASE: built"
+else
+    echo "RELEASE: failed"
 fi
 
 exit "$rc"
