@@ -85,6 +85,22 @@ struct SavedScreenTests {
         #expect(SavedRowAction.labelKey(.delete) == "offline_action_delete")
     }
 
+    // MARK: - The Home entry into this screen
+
+    /// Fork D at the Home surface: the kill-switch governs SAVING, not access to what is already
+    /// saved. Settings' `.savedLibrary` row is always shown, so Home's overflow entry must be too —
+    /// hiding it left the two surfaces disagreeing about a library the user still owns.
+    ///
+    /// A `some View` body's metatype resolves to the concrete view tree at runtime (the
+    /// `MainShellRoutingTests` idiom, one level up): a `if`-gated entry appears as an `Optional`,
+    /// an unconditional one as the bare `Button`. Three `Label` entries: Favorites, Saved, Settings.
+    @Test func theHomeOverflowMenuAlwaysOffersTheSavedEntry() {
+        let body = String(describing: HomeView.Body.self)
+        let entry = "Button<Label<Text, Image>>"
+        #expect(body.components(separatedBy: entry).count - 1 == 3, "Favorites, Saved, Settings: \(body)")
+        #expect(!body.contains("Optional<\(entry)>"), "no menu entry may be gated by the kill-switch")
+    }
+
     // MARK: - Settings storage value
 
     @Test func storageValueRendersBothByteCountsThroughFormat() {

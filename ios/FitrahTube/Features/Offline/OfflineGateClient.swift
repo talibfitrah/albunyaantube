@@ -57,7 +57,7 @@ nonisolated enum SaveButtonState: Equatable, Sendable {
 /// - An existing item outranks everything: its save was authorized at save time and the sweep owns
 ///   revocation — a completed item must open OFFLINE, where the gate fetch never lands.
 /// - `downloadsEnabled == false` (the remote kill-switch) hides ONLY the `.save` state, silently
-///   (fork D, Task 5 review fold-in): the switch governs saving, not access to what's already
+///   (fork D): the switch governs saving, not access to what's already
 ///   saved — a running save stays visible/cancellable, a completed item stays openable.
 /// - With no item (or a failed/cancelled row, which a fresh save upserts over), only an
 ///   affirmative `.allowed` under an enabled switch shows Save; everything else renders nothing.

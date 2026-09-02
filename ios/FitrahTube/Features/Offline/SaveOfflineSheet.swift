@@ -5,7 +5,7 @@ import SwiftUI
 /// `.progressiveOnly`), preselected from `SettingsStore.downloadQuality`; the save fires ONLY on
 /// the explicit confirm button — never speculatively (every video save POSTs a real walk).
 ///
-/// The body IS `SettingsPickerSheet` (the fold-in that removed a verbatim copy of it): same
+/// The body IS `SettingsPickerSheet`, not a verbatim copy of it: same
 /// checkmark rows, detents and background, with `confirm:` supplying the Save button and
 /// suppressing dismiss-on-tap.
 struct SaveOfflineSheet: View {

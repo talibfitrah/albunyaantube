@@ -46,8 +46,8 @@ enum OfflineStorage {
     /// the manager still owns every write/delete.
     /// Returns 0 when `resourceValues` throws — which in practice means `base` doesn't exist.
     /// That never happens for `AppContainer.offlineBase` in a running app: SwiftData creates its
-    /// store there before any caller renders (a real coupling, named here — Task 6 review
-    /// fold-in). If that store ever moves, add an `NSHomeDirectory()` fallback; until then it's a
+    /// store there before any caller renders (a real coupling, named here). If that store ever
+    /// moves, add an `NSHomeDirectory()` fallback; until then it's a
     /// fallback nothing can reach.
     ///
     /// `base` is required, with no default: the default used to be a SECOND spelling of

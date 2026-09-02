@@ -1,88 +1,6 @@
 import Foundation
 import InnerTubeKit
 
-/// Task 7, the Task 4 trap's ROOT cause: YouTube's itag-140 fMP4 declares the FULL duration in
-/// `mvhd`/`mdhd` while also carrying every fragment, so AVFoundation reports ~2× (probed live
-/// 2026-09-01: afinfo 8455.99 s vs `AVURLAsset` 16912.02 s — and
-/// `AVURLAssetPreferPreciseDurationAndTimingKey` changes NOTHING; zeroing the two fields, the
-/// shape the fMP4 spec itself prescribes for fragmented files, yields the exact 8455.99 s).
-/// Runs once at save completion. Fragmented files only (`mvex` present) — a plain mp4's `mvhd`
-/// is authoritative and must not be touched.
-nonisolated enum FragmentedMP4Durations {
-    /// How much of the file head is searched for `moov` (it sits right after `ftyp` in these
-    /// files; a `moov` beyond this is left alone — fail-safe no-op, never a corrupted file).
-    private static let headLimit = 4 * 1024 * 1024
-
-    /// The absolute byte ranges of every `mvhd`/`mdhd` duration field inside a `moov` that also
-    /// contains `mvex` — empty for non-fragmented (or unparseable) data. Pure, so the tests pin
-    /// the box walk without AVFoundation.
-    static func durationFieldRanges(in data: Data) -> [Range<Int>] {
-        // Zero-base a slice so every offset below is both a Data index and a file offset.
-        guard data.startIndex == 0 else { return durationFieldRanges(in: Data(data)) }
-        var ranges: [Range<Int>] = []
-        var fragmented = false
-
-        func boxType(at offset: Int) -> String? {
-            String(data: data[(offset + 4)..<(offset + 8)], encoding: .ascii)
-        }
-
-        func walk(_ lower: Int, _ upper: Int) {
-            var offset = lower
-            while offset + 8 <= upper {
-                let size = Int(readUInt32(data, at: offset) ?? 0)
-                guard size >= 8, offset + size <= upper, let type = boxType(at: offset) else { return }
-                if type == "trak" || type == "mdia" {
-                    walk(offset + 8, offset + size)
-                }
-                if type == "mvex" { fragmented = true }
-                if type == "mvhd" || type == "mdhd", offset + 9 <= upper {
-                    let version = data[offset + 8]
-                    // v0: ver/flags(4) + creation(4) + modification(4) + timescale(4) → 4-byte
-                    // duration at +24; v1: 8-byte creation/modification → 8-byte duration at +32.
-                    let (start, length) = version == 1 ? (offset + 32, 8) : (offset + 24, 4)
-                    if start + length <= offset + size {
-                        ranges.append(start..<(start + length))
-                    }
-                }
-                offset += size
-            }
-        }
-
-        // Top level: only moov is entered; everything else (ftyp/sidx/moof/mdat) is stepped over.
-        var offset = 0
-        let upper = min(data.count, Self.headLimit)
-        while offset + 8 <= upper {
-            let size = Int(readUInt32(data, at: offset) ?? 0)
-            guard size >= 8 else { break }
-            if offset + size <= upper, boxType(at: offset) == "moov" {
-                walk(offset + 8, offset + size)
-                break   // one movie header per file
-            }
-            offset += size
-        }
-        return fragmented ? ranges : []
-    }
-
-    /// Zeroes the duration fields in place. Any failure (unreadable head, unwritable file,
-    /// nothing fragmented) is a silent no-op — the file still plays, just with the 2× scrubber.
-    static func normalize(at url: URL) {
-        guard let handle = try? FileHandle(forUpdating: url),
-              let head = try? handle.read(upToCount: headLimit) else { return }
-        defer { try? handle.close() }
-        for range in durationFieldRanges(in: head) {
-            try? handle.seek(toOffset: UInt64(range.lowerBound))
-            try? handle.write(contentsOf: Data(repeating: 0, count: range.count))
-        }
-    }
-
-    private static func readUInt32(_ data: Data, at offset: Int) -> UInt32? {
-        guard offset + 4 <= data.count else { return nil }
-        let index = data.startIndex + offset
-        return (UInt32(data[index]) << 24) | (UInt32(data[index + 1]) << 16)
-            | (UInt32(data[index + 2]) << 8) | UInt32(data[index + 3])
-    }
-}
-
 /// What a save request carries besides its ids (the Saved-screen row's text + thumbnail).
 nonisolated struct OfflineMetadata: Sendable {
     var title: String
@@ -150,9 +68,9 @@ actor OfflineManager: OfflineSaving {
     private let isOnCellular: @MainActor @Sendable () -> Bool
     private let gate: @Sendable (String) async -> GateAnswer
     private let now: @Sendable () -> Date
-    /// The remote kill-switch (Task 6 review fold-in): `SaveAffordance` hiding the Save button was
-    /// the ONLY config consult, so Saved-screen Retry/Resume started downloads with the switch
-    /// off. Consulted wherever new work would START (`retry`, `begin` — which schedule/resume
+    /// The remote kill-switch: `SaveAffordance` hiding the Save button was the ONLY config consult,
+    /// so Saved-screen Retry/Resume started downloads with the switch off.
+    /// Consulted wherever new work would START (`retry`, `begin` — which schedule/resume
     /// route through); NEVER by delete/cancel/pause/sweep or offline playback (fork D: the switch
     /// governs saving, not access to what's already saved). Refusal is silent — the row stays as
     /// it was, exactly like the kill-switch's hidden-affordance rule.
@@ -169,14 +87,14 @@ actor OfflineManager: OfflineSaving {
     private var attempts: [String: Int] = [:]
     /// Ids whose next attempt is timer-scheduled (limiter delay/block, resolver cooldown).
     private var retries: [String: Task<Void, Never>] = [:]
-    /// Ids the CELLULAR GATE paused (cubic R2-2) — never a user's pause. `gateDidChange` resumes
-    /// exactly these when the gate re-opens, and `pause(_:)` drops one, because a user pause
-    /// outranks this bookkeeping (Part A review, Important 1).
+    /// Ids the CELLULAR GATE paused — never a user's pause. `gateDidChange` resumes exactly these
+    /// when the gate re-opens, and `pause(_:)` drops one, because a user pause outranks this
+    /// bookkeeping.
     ///
-    /// In-memory, and `reattach()` does NOT cover the loss (Part A review, Minor 2 — the previous
-    /// comment claimed it did): a gate-paused row persists as `.paused`, and `reattach()` iterates
-    /// `.running` rows only, so it never sees one. A gate pause that survives a force-quit
-    /// therefore still reads Paused until the user's Resume. That is the safe direction — the
+    /// In-memory, and `reattach()` does NOT cover the loss: a gate-paused row persists as
+    /// `.paused`, and `reattach()` iterates `.running` rows only, so it never sees one. A gate
+    /// pause that survives a force-quit therefore still reads Paused until the user's Resume.
+    /// That is the safe direction — the
     /// alternative is a relaunch that silently starts downloads nobody asked for — and it is why
     /// this stays in memory instead of becoming a persisted column.
     private var gatePausedIds: Set<String> = []
@@ -186,7 +104,7 @@ actor OfflineManager: OfflineSaving {
 
     /// Test hook: which ids currently wait on a retry timer.
     var pendingRetryIds: Set<String> { Set(retries.keys) }
-    /// Test hook (cubic P1): how many times `reattach()` has run — the background-events relaunch
+    /// Test hook: how many times `reattach()` has run — the background-events relaunch
     /// wiring is asserted at this flag level; the real relaunch is device territory.
     private(set) var reattachCount = 0
 
@@ -229,7 +147,7 @@ actor OfflineManager: OfflineSaving {
 
     func pause(_ id: String) async {
         guard let row = await read(id: id), row.status == .running else { return }
-        // A USER pause outranks any gate bookkeeping (Part A review, Important 1): whatever the
+        // A USER pause outranks any gate bookkeeping: whatever the
         // gate still believes it parked, this row now waits for the user's Resume. `gateDidChange`
         // re-inserts immediately after its own `await pause(...)`, so the gate's leg is unaffected;
         // this is what stops a STALE entry (an id that left `.paused` by another route, or one the
@@ -292,12 +210,12 @@ actor OfflineManager: OfflineSaving {
         await schedule()
     }
 
-    /// Settings' Clear-all (Cubic P3-3). Looping `delete(_:)` ran a `schedule()` per row, and a
+    /// Settings' Clear-all. Looping `delete(_:)` ran a `schedule()` per row, and a
     /// schedule between two deletes picks a still-existing queued row and begins its resolve — a
     /// real, rate-limited InnerTube POST for a row the very next iteration deletes. Every row
     /// tears down first, then ONE `schedule()`.
     ///
-    /// `deleteAll`, not a `delete` overload (fix round 1): `manager.delete(x)` would no longer say
+    /// `deleteAll`, not a `delete` overload: `manager.delete(x)` would no longer say
     /// at the call site which of the two semantics applies.
     func deleteAll(_ ids: [String]) async {
         for id in ids {
@@ -311,11 +229,17 @@ actor OfflineManager: OfflineSaving {
         reattachCount += 1
         let live = await engine.liveIds()
         let rows = await readAll()
-        for row in rows where row.status == .running {
+        // A row in `active` belongs to a live attempt of THIS session — two launch callers run
+        // this (the AppDelegate background-events hook and RootView's `.task`), and re-queueing a
+        // row whose resolve is still in flight made the engine start feed `.progress` events to a
+        // `.queued` row, which the status guard drops: "Waiting" with a frozen bar until
+        // `.finished`. Re-claiming it would be just as wrong — the bump invalidates its own
+        // continuation.
+        for row in rows where row.status == .running && !active.contains(row.id) {
             if live.contains(row.id) {
                 _ = claim(row.id)
             } else {
-                // Orphaned: the app died mid-download. It queues either way (cubic R2-2) — a row
+                // Orphaned: the app died mid-download. It queues either way — a row
                 // that was RUNNING was never paused by a user, and `.paused` is the state that
                 // waits for a user's Resume. `begin` continues it from its resume data when it
                 // carries any, else from zero.
@@ -353,15 +277,24 @@ actor OfflineManager: OfflineSaving {
                 await pause(row.id)
                 gatePausedIds.insert(row.id)
             }
+            // The gate can re-open inside those awaits: that re-open's own allow leg snapshotted
+            // the parked set BEFORE this leg inserted into it, so it resumed nothing and the row
+            // stayed Paused until the next gate change or a manual Resume. The leg that finishes
+            // last reconciles the rows with the gate as it now reads.
+            guard await gateAllows() else { return }
+            await resumeGateParked()
             return
         }
-        // A GATE pause is not a user pause (cubic R2-2): `schedule()` picks only `.queued` rows,
-        // so a brief Wi-Fi drop under Wi-Fi-only used to leave the save at "Paused" until the
-        // user tapped Resume. The gate resumes exactly the ids IT parked; a row the user paused
-        // still waits for the user.
-        // ponytail: restores every parked row, which briefly exceeds the serial floor (CF-D-5)
-        // if two were somehow running — that is a faithful restore of the pre-gate state; add a
-        // one-at-a-time drain if per-item concurrency ever lands.
+        await resumeGateParked()
+    }
+
+    /// A GATE pause is not a user pause: `schedule()` picks only `.queued` rows, so a brief Wi-Fi
+    /// drop under Wi-Fi-only used to leave the save at "Paused" until the user tapped Resume. This
+    /// resumes exactly the ids the GATE parked; a row the user paused still waits for the user.
+    /// ponytail: restores every parked row, which briefly exceeds the serial floor (CF-D-5) if two
+    /// were somehow running — that is a faithful restore of the pre-gate state; add a
+    /// one-at-a-time drain if per-item concurrency ever lands.
+    private func resumeGateParked() async {
         let parked = gatePausedIds
         gatePausedIds.removeAll()
         for id in parked { await resume(id) }
@@ -390,7 +323,7 @@ actor OfflineManager: OfflineSaving {
             let tmp = directory.appending(path: "\(id).tmp")
             // `.paused` too: `pause()` writes `paused` before the engine hop returns, so a final
             // chunk racing the pause can deliver `.finished` for a paused row — those bytes are
-            // the complete file and must be kept, not deleted. `.queued` too (cubic R2-3): on a
+            // the complete file and must be kept, not deleted. `.queued` too: on a
             // background-events relaunch the pending delegate callbacks and `liveIds()`'s
             // `getAllTasks` are both async on the delegate queue with no ordering guarantee, so
             // the final chunk's finish can land AFTER `reattach()` already found no live task and
@@ -431,7 +364,7 @@ actor OfflineManager: OfflineSaving {
         case .failed(let id, let failure):
             guard let row = await read(id: id), row.status == .running else { return }
             switch failure {
-            case .http(403) where !reResolvedAfter403.contains(id):
+            case .http(403, _) where !reResolvedAfter403.contains(id):
                 // `DownloadWorker.kt:266-276`: one forced re-resolve, restart from zero — the old
                 // resume data names the dead URL.
                 reResolvedAfter403.insert(id)
@@ -447,10 +380,13 @@ actor OfflineManager: OfflineSaving {
                 }
                 guard let requeued = await read(id: id) else { return }
                 await resolveAndStart(requeued, forceRefresh: true)
-            case .http(403): await fail(id, .http403)
-            case .http(429): await fail(id, .http429)
-            case .http: await fail(id, .network)
-            case .network(let resumeData): await fail(id, .network, resumeData: resumeData)
+            case .http(403, _): await fail(id, .http403)
+            case .http(429, _): await fail(id, .http429)
+            // A transient status (5xx, 416) is a transport failure like any other: the `.tmp` is
+            // untouched, so keep the token — `retry` → `begin` resumes only when the row carries
+            // one, and `engine.start` deletes the partial.
+            case .http(_, let resumeData), .network(let resumeData):
+                await fail(id, .network, resumeData: resumeData)
             }
         }
     }
@@ -461,7 +397,7 @@ actor OfflineManager: OfflineSaving {
     // actually queue up in practice; serial is the rate-limit-friendly floor and keeps the single
     // background session's re-attach trivial.
     //
-    /// Not `private` (Cubic P3-1): the smallest kick the remote-config refresh path can give the
+    /// Not `private`: the smallest kick the remote-config refresh path can give the
     /// queue when the kill-switch flips back ON. Nothing else observes that flip
     /// (`observeOfflineGate` watches only Wi-Fi/cellular), so rows queued during an off-window
     /// used to sit at "Waiting" until the next launch's `reattach()`. A no-op when nothing is
@@ -486,16 +422,20 @@ actor OfflineManager: OfflineSaving {
         // (or a double-tap Resume) both used to pass their checks and start the same row twice.
         guard !active.contains(row.id) else { return }
         let attempt = claim(row.id)
-        // Kill-switch (fold-in): `begin` is the one funnel every start rides — schedule picks,
+        // Kill-switch: `begin` is the one funnel every start rides — schedule picks,
         // user Resume, reattach's re-queue. Refusal leaves the row queued/paused untouched.
+        // Both refusals release the claim only if it is still THIS attempt's: a cancel plus retry
+        // landing inside either await re-claims the row, and stripping that newer claim left the
+        // retry's own continuation failing `stillCurrent` — the row stayed queued with nothing
+        // running.
         guard await downloadsEnabled() else {
-            active.remove(row.id)
+            release(row.id, attempt)
             return
         }
         guard await gateAllows() else {
             // Stays queued/paused. A queued row is re-picked by the schedule() a gateDidChange
             // runs; a paused row waits for the user's Resume (schedule() picks only queued rows).
-            active.remove(row.id)
+            release(row.id, attempt)
             return
         }
         guard stillCurrent(row.id, attempt) else { return }   // cancelled/deleted during the hop
@@ -509,7 +449,7 @@ actor OfflineManager: OfflineSaving {
         await resolveAndStart(row, forceRefresh: false)
     }
 
-    /// The ONLY way to claim the serial slot (review F1): every `active.insert` must carry an
+    /// The ONLY way to claim the serial slot: every `active.insert` must carry an
     /// attempt bump, or `stillCurrent` reads a nil generation against the claimant's own token and
     /// silently discards its continuation — a re-attached row's 403 re-resolve wedged the whole
     /// scheduler this way (the claim was never released either).
@@ -517,6 +457,12 @@ actor OfflineManager: OfflineSaving {
         active.insert(id)
         attempts[id, default: 0] += 1
         return attempts[id]!
+    }
+
+    /// Drops the serial claim only while it is still `attempt`'s — the mirror of `claim`.
+    private func release(_ id: String, _ attempt: Int) {
+        guard stillCurrent(id, attempt) else { return }
+        active.remove(id)
     }
 
     /// True while `id`'s claim from `begin`/`reattach` (or the 403 re-resolve continuing it) is the live
@@ -557,7 +503,7 @@ actor OfflineManager: OfflineSaving {
             // CF-D-9 reverse direction: never a failed row, never a retry into the cooldown.
             scheduleRetry(row.id, after: .seconds(max(1, until.timeIntervalSince(now())))); return
         } catch ExtractionError.botCheck {
-            // Review F2: a bot-checked walk (the muxed save-walk's shape — its walk-end trip just
+            // A bot-checked walk (the muxed save-walk's shape — its walk-end trip just
             // armed the persisted cooldown) is a temporary block, never a failed row. `.botCheck`
             // carries no date, so park briefly: the retry's own resolve hits the resolver's
             // cooldown self-gate BEFORE any rung or network call and lands in the `.cooldown` arm
@@ -572,7 +518,7 @@ actor OfflineManager: OfflineSaving {
         guard stillCurrent(row.id, attempt) else { return }
         guard let url = Self.sourceURL(resolved.stream, audioOnly: row.audioOnly) else {
             if case .embed = resolved.stream { await fail(row.id, .notSaveable); return }
-            // Cubic P2: an audio-only save resolves without `requiresMuxed`, so this answer may be
+            // An audio-only save resolves without `requiresMuxed`, so this answer may be
             // the shared `ManifestCache`'s — and a player fallback walk caches `.progressive`
             // (nil `audioOnlyURL`) for its whole 1 h TTL even though a fresh visionos walk would
             // return `.hls` with itag-140. `!forceRefresh` is exactly "plausibly from cache" (a

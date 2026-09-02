@@ -18,14 +18,6 @@ struct HomeView: View {
     /// other two list screens use -- in particular guard 5's progress invariant, which is what
     /// stops a failing endpoint from being retried on every footer-spinner-driven relayout.
     @State private var paginationGuard = PaginationGuard()
-    /// Phase 3 Task 6: the overflow menu's Saved entry, gated by the remote kill-switch
-    /// (`RemoteConfig.isDownloadsEnabled`). Read once per LAUNCH, not per appearance: Home is a
-    /// tab root that stays alive for the session, so its plain `.task` below runs once (unlike
-    /// `PlayerScreen`'s, which is correctly keyed). A mid-session flip therefore leaves this entry
-    /// as it was until relaunch — accepted, because the Saved screen is access to already-saved
-    /// content, which the switch does not govern (fork D). false until the read lands: the OFF
-    /// state hides silently, so appearing late beats flashing out.
-    @State private var downloadsEnabled = false
 
     private static let topAnchor = "home-top"
 
@@ -75,7 +67,7 @@ struct HomeView: View {
                                           action: { Task { await viewModel.load() } })
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
-        // Fix round 1, finding #4: a category applied on Categories/Subcategories (Task 11) pops
+        // A category applied on Categories/Subcategories (Task 11) pops
         // straight back to Home without re-running `.task` (this view was never removed from its
         // `NavigationStack`, just the pushed screens above it were). Unlike `ContentListViewModel`,
         // `HomeViewModel` snapshots `filter.state.categoryId` once into `category` at `init` and
@@ -94,7 +86,6 @@ struct HomeView: View {
         // `submitList` completion callback (gate B1-C1).
         .onChange(of: viewModel?.state) { _, _ in triggerAutoFill() }
         .task {
-            downloadsEnabled = await container.innerTube.remoteConfig.current().isDownloadsEnabled
             if viewModel == nil {
                 // ponytail: `widthClass` is captured once here (the environment value at first
                 // appearance), not re-read live on every later call -- contentLimit (10 vs 20) can
@@ -129,14 +120,13 @@ struct HomeView: View {
                     Label(String(localized: "favorites_title"), systemImage: "heart.fill")
                 }
                 // Phase 3 Task 6: the Saved library entry (`arrow.down.circle` -- the project's
-                // save-for-offline glyph, PlayerToolbar's save slot). Hidden, silently, while the
-                // kill-switch is off.
-                if downloadsEnabled {
-                    Button {
-                        router.push(.offline)
-                    } label: {
-                        Label(String(localized: "offline_saved_title"), systemImage: "arrow.down.circle")
-                    }
+                // save-for-offline glyph, PlayerToolbar's save slot). Always shown, like Settings'
+                // `.savedLibrary` row: the downloads kill-switch governs SAVING, never access to
+                // what is already saved (fork D).
+                Button {
+                    router.push(.offline)
+                } label: {
+                    Label(String(localized: "offline_saved_title"), systemImage: "arrow.down.circle")
                 }
                 Button {
                     router.push(.settings)
@@ -163,7 +153,7 @@ struct HomeView: View {
             label: container.filters.state.categoryName ?? String(localized: "filter_category"),
             isActive: hasActiveFilter,
             onTap: { router.push(.categories) },
-            // Fix round 1, finding #4: routes through the shared store, so this and an
+            // Routes through the shared store, so this and an
             // externally-applied category (Categories/Subcategories) both funnel through the
             // single `.onChange(of: container.filters.state)` reload above -- one filter change,
             // one reload, regardless of where it originated.

@@ -9,7 +9,10 @@ nonisolated enum OfflineDownloadEvent: Sendable {
 }
 
 nonisolated enum OfflineDownloadFailure: Sendable {
-    case http(status: Int)
+    /// The partial is untouched, so `resumeData` continues the walk from it — a transient 5xx/416
+    /// must not cost the whole download. (403 is the exception the manager makes: the URL itself
+    /// is dead, so it re-resolves and restarts.)
+    case http(status: Int, resumeData: Data?)
     /// Transport-level failure; `resumeData` is what the engine needs to continue later, if anything.
     case network(resumeData: Data?)
 }
@@ -72,8 +75,8 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     /// nothing to stop and the delegate walked on.
     private let stateLock = NSLock()
     /// Per-walk resume token, registered by `start`/`resume` and re-registered by every
-    /// `issueChunk` (review F4: a relaunch-re-attached walk enters only through the delegate's
-    /// `issueChunk`) — `pause` reads it here rather than off a live task (nil at a boundary).
+    /// `issueChunk` (a relaunch-re-attached walk enters only through the delegate's `issueChunk`)
+    /// — `pause` reads it here rather than off a live task (nil at a boundary).
     /// Cleared on `.finished` and on `cancel`; kept across a transient failure so a racing pause
     /// still gets its token.
     private var walks: [String: ResumeToken] = [:]
@@ -82,6 +85,12 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     /// ponytail: grows by one id per cancelled/paused item per session — trim on clear if that
     /// ever matters.
     private var stoppedIds: Set<String> = []
+    /// The TASKS we cancelled, which is the identity `didCompleteWithError` needs: `stoppedIds` is
+    /// keyed by ROW, and a `resume` clears the row's entry before the background daemon delivers
+    /// the paused task's late `.cancelled` — which then read as a system cancel and failed the
+    /// freshly resumed row while its new chunk kept downloading. Kept (never removed) so a
+    /// re-delivery stays silent too; one Int per pause/cancel per session.
+    private var stoppedTaskIds: Set<Int> = []
 
     init(directory: URL, configuration: URLSessionConfiguration) {
         let (stream, continuation) = AsyncStream.makeStream(of: OfflineDownloadEvent.self)
@@ -126,7 +135,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             return walks[id]
         }
         let live = await task(id)
-        live?.cancel()
+        stop(live)
         // Walk state first; the live task is the fallback for a relaunch-re-attached walk that
         // never registered one. At a chunk boundary both `live` and the old task-only path are
         // nil — the walk state is what keeps the token.
@@ -138,7 +147,15 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             stoppedIds.insert(id)   // authoritative even when no task is live (chunk boundary)
             walks[id] = nil
         }
-        await task(id)?.cancel()
+        stop(await task(id))
+    }
+
+    /// Records the task as ours BEFORE cancelling it — the completion is delivered on the delegate
+    /// queue, so the other order races it.
+    private func stop(_ task: URLSessionTask?) {
+        guard let task else { return }
+        stateLock.withLock { _ = stoppedTaskIds.insert(task.taskIdentifier) }
+        task.cancel()
     }
 
     func liveIds() async -> Set<String> {
@@ -150,7 +167,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     private func issueChunk(id: String, url: URL, userAgent: String, allowsCellular: Bool, offset: Int64) {
         let proceed = stateLock.withLock { () -> Bool in
             guard !stoppedIds.contains(id) else { return false }
-            // Review F4: register on every chunk, not just in start/resume — a relaunch-re-attached
+            // Register on every chunk, not just in start/resume — a relaunch-re-attached
             // walk enters here from the delegate without ever passing either, and a boundary
             // `pause` without the token restarts the walk from zero (deleting the `.tmp`).
             walks[id] = ResumeToken(url: url, userAgent: userAgent)
@@ -209,22 +226,26 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
         let response = downloadTask.response as? HTTPURLResponse
         let status = response?.statusCode ?? 200
         guard (200..<300).contains(status) else {
-            continuation.yield(.failed(id: id, failure: .http(status: status)))
+            // The partial is untouched, so the token continues the walk from it (the manager
+            // re-resolves from zero for a 403, where the URL itself is what died).
+            continuation.yield(.failed(id: id, failure: .http(status: status, resumeData: Self.token(for: downloadTask))))
             return
         }
         let expectedOffset = Self.offset(fromRangeHeader: request.value(forHTTPHeaderField: "Range"))
         do {
             try OfflineManager.prepareDirectory(directory)
             let partial = partialURL(id)
+            // The file and the chunk must agree on the offset in BOTH branches (a stale relaunch
+            // task): `partialSize` is 0 with no partial, so a missing file demands a chunk that
+            // starts at 0 — otherwise the walk wrote a file beginning mid-stream and completed it.
+            guard status == 200 || partialSize(id) == expectedOffset else {
+                throw CocoaError(.fileWriteUnknown)   // restart cleanly
+            }
             // A 200 means the server ignored the Range and sent the whole body: it replaces.
             if status == 200 || !FileManager.default.fileExists(atPath: partial.path()) {
                 try? FileManager.default.removeItem(at: partial)
                 try FileManager.default.moveItem(at: location, to: partial)
             } else {
-                guard partialSize(id) == expectedOffset else {
-                    // The file and the chunk disagree (a stale relaunch task): restart cleanly.
-                    throw CocoaError(.fileWriteUnknown)
-                }
                 let handle = try FileHandle(forWritingTo: partial)
                 defer { try? handle.close() }
                 try handle.seekToEnd()
@@ -267,10 +288,12 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
         // Our own pause/cancel: `pause` already returned its token. But iOS cancels background
         // tasks WE never stopped too (force-quit, background-session disconnect), and swallowing
         // those left the row at "Saving…" with no task — the manager's `active` claim was never
-        // released, so `schedule()` refused every other queued row for the session. `stoppedIds`
-        // is the engine's own stop set: only an id in it is ours.
+        // released, so `schedule()` refused every other queued row for the session. The engine's
+        // own stop sets are what make a cancellation ours: the TASK we stopped (a resume clears
+        // the row long before this arrives), or the ROW, for a stop issued at a chunk boundary
+        // where there was no task to name.
         if (error as? URLError)?.code == .cancelled,
-           stateLock.withLock({ stoppedIds.contains(id) }) { return }
+           stateLock.withLock({ stoppedTaskIds.contains(task.taskIdentifier) || stoppedIds.contains(id) }) { return }
         continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: task))))
     }
 
