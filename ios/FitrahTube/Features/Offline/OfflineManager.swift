@@ -170,8 +170,15 @@ actor OfflineManager: OfflineSaving {
     /// Ids whose next attempt is timer-scheduled (limiter delay/block, resolver cooldown).
     private var retries: [String: Task<Void, Never>] = [:]
     /// Ids the CELLULAR GATE paused (cubic R2-2) — never a user's pause. `gateDidChange` resumes
-    /// exactly these when the gate re-opens. In-memory only: a relaunch loses them, and
-    /// `reattach()` re-queues every orphaned running row anyway.
+    /// exactly these when the gate re-opens, and `pause(_:)` drops one, because a user pause
+    /// outranks this bookkeeping (Part A review, Important 1).
+    ///
+    /// In-memory, and `reattach()` does NOT cover the loss (Part A review, Minor 2 — the previous
+    /// comment claimed it did): a gate-paused row persists as `.paused`, and `reattach()` iterates
+    /// `.running` rows only, so it never sees one. A gate pause that survives a force-quit
+    /// therefore still reads Paused until the user's Resume. That is the safe direction — the
+    /// alternative is a relaunch that silently starts downloads nobody asked for — and it is why
+    /// this stays in memory instead of becoming a persisted column.
     private var gatePausedIds: Set<String> = []
     /// Ids that already spent their one re-resolve on a 403.
     private var reResolvedAfter403: Set<String> = []
@@ -222,6 +229,13 @@ actor OfflineManager: OfflineSaving {
 
     func pause(_ id: String) async {
         guard let row = await read(id: id), row.status == .running else { return }
+        // A USER pause outranks any gate bookkeeping (Part A review, Important 1): whatever the
+        // gate still believes it parked, this row now waits for the user's Resume. `gateDidChange`
+        // re-inserts immediately after its own `await pause(...)`, so the gate's leg is unaffected;
+        // this is what stops a STALE entry (an id that left `.paused` by another route, or one the
+        // refuse leg inserted after a pause that no-oped inside its own suspension) turning the
+        // next gate re-open into an unrequested resume.
+        gatePausedIds.remove(id)
         await transition(id, .pause)
         let resumeData = await engine.pause(id: id)
         active.remove(id)

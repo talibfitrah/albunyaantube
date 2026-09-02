@@ -543,6 +543,41 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
     }
 
+    /// Part A review, Important 1: the R2-2 ruling rests on the invariant "`gatePausedIds` holds
+    /// only rows the GATE paused", and nothing enforced it — the set is written by the refuse leg
+    /// and drained by the allow leg, so any id that leaves the paused state by another route (a
+    /// user Resume getting to the re-opened gate first, or a `.finished` landing inside the
+    /// refuse leg's own `await`) stayed behind as a live stale entry. The next genuine USER pause
+    /// then looked like the gate's, and the following gate change resumed it. A user pause
+    /// outranks the bookkeeping.
+    @Test func aUserPauseOutranksStaleGateBookkeeping() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.cellular = true
+        let id = await save(rig)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+
+        // The gate parks it — the id goes into the gate-paused set.
+        rig.flags.wifiOnly = true
+        await rig.manager.gateDidChange()
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        // The gate re-opens, but the user's own Resume gets there before `gateDidChange` does, so
+        // the set is never drained and its entry is now stale.
+        rig.flags.cellular = false
+        await rig.manager.resume(id)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+
+        // A genuine USER pause, on a row the gate has no claim to any more.
+        await rig.manager.pause(id)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+        let resumesBeforeTheGate = rig.engine.resumes.count
+
+        await rig.manager.gateDidChange()   // the gate allows, and must resume nothing
+        #expect(rig.engine.resumes.count == resumesBeforeTheGate,
+                "a user pause must wait for the user's Resume, not for the gate")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+    }
+
     /// The preserve clause of the same finding: a row the USER paused still waits for the
     /// user's Resume — a gate change must never restart it.
     @Test func aUserPausedRowIsNeverResumedByAGateChange() async throws {
@@ -874,6 +909,22 @@ struct OfflineManagerTests {
         }
         #expect(!collector.events.contains { if case .finished = $0 { return true } else { return false } },
                 "a partial with no readable total must never be reported finished")
+
+        // Part A review, Minor 4: the point of putting the guard INSIDE the `do` rather than
+        // reusing the `catch` (which deletes the partial) is that the walk stays resumable — the
+        // row fails with Retry, and Retry continues from the bytes already on disk instead of
+        // re-downloading the file. Assert both halves, or a refactor that folds the guard into the
+        // `catch` passes green while silently losing the resume point.
+        #expect((try? Data(contentsOf: directory.appending(path: "\(id).tmp")))?.count == 5,
+                "the partial must stay on disk — it is the engine's resume point")
+        let failure = try #require(collector.events.compactMap { event -> OfflineDownloadFailure? in
+            if case .failed(_, let failure) = event { return failure } else { return nil }
+        }.first)
+        guard case .network(let resumeData) = failure else {
+            Issue.record("expected a resumable transport failure, got \(failure)")
+            return
+        }
+        #expect(resumeData != nil, "without the token the retry restarts the walk from zero")
     }
 
     // MARK: - Chunked engine arithmetic (googlevideo throttles single long GETs on adaptive
