@@ -1,0 +1,65 @@
+ios/FitrahTube/Features/Home/HomeView.swift
+  s_66ddb7c44de816::t_c054c68db6efc5 156
+  s_66ddb7c44de816::t_79a506c128cd42 123-129
+  s_66ddb7c44de816::t_c49fe8b35734e7 70
+ios/FitrahTube/Features/Offline/OfflineManager.swift
+  s_66ddb7c44de816::t_02806701b50404 280-285,288-297
+  s_66ddb7c44de816::t_8630ec0bd03503 367
+  s_66ddb7c44de816::t_099e9e16d76409 94,107,150,213,218,326,400,425,452,506,521
+  s_66ddb7c44de816::t_4c16e7ab4ebae6 232-238,242
+  s_66ddb7c44de816::t_e53fcdbe7f60c5 385-389
+  s_66ddb7c44de816::t_a76751736ad78c 90-92,95
+  s_66ddb7c44de816::t_9d5aed50739178 427-430,432,438
+  s_66ddb7c44de816::t_15ee3abb5f2d37 96-97
+  s_66ddb7c44de816::t_fc696208168565 462-467
+  s_66ddb7c44de816::t_d1439522d97df2 71-73
+  s_66ddb7c44de816::t_6c1a4aab13e01e 383-384
+ios/FitrahTube/Features/Offline/SaveOfflineSheet.swift
+  s_66ddb7c44de816::t_e48db94a9ccbd4 8
+ios/FitrahTubeTests/SavedScreenTests.swift
+  s_66ddb7c44de816::t_d2cedc5c8c29e7 88-103
+ios/FitrahTube/Features/Offline/FragmentedMP4Durations.swift
+  s_66ddb7c44de816::t_c5fb350781f1c3 1-83
+ios/FitrahTube/Features/Offline/OfflineStorage.swift
+  s_66ddb7c44de816::t_e48db94a9ccbd4 49-50
+ios/FitrahTube/Features/Offline/OfflineGateClient.swift
+  s_66ddb7c44de816::t_e48db94a9ccbd4 60
+ios/FitrahTube/Features/Offline/OfflineEngine.swift
+  s_66ddb7c44de816::t_15f698a4b5ff8f 78-79,88-93
+  s_66ddb7c44de816::t_bd15ff467bf8e1 291-294,296
+  s_66ddb7c44de816::t_2ff4ad1ca52803 12-15
+  s_66ddb7c44de816::t_e48db94a9ccbd4 170
+  s_66ddb7c44de816::t_3afc5b3dd31174 229-231,238-243
+  s_66ddb7c44de816::t_950cc6a948f2f8 150-158
+  s_66ddb7c44de816::t_88bfd7b6e7537b 138
+ios/FitrahTubeTests/OfflineManagerTests.swift
+  s_66ddb7c44de816::t_8da45bb8092d39 876-878,883,885
+  s_66ddb7c44de816::t_8bb30011372ae1 942-1080,1082-1085,1087-1101
+  s_66ddb7c44de816::t_84d3589f294ee8 62-63
+  s_66ddb7c44de816::t_f7f29601650ac5 98-100
+  s_66ddb7c44de816::t_ca5a97754dae7d 101-102
+  s_66ddb7c44de816::t_d1d64c54888bab 530-557,561,565-569,571-577,579-587
+  s_66ddb7c44de816::t_90176c408740ca 146-147
+  s_66ddb7c44de816::t_011b4fae44b589 578
+  s_66ddb7c44de816::t_ec0b912516e053 28-36
+  s_66ddb7c44de816::t_dce7b3bbe27253 299,304,316,320,330,518,1081,1086
+  s_66ddb7c44de816::t_026f28e0d1e622 310-315,317-319,321-326
+  s_66ddb7c44de816::t_83382c5873e42b 672-696
+  s_66ddb7c44de816::t_6e702ba90707ca 558-560,562-564,570
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "90e7207d879fc22cbcebd4ae831b8dac1f7cf896",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
