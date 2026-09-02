@@ -328,7 +328,7 @@ struct SettingsView: View {
     private func clearOffline() {
         let ids = container.offlineStore.items.map(\.id)
         let manager = container.offlineManager
-        Task { await manager.delete(ids) }
+        Task { await manager.deleteAll(ids) }
     }
 
     private func actionRow(_ row: SettingsRow, value: String?, action: @escaping () -> Void) -> some View {

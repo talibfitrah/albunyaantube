@@ -740,7 +740,7 @@ struct OfflineManagerTests {
             try rig.store.insert(item)
             ids.append(item.id)
         }
-        await rig.manager.delete(ids)
+        await rig.manager.deleteAll(ids)
         #expect(rig.rowCount() == 0)
         #expect(rig.resolver.calls.isEmpty, "a clear must not burn a resolve on a row it is deleting")
         #expect(rig.engine.starts.isEmpty, "a clear must never start a row it is deleting")

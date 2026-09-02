@@ -109,10 +109,15 @@ struct FitrahTubeApp: App {
             await container.innerTube.remoteConfig.refresh()
             let config = await container.innerTube.remoteConfig.current()
             // Cubic P3-1: the kill-switch flipping back ON is observed by nothing — a row saved
-            // during an off-window stays queued until the next launch. This refresh is the one
-            // place the new config lands, so it kicks the queue right after it: a no-op when
-            // nothing is queued or the switch is still off (`begin` re-consults it).
-            await container.offlineManager.schedule()
+            // during an off-window stays queued until the next launch. The refresh above is where
+            // the new config lands, so the queue is kicked right after it: a no-op when nothing is
+            // queued or the switch is still off (`begin` re-consults it).
+            //
+            // Its OWN Task (fix round 1, the `sweep()` idiom above): `schedule()` awaits
+            // `begin` → a real InnerTube resolve whenever a row IS queued — precisely the case
+            // this kick exists for — which inline would put spec D3's forced-update decision
+            // below behind a network round trip.
+            Task { await container.offlineManager.schedule() }
             // Spec D3: re-evaluated after EVERY refresh, from the served config alone (fetched,
             // else persisted last-known-good, else bundled default) -- so a lowered minAppVersion
             // un-blocks and the first launch after a blocking publish blocks even if this

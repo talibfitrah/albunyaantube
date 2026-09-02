@@ -278,7 +278,10 @@ actor OfflineManager: OfflineSaving {
     /// schedule between two deletes picks a still-existing queued row and begins its resolve — a
     /// real, rate-limited InnerTube POST for a row the very next iteration deletes. Every row
     /// tears down first, then ONE `schedule()`.
-    func delete(_ ids: [String]) async {
+    ///
+    /// `deleteAll`, not a `delete` overload (fix round 1): `manager.delete(x)` would no longer say
+    /// at the call site which of the two semantics applies.
+    func deleteAll(_ ids: [String]) async {
         for id in ids {
             guard let row = await read(id: id) else { continue }
             await tearDown(row)

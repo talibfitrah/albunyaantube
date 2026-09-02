@@ -80,7 +80,7 @@ private struct SavedRow: View {
                 }
                 Text(caption)
                     .font(TypeScale.caption).foregroundStyle(Color.textSecondary).lineLimit(2)
-                if let fraction = progressFraction {
+                if let fraction = determinateFraction {
                     ProgressView(value: fraction).tint(.brand)
                 }
             }
@@ -126,8 +126,10 @@ private struct SavedRow: View {
         router.push(.player(args))
     }
 
-    /// Determinate only while bytes are actually moving toward a known total.
-    private var progressFraction: Double? {
+    /// The row's bar is determinate only while bytes are actually moving toward a known total —
+    /// the model's `progressFraction` plus this status guard. Deliberately NOT named
+    /// `progressFraction`: two same-named properties one line apart read as a recursion hazard.
+    private var determinateFraction: Double? {
         guard let status, status == .running || status == .paused || status == .queued else { return nil }
         return item.progressFraction
     }
