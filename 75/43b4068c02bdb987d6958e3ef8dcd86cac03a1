@@ -1,0 +1,30 @@
+.gitignore
+  s_66ddb7c44de816::t_b8faf8fb1bb7aa 205
+  s_66ddb7c44de816::t_1fd9724e891bef 209-212
+ios/scripts/test.sh
+  s_66ddb7c44de816::t_50008626f4a431 37-39
+  s_66ddb7c44de816::t_1749ccbbbc8ffa 154-155
+  s_66ddb7c44de816::t_742ec7dd0c8721 172,181
+  s_66ddb7c44de816::t_90899456e44124 198-202,205,214
+  s_66ddb7c44de816::t_733507af4c10e5 21
+  s_66ddb7c44de816::t_3b784de0275389 96-101,105,108
+  s_66ddb7c44de816::t_08fe46eecef345 12-13
+ios/FitrahTubeTests/OfflineManagerTests.swift
+  s_66ddb7c44de816::t_b05be65d83c599 859-862,869,874
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7543b4068c02bdb987d6958e3ef8dcd86cac03a1",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
