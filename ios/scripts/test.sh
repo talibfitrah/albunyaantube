@@ -9,7 +9,8 @@
 # charging that recompile to the gate's window is what pushed a combined run past 300s once
 # Firebase/GoogleSignIn landed (Phase 4 Task 1). REQUIRED for the Phase 4 gate tasks (19, 31) and
 # any task touching ios/project.yml, an xcconfig, entitlements, or Info.plist keys; ordinary
-# tasks run the Debug gate only. Prints "RELEASE: built" or "RELEASE: skipped (set RELEASE=1)".
+# tasks run the Debug gate only. Prints "RELEASE: built", "RELEASE: failed" or "RELEASE: skipped
+# (set RELEASE=1)".
 # Per-test limit: 60s -- XCTest rounds `defaultTestExecutionTimeAllowance` up to 60s and Swift
 # Testing's own floor is also one minute, so 60s is the real effective limit regardless of the
 # number configured (FitrahTube.xctestplan sets 60 to match); CLAUDE.md's 30s note is a
@@ -17,6 +18,7 @@
 # watchdog window (gate; Release gets its own when requested).
 # $RESULTS (xcresult bundle + watchdog marker) is removed on exit unless KEEP_RESULTS=1 is set.
 # Override simulators with IPHONE_SIM / IPAD_SIM env vars, e.g. IPHONE_SIM="iPhone 16" ./test.sh.
+# IPAD_SIM="" (explicitly empty, not just unset) drops the iPad destination and runs iPhone only.
 # Invoke from the repo root (`ios/scripts/test.sh`) -- the first stage's path is repo-root-relative.
 set -uo pipefail
 set -m
@@ -32,7 +34,9 @@ PATH="$HOME/.local/bin:$PATH"
 export IOS_REMOTE_CONFIG_PATH="$(cd "$(dirname "$0")/../.." && pwd)/ios-remote-config.json"
 
 IPHONE_SIM="${IPHONE_SIM:-iPhone 17}"
-IPAD_SIM="${IPAD_SIM:-iPad Pro 13-inch (M5)}"
+# ":-" would also substitute the default on an explicitly EMPTY value, making IPAD_SIM="" a no-op;
+# "-" substitutes only when unset, so an explicit empty string survives to the skip check below.
+IPAD_SIM="${IPAD_SIM-iPad Pro 13-inch (M5)}"
 
 # Alternatives that actually fire on this Xcode: swift test's summary, xcodebuild's per-destination and per-test lines, and generic TEST SUCCEEDED/FAILED / error: lines.
 SUMMARY='Test run with|Testing (passed|failed) on|Test case .* failed|TEST (SUCCEEDED|FAILED)|error:'
@@ -89,14 +93,19 @@ run_gate() {
 
     xcodegen generate || return $?
 
-    echo "== $IPHONE_SIM + $IPAD_SIM =="
+    local destinations=(-destination "platform=iOS Simulator,name=$IPHONE_SIM")
+    if [ -n "$IPAD_SIM" ]; then
+        destinations+=(-destination "platform=iOS Simulator,name=$IPAD_SIM")
+    fi
+
+    echo "== $IPHONE_SIM${IPAD_SIM:+ + $IPAD_SIM} =="
     xcodebuild test \
         -project FitrahTube.xcodeproj \
         -scheme FitrahTube \
-        -destination "platform=iOS Simulator,name=$IPHONE_SIM" \
-        -destination "platform=iOS Simulator,name=$IPAD_SIM" \
+        "${destinations[@]}" \
         -resultBundlePath "$RESULTS/FitrahTube.xcresult" \
         -derivedDataPath DerivedData \
+        -onlyUsePackageVersionsFromResolvedFile \
         2>&1 | grep -E "$SUMMARY"
     local xcodebuild_status=${PIPESTATUS[0]}
     if [ "$xcodebuild_status" -ne 0 ]; then
@@ -142,7 +151,8 @@ run_release() {
         -scheme FitrahTube \
         -configuration Release \
         -destination "platform=iOS Simulator,name=$IPHONE_SIM" \
-        -derivedDataPath DerivedData \
+        -derivedDataPath DerivedData-Release \
+        -onlyUsePackageVersionsFromResolvedFile \
         2>&1 | grep -E "$SUMMARY"
     local release_status=${PIPESTATUS[0]}
     return "$release_status"
@@ -159,7 +169,7 @@ pid=$!
 # the window between `wait "$pid"` returning and the `kill` on the watchdog below, the marker was
 # still written and a passing run exited 124 -- a sub-millisecond race, but a non-deterministic CI
 # failure is expensive to chase.
-( sleep 300; kill -0 -"$pid" 2>/dev/null || exit 0; touch "$RESULTS/killed"; kill -TERM -- -"$pid" 2>/dev/null ) &
+( sleep 300; kill -0 -"$pid" 2>/dev/null || exit 0; touch "$RESULTS/killed-gate"; kill -TERM -- -"$pid" 2>/dev/null ) &
 wd=$!
 
 trap 'kill -- -"$pid" -"$wd" 2>/dev/null; exit 130' INT TERM
@@ -168,7 +178,7 @@ wait "$pid"
 rc=$?
 kill -- -"$wd" 2>/dev/null || true
 
-if [ -e "$RESULTS/killed" ]; then
+if [ -e "$RESULTS/killed-gate" ]; then
     echo "test.sh: 300s wall-clock watchdog killed the run" >&2
     trap - EXIT
     echo "results kept at $RESULTS"
@@ -185,10 +195,14 @@ if [ "${RELEASE:-0}" != "1" ]; then
 fi
 
 # Release build: same race-safe watchdog shape as the gate above, but its own separate 300s
-# window -- see header comment for why it can't share the gate's window.
+# window -- see header comment for why it can't share the gate's window. Own marker filename
+# (M1): the gate's watchdog above and this one otherwise touch the same $RESULTS/killed path, so a
+# stale gate-watchdog subshell could in principle be misread by this leg's check below -- safe
+# today only because control flow always reaps the gate's watchdog (`kill -- -"$wd"` above) before
+# this leg starts, but a distinct name removes the class of bug rather than relying on ordering.
 run_release &
 pid=$!
-( sleep 300; kill -0 -"$pid" 2>/dev/null || exit 0; touch "$RESULTS/killed"; kill -TERM -- -"$pid" 2>/dev/null ) &
+( sleep 300; kill -0 -"$pid" 2>/dev/null || exit 0; touch "$RESULTS/killed-release"; kill -TERM -- -"$pid" 2>/dev/null ) &
 wd=$!
 
 trap 'kill -- -"$pid" -"$wd" 2>/dev/null; exit 130' INT TERM
@@ -197,7 +211,7 @@ wait "$pid"
 rc=$?
 kill -- -"$wd" 2>/dev/null || true
 
-if [ -e "$RESULTS/killed" ]; then
+if [ -e "$RESULTS/killed-release" ]; then
     echo "test.sh: 300s wall-clock watchdog killed the Release build" >&2
     trap - EXIT
     echo "results kept at $RESULTS"

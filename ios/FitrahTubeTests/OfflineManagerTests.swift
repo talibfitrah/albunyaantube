@@ -856,21 +856,22 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: id)?.status == OfflineStatus.failed.rawValue, "refused, failed, not deleted (I2/NI1)")
     }
 
-    /// The kill-switch kick (`schedule()` after the remote-config refresh flips it back on) is the
-    /// same shape: rows queued through an off-window are started by it, and the switch coming back
-    /// says nothing about whether those videos are still saveable.
+    /// The kill-switch kick (`kickAfterConfigRefresh()` -> `gateDidChange()`, after the
+    /// remote-config refresh flips it back on) is the same shape: rows queued through an
+    /// off-window are started by it, and the switch coming back says nothing about whether those
+    /// videos are still saveable.
     @Test func theKillSwitchKickConsultsThePerVideoGate() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         rig.flags.downloadsEnabled = { false }
         let item = makeOfflineItem("vidQueued00")
         try rig.store.insert(item)
 
-        await rig.manager.schedule()
+        await rig.manager.kickAfterConfigRefresh()
         #expect(rig.flags.gateCalls.isEmpty, "the kill-switch is consulted first and refuses silently")
 
         rig.flags.downloadsEnabled = { true }
         rig.flags.gate = .notAllowed
-        await rig.manager.schedule()
+        await rig.manager.kickAfterConfigRefresh()
 
         #expect(rig.flags.gateCalls == ["vidQueued00"])
         #expect(rig.engine.starts.isEmpty)
