@@ -21,6 +21,17 @@ extension StreamResolving {
     /// six-argument form themselves. The third production resolver, `OfflineResolver`,
     /// deliberately rides this default: it answers from disk with zero network calls, so
     /// `requiresMuxed` is meaningless offline.
+    ///
+    /// Cubic R7-19, the audit rule this default needs: ONLY a resolver that can never be handed to
+    /// `OfflineManager` may ride it. Anything on the save path — a new production resolver, or a
+    /// decorator wrapped around one — must implement the six-argument form and FORWARD the flag,
+    /// or every video save silently resolves `.hls`, `sourceURL` refuses that pair and the row
+    /// fails NO_STREAM (pinned by `aVideoSaveAnsweredWithAManifestFailsNoStreamAndStartsNothing`;
+    /// the forwarding half by `aVideoSaveRequiresMuxedAndTheProgressiveAnswerReachesTheEngine`).
+    /// Making the six-argument form the sole requirement would remove the footgun outright, and is
+    /// deliberately not done here: the five-argument-only conformers are the seven `PlayerScreen`
+    /// fixtures plus four test doubles, and rewriting them is a wider blast radius than the
+    /// footgun.
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
         try await resolve(videoId, purpose: purpose, kind: kind,

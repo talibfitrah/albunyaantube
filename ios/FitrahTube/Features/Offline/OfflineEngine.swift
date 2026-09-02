@@ -162,9 +162,19 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
         await task(id)?.cancel()
     }
 
+    /// Cubic R7-5: the counter used to start at 0 in EVERY launch, so this launch's first walk for
+    /// an id was `X#1` — exactly what the PREVIOUS launch issued for it. A late `X#1` chunk from
+    /// that launch then passed `isCurrent`'s equality, was taken as current, and its offset did not
+    /// match the partial this launch is continuing: the mismatch threw and the `catch` deleted the
+    /// whole `.tmp`. The base is drawn once per PROCESS, so no two launches issue the same
+    /// `<id>#<generation>`; inside a launch the counter still just increments, which is all
+    /// `isCurrent` compares. ≥ 1, so a generation is never 0 — the value `taskKey` gives a
+    /// description from a build before this scheme, which any live walk must supersede.
+    private let generationBase = Int(UInt32.random(in: 1...UInt32.max))
+
     /// Call with `stateLock` held.
     private func bumpLocked(_ id: String) -> Int {
-        let next = (generations[id] ?? 0) + 1
+        let next = (generations[id] ?? generationBase) + 1
         generations[id] = next
         return next
     }

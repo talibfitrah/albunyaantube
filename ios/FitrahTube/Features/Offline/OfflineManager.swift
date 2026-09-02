@@ -91,8 +91,11 @@ actor OfflineManager: OfflineSaving {
     /// would reissue token 1 to a retry and let a stale attempt pass; one `Int` per id ever saved
     /// this session is the cost.
     private var attempts: [String: Int] = [:]
-    /// Ids whose next attempt is timer-scheduled (limiter delay/block, resolver cooldown).
-    private var retries: [String: Task<Void, Never>] = [:]
+    /// Ids whose next attempt is timer-scheduled (limiter delay/block, resolver cooldown), each with
+    /// the attempt that parked it — a timer already past its cancellation check must not untrack the
+    /// one that REPLACED it (R7-11). Consecutive parks of an id always carry different attempts:
+    /// `scheduleRetry` drops the claim, so the next park needs a fresh `claim` and its bump.
+    private var retries: [String: (attempt: Int, task: Task<Void, Never>)] = [:]
     /// Ids the CELLULAR GATE paused — never a user's pause. `gateDidChange` resumes exactly these
     /// when the gate re-opens, and `pause(_:)` drops one, because a user pause outranks this
     /// bookkeeping.
@@ -106,6 +109,11 @@ actor OfflineManager: OfflineSaving {
     private var gatePausedIds: Set<String> = []
     /// Ids that already spent their one re-resolve on a 403.
     private var reResolvedAfter403: Set<String> = []
+    /// Ids whose next resolve must bypass the manifest cache — the 403 re-resolve's intent, held
+    /// across a limiter park (`scheduleRetry` drops the claim, and the timer's `begin` re-enters
+    /// `resolveAndStart` with `forceRefresh: false`). Moved into `reResolvedAfter403` by the walk
+    /// that actually answers, so a parked re-resolve does not spend the one budget it never used.
+    private var pendingForceRefresh: Set<String> = []
     private var lastProgressPersist: [String: Date] = [:]
 
     /// Test hook: which ids currently wait on a retry timer.
@@ -151,11 +159,16 @@ actor OfflineManager: OfflineSaving {
         await schedule()
     }
 
-    func pause(_ id: String) async {
-        guard let row = await read(id: id), row.status == .running else { return }
+    func pause(_ id: String) async { _ = await pauseIfRunning(id) }
+
+    /// Returns whether THIS call is what paused the row — the gate's close leg needs to know
+    /// (R7-12), and nothing else does.
+    @discardableResult
+    private func pauseIfRunning(_ id: String) async -> Bool {
+        guard let row = await read(id: id), row.status == .running else { return false }
         // A USER pause outranks any gate bookkeeping: whatever the
         // gate still believes it parked, this row now waits for the user's Resume. `gateDidChange`
-        // re-inserts immediately after its own `await pause(...)`, so the gate's leg is unaffected;
+        // re-inserts right after its own call returns TRUE, so the gate's leg is unaffected;
         // this is what stops a STALE entry (an id that left `.paused` by another route, or one the
         // refuse leg inserted after a pause that no-oped inside its own suspension) turning the
         // next gate re-open into an unrequested resume.
@@ -171,13 +184,20 @@ actor OfflineManager: OfflineSaving {
             try store.save()
         }
         await schedule()
+        return true
     }
 
-    func resume(_ id: String) async {
+    func resume(_ id: String) async { await resume(id, userInitiated: true) }
+
+    /// `userInitiated: false` is the GATE's re-open (`resumeGateParked`), not a tap: a refusal it
+    /// meets must stay silent, because R5-3's "leave the reason on the row" exists for a button that
+    /// appears to do nothing. Going through the public `resume` noted NETWORK on a row nobody
+    /// touched whenever the per-video gate was unreachable at re-open time.
+    private func resume(_ id: String, userInitiated: Bool) async {
         guard let row = await read(id: id), row.status == .paused || row.status == .queued else { return }
         // ponytail: a user Resume runs immediately even if the scheduler has something active;
         // the serial floor (CF-D-5) applies to queue picks, not to explicit user intent.
-        await begin(row, userInitiated: true)
+        await begin(row, userInitiated: userInitiated)
     }
 
     func cancel(_ id: String) async {
@@ -186,8 +206,19 @@ actor OfflineManager: OfflineSaving {
         forget(id)
         removeFiles(row)
         await write { store in
-            guard let item = store.item(id: id), let status = OfflineStatus(rawValue: item.status),
-                  let next = OfflineStateMachine.transition(from: status, on: .cancel) else { return }
+            guard let item = store.item(id: id), let status = OfflineStatus(rawValue: item.status) else { return }
+            // Cubic R7-4: a `.finished` racing the engine hop above already moved the bytes to
+            // `<id>.<ext>` and wrote `.completed` — `removeFiles` has just unlinked that copy, and
+            // `(completed, .cancel)` is nil, so the row was left Saved and pointing at nothing while
+            // its bytes still counted in the storage footer. The user asked for this copy to go, so
+            // the row goes with the file: the same end state `delete` produces, decided inside the
+            // write that already re-reads the row rather than behind another main-actor hop (which
+            // would land after `removeFiles` no matter where it went, and stall a cancel that races
+            // a blocked main actor).
+            guard let next = OfflineStateMachine.transition(from: status, on: .cancel) else {
+                if status == .completed { try store.delete(item) }
+                return
+            }
             item.status = next.rawValue
             item.resumeData = nil
             item.bytesWritten = 0
@@ -340,8 +371,12 @@ actor OfflineManager: OfflineSaving {
     func gateDidChange() async {
         guard await gateAllows() else {
             for row in await readAll() where row.status == .running && active.contains(row.id) {
-                await pause(row.id)
-                gatePausedIds.insert(row.id)
+                // Cubic R7-12: only a pause this leg PERFORMED is the gate's to undo. The `where`
+                // clause re-reads `active` live, so a user pause that already finished drops out of
+                // the loop by itself — but one still suspended in `engine.pause` leaves the row
+                // reading `.paused` with its claim intact, and marking it anyway handed the next
+                // gate re-open a row the user had paused (the invariant `pause` protects above).
+                if await pauseIfRunning(row.id) { gatePausedIds.insert(row.id) }
             }
             // The gate can re-open inside those awaits: that re-open's own allow leg snapshotted
             // the parked set BEFORE this leg inserted into it, so it resumed nothing and the row
@@ -363,7 +398,7 @@ actor OfflineManager: OfflineSaving {
     private func resumeGateParked() async {
         let parked = gatePausedIds
         gatePausedIds.removeAll()
-        for id in parked { await resume(id) }
+        for id in parked { await resume(id, userInitiated: false) }
         await schedule()
     }
 
@@ -447,8 +482,9 @@ actor OfflineManager: OfflineSaving {
             switch failure {
             case .http(403, _) where !reResolvedAfter403.contains(id):
                 // `DownloadWorker.kt:266-276`: one forced re-resolve, restart from zero — the old
-                // resume data names the dead URL.
-                reResolvedAfter403.insert(id)
+                // resume data names the dead URL. The intent is armed here and SPENT by the walk
+                // that answers (R7-6), so a limiter park between the two cannot swallow it.
+                pendingForceRefresh.insert(id)
                 await write { store in
                     guard let item = store.item(id: id) else { return }
                     // Back to queued directly (no running→queued transition exists): a limiter
@@ -586,6 +622,23 @@ actor OfflineManager: OfflineSaving {
             if userInitiated, mine { await note(row.id, .network) }
             return
         }
+        // Cubic R7-1: the snapshot `schedule()` picked predates three awaits, and the CLAIM is what
+        // makes a read authoritative. A relaunch `.finished` that completed the row BEFORE this
+        // attempt claimed the slot left its `forget` with no claim to strip, so `stillCurrent` was
+        // still true here: the `(completed, .start)` transition silently no-oped, the engine
+        // re-downloaded a file that was already whole, and the second `.finished` was rejected
+        // WITHOUT releasing — every later `schedule()` then exited at `guard active.isEmpty` for the
+        // rest of the launch. Re-read under the claim, and a REFUSED transition releases the slot
+        // and re-runs the scheduler (nothing else would: the completion's own `schedule()` ran while
+        // this claim was held).
+        guard let row = await read(id: row.id),
+              OfflineStateMachine.transition(from: row.status,
+                                             on: row.status == .paused ? .resume : .start) != nil
+        else {
+            release(row.id, attempt)
+            await schedule()
+            return
+        }
         guard stillCurrent(row.id, attempt) else { return }   // cancelled/deleted during the hops
         if let resumeData = row.resumeData {
             await transition(row.id, row.status == .paused ? .resume : .start)
@@ -596,9 +649,22 @@ actor OfflineManager: OfflineSaving {
             let allowsCellular = !(await wifiOnly())
             guard stillCurrent(row.id, attempt) else { return }
             await engine.resume(id: row.id, resumeData: resumeData, allowsCellular: allowsCellular)
+            await stopWalkIfNotRunning(row.id, attempt)
             return
         }
         await resolveAndStart(row, forceRefresh: false)
+    }
+
+    /// Cubic R7-14: `pause()` writes `.paused` and awaits `engine.pause` BEFORE it drops the claim,
+    /// so a start completing inside that window still passed `stillCurrent`, issued its chunk under
+    /// the NEWEST generation, and kept downloading — possibly on cellular — until the row flipped to
+    /// Saved on its own. The engine hop is the last thing a start does, so the row it started for is
+    /// re-read after it: a row that is no longer `.running` (or no longer this attempt's) has its
+    /// fresh walk stopped. `pause` rather than `cancel` for a deleted row too — the bump is what
+    /// stops the walk, and `tearDown` already removed the files.
+    private func stopWalkIfNotRunning(_ id: String, _ attempt: Int) async {
+        guard await read(id: id)?.status != .running || !stillCurrent(id, attempt) else { return }
+        _ = await engine.pause(id: id)
     }
 
     /// The ONLY way to claim the serial slot: every `active.insert` must carry an
@@ -625,6 +691,12 @@ actor OfflineManager: OfflineSaving {
 
     private func resolveAndStart(_ row: Row, forceRefresh: Bool) async {
         let attempt = attempts[row.id] ?? 0
+        // Cubic R7-6: the 403 re-resolve's intent has to survive a park. `scheduleRetry` drops the
+        // claim, and the timer's `begin` re-enters here with `forceRefresh: false` — which served an
+        // audio-only save the DEAD URL straight back out of the shared `ManifestCache`, so the next
+        // 403 hard-failed as HTTP_403 instead of re-resolving. The set carries the intent; the
+        // budget below is spent only once a forced walk has actually answered.
+        let forceRefresh = forceRefresh || pendingForceRefresh.contains(row.id)
         switch await limiterCheck(row.videoId) {
         case .allowed:
             break
@@ -662,8 +734,18 @@ actor OfflineManager: OfflineSaving {
             // above with the cooldown's exact end.
             await scheduleRetry(row.id, attempt, after: .seconds(1)); return
         } catch {
+            // Cubic R7-13: an OLD attempt's error landing after a cancel plus a retry re-claimed the
+            // row would `forget` the newer attempt and mark the row failed — and that attempt's own
+            // resolve then discarded its continuation on the guard this failure had just
+            // invalidated, leaving the row failed with nothing running and nothing to reschedule it.
+            // The other two arms park through `scheduleRetry`, which carries the same guard already.
+            guard stillCurrent(row.id, attempt) else { return }
             await fail(row.id, Self.code(for: error)); return
         }
+        // The forced walk answered, so the 403 budget is spent — here rather than after the guard
+        // below, because a discarded attempt must not leave the intent armed for a resolve nobody
+        // asked to force (R7-6).
+        if pendingForceRefresh.remove(row.id) != nil { reResolvedAfter403.insert(row.id) }
         // The resolve suspended for up to the whole ladder walk: a cancel/delete landing in that
         // window already tore the row down — starting the engine now would download a full file
         // for a dead row, in parallel with whatever the freed slot picked up next.
@@ -708,6 +790,7 @@ actor OfflineManager: OfflineSaving {
             item.resumeData = token
             try store.save()
         }
+        await stopWalkIfNotRunning(row.id, attempt)
     }
 
     /// itag 140 for audio-only (only the VISIONOS `.hls` rung carries it), itag 18 for video (the
@@ -773,12 +856,12 @@ actor OfflineManager: OfflineSaving {
         // floor at ≥1 s and need no such argument.
         // ponytail: pass the park through a single write if a caller ever parks with
         // a ~0 delay and does NOT re-schedule behind it.
-        retries[id]?.cancel()
-        retries[id] = Task { [weak self] in
+        retries[id]?.task.cancel()
+        retries[id] = (attempt, Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
-            await self?.retryNow(id)
-        }
+            await self?.retryNow(id, attempt)
+        })
         await write { store in
             // `.queued` too, not `.paused` alone: `resume()` admits queued rows, so a queued row can
             // reach a park carrying a noted code and the paused-only guard skipped it entirely.
@@ -795,7 +878,16 @@ actor OfflineManager: OfflineSaving {
         }
     }
 
-    private func retryNow(_ id: String) async {
+    /// A park's timer firing. Not `private` for the same reason `handle(_:)` is not: the window this
+    /// guard closes is between a timer's own cancellation check and its hop onto this actor, which
+    /// no seam in the rig can hold open — the test drives the stale call directly.
+    ///
+    /// Cubic R7-11: this used to nil `retries[id]` unconditionally, so a timer already past its
+    /// cancellation check untracked the timer that REPLACED it — the replacement then sat outside
+    /// `pendingRetryIds` (so `schedule()` could pick the row it was parking) and outside `forget`'s
+    /// reach, leaking a live `Task` that still ran a `schedule()` of its own.
+    func retryNow(_ id: String, _ attempt: Int) async {
+        guard retries[id]?.attempt == attempt else { return }
         retries[id] = nil
         await schedule()
     }
@@ -859,10 +951,11 @@ actor OfflineManager: OfflineSaving {
 
     private func forget(_ id: String) {
         active.remove(id)
-        retries[id]?.cancel()
+        retries[id]?.task.cancel()
         retries[id] = nil
         gatePausedIds.remove(id)
         reResolvedAfter403.remove(id)
+        pendingForceRefresh.remove(id)
         lastProgressPersist[id] = nil
     }
 

@@ -8,6 +8,11 @@ import Testing
 /// (plan Global Constraints). Saved media lives in the app sandbox and never leaves it.
 @Suite(.perTest)
 struct OfflineComplianceTests {
+    /// Cubic R7-22: `AVPlayer` begins loading the item the moment it is built, so the remote URL
+    /// these tests hand it must not resolve — `example.invalid` still costs a real DNS lookup from
+    /// a test nothing gates. An address literal on the discard port needs no resolver and refuses
+    /// instantly, and the assertions only ever ask whether the URL is a `file://` one.
+    private static let unroutable = URL(string: "https://127.0.0.1:9/v.m3u8")!
     /// Neither key may ever land in Info.plist: `UIFileSharingEnabled` mounts the container in
     /// Files/Finder, `LSSupportsOpeningDocumentsInPlace` lets other apps open files in place —
     /// either one exports saved media out of the sandbox. `Bundle.main` in this hosted test
@@ -53,7 +58,7 @@ struct OfflineComplianceTests {
         #expect(PlayerHostView.player(for: .rung2Progressive(saved), replacing: nil)?
             .allowsExternalPlayback == false)
 
-        let streamed = Resolved(stream: .hls(url: URL(string: "https://example.invalid/v.m3u8")!, isLive: false,
+        let streamed = Resolved(stream: .hls(url: Self.unroutable, isLive: false,
                                              audioOnlyURL: nil, captionTracks: []),
                                 client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
         #expect(PlayerHostView.player(for: .ready(streamed), replacing: nil)?
@@ -68,7 +73,7 @@ struct OfflineComplianceTests {
     /// `isOfflinePlayback` false under a live `file://` player) cannot run there — the whole
     /// compliance pin rested on that construction accident.
     @Test func aSavedFileSwappedIntoALivePlayerLosesTheExternalRoute() {
-        let streamed = Resolved(stream: .hls(url: URL(string: "https://example.invalid/v.m3u8")!, isLive: false,
+        let streamed = Resolved(stream: .hls(url: Self.unroutable, isLive: false,
                                              audioOnlyURL: nil, captionTracks: []),
                                 client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
         let live = PlayerHostView.player(for: .ready(streamed), replacing: nil)

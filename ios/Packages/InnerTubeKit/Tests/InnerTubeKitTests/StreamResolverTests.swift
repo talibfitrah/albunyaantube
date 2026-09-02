@@ -813,8 +813,14 @@ import Testing
         func send(_ request: HTTPRequest) async throws -> HTTPResponse {
             let ordinal = lock.withLock { count += 1; return count }
             if ordinal == 1 {
-                while !lock.withLock({ released }) {
-                    try await Task.sleep(for: .milliseconds(1))   // throws when cancelled — the test's tripwire
+                // Cubic R7-10: capped like `waitForCall` above (~2 s). On the exact regression this
+                // fixture guards — a save walk that JOINS the held player walk — an unbounded poll
+                // never ends, so the test hung to the 300 s wall instead of letting its own
+                // assertions go red. The `try` stays: a cancelled task's sleep throws, which is the
+                // other tripwire (a save walk that CANCELS the player walk).
+                for _ in 0..<2000 {
+                    if lock.withLock({ released }) { break }
+                    try await Task.sleep(for: .milliseconds(1))
                 }
             }
             return responses[min(ordinal, responses.count) - 1]

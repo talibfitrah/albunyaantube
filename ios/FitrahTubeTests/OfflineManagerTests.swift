@@ -34,6 +34,16 @@ struct OfflineManagerTests {
         var pauseEntered: Set<String> { lock.withLock { _pauseEntered } }
         private var _pauseHeld: Set<String> = []
         private var _pauseEntered: Set<String> = []
+        /// The same shape for `resume`, and the ONE seam that parks a caller INSIDE the engine
+        /// start (R7-14): the hold sits before the walk is recorded, so a test can land a `pause()`
+        /// in the window `begin` used to leave unguarded.
+        var resumeHeld: Set<String> {
+            get { lock.withLock { _resumeHeld } }
+            set { lock.withLock { _resumeHeld = newValue } }
+        }
+        var resumeEntered: Set<String> { lock.withLock { _resumeEntered } }
+        private var _resumeHeld: Set<String> = []
+        private var _resumeEntered: Set<String> = []
         /// Same shape for `cancel`: the R4-4 interleaving needs a cancel parked mid-flight, past
         /// its own row read but before it drops the manager's claim.
         var cancelHeld: Set<String> {
@@ -66,6 +76,8 @@ struct OfflineManagerTests {
             return pauseResumeData
         }
         func resume(id: String, resumeData: Data, allowsCellular: Bool) async {
+            lock.withLock { _ = _resumeEntered.insert(id) }
+            await Self.hold(while: { self.lock.withLock { self._resumeHeld.contains(id) } }, what: "resume of \(id)")
             lock.withLock { _resumes.append((id, resumeData)); _ = _live.insert(id) }
         }
         func pause(id: String) async -> Data? {
@@ -137,7 +149,11 @@ struct OfflineManagerTests {
             set { lock.withLock { _limiterHeld = newValue } }
         }
         var limiterEntered: Set<String> { lock.withLock { _limiterEntered } }
-        func enterLimiter(_ id: String) { lock.withLock { _ = _limiterEntered.insert(id) } }
+        /// How many consults have ARRIVED, which `limiterEntered` (a set) cannot say — a test that
+        /// waits for a SECOND attempt to reach the held limiter needs the count, not the id.
+        var limiterCalls: Int { lock.withLock { _limiterCalls } }
+        private var _limiterCalls = 0
+        func enterLimiter(_ id: String) { lock.withLock { _ = _limiterEntered.insert(id); _limiterCalls += 1 } }
         func limiterIsHeld(_ id: String) -> Bool { lock.withLock { _limiterHeld.contains(id) } }
         nonisolated(unsafe) var now = Date()
         /// Fires once inside the manager's `now()` read — the one deterministic seam into the
@@ -153,10 +169,33 @@ struct OfflineManagerTests {
         /// it cannot suspend — holding the main actor IS the mechanism this scenario needs. A
         /// semaphore is the honest shape of that hold: it wakes the instant the releaser signals,
         /// and the 2 s is a FAILURE GUARD (`wifiOnlyTimedOut`), never the release mechanism.
-        nonisolated(unsafe) var wifiOnlyBlocked = false
-        nonisolated(unsafe) var wifiOnlyEntered = false
+        ///
+        /// Cubic R7-21: the three flags below are written by the `@MainActor` closure and read (and
+        /// written) by a `Task.detached` poller, which is the TSan-reportable class R5-5 already
+        /// fixed for `limiterHeld` — they live behind the same lock, and the closure's one-shot
+        /// disarm is a single critical section (`consumeWifiOnlyBlock`) rather than a
+        /// read-then-write pair. The semaphore stays: `wifiOnly` is a synchronous `@MainActor`
+        /// closure, so holding the main actor IS the mechanism, and the 2 s is its failure guard.
+        private var _wifiOnlyBlocked = false
+        private var _wifiOnlyEntered = false
+        private var _wifiOnlyTimedOut = false
+        var wifiOnlyBlocked: Bool {
+            get { lock.withLock { _wifiOnlyBlocked } }
+            set { lock.withLock { _wifiOnlyBlocked = newValue } }
+        }
+        var wifiOnlyEntered: Bool {
+            get { lock.withLock { _wifiOnlyEntered } }
+            set { lock.withLock { _wifiOnlyEntered = newValue } }
+        }
+        var wifiOnlyTimedOut: Bool {
+            get { lock.withLock { _wifiOnlyTimedOut } }
+            set { lock.withLock { _wifiOnlyTimedOut = newValue } }
+        }
+        /// Arms exactly once: reads the flag and clears it in one critical section.
+        func consumeWifiOnlyBlock() -> Bool {
+            lock.withLock { defer { _wifiOnlyBlocked = false }; return _wifiOnlyBlocked }
+        }
         let wifiOnlyRelease = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var wifiOnlyTimedOut = false
         /// The remote kill-switch as the manager reads it; a test replaces it to hold a refusal
         /// inside `begin`'s own `await`.
         nonisolated(unsafe) var downloadsEnabled: @Sendable () async -> Bool = { true }
@@ -237,8 +276,7 @@ struct OfflineManagerTests {
             },
             wifiOnly: {
                 flags.wifiOnlyEntered = true
-                if flags.wifiOnlyBlocked {
-                    flags.wifiOnlyBlocked = false   // one-shot: only the read the test armed blocks
+                if flags.consumeWifiOnlyBlock() {   // one-shot: only the read the test armed blocks
                     if flags.wifiOnlyRelease.wait(timeout: .now() + 2) == .timedOut { flags.wifiOnlyTimedOut = true }
                 }
                 return flags.wifiOnly
@@ -315,6 +353,22 @@ struct OfflineManagerTests {
         #expect(rig.engine.starts.count == 1)
         #expect(rig.engine.starts.first?.url.absoluteString == "https://manifest.googlevideo.com/x.m3u8")
         #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+    }
+
+    /// Cubic R7-19, the blast radius of the defaulted `StreamResolving` overload: a resolver or
+    /// decorator that implements only the five-argument form drops `requiresMuxed`, so a VIDEO save
+    /// is answered with `.hls` — the manifest URL the muxed walk exists to avoid. `sourceURL`
+    /// refuses that pair, so the row fails NO_STREAM with nothing written: never a saved `.mp4`
+    /// that is really a manifest. (The forwarding half is pinned by
+    /// `aVideoSaveRequiresMuxedAndTheProgressiveAnswerReachesTheEngine` above.)
+    @Test func aVideoSaveAnsweredWithAManifestFailsNoStreamAndStartsNothing() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig, audioOnly: false)
+        #expect(rig.engine.starts.isEmpty)
+        #expect(rig.resolver.calls.count == 1, "a video save never re-resolves for audio it does not want")
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.failed.rawValue)
+        #expect(row.errorCode == "NO_STREAM")
     }
 
     @Test func aBlockedLimiterDecisionLeavesTheItemQueuedWithARetryAndNoEngineCall() async throws {
@@ -425,6 +479,38 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: id)?.errorCode == "HTTP_403")
     }
 
+    /// Cubic R7-6: `reResolvedAfter403` was spent BEFORE the forced resolve ran, so a limiter that
+    /// parked that resolve threw the intent away — the timer's `begin` re-entered with
+    /// `forceRefresh: false`, an audio-only save was served the DEAD URL straight back out of
+    /// `ManifestCache`, and the next 403 hard-failed instead of re-resolving. The intent survives
+    /// the park, and it is spent only when a forced walk actually answered.
+    ///
+    /// A user Resume stands in for the timer's expiry: both re-enter `begin`, which is where the
+    /// `forceRefresh: false` came from, and the park's own 300 s clock is the slow half.
+    @Test func aParked403ReResolveIsStillForcedWhenItFinallyRuns() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        rig.flags.decision = .blocked(reason: "prefetch blocked", retryAfter: .seconds(300))
+
+        await rig.manager.handle(.failed(id: id, failure: .http(status: 403, resumeData: nil)))
+        #expect(rig.resolver.calls.count == 1, "the re-resolve never ran — the limiter parked it")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.queued.rawValue)
+        #expect(await rig.manager.pendingRetryIds == [id])
+
+        rig.flags.decision = .allowed
+        await rig.manager.resume(id)
+
+        #expect(rig.resolver.calls.map(\.forceRefresh) == [false, true],
+                "the cache bypass must survive the park, or the dead URL comes straight back")
+        #expect(rig.engine.starts.count == 2)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+
+        // And it is spent exactly once: the next 403 fails the row rather than resolving again.
+        await rig.manager.handle(.failed(id: id, failure: .http(status: 403, resumeData: nil)))
+        #expect(rig.resolver.calls.count == 2)
+        #expect(rig.persisted(id: id)?.errorCode == "HTTP_403")
+    }
+
     /// A transient 5xx/416 is a NETWORK failure with the `.tmp` still on disk, so the row must keep
     /// the resume token: `retry` → `begin` resumes only when the row carries one, and `engine.start`
     /// deletes the partial — a 503 used to throw away the whole download.
@@ -517,6 +603,31 @@ struct OfflineManagerTests {
         #expect(row.status == OfflineStatus.cancelled.rawValue)
         #expect(row.bytesWritten == 0)
         #expect(row.resumeData == nil)
+    }
+
+    /// Cubic R7-4: `cancel` read `.running`, awaited `engine.cancel`, and a `.finished` that landed
+    /// inside that hop moved the bytes into place and wrote `.completed`. `removeFiles` then
+    /// unlinked the finished copy while `(completed, .cancel)` silently refused — a Saved row whose
+    /// `localPath` named nothing, still counting its bytes in the storage footer. The user asked for
+    /// this copy to go: a row that completed under the cancel becomes the delete it already is.
+    @Test func aCancelThatRacesTheCompletionRemovesTheFinishedCopyAndItsRow() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        rig.engine.cancelHeld = [id]
+        let cancelTask = Task { await rig.manager.cancel(id) }
+        await waitUntil { rig.engine.cancelEntered.contains(id) }
+
+        try Data(repeating: 7, count: 1_024).write(to: rig.directory.appending(path: "\(id).tmp"))
+        await rig.manager.handle(.finished(id: id))   // the completion wins the race
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.completed.rawValue)
+
+        rig.engine.cancelHeld = []
+        await cancelTask.value
+
+        #expect(rig.persisted(id: id) == nil, "never a Saved row whose file the cancel already deleted")
+        let file = OfflineStorage.fileURL(relativePath: "\(id).m4a", base: rig.base)
+        #expect(!FileManager.default.fileExists(atPath: file.path()))
+        #expect(!FileManager.default.fileExists(atPath: rig.directory.appending(path: "\(id).tmp").path()))
     }
 
     @Test func retryRequeuesAFailedRowAndResolvesAgain() async throws {
@@ -743,6 +854,31 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
         #expect(await rig.manager.pendingRetryIds.isEmpty,
                 "and the stale attempt must not arm a timer over a row that is already running")
+    }
+
+    /// Cubic R7-11: `retryNow` nil'd `retries[id]` unconditionally, so a timer already past its
+    /// cancellation check untracked the timer that REPLACED it — the replacement then sat outside
+    /// `pendingRetryIds` (so `schedule()` could pick the very row it parks, bypassing the park) and
+    /// outside `forget`'s reach, leaking a live `Task` running a `schedule()` of its own.
+    ///
+    /// Driven through `retryNow` directly: the window is between a timer's own cancellation check
+    /// and its hop onto the actor, and the replacement cancels the timer on every path a rig can
+    /// script — so the stale call is the seam, exactly as `handle(_:)` is for engine events.
+    @Test func aStaleRetryTimerNeverUntracksTheOneThatReplacedIt() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.decision = .blocked(reason: "prefetch blocked", retryAfter: .seconds(300))
+        let id = await save(rig)                     // parks under attempt 1
+        #expect(await rig.manager.pendingRetryIds == [id])
+        await rig.manager.resume(id)                 // re-claims and parks again, under attempt 2
+        #expect(await rig.manager.pendingRetryIds == [id])
+
+        rig.flags.decision = .allowed                // whatever gets through the park now starts
+        await rig.manager.retryNow(id, 1)            // the timer attempt 2 replaced, arriving late
+
+        #expect(await rig.manager.pendingRetryIds == [id],
+                "the replacement timer must stay tracked, or nothing can cancel it")
+        #expect(rig.engine.starts.isEmpty, "and the row it parks must not be picked behind its back")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.queued.rawValue)
     }
 
     /// The cellular gate re-opening is a START. It used to walk straight into `resolveAndStart` on
@@ -1234,6 +1370,74 @@ struct OfflineManagerTests {
         #expect(rig.engine.starts.isEmpty)
     }
 
+    /// Cubic R7-1: `reattach()` re-queues a row with no live task, the background session then
+    /// delivers that walk's final `.finished`, and `schedule()`'s snapshot — taken before the
+    /// completion's row write — still ran `begin` for it. The completion's `forget` had already run
+    /// (it landed BEFORE this attempt claimed the slot, so there was no claim to strip), the
+    /// `(completed, .start)` transition silently no-oped, and the engine walked a file that was
+    /// already whole. The row under the CLAIM is the authority; the snapshot is not.
+    ///
+    /// The completion is written straight through the store rather than through
+    /// `handle(.finished:)`, because that funnel's `forget` would strip this attempt's claim and
+    /// `begin` would take its `stillCurrent` exit — the half that was always safe. What `begin`
+    /// never survived is a row that changed under a claim its owner still holds.
+    @Test func aRowThatCompletedUnderTheClaimIsNotWalkedAgain() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let item = OfflineItem(videoId: "vidRelaunch", title: "t", channelName: nil, thumbnailUrl: nil,
+                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue,
+                               resumeData: Data("RD".utf8))
+        try rig.store.insert(item)
+        rig.flags.gateHeld = ["vidRelaunch"]   // park `begin` inside its per-video gate GET
+
+        let scheduleTask = Task { await rig.manager.schedule() }
+        await waitUntil { rig.flags.gateCalls == ["vidRelaunch"] }
+        let row = try #require(rig.store.item(id: item.id))
+        row.status = OfflineStatus.completed.rawValue
+        row.localPath = "\(item.id).m4a"
+        try rig.store.save()
+        rig.flags.gateHeld = []
+        await scheduleTask.value
+
+        #expect(rig.engine.resumes.isEmpty, "a refused transition must not walk bytes for a finished row")
+        #expect(rig.engine.starts.isEmpty)
+        let persisted = try #require(rig.persisted(id: item.id))
+        #expect(persisted.status == OfflineStatus.completed.rawValue)
+        #expect(persisted.localPath == "\(item.id).m4a", "and the finished copy is untouched")
+    }
+
+    /// The other half of R7-1: the silent no-op re-downloaded the file, and the SECOND `.finished`
+    /// was then rejected by `acceptsCompletion` without releasing the claim — so every later
+    /// `schedule()` exited at `guard active.isEmpty` until the next launch. A refused transition
+    /// releases the slot and re-runs the scheduler, so the next queued row moves.
+    @Test func aRowThatCompletedUnderTheClaimReleasesTheSlotForTheNextRow() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        func insert(_ videoId: String, ageInSeconds: TimeInterval, resumeData: Data?) throws -> String {
+            let item = OfflineItem(videoId: videoId, title: videoId, channelName: nil, thumbnailUrl: nil,
+                                   qualityLabel: "360p", audioOnly: true,
+                                   status: OfflineStatus.queued.rawValue, resumeData: resumeData,
+                                   createdAt: rig.flags.now.addingTimeInterval(-ageInSeconds))
+            try rig.store.insert(item)
+            return item.id
+        }
+        // The head row carries a token, so a walk it should not get shows up as a RESUME; the
+        // younger one carries none, so the walk it should get shows up as a START.
+        let head = try insert("vidFinished0", ageInSeconds: 60, resumeData: Data("RD".utf8))
+        let younger = try insert("vidWaiting00", ageInSeconds: 0, resumeData: nil)
+        rig.flags.gateHeld = ["vidFinished0"]
+
+        let scheduleTask = Task { await rig.manager.schedule() }
+        await waitUntil { rig.flags.gateCalls == ["vidFinished0"] }
+        let row = try #require(rig.store.item(id: head))
+        row.status = OfflineStatus.completed.rawValue
+        try rig.store.save()
+        rig.flags.gateHeld = []
+        await scheduleTask.value
+
+        #expect(rig.engine.resumes.isEmpty)
+        #expect(rig.engine.starts.map(\.id) == [younger], "the leaked claim wedged the queue for the launch")
+        #expect(rig.persisted(id: younger)?.status == OfflineStatus.running.rawValue)
+    }
+
     /// Both refusal paths in `begin` dropped the `active` claim unconditionally after an await. A
     /// cancel plus retry that re-claims the row INSIDE that await had its claim removed by the
     /// older attempt's refusal continuation, and its own `stillCurrent` check then discarded the
@@ -1383,6 +1587,77 @@ struct OfflineManagerTests {
                 "a row parked by a gate that has since re-opened must not stay Paused")
     }
 
+    /// Cubic R7-12: the close leg walks a SNAPSHOT, and every row after the first is reached across
+    /// the whole of the previous row's pause. A user pause landing in that window makes the leg's
+    /// own `pause(row.id)` a no-op — but it marked the row gate-parked anyway, so the next gate
+    /// re-open resumed a row the user had paused. Only a pause this leg actually performed is the
+    /// gate's to undo (the invariant `pause` protects by dropping the id, fed1e60e).
+    ///
+    /// The leg's `where` clause re-reads `active` LIVE, so a user pause that has already finished
+    /// takes the row out of the loop by itself; what it cannot see is a user pause still suspended
+    /// in `engine.pause` — the row reads `.paused` while its claim is still held. Both pauses are
+    /// therefore parked, and released in the order that puts the leg on the second row while the
+    /// user's own pause is still open.
+    @Test func theGateCloseLegNeverMarksARowTheUserPausedInsideIt() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.cellular = true
+        // `store.items` sorts by TITLE, so "A" is the row the leg pauses first and holds inside.
+        // A user Resume bypasses the serial floor (CF-D-5), which is how both rows come to run.
+        func insert(_ videoId: String, title: String) throws -> String {
+            let item = OfflineItem(videoId: videoId, title: title, channelName: nil, thumbnailUrl: nil,
+                                   qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue)
+            try rig.store.insert(item)
+            return item.id
+        }
+        let first = try insert("vidCloseLegA", title: "A")
+        let second = try insert("vidCloseLegB", title: "B")
+        await rig.manager.resume(first)
+        await rig.manager.resume(second)
+        #expect(rig.engine.starts.map(\.id) == [first, second])
+
+        rig.engine.pauseHeld = [first, second]
+        rig.flags.wifiOnly = true
+        let close = Task { await rig.manager.gateDidChange() }
+        await waitUntil { rig.engine.pauseEntered.contains(first) }   // past its readAll, inside A
+        let userPause = Task { await rig.manager.pause(second) }      // the USER pauses row B
+        await waitUntil { rig.engine.pauseEntered.contains(second) }
+
+        rig.engine.pauseHeld = [second]   // the leg walks on to B while B's own pause is still open
+        await close.value
+        rig.engine.pauseHeld = []
+        await userPause.value
+        #expect(rig.persisted(id: second)?.status == OfflineStatus.paused.rawValue)
+
+        rig.flags.cellular = false
+        await rig.manager.gateDidChange()        // the gate re-opens and undoes only its OWN pause
+
+        #expect(rig.engine.resumes.map(\.id) == [first],
+                "a user pause must wait for the user, not for the gate")
+        #expect(rig.persisted(id: second)?.status == OfflineStatus.paused.rawValue)
+    }
+
+    /// Carried minor (B-offline loop): `resumeGateParked` went through `resume(_:)`, which marks its
+    /// refusals `userInitiated` — R5-3's remedy for a button that appears to do nothing. A cellular
+    /// re-open meeting an unreachable per-video gate therefore noted NETWORK on a row nobody
+    /// touched. The re-open is a SCHEDULER pick: "Waiting" is already honest for one of those.
+    @Test func aGateReOpenRefusedByThePerVideoGateLeavesNoReasonOnTheRow() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.cellular = true
+        let id = await save(rig)
+        rig.flags.wifiOnly = true
+        await rig.manager.gateDidChange()
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        rig.flags.gate = .unreachable
+        rig.flags.cellular = false
+        await rig.manager.gateDidChange()
+
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.queued.rawValue, "wait-don't-skip, exactly like a save")
+        #expect(row.errorCode == nil, "nobody tapped anything, so there is nothing to explain")
+        #expect(await rig.manager.pendingRetryIds == [id])
+    }
+
     /// The preserve clause of the same finding: a row the USER paused still waits for the
     /// user's Resume — a gate change must never restart it.
     @Test func aUserPausedRowIsNeverResumedByAGateChange() async throws {
@@ -1498,6 +1773,63 @@ struct OfflineManagerTests {
         #expect(!flags.wifiOnlyTimedOut, "the hold was abandoned on its guard, so the interleaving never happened")
         #expect(rig.engine.starts.isEmpty, "the guard must be the last thing before the engine")
         #expect(rig.persisted(id: id)?.status == OfflineStatus.cancelled.rawValue)
+    }
+
+    /// Cubic R7-13: the generic resolve `catch` called `fail()` with no `stillCurrent` guard, so an
+    /// OLD attempt's error landing after a cancel plus a retry re-claimed the row `forget` the newer
+    /// attempt and marked the row failed — and that attempt's own resolve then discarded its
+    /// continuation on the guard the failure had just invalidated. The row sat failed with nothing
+    /// running and nothing left to reschedule it.
+    @Test func aStaleResolveErrorNeverFailsARowANewerAttemptOwns() async throws {
+        let rig = makeRig(.failure(.transport("boom"))); defer { rig.cleanUp() }
+        let flags = rig.flags
+        rig.resolver.hold(Self.lectureVideoId)
+        let saveTask = Task { await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p",
+                                                     audioOnly: true, metadata: Self.metadata) }
+        await rig.resolver.waitUntilCalled(count: 1)
+        let id = try #require(rig.persisted(videoId: Self.lectureVideoId)?.id)
+
+        await rig.manager.cancel(id)                  // drops the first attempt's claim
+        flags.limiterHeld = [Self.lectureVideoId]     // park the new attempt while it HOLDS one
+        let retryTask = Task { await rig.manager.retry(id) }
+        await waitUntil { flags.limiterCalls == 2 }
+
+        rig.resolver.outcome = .hls                   // what the newer attempt's own resolve answers
+        rig.resolver.release(id: Self.lectureVideoId) // the stale attempt's transport error lands
+        await saveTask.value
+
+        flags.limiterHeld = []
+        await rig.resolver.waitUntilCalled(count: 2)
+        rig.resolver.release(id: Self.lectureVideoId)
+        await retryTask.value
+
+        #expect(rig.engine.starts.map(\.id) == [id], "the newer attempt must survive the older one's error")
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.running.rawValue)
+        #expect(row.errorCode == nil)
+    }
+
+    /// Cubic R7-14: `pause()` writes `.paused` and awaits `engine.pause` BEFORE it drops the claim,
+    /// so a start completing inside that window still passed `stillCurrent`, issued its chunk under
+    /// the NEWEST generation, and kept downloading — possibly on cellular — until the row flipped to
+    /// Saved on its own. The last thing every start does is re-read the row it started for.
+    @Test func aPauseLandingInsideTheEngineStartStopsTheWalkItBegan() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.pause(id)
+        #expect(rig.engine.pauses == [id])
+
+        rig.engine.resumeHeld = [id]
+        let resumeTask = Task { await rig.manager.resume(id) }
+        await waitUntil { rig.engine.resumeEntered.contains(id) }
+        await rig.manager.pause(id)          // the user pauses while the engine hop is still open
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+        rig.engine.resumeHeld = []
+        await resumeTask.value
+
+        #expect(rig.engine.pauses == [id, id, id], "the walk begun under a paused row must be stopped")
+        #expect(rig.engine.live.isEmpty, "or it downloads on until it completes a row the user paused")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
     }
 
     /// Finding 4: a head-of-queue row parked by a limiter block must not starve a younger queued
@@ -1847,6 +2179,73 @@ struct OfflineManagerTests {
                 "the adopted walk must continue the SAME partial, not restart it")
     }
 
+    /// Cubic R7-5: the per-id generation counter restarted at 1 in EVERY launch, so a previous
+    /// launch's late `X#1` chunk passed `isCurrent`'s equality against this launch's own first walk.
+    /// It was taken as current, its offset did not match the partial this launch is continuing, and
+    /// the mismatch threw — the `catch` then deleted the whole `.tmp` and failed the row, losing a
+    /// download that was fine. Generations are launch-unique, so a description this process never
+    /// issued is simply stale. (Adoption is unchanged: an id with NO generation here still adopts —
+    /// `aRelaunchChunkWithNoGenerationContinuesTheWalkToCompletion` above.)
+    @Test func aPreviousLaunchsChunkNeverCollidesWithThisLaunchsWalk() async throws {
+        let base = FileManager.default.temporaryDirectory
+            .appending(path: "OfflineEngineLaunchGen-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let directory = OfflineStorage.directoryURL(base: base)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HangingURLProtocol.self]
+        let engine = ProgressiveEngine(directory: directory, configuration: configuration)
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+
+        let id = "launch-gen-\(UUID().uuidString)"
+        let url = URL(string: "https://example.invalid/media?itag=140")!
+        // This launch continues the partial the previous one left behind — the relaunch shape.
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let tmp = directory.appending(path: "\(id).tmp")
+        try Data("chunk".utf8).write(to: tmp)
+        let token = try JSONEncoder().encode(WireToken(url: url, userAgent: "UA"))
+        await engine.resume(id: id, resumeData: token, allowsCellular: true)
+        await waitUntil { HangingURLProtocol.task(id) != nil }
+
+        // The PREVIOUS launch's chunk 0, described with the generation that launch's first walk
+        // was issued under — the one a per-process counter starting at 1 reissues here.
+        let sideConfiguration = URLSessionConfiguration.ephemeral
+        sideConfiguration.protocolClasses = [PartialChunkURLProtocol.self]
+        let side = URLSession(configuration: sideConfiguration)
+        var request = URLRequest(url: url)
+        request.setValue(ProgressiveEngine.rangeHeader(offset: 0), forHTTPHeaderField: "Range")
+        request.setValue("UA", forHTTPHeaderField: "User-Agent")
+        let stale = side.downloadTask(with: request) { _, _, _ in }
+        stale.taskDescription = ProgressiveEngine.taskKey(id, 1)
+        stale.resume()
+        await waitUntil { stale.state == .completed }
+
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data("chunk".utf8).write(to: location)
+        defer { try? FileManager.default.removeItem(at: location) }
+        engine.urlSession(side, downloadTask: stale, didFinishDownloadingTo: location)
+
+        // FIFO sentinel: the stream preserves order, so once this arrives anything the straggler
+        // yielded has been collected too.
+        let sentinel = side.downloadTask(with: request)   // never resumed; carries the request shape
+        sentinel.taskDescription = "sentinel"
+        engine.urlSession(side, task: sentinel, didCompleteWithError: URLError(.timedOut))
+        await waitUntil { collector.events.contains { event in
+            if case .failed(let failedId, _) = event { return failedId == "sentinel" }
+            return false
+        } }
+
+        #expect(!collector.events.contains { event in
+            switch event {
+            case .progress(let eventId, _, _), .finished(let eventId), .failed(let eventId, _): return eventId == id
+            }
+        }, "a chunk from a walk this launch never issued must yield nothing at all")
+        #expect((try? Data(contentsOf: tmp))?.count == 5, "and it must never cost the partial it collided with")
+        #expect(FileManager.default.fileExists(atPath: location.path()),
+                "the delegate must bail before consuming the chunk")
+    }
+
     /// R4-3's wasted full download: `start` deleted the partial unconditionally, so the walk a
     /// relaunch or a retry restarts re-downloads bytes that are already on disk. With the
     /// generation token silencing the older walk, a start whose token IS the walk already
@@ -2099,14 +2498,24 @@ struct OfflineManagerTests {
         engine.urlSession(side, task: stoppedTask("ours"), didCompleteWithError: URLError(.cancelled))
         engine.urlSession(side, task: stoppedTask("theirs"), didCompleteWithError: URLError(.cancelled))
 
-        await waitUntil { collector.events.count == 1 }
-        let event = try #require(collector.events.first)
-        guard case .failed(let id, .network(let resumeData)) = event else {
-            Issue.record("expected a system cancel to fail the row, got \(event)")
-            return
+        // Cubic R7-23: waiting for `count == 1` and asserting `.first` passed or failed on the 1 ms
+        // poll — a regression that yields BOTH is a count of 1 for as long as the collector is
+        // between the two. The FIFO sentinel (the idiom the generation tests use) is the ordering:
+        // once it arrives, every earlier yield has been collected, so "ours said nothing" is a
+        // statement about the whole stream rather than about a moment in it.
+        engine.urlSession(side, task: stoppedTask("sentinel"), didCompleteWithError: URLError(.timedOut))
+        await waitUntil { collector.events.contains { event in
+            if case .failed(let failedId, _) = event { return failedId == "sentinel" }
+            return false
+        } }
+
+        let failures = collector.events.compactMap { event -> (id: String, resumeData: Data?)? in
+            guard case .failed(let id, .network(let resumeData)) = event, id != "sentinel" else { return nil }
+            return (id, resumeData)
         }
-        #expect(id == "theirs")
-        #expect(resumeData != nil, "the failure must carry the resume token so the row can continue")
+        #expect(collector.events.count == 2, "our own stop must yield nothing at all")
+        #expect(failures.map(\.id) == ["theirs"])
+        #expect(failures.first?.resumeData != nil, "the failure must carry the resume token so the row can continue")
     }
 
     /// Serves a 206 whose `Content-Range` names no total (`bytes 0-4/*` — what a proxy or a CDN
