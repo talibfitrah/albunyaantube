@@ -382,6 +382,9 @@ Implementers inherit nothing from earlier plans. All of the following are bindin
 - **CF-D-15 (device QA):** the cast slot is a combined accessibility element wrapping `GCKUICastButton`; VoiceOver activation of the merged action and the announced state are unverified without a device (Task 8 review I3/⚠️). Joins Tier 3 items 1-2 (discovery, load, hand-back, mini controller, AirPlay + the 403→mirroring fallback on hardware).
 - **CF-D-16:** the AirPlay mirroring fallback latches once per stream — re-picking AirPlay on the same video after a fallback gets no second attempt (`ponytail:` in `PlayerViewModel`); lift it only with a device repro that wants one.
 - **CF-D-17:** the cast slot's caption can outlive the SDK's own glyph after the first tap on a network with no receiver (`ponytail:` in `PlayerToolbar`); hiding it needs a `castState` observer on `CastController` — the same observer the mini controller's SDK `active` flag wants (Task 8 review M1).
+- **CF-D-18:** `ProgressiveEngine.start` deletes the `.tmp` while a pending finish for an older task can still land (Cubic r2 Part A review, Minor 5; pre-existing, not worsened). Self-healing via the status guards; an engine-side generation token is the real fix, together with CF-D-10.
+- **CF-D-19:** the revalidation sweep issues one gate GET per saved video on every due launch/foreground (Cubic r3 R3-11). Bounded by the 15-minute spacing and the size of a personal library; the fix is a backend batch endpoint (`POST /api/v1/videos/offline-gate` with ids) plus a client cap — backend work, not Phase 3.
+- **CF-D-20 (iPad):** the rail layout publishes no visibility signal, so a cast claim held by a non-selected tab's player is never released on the rail the way the compact `TabView` releases it on `onDisappear` (Part B fix round 1, Minor 4). Documented at the seam; needs a rail-side selection observer.
 
 ---
 
