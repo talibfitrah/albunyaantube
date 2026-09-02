@@ -1,6 +1,7 @@
 package com.albunyaan.tube.controller;
 
-import com.albunyaan.tube.config.UniversalLinksProperties;
+import com.albunyaan.tube.config.AndroidProperties;
+import com.albunyaan.tube.config.IosProperties;
 import com.albunyaan.tube.exception.ResourceNotFoundException;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
@@ -26,7 +27,7 @@ import java.util.concurrent.TimeUnit;
 @RestController
 public class WellKnownController {
 
-    /** Android Digital Asset Links {@code package_name}. Not app.universal-links-configurable
+    /** Android Digital Asset Links {@code package_name}. Not config-driven
      *  (only the fingerprints are, per spec) -- this is the same stable app id CLAUDE.md
      *  pins as back-compat-only, so it is a literal here like it is elsewhere in the repo. */
     private static final String ANDROID_PACKAGE_NAME = "com.albunyaan.tube";
@@ -45,16 +46,18 @@ public class WellKnownController {
      */
     private static final List<String> AASA_PATHS = List.of("/watch/*", "/channel/*", "/playlist/*");
 
-    private final UniversalLinksProperties properties;
+    private final IosProperties iosProperties;
+    private final AndroidProperties androidProperties;
 
-    public WellKnownController(UniversalLinksProperties properties) {
-        this.properties = properties;
+    public WellKnownController(IosProperties iosProperties, AndroidProperties androidProperties) {
+        this.iosProperties = iosProperties;
+        this.androidProperties = androidProperties;
     }
 
     @GetMapping({"/.well-known/apple-app-site-association", "/apple-app-site-association"})
     public ResponseEntity<Map<String, Object>> appleAppSiteAssociation() {
         Map<String, Object> detail = Map.of(
-                "appID", properties.getAppleTeamId() + "." + properties.getIosBundleId(),
+                "appID", iosProperties.getTeamId() + "." + iosProperties.getBundleId(),
                 "paths", AASA_PATHS);
         Map<String, Object> body = Map.of(
                 "applinks", Map.of(
@@ -68,7 +71,7 @@ public class WellKnownController {
 
     @GetMapping("/.well-known/assetlinks.json")
     public ResponseEntity<List<Map<String, Object>>> assetlinks() {
-        List<String> fingerprints = properties.getAndroidSha256Fingerprints();
+        List<String> fingerprints = androidProperties.getSha256Fingerprints();
         if (fingerprints.isEmpty()) {
             // Standard 404 envelope (GlobalExceptionHandler) rather than an
             // empty relation array -- an empty assetlinks.json would still
