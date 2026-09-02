@@ -537,26 +537,53 @@ actor OfflineManager: OfflineSaving {
         // sweep ever revalidated. BELOW the cellular gate on purpose: a row that gate refuses
         // writes no bytes, so it needs no authorization and costs no GET.
         //
-        // Only an affirmative answer starts bytes; EVERY other answer parks, and `begin` deletes
-        // NOTHING (review I2). A per-row delete here ends in `schedule()`, which picks the next
-        // queued row and re-enters this function — so one drifted backend answer cascaded through
-        // every queued/paused/failed row in a single pass, with none of the belt the sweep applies
-        // to the identical verdict 200 lines below. `Video.offlineAllowed` is a boxed `Boolean`
-        // that one migration can null across the whole catalog, which is precisely the drift the
-        // belt exists to refuse: under it the sweep keeps everything while this deleted every
-        // partial it could reach. Telling drift from a real revocation needs whole-library
-        // evidence, and only the sweep has it — so the sweep owns every deletion, at the next
-        // launch or foreground. `retry` keeps its own single user-initiated delete: with `begin`
-        // unable to delete there is no cascade behind it.
+        // Only an affirmative answer starts bytes, and `begin` deletes NOTHING (review I2). A
+        // per-row delete here ends in `schedule()`, which picks the next queued row and re-enters
+        // this function — so one drifted backend answer cascaded through every queued/paused/failed
+        // row in a single pass, with none of the belt the sweep applies to the identical verdict
+        // 200 lines below. `Video.offlineAllowed` is a boxed `Boolean` that one migration can null
+        // across the whole catalog, which is precisely the drift that belt exists to refuse: under
+        // it the sweep keeps everything while this deleted every partial it could reach. Telling
+        // drift from a real revocation needs whole-library evidence, and only the sweep has it — so
+        // the BELTED sweep owns every deletion, at its next launch/foreground run. `retry` keeps
+        // its own single user-initiated delete: with `begin` unable to delete, nothing cascades.
+        switch await gate(row.videoId) {
+        case .allowed: break
+
+        // A PER-VIDEO verdict is not a wall (review NI1): this row is refused, younger ones are
+        // not. Parking it on a timer was a starvation bug — `schedule()` picks the OLDEST queued
+        // row and a parked row only ages, so a revoked head row was re-picked every 60 s forever
+        // while every younger row sat at "Waiting" with no bytes and no error, until a sweep that
+        // needs a foreground transition finally deleted it. The row FAILS instead: `fail` frees the
+        // slot and re-runs `schedule()` for the younger rows (the `.blocked` arm's reasoning), and
+        // `schedule()` never picks a `.failed` row again. No delete (I2) and no timer — the belted
+        // sweep collects it, or the user's Retry does through `retry`'s own single delete.
         //
-        // The park is wait-don't-skip, like a limiter park: `.queued` ("Waiting"), NO error code
-        // (a refusal never says why), the partial and any resume token untouched. For a user's
-        // Resume that promotion IS the visible state change R5-3 asks for, so nothing is noted on
-        // top. Deliberately NO `schedule()` behind it, unlike the `.delayed`/`.blocked` arms: this
-        // wall is the gate's transport, which is global — the same reasoning as the `.cooldown`
-        // arm, where re-scheduling would only walk every younger row into the same dead edge.
-        guard case .allowed = await gate(row.videoId) else {
+        // `.notSaveable` is the code the failed caption already renders as "This video can't be
+        // saved for offline": the WHAT, never the why, and no new string. The resume token rides
+        // along so a transient drift that clears costs no re-download.
+        case .notAllowed, .gone:
+            guard stillCurrent(row.id, attempt) else { return }
+            await fail(row.id, .notSaveable, resumeData: row.resumeData)
+            return
+
+        // TRANSPORT, not a verdict: the wall is global, so re-scheduling would only walk every
+        // younger row into the same dead edge — the `.cooldown` arm's reasoning, and the one place
+        // that argument actually holds. Wait-don't-skip: `.queued` ("Waiting"), the partial and any
+        // resume token untouched, a timer to re-ask.
+        case .unreachable:
+            // Read BEFORE the park: `scheduleRetry` drops the claim, so `stillCurrent` is false
+            // afterwards by construction and could not tell a stale attempt from a live one.
+            let mine = stillCurrent(row.id, attempt)
             await scheduleRetry(row.id, attempt, after: Self.gateRetryDelay)
+            // R5-3 / review m-1: the promotion to "Waiting" is a visible change only the FIRST
+            // time, for a `.paused` row. A Resume on an already-parked row rewrites the state it
+            // already has, so the button read as broken indefinitely. A user action now leaves the
+            // reason on the row (NETWORK — what failed is reaching the gate at all), after the park
+            // because the park clears the code (RR-I1); `transition` into `.running` clears it
+            // again the moment real work starts (R6-1). A scheduler pick stays silent: "Waiting" is
+            // already honest for one of those.
+            if userInitiated, mine { await note(row.id, .network) }
             return
         }
         guard stillCurrent(row.id, attempt) else { return }   // cancelled/deleted during the hops
@@ -714,6 +741,11 @@ actor OfflineManager: OfflineSaving {
     /// mechanism resumes it when the timer fires. Here rather than at the four call sites: every
     /// park routes through this one function, and a row that is already `.queued` only needs its
     /// stale reason cleared (RR-I1 below).
+    ///
+    /// ENTRY CONTRACT (review m-3): `attempt` must be a claim this caller holds — `begin`'s own
+    /// `claim`, or the live generation `resolveAndStart` continues. An unclaimed caller passing
+    /// `attempts[id] ?? 0` fails the guard below and parks NOTHING; both callers claim today, and a
+    /// third must claim before it parks.
     private func scheduleRetry(_ id: String, _ attempt: Int, after delay: Duration) async {
         // Review I1: this used to drop the claim with an unconditional `active.remove(id)`, so a
         // cancel plus a retry that re-claimed the row INSIDE the caller's own await had its claim
