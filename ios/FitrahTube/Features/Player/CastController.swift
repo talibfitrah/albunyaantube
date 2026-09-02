@@ -2,6 +2,17 @@ import Foundation
 import GoogleCast
 import SwiftUI
 
+/// What a `PlayerScreen` that claimed a cast does when it comes back on screen
+/// (`CastController.returnAction`).
+nonisolated enum CastReturnAction: Sendable, Equatable {
+    /// Nothing to reconcile.
+    case none
+    /// The session is still up and the stamp is free: take back the claim we surrendered.
+    case reclaim
+    /// The session ended while we were away: seek local to the receiver's position and resume.
+    case handBack
+}
+
 /// The app's ONE Google Cast seam (spec §10 Chromecast). Every `GoogleCast` reference lives here
 /// and in `CastMedia`'s one mapping function -- spec §10's "Cast SDK is not loaded at all when
 /// `GCKCastContext` cannot be created" is enforced by construction: a failed `setUp()` leaves
@@ -81,6 +92,14 @@ import SwiftUI
     /// request is the only thing carrying the load's outcome.
     private var loadRequest: GCKRequest?
 
+    /// The mini controller most recently handed to a representable. Identity only (an
+    /// `ObjectIdentifier` is `Sendable`; the view controller is not, so it cannot cross the
+    /// delegate's actor hop). Part B review, Minor 1: with one controller per representable (R2-9)
+    /// a tab switch has two alive at once in an order SwiftUI does not define, so a
+    /// `shouldAppear: false` from the OUTGOING one would clear the flag the incoming strip is being
+    /// shown under -- the R2-9 symptom relocated from view parenting to the delegate.
+    private var currentMiniControls: ObjectIdentifier?
+
     /// Creates the shared `GCKCastContext`, once per process. Idempotent and non-throwing: the
     /// `setSharedInstanceWithOptions:error:` overload (Bool + NSError, `GCKCastContext.h:78`) is
     /// what makes "cannot be created" a survivable state rather than the exception the
@@ -125,6 +144,7 @@ import SwiftUI
     func makeMiniControls() -> GCKUIMiniMediaControlsViewController {
         let controls = GCKCastContext.sharedInstance().createMiniMediaControlsViewController()
         controls.delegate = self
+        currentMiniControls = ObjectIdentifier(controls)
         return controls
     }
 
@@ -154,12 +174,31 @@ import SwiftUI
         return claimCastSource(videoId)
     }
 
-    /// The claiming screen went away (cubic R2-5): give the stamp back so the NEXT screen opened
-    /// during the same session can claim it. Keyed on the videoId for the same reason every other
-    /// reaction is -- several `PlayerScreen`s can be mounted, and only the owner may release.
+    /// The claiming screen went OFF SCREEN (cubic R2-5): give the stamp back so the next video
+    /// opened during the same session can claim it. Only the owner may release, and the caller must
+    /// pass the id it actually claimed -- never a re-read `args.videoId`, which `swapArgs` moves on
+    /// every advance (Part B review, Important 1). A screen that never claimed holds nothing and so
+    /// can never release someone else's session.
+    ///
+    /// The STAMP only: `lastStreamPosition` is the receiver's position and the hand-back still
+    /// needs it (Part B review, Important 2 -- `onDisappear` fires for a screen that is merely
+    /// covered or tab-switched, not just a popped one). `finishCasting()` is what consumes both.
     func releaseClaim(_ videoId: String) {
         guard castingVideoId == videoId else { return }
-        finishCasting()
+        castingVideoId = nil
+    }
+
+    /// What a claimant that comes BACK on screen should do (Part B review, Important 2). Pure, so
+    /// the three-way reconcile is pinned without driving SwiftUI's appearance callbacks.
+    ///
+    /// A re-claim costs no re-resolve and no second `load()` -- it only takes back the stamp the
+    /// screen surrendered on its way off. The hand-back arm exists because a session that ends
+    /// while the claimant is away leaves its `.onChange` with no stamp to match, so the phone would
+    /// stay paused at the pre-cast position with the receiver's position unspent.
+    nonisolated static func returnAction(pausedForCast: Bool, sessionActive: Bool,
+                                         stampIsFree: Bool) -> CastReturnAction {
+        if sessionActive { return stampIsFree ? .reclaim : .none }
+        return pausedForCast ? .handBack : .none
     }
 
     /// Still ours to act on (cubic R2-8): `PlayerScreen.startCasting` awaits a forced resolve
@@ -202,7 +241,10 @@ import SwiftUI
 
     /// The mini controller's `active` flag, from its delegate (same seam shape as the session
     /// callbacks above, and the only way a test can set it without an SDK view controller).
-    func miniMediaControlsViewControllerDidChangeActive(_ active: Bool) {
+    /// `from` identifies the sender so a controller we no longer hand out cannot write the flag
+    /// (Part B review, Minor 1); nil is the test seam's "no sender to check".
+    func miniMediaControlsViewControllerDidChangeActive(_ active: Bool, from sender: ObjectIdentifier? = nil) {
+        guard sender == nil || sender == currentMiniControls else { return }
         miniControlsActive = active
     }
 
@@ -334,7 +376,13 @@ extension CastController: GCKUIMiniMediaControlsViewControllerDelegate {
     nonisolated func miniMediaControlsViewController(
         _ miniMediaControlsViewController: GCKUIMiniMediaControlsViewController,
         shouldAppear: Bool) {
-        MainActor.assumeIsolated { miniMediaControlsViewControllerDidChangeActive(shouldAppear) }
+        // The identity, not the object: `GCKUIMiniMediaControlsViewController` is a non-`Sendable`
+        // ObjC class, so carrying it into the hop is a sending violation -- the same reason
+        // `willEndSession` reads its position first. `ObjectIdentifier` is all the check needs.
+        let sender = ObjectIdentifier(miniMediaControlsViewController)
+        MainActor.assumeIsolated {
+            miniMediaControlsViewControllerDidChangeActive(shouldAppear, from: sender)
+        }
     }
 }
 

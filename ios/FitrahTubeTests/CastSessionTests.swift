@@ -180,6 +180,90 @@ struct CastSessionTests {
         #expect(cast.castingVideoId == "xc7keR2piUM")
     }
 
+    // MARK: - Part B fix round 1
+
+    /// Important 1(a): the release was keyed on `model.args.videoId`, which `swapArgs` replaces on
+    /// every auto-advance / Up Next tap / auto-skip, while the stamp keeps the id that was actually
+    /// claimed. So after ONE advance during a session the leaving screen released nothing, the
+    /// session-end arm missed for the same reason, and `sessionDidEnd()` deliberately preserves the
+    /// stamp — every later video opened during that session then failed to claim, which is R2-5's
+    /// exact symptom. The screen holds the claimed id and releases exactly that; this pins the
+    /// contract it has to honour.
+    @Test func onlyTheClaimedIdReleasesTheClaimNotTheVideoTheScreenAdvancedTo() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
+
+        // The queue advanced: the screen plays another video now, the stamp still names the claim.
+        cast.releaseClaim("5ZMMARhgvsw")
+        #expect(cast.castingVideoId == "xc7keR2piUM",
+                "an advanced-to id must never release a claim taken for another video")
+
+        cast.releaseClaim("xc7keR2piUM")
+        #expect(cast.castingVideoId == nil)
+        #expect(cast.claimForCast(videoId: "5ZMMARhgvsw", isOfflinePlayback: false),
+                "the next video opened during the same session must be able to claim it")
+    }
+
+    /// Important 2: `onDisappear` is a WENT-OFF-SCREEN seam, not a teardown one — a push-over and a
+    /// compact-layout tab switch both fire it on a screen that is still alive and still paused for
+    /// its cast. Surrendering the stamp is right (the next video must be able to claim), but
+    /// discarding `lastStreamPosition` with it threw away the receiver's position the hand-back
+    /// needs, leaving the phone paused at the pre-cast position. The release gives back the STAMP
+    /// only; `finishCasting()` is what consumes both.
+    @Test func anOffScreenReleaseGivesBackTheStampButKeepsTheReceiversPosition() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
+        cast.sessionWillEnd(position: 300)
+
+        cast.releaseClaim("xc7keR2piUM")
+        #expect(cast.castingVideoId == nil)
+        #expect(cast.lastStreamPosition == 300, "the hand-back still needs the receiver's position")
+    }
+
+    /// Important 2, the return leg: what a claimant coming back on screen does. Re-claiming costs
+    /// no re-resolve and no second `load()` — it only takes back the stamp it surrendered — and a
+    /// session that ended while the screen was away still owes it the hand-back, which its
+    /// `.onChange` arm missed precisely because the stamp was gone.
+    @Test func aReturningClaimantReclaimsALiveSessionAndHandsBackAFinishedOne() {
+        // Still casting, stamp free: take it back.
+        #expect(CastController.returnAction(pausedForCast: true, sessionActive: true,
+                                            stampIsFree: true) == .reclaim)
+        // Still casting but another screen claimed while we were away: leave it alone (fix round
+        // 1's Important 1 — one screen owns the session).
+        #expect(CastController.returnAction(pausedForCast: true, sessionActive: true,
+                                            stampIsFree: false) == .none)
+        // The session ended while we were off screen: hand back now, or the phone stays paused at
+        // the pre-cast position with the receiver's position thrown away. Whoever holds the stamp
+        // by then is irrelevant — our own player is the one that owes a resume, and the release
+        // that follows no-ops unless the stamp is still ours.
+        for stampIsFree in [true, false] {
+            #expect(CastController.returnAction(pausedForCast: true, sessionActive: false,
+                                                stampIsFree: stampIsFree) == .handBack)
+        }
+        // Nothing was ever paused for a cast here: a plain re-appear does nothing.
+        for stampIsFree in [true, false] {
+            #expect(CastController.returnAction(pausedForCast: false, sessionActive: false,
+                                                stampIsFree: stampIsFree) == .none)
+        }
+    }
+
+    /// Minor 1: with one mini controller per representable (R2-9), a tab switch has two alive at
+    /// once and their create/teardown order is exactly what R2-9 calls undefined — so a
+    /// `shouldAppear: false` from the OUTGOING controller would land on the flag the incoming one
+    /// is being shown under, relocating the blank-strip symptom from view parenting to the
+    /// delegate. Only the controller we last handed out is trusted.
+    @Test func aStaleMiniControlsCallbackCannotClearTheLiveStripsFlag() {
+        let cast = CastController()
+        cast.miniMediaControlsViewControllerDidChangeActive(true)
+        #expect(cast.miniControlsActive)
+
+        cast.miniMediaControlsViewControllerDidChangeActive(false, from: ObjectIdentifier(NSObject()))
+        #expect(cast.miniControlsActive,
+                "an outgoing tab's controller must not clear the incoming one's flag")
+    }
+
     /// R2-8: `startCasting` awaits a FORCED resolve before it pauses the local player. If the
     /// session ended inside that window the end reaction already ran (`pausedForCast` was false,
     /// so nothing resumes), `finishCasting()` cleared the stamp, `load()` finds no session and
