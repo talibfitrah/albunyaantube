@@ -1,6 +1,7 @@
 package com.albunyaan.tube.controller;
 
-import com.albunyaan.tube.config.UniversalLinksProperties;
+import com.albunyaan.tube.config.AndroidProperties;
+import com.albunyaan.tube.config.IosProperties;
 import com.albunyaan.tube.exception.GlobalExceptionHandler;
 import com.albunyaan.tube.security.SecurityConfig;
 import com.google.firebase.auth.FirebaseAuth;
@@ -42,7 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * property via {@code @TestPropertySource}.
  */
 @WebMvcTest(WellKnownController.class)
-@Import({SecurityConfig.class, GlobalExceptionHandler.class, UniversalLinksProperties.class})
+@Import({SecurityConfig.class, GlobalExceptionHandler.class, IosProperties.class, AndroidProperties.class})
 class WellKnownControllerTest {
 
     @Autowired
