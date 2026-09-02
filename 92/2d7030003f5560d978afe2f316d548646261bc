@@ -1,0 +1,71 @@
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_66ddb7c44de816::t_8629b8cea1ffc5 717-724
+ios/FitrahTubeTests/AirPlayFallbackTests.swift
+  s_66ddb7c44de816::t_9f2b5cb6495ce3 1,3
+  s_66ddb7c44de816::t_fc7878c3226cf8 32-48
+ios/FitrahTubeTests/OfflineComplianceTests.swift
+  s_66ddb7c44de816::t_211be02817e3d3 62-81
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_66ddb7c44de816::t_ba183918843b63 880,882-886,890
+  s_66ddb7c44de816::t_f4e9caf6567d15 796-798,803
+  s_66ddb7c44de816::t_edc1b7867f491f 147-156,158,167-179
+  s_66ddb7c44de816::t_695d64d6508539 694-714
+  s_66ddb7c44de816::t_fe6903c7515555 829,831
+  s_66ddb7c44de816::t_443040b2781f46 561
+  s_66ddb7c44de816::t_2bbce22fde871d 819-820
+  s_66ddb7c44de816::t_95bac6bbb9db3b 869-870
+  s_66ddb7c44de816::t_1808b0c9864542 251
+  s_66ddb7c44de816::t_eb3c82304887b2 226,232-235,237
+  s_66ddb7c44de816::t_011c7356c2cfab 839-840
+  s_66ddb7c44de816::t_17c746fe569408 856
+  s_66ddb7c44de816::t_5b22d8194c0ff1 799-802
+  s_66ddb7c44de816::t_df64c223968ff4 757-765
+ios/FitrahTubeTests/CastSessionTests.swift
+  s_66ddb7c44de816::t_e9816f649d7607 524-529,536-537,542,544,547,549
+  s_66ddb7c44de816::t_90f2b33fe3d11e 102
+  s_66ddb7c44de816::t_237fcc27cd94c4 446-447,451-452,458-459
+  s_66ddb7c44de816::t_ad43e55556099a 614-634
+  s_66ddb7c44de816::t_bffa9604c29aa0 251,254,258,260
+  s_66ddb7c44de816::t_a3fb3633709c40 22,25,28-56,61-62,69
+  s_66ddb7c44de816::t_a9779fee210d70 820-822,826
+  s_66ddb7c44de816::t_bf3590ac11d1b1 742
+  s_66ddb7c44de816::t_bc2d52718021f0 389-411
+  s_66ddb7c44de816::t_c646bc5fd4db1f 82-84,87,93
+  s_66ddb7c44de816::t_8f23782dd66600 575-576,580,588-613,635-653
+  s_66ddb7c44de816::t_03d99e464c5948 749-789
+  s_66ddb7c44de816::t_de4dc7c407a3a6 205,207-208,210,212,220-221,225-226,234-235
+  s_66ddb7c44de816::t_2779991d0fde1e 838-841,843-844,849
+  s_66ddb7c44de816::t_d5f31a09bdad85 494-495
+  s_66ddb7c44de816::t_847265005d1e36 704-705
+  s_66ddb7c44de816::t_ffabd56eeeea72 273,276,285-288,294-296,298-300
+ios/FitrahTube/Features/Player/CastController.swift
+  s_66ddb7c44de816::t_cf88df0ce6c4f8 188,190
+  s_66ddb7c44de816::t_d2d94c47d909e5 250,252
+  s_66ddb7c44de816::t_f145b11199d395 298-299
+  s_66ddb7c44de816::t_d6b5bcb52a1ac2 211-212,217-218
+  s_66ddb7c44de816::t_b60f288a14efd8 325,331-332
+  s_66ddb7c44de816::t_9f79190d0a8a55 230-234
+  s_66ddb7c44de816::t_d1afd9e3ad8947 376-381,386
+  s_66ddb7c44de816::t_31473139d3fbf8 312
+  s_66ddb7c44de816::t_315352cc11be3c 486,488-489
+  s_66ddb7c44de816::t_d4503200501e72 68-72,75-82
+  s_66ddb7c44de816::t_3139497431677d 166-169,171-174,177
+  s_66ddb7c44de816::t_f282741729db69 42-50,57-60
+  s_66ddb7c44de816::t_11cd08f609162c 202-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "922d7030003f5560d978afe2f316d548646261bc",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
