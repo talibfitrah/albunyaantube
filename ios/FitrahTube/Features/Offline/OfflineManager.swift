@@ -169,6 +169,10 @@ actor OfflineManager: OfflineSaving {
     private var attempts: [String: Int] = [:]
     /// Ids whose next attempt is timer-scheduled (limiter delay/block, resolver cooldown).
     private var retries: [String: Task<Void, Never>] = [:]
+    /// Ids the CELLULAR GATE paused (cubic R2-2) — never a user's pause. `gateDidChange` resumes
+    /// exactly these when the gate re-opens. In-memory only: a relaunch loses them, and
+    /// `reattach()` re-queues every orphaned running row anyway.
+    private var gatePausedIds: Set<String> = []
     /// Ids that already spent their one re-resolve on a 403.
     private var reResolvedAfter403: Set<String> = []
     private var lastProgressPersist: [String: Date] = [:]
@@ -297,12 +301,13 @@ actor OfflineManager: OfflineSaving {
             if live.contains(row.id) {
                 _ = claim(row.id)
             } else {
-                // Orphaned: the app died mid-download. Resume data (from a pause before the death)
-                // resumes as paused; without it the row queues and downloads from zero.
-                let next: OfflineStatus = row.resumeData == nil ? .queued : .paused
+                // Orphaned: the app died mid-download. It queues either way (cubic R2-2) — a row
+                // that was RUNNING was never paused by a user, and `.paused` is the state that
+                // waits for a user's Resume. `begin` continues it from its resume data when it
+                // carries any, else from zero.
                 await write { store in
                     guard let item = store.item(id: row.id) else { return }
-                    item.status = next.rawValue
+                    item.status = OfflineStatus.queued.rawValue
                     try store.save()
                 }
             }
@@ -329,13 +334,24 @@ actor OfflineManager: OfflineSaving {
     /// Reconciliation note 6: re-evaluate the cellular gate after `wifiOnlyDownloads` or the path
     /// changes — pause running tasks the gate now refuses, start queued ones it now allows.
     func gateDidChange() async {
-        if await gateAllows() {
-            await schedule()
+        guard await gateAllows() else {
+            for row in await readAll() where row.status == .running && active.contains(row.id) {
+                await pause(row.id)
+                gatePausedIds.insert(row.id)
+            }
             return
         }
-        for row in await readAll() where row.status == .running && active.contains(row.id) {
-            await pause(row.id)
-        }
+        // A GATE pause is not a user pause (cubic R2-2): `schedule()` picks only `.queued` rows,
+        // so a brief Wi-Fi drop under Wi-Fi-only used to leave the save at "Paused" until the
+        // user tapped Resume. The gate resumes exactly the ids IT parked; a row the user paused
+        // still waits for the user.
+        // ponytail: restores every parked row, which briefly exceeds the serial floor (CF-D-5)
+        // if two were somehow running — that is a faithful restore of the pre-gate state; add a
+        // one-at-a-time drain if per-item concurrency ever lands.
+        let parked = gatePausedIds
+        gatePausedIds.removeAll()
+        for id in parked { await resume(id) }
+        await schedule()
     }
 
     // MARK: - Engine events
@@ -360,8 +376,14 @@ actor OfflineManager: OfflineSaving {
             let tmp = directory.appending(path: "\(id).tmp")
             // `.paused` too: `pause()` writes `paused` before the engine hop returns, so a final
             // chunk racing the pause can deliver `.finished` for a paused row — those bytes are
-            // the complete file and must be kept, not deleted.
-            guard let row = await read(id: id), row.status == .running || row.status == .paused else {
+            // the complete file and must be kept, not deleted. `.queued` too (cubic R2-3): on a
+            // background-events relaunch the pending delegate callbacks and `liveIds()`'s
+            // `getAllTasks` are both async on the delegate queue with no ordering guarantee, so
+            // the final chunk's finish can land AFTER `reattach()` already found no live task and
+            // queued the row — deleting a file that is complete costs a full re-download.
+            // Only a cancelled/deleted row's bytes are actually garbage.
+            guard let row = await read(id: id),
+                  row.status == .running || row.status == .paused || row.status == .queued else {
                 try? FileManager.default.removeItem(at: tmp)   // cancelled/deleted while finishing
                 return
             }
@@ -628,6 +650,7 @@ actor OfflineManager: OfflineSaving {
         active.remove(id)
         retries[id]?.cancel()
         retries[id] = nil
+        gatePausedIds.remove(id)
         reResolvedAfter403.remove(id)
         lastProgressPersist[id] = nil
     }

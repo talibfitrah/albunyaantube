@@ -59,6 +59,19 @@ struct OfflineManagerTests {
         func liveIds() async -> Set<String> { live }
     }
 
+    /// Drains an engine's event stream so a test can assert what it emitted — and, just as
+    /// importantly, what it did NOT (the `.cancelled` and no-total findings are both "one event
+    /// too many/few").
+    nonisolated final class EventCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _events: [OfflineDownloadEvent] = []
+        var events: [OfflineDownloadEvent] { lock.withLock { _events } }
+
+        func consume(_ stream: AsyncStream<OfflineDownloadEvent>) -> Task<Void, Never> {
+            Task { for await event in stream { self.lock.withLock { self._events.append(event) } } }
+        }
+    }
+
     /// Cellular-gate inputs the closures read live.
     final class Flags: @unchecked Sendable {
         nonisolated(unsafe) var wifiOnly = false
@@ -402,12 +415,56 @@ struct OfflineManagerTests {
         await rig.manager.reattach()
 
         #expect(rig.persisted(id: live)?.status == OfflineStatus.running.rawValue)
-        #expect(rig.persisted(id: orphanWithData)?.status == OfflineStatus.paused.rawValue)
-        // No resume data → queued, and it STAYS queued: the re-bound live task holds the serial
-        // slot (CF-D-5), so nothing resolves until it finishes.
+        // Both orphans queue (cubic R2-2): `.paused` is the USER's state, and neither of these
+        // rows was paused by a user — they were running when the app died. They STAY queued
+        // here: the re-bound live task holds the serial slot (CF-D-5), so nothing resolves
+        // until it finishes.
+        #expect(rig.persisted(id: orphanWithData)?.status == OfflineStatus.queued.rawValue)
         #expect(rig.persisted(id: orphanNoData)?.status == OfflineStatus.queued.rawValue)
         #expect(rig.resolver.calls.isEmpty)
         #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Cubic R2-2, second leg: a relaunched row carrying stale resume data was parked as
+    /// `.paused` — the state only a USER pause should produce — so the save sat at "Paused"
+    /// until the user tapped Resume. With no live task holding the serial slot it continues
+    /// from its `.tmp` on its own.
+    @Test func reattachContinuesAnOrphanedRowThatCarriesResumeData() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let item = OfflineItem(videoId: "vidOrphan0C", title: "t", channelName: nil, thumbnailUrl: nil,
+                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.running.rawValue,
+                               resumeData: Data("RD".utf8))
+        try rig.store.insert(item)
+        rig.engine.live = []
+
+        await rig.manager.reattach()
+
+        #expect(rig.engine.resumes.map(\.id) == [item.id])
+        #expect(rig.engine.starts.isEmpty, "a continued walk resumes from the `.tmp`, never restarts")
+        #expect(rig.persisted(id: item.id)?.status == OfflineStatus.running.rawValue)
+    }
+
+    /// Cubic R2-3: on a background-events relaunch the session's pending delegate callbacks and
+    /// `liveIds()`'s `getAllTasks` are both async on the delegate queue with no ordering
+    /// guarantee. When the final chunk's finish lands first, `reattach()` sees no live task and
+    /// queues the row — and the queued `.finished` then hit the status guard, deleting a
+    /// COMPLETE file for a full re-download.
+    @Test func aFinishedEventForAQueuedRowCompletesItInsteadOfDeletingTheFile() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let item = OfflineItem(videoId: "vidRelaunch", title: "t", channelName: nil, thumbnailUrl: nil,
+                               qualityLabel: "360p", audioOnly: true, status: OfflineStatus.queued.rawValue)
+        try rig.store.insert(item)
+        try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
+        try Data(repeating: 7, count: 2_048).write(to: rig.directory.appending(path: "\(item.id).tmp"))
+
+        await rig.manager.handle(.finished(id: item.id))
+
+        let row = try #require(rig.persisted(id: item.id))
+        #expect(row.status == OfflineStatus.completed.rawValue)
+        #expect(row.localPath == "\(item.id).m4a")
+        #expect(row.bytesWritten == 2_048)
+        let file = OfflineStorage.fileURL(relativePath: "\(item.id).m4a", base: rig.base)
+        #expect(FileManager.default.fileExists(atPath: file.path()))
     }
 
     /// Fix-first F1: a re-attached claim must carry an attempt token like `begin`'s. Without it,
@@ -465,6 +522,38 @@ struct OfflineManagerTests {
         #expect(rig.engine.pauses == [id])
         #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
         #expect(rig.persisted(id: id)?.resumeData == Data("RD".utf8))
+    }
+
+    /// Cubic R2-2: a gate pause is not a user pause. `gateDidChange` parked running rows as
+    /// `.paused` but on re-open only ran `schedule()`, which picks `.queued` rows — so a brief
+    /// Wi-Fi drop under Wi-Fi-only left the save at "Paused" until the user tapped Resume.
+    @Test func theGateResumesExactlyTheRowsItPaused() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.flags.cellular = true
+        let id = await save(rig)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+
+        rig.flags.wifiOnly = true
+        await rig.manager.gateDidChange()
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        rig.flags.cellular = false
+        await rig.manager.gateDidChange()
+        #expect(rig.engine.resumes.map(\.id) == [id])
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+    }
+
+    /// The preserve clause of the same finding: a row the USER paused still waits for the
+    /// user's Resume — a gate change must never restart it.
+    @Test func aUserPausedRowIsNeverResumedByAGateChange() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.pause(id)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        await rig.manager.gateDidChange()   // the gate allows and always did
+        #expect(rig.engine.resumes.isEmpty)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
     }
 
     // MARK: - Race windows (Task 4 review fix round)
@@ -695,6 +784,96 @@ struct OfflineManagerTests {
         await engine.resume(id: id, resumeData: token, allowsCellular: true)
         let tmp = directory.appending(path: "\(id).tmp")
         #expect((try? Data(contentsOf: tmp))?.count == 5)
+    }
+
+    /// Cubic R2-1: iOS cancels background tasks the engine never asked to stop (force-quit, a
+    /// background-session disconnect). Swallowing EVERY `.cancelled` as "our own pause/cancel"
+    /// left such a row at "Saving…" with no task, so the manager's `active` claim was never
+    /// released and `schedule()` refused every other queued row for the rest of the session.
+    /// Only an id in the engine's own stop set is silent.
+    @Test func aSystemCancelFailsTheWalkWhileOurOwnStopStaysSilent() async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+
+        let side = URLSession(configuration: .ephemeral)
+        func stoppedTask(_ id: String) -> URLSessionTask {
+            var request = URLRequest(url: URL(string: "https://example.invalid/media?itag=140")!)
+            request.setValue("UA", forHTTPHeaderField: "User-Agent")
+            let task = side.downloadTask(with: request)   // never resumed; carries the request shape
+            task.taskDescription = id
+            return task
+        }
+
+        await engine.cancel(id: "ours")   // in `stoppedIds`: this completion is ours, stay silent
+        engine.urlSession(side, task: stoppedTask("ours"), didCompleteWithError: URLError(.cancelled))
+        engine.urlSession(side, task: stoppedTask("theirs"), didCompleteWithError: URLError(.cancelled))
+
+        await waitUntil { collector.events.count == 1 }
+        let event = try #require(collector.events.first)
+        guard case .failed(let id, .network(let resumeData)) = event else {
+            Issue.record("expected a system cancel to fail the row, got \(event)")
+            return
+        }
+        #expect(id == "theirs")
+        #expect(resumeData != nil, "the failure must carry the resume token so the row can continue")
+    }
+
+    /// Serves a 206 whose `Content-Range` names no total (`bytes 0-4/*` — what a proxy or a CDN
+    /// edge that strips the length produces).
+    nonisolated final class UnboundedChunkURLProtocol: URLProtocol {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil,
+                                           headerFields: ["Content-Range": "bytes 0-4/*"])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data("chunk".utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        override func stopLoading() {}
+    }
+
+    /// Cubic R2-7: `total(fromContentRange:)` is nil for `bytes 0-x/*` (and for a missing
+    /// header), and the walk's `else` branch called that `.finished` — a 10 MB partial renamed
+    /// to the final file and shown as a completed save. A total the walk cannot read is a
+    /// failure, never a completion.
+    @Test func aPartialChunkWithNoParseableTotalFailsInsteadOfFinishing() async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "unbounded-total"
+        let url = URL(string: "https://example.invalid/media?itag=140")!
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnboundedChunkURLProtocol.self]
+        let side = URLSession(configuration: configuration)
+        var request = URLRequest(url: url)
+        request.setValue("bytes=0-10485759", forHTTPHeaderField: "Range")
+        request.setValue("UA", forHTTPHeaderField: "User-Agent")
+        let task = side.downloadTask(with: request) { _, _, _ in }
+        task.taskDescription = id
+        task.resume()
+        for _ in 0..<2000 {
+            if task.state == .completed { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(task.state == .completed)
+
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data("chunk".utf8).write(to: location)
+        defer { try? FileManager.default.removeItem(at: location) }
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+
+        await waitUntil {
+            collector.events.contains { if case .failed = $0 { return true } else { return false } }
+        }
+        #expect(!collector.events.contains { if case .finished = $0 { return true } else { return false } },
+                "a partial with no readable total must never be reported finished")
     }
 
     // MARK: - Chunked engine arithmetic (googlevideo throttles single long GETs on adaptive

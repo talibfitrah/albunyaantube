@@ -233,7 +233,15 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             let written = partialSize(id)
             let total = status == 200 ? written : Self.total(fromContentRange: response?.value(forHTTPHeaderField: "Content-Range"))
             continuation.yield(.progress(id: id, bytesWritten: written, totalBytes: total))
-            if let total, written < total {
+            // No parseable total (missing `Content-Range`, or `bytes 0-x/*` from a proxy or CDN
+            // edge that strips the length): the walk cannot know it is done, and calling a 10 MB
+            // partial `.finished` renames it to the final file and shows the row as saved. Fail
+            // with the resume token instead — the `.tmp` stays, so a retry continues from it.
+            guard let total else {
+                continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: downloadTask))))
+                return
+            }
+            if written < total {
                 issueChunk(id: id, url: url, userAgent: request.value(forHTTPHeaderField: "User-Agent") ?? "",
                            allowsCellular: request.allowsCellularAccess, offset: written)
             } else {
@@ -256,8 +264,13 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error, let id = task.taskDescription else { return }
-        // Our own pause/cancel: `pause` already returned its token.
-        if (error as? URLError)?.code == .cancelled { return }
+        // Our own pause/cancel: `pause` already returned its token. But iOS cancels background
+        // tasks WE never stopped too (force-quit, background-session disconnect), and swallowing
+        // those left the row at "Saving…" with no task — the manager's `active` claim was never
+        // released, so `schedule()` refused every other queued row for the session. `stoppedIds`
+        // is the engine's own stop set: only an id in it is ours.
+        if (error as? URLError)?.code == .cancelled,
+           stateLock.withLock({ stoppedIds.contains(id) }) { return }
         continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: task))))
     }
 
