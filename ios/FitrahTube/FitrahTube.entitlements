@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Phase 4 Task 2. Sign in with Apple is a capability, and a capability is an entitlement — there is
+  no runtime API to read your own entitlements, so this file is only half the story: Info.plist's
+  FITRAH_APPLE_SIGNIN carries the build-time fact the UI reads (project.yml).
+
+  "Default" means a first-party Apple ID sign-in (the alternative, "Default WebCredentials", is for
+  sharing an account system with a website — FitrahTube has none).
+
+  Never consumed by the gate: `CODE_SIGNING_ALLOWED[sdk=iphonesimulator*] = NO` (project.yml:26)
+  means there is no CodeSign step on either simulator build, Debug or Release. It matters the day a
+  device build is signed — which needs the App ID `com.albunyaan.tube` registered in the portal
+  with the capability enabled, and it is NOT registered today.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
+</dict>
+</plist>

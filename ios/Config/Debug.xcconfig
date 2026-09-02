@@ -1,4 +1,10 @@
 // Debug: backend on this Mac. The simulator reaches the host via localhost.
 API_BASE_URL = http:/$()/localhost:8080/
-FITRAH_TEAM_ID =
+// Owner's Apple Developer Team ID (rulings.md Amendment 2). Drives DEVELOPMENT_TEAM and, through
+// Info.plist's FITRAH_APPLE_SIGNIN, whether the app offers Sign in with Apple at all.
+FITRAH_TEAM_ID = 72PF8SBQR6
+// Google Sign-In's OAuth callback scheme (the REVERSED_CLIENT_ID out of GoogleService-Info.plist).
+// Empty here because that file is USER-BLOCKED and git-ignored: Local.xcconfig supplies the real
+// value the day the plist lands.
+GID_REVERSED_CLIENT_ID =
 #include? "Local.xcconfig"

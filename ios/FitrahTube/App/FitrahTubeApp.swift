@@ -43,6 +43,12 @@ struct FitrahTubeApp: App {
         #endif
         // Cubic P1: the background-events relaunch seam — see `AppContainer.current`.
         AppContainer.current = container
+        // Phase 4 Task 2: an eager warm-up ONLY. `container` above is a stored property, and Swift
+        // evaluates stored-property initializers before this body runs — so `AppContainer.live()`
+        // has already gone by, and the auth builder inside it calls `configureIfPossible()` itself.
+        // Never gate a container member on "configure already ran": on the real launch path it has
+        // not. This line just moves the one-time cost off the first sign-in tap.
+        FirebaseBootstrap.configureIfPossible()
     }
 
     // Owned at the app scope, not inside MainShellView, so a deep link that arrives before the
@@ -65,7 +71,10 @@ struct FitrahTubeApp: App {
             RootView()
                 .environment(\.container, container)
                 .environment(\.router, router)
-                .onOpenURL { router.open($0) }
+                // Google Sign-In gets first refusal: its OAuth callback comes back on the reversed
+                // client id scheme, not `albunyaantube://`, and it returns false for everything it
+                // did not start — so every deep link still reaches `DeepLinkParser` unchanged.
+                .onOpenURL { if !FirebaseBootstrap.handleOpenURL($0) { router.open($0) } }
                 .task {
                     openDebugDeepLinkIfRequested()
                     selectDebugTabIfRequested()

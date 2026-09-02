@@ -4,12 +4,22 @@
   Required since 2024-05-01; without it App Store privacy validation can reject the archive
   (codex-P1, docs/architecture/ios-app-plan.md:344).
 
-  Nothing is tracked: phase 1 is guest-only, there is no analytics SDK, no IDFA/IDFV read, and no
-  PII leaves the device. One thing *is* collected under Apple's definition and is declared below:
-  the locally generated `X-Device-Id` UUID that `DeviceIdMiddleware` sends on every request and the
-  backend retains with `POST /api/v1/reports`. It is a rate-limit/report bucket, not tied to a
-  person -- hence Device ID / App Functionality, not linked to identity, not used for tracking
-  (gate wave-2 W7: an empty array here while that header ships is an App Review rejection risk).
+  Nothing is tracked: there is no analytics SDK, no IDFA/IDFV read, and no advertising network.
+  Two groups of things *are* collected under Apple's definition and are declared below.
+
+  1. The locally generated `X-Device-Id` UUID that `DeviceIdMiddleware` sends on every request and
+     the backend retains with `POST /api/v1/reports`. It is a rate-limit/report bucket, not tied to
+     a person -- hence Device ID / App Functionality, NOT linked to identity, not used for tracking
+     (gate wave-2 W7: an empty array here while that header ships is an App Review rejection risk).
+
+  2. Phase 4's accounts: signing in creates a Firebase user and a backend profile, so the five
+     types below are all Linked (they hang off the uid) and none is used for tracking.
+     - Email address / Name -- from the Google or Apple credential, and shown on the profile.
+     - Phone number -- Contact Info has a dedicated type; `OtherUserContactInfo` is for channels
+       with no listed type, which this is not.
+     - Other data types -- date of birth. It is not contact info at all, and Apple lists no
+       birth-date type, so it lands here.
+     - User ID -- the Firebase uid itself, which every profile row is keyed by.
 
   Required-reason APIs actually used:
   - UserDefaults (CA92.1) — settings, filters, search history, onboarding flag; read and written
@@ -30,6 +40,66 @@
             <string>NSPrivacyCollectedDataTypeDeviceID</string>
             <key>NSPrivacyCollectedDataTypeLinked</key>
             <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeEmailAddress</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeName</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypePhoneNumber</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherDataTypes</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeUserID</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
             <key>NSPrivacyCollectedDataTypeTracking</key>
             <false/>
             <key>NSPrivacyCollectedDataTypePurposes</key>
