@@ -1613,7 +1613,7 @@ nonisolated func shouldShowFeedEmptyState(feedIsEmpty: Bool, selectedTab: MeTab)
 
 > **Live-ops note.** Tier 2 mutates real account rows. Use the Firebase **emulator** and a throwaway uid, never a real curated account. Never point these at production.
 
-**Tier 3 — USER-BLOCKED (13 items).** Everything below reduces to spec §18 open question 1 / D6: **the Apple Developer Team ID and the Firebase iOS app registration for `com.albunyaan.tube` in project `albunyaan-tube`**. `DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)` is empty (`ios/Config/Debug.xcconfig:3`, `Release.xcconfig:1`). Do not claim any of these from a simulator run.
+**Tier 3 — USER-BLOCKED (14 items).** Everything below reduces to spec §18 open question 1 / D6: **provisioning under the owner's Apple team (Team ID `72PF8SBQR6`, known since 2026-09-02; the App ID `com.albunyaan.tube` is registered by Xcode automatic signing once the owner signs Xcode in) and the Firebase iOS app registration for `com.albunyaan.tube` in project `albunyaan-tube`**. `DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)` is empty (`ios/Config/Debug.xcconfig:3`, `Release.xcconfig:1`). Do not claim any of these from a simulator run.
 
 | # | Item | Unblocked by |
 |---|---|---|
@@ -1628,8 +1628,9 @@ nonisolated func shouldShowFeedEmptyState(feedIsEmpty: Bool, selectedTab: MeTab)
 | 9 | A real YouTube import (subscriptions / playlists / liked videos) against a live Google account | item 8 |
 | 10 | Any on-device run: signing, the entitlements file actually resolving, Keychain persistence across a real install | Team ID |
 | 11 | Sync against **production** (as opposed to the emulator) | all of the above |
-| 12 | §12 row 1 `WellKnownController` / AASA — **not Phase 4 work**, listed so it is not re-discovered | Team ID **and** the Cloudflare `/.well-known/*` 403 rule (outside the repo) |
+| 12 | §12 row 1 `WellKnownController` / AASA — SHIPPED (`1e8de0f0`, `13ec5bed`; the 403 was Spring Security, never Cloudflare). What remains: deploying the backend and Apple fetching the file for the registered App ID | the App ID registration + a backend deploy (outside the repo) |
 | 13 | The standing Phase 2/3 device checklists this phase inherits (`PHASE2-CARRYFORWARDS.md` USER-BLOCKED sections; Phase 3 Tier 3 items 1–6) | Team ID |
+| 14 | The iPad rail visibility wire (pre-task 0a): `MainShellView.railStacks` publishes `tabIsSelected` through the environment and a pushed `PlayerScreen` reconciles `.appear`/`.disappear` on its `.onChange` — both ends are unit-pinned, the SwiftUI propagation is not. One sequence on an iPad with a real receiver: cast on tab A → switch to tab B → power the receiver off → silence until tab A is selected again. Known, deliberate: a hidden screen may still START a cast (claim, pause, load); only the audio is gated | Team ID + a receiver on the owner's network |
 
 ---
 
