@@ -252,13 +252,13 @@ Same model as Android: resolve on the device, no backend policy/token/manifest c
 
 | Item | Change | Tests |
 |---|---|---|
-| `WellKnownController` | `GET /.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`, `application/json`, no redirect; values from `application.yml` (`app.ios.team-id`, `app.ios.bundle-id`, `app.android.sha256-fingerprints`); AASA `applinks` paths `/watch/*`, `/channel/*`, `/playlist/*`, `/api/watch/*`, `/api/channel/*`, `/api/playlist/*` with `appIDs: ["<TEAMID>.com.albunyaan.tube"]`; permitted in `SecurityConfig`, exempt from the `X-Device-Id` filter | MockMvc: content type, body, no auth |
+| `WellKnownController` | `GET /.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`, `application/json`, no redirect; values from `application.yml` (`app.ios.team-id`, `app.ios.bundle-id`, `app.android.sha256-fingerprints`); AASA `applinks` paths derived from the iOS `DeepLinkParser` — `/watch/*`, `/channel/*`, `/playlist/*` (no `/api/*` variants: the parser never handles them) — with `appID: "<TEAMID>.com.albunyaan.tube"`; `assetlinks.json` answers the JSON 404 envelope while the fingerprint list is empty; permitted in `SecurityConfig` (`GET /.well-known/**` + the root `/apple-app-site-association` alias only). **Shipped 2026-09-02 (`1e8de0f0`, `13ec5bed`).** | MockMvc: content type, body, no auth through the real filter chain, narrow matcher, 404 envelope, two-fingerprint binding |
 | `DELETE /api/account` | Self-service: reuse the revoke + disable + soft-delete path of `AccountProfileService` (`:112-183`); 204; subsequent calls 403 `ACCOUNT_DELETED` | service + controller tests |
 | `VideoValidationScheduler` | add `status` to `part`; persist `madeForKids`, `embeddable`, `contentRating.ytRating`; expose as optional fields on `ContentItemDto` and the video detail DTO; OpenAPI spec updated | scheduler mapping test |
 | Swift codegen | `scripts/generate-openapi-dtos.sh` gains a Swift step (`swift-openapi-generator` via `swift run` in `ios/Packages/FitrahAPI`) | generated code compiles |
 | `share_app_promo` | drop "ad-free" (backend string if any, Android `strings.xml`, iOS) | — |
 
-Cloudflare currently returns 403 for `/.well-known/*` (plan §8); lifting that rule is outside the repo and is the user's task.
+The 403 on `/.well-known/*` observed until 2026-09-02 was the backend's own Spring Security denying an unmapped path (the response carried Spring's default headers with `cf-cache-status: DYNAMIC`, and the Cloudflare zone has no security rules) — not a Cloudflare rule. It is closed by `WellKnownController` + the `SecurityConfig` matcher above; the only remaining outside-the-repo steps are deploying the backend and registering the App ID in the Apple portal.
 
 ---
 
