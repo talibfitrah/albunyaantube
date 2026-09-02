@@ -1703,6 +1703,43 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
     }
 
+    /// Review I1, the half `aKillSwitchRefusedGateReOpenLeavesTheRowParkedForTheNextOne` cannot
+    /// assert: that test flips the gate AND the switch, so it proves the row is still parked, not
+    /// that the KILL-SWITCH re-enable is what recovers it. Here nothing about the gate ever moves
+    /// after the park — Wi-Fi-only stays ON and the path stays Wi-Fi — so the switch is the only
+    /// thing that changes, and the kick is the only event left. It was `schedule()`, which picks
+    /// `.queued` rows only, so the one event that makes saving legal again could not pick up the
+    /// `.paused` row a kill-switch refusal had (correctly) kept parked.
+    ///
+    /// Driven through `kickAfterConfigRefresh()` — the exact call
+    /// `FitrahTubeApp.refreshRemoteConfigIfDue` makes — so pointing that line back at `schedule()`
+    /// fails here rather than shipping.
+    @Test func theKillSwitchKickResumesARowTheGateParkedWhileSavingWasOff() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let flags = rig.flags
+        flags.cellular = true
+        let id = await save(rig)
+        flags.wifiOnly = true
+        await rig.manager.gateDidChange()             // the gate parks the row
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        // Saving goes off, the path comes back, `begin` refuses and R9-3 keeps the id parked.
+        flags.downloadsEnabled = { @Sendable in false }
+        flags.cellular = false
+        await rig.manager.gateDidChange()
+        #expect(rig.engine.resumes.isEmpty)
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.paused.rawValue)
+
+        // Saving becomes legal again. The gate is exactly where it was, so nothing calls
+        // `gateDidChange` — the config refresh's kick is the whole recovery.
+        flags.downloadsEnabled = { @Sendable in true }
+        await rig.manager.kickAfterConfigRefresh()
+
+        #expect(rig.engine.resumes.map(\.id) == [id],
+                "the kill-switch re-enable is the only event that changes what refused this row")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+    }
+
     /// The same finding's other path: the gate re-opens, `resumeGateParked` hands the row to
     /// `begin`, and the path flaps back to cellular INSIDE `begin`'s own kill-switch await — after
     /// `gateDidChange`'s check, before `begin`'s. That refusal must leave the row parked for the

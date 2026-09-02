@@ -114,6 +114,11 @@ actor OfflineManager: OfflineSaving {
     /// the user asked to stop, and the next re-open would resume it (R9-11). The leg clears the mark
     /// before its own hop (a stale one from a pause the user has since resumed is not evidence) and
     /// re-reads it after: a user pause outranks gate bookkeeping wherever it lands.
+    ///
+    /// "The LAST user pause seen", not "currently user-paused": `resume` does not clear a mark, so
+    /// one outlives the pause it records until the leg's own pre-clear or `forget` drops it. That is
+    /// what makes the pre-clear load-bearing rather than tidy — read this set only immediately after
+    /// a `pauseIfRunning` the same iteration pre-cleared for.
     private var userPausedIds: Set<String> = []
     /// Ids that already spent their one re-resolve on a 403.
     private var reResolvedAfter403: Set<String> = []
@@ -546,7 +551,15 @@ actor OfflineManager: OfflineSaving {
                 // already-re-claimed row spends no limiter attempt and no resolve (R9-9). `begin`
                 // claims, re-consults the kill-switch and both gates, and `pendingForceRefresh`
                 // carries the cache bypass into its `resolveAndStart`.
-                guard let requeued = await read(id: id), requeued.status == .queued else { return }
+                guard let requeued = await read(id: id), requeued.status == .queued else {
+                    // Belt: the claim went at `active.remove(id)` above, so a dropped claim is
+                    // followed by a `schedule()` at EVERY exit of this arm. Not a wedge without it —
+                    // every concurrent path that can make the row non-`.queued` (`cancel`, `delete`,
+                    // `.finished`, `reattach`) runs its own — but the invariant is cheaper to hold
+                    // than to re-derive.
+                    await schedule()
+                    return
+                }
                 await begin(requeued)
             case .http(403, _): await fail(id, .http403)
             // A throttle leaves the `.tmp` untouched like any other transient status, so the token
@@ -567,12 +580,25 @@ actor OfflineManager: OfflineSaving {
     // actually queue up in practice; serial is the rate-limit-friendly floor and keeps the single
     // background session's re-attach trivial.
     //
-    /// Not `private`: the smallest kick the remote-config refresh path can give the
-    /// queue when the kill-switch flips back ON. Nothing else observes that flip
-    /// (`observeOfflineGate` watches only Wi-Fi/cellular), so without the kick rows queued during
-    /// an off-window sit at "Waiting" until the next launch's `reattach()`. A no-op when nothing is
-    /// queued, and `begin` still re-consults the switch — so kicking while it is OFF changes
-    /// nothing.
+    /// The kick the remote-config refresh gives the queue when the kill-switch may just have
+    /// flipped back ON. Nothing else observes that flip (`observeOfflineGate` watches only
+    /// Wi-Fi/cellular), so without it rows parked during an off-window sit there until the next
+    /// launch's `reattach()`.
+    ///
+    /// Named rather than inlined at `FitrahTubeApp.refreshRemoteConfigIfDue`, so the one caller and
+    /// its test say the same thing: this exists to be swapped, and it was `schedule()` — which
+    /// picks `.queued` rows ONLY. A row the cellular gate parked is `.paused` (and, since R9-3,
+    /// still in `gatePausedIds` after a kill-switch refusal re-parked it), so the ONE event that
+    /// makes saving legal again could not recover it; its only recovery was an unrelated path
+    /// change. `gateDidChange` drains the parked set AND ends in `schedule()`, so the kick's
+    /// original job is still done. Free when the switch is still off: `gateAllows` is a MainActor
+    /// read and `begin`'s kill-switch and cellular consults both sit ABOVE the per-video gate GET,
+    /// so a kick into an off-window costs no network.
+    func kickAfterConfigRefresh() async { await gateDidChange() }
+
+    /// Not `private`: `kickAfterConfigRefresh` is its production entry point and `AppContainerTests`
+    /// drives it directly. A no-op when nothing is queued, and `begin` still re-consults the
+    /// kill-switch — so calling it while the switch is OFF changes nothing.
     func schedule() async {
         guard active.isEmpty else { return }
         let waiting = pendingRetryIds
@@ -702,7 +728,7 @@ actor OfflineManager: OfflineSaving {
             await stopWalkIfNotRunning(row.id, attempt)
             return
         }
-        await resolveAndStart(row, forceRefresh: false)
+        await resolveAndStart(row, forceRefresh: false, attempt: attempt)
     }
 
     /// `pause()` writes `.paused` and awaits `engine.pause` BEFORE it drops the claim, so a start
@@ -748,8 +774,11 @@ actor OfflineManager: OfflineSaving {
         active.contains(id) && attempts[id] == attempt
     }
 
-    private func resolveAndStart(_ row: Row, forceRefresh: Bool) async {
-        let attempt = attempts[row.id] ?? 0
+    /// ENTRY CONTRACT: `attempt` is the CALLER's own live claim — `begin`'s `claim(_:)`, or the same
+    /// attempt on the audio-only re-resolve below. Reading `attempts[row.id]` here instead was safe
+    /// (no suspension separates either caller's `stillCurrent` from its call) but it is the
+    /// adopt-whatever-is-live shape R9-4 named, and the next caller would inherit it.
+    private func resolveAndStart(_ row: Row, forceRefresh: Bool, attempt: Int) async {
         // The 403 re-resolve's intent has to survive a park: `scheduleRetry` drops the claim, and
         // the timer's `begin` re-enters here with `forceRefresh: false`, which would serve an
         // audio-only save the DEAD URL straight back out of the shared `ManifestCache` and hard-fail
@@ -822,7 +851,7 @@ actor OfflineManager: OfflineSaving {
             // forced walk never reads it), so re-resolve once forced — same shape as the
             // <10-min-expiry refresh above and the 403 re-resolve; forceRefresh bounds it.
             if row.audioOnly, !forceRefresh {
-                await resolveAndStart(row, forceRefresh: true)
+                await resolveAndStart(row, forceRefresh: true, attempt: attempt)
                 return
             }
             await fail(row.id, .noStream)
