@@ -56,7 +56,19 @@ struct PlayerScreen: View {
         // Not optional: Android restores system UI unconditionally in `onDestroyView`
         // (`PlayerFragment.kt:822-829`); without this, popping the player while fullscreen leaves
         // the app with no tab bar.
-        .onDisappear { router.isFullscreen = false }
+        .onDisappear {
+            router.isFullscreen = false
+            // Cubic R2-5: the claim is the screen's, not the session's. A popped claimant used to
+            // leave its `castingVideoId` behind, so the NEXT video the user opened during the same
+            // session could not claim it and never cast — the phone played locally while the TV
+            // kept the old video. This is the same teardown seam the line above already uses.
+            // ponytail: SwiftUI also runs `onDisappear` when another screen is PUSHED over this
+            // one, so a cast started here and then covered (a channel tap, an Up Next push) gives
+            // its claim up early and misses the session-end hand-back — the phone stays paused
+            // until the user taps play. Distinguishing "popped" from "covered" needs a navigation
+            // signal `NavigationStack` does not give a destination; add it if that bites.
+            if let model { container.castController.releaseClaim(model.args.videoId) }
+        }
         // Reconciliation note 3: rotating out of the fullscreen orientation re-arms the auto-enter.
         .onChange(of: verticalSizeClass) { _, new in if new != .compact { userExitedFullscreen = false } }
         .onChange(of: fullscreen, initial: true) { _, isFS in
@@ -78,12 +90,7 @@ struct PlayerScreen: View {
             guard let model else { return }
             let cast = container.castController
             if active {
-                // Re-review Minor 1: the claim is keyed on the videoId, so an OFFLINE screen for
-                // the SAME video (CF-D-12's Open shape) would otherwise pass it and try to cast a
-                // sandbox file. An offline player never starts, claims or loads a cast — its cast
-                // slot is hidden for the same reason.
-                guard !model.isOfflinePlayback, cast.claimCastSource(model.args.videoId) else { return }
-                Task { await startCasting(model) }
+                Task { await startCastingIfClaimed(model) }
             } else if cast.castingVideoId == model.args.videoId {
                 model.resumeAfterCast(at: cast.lastStreamPosition)
                 cast.finishCasting()
@@ -132,6 +139,11 @@ struct PlayerScreen: View {
                 vm.debugForceRecoveryExhausted()
             }
             #endif
+            // Cubic R2-5: `.onChange` fires only on TRANSITIONS, so a screen that mounts with the
+            // session already up had nothing to react to — the user connected to a receiver, then
+            // opened another video, and the phone played it locally while the TV kept the old one.
+            // The same start path the transition runs, once, on mount.
+            await startCastingIfClaimed(vm)
         }
         // Phase 3 Task 5: one gate fetch per player open, re-run when the queue advances to a new
         // video (`PlayerViewModel.swapArgs` mutates `args` in place — the `.task(id:)` lesson from
@@ -162,8 +174,19 @@ struct PlayerScreen: View {
         .rungAnnouncements(state: model?.state, isOnline: container.network.isOnline)
     }
 
+    /// The ONE cast start path (cubic R2-5): run by the session transition AND by a screen that
+    /// mounts into a live session. `claimForCast` carries every precondition — a live session, an
+    /// online player (m1: a sandbox `file://` is never castable, and its cast slot is hidden for
+    /// the same reason), and a claim no other mounted `PlayerScreen` already holds.
+    private func startCastingIfClaimed(_ model: PlayerViewModel) async {
+        let cast = container.castController
+        guard cast.claimForCast(videoId: model.args.videoId,
+                                isOfflinePlayback: model.isOfflinePlayback) else { return }
+        await startCasting(model)
+    }
+
     /// Session start/resume (spec §10): a FRESH resolve, then load with the local position, then
-    /// pause local. Called only by the screen that claimed the session (`claimCastSource`).
+    /// pause local. Called only by the screen that claimed the session (`claimForCast`).
     /// Order matters — the pause happens only once there is something to load, so a video that
     /// turns out to be uncastable keeps playing on the phone under its banner; a load the RECEIVER
     /// rejects is undone by the `lastLoadFailureDevice` reaction's `resumeAfterCast(at: nil)`.
@@ -176,6 +199,13 @@ struct PlayerScreen: View {
             cast.reportLoadFailure()
             return
         }
+        // Cubic R2-8: that resolve is a forced network walk and can take seconds. If the session
+        // ended inside it the end reaction already ran (`pausedForCast` was false, so it resumed
+        // nothing) and `finishCasting()` cleared the stamp — `load()` would then find no session,
+        // `reportLoadFailure()` would have no device to name, and nothing would ever undo the
+        // pause below. Same for a queue advance in that window: the stamp names a video this
+        // screen no longer plays. Re-check BEFORE pausing anything.
+        guard cast.stillCasting(model.args.videoId) else { return }
         model.pauseForCast()
         cast.load(media, at: model.currentTime)
     }

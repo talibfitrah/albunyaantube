@@ -427,6 +427,13 @@ extension StreamState {
         videoZoomed = false                  // B5 Task 3: the fit/zoom override is per stream
         videoIsPortrait = false              // unknown reads as landscape until the new item is ready
         airPlayFellBack = false              // Task 8: the mirroring fallback is per stream too
+        // Cubic R2-4: resetting the flag alone left the fallback in force. The flag is this VM's
+        // bookkeeping; `allowsExternalPlayback = false` is what the fallback actually DID, and it
+        // lives on the `AVPlayer` -- which `PlayerHostView.player(for:replacing:)` reuses across
+        // advances and never re-enables (it writes `true` only on a freshly built player, so an
+        // update pass cannot undo a fallback that is still wanted). Undo it through the same
+        // `currentPlayer` seam the fallback used, or every later queue item silently mirrors.
+        currentPlayer?.allowsExternalPlayback = true
     }
 
     /// Ruling 16's prefetch lane, first and only call site in the app. Six lines because

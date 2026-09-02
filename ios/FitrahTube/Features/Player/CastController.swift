@@ -81,11 +81,6 @@ import SwiftUI
     /// request is the only thing carrying the load's outcome.
     private var loadRequest: GCKRequest?
 
-    /// Owned rather than made per mount, so its delegate can publish `miniControlsActive` before
-    /// anything decides whether to show the strip (the flag and the view cannot both wait on each
-    /// other). Created once, with the context.
-    private var miniControls: GCKUIMiniMediaControlsViewController?
-
     /// Creates the shared `GCKCastContext`, once per process. Idempotent and non-throwing: the
     /// `setSharedInstanceWithOptions:error:` overload (Bool + NSError, `GCKCastContext.h:78`) is
     /// what makes "cannot be created" a survivable state rather than the exception the
@@ -114,17 +109,23 @@ import SwiftUI
             }
         }
         castAvailable = true
-        let context = GCKCastContext.sharedInstance()
-        context.sessionManager.add(self)
-        let controls = context.createMiniMediaControlsViewController()
-        controls.delegate = self
-        miniControls = controls
+        GCKCastContext.sharedInstance().sessionManager.add(self)
     }
 
-    /// The one mini controller (see `miniControls`). Never called before `setUp()` succeeded --
-    /// `MainShellView` gates on `miniControlsActive`, which only its delegate can set.
+    /// A FRESH mini controller per mount (cubic R2-9). `MainShellView` wraps one of these in a
+    /// `UIViewControllerRepresentable` inside the SELECTED tab's stack, so a tab switch dismantles
+    /// one wrapper and creates another in an order SwiftUI does not define -- and while a single
+    /// owned controller was handed to both, the old wrapper's teardown could remove it from its
+    /// NEW parent, blanking the strip mid-session. One controller per representable makes that
+    /// impossible. Each one is its own delegate source for `miniControlsActive`; only the selected
+    /// tab ever mounts one, so exactly one is live at a time.
+    ///
+    /// Called only from a mounted strip, which mounts only while `isSessionActive` -- so a context
+    /// always exists by then (`sharedInstance()` raises without one).
     func makeMiniControls() -> GCKUIMiniMediaControlsViewController {
-        miniControls ?? GCKCastContext.sharedInstance().createMiniMediaControlsViewController()
+        let controls = GCKCastContext.sharedInstance().createMiniMediaControlsViewController()
+        controls.delegate = self
+        return controls
     }
 
     // MARK: - Session ownership (review Important 1)
@@ -138,6 +139,34 @@ import SwiftUI
             return true
         }
         return castingVideoId == videoId
+    }
+
+    /// The ONE start decision (cubic R2-5), run both by the session TRANSITION and by a screen
+    /// that MOUNTS into a live session: a session is up, this is not an offline player (m1: a
+    /// sandbox file is never castable), and the claim is winnable. Claims as a side effect when it
+    /// answers true, exactly like `claimCastSource`.
+    ///
+    /// Casting used to hang off `.onChange(of: isSessionActive)` alone, which fires only on
+    /// transitions -- so connecting to a receiver and then opening another video left the phone
+    /// playing locally while the TV kept the old one.
+    func claimForCast(videoId: String, isOfflinePlayback: Bool) -> Bool {
+        guard isSessionActive, !isOfflinePlayback else { return false }
+        return claimCastSource(videoId)
+    }
+
+    /// The claiming screen went away (cubic R2-5): give the stamp back so the NEXT screen opened
+    /// during the same session can claim it. Keyed on the videoId for the same reason every other
+    /// reaction is -- several `PlayerScreen`s can be mounted, and only the owner may release.
+    func releaseClaim(_ videoId: String) {
+        guard castingVideoId == videoId else { return }
+        finishCasting()
+    }
+
+    /// Still ours to act on (cubic R2-8): `PlayerScreen.startCasting` awaits a forced resolve
+    /// before it pauses the local player, and both the session and the claim can be gone by the
+    /// time that lands.
+    func stillCasting(_ videoId: String) -> Bool {
+        isSessionActive && castingVideoId == videoId
     }
 
     /// The owning screen has consumed the hand-back: drop the stamp and the spent position.
@@ -226,19 +255,35 @@ import SwiftUI
         loadRequest = nil
     }
 
-    /// Whether a load-result callback is this controller's business to report to the user.
+    /// What one `GCKRequestDelegate` callback should do.
+    nonisolated enum LoadCallbackOutcome: Sendable, Equatable {
+        /// About an older request: touch nothing.
+        case ignore
+        /// Retire the stored request, say nothing.
+        case clear
+        /// Retire it and raise "Couldn't play on {device}".
+        case clearAndReport
+    }
+
+    /// Both of the load-callback guards, as one pure decision over request ids.
     ///
     /// Re-review Important 1: `GCKRequest.cancel()` aborts with `.cancelled` and tells the delegate
     /// (`GCKRequest.h:23-24,142-148`), so `cancelLoadRequest()` fed its own abort straight into the
     /// failure handler -- every second load raised "Couldn't play on {TV}" for a request the app
     /// itself cancelled, and (via the Important-4 resume) restarted the phone's player while the
-    /// real load was still in flight. Both guards are load-bearing and neither subsumes the other:
-    /// a SYNCHRONOUS abort arrives while `loadRequest` is still the cancelled request (identity
-    /// passes, only the reason saves it), an ASYNCHRONOUS one arrives after the new request is
-    /// stored (only identity saves it -- and it is also what stops the handler nil-ing the NEW
-    /// request's only strong reference, the leak the cancel was added to close).
-    static func reportsLoadFailure(isCurrentRequest: Bool, wasCancelledByUs: Bool) -> Bool {
-        isCurrentRequest && !wasCancelledByUs
+    /// real load was still in flight. Neither guard subsumes the other: a SYNCHRONOUS abort arrives
+    /// while `loadRequest` is still the cancelled request (identity passes, only the reason saves
+    /// it), an ASYNCHRONOUS one arrives after the new request is stored (only identity saves it --
+    /// and it is also what stops the handler nil-ing the NEW request's only strong reference, since
+    /// `GCKRequest.delegate` is weak).
+    ///
+    /// Re-review Minor 1: that identity guard used to live in `finishLoad` AHEAD of this helper, so
+    /// no test could ever watch it answer false -- deleting it left every test green. Taking the
+    /// current id as an argument is what makes it testable.
+    static func loadCallbackOutcome(callbackID: GCKRequestID, currentID: GCKRequestID?,
+                                    reportFailure: Bool, cancelledByUs: Bool) -> LoadCallbackOutcome {
+        guard currentID == callbackID else { return .ignore }
+        return reportFailure && !cancelledByUs ? .clearAndReport : .clear
     }
 
     /// The other way a cast can fail to play: nothing castable to load at all (an embed rung, or a
@@ -318,39 +363,67 @@ extension CastController: GCKRequestDelegate {
 }
 
 private extension CastController {
-    /// The one exit for all three delegate callbacks (`reportsLoadFailure`'s two guards). A
-    /// callback about a request this controller is no longer holding touches nothing -- neither
-    /// the banner nor `loadRequest`, which by then may already be the NEXT request's only strong
-    /// reference.
+    /// The one exit for all three delegate callbacks, executing `loadCallbackOutcome`. A callback
+    /// about a request this controller is no longer holding touches nothing -- neither the banner
+    /// nor `loadRequest`, which by then may already be the NEXT request's only strong reference.
     func finishLoad(_ requestID: GCKRequestID, cancelledByUs: Bool, reportFailure: Bool) {
-        let isCurrent = loadRequest?.requestID == requestID
-        guard isCurrent else { return }
-        loadRequest = nil
-        guard reportFailure,
-              Self.reportsLoadFailure(isCurrentRequest: isCurrent, wasCancelledByUs: cancelledByUs)
-        else { return }
-        reportLoadFailure()
+        switch Self.loadCallbackOutcome(callbackID: requestID, currentID: loadRequest?.requestID,
+                                        reportFailure: reportFailure, cancelledByUs: cancelledByUs) {
+        case .ignore:
+            return
+        case .clear:
+            loadRequest = nil
+        case .clearAndReport:
+            loadRequest = nil
+            reportLoadFailure()
+        }
     }
 }
 
 // MARK: - SwiftUI wrappers (the only cast UI in the app)
 
+/// Reaches the hosted `GCKUICastButton` so the toolbar slot's own `Button` can replay a tap into
+/// it (cubic R2-6 / re-review m3). Weak: the SDK button belongs to the view hierarchy.
+@MainActor final class CastButtonHandle {
+    fileprivate weak var button: GCKUICastButton?
+
+    /// Replay the tap the SDK button would have received itself. `sendActions` dispatches to the
+    /// control's registered target/action pairs directly, so it works on a button whose own
+    /// interaction is off -- and `PlayerToolbarLayoutTests.theCastButtonAnswersAReplayedTouchUpInside`
+    /// pins that `GCKUICastButton` still registers for `.touchUpInside` at all.
+    func tap() { button?.sendActions(for: .touchUpInside) }
+}
+
 /// `GCKUICastButton` (spec §10: the toolbar's cast affordance). The SDK button owns its own icon
-/// states and presents the device chooser itself; the first tap is also what starts discovery.
-/// It is a real `UIButton`, so it carries the button trait and its own activation -- which is why
-/// `PlayerToolbar` puts the slot's accessibility label/value on THIS view rather than on a
-/// combined `VStack` element (review Important 3).
+/// states -- connected / connecting / not connected -- and presents the device chooser itself; the
+/// first tap is also what starts discovery.
+///
+/// It renders only. Cubic R2-6 / re-review m3: the toolbar's other four slots wrap icon AND caption
+/// in a `Button`, so the whole slot is tappable and the accessibility element is a real button at
+/// the ≥44 pt floor. This view is a 24 pt `UIView`, and neither way of enlarging it in place works:
+/// `.frame(minWidth: 44, minHeight: 44)` only pads the SwiftUI layout box (the `UIButton`'s own
+/// rect -- its hit area AND its accessibility frame -- stays 24×24), while resizing the `UIButton`
+/// to 44×44 grows the toolbar row by a measured 22 pt and drops the cast caption out of line with
+/// its siblings. So the slot is a `Button` like the other four, `handle` carries its tap in here,
+/// and the SDK button's own interaction is off so one tap can never fire twice.
 struct CastButton: UIViewRepresentable {
+    let handle: CastButtonHandle
+
     func makeUIView(context: Context) -> GCKUICastButton {
         let button = GCKUICastButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
         button.tintColor = .label
+        button.isUserInteractionEnabled = false
+        handle.button = button
         return button
     }
 
-    func updateUIView(_ uiView: GCKUICastButton, context: Context) {}
+    func updateUIView(_ uiView: GCKUICastButton, context: Context) {
+        handle.button = uiView
+    }
 
     /// Match the toolbar's icon row: the caption below it is SwiftUI's, so this reports only the
-    /// glyph's size and never stretches.
+    /// glyph's size and never stretches. This is what keeps the cast caption in line with the
+    /// other four slots' -- `theCastSlotWidensTheRowWithoutGrowingIt` is the guard.
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: GCKUICastButton, context: Context) -> CGSize? {
         CGSize(width: 24, height: 24)
     }

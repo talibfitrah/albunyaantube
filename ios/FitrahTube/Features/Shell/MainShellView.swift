@@ -116,11 +116,20 @@ struct MainShellView: View {
         // appear. The flag now drives HEIGHT instead, which still closes fix round 1's complaint:
         // a connected session with nothing loaded on the receiver (the shape a rejected load leaves
         // behind) collapses to zero height rather than parking an empty strip above the tab bar.
+        // Cubic R2-9: each of these representables now makes its OWN controller
+        // (`CastController.makeMiniControls`), so a tab switch — which dismantles one wrapper and
+        // creates the other in an order SwiftUI does not define — can no longer have the outgoing
+        // wrapper's teardown pull a SHARED view controller out of its new parent.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if container.castController.isSessionActive, tab == router.selectedTab,
                !router.isFullscreen {
                 CastMiniControls(controller: container.castController)
                     .frame(height: container.castController.miniControlsActive ? nil : 0)
+                    // Re-review Minor 3: still needed, and not because of the shared instance —
+                    // `CastMiniControls.sizeThatFits` reports the SDK's own `minHeight` whatever
+                    // height is proposed (there is no smaller size the control bar is willing to
+                    // draw), so at `height: 0` the hosted view overflows and only this keeps it off
+                    // screen. The safe-area inset is genuinely 0 either way; this is cosmetic.
                     .clipped()
                     .accessibilityHidden(!container.castController.miniControlsActive)
             }

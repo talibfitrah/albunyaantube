@@ -45,6 +45,9 @@ struct PlayerToolbar: View {
     /// tapped video; its identity is `SaveSheetArgs.id`
     /// (`SavedScreenTests.theSaveSheetIdentityIs...`).
     @State private var saveSheetArgs: SaveSheetArgs?
+    /// Reaches the hosted `GCKUICastButton` so `castSlot`'s own `Button` can replay a tap into it
+    /// (cubic R2-6). `@State` so it survives every re-render of this view.
+    @State private var castHandle = CastButtonHandle()
 
     var body: some View {
         HStack {
@@ -126,45 +129,45 @@ struct PlayerToolbar: View {
     // MARK: - Cast (Phase 3 Task 8, spec §10)
 
     /// The SDK's own `GCKUICastButton` (spec §10 names it), captioned like every other slot so the
-    /// five-button row stays one shape. The button owns its icon states and presents the device
-    /// chooser itself; the first tap is also what starts discovery, so nothing here does. The
-    /// ≥44 pt target comes from the 24 pt glyph plus the caption below it, same as the other
-    /// slots' `toolbarLabel`.
+    /// five-button row stays one shape. The SDK button owns its icon states and the device chooser;
+    /// the first tap is also what starts discovery, so nothing here does.
     ///
-    /// Fix round 1 (review Important 3): the accessibility element is the `GCKUICastButton` ITSELF
-    /// — a real `UIButton`, so it keeps the button trait and its own activation — with the caption
-    /// hidden beside it. The previous `.accessibilityElement(children: .combine)` on the `VStack`
-    /// produced a non-button with no state, which is why the UI test had to look it up in
-    /// `otherElements`. The `favoriteButton` idiom in full this time: a constant role label plus a
-    /// VALUE carrying the live state (the connected receiver's name).
+    /// Cubic R2-6 + re-review m3: the slot is now a `Button` around icon AND caption, exactly like
+    /// its four siblings, and it REPLAYS the tap into the SDK button (`CastButtonHandle.tap`). Two
+    /// earlier shapes both failed the ≥44 pt floor from opposite sides: `.frame(minWidth: 44,
+    /// minHeight: 44)` on the representable padded only the SwiftUI layout box, leaving the
+    /// `UIButton`'s own rect — its hit area AND its accessibility frame — at 24×24; and resizing
+    /// the `UIButton` to 44×44 grows the toolbar row by a measured 22 pt (fix round 1 measured the
+    /// same 20 pt from the SwiftUI side) and drops the cast caption out of line with the others.
+    /// The wrapping `Button` gives the slot its siblings' whole-slot target and a real button
+    /// element carrying the label/value, at the row's existing size.
+    ///
+    /// Fix round 1 (review Important 3) asked for a real button element rather than the
+    /// `.accessibilityElement(children: .combine)` non-button it replaced; a SwiftUI `Button` is
+    /// one, so the UI test still finds `player.castButton` in `buttons`. The `favoriteButton`
+    /// idiom in full: a constant role label plus a VALUE carrying the live state (the connected
+    /// receiver's name). The SDK button is hidden from accessibility so the slot is ONE element.
     // ponytail: the SDK button hides its own glyph in one state (`startDiscoveryAfterFirstTap...`
     // docs: after the first tap, with no Wi-Fi connection), which would leave this slot's caption
     // standing over an invisible icon. Reading `castState` to hide the whole slot needs a second
     // SDK observer in `CastController`; add it if that state is ever seen in practice.
     private var castSlot: some View {
-        VStack(spacing: 4) {
-            CastButton()
-                .frame(width: 24, height: 24)
-                // Re-review Minor 3: moving the accessibility element onto the button shrank it to
-                // the 24 pt glyph; this restores the ≥44 pt floor for it. The negative vertical
-                // padding is what keeps the finding's OTHER half ("without changing the row's
-                // look"): `.frame(minHeight: 44)` alone makes the slot 20 pt taller than the other
-                // four and drops its caption out of line with them — measured, screenshotted.
-                // -10 top and bottom hands the parent back the original 24 pt of layout while the
-                // view itself still measures 44. The SDK button's own TOUCH area is 24 pt and
-                // always was; enlarging that means resizing the `UIButton`, which reintroduces the
-                // same misalignment.
-                .frame(minWidth: 44, minHeight: 44)
-                .padding(.vertical, -10)
-                .accessibilityIdentifier("player.castButton")
-                .accessibilityLabel(String(localized: "player_action_cast"))
-                .accessibilityValue(container.castController.connectedDeviceName ?? "")
-            Text(String(localized: "player_action_cast"))
-                .font(TypeScale.caption)
-                .accessibilityHidden(true)
+        Button {
+            castHandle.tap()
+        } label: {
+            VStack(spacing: 4) {
+                CastButton(handle: castHandle)
+                    .frame(width: 24, height: 24)
+                    .accessibilityHidden(true)
+                Text(String(localized: "player_action_cast"))
+                    .font(TypeScale.caption)
+            }
+            .foregroundStyle(Color.textPrimary)
+            .frame(minHeight: 44)
         }
-        .foregroundStyle(Color.textPrimary)
-        .frame(minHeight: 44)
+        .accessibilityIdentifier("player.castButton")
+        .accessibilityLabel(String(localized: "player_action_cast"))
+        .accessibilityValue(container.castController.connectedDeviceName ?? "")
     }
 
     // MARK: - Save for offline (Phase 3 Task 5)

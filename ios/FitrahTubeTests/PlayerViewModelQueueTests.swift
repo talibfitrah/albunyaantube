@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import InnerTubeKit
 import Testing
@@ -38,6 +39,25 @@ struct PlayerViewModelQueueTests {
         #expect(vm.args.videoId == "b")
         #expect(vm.state.isPlayable)
         #expect(vm.args.playlistId == "PL")   // the queue context survives the advance
+    }
+
+    /// Cubic R2-4: `swapArgs` resets `airPlayFellBack` so the AirPlay mirroring fallback is per
+    /// stream, but the `allowsExternalPlayback = false` it wrote lives on the `AVPlayer` —
+    /// which `PlayerHostView.player(for:replacing:)` REUSES across advances and only ever sets
+    /// true on a freshly built player (deliberately, so an update pass cannot undo the fallback
+    /// while it is still wanted). So after one 403 fallback every later queue item silently
+    /// mirrored instead of playing on the AirPlay device, and a later failure re-ran the fallback
+    /// against an already-disabled route. The reset has to reach the same player the fallback did.
+    @Test func anAdvanceUndoesTheAirPlayMirroringFallbackOnTheReusedPlayer() async {
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
+        await vm.open()
+        let player = AVPlayer()
+        vm.currentPlayer = player
+        player.allowsExternalPlayback = false      // what the fallback wrote for THIS stream
+        await vm.playToEnd()
+        #expect(vm.args.videoId == "b")
+        #expect(player.allowsExternalPlayback,
+                "the next queue item mirrors instead of playing on the AirPlay device")
     }
 
     @Test func safeModeDisablesAutoAdvanceButNotTheQueue() async {

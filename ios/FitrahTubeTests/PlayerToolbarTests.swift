@@ -170,6 +170,7 @@ struct PlayerToolbarTests {
 
 // MARK: - Task 5 UI preservation: the 4-button row at accessibility sizes
 
+import GoogleCast
 import SwiftUI
 import UIKit
 
@@ -237,5 +238,39 @@ struct PlayerToolbarLayoutTests {
         // Task 7's flag still wins: an offline player never offers cast (a sandboxed file no
         // receiver can fetch), even with a live context.
         #expect(width(offline: true) == hidden, "the offline player still rendered a cast slot")
+    }
+
+    /// Cubic R2-6 + re-review m3: the cast slot must reach the ≥44 pt touch target the row's other
+    /// four slots get from their `Button` — WITHOUT growing the row. Measured on iPhone 17,
+    /// 2026-09-02: the shipped slot costs 3.0 pt (its `.frame(minHeight: 44)` against ~41 pt
+    /// siblings — that IS the accessibility floor, so it stays), while sizing the
+    /// `GCKUICastButton` itself to 44×44 costs 22.0 pt and drops the cast caption out of line with
+    /// the other four. Hence the tap-replay shape, and hence this bound: it passes at 3 and fails
+    /// at 22. The `phase3-player-save-cast` screenshot is the other half of the evidence.
+    @Test func theCastSlotWidensTheRowWithoutGrowingIt() {
+        let container = AppContainer.fake(
+            defaults: UserDefaults(suiteName: "PlayerToolbarLayoutTests.\(UUID().uuidString)")!)
+        func size() -> CGSize {
+            let toolbar = PlayerToolbar(args: PlayerArgs(videoId: "layout", title: "Layout"),
+                                        saveGate: nil, saveEnabled: true)
+                .environment(\.container, container)
+            return ImageRenderer(content: toolbar).uiImage?.size ?? .zero
+        }
+        let without = size()
+        container.castController.setUp()
+        let with = size()
+        #expect(with.width > without.width, "castAvailable added no width — the cast slot is missing")
+        #expect(with.height - without.height < 4,
+                "the cast slot grew the row: \(without.height) -> \(with.height)")
+    }
+
+    /// The slot's own `Button` replays the tap into the SDK button with
+    /// `sendActions(for: .touchUpInside)` — the SDK still owns the glyph, its cast states and the
+    /// device chooser. That replay only works while `GCKUICastButton` handles the event through
+    /// target/action, so pin it: without this the whole slot would be silently inert.
+    @Test func theCastButtonAnswersAReplayedTouchUpInside() {
+        let button = GCKUICastButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
+        #expect(button.allControlEvents.contains(.touchUpInside),
+                "GCKUICastButton no longer handles .touchUpInside — the cast slot's tap replay is inert")
     }
 }

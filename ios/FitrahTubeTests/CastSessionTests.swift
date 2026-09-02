@@ -115,11 +115,92 @@ struct CastSessionTests {
     /// and (via the Important-4 resume) restarted the phone mid-load. Both guards are needed: a
     /// synchronous abort still looks like the current request, an asynchronous one lands after the
     /// new request is stored.
-    @Test func aLoadFailureReportsOnlyForTheCurrentRequestAndNeverForOurOwnCancel() {
-        #expect(CastController.reportsLoadFailure(isCurrentRequest: true, wasCancelledByUs: false))
-        #expect(CastController.reportsLoadFailure(isCurrentRequest: true, wasCancelledByUs: true) == false)
-        #expect(CastController.reportsLoadFailure(isCurrentRequest: false, wasCancelledByUs: false) == false)
-        #expect(CastController.reportsLoadFailure(isCurrentRequest: false, wasCancelledByUs: true) == false)
+    ///
+    /// Re-review Minor 1: the IDENTITY guard used to sit in `finishLoad` ahead of the pure helper,
+    /// so no test could ever see it answer false — deleting it left `loadRequest = nil` running for
+    /// a stale callback (nil-ing the NEW request's only strong reference, since `GCKRequest.delegate`
+    /// is weak) with every test still green. One pure decision over the ids covers both guards.
+    @Test func aLoadCallbackReportsOnlyForTheCurrentRequestAndNeverForOurOwnCancel() {
+        // The current request: a genuine failure is the user's business, our own cancel is not,
+        // and a success just retires it.
+        #expect(CastController.loadCallbackOutcome(callbackID: 7, currentID: 7, reportFailure: true,
+                                                   cancelledByUs: false) == .clearAndReport)
+        #expect(CastController.loadCallbackOutcome(callbackID: 7, currentID: 7, reportFailure: true,
+                                                   cancelledByUs: true) == .clear)
+        #expect(CastController.loadCallbackOutcome(callbackID: 7, currentID: 7, reportFailure: false,
+                                                   cancelledByUs: false) == .clear)
+        // A callback about an OLDER request must touch nothing at all — not the banner, and above
+        // all not the stored request, which by now belongs to the newer load.
+        for (report, cancelled) in [(true, false), (true, true), (false, false)] {
+            #expect(CastController.loadCallbackOutcome(callbackID: 6, currentID: 7, reportFailure: report,
+                                                       cancelledByUs: cancelled) == .ignore)
+        }
+        #expect(CastController.loadCallbackOutcome(callbackID: 6, currentID: nil, reportFailure: true,
+                                                   cancelledByUs: false) == .ignore)
+    }
+
+    // MARK: - Cubic round 2
+
+    /// R2-5: casting was driven solely by `.onChange(of: isSessionActive)`, which fires only on
+    /// TRANSITIONS — a screen that mounts with the session already up never cast (phone plays
+    /// locally, the TV keeps the old video), and the popped claimant's stale stamp meant it could
+    /// not even claim. `claimForCast` is the one start decision both the transition and the mount
+    /// run; `releaseClaim` is what the leaving screen gives back.
+    @Test func aVideoOpenedDuringALiveSessionClaimsItOnceTheOldClaimantIsGone() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
+        // Fix round 1's Important 1 still holds: a second mounted screen does not steal the session.
+        #expect(cast.claimForCast(videoId: "5ZMMARhgvsw", isOfflinePlayback: false) == false)
+        // The claimant goes away: its claim goes with it, and the next screen mounts and casts.
+        cast.releaseClaim("xc7keR2piUM")
+        #expect(cast.castingVideoId == nil)
+        #expect(cast.claimForCast(videoId: "5ZMMARhgvsw", isOfflinePlayback: false))
+    }
+
+    /// m1 survives the new funnel: an offline player never starts, claims or loads a cast — and
+    /// with no live session there is nothing to start at all.
+    @Test func anOfflinePlayerNeverClaimsALiveSession() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: true) == false)
+        #expect(cast.castingVideoId == nil, "an offline screen must not even take the stamp")
+
+        cast.sessionDidEnd()
+        #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false) == false)
+    }
+
+    /// The release half of R2-5: only the screen that OWNS the stamp may drop it, or a second
+    /// mounted `PlayerScreen` disappearing would hand the session away from the real claimant.
+    @Test func aScreenThatNeverClaimedCannotReleaseAnotherScreensSession() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
+        cast.releaseClaim("5ZMMARhgvsw")
+        #expect(cast.castingVideoId == "xc7keR2piUM")
+    }
+
+    /// R2-8: `startCasting` awaits a FORCED resolve before it pauses the local player. If the
+    /// session ended inside that window the end reaction already ran (`pausedForCast` was false,
+    /// so nothing resumes), `finishCasting()` cleared the stamp, `load()` finds no session and
+    /// `reportLoadFailure()` has no device to name — leaving the phone paused with no banner and
+    /// nothing to undo it. The pause must not happen at all.
+    @Test func aSessionEndingDuringTheResolveStopsTheCastBeforeThePause() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
+        #expect(cast.stillCasting("xc7keR2piUM"))
+
+        cast.sessionWillEnd(position: 90)
+        cast.sessionDidEnd()
+        #expect(cast.stillCasting("xc7keR2piUM") == false, "a dead session must not be pause-and-loaded")
+
+        // The other way the cast stops being ours inside that window: the queue advanced, so the
+        // stamp names a video this screen no longer plays.
+        let advanced = CastController()
+        advanced.sessionDidBegin(deviceName: "Living Room TV")
+        #expect(advanced.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
+        #expect(advanced.stillCasting("5ZMMARhgvsw") == false)
     }
 
     /// Re-review Minor 2: a failure that landed with no claimant mounted is never consumed, and
