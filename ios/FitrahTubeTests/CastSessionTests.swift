@@ -22,7 +22,7 @@ struct CastSessionTests {
         #expect(cast.claimCastSource("xc7keR2piUM"))
         #expect(cast.castingVideoId == "xc7keR2piUM")
         // A second mounted PlayerScreen reacting to the same session flag must NOT resolve or load.
-        #expect(cast.claimCastSource("5ZMMARhgvsw") == false)
+        #expect(cast.claimCastSource("other-video") == false)
         #expect(cast.castingVideoId == "xc7keR2piUM")
         // Idempotent for the owner: a resumed session re-claims without losing the stamp.
         #expect(cast.claimCastSource("xc7keR2piUM"))
@@ -52,17 +52,17 @@ struct CastSessionTests {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
         _ = cast.claimCastSource("xc7keR2piUM")
-        cast.recordLoad("5ZMMARhgvsw")            // another screen's video is what plays there
+        cast.recordLoad("other-video")            // another screen's video is what plays there
         cast.sessionWillEnd(position: 300)
 
         cast.finishClaim("xc7keR2piUM")
         #expect(cast.castingVideoId == nil, "our stamp goes")
-        #expect(cast.loadedVideoId == "5ZMMARhgvsw", "the receiver's video is not ours to forget")
+        #expect(cast.loadedVideoId == "other-video", "the receiver's video is not ours to forget")
         #expect(cast.lastStreamPosition == 300, "nor is the position that belongs to it")
 
         // And a screen that holds neither takes nothing.
         cast.finishClaim("no-such-video")
-        #expect(cast.loadedVideoId == "5ZMMARhgvsw")
+        #expect(cast.loadedVideoId == "other-video")
         #expect(cast.lastStreamPosition == 300)
     }
 
@@ -175,11 +175,11 @@ struct CastSessionTests {
         cast.sessionDidBegin(deviceName: "Living Room TV")
         #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
         // Fix round 1's Important 1 still holds: a second mounted screen does not steal the session.
-        #expect(cast.claimForCast(videoId: "5ZMMARhgvsw", isOfflinePlayback: false) == false)
+        #expect(cast.claimForCast(videoId: "other-video", isOfflinePlayback: false) == false)
         // The claimant goes away: its claim goes with it, and the next screen mounts and casts.
         cast.releaseClaim("xc7keR2piUM")
         #expect(cast.castingVideoId == nil)
-        #expect(cast.claimForCast(videoId: "5ZMMARhgvsw", isOfflinePlayback: false))
+        #expect(cast.claimForCast(videoId: "other-video", isOfflinePlayback: false))
     }
 
     /// m1 survives the new funnel: an offline player never starts, claims or loads a cast — and
@@ -200,7 +200,7 @@ struct CastSessionTests {
         let cast = CastController()
         cast.sessionDidBegin(deviceName: "Living Room TV")
         #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
-        cast.releaseClaim("5ZMMARhgvsw")
+        cast.releaseClaim("other-video")
         #expect(cast.castingVideoId == "xc7keR2piUM")
     }
 
@@ -219,13 +219,13 @@ struct CastSessionTests {
         #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
 
         // The queue advanced: the screen plays another video now, the stamp still names the claim.
-        cast.releaseClaim("5ZMMARhgvsw")
+        cast.releaseClaim("other-video")
         #expect(cast.castingVideoId == "xc7keR2piUM",
                 "an advanced-to id must never release a claim taken for another video")
 
         cast.releaseClaim("xc7keR2piUM")
         #expect(cast.castingVideoId == nil)
-        #expect(cast.claimForCast(videoId: "5ZMMARhgvsw", isOfflinePlayback: false),
+        #expect(cast.claimForCast(videoId: "other-video", isOfflinePlayback: false),
                 "the next video opened during the same session must be able to claim it")
     }
 
@@ -249,7 +249,7 @@ struct CastSessionTests {
     // MARK: - R4-6: the ownership table (the old `returnAction` rows fold in here)
 
     private static let claimed = "xc7keR2piUM"
-    private static let other = "5ZMMARhgvsw"
+    private static let other = "other-video"
 
     /// Every input the decision reads, defaulted to "this screen claimed the live session, the
     /// receiver is playing its video, the phone is paused for it".
@@ -394,7 +394,7 @@ struct CastSessionTests {
         let advanced = CastController()
         advanced.sessionDidBegin(deviceName: "Living Room TV")
         #expect(advanced.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
-        #expect(advanced.stillCasting("5ZMMARhgvsw") == false)
+        #expect(advanced.stillCasting("other-video") == false)
     }
 
     /// Re-review Minor 2: a failure that landed with no claimant mounted is never consumed, and
@@ -462,9 +462,9 @@ struct CastSessionTests {
         #expect(cast.claimForCast(videoId: "xc7keR2piUM", isOfflinePlayback: false))
         cast.recordLoad("xc7keR2piUM")
         cast.releaseClaim("xc7keR2piUM")
-        #expect(cast.claimForCast(videoId: "5ZMMARhgvsw", isOfflinePlayback: false))
-        cast.recordLoad("5ZMMARhgvsw")
-        cast.releaseClaim("5ZMMARhgvsw")
+        #expect(cast.claimForCast(videoId: "other-video", isOfflinePlayback: false))
+        cast.recordLoad("other-video")
+        cast.releaseClaim("other-video")
 
         // A comes back: the session is live and free, but the receiver is playing B — so A must
         // re-cast, not take the session over and not resume on the phone under a TV playing B.
@@ -480,12 +480,12 @@ struct CastSessionTests {
         cast.sessionDidEnd()
         #expect(cast.receiverPosition(for: "xc7keR2piUM") == nil,
                 "B's receiver position is not A's hand-back")
-        #expect(cast.receiverPosition(for: "5ZMMARhgvsw") == 512)
+        #expect(cast.receiverPosition(for: "other-video") == 512)
 
         // B's own hand-back spends both.
-        cast.finishClaim("5ZMMARhgvsw")
+        cast.finishClaim("other-video")
         #expect(cast.loadedVideoId == nil)
-        #expect(cast.receiverPosition(for: "5ZMMARhgvsw") == nil)
+        #expect(cast.receiverPosition(for: "other-video") == nil)
     }
 
     // MARK: - R4-1: the cast resolve is not a second forced walk

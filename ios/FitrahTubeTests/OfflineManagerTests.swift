@@ -23,7 +23,7 @@ struct OfflineManagerTests {
         private var _pauses: [String] = []
         private var _cancels: [String] = []
         private var _live: Set<String> = []
-        /// What `pause` hands back (canned resume data).
+        /// What `pause` — and, since R5-8, `start` — hands back (canned resume data).
         var pauseResumeData: Data? = Data("RD".utf8)
         /// Ids whose `pause` suspends until released (the gate-flap interleaving); `pauseEntered`
         /// records arrival so a test can wait for the close leg to be inside its own `await`.
@@ -61,22 +61,36 @@ struct OfflineManagerTests {
 
         func emit(_ event: OfflineDownloadEvent) { continuation.yield(event) }
 
-        func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async {
+        func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data? {
             lock.withLock { _starts.append(Start(id: id, url: url, userAgent: userAgent, allowsCellular: allowsCellular)); _ = _live.insert(id) }
+            return pauseResumeData
         }
         func resume(id: String, resumeData: Data, allowsCellular: Bool) async {
             lock.withLock { _resumes.append((id, resumeData)); _ = _live.insert(id) }
         }
         func pause(id: String) async -> Data? {
             lock.withLock { _pauses.append(id); _live.remove(id); _ = _pauseEntered.insert(id) }
-            while lock.withLock({ _pauseHeld.contains(id) }) { try? await Task.sleep(for: .milliseconds(1)) }
+            await Self.hold(while: { self.lock.withLock { self._pauseHeld.contains(id) } }, what: "pause of \(id)")
             return pauseResumeData
         }
         func cancel(id: String) async {
             lock.withLock { _cancels.append(id); _live.remove(id); _ = _cancelEntered.insert(id) }
-            while lock.withLock({ _cancelHeld.contains(id) }) { try? await Task.sleep(for: .milliseconds(1)) }
+            await Self.hold(while: { self.lock.withLock { self._cancelHeld.contains(id) } }, what: "cancel of \(id)")
         }
         func liveIds() async -> Set<String> { live }
+
+        /// Cubic R5-10: these holds were `while held { Task.sleep(1ms) }` with no deadline, so a
+        /// `#require` failing before the release line left an unstructured task polling at 1 ms for
+        /// the whole process. Capped like `RecordingResolver.hold`, and it reports rather than
+        /// spinning forever.
+        static func hold(while held: @Sendable () -> Bool, what: String,
+                         sourceLocation: SourceLocation = #_sourceLocation) async {
+            for _ in 0..<2000 {
+                if !held() { return }
+                do { try await Task.sleep(for: .milliseconds(1)) } catch { return }
+            }
+            #expect(!held(), "held \(what) was never released", sourceLocation: sourceLocation)
+        }
     }
 
     /// Drains an engine's event stream so a test can assert what it emitted — and, just as
@@ -92,27 +106,53 @@ struct OfflineManagerTests {
         }
     }
 
-    /// Cellular-gate inputs the closures read live.
-    final class Flags: @unchecked Sendable {
+    /// Cellular-gate inputs the closures read live. `nonisolated` (the `FakeOfflineEngine` shape):
+    /// the manager's closures call into it from the actor, not from the main actor.
+    nonisolated final class Flags: @unchecked Sendable {
         nonisolated(unsafe) var wifiOnly = false
         nonisolated(unsafe) var cellular = false
         nonisolated(unsafe) var gate: GateAnswer = .unreachable
+        /// Per-video overrides of `gate` (the sweep's whole-library belt needs one row to answer
+        /// something other than `.gone`).
+        nonisolated(unsafe) var gates: [String: GateAnswer] = [:]
         nonisolated(unsafe) var decision: Decision = .allowed
         /// Per-video overrides of `decision` (the starvation test blocks one id, allows the rest).
         nonisolated(unsafe) var decisions: [String: Decision] = [:]
         /// Ids whose limiter check suspends until removed (same 1 ms-poll gate as
         /// `RecordingResolver.hold`); `limiterEntered` records arrival so a test can wait for it.
-        nonisolated(unsafe) var limiterHeld: Set<String> = []
-        nonisolated(unsafe) var limiterEntered: Set<String> = []
+        ///
+        /// Cubic R5-5: both are inserted into from the `@Sendable` limiter closure ON THE ACTOR
+        /// while the test task reads/reassigns them — `Set` is not thread-safe, so the plain
+        /// `nonisolated(unsafe)` stored properties were a genuine (TSan-detectable) data race.
+        /// Behind a lock, the `FakeOfflineEngine.pauseHeld` shape.
+        private let lock = NSLock()
+        private var _limiterHeld: Set<String> = []
+        private var _limiterEntered: Set<String> = []
+        var limiterHeld: Set<String> {
+            get { lock.withLock { _limiterHeld } }
+            set { lock.withLock { _limiterHeld = newValue } }
+        }
+        var limiterEntered: Set<String> { lock.withLock { _limiterEntered } }
+        func enterLimiter(_ id: String) { lock.withLock { _ = _limiterEntered.insert(id) } }
+        func limiterIsHeld(_ id: String) -> Bool { lock.withLock { _limiterHeld.contains(id) } }
         nonisolated(unsafe) var now = Date()
         /// Fires once inside the manager's `now()` read — the one deterministic seam into the
         /// actor's own execution between a completion's file move and its row write (G-P1b).
         nonisolated(unsafe) var onNow: (@Sendable () -> Void)?
-        /// Blocks the MAIN ACTOR inside the `wifiOnly` read (bounded, 2 s) so a cancel already
-        /// parked in `engine.cancel` can finish while `begin` sits in that hop (R4-4);
-        /// `wifiOnlyEntered` is how the test knows `begin` has reached it.
+        /// Blocks the MAIN ACTOR inside the `wifiOnly` read so a cancel already parked in
+        /// `engine.cancel` can finish while `begin` sits in that hop (R4-4); `wifiOnlyEntered` is
+        /// how the test knows `begin` has reached it.
+        ///
+        /// Cubic R5-6: the block used to be a `while … Thread.sleep(0.001)` wall-clock spin, which
+        /// silently ABANDONED the block after 2 s (the engine then started and the test failed for
+        /// the wrong reason). `wifiOnly` is a synchronous `@MainActor` closure returning `Bool`, so
+        /// it cannot suspend — holding the main actor IS the mechanism this scenario needs. A
+        /// semaphore is the honest shape of that hold: it wakes the instant the releaser signals,
+        /// and the 2 s is a FAILURE GUARD (`wifiOnlyTimedOut`), never the release mechanism.
         nonisolated(unsafe) var wifiOnlyBlocked = false
         nonisolated(unsafe) var wifiOnlyEntered = false
+        let wifiOnlyRelease = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var wifiOnlyTimedOut = false
         /// The remote kill-switch as the manager reads it; a test replaces it to hold a refusal
         /// inside `begin`'s own `await`.
         nonisolated(unsafe) var downloadsEnabled: @Sendable () async -> Bool = { true }
@@ -145,29 +185,34 @@ struct OfflineManagerTests {
         func cleanUp() { try? FileManager.default.removeItem(at: base) }
     }
 
-    private func makeRig(_ outcome: RecordingResolver.Outcome = .hls) -> Rig {
-        let container = AppContainer.makeModelContainer(inMemory: true)
-        let store = OfflineStore(modelContainer: container)
+    /// `relaunching:` reuses a previous rig's STORE, model container and files behind a fresh
+    /// manager, engine and resolver — the app dying and coming back up, which is the only way to
+    /// observe what a walk left persisted (R5-8).
+    private func makeRig(_ outcome: RecordingResolver.Outcome = .hls, relaunching previous: Rig? = nil) -> Rig {
+        let container = previous?.container ?? AppContainer.makeModelContainer(inMemory: true)
+        let store = previous?.store ?? OfflineStore(modelContainer: container)
         let engine = FakeOfflineEngine()
         let resolver = RecordingResolver(outcome)
         let flags = Flags()
-        let base = FileManager.default.temporaryDirectory
+        let base = previous?.base ?? FileManager.default.temporaryDirectory
             .appending(path: "OfflineManagerTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         let manager = OfflineManager(
             store: store, engine: engine, resolver: resolver,
             limiterCheck: { id in
-                flags.limiterEntered.insert(id)
-                while flags.limiterHeld.contains(id) { try? await Task.sleep(for: .milliseconds(1)) }
+                flags.enterLimiter(id)
+                await FakeOfflineEngine.hold(while: { flags.limiterIsHeld(id) }, what: "limiter check of \(id)")
                 return flags.decisions[id] ?? flags.decision
             },
             wifiOnly: {
                 flags.wifiOnlyEntered = true
-                let deadline = Date().addingTimeInterval(2)
-                while flags.wifiOnlyBlocked && Date() < deadline { Thread.sleep(forTimeInterval: 0.001) }
+                if flags.wifiOnlyBlocked {
+                    flags.wifiOnlyBlocked = false   // one-shot: only the read the test armed blocks
+                    if flags.wifiOnlyRelease.wait(timeout: .now() + 2) == .timedOut { flags.wifiOnlyTimedOut = true }
+                }
                 return flags.wifiOnly
             },
             isOnCellular: { flags.cellular },
-            baseDirectory: base, gate: { _ in flags.gate },
+            baseDirectory: base, gate: { flags.gates[$0] ?? flags.gate },
             now: {
                 if let onNow = flags.onNow { flags.onNow = nil; onNow() }
                 return flags.now
@@ -448,6 +493,11 @@ struct OfflineManagerTests {
 
     /// `unreachable` is no answer, not a "no": the retry is refused (fail-closed for SAVING) and
     /// the row stays failed with whatever is on disk — never deleted on a transport error.
+    ///
+    /// Cubic R5-3: it used to return with NO state change at all, which is exactly the situation a
+    /// row failed with "Network error. Check your connection" already leaves the user in — the
+    /// Retry button read as broken. The status and the partial are untouched; the error code
+    /// becomes the network one, which is what the row's caption renders.
     @Test func aRetryWithAnUnreachableGateIsRefusedAndTheRowStaysFailed() async throws {
         let rig = makeRig(.embed); defer { rig.cleanUp() }
         let id = await save(rig)
@@ -460,11 +510,46 @@ struct OfflineManagerTests {
         await rig.manager.retry(id)
 
         let row = try #require(rig.persisted(id: id))
-        #expect(row.status == OfflineStatus.failed.rawValue)
-        #expect(row.errorCode == "NOT_SAVEABLE", "the refusal leaves the row exactly as it was")
+        #expect(row.status == OfflineStatus.failed.rawValue, "the refusal changes no status")
+        #expect(row.errorCode == "NETWORK", "a refused retry must say WHY nothing happened")
         #expect(FileManager.default.fileExists(atPath: tmp.path()))
         #expect(rig.engine.starts.isEmpty)
         #expect(rig.resolver.calls.count == 1)
+    }
+
+    /// R5-3, the other refusal: a user Resume the cellular gate refuses left the row EXACTLY as it
+    /// was — Paused, no error, nothing started — so the Resume button read as broken too. The
+    /// status is untouched (a paused row is still paused, waiting for the user) and the row gets
+    /// the network code; there is no Wi-Fi-only paused wording in the catalog to prefer.
+    @Test func aResumeTheCellularGateRefusesLeavesTheReasonOnTheRow() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.pause(id)
+        rig.flags.wifiOnly = true
+        rig.flags.cellular = true
+
+        await rig.manager.resume(id)
+
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.paused.rawValue)
+        #expect(row.errorCode == "NETWORK", "a refused Resume must leave a trace on the row")
+        #expect(rig.engine.resumes.isEmpty)
+    }
+
+    /// The preserve clause (fork D): the kill-switch refusal NEVER announces itself, so the same
+    /// Resume under an off switch leaves the row completely untouched.
+    @Test func aResumeTheKillSwitchRefusesStaysSilent() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        await rig.manager.pause(id)
+        rig.flags.downloadsEnabled = { false }
+
+        await rig.manager.resume(id)
+
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.paused.rawValue)
+        #expect(row.errorCode == nil, "the kill-switch governs saving silently")
+        #expect(rig.engine.resumes.isEmpty)
     }
 
     @Test func aFinishedDownloadLandsAtTheRelativePathAndReadsCompletedOnReRead() async throws {
@@ -634,6 +719,28 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: item.id)?.status == OfflineStatus.running.rawValue)
     }
 
+    /// Cubic R5-8: `ProgressiveEngine.start` continues a partial only when the incoming token IS
+    /// the walk already registered for the id, and `walks` is empty after a relaunch — so
+    /// `reattach()`'s orphan path re-resolved and `engine.start` deleted a 90 %-complete `.tmp`.
+    /// The walk's `{url, userAgent}` token is persisted into the row's existing `resumeData` column
+    /// while it RUNS (not only when it pauses), so the orphan takes `begin`'s resume leg instead.
+    @Test func aRelaunchedOrphanContinuesItsPartialInsteadOfRestartingFromZero() async throws {
+        let first = makeRig(.hls); defer { first.cleanUp() }
+        let id = await save(first)
+        #expect(first.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+        #expect(first.persisted(id: id)?.resumeData == Data("RD".utf8),
+                "a running walk's token must be persisted, not only written on pause")
+
+        // The relaunch: a fresh manager, engine and resolver over the SAME store and files, the
+        // row still RUNNING and no live task to re-bind (the app died mid-download).
+        let relaunched = makeRig(.hls, relaunching: first)
+        await relaunched.manager.reattach()
+
+        #expect(relaunched.engine.resumes.map(\.id) == [id], "the orphan continues from its `.tmp`")
+        #expect(relaunched.engine.starts.isEmpty, "a restart deletes a nearly complete partial")
+        #expect(relaunched.resolver.calls.isEmpty, "and it costs no re-resolve")
+    }
+
     /// Cubic R2-3: on a background-events relaunch the session's pending delegate callbacks and
     /// `liveIds()`'s `getAllTasks` are both async on the delegate queue with no ordering
     /// guarantee. When the final chunk's finish lands first, `reattach()` sees no live task and
@@ -719,7 +826,7 @@ struct OfflineManagerTests {
         flags.downloadsEnabled = { @Sendable in
             flags.killSwitchCalls += 1
             guard flags.killSwitchCalls == 1 else { return true }
-            while flags.killSwitchHeld { try? await Task.sleep(for: .milliseconds(1)) }
+            await FakeOfflineEngine.hold(while: { flags.killSwitchHeld }, what: "kill-switch consult")
             return false
         }
 
@@ -753,6 +860,9 @@ struct OfflineManagerTests {
         #expect(rig.engine.starts.isEmpty)
         #expect(rig.resolver.calls.isEmpty)
         #expect(rig.persisted(id: id)?.status == OfflineStatus.queued.rawValue)
+        // R5-3's bound: a row the SCHEDULER picked is not marked — "Waiting" is already honest,
+        // and only a user action that appears to do nothing needs a reason.
+        #expect(rig.persisted(id: id)?.errorCode == nil)
 
         rig.flags.cellular = false
         await rig.manager.gateDidChange()
@@ -928,7 +1038,7 @@ struct OfflineManagerTests {
     @Test func aCancelCompletingInsideTheWifiOnlyHopStartsNothing() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         let flags = rig.flags, engine = rig.engine
-        defer { flags.wifiOnlyBlocked = false }
+        defer { flags.wifiOnlyBlocked = false; flags.wifiOnlyRelease.signal() }
         rig.resolver.hold(Self.lectureVideoId)
         let saveTask = Task { await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p",
                                                      audioOnly: true, metadata: Self.metadata) }
@@ -957,13 +1067,14 @@ struct OfflineManagerTests {
                 if !FileManager.default.fileExists(atPath: tmp.path()) { break }
                 try? await Task.sleep(for: .milliseconds(1))
             }
-            flags.wifiOnlyBlocked = false
+            flags.wifiOnlyRelease.signal()
         }
         rig.resolver.release(id: Self.lectureVideoId)
         await saveTask.value
         await cancelTask.value
         await releaser.value
 
+        #expect(!flags.wifiOnlyTimedOut, "the hold was abandoned on its guard, so the interleaving never happened")
         #expect(rig.engine.starts.isEmpty, "the guard must be the last thing before the engine")
         #expect(rig.persisted(id: id)?.status == OfflineStatus.cancelled.rawValue)
     }
@@ -1653,13 +1764,54 @@ struct OfflineManagerTests {
                                    audioOnly: true, status: status.rawValue)
             try rig.store.insert(item)
         }
+        // One survivor, so the pass is not a WHOLE-library removal — R5-2's belt refuses those.
+        let survivor = OfflineItem(videoId: "vidSurvivor", title: "Lecture", channelName: nil,
+                                   thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
+                                   status: OfflineStatus.paused.rawValue)
+        try rig.store.insert(survivor)
         rig.flags.gate = gate
+        rig.flags.gates = ["vidSurvivor": .allowed]
 
         await rig.manager.sweep()
 
-        #expect(rig.rowCount() == 0, "auto-delete on catalog removal is not a completed-rows-only rule")
+        #expect(rig.rowCount() == 1, "auto-delete on catalog removal is not a completed-rows-only rule")
+        #expect(rig.persisted(id: survivor.id) != nil)
         #expect(rig.resolver.calls.isEmpty, "the sweep must not burn a resolve on a row it is deleting")
         #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Cubic R5-2's belt, behind the gate client's envelope check: if EVERY row the gate was asked
+    /// about in one pass answers gone, that is a broken edge answering 404 for `/api/v1/videos/*`,
+    /// not a same-day whole-catalog purge. Keep them all and let the next sweep retry — the delete
+    /// is irreversible, the wait is not.
+    @Test func aSweepWhereEveryCheckedRowAnswersGoneDeletesNothing() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        for index in 0..<3 {
+            let item = OfflineItem(videoId: "vidGone\(index)", title: "Lecture \(index)",
+                                   channelName: nil, thumbnailUrl: nil, qualityLabel: "360p",
+                                   audioOnly: true, status: OfflineStatus.completed.rawValue,
+                                   completedAt: rig.flags.now)
+            try rig.store.insert(item)
+        }
+        rig.flags.gate = .gone
+
+        await rig.manager.sweep()
+
+        #expect(rig.rowCount() == 3, "a whole-library removal in one pass is an edge, not a purge")
+    }
+
+    /// The bound: ONE row really can leave the catalog, and it still goes.
+    @Test func aSweepWhereTheOnlyCheckedRowIsGoneStillDeletesIt() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let item = OfflineItem(videoId: "vidGoneOnly", title: "Lecture", channelName: nil,
+                               thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
+                               status: OfflineStatus.completed.rawValue, completedAt: rig.flags.now)
+        try rig.store.insert(item)
+        rig.flags.gate = .gone
+
+        await rig.manager.sweep()
+
+        #expect(rig.rowCount() == 0)
     }
 
     // MARK: - Live smoke (plan Task 4 step 2; §15 "simulator download" evidence)

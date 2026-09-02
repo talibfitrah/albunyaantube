@@ -24,8 +24,11 @@ nonisolated enum OfflineDownloadFailure: Sendable {
 nonisolated protocol OfflineEngine: Sendable {
     /// Every task this engine owns, including ones re-attached from a previous launch.
     var events: AsyncStream<OfflineDownloadEvent> { get }
-    /// From zero: any partial `<id>.tmp` is discarded.
-    func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async
+    /// From zero unless the walk it begins IS the one already registered for this id, in which
+    /// case its partial `<id>.tmp` continues. Hands back the same opaque token `pause` returns —
+    /// the manager persists it with the row so a RELAUNCH can resume the walk instead of
+    /// re-resolving and dropping a nearly complete partial (R5-8).
+    func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data?
     /// Continues with the opaque `resumeData` a `pause` or `.network` failure handed back.
     func resume(id: String, resumeData: Data, allowsCellular: Bool) async
     /// Stops the task and hands back what `resume` needs (nil when the task had nothing to give).
@@ -107,7 +110,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
 
     // MARK: - OfflineEngine
 
-    func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async {
+    func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data? {
         let token = ResumeToken(url: url, userAgent: userAgent)
         let (generation, continues) = stateLock.withLock { () -> (Int, Bool) in
             // A start whose token IS the walk already registered for this id continues that walk's
@@ -122,6 +125,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
         if offset == 0 { try? FileManager.default.removeItem(at: partialURL(id)) }
         issueChunk(id: id, generation: generation, url: url, userAgent: userAgent,
                    allowsCellular: allowsCellular, offset: offset)
+        return try? JSONEncoder().encode(token)
     }
 
     func resume(id: String, resumeData: Data, allowsCellular: Bool) async {

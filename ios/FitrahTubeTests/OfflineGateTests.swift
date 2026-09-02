@@ -16,19 +16,30 @@ import Testing
     private struct Canned: HTTPTransport {
         var status = 200
         var body = Data()
+        /// Nil means the response carries no `Content-Type` at all (an empty proxy error page).
+        var contentType: String? = "application/json;charset=UTF-8"
         var fail = false
         func send(_ request: HTTPRequest) async throws -> HTTPResponse {
             if fail { throw URLError(.notConnectedToInternet) }
             #expect(request.headers["X-Device-Id"] == "device-1")
             #expect(request.url.path() == "/api/v1/videos/xc7keR2piUM")
-            return HTTPResponse(status: status, headers: [:], body: body)
+            return HTTPResponse(status: status, headers: contentType.map { ["Content-Type": $0] } ?? [:], body: body)
         }
     }
 
-    private func client(status: Int = 200, json: String = "{}", fail: Bool = false) -> OfflineGateClient {
-        OfflineGateClient(transport: Canned(status: status, body: Data(json.utf8), fail: fail),
+    private func client(status: Int = 200, json: String = "{}",
+                        contentType: String? = "application/json;charset=UTF-8",
+                        fail: Bool = false) -> OfflineGateClient {
+        OfflineGateClient(transport: Canned(status: status, body: Data(json.utf8), contentType: contentType, fail: fail),
                           baseURL: URL(string: "https://app.fitrahtube.com/")!, deviceId: DeviceId(value: "device-1"))
     }
+
+    /// `GlobalExceptionHandler.handleResourceNotFoundException` verbatim (timestamp/status/error/
+    /// message/path, `application/json`).
+    private static let notFoundEnvelope = """
+        {"timestamp":"2026-09-02T10:00:00.123","status":404,"error":"Not Found",
+         "message":"Video not found with id: xc7keR2piUM","path":"/api/v1/videos/xc7keR2piUM"}
+        """
 
     @Test func a200WithOfflineAllowedTrueIsAllowed() async {
         #expect(await client(json: #"{"offlineAllowed":true}"#).answer("xc7keR2piUM") == .allowed)
@@ -55,10 +66,31 @@ import Testing
         #expect(await client(json: "{}").answer("xc7keR2piUM") == .notAllowed)
     }
 
-    @Test func a404IsGone() async {
-        #expect(await client(status: 404).answer("xc7keR2piUM") == .gone)
+    /// A 404 the BACKEND produced: the video left the catalog, and the sweep deletes the copy.
+    @Test func aBackend404EnvelopeIsGone() async {
+        #expect(await client(status: 404, json: Self.notFoundEnvelope).answer("xc7keR2piUM") == .gone)
     }
 
+    /// Cubic R5-2, the second mass-delete pin: a reverse proxy, a CDN edge or a deploy briefly
+    /// serving a default vhost answers 404 for `/api/v1/videos/*` too, and `sweep()` turns `.gone`
+    /// into `deleteAll` — every saved file and row, irreversibly, on the next launch. Only the
+    /// backend's own error envelope (JSON content type, `status` + `error`) may map to `.gone`.
+    @Test func a404WithoutTheBackendEnvelopeIsUnreachableNeverGone() async {
+        // A CDN/default-vhost error page.
+        #expect(await client(status: 404, json: "<html><body>404 Not Found</body></html>",
+                             contentType: "text/html").answer("xc7keR2piUM") == .unreachable)
+        // A bare 404 with no body and no content type at all.
+        #expect(await client(status: 404, json: "", contentType: nil).answer("xc7keR2piUM") == .unreachable)
+        // JSON, but somebody else's JSON.
+        #expect(await client(status: 404, json: #"{"error":"not found"}"#).answer("xc7keR2piUM") == .unreachable)
+        // The envelope's shape served with a non-JSON content type — an edge echoing a body it
+        // proxied is not the backend answering.
+        #expect(await client(status: 404, json: Self.notFoundEnvelope, contentType: "text/plain")
+                    .answer("xc7keR2piUM") == .unreachable)
+    }
+
+    /// 410 needs no envelope: `ContentGoneException` is the only thing in the world that answers
+    /// Gone for a video URL — an edge that knows nothing about the resource answers 404.
     @Test func a410IsGone() async {
         #expect(await client(status: 410).answer("xc7keR2piUM") == .gone)
     }

@@ -61,6 +61,22 @@ struct SavedScreenTests {
         }
     }
 
+    /// Cubic R5-3: the row showed its error copy for `.failed` rows ONLY, so a refused Retry or
+    /// Resume — which leaves the network code on a row that stays cancelled or paused — was still
+    /// invisible and the button still read as broken. An error code present outranks the status
+    /// caption whatever the status; without one, nothing changes.
+    @Test func aRowCarryingAnErrorCodeRendersItWhateverItsStatus() {
+        #expect(SavedRowText.captionKey(status: .paused, errorCode: "NETWORK") == "offline_error_network")
+        #expect(SavedRowText.captionKey(status: .cancelled, errorCode: "NETWORK") == "offline_error_network")
+        #expect(SavedRowText.captionKey(status: .paused, errorCode: nil) == "offline_status_paused")
+        #expect(SavedRowText.captionKey(status: .cancelled, errorCode: nil) == "offline_status_cancelled")
+        // Unchanged: a failed row shows its error copy, and a codeless failure the generic one.
+        #expect(SavedRowText.captionKey(status: .failed, errorCode: "HTTP_403") == "offline_error_403")
+        #expect(SavedRowText.captionKey(status: .failed, errorCode: nil) == "offline_error_unknown")
+        // An unreadable raw status (a future version's row) has no caption to choose.
+        #expect(SavedRowText.captionKey(status: nil, errorCode: nil) == "offline_error_unknown")
+    }
+
     /// Every key this screen renders resolves to real copy — `String(localized:)` silently
     /// returns the key itself when the catalog entry is missing (the SettingsRowsTests idiom).
     @Test func everySavedScreenKeyResolvesToRealCopy() {

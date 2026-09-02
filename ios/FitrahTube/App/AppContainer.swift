@@ -72,6 +72,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private let userDefaults: UserDefaults
     private let modelContainer: ModelContainer
     private let apiBaseURL: URL
+    /// What `offlineGate` sends over. Not private, and not a detail: R5-1: `fake()` used to build
+    /// the gate client over the network against `AppConfig.apiBaseURL`, so `AppContainerTests` pins
+    /// which transport a fixture container actually got.
+    let gateTransport: any HTTPTransport
 
     private(set) lazy var settings: any SettingsStore = UserDefaultsSettingsStore(defaults: userDefaults)
     private(set) lazy var filters: any FilterStore = UserDefaultsFilterStore(defaults: userDefaults)
@@ -89,10 +93,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var categories: any CategoriesCache = LiveCategoriesCache(client: catalog)
     private(set) lazy var network = NetworkMonitor()
     /// Phase 3 Task 5: the per-video `offlineAllowed` gate — ONE client shared by the player's
-    /// Save button (via `PlayerScreen`) and the manager's revalidation sweep. Fake containers get
-    /// the real client against an unreachable host: every answer is `.unreachable`, which is
-    /// hidden-button / keep-on-sweep — the safe fixture default.
-    private(set) lazy var offlineGate = OfflineGateClient(baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+    /// Save button (via `PlayerScreen`) and the manager's revalidation sweep.
+    private(set) lazy var offlineGate = OfflineGateClient(transport: gateTransport, baseURL: apiBaseURL,
+                                                          deviceId: .persisted(in: userDefaults))
 
     /// Phase 3 Task 4: resolve → download → persist over `offlineStore`. One background session
     /// (`ProgressiveEngine.backgroundSessionIdentifier`); `.prefetch` lane on the ONE limiter/clock
@@ -109,12 +112,14 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var castController = CastController()
 
     private func makeOfflineManager() -> OfflineManager {
-        let configuration = URLSessionConfiguration.background(withIdentifier: ProgressiveEngine.backgroundSessionIdentifier)
-        configuration.sessionSendsLaunchEvents = true
         let base = offlineBase
         let manager = OfflineManager(
             store: offlineStore,
-            engine: ProgressiveEngine(directory: OfflineStorage.directoryURL(base: base), configuration: configuration),
+            engine: injectedOfflineEngine ?? {
+                let configuration = URLSessionConfiguration.background(withIdentifier: ProgressiveEngine.backgroundSessionIdentifier)
+                configuration.sessionSendsLaunchEvents = true
+                return ProgressiveEngine(directory: OfflineStorage.directoryURL(base: base), configuration: configuration)
+            }(),
             resolver: LiveStreamResolver(resolver: resolver),
             limiterCheck: { [innerTube] in await innerTube.rateLimiter.check($0, kind: .prefetch, now: innerTube.clock.now) },
             wifiOnly: { [settings] in settings.wifiOnlyDownloads },
@@ -194,6 +199,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         degradedHeader: degradedHeader
     )
     private let injectedBrowse: (any BrowseSource)?
+    /// R5-7: fixture containers inject a fake download engine, so a test that reaches
+    /// `offlineManager` never opens a second background `URLSession` on
+    /// `ProgressiveEngine.backgroundSessionIdentifier` nor lets `reattach()` start a live resolve.
+    private let injectedOfflineEngine: (any OfflineEngine)?
     private let degradedHeader: (@Sendable (String) async throws -> ChannelHeader)?
     /// Plan C Task 4: a deep-linked `Route.playlist` carries no title/count, so the header falls back
     /// to `getPublicPlaylist` -- same closure shape as `degradedHeader` (the container never holds the
@@ -202,14 +211,18 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
 
     init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer, apiBaseURL: URL,
          browse: (any BrowseSource)? = nil, degradedHeader: (@Sendable (String) async throws -> ChannelHeader)? = nil,
-         playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)? = nil) {
+         playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)? = nil,
+         gateTransport: any HTTPTransport = URLSessionTransport(),
+         offlineEngine: (any OfflineEngine)? = nil) {
         self.catalog = catalog
         self.userDefaults = userDefaults
         self.modelContainer = modelContainer
         self.apiBaseURL = apiBaseURL
         self.injectedBrowse = browse
+        self.injectedOfflineEngine = offlineEngine
         self.degradedHeader = degradedHeader
         self.playlistHeader = playlistHeader
+        self.gateTransport = gateTransport
     }
 
     static func live(baseURL: URL = AppConfig.apiBaseURL) -> AppContainer {
@@ -243,7 +256,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // bundle identifier or a reserved domain -- a trap in a default-argument position, far
         // from any call site (gate A-M15). "fitrahtube.fake" is safe today; this keeps it latent.
         defaults: UserDefaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard,
-        browse: any BrowseSource = FakeBrowseSource()
+        browse: any BrowseSource = FakeBrowseSource(),
+        offlineEngine: (any OfflineEngine)? = nil
     ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
         // defaults domain. Does NOT wipe the suite -- callers that write through the returned
@@ -255,8 +269,18 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // InnerTubeKit actors here (the package has no fake variant) -- previews/tests that never
         // touch them pay nothing (`lazy`); one that does gets `BackendAvailabilityGate`'s fail-open
         // behaviour against an unreachable host instead of a crash.
+        //
+        // `gateTransport`: Cubic R5-1. This used to build the REAL `OfflineGateClient` against
+        // `AppConfig.apiBaseURL` (Debug: `http://localhost:8080/`), and the comment claimed an
+        // "unreachable host" — which is only true while nothing is listening on 8080. With the
+        // documented dev backend running, the launch sweep got a real 404 for every
+        // `-fitrah-seed-offline` row and deleted the whole screenshot fixture before the rig could
+        // photograph it, and every `PlayerScreen` gate fetch under a fake container hit the
+        // network. A canned 503 is `.unreachable` by construction: hidden Save button,
+        // keep-on-sweep, zero requests.
         AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true),
-                     apiBaseURL: AppConfig.apiBaseURL, browse: browse)
+                     apiBaseURL: AppConfig.apiBaseURL, browse: browse,
+                     gateTransport: FixedStatusTransport(status: 503), offlineEngine: offlineEngine)
     }
     #endif
 
@@ -319,8 +343,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
 }
 
 #if DEBUG
-/// `-fitrah-fake-report <status>`: one canned status for every request, no network.
-private struct FixedStatusTransport: HTTPTransport {
+/// `-fitrah-fake-report <status>`: one canned status for every request, no network. Also the fake
+/// container's offline-gate transport (R5-1) — `AppContainerTests` names the type, so not private.
+struct FixedStatusTransport: HTTPTransport {
     let status: Int
     func send(_ request: HTTPRequest) async throws -> HTTPResponse { HTTPResponse(status: status, headers: [:], body: Data()) }
 }

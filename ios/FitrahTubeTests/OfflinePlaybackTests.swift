@@ -201,8 +201,9 @@ struct OfflinePlaybackTests {
         var starts: [String] { lock.withLock { _starts } }
         var resumes: [String] { lock.withLock { _resumes } }
         let events: AsyncStream<OfflineDownloadEvent> = AsyncStream { _ in }
-        func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async {
+        func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data? {
             lock.withLock { _starts.append(id) }
+            return nil
         }
         func resume(id: String, resumeData: Data, allowsCellular: Bool) async {
             lock.withLock { _resumes.append(id) }

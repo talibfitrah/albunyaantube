@@ -4,8 +4,25 @@ import Testing
 import UIKit
 @testable import FitrahTube
 
-@Suite(.perTest)
+/// `.serialized` (Cubic R5-7): the background-events test swaps the process-global
+/// `AppContainer.current` for a fixture container across its own awaits, and the cast test below
+/// reads that same global — parallel MainActor tests interleave at exactly those suspensions.
+@Suite(.perTest, .serialized)
 struct AppContainerTests {
+
+    /// R5-7: no background `URLSession`, no resolver, no files. The hook's job is to REACH the
+    /// manager, and `reattachCount` is where that lands; the real `ProgressiveEngine` the process
+    /// container carries would open a second session on `ProgressiveEngine.backgroundSessionIdentifier`
+    /// and let `reattach()` start a live InnerTube resolve for any row a sibling test seeded.
+    private nonisolated final class NoOpEngine: OfflineEngine, @unchecked Sendable {
+        let events: AsyncStream<OfflineDownloadEvent> = AsyncStream { _ in }
+        func start(id: String, url: URL, userAgent: String, allowsCellular: Bool) async -> Data? { nil }
+        func resume(id: String, resumeData: Data, allowsCellular: Bool) async {}
+        func pause(id: String) async -> Data? { nil }
+        func cancel(id: String) async {}
+        func liveIds() async -> Set<String> { [] }
+    }
+
     /// Gate A-I1: a store SwiftData cannot open used to `preconditionFailure` on the launch path,
     /// i.e. a permanent crash loop with no recovery short of delete-and-reinstall. It must now
     /// delete the store and rebuild instead -- favorites are lost, the app is not.
@@ -43,8 +60,17 @@ struct AppContainerTests {
     /// hook must reach the App's one container (the `AppContainer.current` seam, set at
     /// `FitrahTubeApp.init` — which the test host's launch already ran) and schedule a `reattach()`.
     /// Asserted at flag level; the real background relaunch is device territory.
+    ///
+    /// R5-7: it used to drive the PROCESS container's real `ProgressiveEngine` (a real background
+    /// session, `LiveStreamResolver` and `OfflineGateClient` behind it) over the shared fake store.
+    /// The hook reads `AppContainer.current`, so pointing that at a fixture container for the
+    /// test's duration proves the same wiring against a no-op engine and an empty store.
     @Test func theBackgroundSessionRelaunchHookReachesTheManagerAndSchedulesReattach() async throws {
-        let container = try #require(AppContainer.current, "FitrahTubeApp.init must set AppContainer.current")
+        _ = try #require(AppContainer.current, "FitrahTubeApp.init must set AppContainer.current")
+        let previous = AppContainer.current
+        defer { AppContainer.current = previous }
+        let container = AppContainer.fake(offlineEngine: NoOpEngine())
+        AppContainer.current = container
         let before = await container.offlineManager.reattachCount
         AppDelegate().application(
             UIApplication.shared,
@@ -70,6 +96,19 @@ struct AppContainerTests {
         let container = try #require(AppContainer.current, "FitrahTubeApp.init must set AppContainer.current")
         #expect(container.castController.castAvailable,
                 "AppDelegate.didFinishLaunchingWithOptions must call castController.setUp()")
+    }
+
+    /// R5-1: `fake()` passed `AppConfig.apiBaseURL` (Debug: `http://localhost:8080/`) to the REAL
+    /// gate client, so with the documented dev backend running the launch sweep got a real 404 for
+    /// every `-fitrah-seed-offline` row and deleted the whole screenshot fixture before the rig
+    /// could photograph it — and every `PlayerScreen` gate fetch under a fake container hit the
+    /// network. The canned transport makes the "unreachable host" the old comment assumed true by
+    /// construction instead of by hoping nothing is listening on 8080.
+    @Test func theFakeContainerAnswersTheOfflineGateWithoutTheNetwork() async {
+        let container = AppContainer.fake()
+        #expect(container.gateTransport is FixedStatusTransport,
+                "a fake container must not run the real gate client against the API base URL")
+        #expect(await container.offlineGate.answer("xc7keR2piUM") == .unreachable)
     }
 
     @Test func fakeContainerServesCannedCategories() async throws {

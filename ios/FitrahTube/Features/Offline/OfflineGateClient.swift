@@ -10,9 +10,10 @@ import InnerTubeKit
 ///
 /// Mapping (save-time fail-closed; sweep-time semantics live in `OfflineSweep.decide`):
 /// 200 + `offlineAllowed: true` → `.allowed`; 200 with the flag false or ABSENT → `.notAllowed`
-/// (the ruling's default-false — channel-sourced videos were never admin-flagged); 404/410 →
-/// `.gone` (left the catalog); anything else — 5xx, other 4xx, transport error, undecodable 200 —
-/// → `.unreachable`, NEVER `.gone`: a mistaken `.gone` mass-deletes the library at sweep time.
+/// (the ruling's default-false — channel-sourced videos were never admin-flagged); 410, and a 404
+/// carrying the BACKEND'S OWN error envelope, → `.gone` (left the catalog); anything else — 5xx,
+/// other 4xx, a 404 from anyone but the backend, transport error, undecodable 200 → `.unreachable`,
+/// NEVER `.gone`: a mistaken `.gone` mass-deletes the library at sweep time.
 nonisolated struct OfflineGateClient: Sendable {
     private let transport: HTTPTransport
     private let baseURL: URL
@@ -29,6 +30,26 @@ nonisolated struct OfflineGateClient: Sendable {
         var offlineAllowed: Bool?
     }
 
+    /// The backend's error envelope, as `GlobalExceptionHandler` writes it for every mapped
+    /// exception: `{timestamp, status, error, message, path}`.
+    private struct ErrorEnvelope: Decodable {
+        var status: Int?
+        var error: String?
+    }
+
+    /// Cubic R5-2: a 404 is a catalog removal ONLY when the backend itself said so. A reverse
+    /// proxy, a CDN edge, or a deploy briefly serving a default vhost answers 404 for
+    /// `/api/v1/videos/*` too — and `sweep()` turns `.gone` into `deleteAll`: every saved file and
+    /// row, irreversibly, on the next launch or foreground. `ResourceNotFoundException` always
+    /// comes back as JSON carrying its own `status`/`error`; an HTML error page, an empty body, or
+    /// somebody else's JSON does not, and reads as `.unreachable` (keep, and retry next sweep).
+    private static func isBackendNotFound(_ response: HTTPResponse) -> Bool {
+        guard response.headers.contains(where: {
+            $0.key.lowercased() == "content-type" && $0.value.lowercased().contains("application/json")
+        }), let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: response.body) else { return false }
+        return envelope.status == 404 && envelope.error != nil
+    }
+
     func answer(_ videoId: String) async -> GateAnswer {
         let request = HTTPRequest(method: "GET", url: baseURL.appending(path: "api/v1/videos/\(videoId)"),
                                   headers: ["X-Device-Id": deviceId.value], body: nil)
@@ -40,7 +61,11 @@ nonisolated struct OfflineGateClient: Sendable {
                 return .unreachable
             }
             return dto.offlineAllowed == true ? .allowed : .notAllowed
-        case 404, 410:
+        case 404:
+            return Self.isBackendNotFound(response) ? .gone : .unreachable
+        case 410:
+            // No envelope check: `ContentGoneException` is the only thing that answers Gone for a
+            // video URL — an edge that knows nothing about the resource answers 404, not 410.
             return .gone
         default:
             return .unreachable

@@ -171,7 +171,7 @@ actor OfflineManager: OfflineSaving {
         guard let row = await read(id: id), row.status == .paused || row.status == .queued else { return }
         // ponytail: a user Resume runs immediately even if the scheduler has something active;
         // the serial floor (CF-D-5) applies to queue picks, not to explicit user intent.
-        await begin(row)
+        await begin(row, userInitiated: true)
     }
 
     func cancel(_ id: String) async {
@@ -204,7 +204,11 @@ actor OfflineManager: OfflineSaving {
         switch await gate(row.videoId) {
         case .allowed: break
         case .notAllowed, .gone: await delete(row.id); return
-        case .unreachable: return
+        // Cubic R5-3: this used to return with no state change at all — which is exactly the
+        // situation the user is already in when a row failed with "Network error. Check your
+        // connection", so the Retry button read as broken. The status and the partial stay put;
+        // the row carries the network code, which is what its caption renders.
+        case .unreachable: await note(row.id, .network); return
         }
         await write { store in
             guard let item = store.item(id: id) else { return }
@@ -272,20 +276,33 @@ actor OfflineManager: OfflineSaving {
     func sweep() async {
         let current = now()
         var doomed: [String] = []
+        var removed: [String] = []
+        var checked = 0
         for row in await readAll() {
             let action: SweepAction
             if let completedAt = row.completedAt, OfflineSweep.isExpired(completedAt: completedAt, now: current) {
                 action = .deleteExpired   // TTL first, before any network
             } else {
+                checked += 1
                 action = OfflineSweep.decide(completedAt: row.completedAt, now: current, gate: await gate(row.videoId))
             }
-            if action != .keep { doomed.append(row.id) }
+            switch action {
+            case .keep: break
+            case .deleteRemoved: removed.append(row.id)
+            case .deleteExpired, .deleteGateRevoked: doomed.append(row.id)
+            }
         }
+        // Cubic R5-2's belt, behind the gate client's envelope check: EVERY gate-checked row in one
+        // pass answering gone is not a same-day whole-catalog removal, it is a broken edge — the
+        // 404 shape this deletion is most likely to be wrong about. Keep them all and let the next
+        // sweep retry; the delete is irreversible, the wait is not. One row alone still goes: a
+        // single video really does leave the catalog.
+        if checked >= 2 && removed.count == checked { removed = [] }
         // Through `deleteAll` (Task 7): files + rows together, the same teardown a user Delete
         // runs — never a second removal path — and ONE `schedule()`. A per-row `delete` re-ran the
         // scheduler between deletions, which picks a still-existing queued row and begins its
         // resolve: a real, rate-limited InnerTube POST for a row this same loop then deletes.
-        await deleteAll(doomed)
+        await deleteAll(doomed + removed)
     }
 
     /// Reconciliation note 6: re-evaluate the cellular gate after `wifiOnlyDownloads` or the path
@@ -448,7 +465,10 @@ actor OfflineManager: OfflineSaving {
     }
 
     /// Runs one row: the cellular gate, then either a resume-data restart or the resolve path.
-    private func begin(_ row: Row) async {
+    ///
+    /// `userInitiated` is a USER's Resume, not a queue pick: only that one needs a refusal to leave
+    /// a trace (R5-3). A queued row the scheduler picked already reads "Waiting", which is honest.
+    private func begin(_ row: Row, userInitiated: Bool = false) async {
         // Claim the slot SYNCHRONOUSLY, before any suspension: two interleaved schedule() passes
         // (or a double-tap Resume) both used to pass their checks and start the same row twice.
         guard !active.contains(row.id) else { return }
@@ -467,6 +487,11 @@ actor OfflineManager: OfflineSaving {
             // Stays queued/paused. A queued row is re-picked by the schedule() a gateDidChange
             // runs; a paused row waits for the user's Resume (schedule() picks only queued rows).
             release(row.id, attempt)
+            // R5-3: a user's Resume that the cellular gate refuses left the row EXACTLY as it was,
+            // so the button looked broken. The status is still the user's to own — a paused row
+            // stays paused — but the row now carries the reason its caption renders. There is no
+            // Wi-Fi-only paused wording in the catalog, so the network code is the copy.
+            if userInitiated { await note(row.id, .network) }
             return
         }
         guard stillCurrent(row.id, attempt) else { return }   // cancelled/deleted during the hop
@@ -575,7 +600,22 @@ actor OfflineManager: OfflineSaving {
         // Above the guard, not inside the call's argument list — see `begin`'s resume leg.
         let allowsCellular = !(await wifiOnly())
         guard stillCurrent(row.id, attempt) else { return }   // cancel during the transition hop
-        await engine.start(id: row.id, url: url, userAgent: resolved.userAgent, allowsCellular: allowsCellular)
+        let token = await engine.start(id: row.id, url: url, userAgent: resolved.userAgent, allowsCellular: allowsCellular)
+        // Cubic R5-8: the engine's `walks` are in memory, so after a relaunch `start` cannot know
+        // the `.tmp` on disk is this exact stream's and deletes it — `reattach()`'s orphan path
+        // threw away a 90 %-complete partial and re-downloaded the file. The token is constant for
+        // the whole walk (every `issueChunk` re-registers the same one), so persisting it ONCE
+        // here is the same value a per-chunk write would produce, minus a store hop twice a
+        // second: `begin` then takes its resume leg for the orphan instead of resolving.
+        // An expired URL still 403s, which is the existing forced re-resolve — never worse than
+        // today, and a whole file better when the token is still good.
+        await write { store in
+            // The pause write's still-running guard: a `.finished` racing this start already
+            // cleared `resumeData` on a completed row, and a token there names bytes that are gone.
+            guard let item = store.item(id: row.id), item.status == OfflineStatus.running.rawValue else { return }
+            item.resumeData = token
+            try store.save()
+        }
     }
 
     /// itag 140 for audio-only (only the VISIONOS `.hls` rung carries it), itag 18 for video (the
@@ -616,6 +656,19 @@ actor OfflineManager: OfflineSaving {
 
     private func gateAllows() async -> Bool {
         await MainActor.run { OfflineStateMachine.allowedToRun(wifiOnly: wifiOnly(), isOnCellular: isOnCellular()) }
+    }
+
+    /// R5-3: a refused user action leaves the reason on the row without touching its status — the
+    /// Saved row renders an error code whatever its status, so a Retry/Resume that does nothing
+    /// visible stops reading as a broken button. NOT used by the kill-switch refusals: that one
+    /// never announces itself (fork D). The completed guard is the `pause` write's: a `.finished`
+    /// racing the refusal's own awaits must not end up captioned "Network error".
+    private func note(_ id: String, _ code: ErrorCode) async {
+        await write { store in
+            guard let item = store.item(id: id), item.status != OfflineStatus.completed.rawValue else { return }
+            item.errorCode = code.rawValue
+            try store.save()
+        }
     }
 
     private func fail(_ id: String, _ code: ErrorCode, resumeData: Data? = nil) async {

@@ -145,17 +145,26 @@ private struct SavedRow: View {
         return item.progressFraction
     }
 
-    /// Failed rows surface their error copy (WHAT, never why); every other status shows its
-    /// status caption.
     private var caption: String {
-        guard let status else { return String(localized: "offline_error_unknown") }
-        let key = status == .failed ? SavedRowText.errorKey(item.errorCode) : SavedRowText.statusKey(status)
-        return String(localized: String.LocalizationValue(key))
+        String(localized: String.LocalizationValue(
+            SavedRowText.captionKey(status: status, errorCode: item.errorCode)))
     }
 }
 
 /// The row/status → catalog-key mappings, pure (`SavedScreenTests`).
 enum SavedRowText {
+    /// The row's caption: error copy when the row carries an error code, its status caption
+    /// otherwise (WHAT, never why).
+    ///
+    /// Cubic R5-3: this was `.failed`-only, so a refused Retry or Resume — which leaves the network
+    /// code on a row that stays cancelled or paused (`OfflineManager.note`) — was still invisible
+    /// and the button still read as broken. A code present outranks the status caption; a failed
+    /// row with no code keeps its generic copy, exactly as before.
+    static func captionKey(status: OfflineStatus?, errorCode: String?) -> String {
+        guard let status else { return "offline_error_unknown" }
+        return status == .failed || errorCode != nil ? errorKey(errorCode) : statusKey(status)
+    }
+
     /// `running` reads as "Saving…" (owner ruling: "Save for offline" language, never "Download").
     static func statusKey(_ status: OfflineStatus) -> String {
         switch status {
