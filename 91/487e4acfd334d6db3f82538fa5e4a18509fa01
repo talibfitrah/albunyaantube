@@ -1,0 +1,60 @@
+ios/FitrahTubeTests/PlayerToolbarTests.swift
+  s_66ddb7c44de816::t_ae018c5d8bf2c9 149-151
+ios/FitrahTubeTests/AccountSessionTests.swift
+  s_66ddb7c44de816::t_d5dbbb8b3a1700 1
+  s_66ddb7c44de816::t_1bd3e8c1aaee99 138
+  s_66ddb7c44de816::t_3000233357cd62 2-137,139-206
+ios/FitrahTube/Features/Auth/FirebaseAuthClient.swift
+  s_66ddb7c44de816::t_50a7e83c03e3b7 22-29,33-35,37
+ios/FitrahTube/Features/Auth/AccountStatusAlert.swift
+  s_66ddb7c44de816::t_9091330400c3fc 1-24
+ios/FitrahTubeTests/SplashRouterTests.swift
+  s_66ddb7c44de816::t_ae018c5d8bf2c9 26-27,30
+ios/FitrahTube/Features/Auth/UserScoped.swift
+  s_66ddb7c44de816::t_c6e685196b5a0e 1-14
+ios/FitrahTube/App/RootView.swift
+  s_66ddb7c44de816::t_e75c91c7000a6d 4-5,8,11,60-84,87-108,116-131
+  s_66ddb7c44de816::t_66aeb8f32409d6 85-86
+ios/FitrahTube/App/FakeAuthClient.swift
+  s_66ddb7c44de816::t_a44cc84ed94fc1 14-16,27,34-35,99,103-106
+ios/FitrahTube/Catalog/SubscriptionsStore.swift
+  s_66ddb7c44de816::t_b6f3095de25872 8
+ios/FitrahTube/Persistence/FavoritesStore.swift
+  s_66ddb7c44de816::t_b6f3095de25872 11
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_66ddb7c44de816::t_5b526f42ad3d70 1-131
+ios/FitrahTubeTests/ChannelDetailViewModelTests.swift
+  s_66ddb7c44de816::t_ae018c5d8bf2c9 74-75
+ios/FitrahTube/Features/Auth/AuthClient.swift
+  s_66ddb7c44de816::t_63207c78865a49 3,71-100,104-105,108-118,132-138
+  s_66ddb7c44de816::t_05c33bb1ef0b22 101-103,106-107
+ios/FitrahTube/Catalog/SavedPlaylistsStore.swift
+  s_66ddb7c44de816::t_b6f3095de25872 8
+ios/FitrahTubeTests/AuthClientTests.swift
+  s_66ddb7c44de816::t_8eee91eff1b214 16-18
+  s_66ddb7c44de816::t_ae018c5d8bf2c9 137
+  s_66ddb7c44de816::t_198a1b079dc3bc 11-15,19-29,32-64
+ios/FitrahTube/App/AppContainer.swift
+  s_66ddb7c44de816::t_be234de681ca0a 194-202
+  s_66ddb7c44de816::t_c68b467657e09b 191-193,203-207
+ios/FitrahTubeTests/PlaylistDetailViewModelTests.swift
+  s_66ddb7c44de816::t_ae018c5d8bf2c9 52-53
+ios/FitrahTubeTests/RootViewDestinationTests.swift
+  s_66ddb7c44de816::t_ce9eebb4596020 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "91487e4acfd334d6db3f82538fa5e4a18509fa01",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
