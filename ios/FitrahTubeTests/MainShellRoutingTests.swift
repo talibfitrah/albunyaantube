@@ -43,6 +43,12 @@ struct MainShellRoutingTests {
         #expect(leafTypeName(for: .signIn) == "SignInScreen")
     }
 
+    /// Phase 4 Task 11: the ONE new `Route` case this task adds — it lands WITH its screen, which
+    /// is what this arm pins.
+    @Test func theEmailVerificationRouteRendersTheRealScreen() {
+        #expect(leafTypeName(for: .emailVerification) == "EmailVerificationScreen")
+    }
+
     /// T0-1: `railStacks` is the only publisher of `\.tabIsSelected` — the compact `TabView` sets
     /// nothing, and neither does a sheet, a preview or a test host. So the DEFAULT is what every
     /// one of those readers gets, and it has to mean "you are on screen": `false` there would have

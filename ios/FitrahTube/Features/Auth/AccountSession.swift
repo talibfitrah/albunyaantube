@@ -131,6 +131,18 @@ nonisolated enum AccountState: Sendable, Equatable {
         }
     }
 
+    /// Task 11: the identity `AuthClient.reload()` just answered. Firebase's auth-state listener
+    /// does NOT fire when a reload flips `isEmailVerified`, so nothing else can move `user` off the
+    /// stale value — and `RootView`'s outcome reads exactly that field, which would park a
+    /// just-verified account on the verification screen forever.
+    ///
+    /// A DIFFERENT uid is refused: swapping identity is `start()`'s job, because only it re-scopes
+    /// every store first, and doing it here would render the new account against the old one's rows.
+    func adopt(_ reloaded: AuthUser) {
+        guard user?.uid == reloaded.uid else { return }
+        user = reloaded
+    }
+
     /// Sign-out ONLY: the local library is deliberately kept (`AccountRepositoryImpl.kt:44-49`).
     /// Re-scoping to `""` is what hides the account's rows behind the guest's.
     func signOut() {

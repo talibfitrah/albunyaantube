@@ -24,6 +24,7 @@ nonisolated final class FakeAuthClient: AuthClient {
         var user: AuthUser
         var scriptedErrors: [AuthErrorCode]
         var nextError: AuthErrorCode?
+        var reloadedUser: AuthUser?
         var entryPoints: [EntryPoint] = []
     }
 
@@ -46,6 +47,15 @@ nonisolated final class FakeAuthClient: AuthClient {
     var nextError: AuthErrorCode? {
         get { storage.withLock { $0.nextError } }
         set { storage.withLock { $0.nextError = newValue } }
+    }
+
+    /// Task 11: what the next `reload()` answers, when that differs from the state the fixture was
+    /// constructed with. Firebase's listener does not fire on a reload, so a real client can hold a
+    /// stale `isEmailVerified` while `reload()` returns the flipped one — this is that gap, and
+    /// `EmailVerificationViewModel` exists to close it. Unset -> `reload()` answers the current user.
+    var reloadedUser: AuthUser? {
+        get { storage.withLock { $0.reloadedUser } }
+        set { storage.withLock { $0.reloadedUser = newValue } }
     }
 
     func currentUser() async -> AuthUser? { signedInUser() }
@@ -72,7 +82,7 @@ nonisolated final class FakeAuthClient: AuthClient {
     func reload() async throws(AuthErrorCode) -> AuthUser {
         try consumeError()
         guard let user = signedInUser() else { throw AuthErrorCode.unknown }
-        return user
+        return reloadedUser ?? user
     }
 
     func deleteUser() async throws(AuthErrorCode) {

@@ -50,6 +50,10 @@ nonisolated enum Route: Hashable, Sendable {
     /// Phase 4 Task 10: the sign-in screen, pushed from the guest Me tab's card. iOS never forces
     /// it (D11 / RULING 31) — it is a destination, never a gate.
     case signIn
+    /// Phase 4 Task 11: the email-verification screen. `RootView` renders it as a ROOT destination
+    /// at launch (`SplashDestination.emailVerification`); this case is the same screen reached from
+    /// inside the shell, where the account is already past the splash.
+    case emailVerification
 }
 
 extension Route {

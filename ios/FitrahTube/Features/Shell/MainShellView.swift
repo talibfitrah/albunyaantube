@@ -200,6 +200,8 @@ struct MainShellView: View {
             SavedScreen()
         case .signIn:
             SignInScreen()
+        case .emailVerification:
+            EmailVerificationScreen()
         }
     }
 

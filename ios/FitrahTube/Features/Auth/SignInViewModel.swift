@@ -29,14 +29,15 @@ import Observation
 
     private(set) var state: UiState
 
-    /// Set ONCE, by a successful sign-in: where spec §13 says this account lands. The screen
-    /// dismisses on it; `RootView.destination(for:)` is what renders the destination, so nothing
-    /// here has to know whether Tasks 11/12 have shipped their screens yet.
+    /// Set ONCE, by a successful sign-in. **Only its non-nil-ness is behaviour**: `SignInScreen`'s
+    /// single consumer is `.onChange(of: viewModel?.landing)`, which dismisses; `RootView` then
+    /// renders where spec §13 lands the account from its OWN recomputed outcome (a computed property
+    /// over `container.session`), never from this value.
     ///
-    /// The whole `SplashOutcome`, not just its destination. Fix round 1 / M6 corrects what the
-    /// hand-off actually is: `RootView` acts on its OWN recomputed outcome (`RootView.swift`, a
-    /// computed property over `container.session`), never on this value — so `signOut`/`alert` are
-    /// carried here for this screen's own reading of the terminal rows, not for a caller elsewhere.
+    /// So why the whole `SplashOutcome` rather than the destination? Because it is what the tests
+    /// assert: storing the matrix row this sign-in produced is what lets `SignInViewModelTests` pin
+    /// Task 8's table per entry point without re-deriving the rule. **Nothing reads `signOut` or
+    /// `alert`** — `RootView` acts on its own copy of both (Task 10 re-review M6).
     private(set) var landing: SplashOutcome?
 
     /// Fix round 1 / I1: the banner cannot be driven off `state.error`. Neither pre-network gate

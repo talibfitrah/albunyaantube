@@ -69,7 +69,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     static var current: AppContainer?
 
     let catalog: any CatalogClient
-    private let userDefaults: UserDefaults
+    /// Not private (Task 11): `EmailVerificationViewModel` persists its one-auto-send-per-account
+    /// latch here, and a fixture container's screens must write to the fixture's suite rather than
+    /// the app's real domain — the same reason `fake()` takes a `defaults:` at all.
+    let userDefaults: UserDefaults
     private let modelContainer: ModelContainer
     private let apiBaseURL: URL
     /// What `offlineGate` sends over. Not private, and not a detail: a fixture container's gate

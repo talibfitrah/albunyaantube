@@ -136,10 +136,9 @@ struct RootView: View {
         switch outcome.destination {
         case .onboarding: OnboardingView()
         case .main: MainShellView()
-        // Tasks 11/12 replace this arm with the real screen
+        // Task 12 replaces this arm with the real screen
         case .profileBootstrap: MainShellView()
-        // Tasks 11/12 replace this arm with the real screen
-        case .emailVerification: MainShellView()
+        case .emailVerification: EmailVerificationScreen()
         }
     }
 }

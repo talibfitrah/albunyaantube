@@ -24,10 +24,9 @@ struct RootViewDestinationTests {
     @Test func everySplashDestinationRendersItsScreen() {
         #expect(leafTypeName(for: .onboarding) == "OnboardingView")
         #expect(leafTypeName(for: .main) == "MainShellView")
-        // Task 11 flips this to "ProfileBootstrapScreen"
+        // Task 12 flips this to "ProfileBootstrapScreen"
         #expect(leafTypeName(for: .profileBootstrap) == "MainShellView")
-        // Task 12 flips this to "EmailVerificationScreen"
-        #expect(leafTypeName(for: .emailVerification) == "MainShellView")
+        #expect(leafTypeName(for: .emailVerification) == "EmailVerificationScreen")
     }
 
     /// The terminal alert is blocked/deleted and nothing else: `.signedOut` is the user's own
