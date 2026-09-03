@@ -1,0 +1,23 @@
+ios/FitrahTube/App/RootView.swift
+  s_66ddb7c44de816::t_66f9ff4aee7f9d 68-71
+ios/FitrahTubeTests/SplashRouterTests.swift
+  s_66ddb7c44de816::t_2a6cbbdb42958c 13-123
+ios/FitrahTube/App/SplashRouter.swift
+  s_66ddb7c44de816::t_fe02820fd893db 1,7-18,22,26-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1de2f1d3a2b701b81f7047d5b0970082c2ae91f0",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
