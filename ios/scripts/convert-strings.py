@@ -42,7 +42,13 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # picker Android never had here either -- bootstrap's and the profile edit sheet's phone
           # field are both one free-text "+" field, no country selector.
           "auth_microsoft_button", "auth_microsoft_unavailable_tv", "auth_error_microsoft",
-          "bootstrap_phone_country_label", "bootstrap_error_invalid_phone_country", "edit_phone_country"}
+          "bootstrap_phone_country_label", "bootstrap_error_invalid_phone_country", "edit_phone_country",
+          # Task 9 fix round 1 / M3: these four exist ONLY in Android's values/strings.xml -- no
+          # values-ar, no values-nl -- so the en->ar/nl fallback shipped the English sentence as the
+          # Arabic and Dutch value. Task 9 is what first RENDERS them (the blocked-account alert and
+          # both `AccountSession.refresh` banners), so an Arabic user got an English dialog. Refused
+          # here and re-authored under EXTRA_KEYS, en byte-identical to Android's.
+          "account_blocked_title", "account_blocked_body", "auth_error_network", "auth_error_generic"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -516,6 +522,30 @@ EXTRA_KEYS = {
         "en": "This permanently deletes your FitrahTube account. Your name, email, phone number and date of birth are erased, along with your subscriptions, saved playlists, favourites and every video saved for offline on this device. This cannot be undone.",
         "ar": "سيؤدي هذا إلى حذف حسابك في فطرة تيوب نهائيًا. سيتم محو اسمك وبريدك الإلكتروني ورقم هاتفك وتاريخ ميلادك، إلى جانب اشتراكاتك وقوائم التشغيل المحفوظة والمفضلة وكل فيديو محفوظ دون اتصال على هذا الجهاز. لا يمكن التراجع عن هذا الإجراء.",
         "nl": "Hiermee wordt je FitrahTube-account definitief verwijderd. Je naam, e-mailadres, telefoonnummer en geboortedatum worden gewist, samen met je abonnementen, opgeslagen afspeellijsten, favorieten en elke video die op dit apparaat offline is opgeslagen. Dit kan niet ongedaan worden gemaakt.",
+    },
+    # Task 9 fix round 1 / M3. REFUSED above (Android has en only) and re-authored here with real
+    # ar/nl. The `en` values are byte-identical to android/app/src/main/res/values/strings.xml, so
+    # only the two missing locales change. Refusal copy states WHAT, never WHY: "blocked by an
+    # administrator", not the reason for the block; the two banners name the condition and stop.
+    "account_blocked_title": {
+        "en": "Account blocked",
+        "ar": "تم حظر الحساب",
+        "nl": "Account geblokkeerd",
+    },
+    "account_blocked_body": {
+        "en": "Your account has been blocked by an administrator. Contact support for details.",
+        "ar": "تم حظر حسابك من قِبَل أحد المشرفين. تواصل مع الدعم لمعرفة التفاصيل.",
+        "nl": "Je account is geblokkeerd door een beheerder. Neem contact op met support voor meer informatie.",
+    },
+    "auth_error_network": {
+        "en": "No internet connection",
+        "ar": "لا يوجد اتصال بالإنترنت",
+        "nl": "Geen internetverbinding",
+    },
+    "auth_error_generic": {
+        "en": "Something went wrong",
+        "ar": "حدث خطأ ما",
+        "nl": "Er is iets misgegaan",
     },
 }
 

@@ -65,8 +65,7 @@ struct RootView: View {
             // them, and this is the caller. `initial: true` so a launch that already resolves to a
             // blocked account drops the session on the first pass, not on the next change.
             .onChange(of: outcome, initial: true) { _, outcome in
-                if outcome.signOut { container.session.signOut() }
-                if let event = outcome.alert { alert = AccountStatusAlert(event) }
+                Self.act(on: outcome, session: container.session, alert: &alert)
             }
             // Mid-session terminal events: `AuthorizedTransport` posts the 403 account-lifecycle
             // envelope here from whatever isolation the request ran on. `consume()` clears it, so a
@@ -98,6 +97,18 @@ struct RootView: View {
                                     hasPasswordProvider: session.user?.hasPasswordProvider ?? false,
                                     isEmailVerified: session.user?.isEmailVerified ?? false,
                                     status: session.state.me?.status)
+    }
+
+    /// The two advisory legs of the outcome, extracted so `RootViewDestinationTests` can pin BOTH —
+    /// dropping a blocked account's session at launch is the one path nothing else covers.
+    ///
+    /// `static`, taking the session, rather than an instance method reading `container`:
+    /// `@Environment` is only populated while a view is being rendered, and the tests construct
+    /// `RootView()` directly. `inout` rather than a return so an outcome carrying no alert leaves one
+    /// already on screen alone.
+    static func act(on outcome: SplashOutcome, session: AccountSession, alert: inout AccountStatusAlert?) {
+        if outcome.signOut { session.signOut() }
+        if let event = outcome.alert { alert = AccountStatusAlert(event) }
     }
 
     private func dropToGuest() {

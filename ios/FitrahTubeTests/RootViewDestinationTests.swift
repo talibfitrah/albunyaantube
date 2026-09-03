@@ -39,4 +39,28 @@ struct RootViewDestinationTests {
                 == AccountStatusAlert(titleKey: "account_deleted_title", bodyKey: "account_deleted_body"))
         #expect(AccountStatusAlert(.signedOut) == nil)
     }
+
+    /// Fix round 1 / I3. `signOut`/`alert` are ADVISORY on the outcome (Task 8) — `RootView` is the
+    /// caller that must act on both, and the dispatch said "its tests must pin both". Only the alert
+    /// MAPPING was pinned (above, as data); the leg that actually drops a blocked account's session at
+    /// launch was untested. `RootView.act` is the seam that makes it reachable: static and taking the
+    /// session, because `@Environment` is only populated while a view is being rendered and these
+    /// tests construct `RootView()` directly.
+    @Test @MainActor func theOutcomeAdvisoriesDropTheSessionAndRaiseTheAlert() async {
+        let container = AppContainer.fake(auth: FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser)))
+        let session = container.session
+        await session.refresh()
+        #expect(session.state.me != nil, "the fixture container answers one canned /me")
+
+        var alert: AccountStatusAlert?
+        RootView.act(on: SplashOutcome(destination: .main), session: session, alert: &alert)
+        #expect(session.state.me != nil, "a plain .main outcome touches neither leg")
+        #expect(alert == nil)
+
+        RootView.act(on: SplashOutcome(destination: .main, signOut: true, alert: .blocked),
+                     session: session, alert: &alert)
+        #expect(session.state == .signedOut)
+        #expect(await container.auth.currentUser() == nil, "the auth client was signed out, not just the state")
+        #expect(alert == AccountStatusAlert(.blocked))
+    }
 }

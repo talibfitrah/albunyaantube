@@ -91,13 +91,16 @@ nonisolated final class AuthStateBroadcaster: Sendable {
     var stream: AsyncStream<AuthState> {
         let id = UUID()
         let (stream, continuation) = AsyncStream<AuthState>.makeStream()
-        let current = storage.withLock { storage -> AuthState in
-            storage.observers[id] = continuation
-            return storage.current
-        }
         // Firebase's listener delivers the current state on registration; so does every subscriber
         // here, so a late subscriber is never left with no state at all.
-        continuation.yield(current)
+        //
+        // Fix round 1 / I2: the replay yields INSIDE the lock. Registering under it and yielding
+        // after left a window in which a `send(S1)` delivered S1 to this brand-new subscriber before
+        // its own replayed S0, leaving the stale state last. `yield` does not re-enter the lock.
+        storage.withLock { storage in
+            storage.observers[id] = continuation
+            continuation.yield(storage.current)
+        }
         // `[weak self]`, not `[storage]`: `Mutex` is `~Copyable`, so capturing it directly is a
         // consume the compiler refuses.
         continuation.onTermination = { [weak self] _ in self?.remove(id) }
@@ -106,13 +109,14 @@ nonisolated final class AuthStateBroadcaster: Sendable {
 
     private func remove(_ id: UUID) { storage.withLock { _ = $0.observers.removeValue(forKey: id) } }
 
+    /// Fix round 1 / I2: "become current" and "tell everyone" happen under ONE lock acquisition, so
+    /// two concurrent `send`s cannot invert each other's deliveries.
     func send(_ state: AuthState) {
-        let observers = storage.withLock { storage -> [AsyncStream<AuthState>.Continuation] in
-            guard storage.current != state else { return [] }
+        storage.withLock { storage in
+            guard storage.current != state else { return }
             storage.current = state
-            return Array(storage.observers.values)
+            storage.observers.values.forEach { $0.yield(state) }
         }
-        observers.forEach { $0.yield(state) }
     }
 }
 

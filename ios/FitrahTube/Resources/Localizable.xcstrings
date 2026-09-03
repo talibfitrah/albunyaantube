@@ -313,8 +313,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Your account has been blocked by an administrator. Contact support for details."
+            "state": "translated",
+            "value": "تم حظر حسابك من قِبَل أحد المشرفين. تواصل مع الدعم لمعرفة التفاصيل."
           }
         },
         "en": {
@@ -325,8 +325,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Your account has been blocked by an administrator. Contact support for details."
+            "state": "translated",
+            "value": "Je account is geblokkeerd door een beheerder. Neem contact op met support voor meer informatie."
           }
         }
       }
@@ -335,8 +335,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Account blocked"
+            "state": "translated",
+            "value": "تم حظر الحساب"
           }
         },
         "en": {
@@ -347,8 +347,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Account blocked"
+            "state": "translated",
+            "value": "Account geblokkeerd"
           }
         }
       }
@@ -688,8 +688,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Something went wrong"
+            "state": "translated",
+            "value": "حدث خطأ ما"
           }
         },
         "en": {
@@ -700,8 +700,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Something went wrong"
+            "state": "translated",
+            "value": "Er is iets misgegaan"
           }
         }
       }
@@ -776,8 +776,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "No internet connection"
+            "state": "translated",
+            "value": "لا يوجد اتصال بالإنترنت"
           }
         },
         "en": {
@@ -788,8 +788,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "No internet connection"
+            "state": "translated",
+            "value": "Geen internetverbinding"
           }
         }
       }

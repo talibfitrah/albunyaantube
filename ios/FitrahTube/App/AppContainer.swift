@@ -191,7 +191,18 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// Phase 4 Task 9: the ONE holder of account state, and the only thing that writes
     /// `currentUserId`. Started by `RootView`'s `.task`.
     private(set) lazy var session = AccountSession(auth: auth, account: account, stores: userScopedStores,
-                                                   status: accountStatus, sleep: Self.realSleep)
+                                                   status: accountStatus, sleep: sessionSleep)
+
+    /// Fix round 1 / M5: a FIXTURE never burns real wall clock. Its `authorizedTransport` holds one
+    /// canned `/me`, so a second refresh in a preview or the screenshot rig throws `exhausted` ->
+    /// `.network` -> three attempts through `realSleep`, i.e. 3 s of the rig's time waiting on a
+    /// retry that can only fail again.
+    private var sessionSleep: @Sendable (Duration) async -> Void {
+        #if DEBUG
+        if isFixture { return Self.noSleep }
+        #endif
+        return Self.realSleep
+    }
 
     /// A named `nonisolated static` rather than a closure literal: under
     /// `SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor` a literal written here is inferred main-actor
@@ -201,9 +212,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         try? await Task.sleep(for: duration)
     }
 
+    /// Named `nonisolated static` for the same reason `realSleep` is — a closure literal written in
+    /// this type is inferred main-actor isolated and cannot satisfy a nonisolated `@Sendable`.
+    private nonisolated static func noSleep(_ duration: Duration) async {}
+
     /// Every per-user local store, in ONE list. A store added here is re-scoped on every auth
     /// change for free; a store that is not is the bug this list exists to make visible.
-    var userScopedStores: [any UserScoped] { [favorites, savedPlaylists, subscriptions] }
+    private var userScopedStores: [any UserScoped] { [favorites, savedPlaylists, subscriptions] }
 
     #if DEBUG
     /// What a fixture container's `GET /api/account/me` answers. Task 13's `-fitrah-fake-account`

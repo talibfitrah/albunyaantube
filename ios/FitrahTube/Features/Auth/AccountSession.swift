@@ -78,13 +78,23 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // "Something went wrong" over a dead account is the wrong end state, not a banner.
                 case .blocked: handle(.blocked)
                 case .deletedAccount: handle(.deleted)
-                // A bare 401 survives `BearerRetry` only when the signed-in identity changed between
-                // the first attempt and the retry (Task 7). That is "re-drive under the current
-                // account", never an error banner: the auth stream is already carrying the new
-                // identity and `start()` refreshes again the moment it settles.
-                case .unknown(status: 401): state = .loading
+                // Fix round 1 / I1: BOUNDED. `BearerRetry` surfaces a bare 401 in THREE cases —
+                // the cross-account identity change (Task 7), `token(true)` returning nil (the
+                // ordinary expired/failed-refresh path), and a freshly refreshed token still being
+                // rejected. Only the first is followed by an auth transition, so parking at
+                // `.loading` and waiting for the stream hung the other two forever: signed-in user,
+                // no `/me`, no banner, and `RootView` rendering them as a guest with no explanation.
+                // So: re-drive inside the budget (a new token may be minted between sends), then
+                // fall through to `.unknown(let status)` and fail. No backoff — a rejected token is
+                // not a network stall, and waiting does not make it acceptable.
+                case .unknown(status: 401) where attempt < maxAttempts: continue
                 case .network where attempt < maxAttempts:
                     await sleep(.seconds(attempt))
+                    // Fix round 1 / M4: `AccountClient.send` maps `CancellationError` to `.network`
+                    // by design and the real sleep's `try?` swallows the cancellation, so a screen
+                    // that went away mid-refresh used to burn all three attempts and land on "No
+                    // internet connection" — a banner over a session nobody is watching.
+                    if Task.isCancelled { return }
                     continue
                 case .network: state = .failed(code: nil, message: String(localized: "auth_error_network"))
                 case .unknown(let status): state = .failed(code: status, message: String(localized: "auth_error_generic"))

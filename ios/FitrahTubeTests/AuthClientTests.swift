@@ -63,6 +63,33 @@ import Testing
     }
 
 
+    /// Fix round 1 / I2. `AuthStateBroadcaster` registered the new observer and read `current` under
+    /// the mutex but yielded the replay AFTER releasing it, and `send` snapshotted the observers under
+    /// the mutex and yielded after — so a `send(S1)` landing in either window delivered S1 to a new
+    /// subscriber BEFORE its replayed S0, leaving the stale state last. Both yields now happen inside
+    /// `withLock`, which serializes "become current" with "tell everyone".
+    ///
+    /// **No deterministic red exists for the race itself**: the window is between a `withLock`
+    /// returning and the next statement, with no seam to interpose on, and a stress loop would be a
+    /// flaky test rather than a proof. What is pinned instead is the CONTRACT the fix makes total —
+    /// a stream opened after a transition replays the NEW state, and an existing subscriber sees the
+    /// two in order.
+    @Test func aStreamOpenedAfterATransitionReplaysTheNewStateAndTheOldSubscriberSeesBothInOrder() async throws {
+        let client = FakeAuthClient(state: .signedOut, user: Self.user)
+        let existing = Collector(client.state)
+        await existing.wait(for: 1)
+
+        let signedIn = try await client.signIn(email: "student@fitrah.test", password: "hunter2")
+        await existing.wait(for: 2)
+
+        let late = Collector(client.state)
+        await late.wait(for: 1)
+        await late.settle()
+        #expect(late.seen == [.signedIn(signedIn)], "a late subscriber replays the CURRENT state, once")
+        #expect(existing.seen == [.signedOut, .signedIn(signedIn)], "and in order, never inverted")
+    }
+
+
     /// The stream is 1:1 with Firebase's auth-state listener: the CURRENT state first, then one
     /// element per transition. Buffering is unbounded, so a yield that lands before the consumer
     /// starts is still delivered — no rendezvous, no sleep.

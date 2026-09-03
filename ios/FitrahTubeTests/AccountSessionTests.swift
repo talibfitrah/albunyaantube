@@ -111,22 +111,62 @@ struct AccountSessionTests {
 
         #expect(transport.sent.count == 1)
         #expect(sleeps.recorded.isEmpty)
-        #expect(session.state.me == nil)
+        // Fix round 1 / M1: `me == nil` alone is also true of a `.loading` park, which is exactly the
+        // end state the 401 arm used to reach — so the failure itself is asserted. 400/422 map to
+        // `AccountError.validation`, which lands on `refresh`'s `default:` arm and carries no code;
+        // 404/500/503 map to `.unknown(status:)` and carry theirs.
+        let code = [400, 422].contains(status) ? nil : status
+        #expect(session.state == .failed(code: code, message: String(localized: "auth_error_generic")))
     }
 
-    /// Task 7 addendum: a bare 401 survives `BearerRetry` only when the signed-in identity changed
-    /// between the first attempt and the retry. That is "re-drive under the current account" — never
-    /// an error banner, and never a retry against the identity that just went away.
-    @Test func aCrossAccount401IsNotAnErrorBanner() async {
+    /// Fix round 1 / I1 + M2. `BearerRetry` surfaces a bare 401 in THREE cases, not the one the
+    /// Task 7 addendum described: the cross-account identity change, `token(true)` returning nil (the
+    /// ordinary expired/failed-refresh path), and a freshly refreshed token still being rejected.
+    /// Only the first is followed by an auth transition, so parking at `.loading` and waiting for the
+    /// stream hung the other two forever — signed-in user, no `/me`, no banner, no escape.
+    ///
+    /// So the park is BOUNDED: re-drive inside the retry budget (a new token may be minted between
+    /// sends), then fail. No sleep — a 401 is not a network stall, and nothing about waiting makes a
+    /// rejected token acceptable.
+    @Test func aBare401ParksThenFailsWithinTheBudget() async {
         let sleeps = SleepRecorder()
+        let bare401 = { HTTPResponse.json(401, "{}") }
         let (session, _, transport, _) = make(auth: FakeAuthClient(state: .signedOut),
-                                              responses: [.json(401, "{}"), .json(200, Self.meJSON)],
-                                              sleeps: sleeps)
+                                              responses: [bare401(), bare401(), bare401()], sleeps: sleeps)
         await session.refresh()
 
-        #expect(transport.sent.count == 1)
-        #expect(sleeps.recorded.isEmpty)
-        #expect(session.state == .loading, "a 401 leaves the session waiting for the auth stream, not failed")
+        // 3 sends, not 2: attempts 1 and 2 re-drive, attempt 3 is the last of the budget and fails.
+        #expect(transport.sent.count == 3)
+        #expect(sleeps.recorded.isEmpty, "a 401 re-drives immediately — backoff is for transport errors")
+        #expect(session.state == .failed(code: 401, message: String(localized: "auth_error_generic")))
+    }
+
+    /// The half of the old behaviour worth keeping: the FIRST 401 is not an error banner. A token
+    /// minted between the two sends still lands the account.
+    @Test func aBare401FollowedByASuccessLoadsTheAccount() async {
+        let (session, _, transport, _) = make(auth: FakeAuthClient(state: .signedOut),
+                                              responses: [.json(401, "{}"), .json(200, Self.meJSON)])
+        await session.refresh()
+
+        #expect(transport.sent.count == 2)
+        #expect(session.state.me?.uid == "fake-uid")
+    }
+
+    /// M4: a cancelled refresh must not burn its budget into a network banner. `AccountClient.send`
+    /// maps `CancellationError` to `.network` by design and `realSleep`'s `try?` swallows the
+    /// cancellation, so a `RootView` disappearing mid-refresh used to run three instant attempts and
+    /// end on "No internet connection" — over a session nobody is watching any more.
+    @Test func aCancelledRefreshStopsAtTheSleepInsteadOfBanneringTheNetwork() async {
+        let sleeps = SleepRecorder()
+        let failure = { HTTPResponse.failing(URLError(.notConnectedToInternet)) }
+        let (session, _, transport, _) = make(auth: FakeAuthClient(state: .signedOut),
+                                              responses: [failure(), failure(), failure()], sleeps: sleeps)
+        let running = Task { await session.refresh() }
+        running.cancel()
+        await running.value
+
+        #expect(transport.sent.count == 1, "the cancelled refresh does not re-drive")
+        #expect(session.state == .loading, "cancelled, not failed — no banner over an abandoned screen")
     }
 
     /// A terminal 403 envelope reaching the client directly drops the session. `AuthorizedTransport`
