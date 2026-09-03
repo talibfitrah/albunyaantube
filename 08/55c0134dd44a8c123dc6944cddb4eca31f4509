@@ -1,0 +1,56 @@
+ios/FitrahTube/Features/Auth/OAuthSignInProvider.swift
+  s_66ddb7c44de816::t_2a5a5452e82d8f 10-24
+ios/FitrahTubeTests/Support/TestDoubles.swift
+  s_66ddb7c44de816::t_b533cf8475898f 75-78,82-83,90-91,95,98,100-102
+ios/FitrahTube/App/Route.swift
+  s_66ddb7c44de816::t_d21c0fca8f879f 50-52
+ios/FitrahTube/Features/Shell/MainShellView.swift
+  s_66ddb7c44de816::t_d21c0fca8f879f 201-202
+ios/FitrahTubeTests/SignInViewModelTests.swift
+  s_66ddb7c44de816::t_e7b9f069a4b1dd 1
+  s_66ddb7c44de816::t_223d94069df0ba 2-296
+ios/FitrahTube/Features/Auth/GoogleAuthProvider.swift
+  s_66ddb7c44de816::t_1f7be0151979d3 22,27,31,36-37,39-47
+ios/FitrahTubeTests/SignInCapabilitiesTests.swift
+  s_66ddb7c44de816::t_a3b648b10dd96f 64,82,103,119
+ios/FitrahTube/Features/Auth/AppleAuthProvider.swift
+  s_66ddb7c44de816::t_335b6f2307d5bf 50
+  s_66ddb7c44de816::t_d4a0b5869af185 69,72-73,75-84
+  s_66ddb7c44de816::t_ac7a7f4f896c97 37,39-41
+ios/FitrahTube/Features/Auth/SignInViewModel.swift
+  s_66ddb7c44de816::t_a8c1fd6ab4b800 95
+  s_66ddb7c44de816::t_9a2bc7ef91fa3e 90-94
+  s_66ddb7c44de816::t_1b6c1b958265e5 1-89,96-181
+ios/FitrahTube/Features/Auth/SignInScreen.swift
+  s_66ddb7c44de816::t_0c9ceab8c4c859 1-46,50-55,58-64,66-70,72-83,87-93,97-106,108,110-125,129,136-170,172-177,183-188,190-191,200-228
+  s_66ddb7c44de816::t_9771e2c73f5219 47-49,56-57,65,71,84-86,94-96,107,109,126-128,130-135,171,178-182,189,192-199
+ios/FitrahTube/Features/Me/MeGuestView.swift
+  s_66ddb7c44de816::t_37a6cf73ed57a4 5-6
+  s_66ddb7c44de816::t_16b29fef5d17b1 56-58
+ios/FitrahTubeTests/AuthErrorMappingTests.swift
+  s_66ddb7c44de816::t_a3b648b10dd96f 67-68,70
+ios/scripts/convert-strings.py
+  s_66ddb7c44de816::t_8e993e9892041e 274-284
+ios/FitrahTubeTests/MainShellRoutingTests.swift
+  s_66ddb7c44de816::t_a14d47fca74f99 40-45
+ios/FitrahTube/Features/Auth/EmailShape.swift
+  s_66ddb7c44de816::t_99cb01313ba076 1-20
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_66ddb7c44de816::t_cd5413064b77db 555-576,643-660
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0855c0134dd44a8c123dc6944cddb4eca31f4509",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
