@@ -136,6 +136,24 @@ struct EmailVerificationViewModelTests {
         #expect(fixture.defaults.object(forKey: Self.key) as? Date == fixture.clock.now)
     }
 
+    /// The elapsed label is the DISABLED Resend button's explanation, so it has to stop where the
+    /// cooldown does: past the boundary it read "Last sent 612 seconds ago" beside an ENABLED
+    /// button, and was that button's `accessibilityValue` (fix round 1 / M1).
+    @Test func theElapsedLabelStopsAtTheCooldownBoundary() async {
+        let auth = FakeAuthClient(state: .signedIn(Self.unverified))
+        let fixture = make(auth: auth, seedLastSentAt: Self.t0)
+        defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
+        await fixture.model.send()
+
+        fixture.clock.advance(30)
+        #expect(fixture.model.secondsSinceLastSend(at: fixture.clock.now) == 30)
+
+        fixture.clock.advance(EmailVerificationViewModel.cooldown - 30)
+        #expect(fixture.model.canResend(at: fixture.clock.now))
+        #expect(fixture.model.secondsSinceLastSend(at: fixture.clock.now) == nil,
+                "the elapsed label outlived the cooldown it explains")
+    }
+
     // MARK: - Backend first, Firebase only on an unsuccessful backend response
 
     @Test func aSuccessfulBackendSendNeverAsksFirebase() async {
@@ -181,6 +199,23 @@ struct EmailVerificationViewModelTests {
 
         #expect(fixture.model.state.error == .rateLimited)
         #expect(auth.nextError == .unknown, "a 429 fell through to Firebase")
+        #expect(fixture.model.state.lastSentAt == nil)
+    }
+
+    /// D2's argument — routing around the server's own ruling defeats it — applies at least as hard
+    /// to a 403 account-lifecycle envelope as to a 429: an account the backend has just refused to
+    /// act for must not be mailed by Firebase behind its back (fix round 1 / M4).
+    @Test(arguments: ["ACCOUNT_BLOCKED", "ACCOUNT_DELETED"])
+    func aTerminal403NeverReachesTheFirebaseFallback(code: String) async {
+        let auth = FakeAuthClient(state: .signedIn(Self.unverified))
+        auth.nextError = .unknown
+        let fixture = make(auth: auth, responses: [.json(403, #"{"code":"\#(code)"}"#)])
+        defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
+
+        await fixture.model.send()
+
+        #expect(auth.nextError == .unknown, "a terminal 403 fell through to Firebase")
+        #expect(fixture.model.state.error == .unknown)
         #expect(fixture.model.state.lastSentAt == nil)
     }
 

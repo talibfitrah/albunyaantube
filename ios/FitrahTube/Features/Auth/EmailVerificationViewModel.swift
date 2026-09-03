@@ -78,18 +78,26 @@ import Observation
         await performSend()
     }
 
-    /// The ONE cooldown rule, shared by `resend()` and the screen's disabled state so the button and
-    /// the refusal can never disagree. `>=`: Android's gate is `now - last < COOLDOWN_MS`, so the
-    /// boundary itself sends.
+    /// The ONE cooldown rule, shared by `resend()` and the screen's disabled state. `>=`: Android's
+    /// gate is `now - last < COOLDOWN_MS`, so the boundary itself sends.
+    ///
+    /// The two callers read DIFFERENT clocks — the screen passes `TimelineView`'s wall clock, this
+    /// object's own `resend()` passes the injected `now()`. In production both are `Date()` and the
+    /// button and the refusal agree; under an injected clock they can diverge by design, which is
+    /// what lets a test sit inside the cooldown without waiting one real second (fix round 1 / M5).
     func canResend(at date: Date) -> Bool {
         guard let lastSentAt = state.lastSentAt else { return true }
         return date.timeIntervalSince(lastSentAt) >= Self.cooldown
     }
 
     /// Whole seconds since the last send, for `email_verification_last_sent`; nil when nothing has
-    /// been sent yet.
+    /// been sent yet AND once the cooldown has lapsed. The label exists to explain why Resend is
+    /// unavailable, so it stops where the unavailability does — otherwise it grew forever
+    /// ("Last sent 612 seconds ago") beside an enabled button, and was that button's
+    /// `accessibilityValue` (fix round 1 / M1).
     func secondsSinceLastSend(at date: Date) -> Int? {
-        state.lastSentAt.map { max(0, Int(date.timeIntervalSince($0))) }
+        guard !canResend(at: date) else { return nil }
+        return state.lastSentAt.map { max(0, Int(date.timeIntervalSince($0))) }
     }
 
     /// `reload()` then the flag (`EmailVerificationViewModel.kt:71-84`). Returns whether the account
@@ -158,6 +166,11 @@ import Observation
     ///     a second doomed call (Android's `IOException` leg escapes ahead of the fallback too).
     ///   - `.rateLimited` — 429 IS the backend's own 60 s per-uid limit; routing around it through
     ///     Firebase would defeat the server-side rule this screen's cooldown mirrors.
+    ///   - `.blocked` / `.deletedAccount` — the same argument, harder: the 403 account-lifecycle
+    ///     envelope is the backend refusing to act for this account at all, so mailing it through
+    ///     Firebase behind the server's back is exactly the thing the ruling forbids (fix round 1 /
+    ///     M4). `.unknown` rather than a sentence of its own: `AccountStatusCenter` owns the
+    ///     terminal routing, and this screen must not name the reason.
     private func sendOnce() async -> EmailVerifyError? {
         do {
             try await account.sendVerificationEmail()
@@ -166,6 +179,7 @@ import Observation
             switch error {
             case .network: return .network
             case .rateLimited: return .rateLimited
+            case .blocked, .deletedAccount: return .unknown
             default: break
             }
         }

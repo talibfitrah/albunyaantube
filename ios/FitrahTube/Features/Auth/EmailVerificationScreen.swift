@@ -12,6 +12,7 @@ struct EmailVerificationScreen: View {
     @Environment(\.locale) private var locale
 
     @State private var viewModel: EmailVerificationViewModel?
+    @State private var banner: BannerMessage?
 
     var body: some View {
         ScrollView {
@@ -19,6 +20,19 @@ struct EmailVerificationScreen: View {
         }
         .background(Color.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
+        // Fix round 1 / I1: the outcome of "I've verified my email" used to be a bare inline `Text`
+        // below the button, so VoiceOver — whose focus stays on the button, and whose value goes
+        // "" -> "Loading…" -> "" — heard the spinner start and then nothing at all. The banner is
+        // the app's ONE feedback path for this class of result (`SignInScreen`, `PlayerScreen`) and
+        // it posts an `AccessibilityNotification.Announcement`; a second path would be a second
+        // thing to keep in step. A REPEATED outcome still announces: every arm the screen can reach
+        // is written after an explicit `state.error = nil`, and the one arm that is not
+        // (`resend()`'s pre-network refusal) is unreachable while the button it guards is disabled.
+        .transientBanner($banner)
+        .onChange(of: viewModel?.state.error) { _, error in
+            guard let key = errorKey(error ?? nil) else { return }
+            banner = BannerMessage(text: String(localized: String.LocalizationValue(key)))
+        }
         .task {
             if viewModel == nil {
                 viewModel = EmailVerificationViewModel(auth: container.auth, session: container.session,
@@ -55,12 +69,6 @@ struct EmailVerificationScreen: View {
                 // cooldown lapses, with no timer object to own or cancel.
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     resendSection(viewModel, at: context.date)
-                }
-                if let message = errorKey(viewModel.state.error) {
-                    Text(String(localized: String.LocalizationValue(message)))
-                        .font(TypeScale.body(widthClass))
-                        .foregroundStyle(Color.errorText)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 signOutButton(viewModel)
             }
@@ -162,18 +170,27 @@ struct EmailVerificationScreen: View {
 }
 
 #if DEBUG
+/// Fix round 1 / M2: its OWN suite per `AppContainer.fake(defaults:)`'s contract — this screen
+/// WRITES the auto-send latch through the container's defaults, and the shared "fitrahtube.fake"
+/// suite would carry it into every other preview (and back into the second run of this one, which
+/// then opens on a stale countdown having auto-sent nothing).
+private func previewDefaults(_ name: String) -> UserDefaults {
+    UserDefaults(suiteName: "fitrahtube.preview.emailVerification.\(name)") ?? .standard
+}
+
+private let previewUser = AuthUser(uid: "preview", email: "student@fitrah.test",
+                                   isEmailVerified: false, providerIDs: ["password"])
+
 #Preview {
     EmailVerificationScreen()
-        .environment(\.container, .fake(auth: FakeAuthClient(
-            state: .signedIn(AuthUser(uid: "preview", email: "student@fitrah.test",
-                                      isEmailVerified: false, providerIDs: ["password"])))))
+        .environment(\.container, .fake(defaults: previewDefaults("ltr"),
+                                       auth: FakeAuthClient(state: .signedIn(previewUser))))
 }
 
 #Preview("RTL") {
     EmailVerificationScreen()
-        .environment(\.container, .fake(auth: FakeAuthClient(
-            state: .signedIn(AuthUser(uid: "preview", email: "student@fitrah.test",
-                                      isEmailVerified: false, providerIDs: ["password"])))))
+        .environment(\.container, .fake(defaults: previewDefaults("rtl"),
+                                       auth: FakeAuthClient(state: .signedIn(previewUser))))
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }

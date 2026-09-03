@@ -83,6 +83,25 @@ struct AccountSessionTests {
         #expect(stores[0].scopes.map(\.uid) == ["fake-uid", ""])
     }
 
+    /// Task 11's `adopt(_:)` REFRESHES the signed-in identity; swapping identity is `start()`'s job,
+    /// because only it re-scopes every per-user store first. A foreign uid is therefore refused
+    /// outright, or the new account would render against the previous one's rows (fix round 1 / M3).
+    @Test func adoptingADifferentUidLeavesTheSessionIdentityAlone() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let (session, stores, _, _) = make(auth: auth, responses: [.json(200, Self.meJSON)])
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+        let before = session.user
+        #expect(before?.uid == "fake-uid")
+
+        session.adopt(AuthUser(uid: "someone-else", email: "other@fitrah.test",
+                               isEmailVerified: !(before?.isEmailVerified ?? false),
+                               providerIDs: ["password"]))
+
+        #expect(session.user == before, "a foreign identity was adopted")
+        #expect(stores.allSatisfy { $0.currentUserId == "fake-uid" }, "the stores were left on the old uid")
+    }
+
     // MARK: - The retry budget
 
     /// `MAX_ATTEMPTS = 3`, linear backoff `1 s * attempt` (`AccountRepositoryImpl.kt:111-147`) —
