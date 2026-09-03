@@ -64,6 +64,11 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
     /// `AccountClient` still sees the 403 and maps it to `.blocked`/`.deletedAccount`.
     private func postStatusEvent(for request: HTTPRequest, _ response: HTTPResponse) {
         guard response.status == 403 else { return }
+        // Task 7 review I2: the path prefix is only half the rule. This transport is shared and
+        // handed arbitrary URLs, so a foreign host answering the same envelope on an honoured path
+        // could otherwise sign the user out. Same `BearerScope` as the signing decision above —
+        // never a second host rule.
+        guard BearerScope.allows(request.url, apiHost: apiHost) else { return }
         let path = request.url.path()
         guard Self.envelopePaths.contains(where: path.hasPrefix) else { return }
         let peek = response.body.prefix(Self.maxPeekBytes)

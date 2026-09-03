@@ -138,4 +138,17 @@ struct AuthorizedTransportTests {
             #expect(events.posted.isEmpty, "\(path) must not be checked")
         }
     }
+
+    /// Task 7 review I2: the path prefix is only half the rule. This transport is SHARED and handed
+    /// arbitrary URLs (`theBearerReachesTheApiHostAndNeverYouTube` pushes YouTube through the same
+    /// instance), so an honoured path on a foreign host answering the same envelope must post
+    /// nothing — signing is per-request-host and sign-out has to be too, via the same `BearerScope`.
+    @Test func theEnvelopeCheckIgnoresForeignHosts() async throws {
+        let envelope = #"{"code":"ACCOUNT_BLOCKED"}"#
+        for path in ["/api/admin/users", "/api/v1/videos", "/api/account/me", "/api/share-metadata/abc"] {
+            let (authorized, _, events) = transport([.json(403, envelope)])
+            _ = try await authorized.send(request(path, host: "evil.example"))
+            #expect(events.posted.isEmpty, "\(path) on a foreign host must not sign the user out")
+        }
+    }
 }

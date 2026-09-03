@@ -147,4 +147,17 @@ struct BearerRetryTests {
         #expect(recorder.sent == [1], "account A's request must not be replayed with account B's token")
         #expect(response == true, "the original 401 surfaces instead")
     }
+
+    /// (9) Task 7 review I1 — the cross-account guard must NOT also kill the unsigned-first retry.
+    /// When `token(false)` returned nil (a transient `getIDToken` failure — the case the file's doc
+    /// comment at `:6-9` promises) attempt 1 went out unsigned, so there is no account A to leak
+    /// FROM and nothing for the guard to protect. Comparing `nil` against the refreshed identity
+    /// dropped the single most valuable retry in the machine.
+    @Test func anUnsignedFirstAttemptStillRetriesWithTheRefreshedToken() async {
+        let recorder = Recorder()
+        let response = await run(tokens: [nil, "2"], responses: [true, false], into: recorder)
+        #expect(recorder.tokenCalls == [false, true])
+        #expect(recorder.sent == [0, 2], "the unsigned first attempt must be retried, signed")
+        #expect(response == false)
+    }
 }

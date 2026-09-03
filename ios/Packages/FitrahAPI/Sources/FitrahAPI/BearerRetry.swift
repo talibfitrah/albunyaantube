@@ -36,8 +36,10 @@ public nonisolated enum BearerRetry {
         // while this request was in flight), the refreshed bearer belongs to a DIFFERENT user and
         // replaying account A's request with it would leak across accounts
         // (`FirebaseAuthInterceptor.kt:131-143`). Surface the original 401 instead and let the
-        // caller re-drive the request under the new account.
-        guard refreshed.identity == first?.identity else { return response }
+        // caller re-drive the request under the new account. Task 7 review I1: only when attempt 1
+        // WAS signed — an unsigned first attempt (`token(false)` nil) has no account to leak from,
+        // and comparing nil against the refreshed identity killed that retry outright.
+        guard first == nil || refreshed.identity == first?.identity else { return response }
         return try await send(sign(request, refreshed.value))
     }
 }
