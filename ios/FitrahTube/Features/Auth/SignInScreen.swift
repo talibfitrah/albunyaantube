@@ -209,9 +209,11 @@ struct SignInScreen: View {
     }
 }
 
-private extension View {
-    /// One field chrome for both text fields — RTL-safe (no leading/trailing literals) and tall
-    /// enough for the 44 pt floor at every Dynamic Type size.
+extension View {
+    /// One field chrome for every auth/bootstrap text field — RTL-safe (no leading/trailing
+    /// literals) and tall enough for the 44 pt floor at every Dynamic Type size. Internal, not
+    /// file-private, since Task 12: `ProfileBootstrapScreen`'s fields are the same chrome, and a
+    /// second copy is a second thing to keep in step with the 44 pt floor.
     func fieldChrome(_ widthClass: WidthClass) -> some View {
         textFieldStyle(.plain)
             .font(TypeScale.body(widthClass))

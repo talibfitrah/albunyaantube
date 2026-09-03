@@ -202,6 +202,10 @@ struct MainShellView: View {
             SignInScreen()
         case .emailVerification:
             EmailVerificationScreen()
+        case .profileBootstrap:
+            ProfileBootstrapScreen()
+        case .ageIneligible:
+            AgeIneligibleScreen()
         }
     }
 

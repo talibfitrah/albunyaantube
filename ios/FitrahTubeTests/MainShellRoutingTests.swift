@@ -49,6 +49,15 @@ struct MainShellRoutingTests {
         #expect(leafTypeName(for: .emailVerification) == "EmailVerificationScreen")
     }
 
+    /// Phase 4 Task 12: the TWO new `Route` cases this task adds — both land WITH their screens.
+    @Test func theProfileBootstrapRouteRendersTheRealScreen() {
+        #expect(leafTypeName(for: .profileBootstrap) == "ProfileBootstrapScreen")
+    }
+
+    @Test func theAgeIneligibleRouteRendersTheRealScreen() {
+        #expect(leafTypeName(for: .ageIneligible) == "AgeIneligibleScreen")
+    }
+
     /// T0-1: `railStacks` is the only publisher of `\.tabIsSelected` — the compact `TabView` sets
     /// nothing, and neither does a sheet, a preview or a test host. So the DEFAULT is what every
     /// one of those readers gets, and it has to mean "you are on screen": `false` there would have

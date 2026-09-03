@@ -424,7 +424,7 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "FitrahTube is for users 13 and older. Please come back when you're a bit older."
+            "value": "FitrahTube مخصص للمستخدمين من عمر 13 فأكثر. يرجى العودة عندما تكبر قليلًا."
           }
         },
         "en": {
@@ -436,7 +436,7 @@
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "FitrahTube is for users 13 and older. Please come back when you're a bit older."
+            "value": "FitrahTube is voor gebruikers van 13 jaar en ouder. Kom terug wanneer je wat ouder bent."
           }
         }
       }
@@ -467,8 +467,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sorry — come back soon"
+            "state": "translated",
+            "value": "عذرًا — عد إلينا قريبًا"
           }
         },
         "en": {
@@ -479,8 +479,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sorry — come back soon"
+            "state": "translated",
+            "value": "Sorry — kom snel terug"
           }
         }
       }
@@ -1172,8 +1172,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Display name"
+            "state": "translated",
+            "value": "الاسم المعروض"
           }
         },
         "en": {
@@ -1184,8 +1184,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Display name"
+            "state": "translated",
+            "value": "Weergavenaam"
           }
         }
       }
@@ -1194,8 +1194,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "What should we call you?"
+            "state": "translated",
+            "value": "بماذا نناديك؟"
           }
         },
         "en": {
@@ -1206,8 +1206,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "What should we call you?"
+            "state": "translated",
+            "value": "Hoe mogen we je noemen?"
           }
         }
       }
@@ -1216,8 +1216,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Tap to select"
+            "state": "translated",
+            "value": "اضغط للاختيار"
           }
         },
         "en": {
@@ -1228,8 +1228,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Tap to select"
+            "state": "translated",
+            "value": "Tik om te kiezen"
           }
         }
       }
@@ -1238,8 +1238,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Date of birth"
+            "state": "translated",
+            "value": "تاريخ الميلاد"
           }
         },
         "en": {
@@ -1250,8 +1250,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Date of birth"
+            "state": "translated",
+            "value": "Geboortedatum"
           }
         }
       }
@@ -1260,8 +1260,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Please choose your date of birth"
+            "state": "translated",
+            "value": "يرجى اختيار تاريخ ميلادك"
           }
         },
         "en": {
@@ -1272,8 +1272,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Please choose your date of birth"
+            "state": "translated",
+            "value": "Kies je geboortedatum"
           }
         }
       }
@@ -1282,8 +1282,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Please tell us your name (1–40 characters)"
+            "state": "translated",
+            "value": "يرجى إدخال اسمك (من 1 إلى 40 حرفًا)"
           }
         },
         "en": {
@@ -1294,8 +1294,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Please tell us your name (1–40 characters)"
+            "state": "translated",
+            "value": "Vul je naam in (1–40 tekens)"
           }
         }
       }
@@ -1393,7 +1393,7 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn't save your profile — try again"
+            "value": "تعذّر حفظ ملفك الشخصي — حاول مرة أخرى"
           }
         },
         "en": {
@@ -1405,7 +1405,7 @@
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn't save your profile — try again"
+            "value": "Kon je profiel niet opslaan — probeer het opnieuw"
           }
         }
       }
@@ -1546,8 +1546,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Continue"
+            "state": "translated",
+            "value": "متابعة"
           }
         },
         "en": {
@@ -1558,8 +1558,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Continue"
+            "state": "translated",
+            "value": "Doorgaan"
           }
         }
       }
@@ -1568,8 +1568,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Tell us about you"
+            "state": "translated",
+            "value": "أخبرنا عن نفسك"
           }
         },
         "en": {
@@ -1580,8 +1580,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Tell us about you"
+            "state": "translated",
+            "value": "Vertel ons over jezelf"
           }
         }
       }

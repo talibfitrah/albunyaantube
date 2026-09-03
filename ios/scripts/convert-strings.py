@@ -48,7 +48,22 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # Arabic and Dutch value. Task 9 is what first RENDERS them (the blocked-account alert and
           # both `AccountSession.refresh` banners), so an Arabic user got an English dialog. Refused
           # here and re-authored under EXTRA_KEYS, en byte-identical to Android's.
-          "account_blocked_title", "account_blocked_body", "auth_error_network", "auth_error_generic"}
+          "account_blocked_title", "account_blocked_body", "auth_error_network", "auth_error_generic",
+          # Task 12, same class as Task 9 / M3 and the same remedy: these eleven live in
+          # values-ar/strings_onboarding.xml and values-nl/strings_onboarding.xml with the ENGLISH
+          # sentence as their value -- the file was copied, never translated -- so the converter's
+          # per-locale read shipped English as the Arabic and Dutch text. Task 12 is what first
+          # RENDERS them (the mandatory bootstrap form and the terminal under-13 screen), i.e. the
+          # first Arabic user to be routed to `pending_profile` would get an English form. Refused
+          # here and re-authored under EXTRA_KEYS, en byte-identical to Android's. The eleven are
+          # exactly the untranslated ones -- bootstrap_phone_*/_password_*/_error_under_age/
+          # _error_invalid_phone/_invalid_password/_password_mismatch/_password_set_failed are
+          # genuinely translated on Android and are ported unchanged, and age_ineligible_ok_button
+          # is "OK" in all three locales exactly as the shipped `ok` key already is.
+          "bootstrap_title", "bootstrap_display_name_label", "bootstrap_display_name_hint",
+          "bootstrap_dob_label", "bootstrap_dob_hint", "bootstrap_submit_button",
+          "bootstrap_error_invalid_name", "bootstrap_error_invalid_dob", "bootstrap_error_save_failed",
+          "age_ineligible_title", "age_ineligible_body"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -135,6 +150,68 @@ EXTRA_KEYS = {
         "en": "Showing recent uploads only",
         "ar": "عرض أحدث المقاطع فقط",
         "nl": "Alleen recente uploads worden getoond",
+    },
+    # Task 12: the eleven REFUSED above. `en` is Android's own value verbatim; `ar`/`nl` are
+    # authored here because Android has none. Copy rules hold -- no "Download", no "ad-free", and
+    # the two failure strings say WHAT went wrong, never why.
+    "bootstrap_title": {
+        "en": "Tell us about you",
+        "ar": "أخبرنا عن نفسك",
+        "nl": "Vertel ons over jezelf",
+    },
+    "bootstrap_display_name_label": {
+        "en": "What should we call you?",
+        "ar": "بماذا نناديك؟",
+        "nl": "Hoe mogen we je noemen?",
+    },
+    "bootstrap_display_name_hint": {
+        "en": "Display name",
+        "ar": "الاسم المعروض",
+        "nl": "Weergavenaam",
+    },
+    "bootstrap_dob_label": {
+        "en": "Date of birth",
+        "ar": "تاريخ الميلاد",
+        "nl": "Geboortedatum",
+    },
+    "bootstrap_dob_hint": {
+        "en": "Tap to select",
+        "ar": "اضغط للاختيار",
+        "nl": "Tik om te kiezen",
+    },
+    "bootstrap_submit_button": {
+        "en": "Continue",
+        "ar": "متابعة",
+        "nl": "Doorgaan",
+    },
+    # Latin digits in `ar`, matching its already-translated sibling bootstrap_error_invalid_password
+    # ("8 أحرف على الأقل") -- one form's error messages must not mix digit systems.
+    "bootstrap_error_invalid_name": {
+        "en": "Please tell us your name (1–40 characters)",
+        "ar": "يرجى إدخال اسمك (من 1 إلى 40 حرفًا)",
+        "nl": "Vul je naam in (1–40 tekens)",
+    },
+    "bootstrap_error_invalid_dob": {
+        "en": "Please choose your date of birth",
+        "ar": "يرجى اختيار تاريخ ميلادك",
+        "nl": "Kies je geboortedatum",
+    },
+    "bootstrap_error_save_failed": {
+        "en": "Couldn’t save your profile — try again",
+        "ar": "تعذّر حفظ ملفك الشخصي — حاول مرة أخرى",
+        "nl": "Kon je profiel niet opslaan — probeer het opnieuw",
+    },
+    "age_ineligible_title": {
+        "en": "Sorry — come back soon",
+        "ar": "عذرًا — عد إلينا قريبًا",
+        "nl": "Sorry — kom snel terug",
+    },
+    # "FitrahTube" and "13" stay Latin in `ar`, exactly as the translated bootstrap_error_under_age
+    # already writes them.
+    "age_ineligible_body": {
+        "en": "FitrahTube is for users 13 and older. Please come back when you’re a bit older.",
+        "ar": "FitrahTube مخصص للمستخدمين من عمر 13 فأكثر. يرجى العودة عندما تكبر قليلًا.",
+        "nl": "FitrahTube is voor gebruikers van 13 jaar en ouder. Kom terug wanneer je wat ouder bent.",
     },
     "me_guest_title": {
         "en": "Sign in to sync your favorites",

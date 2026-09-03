@@ -24,8 +24,7 @@ struct RootViewDestinationTests {
     @Test func everySplashDestinationRendersItsScreen() {
         #expect(leafTypeName(for: .onboarding) == "OnboardingView")
         #expect(leafTypeName(for: .main) == "MainShellView")
-        // Task 12 flips this to "ProfileBootstrapScreen"
-        #expect(leafTypeName(for: .profileBootstrap) == "MainShellView")
+        #expect(leafTypeName(for: .profileBootstrap) == "ProfileBootstrapScreen")
         #expect(leafTypeName(for: .emailVerification) == "EmailVerificationScreen")
     }
 

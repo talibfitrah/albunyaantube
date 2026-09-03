@@ -54,6 +54,15 @@ nonisolated enum Route: Hashable, Sendable {
     /// at launch (`SplashDestination.emailVerification`); this case is the same screen reached from
     /// inside the shell, where the account is already past the splash.
     case emailVerification
+    /// Phase 4 Task 12: the mandatory profile form. Same shape as `.emailVerification` — `RootView`
+    /// renders it as a ROOT destination at launch (`SplashDestination.profileBootstrap`); this case
+    /// is the same screen reached from inside the shell.
+    case profileBootstrap
+    /// Phase 4 Task 12: the terminal under-13 screen. `ProfileBootstrapScreen` renders it IN PLACE
+    /// rather than pushing it (a pushed terminal screen has a back gesture, and going back to retry
+    /// a different date of birth is what the age gate exists to stop); this case is the same screen
+    /// for a caller inside the shell.
+    case ageIneligible
 }
 
 extension Route {
