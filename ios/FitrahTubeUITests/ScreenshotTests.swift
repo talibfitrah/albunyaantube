@@ -61,6 +61,15 @@ final class ScreenshotTests: XCTestCase {
         // a *button*, not a static text: `AboutView` puts `.accessibilityAddTraits(.isButton)` on
         // that `Text` for the 7-tap developer gesture, and traits decide the XCUIElement type.
         Screen(key: "about", arguments: ["-fitrah-route", "about"], anchor: .button("Version")),
+        // Phase 4 Task 13: the signed-in Me shell. `-fitrah-fake-auth active` selects the fixture
+        // auth state at CONTAINER CONSTRUCTION (`AppContainer.sharedFake`) — `auth` is a
+        // `private(set) lazy var`, so the `-fitrah-seed-*` shape, which runs in the scene's
+        // `.task` after the container exists, cannot reach it. The favorites row is the anchor
+        // because it is the one block with locale-independent seeded titles.
+        Screen(key: "me-signed-in",
+               arguments: ["-fitrah-fake-auth", "active", "-fitrah-seed-subscriptions",
+                           "-fitrah-seed-favorites", "-fitrah-tab", "me"],
+               anchor: .button("Seeded Favorite 1")),
         // The only screen that must NOT skip onboarding: `-fitrah-reset-onboarding` writes the flag
         // back to false, so `-onboarding_completed` is deliberately not added for this one.
         Screen(key: "onboarding", arguments: ["-fitrah-reset-onboarding"], anchor: .secondButton),

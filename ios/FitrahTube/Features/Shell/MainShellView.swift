@@ -209,13 +209,15 @@ struct MainShellView: View {
         }
     }
 
-    // Tab roots: task-12 replaces the Me placeholder with the guest Me tab (spec D11).
+    // Tab roots: task-12 replaced the Me placeholder with the guest Me tab (spec D11); Phase 4
+    // Task 13 puts `MeTabRoot` there instead — ruling C5's seam, which picks the guest or the
+    // signed-in screen from `AccountSession.state`.
     @ViewBuilder
     private func rootView(for tab: Tab) -> some View {
         switch tab {
         case .home: HomeView()
         case .channels: ContentListView(type: .channels)
-        case .me: MeGuestView()
+        case .me: MeTabRoot()
         case .playlists: ContentListView(type: .playlists)
         case .videos: ContentListView(type: .videos)
         }

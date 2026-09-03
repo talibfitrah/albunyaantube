@@ -8,10 +8,11 @@ import SwiftUI
 /// `SharedPreferences` has no iOS counterpart -- see that contract's §4.1.
 @MainActor protocol SettingsStore: AnyObject, Observable {
     /// RULING 33 removed the in-app language picker (the iOS per-app language setting is the only
-    /// way to change it), so nothing in phase 1 writes this and `resolvedLocale` is always its
-    /// "system" arm -- the Settings screen reads the locale it is rendering in instead (gate
-    /// wave-4 V11). Both are kept, not deleted: the key is Android-parity persisted state and the
-    /// resolution is the contract's §4.2 rule, restored together by phase 4's picker.
+    /// way to change it), so nothing writes this and `resolvedLocale` is always its "system" arm --
+    /// the Settings screen reads the locale it is rendering in instead (gate wave-4 V11).
+    /// Ruling C10: RULING 33 is final: there is no picker in any phase; both are kept as
+    /// Android-parity persisted state, and spec §14 routes the Settings Language row to iOS
+    /// per-app language.
     var appLocale: String { get set }           // "system" | "en" | "ar" | "nl"
     var theme: String { get set }                // "system" | "light" | "dark"
     var audioOnly: Bool { get set }

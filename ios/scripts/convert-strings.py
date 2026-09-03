@@ -63,7 +63,22 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           "bootstrap_title", "bootstrap_display_name_label", "bootstrap_display_name_hint",
           "bootstrap_dob_label", "bootstrap_dob_hint", "bootstrap_submit_button",
           "bootstrap_error_invalid_name", "bootstrap_error_invalid_dob", "bootstrap_error_save_failed",
-          "age_ineligible_title", "age_ineligible_body"}
+          "age_ineligible_title", "age_ineligible_body",
+          # Task 13, the SAME class as Task 9 / M3 and Task 12 / D1, third occurrence: these ten
+          # live only in `values/strings.xml` -- no values-ar, no values-nl entry at all -- so the
+          # en->ar/nl fallback shipped the English sentence as the Arabic and Dutch value. Task 13
+          # is what first RENDERS them (the signed-in Me kebab and the Settings Account section
+          # with its sign-out confirmation), so an Arabic user would get an English kebab and an
+          # English confirmation dialog on the screen they sign out from. Refused here and
+          # re-authored under EXTRA_KEYS, en byte-identical to Android's. The rest of the Me keys
+          # (me_favorites, me_see_all, me_empty_*, me_kebab_suggest_content,
+          # me_kebab_import_youtube, my_submissions_title, ...) ARE translated on Android and are
+          # ported unchanged.
+          "me_kebab_profile", "me_kebab_sign_out",
+          "settings_account_header", "settings_account_signed_in_as",
+          "settings_account_signed_in_default", "settings_account_sign_out",
+          "settings_account_sign_out_confirm_title", "settings_account_sign_out_confirm_body",
+          "settings_account_sign_out_confirm_action", "settings_account_sign_out_cancel"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -212,6 +227,61 @@ EXTRA_KEYS = {
         "en": "FitrahTube is for users 13 and older. Please come back when you’re a bit older.",
         "ar": "FitrahTube مخصص للمستخدمين من عمر 13 فأكثر. يرجى العودة عندما تكبر قليلًا.",
         "nl": "FitrahTube is voor gebruikers van 13 jaar en ouder. Kom terug wanneer je wat ouder bent.",
+    },
+    # Task 13: the ten REFUSED above. `en` is Android's own value verbatim; `ar`/`nl` are authored
+    # here because Android has neither. Copy rules hold -- no "Download", no "ad-free", and the
+    # confirmation body says WHAT signing out costs, never why.
+    "me_kebab_profile": {
+        "en": "Profile",
+        "ar": "الملف الشخصي",
+        "nl": "Profiel",
+    },
+    "me_kebab_sign_out": {
+        "en": "Sign out",
+        "ar": "تسجيل الخروج",
+        "nl": "Afmelden",
+    },
+    # "Account" is a real Dutch word and stays identical to the English -- unlike Arabic, which
+    # never legitimately equals it. `MeViewModelTests` pins only the Arabic side for that reason.
+    "settings_account_header": {
+        "en": "Account",
+        "ar": "الحساب",
+        "nl": "Account",
+    },
+    "settings_account_signed_in_as": {
+        "en": "Signed in as %1$@",
+        "ar": "مسجّل الدخول باسم %1$@",
+        "nl": "Aangemeld als %1$@",
+    },
+    "settings_account_signed_in_default": {
+        "en": "Signed in",
+        "ar": "مسجّل الدخول",
+        "nl": "Aangemeld",
+    },
+    "settings_account_sign_out": {
+        "en": "Sign out",
+        "ar": "تسجيل الخروج",
+        "nl": "Afmelden",
+    },
+    "settings_account_sign_out_confirm_title": {
+        "en": "Sign out?",
+        "ar": "تسجيل الخروج؟",
+        "nl": "Afmelden?",
+    },
+    "settings_account_sign_out_confirm_body": {
+        "en": "You'll need to sign in again to access admin features and personalised content.",
+        "ar": "ستحتاج إلى تسجيل الدخول مرة أخرى للوصول إلى ميزات الإشراف والمحتوى المخصّص.",
+        "nl": "Je moet je opnieuw aanmelden voor beheerfuncties en gepersonaliseerde inhoud.",
+    },
+    "settings_account_sign_out_confirm_action": {
+        "en": "Sign out",
+        "ar": "تسجيل الخروج",
+        "nl": "Afmelden",
+    },
+    "settings_account_sign_out_cancel": {
+        "en": "Cancel",
+        "ar": "إلغاء",
+        "nl": "Annuleren",
     },
     "me_guest_title": {
         "en": "Sign in to sync your favorites",

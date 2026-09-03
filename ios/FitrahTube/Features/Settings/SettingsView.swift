@@ -185,6 +185,8 @@ struct SettingsView: View {
     @State private var showQualityPicker = false
     /// Phase 3 Task 6 (CF-B3-11): Clear saved videos requires an explicit confirm.
     @State private var showClearOfflineConfirm = false
+    /// Phase 4 Task 13: the second sign-out surface (the Me kebab is the other), same `.alert`.
+    @State private var showSignOutConfirm = false
     /// Free-space capacity, read once per appearance instead of once per `body` — see
     /// `OfflineStorage.availableBytes(cached:base:)`, which the Storage row reads it through.
     @State private var availableBytes: Int64?
@@ -195,8 +197,43 @@ struct SettingsView: View {
 
     private var settings: any SettingsStore { container.settings }
 
+    /// `favorites-settings-about.md:143`: Account/Sign-out is "hidden unless signed in", and until
+    /// Phase 4 nothing could sign in — which is why it is a conditional Section here rather than a
+    /// `SettingsSection` case. `SettingsLayout.rows` stays the unconditional twelve
+    /// (`SettingsRowsTests.twelveRowsInSixSectionsNoAccountSection` is still true of it), because a
+    /// static table cannot express a row that appears only for a signed-in user.
+    @ViewBuilder
+    private var accountSection: some View {
+        if let me = container.session.state.me {
+            Section(String(localized: "settings_account_header")) {
+                // Label = the role, value = who — the same split `CategoryPill` makes (gate B1-I7),
+                // so VoiceOver reads "Account, <email>" rather than one fused sentence.
+                Text(signedInAs(me))
+                    .font(TypeScale.subtitle)
+                    .foregroundStyle(Color.textSecondary)
+                    .accessibilityLabel(String(localized: "settings_account_header"))
+                    .accessibilityValue(me.email ?? me.displayName ?? "")
+                Button(String(localized: "settings_account_sign_out"), role: .destructive) {
+                    showSignOutConfirm = true
+                }
+                .frame(minHeight: 44)
+            }
+        }
+    }
+
+    /// `\u{2068}…\u{2069}` isolation: an email or display name carries its own bidi direction and
+    /// would otherwise corrupt the surrounding Arabic sentence (Global Constraints, spec §14).
+    private func signedInAs(_ me: AccountMe) -> String {
+        guard let who = me.email ?? me.displayName, !who.isEmpty else {
+            return String(localized: "settings_account_signed_in_default")
+        }
+        return Format.localizedFormat("settings_account_signed_in_as", locale: locale,
+                                      "\u{2068}\(who)\u{2069}")
+    }
+
     var body: some View {
         Form {
+            accountSection
             ForEach(SettingsSection.allCases, id: \.self) { section in
                 Section(String(localized: String.LocalizationValue(section.titleKey))) {
                     ForEach(SettingsLayout.rows.filter { $0.section == section }.map(\.row), id: \.self) { row in
@@ -238,6 +275,7 @@ struct SettingsView: View {
         } message: {
             Text(String(localized: "settings_offline_clear_confirm"))
         }
+        .signOutConfirmation(isPresented: $showSignOutConfirm) { container.session.signOut() }
         .task(id: container.offlineStore.items.count) {
             availableBytes = OfflineStorage.availableBytes(base: container.offlineBase)
         }

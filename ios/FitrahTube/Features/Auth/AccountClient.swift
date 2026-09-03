@@ -27,7 +27,11 @@ nonisolated struct AccountMe: Sendable, Equatable {
     var status: AccountStatus
     /// Lowercased (`AccountRepositoryImpl.kt:223`); absent reads as "user".
     var role: String
-    var isModerator: Bool { role == "moderator" || role == "admin" }
+    /// Case-INSENSITIVE (`MeFragment.kt:270-271`, `ignoreCase = true`). `decode` already lowercases
+    /// what the wire sent, but an `AccountMe` built anywhere else (a test, a future local
+    /// construction) is not covered by that, and the role gate deciding on capitalisation is the
+    /// kind of defect that only shows up as a moderator with a three-item kebab.
+    var isModerator: Bool { role.lowercased() == "moderator" || role.lowercased() == "admin" }
 }
 
 nonisolated enum AccountError: Error, Equatable {

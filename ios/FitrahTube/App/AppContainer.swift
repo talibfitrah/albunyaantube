@@ -166,6 +166,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     let capabilities: SignInCapabilities
     private let injectedGoogleSignIn: (any OAuthSignInProvider)?
     private let injectedAppleSignIn: (any OAuthSignInProvider)?
+    #if DEBUG
+    /// The `/me` body a FIXTURE container answers with, or nil for the default ACTIVE student.
+    private let injectedAccountStatusJSON: String?
+    #endif
 
     /// Phase 4 Task 7: where `authorizedTransport`'s 403 account-lifecycle envelopes land.
     private(set) lazy var accountStatus = AccountStatusCenter()
@@ -181,7 +185,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// the `gateTransport: FixedStatusTransport(status: 503)` precedent, with a body.
     private(set) lazy var authorizedTransport: any HTTPTransport = {
         #if DEBUG
-        if isFixture { return ScriptedTransport([.json(200, Self.fixtureAccountMeJSON)]) }
+        // Sized for every request the Me flow can make in one launch: `AccountSession.start()`
+        // sends one `/me`, and a sign-out-then-sign-in inside the same screenshot run sends
+        // another. A dry queue throws `exhausted`, which is a fixture bug and must look like one —
+        // so it is short, not endless.
+        if isFixture { return ScriptedTransport(Array(repeating: .json(200, fixtureAccountJSON), count: 4)) }
         #endif
         return AuthorizedTransport(base: URLSessionTransport(), apiHost: apiBaseURL.host() ?? "",
                                    tokens: auth, onStatusEvent: { [accountStatus] in accountStatus.post($0) })
@@ -224,13 +232,24 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private var userScopedStores: [any UserScoped] { [favorites, savedPlaylists, subscriptions] }
 
     #if DEBUG
-    /// What a fixture container's `GET /api/account/me` answers. Task 13's `-fitrah-fake-account`
-    /// hook is what makes this selectable per launch; until then every fixture is the same ACTIVE
-    /// student, matching `FakeAuthClient.defaultUser`.
-    static let fixtureAccountMeJSON = """
-    {"uid":"fake-uid","email":"student@fitrah.test","displayName":"Aisha","dateOfBirth":"2001-04-09",\
-    "phoneNumber":null,"status":"active","role":"user"}
-    """
+    /// What a fixture container's `GET /api/account/me` answers. Task 13's `-fitrah-fake-auth`
+    /// hook is what makes this selectable per launch (`fake(accountStatusJSON:)`); the default is
+    /// the same ACTIVE student it always was, matching `FakeAuthClient.defaultUser`.
+    static let fixtureAccountMeJSON = fixtureAccountMeJSON(status: "active")
+
+    /// The same record with a different lifecycle `status` — `pending_profile`, `blocked` and
+    /// `deleted` are what `RootView`'s `SplashRouter` outcome routes on, so the screenshot rig
+    /// reaches those screens by changing this one field.
+    static func fixtureAccountMeJSON(status: String, role: String = "user") -> String {
+        """
+        {"uid":"fake-uid","email":"student@fitrah.test","displayName":"Aisha","dateOfBirth":"2001-04-09",\
+        "phoneNumber":null,"status":"\(status)","role":"\(role)"}
+        """
+    }
+
+    /// Task 4 deliberately left this out (nothing could consume it); Task 13 adds it WITH its
+    /// consumer, `authorizedTransport` above.
+    private var fixtureAccountJSON: String { injectedAccountStatusJSON ?? Self.fixtureAccountMeJSON }
     #endif
 
     private func makeOfflineManager() -> OfflineManager {
@@ -331,7 +350,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
          capabilities: SignInCapabilities? = nil,
          googleSignIn: (any OAuthSignInProvider)? = nil,
          appleSignIn: (any OAuthSignInProvider)? = nil,
+         accountStatusJSON: String? = nil,
          isFixture: Bool = false) {
+        #if DEBUG
+        self.injectedAccountStatusJSON = accountStatusJSON
+        #endif
         self.injectedAuth = auth
         self.capabilities = capabilities ?? .current()
         self.injectedGoogleSignIn = googleSignIn
@@ -393,7 +416,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // `FakeOAuthProvider`s.
         capabilities: SignInCapabilities? = nil,
         googleSignIn: (any OAuthSignInProvider)? = nil,
-        appleSignIn: (any OAuthSignInProvider)? = nil
+        appleSignIn: (any OAuthSignInProvider)? = nil,
+        // Task 4 deferred this (deviation 1) because nothing could consume it. Task 13 adds it
+        // together with its consumer: it is the BODY the fixture `/me` answers, so a screenshot
+        // run can put the rig on a pending-profile, blocked or deleted account.
+        accountStatusJSON: String? = nil
     ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
         // defaults domain. Does NOT wipe the suite -- callers that write through the returned
@@ -417,7 +444,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                      apiBaseURL: AppConfig.apiBaseURL, browse: browse,
                      gateTransport: FixedStatusTransport(status: 503), auth: auth,
                      capabilities: capabilities, googleSignIn: googleSignIn, appleSignIn: appleSignIn,
-                     isFixture: true)
+                     accountStatusJSON: accountStatusJSON, isFixture: true)
     }
     #endif
 
@@ -474,8 +501,34 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         let defaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard
         defaults.removePersistentDomain(forName: "fitrahtube.fake")
         // Plan C Task 6: the detail screens' fake reads its own `-fitrah-fake-browse-*` launch arguments.
-        return fake(defaults: defaults, browse: FakeBrowseSource.fromLaunchArguments())
+        // Task 13: auth is chosen HERE, at construction — `auth` is a `private(set) lazy var`, so
+        // nothing post-construction (the `-fitrah-seed-*` shape, which writes through a store) can
+        // swap it.
+        let fakeAuth = FakeAuth.fromLaunchArguments()
+        return fake(defaults: defaults, browse: FakeBrowseSource.fromLaunchArguments(),
+                    auth: FakeAuthClient(state: fakeAuth.state),
+                    accountStatusJSON: fakeAuth.accountJSON)
     }()
+
+    /// `-fitrah-fake-auth <signedOut|active|pendingProfile|blocked|deleted>`: the screenshot rig's
+    /// only way onto a signed-in screen. Absent -> signed out, i.e. every existing rig invocation
+    /// is unchanged.
+    enum FakeAuth {
+        static func fromLaunchArguments() -> (state: AuthState, accountJSON: String?) {
+            let args = LaunchArguments.debug
+            guard let i = args.firstIndex(of: "-fitrah-fake-auth"), args.indices.contains(i + 1) else {
+                return (.signedOut, nil)
+            }
+            let signedIn = AuthState.signedIn(FakeAuthClient.defaultUser)
+            switch args[i + 1] {
+            case "active": return (signedIn, AppContainer.fixtureAccountMeJSON(status: "active"))
+            case "pendingProfile": return (signedIn, AppContainer.fixtureAccountMeJSON(status: "pending_profile"))
+            case "blocked": return (signedIn, AppContainer.fixtureAccountMeJSON(status: "blocked"))
+            case "deleted": return (signedIn, AppContainer.fixtureAccountMeJSON(status: "deleted"))
+            default: return (.signedOut, nil)
+            }
+        }
+    }
     #endif
 }
 

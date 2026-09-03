@@ -7672,8 +7672,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Profile"
+            "state": "translated",
+            "value": "الملف الشخصي"
           }
         },
         "en": {
@@ -7684,8 +7684,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Profile"
+            "state": "translated",
+            "value": "Profiel"
           }
         }
       }
@@ -7694,8 +7694,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign out"
+            "state": "translated",
+            "value": "تسجيل الخروج"
           }
         },
         "en": {
@@ -7706,8 +7706,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign out"
+            "state": "translated",
+            "value": "Afmelden"
           }
         }
       }
@@ -14112,8 +14112,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Account"
+            "state": "translated",
+            "value": "الحساب"
           }
         },
         "en": {
@@ -14124,7 +14124,7 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Account"
           }
         }
@@ -14134,8 +14134,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign out"
+            "state": "translated",
+            "value": "تسجيل الخروج"
           }
         },
         "en": {
@@ -14146,8 +14146,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign out"
+            "state": "translated",
+            "value": "Afmelden"
           }
         }
       }
@@ -14156,8 +14156,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Cancel"
+            "state": "translated",
+            "value": "إلغاء"
           }
         },
         "en": {
@@ -14168,8 +14168,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Cancel"
+            "state": "translated",
+            "value": "Annuleren"
           }
         }
       }
@@ -14178,8 +14178,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign out"
+            "state": "translated",
+            "value": "تسجيل الخروج"
           }
         },
         "en": {
@@ -14190,8 +14190,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign out"
+            "state": "translated",
+            "value": "Afmelden"
           }
         }
       }
@@ -14200,8 +14200,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "You'll need to sign in again to access admin features and personalised content."
+            "state": "translated",
+            "value": "ستحتاج إلى تسجيل الدخول مرة أخرى للوصول إلى ميزات الإشراف والمحتوى المخصّص."
           }
         },
         "en": {
@@ -14212,8 +14212,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "You'll need to sign in again to access admin features and personalised content."
+            "state": "translated",
+            "value": "Je moet je opnieuw aanmelden voor beheerfuncties en gepersonaliseerde inhoud."
           }
         }
       }
@@ -14222,8 +14222,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign out?"
+            "state": "translated",
+            "value": "تسجيل الخروج؟"
           }
         },
         "en": {
@@ -14234,8 +14234,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign out?"
+            "state": "translated",
+            "value": "Afmelden?"
           }
         }
       }
@@ -14244,8 +14244,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Signed in as %1$@"
+            "state": "translated",
+            "value": "مسجّل الدخول باسم %1$@"
           }
         },
         "en": {
@@ -14256,8 +14256,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Signed in as %1$@"
+            "state": "translated",
+            "value": "Aangemeld als %1$@"
           }
         }
       }
@@ -14266,8 +14266,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Signed in"
+            "state": "translated",
+            "value": "مسجّل الدخول"
           }
         },
         "en": {
@@ -14278,8 +14278,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Signed in"
+            "state": "translated",
+            "value": "Aangemeld"
           }
         }
       }

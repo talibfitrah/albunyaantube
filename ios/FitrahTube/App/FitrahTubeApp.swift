@@ -80,6 +80,7 @@ struct FitrahTubeApp: App {
                     selectDebugTabIfRequested()
                     pushDebugRouteIfRequested()
                     showDebugBannerIfRequested()
+                    await awaitFakeAccountIfSignedIn()
                     seedDebugFavoritesIfRequested()
                     seedDebugSubscriptionsIfRequested()
                     seedDebugOfflineItemsIfRequested()
@@ -293,6 +294,22 @@ struct FitrahTubeApp: App {
         let args = LaunchArguments.debug
         guard let flagIndex = args.firstIndex(of: "-fitrah-banner"), args.indices.contains(flagIndex + 1) else { return }
         router.pendingBanner = BannerMessage(text: args[flagIndex + 1])
+        #endif
+    }
+
+    /// Task 13. The two seeds below write through PER-USER stores, and `AccountSession.start()`
+    /// (`RootView`'s task) is what re-scopes those stores from the `""` anon sentinel to the
+    /// signed-in uid. Seeding first put every row under the WRONG uid: the re-scope then hid all of
+    /// them, and the `me-signed-in` screenshot row photographed an empty state rather than the
+    /// screen it exists to capture. Found by the rig, not by inspection.
+    ///
+    /// A bounded `Task.yield()` loop, never a sleep — the fixture transport has one canned `/me`
+    /// and `sessionSleep` is `noSleep`, so this settles in a handful of yields; the bound is what
+    /// keeps a fixture that can never load from parking the launch path.
+    private func awaitFakeAccountIfSignedIn() async {
+        #if DEBUG
+        guard AppContainer.FakeAuth.fromLaunchArguments().accountJSON != nil else { return }
+        for _ in 0..<2000 where container.session.state.me == nil { await Task.yield() }
         #endif
     }
 

@@ -1,0 +1,128 @@
+import Foundation
+import Observation
+
+/// One row of the signed-in Me screen's chip rail: a subscribed channel or a saved playlist,
+/// merged into ONE list. `addedAt` is `SubscribedChannel.followedAt` / `SavedPlaylist.addedAt`.
+nonisolated struct MeChipItem: Sendable, Equatable, Identifiable {
+    enum Kind: Sendable, Equatable { case channel, playlist }
+    var id: String
+    var title: String
+    var avatarURL: URL?
+    var addedAt: Date
+    var kind: Kind
+}
+
+/// Menu order = `res/menu/menu_me_kebab.xml`. There is deliberately NO `.history` and no
+/// `.recentlyWatched` case: ruling F10 / RULING 28 — a row that promises "coming soon" is a dead
+/// affordance, and `MeViewModelTests.thereIsNoHistoryOrRecentlyWatchedKebabItem` pins the ABSENCE.
+nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
+    case profile, mySubmissions, suggestContent, importYouTube, signOut
+
+    var titleKey: String {
+        switch self {
+        case .profile: "me_kebab_profile"
+        case .mySubmissions: "my_submissions_title"
+        case .suggestContent: "me_kebab_suggest_content"
+        case .importYouTube: "me_kebab_import_youtube"
+        case .signOut: "me_kebab_sign_out"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .profile: "person.crop.circle"
+        case .mySubmissions: "tray"
+        case .suggestContent: "plus.circle"
+        case .importYouTube: "square.and.arrow.down.on.square"
+        case .signOut: "rectangle.portrait.and.arrow.right"
+        }
+    }
+
+    /// BOTH moderator items move together (ruling C4) — `MeFragment.kt:270-273` flips
+    /// `action_my_submissions` and `action_suggest_content` off the same boolean.
+    static func items(isModerator: Bool) -> [MeKebabItem] {
+        allCases.filter { item in
+            switch item {
+            case .mySubmissions, .suggestContent: isModerator
+            default: true
+            }
+        }
+    }
+
+    /// The kebab rows that have a destination TODAY. RULING 28: a row with nowhere to go is not
+    /// rendered greyed, it is not rendered at all — a greyed row is still a visible promise, and
+    /// three of the four missing ones are Part B, so they would sit on this screen through all of
+    /// Part A and Task 19's screenshot matrix. Each later task that lands a destination adds its
+    /// own case here plus its own assertion (Task 17 `.profile`, 25 `.mySubmissions`,
+    /// 27 `.suggestContent`, 29 `.importYouTube`), so every re-enable is a named test edit.
+    static let landed: Set<MeKebabItem> = [.signOut]
+}
+
+/// Ruling C5's signed-in Me screen, over LOCAL stores only. No feed (Tasks 14-16), no History
+/// rows (F10), no Content/Pending tabs (F14).
+@MainActor @Observable final class MeViewModel {
+    private let session: AccountSession
+    private let favorites: any FavoritesStore
+    private let subscriptions: any SubscriptionsStore
+    private let savedPlaylists: any SavedPlaylistsStore
+
+    /// `MeFavoritesAdapter:19-20,45` — 20 tiles, plus a trailing "See all".
+    static let maxFavoriteTiles = 20
+
+    private var rawSelection: String?
+
+    init(session: AccountSession, favorites: any FavoritesStore,
+         subscriptions: any SubscriptionsStore, savedPlaylists: any SavedPlaylistsStore) {
+        self.session = session
+        self.favorites = favorites
+        self.subscriptions = subscriptions
+        self.savedPlaylists = savedPlaylists
+    }
+
+    /// Channels + playlists MERGED and sorted by add time, descending — never segregated.
+    /// Android's comment (`MeViewModel.kt:406-411`) records why: splitting them pushed a
+    /// freshly-saved playlist off-screen in RTL. `id` breaks ties so the order is deterministic
+    /// (two rows written in the same millisecond would otherwise shuffle between renders).
+    var chips: [MeChipItem] {
+        let channels = subscriptions.items.map {
+            MeChipItem(id: $0.channelId, title: $0.title, avatarURL: $0.avatarUrl.flatMap(URL.init(string:)),
+                       addedAt: $0.followedAt, kind: .channel)
+        }
+        let playlists = savedPlaylists.items.map {
+            MeChipItem(id: $0.playlistId, title: $0.title, avatarURL: $0.thumbnailUrl.flatMap(URL.init(string:)),
+                       addedAt: $0.addedAt, kind: .playlist)
+        }
+        return (channels + playlists).sorted {
+            $0.addedAt == $1.addedAt ? $0.id < $1.id : $0.addedAt > $1.addedAt
+        }
+    }
+
+    /// The store is already sorted most-recently-added first, so this is just the cap.
+    var favoriteTiles: [FavoriteVideo] { Array(favorites.items.prefix(Self.maxFavoriteTiles)) }
+
+    /// `MeFragment.kt:270-271` compares `ignoreCase = true`; `AccountMe.isModerator` carries that.
+    var showsModeratorItems: Bool { session.state.me?.isModerator == true }
+
+    var enabledKebabItems: [MeKebabItem] {
+        MeKebabItem.items(isModerator: showsModeratorItems).filter(MeKebabItem.landed.contains)
+    }
+
+    /// Resolved through `selection(_:in:)` on every read rather than stored raw: a chip
+    /// unsubscribed elsewhere (the channel screen's Subscribe toggle) must not leave this tab
+    /// filtering by a row that no longer exists.
+    var selectedChipId: String? {
+        get { Self.selection(rawSelection, in: chips) }
+        set { rawSelection = newValue }
+    }
+
+    func setFilter(_ chipId: String?) { selectedChipId = chipId }
+
+    /// The kebab's ONE live destination in this task. `AccountSession` re-scopes every per-user
+    /// store to the anon sentinel, which is what puts `MeTabRoot` back on the guest screen.
+    func signOut() { session.signOut() }
+
+    /// Pure, over the merged list.
+    nonisolated static func selection(_ chipId: String?, in chips: [MeChipItem]) -> String? {
+        chips.contains { $0.id == chipId } ? chipId : nil
+    }
+}

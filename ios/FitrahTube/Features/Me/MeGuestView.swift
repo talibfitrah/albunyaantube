@@ -9,8 +9,6 @@ struct MeGuestView: View {
     @Environment(\.router) private var router
     @Environment(\.widthClass) private var widthClass
 
-    @State private var viewModel: FavoritesViewModel?
-
     private static let topAnchor = "me-top"
 
     var body: some View {
@@ -34,11 +32,6 @@ struct MeGuestView: View {
         }
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(String(localized: "nav_me"))
-        .task {
-            if viewModel == nil {
-                viewModel = FavoritesViewModel(store: container.favorites)
-            }
-        }
     }
 
     // MARK: - Sign-in card
@@ -70,27 +63,11 @@ struct MeGuestView: View {
 
     // MARK: - Favorites section (up to 5 rows + "See all")
 
-    @ViewBuilder
+    /// Extracted to `MeFavoritesSection` (Task 13) so both Me screens render ONE copy — the
+    /// wave-2 W9 lesson. `me_favorites` is byte-identical to the `favorites_title` this used to
+    /// pass, in all three locales, so nothing on this screen changed.
     private var favoritesSection: some View {
-        if let viewModel {
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                SectionHeader(
-                    emoji: nil,
-                    title: String(localized: "favorites_title"),
-                    onSeeAll: viewModel.items.isEmpty ? nil : { router.push(.favorites) }
-                )
-                if viewModel.recentFavorites.isEmpty {
-                    EmptyStateView(systemImage: "heart", title: String(localized: "favorites_empty_title"),
-                                    message: String(localized: "favorites_empty_subtitle"))
-                } else {
-                    ForEach(viewModel.recentFavorites, id: \.videoId) { item in
-                        VideoRow(item: viewModel.contentItem(for: item), subtitle: item.channelName) {
-                            router.push(.player(viewModel.playerArgs(for: item)))
-                        }
-                    }
-                }
-            }
-        }
+        MeFavoritesSection(maxRows: 5) { router.push(.favorites) }
     }
 }
 
