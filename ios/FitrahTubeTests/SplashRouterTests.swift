@@ -23,9 +23,11 @@ struct SplashRouterTests {
         #expect(outcome == SplashOutcome(destination: .onboarding))
     }
 
+    /// `hasPasswordProvider: true` with `isEmailVerified: false` on purpose (Task 8 review M1): it
+    /// is what pins the signed-out guard's precedence over the §13 verification branch.
     @Test func signedOutRoutesToMainAsGuest() {
         let outcome = SplashRouter.outcome(onboardingCompleted: true, signedIn: false,
-                                           hasPasswordProvider: false, isEmailVerified: false,
+                                           hasPasswordProvider: true, isEmailVerified: false,
                                            status: nil)
         #expect(outcome == SplashOutcome(destination: .main))
     }

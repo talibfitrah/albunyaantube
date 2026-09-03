@@ -1,12 +1,14 @@
 import SwiftUI
 
 /// Root of the app. `SplashView` gates entry (its own animation/work timeline, `splash-onboarding.md`
-/// §1); once it completes, `SplashRouter.destination(onboardingCompleted:)` decides between
-/// `OnboardingView` and the main shell.
+/// §1); once it completes, `SplashRouter.outcome(...)` decides where to go, whether the session must
+/// be dropped first, and which terminal alert to surface.
 struct RootView: View {
     @Environment(\.container) private var container
+    @Environment(\.router) private var router
     @State private var widthClass: WidthClass = .compact
     @State private var showSplash = true
+    @State private var alert: AccountStatusAlert?
 
     var body: some View {
         #if DEBUG
@@ -55,6 +57,55 @@ struct RootView: View {
             // the root so it covers Onboarding and the main shell alike -- nil for "system" lets
             // the view inherit the environment's scheme, same as Android's FOLLOW_SYSTEM.
             .preferredColorScheme(container.settings.colorScheme)
+            // The ONE `AccountSession.start()`: it owns the auth subscription that re-scopes every
+            // per-user store, so it must outlive every screen, which is what makes the root the
+            // only correct place for it.
+            .task { await container.session.start() }
+            // `signOut`/`alert` are ADVISORY on the outcome (Task 8) — the caller is what acts on
+            // them, and this is the caller. `initial: true` so a launch that already resolves to a
+            // blocked account drops the session on the first pass, not on the next change.
+            .onChange(of: outcome, initial: true) { _, outcome in
+                if outcome.signOut { container.session.signOut() }
+                if let event = outcome.alert { alert = AccountStatusAlert(event) }
+            }
+            // Mid-session terminal events: `AuthorizedTransport` posts the 403 account-lifecycle
+            // envelope here from whatever isolation the request ran on. `consume()` clears it, so a
+            // re-render cannot route the user twice.
+            .onChange(of: container.accountStatus.pending) { _, pending in
+                guard pending != nil, let event = container.accountStatus.consume() else { return }
+                container.session.handle(event)
+                if let terminal = AccountStatusAlert(event) { alert = terminal }
+            }
+            // Non-dismissible: ONE button, no cancel role, and nothing outside it can close the
+            // dialog — a blocked or deleted account cannot tap its way back into the app.
+            .alert(alert.map { String(localized: String.LocalizationValue($0.titleKey)) } ?? "",
+                   isPresented: Binding(get: { alert != nil }, set: { if !$0 { alert = nil } }),
+                   presenting: alert) { _ in
+                Button(String(localized: "ok")) { dropToGuest() }
+            } message: { terminal in
+                Text(String(localized: String.LocalizationValue(terminal.bodyKey)))
+            }
+    }
+
+    /// The launch decision, recomputed whenever settings or the session change. `user` is the
+    /// Firebase identity (spec §13 needs `hasPasswordProvider`/`isEmailVerified`, neither of which
+    /// is on the backend's account record); `status` is nil until `/me` answers, which the matrix
+    /// reads as "guest for now, the caller retries".
+    private var outcome: SplashOutcome {
+        let session = container.session
+        return SplashRouter.outcome(onboardingCompleted: container.settings.onboardingCompleted,
+                                    signedIn: session.user != nil,
+                                    hasPasswordProvider: session.user?.hasPasswordProvider ?? false,
+                                    isEmailVerified: session.user?.isEmailVerified ?? false,
+                                    status: session.state.me?.status)
+    }
+
+    private func dropToGuest() {
+        alert = nil
+        container.session.signOut()
+        // Every tab, not just the selected one: a pushed profile/submissions screen on a background
+        // tab would still be there the moment the user switched to it.
+        Tab.allCases.forEach { router.popToRoot($0) }
     }
 
     @ViewBuilder
@@ -62,14 +113,22 @@ struct RootView: View {
         if showSplash {
             SplashView { showSplash = false }
         } else {
-            switch SplashRouter.destination(onboardingCompleted: container.settings.onboardingCompleted) {
-            case .onboarding: OnboardingView()
-            case .main: MainShellView()
-            // Tasks 11/12 replace this arm with the real screen
-            case .profileBootstrap: MainShellView()
-            // Tasks 11/12 replace this arm with the real screen
-            case .emailVerification: MainShellView()
-            }
+            destination(for: outcome)
+        }
+    }
+
+    /// Internal, and taking the outcome, so `RootViewDestinationTests` can walk it — `destinationView`
+    /// is a `private var` with no argument and no walker can reach it. Mirrors
+    /// `MainShellView.destination(for:)`.
+    @ViewBuilder
+    func destination(for outcome: SplashOutcome) -> some View {
+        switch outcome.destination {
+        case .onboarding: OnboardingView()
+        case .main: MainShellView()
+        // Tasks 11/12 replace this arm with the real screen
+        case .profileBootstrap: MainShellView()
+        // Tasks 11/12 replace this arm with the real screen
+        case .emailVerification: MainShellView()
         }
     }
 }

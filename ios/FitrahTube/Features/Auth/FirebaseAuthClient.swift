@@ -19,14 +19,22 @@ nonisolated final class FirebaseAuthClient: AuthClient {
 
     /// One element per auth-state transition, current state first — Firebase's listener, verbatim.
     /// The listener is never removed: this object is `AppContainer.auth` and lives for the process.
-    let state: AsyncStream<AuthState>
+    ///
+    /// ONE Firebase listener, N subscribers: each `state` access is a fresh stream replaying the
+    /// current state (`AuthClient.swift`'s contract). Registering a listener per subscriber instead
+    /// would either leak one per access or need the non-`Sendable` handle carried into an
+    /// `onTermination` closure; the broadcaster costs neither.
+    var state: AsyncStream<AuthState> { broadcaster.stream }
+
+    private let broadcaster: AuthStateBroadcaster
 
     @MainActor init?() {
         guard FirebaseBootstrap.configureIfPossible() else { return nil }
-        let (stream, continuation) = AsyncStream<AuthState>.makeStream()
-        state = stream
+        let broadcaster = AuthStateBroadcaster(
+            current: Auth.auth().currentUser.map { .signedIn(AuthUser($0)) } ?? .signedOut)
+        self.broadcaster = broadcaster
         _ = Auth.auth().addStateDidChangeListener { _, user in
-            continuation.yield(user.map { .signedIn(AuthUser($0)) } ?? .signedOut)
+            broadcaster.send(user.map { .signedIn(AuthUser($0)) } ?? .signedOut)
         }
     }
 

@@ -8,7 +8,60 @@ import Testing
     private static let user = AuthUser(uid: "u1", email: "student@fitrah.test", isEmailVerified: true,
                                        providerIDs: ["password"])
 
+    /// Subscribes to a stream and collects what it sees, with a BOUNDED yield loop to wait on —
+    /// never a sleep, and never an unbounded `for await` that would hang the suite when a subscriber
+    /// starves (which is exactly the bug the two tests below exist to catch).
+    @MainActor private final class Collector {
+        private(set) var seen: [AuthState] = []
+        /// Held only so it is not discarded; it ends on its own when the client (and so the
+        /// continuation feeding this stream) is released at the end of the test.
+        private var task: Task<Void, Never>?
+
+        init(_ stream: AsyncStream<AuthState>) {
+            task = Task { @MainActor [weak self] in
+                for await state in stream { self?.seen.append(state) }
+            }
+        }
+
+        func wait(for count: Int) async { for _ in 0..<500 where seen.count < count { await Task.yield() } }
+        func settle() async { for _ in 0..<200 { await Task.yield() } }
+    }
+
     // MARK: - FakeAuthClient (app target, #if DEBUG — Task 13's screenshot hook needs it too)
+
+    /// Task 4 shipped ONE stored `AsyncStream` handed to every caller, and `AsyncStream` is
+    /// single-consumer: the second subscriber starved forever, silently. Task 9 is the first task
+    /// with two of them, so the contract is settled — every `state` access is a FRESH stream that
+    /// replays the current state and then carries every transition.
+    @Test func everyStateAccessIsAFreshStreamReplayingTheCurrentState() async throws {
+        let client = FakeAuthClient(state: .signedOut, user: Self.user)
+        let first = Collector(client.state)
+        let second = Collector(client.state)
+        await first.wait(for: 1)
+        await second.wait(for: 1)
+        #expect(first.seen == [.signedOut])
+        #expect(second.seen == [.signedOut])
+
+        let signedIn = try await client.signIn(email: "student@fitrah.test", password: "hunter2")
+        await first.wait(for: 2)
+        await second.wait(for: 2)
+        #expect(first.seen == [.signedOut, .signedIn(signedIn)])
+        #expect(second.seen == [.signedOut, .signedIn(signedIn)])
+    }
+
+    /// A no-op transition emits NOTHING: Firebase's listener does not re-announce an unchanged
+    /// state, so a fixture that did would let a ViewModel test pass against a sequence the real
+    /// client can never produce.
+    @Test func signingOutWhileAlreadySignedOutEmitsNothing() async {
+        let client = FakeAuthClient(state: .signedOut, user: Self.user)
+        let states = Collector(client.state)
+        await states.wait(for: 1)
+
+        client.signOut()
+        await states.settle()
+        #expect(states.seen == [.signedOut])
+    }
+
 
     /// The stream is 1:1 with Firebase's auth-state listener: the CURRENT state first, then one
     /// element per transition. Buffering is unbounded, so a yield that lands before the consumer
@@ -81,6 +134,7 @@ import Testing
         #expect(await provider.idToken(forceRefresh: true) == nil)
         #expect(await client.currentUser() == nil)
         client.signOut()
+        #expect(await client.currentUser() == nil, "a silent sign-out still leaves no user")
     }
 
     /// Contradiction 5: with no plist every auth operation must FAIL, visibly and identically —

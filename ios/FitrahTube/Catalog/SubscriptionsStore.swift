@@ -5,7 +5,7 @@ import SwiftData
 /// Plan C Task 5: the channel screen's Subscribe toggle -- `SavedPlaylistsStore`'s twin over
 /// Android's `followed_channels` table (`FollowedChannel.kt:18-23`), with RULING 27's guest-local
 /// 30-channel cap (`SubscriptionLimitGuard.kt:73`).
-@MainActor protocol SubscriptionsStore: AnyObject, Observable {
+@MainActor protocol SubscriptionsStore: AnyObject, Observable, UserScoped {
     var items: [SubscribedChannel] { get }
     func isSubscribed(_ channelId: String) -> Bool
     func toggle(id: String, name: String?, avatarURL: URL?) throws

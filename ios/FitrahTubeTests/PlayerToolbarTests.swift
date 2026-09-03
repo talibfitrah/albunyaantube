@@ -146,6 +146,9 @@ struct PlayerToolbarTests {
 @MainActor private final class FakeFavoritesStore: FavoritesStore {
     enum Failure: Error { case saveFailed }
 
+    /// Task 9: `UserScoped` is now a requirement of the protocol; this fake is never re-scoped.
+    var currentUserId: String = ""
+
     private(set) var items: [FavoriteVideo] = []
     private(set) var toggledItems: [ContentItem] = []
     var errorToThrow: Error?

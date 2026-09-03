@@ -71,6 +71,8 @@ struct ChannelDetailViewModelTests {
 
     @Observable final class FakeSubscriptions: SubscriptionsStore {
         var ids: Set<String> = []
+        /// Task 9: `UserScoped` is now a protocol requirement; this fake is never re-scoped.
+        var currentUserId: String = ""
         var items: [SubscribedChannel] { [] }
         func isSubscribed(_ channelId: String) -> Bool { ids.contains(channelId) }
         func toggle(id: String, name: String?, avatarURL: URL?) throws {

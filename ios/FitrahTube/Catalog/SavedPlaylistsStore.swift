@@ -5,7 +5,7 @@ import SwiftData
 /// Plan C Task 4: the playlist screen's Save toggle, mirroring `SwiftDataFavoritesStore` --
 /// per-user scoping, tombstones (`isRemoved`) instead of deletes, `dirty` for the sync layer,
 /// save-or-rollback so a failed write never lingers in the context.
-@MainActor protocol SavedPlaylistsStore: AnyObject, Observable {
+@MainActor protocol SavedPlaylistsStore: AnyObject, Observable, UserScoped {
     var items: [SavedPlaylist] { get }
     func isSaved(_ playlistId: String) -> Bool
     func toggle(id: String, title: String?, thumbnailURL: URL?, itemCount: Int?) throws

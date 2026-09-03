@@ -188,6 +188,23 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var account = AccountClient(transport: authorizedTransport, baseURL: apiBaseURL,
                                                   deviceId: .persisted(in: userDefaults))
 
+    /// Phase 4 Task 9: the ONE holder of account state, and the only thing that writes
+    /// `currentUserId`. Started by `RootView`'s `.task`.
+    private(set) lazy var session = AccountSession(auth: auth, account: account, stores: userScopedStores,
+                                                   status: accountStatus, sleep: Self.realSleep)
+
+    /// A named `nonisolated static` rather than a closure literal: under
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor` a literal written here is inferred main-actor
+    /// isolated, and `AccountSession`'s `sleep` is a nonisolated `@Sendable` function — "cannot be
+    /// both main actor-isolated and nonisolated".
+    private nonisolated static func realSleep(_ duration: Duration) async {
+        try? await Task.sleep(for: duration)
+    }
+
+    /// Every per-user local store, in ONE list. A store added here is re-scoped on every auth
+    /// change for free; a store that is not is the bug this list exists to make visible.
+    var userScopedStores: [any UserScoped] { [favorites, savedPlaylists, subscriptions] }
+
     #if DEBUG
     /// What a fixture container's `GET /api/account/me` answers. Task 13's `-fitrah-fake-account`
     /// hook is what makes this selectable per launch; until then every fixture is the same ACTIVE

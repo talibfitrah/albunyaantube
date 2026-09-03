@@ -1,5 +1,6 @@
 import FitrahAPI
 import Foundation
+import Synchronization
 
 /// A signed-in account, reduced to what the app renders and decides on. Firebase's `User` never
 /// leaves `FirebaseAuthClient.swift`.
@@ -67,6 +68,54 @@ nonisolated enum AuthErrorCode: String, Error, Sendable, Equatable, CaseIterable
     }
 }
 
+/// Fans ONE auth-state source out to any number of `AsyncStream` consumers, replaying the current
+/// state to each on subscription — the shape both real conformers need and neither should own.
+/// `UnavailableAuthClient` needs none of it: it has one state, forever, and its stream finishes.
+///
+/// **A transition to the state already held is dropped.** Firebase's listener does not re-announce
+/// an unchanged state, so a fixture that did (`signOut()` on an already-signed-out account emitting
+/// a second `.signedOut`) would let a ViewModel test pass against a sequence the real client can
+/// never produce.
+nonisolated final class AuthStateBroadcaster: Sendable {
+    private struct Storage {
+        var current: AuthState
+        var observers: [UUID: AsyncStream<AuthState>.Continuation] = [:]
+    }
+
+    private let storage: Mutex<Storage>
+
+    init(current: AuthState) { storage = Mutex(Storage(current: current)) }
+
+    var current: AuthState { storage.withLock { $0.current } }
+
+    var stream: AsyncStream<AuthState> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<AuthState>.makeStream()
+        let current = storage.withLock { storage -> AuthState in
+            storage.observers[id] = continuation
+            return storage.current
+        }
+        // Firebase's listener delivers the current state on registration; so does every subscriber
+        // here, so a late subscriber is never left with no state at all.
+        continuation.yield(current)
+        // `[weak self]`, not `[storage]`: `Mutex` is `~Copyable`, so capturing it directly is a
+        // consume the compiler refuses.
+        continuation.onTermination = { [weak self] _ in self?.remove(id) }
+        return stream
+    }
+
+    private func remove(_ id: UUID) { storage.withLock { _ = $0.observers.removeValue(forKey: id) } }
+
+    func send(_ state: AuthState) {
+        let observers = storage.withLock { storage -> [AsyncStream<AuthState>.Continuation] in
+            guard storage.current != state else { return [] }
+            storage.current = state
+            return Array(storage.observers.values)
+        }
+        observers.forEach { $0.yield(state) }
+    }
+}
+
 /// What a provider hands back. Declared here (Task 4 owns the file); POPULATED by Task 5's
 /// providers. Opaque above this layer.
 nonisolated struct OAuthCredential: Sendable {
@@ -80,6 +129,13 @@ nonisolated struct OAuthCredential: Sendable {
 /// adapter (ruling F12). A matching method signature does NOT create conformance in Swift, so the
 /// refinement is declared, not assumed.
 nonisolated protocol AuthClient: AuthTokenProviding {
+    /// **One contract, every conformer: each access returns a FRESH stream that replays the current
+    /// state immediately and then carries every later transition.** Task 4 shipped a single stored
+    /// `AsyncStream` handed to every caller, and `AsyncStream` is single-consumer — the second
+    /// subscriber starved forever, silently. Task 9 needed exactly that second subscriber
+    /// (`AccountSession.start()` alongside anything else that watches auth), so the lifetime is
+    /// settled here rather than left as a rule callers must know. `AuthStateBroadcaster` below is
+    /// how `FirebaseAuthClient` and `FakeAuthClient` honour it off ONE upstream listener.
     var state: AsyncStream<AuthState> { get }
     func currentUser() async -> AuthUser?
     func signIn(email: String, password: String) async throws(AuthErrorCode) -> AuthUser

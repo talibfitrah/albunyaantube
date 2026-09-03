@@ -49,6 +49,8 @@ struct PlaylistDetailViewModelTests {
 
     @Observable final class FakeSaved: SavedPlaylistsStore {
         var ids: Set<String> = []
+        /// Task 9: `UserScoped` is now a protocol requirement; this fake is never re-scoped.
+        var currentUserId: String = ""
         var throwOnToggle = false
         struct Boom: Error {}
         var items: [SavedPlaylist] { [] }

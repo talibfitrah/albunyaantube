@@ -11,10 +11,11 @@ import Synchronization
 /// Scripted, never timed: `scriptedErrors` is a queue consumed in order and `nextError` fails
 /// exactly the next call. No sleeps, no clock.
 nonisolated final class FakeAuthClient: AuthClient {
-    let state: AsyncStream<AuthState>
+    /// A fresh stream per access, replaying the current state — the ONE `AuthClient.state` contract
+    /// (`AuthClient.swift`). Two subscribers both see everything.
+    var state: AsyncStream<AuthState> { broadcaster.stream }
 
     private struct Storage {
-        var current: AuthState
         var user: AuthUser
         var scriptedErrors: [AuthErrorCode]
         var nextError: AuthErrorCode?
@@ -23,20 +24,16 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// `Mutex` rather than `@unchecked Sendable` + bare vars: `AuthClient` is `Sendable` (it refines
     /// `AuthTokenProviding`) and a fixture is driven from whatever isolation a test happens to use.
     private let storage: Mutex<Storage>
-    private let continuation: AsyncStream<AuthState>.Continuation
+    private let broadcaster: AuthStateBroadcaster
 
     /// The default account when a caller does not care who is signed in.
     static let defaultUser = AuthUser(uid: "fake-uid", email: "student@fitrah.test",
                                       isEmailVerified: true, providerIDs: ["password"])
 
     init(state: AuthState, user: AuthUser? = nil, scriptedErrors: [AuthErrorCode] = []) {
-        let (stream, continuation) = AsyncStream<AuthState>.makeStream()
-        self.state = stream
-        self.continuation = continuation
-        storage = Mutex(Storage(current: state, user: user ?? Self.defaultUser,
+        broadcaster = AuthStateBroadcaster(current: state)
+        storage = Mutex(Storage(user: user ?? Self.defaultUser,
                                 scriptedErrors: scriptedErrors, nextError: nil))
-        // Firebase's listener delivers the CURRENT state on registration; so does this.
-        continuation.yield(state)
     }
 
     /// The per-call failure leg: set it, and the next operation throws it and clears it.
@@ -99,13 +96,13 @@ nonisolated final class FakeAuthClient: AuthClient {
     }
 
     private func signedInUser() -> AuthUser? {
-        if case .signedIn(let user) = storage.withLock({ $0.current }) { return user }
+        if case .signedIn(let user) = broadcaster.current { return user }
         return nil
     }
 
-    private func transition(to state: AuthState) {
-        storage.withLock { $0.current = state }
-        continuation.yield(state)
-    }
+    /// A no-op transition emits NOTHING — `signOut()` on an already-signed-out fixture must not
+    /// produce a duplicate `.signedOut` the Firebase listener would never send. The drop lives in
+    /// `AuthStateBroadcaster.send`, so both conformers get it.
+    private func transition(to state: AuthState) { broadcaster.send(state) }
 }
 #endif

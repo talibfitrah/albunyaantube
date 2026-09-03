@@ -8,7 +8,7 @@ import SwiftData
 /// phase 4 wires real auth. `isFavorite` mirrors the DAO's `EXISTS(... deleted = 0)` check --
 /// unlike `items`, it does not filter by `approvalStatus`, so an AWAITING (imported, unreviewed)
 /// favorite still reads as favorited even though it's hidden from the list.
-@MainActor protocol FavoritesStore: AnyObject, Observable {
+@MainActor protocol FavoritesStore: AnyObject, Observable, UserScoped {
     var items: [FavoriteVideo] { get }
     func isFavorite(_ videoId: String) -> Bool
     func toggle(_ item: ContentItem) throws
