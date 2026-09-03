@@ -1,4 +1,5 @@
 #if DEBUG
+import FitrahAPI
 import Foundation
 import Synchronization
 
@@ -46,8 +47,10 @@ nonisolated final class FakeAuthClient: AuthClient {
 
     func currentUser() async -> AuthUser? { signedInUser() }
 
-    func idToken(forceRefresh: Bool) async -> String? {
-        signedInUser().map { "fake-id-token-\($0.uid)" }
+    /// The uid rides along so `BearerRetry`'s cross-account guard is exercisable from a fixture:
+    /// two `FakeAuthClient`s with different uids are two different signing identities.
+    func idToken(forceRefresh: Bool) async -> BearerToken? {
+        signedInUser().map { BearerToken(value: "fake-id-token-\($0.uid)", identity: $0.uid) }
     }
 
     func signIn(email: String, password: String) async throws(AuthErrorCode) -> AuthUser { try signInSucceeds() }

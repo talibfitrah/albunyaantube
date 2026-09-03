@@ -19,22 +19,25 @@ public nonisolated enum BearerRetry {
     public static func send<Req, Res>(
         signed request: Req,
         allowed: Bool,
-        token: @Sendable (_ forceRefresh: Bool) async -> String?,
+        token: @Sendable (_ forceRefresh: Bool) async -> BearerToken?,
         sign: @Sendable (Req, String) -> Req,
         isUnauthorizedBearer: @Sendable (Res) -> Bool,
         send: @Sendable (Req) async throws -> Res
     ) async rethrows -> Res {
-        let attempt: Req
-        if allowed, let token = await token(false) {
-            attempt = sign(request, token)
-        } else {
-            attempt = request
-        }
+        let first = allowed ? await token(false) : nil
+        let attempt = first.map { sign(request, $0.value) } ?? request
 
         let response = try await send(attempt)
         guard allowed, isUnauthorizedBearer(response) else { return response }
 
         guard let refreshed = await token(true) else { return try await send(attempt) }
-        return try await send(sign(request, refreshed))
+        // Task 6 review I2 — the cross-account leak guard, here so BOTH adapters inherit it. If the
+        // signed-in account changed between the two attempts (sign-out + sign-in as somebody else
+        // while this request was in flight), the refreshed bearer belongs to a DIFFERENT user and
+        // replaying account A's request with it would leak across accounts
+        // (`FirebaseAuthInterceptor.kt:131-143`). Surface the original 401 instead and let the
+        // caller re-drive the request under the new account.
+        guard refreshed.identity == first?.identity else { return response }
+        return try await send(sign(request, refreshed.value))
     }
 }

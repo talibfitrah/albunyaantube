@@ -24,10 +24,13 @@ struct BearerRetryTests {
 
     /// `tokens` and `responses` are consumed one per call, in order; running off the end yields
     /// `nil` / "not a 401". `challenge` is the `WWW-Authenticate: Bearer` half of the caller's
-    /// predicate, kept separate from the 401 itself so a plain 401 is expressible.
+    /// predicate, kept separate from the 401 itself so a plain 401 is expressible. `identities` is
+    /// consumed the same way and defaults to ONE account throughout, so only the cross-account test
+    /// has to say anything about it.
     private func run(
         allowed: Bool = true,
         tokens: [String?] = ["1"],
+        identities: [String?] = [],
         responses: [Bool] = [false],
         challenge: Bool = true,
         into recorder: Recorder
@@ -38,7 +41,9 @@ struct BearerRetryTests {
             token: { forceRefresh in
                 recorder.tokenCalls.append(forceRefresh)
                 let index = recorder.tokenCalls.count - 1
-                return index < tokens.count ? tokens[index] : nil
+                guard index < tokens.count, let value = tokens[index] else { return nil }
+                let identity = index < identities.count ? identities[index] : "uid-A"
+                return BearerToken(value: value, identity: identity)
             },
             sign: { _, token in
                 recorder.signCalls += 1
@@ -64,9 +69,14 @@ struct BearerRetryTests {
 
     /// (2) `allowed == false` → `sign` is never called and the request goes out untouched. This is
     /// `BearerScope` saying no; the token is not even fetched.
+    ///
+    /// Task 6 review I1: `responses: [true]` is what makes this test reach the retry branch at all.
+    /// With the helper's default (`[false]`) the guard's `allowed` term was unreachable and deleting
+    /// it left every test green — the one behaviour Task 6 flagged as a judgement call had no
+    /// assertion behind it. `sent == [0]` now pins BOTH halves: unsigned, and not retried.
     @Test func aDisallowedHostNeverSignsAndNeverAsksForAToken() async {
         let recorder = Recorder()
-        _ = await run(allowed: false, into: recorder)
+        _ = await run(allowed: false, responses: [true], into: recorder)
         #expect(recorder.tokenCalls.isEmpty)
         #expect(recorder.signCalls == 0)
         #expect(recorder.sent == [0])
@@ -122,5 +132,19 @@ struct BearerRetryTests {
         #expect(recorder.signCalls == 1)
         #expect(recorder.sent == [1, 1])
         #expect(response == true)
+    }
+
+    /// (8) Task 6 review I2 — the cross-account leak guard, fixed HERE so both adapters inherit it.
+    /// A sign-out plus sign-in as a different account landing between the two attempts must NOT
+    /// replay account A's in-flight request signed with account B's bearer
+    /// (`FirebaseAuthInterceptor.kt:131-143`, which Android calls a P0 identity leak). The original
+    /// 401 is returned instead, and the caller re-drives the request under the new account.
+    @Test func aRefreshUnderADifferentAccountDropsTheRetry() async {
+        let recorder = Recorder()
+        let response = await run(tokens: ["1", "2"], identities: ["uid-A", "uid-B"],
+                                 responses: [true, false], into: recorder)
+        #expect(recorder.tokenCalls == [false, true])
+        #expect(recorder.sent == [1], "account A's request must not be replayed with account B's token")
+        #expect(response == true, "the original 401 surfaces instead")
     }
 }

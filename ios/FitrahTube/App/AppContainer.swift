@@ -164,6 +164,40 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private let injectedGoogleSignIn: (any OAuthSignInProvider)?
     private let injectedAppleSignIn: (any OAuthSignInProvider)?
 
+    /// Phase 4 Task 7: where `authorizedTransport`'s 403 account-lifecycle envelopes land.
+    private(set) lazy var accountStatus = AccountStatusCenter()
+
+    /// The hand-written clients' signed transport. Not private and not a detail, for the same
+    /// reason `gateTransport` is not: `AppContainerTests` pins which one a fixture container got.
+    ///
+    /// **R5-1, again.** A fixture container must make ZERO account requests. `fake()` used to hand
+    /// the offline gate a real client against `AppConfig.apiBaseURL` (Debug: `http://localhost:8080/`)
+    /// and, with the documented dev backend running, the launch sweep got a real 404 per seeded row
+    /// and deleted the whole screenshot fixture before the rig could photograph it. `ScriptedTransport`
+    /// makes "no network" true by construction rather than by hoping nothing is listening on 8080 —
+    /// the `gateTransport: FixedStatusTransport(status: 503)` precedent, with a body.
+    private(set) lazy var authorizedTransport: any HTTPTransport = {
+        #if DEBUG
+        if isFixture { return ScriptedTransport([.json(200, Self.fixtureAccountMeJSON)]) }
+        #endif
+        return AuthorizedTransport(base: URLSessionTransport(), apiHost: apiBaseURL.host() ?? "",
+                                   tokens: auth, onStatusEvent: { [accountStatus] in accountStatus.post($0) })
+    }()
+
+    /// Phase 4 Task 7: `/api/account/*`, over the signed transport above.
+    private(set) lazy var account = AccountClient(transport: authorizedTransport, baseURL: apiBaseURL,
+                                                  deviceId: .persisted(in: userDefaults))
+
+    #if DEBUG
+    /// What a fixture container's `GET /api/account/me` answers. Task 13's `-fitrah-fake-account`
+    /// hook is what makes this selectable per launch; until then every fixture is the same ACTIVE
+    /// student, matching `FakeAuthClient.defaultUser`.
+    static let fixtureAccountMeJSON = """
+    {"uid":"fake-uid","email":"student@fitrah.test","displayName":"Aisha","dateOfBirth":"2001-04-09",\
+    "phoneNumber":null,"status":"active","role":"user"}
+    """
+    #endif
+
     private func makeOfflineManager() -> OfflineManager {
         let base = offlineBase
         let manager = OfflineManager(

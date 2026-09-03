@@ -98,6 +98,32 @@ struct AppContainerTests {
         #expect(await container.offlineGate.answer("xc7keR2piUM") == .unreachable)
     }
 
+    /// R5-1 again, for the account stack: a fixture container must make ZERO account requests. The
+    /// same failure mode as the offline gate — a real client against `AppConfig.apiBaseURL` (Debug:
+    /// `http://localhost:8080/`) reaches the documented dev backend whenever it happens to be
+    /// running, and the screenshot rig's account screens would then be decided by the network.
+    @Test func theFakeContainerAnswersAccountRequestsWithoutTheNetwork() async throws {
+        let container = AppContainer.fake()
+        #expect(container.authorizedTransport is ScriptedTransport)
+        let me = try await container.account.me()
+        #expect(me.uid == "fake-uid")
+        #expect(me.status == .active)
+    }
+
+    /// The transport posts from whatever isolation the request ran on; the center buffers one event
+    /// and hands it over exactly once, so a re-render cannot route the user twice.
+    @Test func theAccountStatusCenterBuffersOneEventAndConsumesItOnce() async {
+        let center = AccountStatusCenter()
+        center.post(.blocked)
+        center.post(.deleted)
+        // `post` hops to the main actor; one yield past both hops is enough, and there is no clock.
+        await Task.yield()
+        await Task.yield()
+        #expect(center.pending == .deleted, "drop-oldest: the newest terminal event wins")
+        #expect(center.consume() == .deleted)
+        #expect(center.consume() == nil)
+    }
+
     /// R5-1, fix round 1: stubbing the gate closed the deletion vector but not the constraint the
     /// item was written for — the fake container still built `LiveStreamResolver` over the real
     /// InnerTubeKit resolver, so nothing stopped a `-fitrah-seed-offline` launch resolving over the

@@ -1,4 +1,5 @@
 import FirebaseAuth
+import FitrahAPI
 import Foundation
 
 /// The ONE `AuthClient` conformer that imports FirebaseAuth (plan Global Constraints: Firebase
@@ -31,9 +32,12 @@ nonisolated final class FirebaseAuthClient: AuthClient {
 
     func currentUser() async -> AuthUser? { Auth.auth().currentUser.map(AuthUser.init) }
 
-    func idToken(forceRefresh: Bool) async -> String? {
-        guard let user = Auth.auth().currentUser else { return nil }
-        return try? await user.getIDToken(forcingRefresh: forceRefresh)
+    /// The uid is read from the SAME `User` the token came from, so `BearerRetry`'s cross-account
+    /// guard compares two identities that were each atomic with their bearer.
+    func idToken(forceRefresh: Bool) async -> BearerToken? {
+        guard let user = Auth.auth().currentUser,
+              let token = try? await user.getIDToken(forcingRefresh: forceRefresh) else { return nil }
+        return BearerToken(value: token, identity: user.uid)
     }
 
     func signIn(email: String, password: String) async throws(AuthErrorCode) -> AuthUser {

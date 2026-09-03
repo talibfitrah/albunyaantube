@@ -9,7 +9,7 @@ import OpenAPIRuntime
 /// This is a thin adapter: the whole state machine is `BearerRetry` (pinned by `BearerRetryTests`)
 /// and the host rule is `BearerScope` (pinned by `BearerScopeTests`). What lives here is only the
 /// mapping onto OpenAPI's `intercept` shape.
-public struct AuthMiddleware: ClientMiddleware {
+public nonisolated struct AuthMiddleware: ClientMiddleware {
     private let apiHost: String
     private let tokens: any AuthTokenProviding
 

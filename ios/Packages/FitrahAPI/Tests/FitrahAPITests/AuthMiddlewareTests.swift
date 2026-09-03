@@ -11,7 +11,9 @@ struct AuthMiddlewareTests {
 
     private struct ScriptedTokens: AuthTokenProviding {
         let token: String?
-        func idToken(forceRefresh: Bool) async -> String? { token }
+        func idToken(forceRefresh: Bool) async -> BearerToken? {
+            token.map { BearerToken(value: $0, identity: "uid-A") }
+        }
     }
 
     /// Fact 1: the Bearer reaches the configured API host, and is ABSENT on a request bound

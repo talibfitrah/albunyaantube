@@ -103,7 +103,7 @@ nonisolated protocol AuthClient: AuthTokenProviding {
 nonisolated struct UnavailableAuthClient: AuthClient {
     var state: AsyncStream<AuthState> { AsyncStream { $0.yield(.signedOut); $0.finish() } }
     func currentUser() async -> AuthUser? { nil }
-    func idToken(forceRefresh: Bool) async -> String? { nil }
+    func idToken(forceRefresh: Bool) async -> BearerToken? { nil }
     func signIn(email: String, password: String) async throws(AuthErrorCode) -> AuthUser { throw .unknown }
     func signUp(email: String, password: String) async throws(AuthErrorCode) -> AuthUser { throw .unknown }
     func signIn(with credential: OAuthCredential) async throws(AuthErrorCode) -> AuthUser { throw .unknown }
