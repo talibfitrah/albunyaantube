@@ -63,9 +63,35 @@ nonisolated enum AccountState: Sendable, Equatable {
         }
     }
 
+    /// Fix round 1 / I2: the refresh currently running, handed to a second caller instead of a
+    /// second request. `SignInViewModel.land()` refreshes on the same auth transition `start()` is
+    /// about to refresh on; with no guard both wrote `state` and the last writer won, so a
+    /// `.loaded` account could be overwritten by the loser's `.failed` and `RootView` would then
+    /// read `status == nil` and route a pending-profile account to the shell.
+    private var inFlight: Task<Void, Never>?
+
     /// `MAX_ATTEMPTS = 3`, linear backoff `1 s * attempt`; IOException retries, 4xx/5xx NEVER
     /// (`AccountRepositoryImpl.kt:111-147`). The splash calls it with `maxAttempts: 1`.
+    ///
+    /// Coalesced: the FIRST caller's `maxAttempts` is the budget that runs, and a second caller
+    /// awaits that work rather than racing it. Ordering with `start()` is unchanged — `start()`
+    /// calls `scope(to:)` and then `refresh()` with no suspension between them, so a `/me` answer
+    /// can still never land before the stores are re-scoped
+    /// (`aUidChangeScopesEveryStoreBeforeTheFirstRequest`).
     func refresh(maxAttempts: Int = 3) async {
+        // A follower must NOT cancel the shared work — only the caller that started it does, which
+        // is what keeps `start()`'s cancellation (Task 9 / M4) reaching the retry loop.
+        if let inFlight {
+            await inFlight.value
+            return
+        }
+        let task = Task { await self.fetch(maxAttempts: maxAttempts) }
+        inFlight = task
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        inFlight = nil
+    }
+
+    private func fetch(maxAttempts: Int) async {
         state = .loading
         for attempt in 1...max(1, maxAttempts) {
             do {

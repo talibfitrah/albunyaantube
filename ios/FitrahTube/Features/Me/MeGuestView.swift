@@ -58,6 +58,10 @@ struct MeGuestView: View {
             Button(String(localized: "me_guest_sign_in")) { router.push(.signIn) }
                 .buttonStyle(.borderedProminent)
                 .tint(.brand)
+                // Fix round 1 / M2: with no Firebase options file nothing on that screen can
+                // complete, and F11 puts the check on the affordance, not behind it. The screen's
+                // own `EmptyStateView` arm stays as the belt to this braces.
+                .disabled(!container.capabilities.emailPassword)
         }
         .frame(maxWidth: .infinity)
         .padding(Spacing.lg(widthClass))

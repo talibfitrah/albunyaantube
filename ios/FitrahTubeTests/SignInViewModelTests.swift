@@ -66,6 +66,25 @@ struct SignInViewModelTests {
         #expect(await auth.currentUser() == nil, "submit() reached the auth client")
     }
 
+    /// Fix round 1 / I1. The screen raises its banner from a CHANGE, and neither pre-network gate
+    /// clears `state.error` first — so a second tap on the same malformed address assigned
+    /// `.invalidEmail` over `.invalidEmail`, nothing changed, and the button did nothing at all.
+    /// Every failed attempt now carries its own presentation, identical repeats included.
+    @Test func twoIdenticalValidationFailuresRaiseTwoDistinctPresentations() async {
+        let (model, _) = make(auth: FakeAuthClient(state: .signedOut))
+        model.email = "not-an-email"
+        model.password = "hunter2"
+
+        await model.submit()
+        let first = model.errorPresentation
+        await model.submit()
+        let second = model.errorPresentation
+
+        #expect(first?.code == .invalidEmail)
+        #expect(second?.code == .invalidEmail)
+        #expect(first != second, "the repeated identical failure raised nothing for the banner")
+    }
+
     /// The double-tap guard. It is raised here through an in-flight PROVIDER sign-in because that is
     /// the one leg a test can hold open without a clock (`FakeOAuthProvider(gate:)`); the guard
     /// itself — `guard !state.isLoading` — is the same line `submit()` and `signIn(with:)` share.
@@ -120,6 +139,9 @@ struct SignInViewModelTests {
 
         await model.submit()
         #expect(model.landing?.destination == .main)
+        // Fix round 1 / M5: both fixture legs share one body, so without this the name's "switches
+        // the call" was unpinned — the entry point is recorded and asserted, not assumed.
+        #expect(auth.entryPoints == [.signIn, .signUp])
     }
 
     // MARK: - Forgot password

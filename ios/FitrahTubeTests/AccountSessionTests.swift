@@ -169,6 +169,29 @@ struct AccountSessionTests {
         #expect(session.state == .loading, "cancelled, not failed — no banner over an abandoned screen")
     }
 
+    /// Fix round 1 / I2. `SignInViewModel.land()` refreshes on the same auth transition `start()`
+    /// is about to refresh on. With no in-flight guard both issued `GET /me` and both wrote
+    /// `state`, so a `.loaded` account could be overwritten by the loser's `.failed` — and
+    /// `RootView` then read `status == nil` and routed a pending-profile account to the shell. The
+    /// second caller now awaits the first's work instead of starting its own.
+    @Test func twoOverlappingRefreshesShareOneRequestAndOneOutcome() async {
+        let (session, _, transport, _) = make(auth: FakeAuthClient(state: .signedOut),
+                                              responses: [.json(200, Self.meJSON)])
+        // The out-of-band caller's budget is the splash's 1; the first caller's 3 is what survives.
+        async let first = Self.refreshAndRead(session)
+        async let second = Self.refreshAndRead(session, maxAttempts: 1)
+        let (a, b) = await (first, second)
+
+        #expect(transport.sent.count == 1, "the second refresh issued a /me of its own")
+        #expect(a == b, "the two callers observed different states")
+        #expect(a.me?.uid == "fake-uid")
+    }
+
+    private static func refreshAndRead(_ session: AccountSession, maxAttempts: Int = 3) async -> AccountState {
+        await session.refresh(maxAttempts: maxAttempts)
+        return session.state
+    }
+
     /// A terminal 403 envelope reaching the client directly drops the session. `AuthorizedTransport`
     /// posts the same event, but "Something went wrong" over a dead account is the wrong end state
     /// even for one request that missed the post.

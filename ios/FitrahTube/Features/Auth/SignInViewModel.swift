@@ -33,10 +33,23 @@ import Observation
     /// dismisses on it; `RootView.destination(for:)` is what renders the destination, so nothing
     /// here has to know whether Tasks 11/12 have shipped their screens yet.
     ///
-    /// The whole `SplashOutcome`, not just its destination: `signOut`/`alert` travel with it for the
-    /// blocked/deleted rows, and `RootView`'s `onChange(of: outcome)` is the caller that acts on
-    /// them — dropping them here would be dropping the terminal-account handling.
+    /// The whole `SplashOutcome`, not just its destination. Fix round 1 / M6 corrects what the
+    /// hand-off actually is: `RootView` acts on its OWN recomputed outcome (`RootView.swift`, a
+    /// computed property over `container.session`), never on this value — so `signOut`/`alert` are
+    /// carried here for this screen's own reading of the terminal rows, not for a caller elsewhere.
     private(set) var landing: SplashOutcome?
+
+    /// Fix round 1 / I1: the banner cannot be driven off `state.error`. Neither pre-network gate
+    /// clears it first, so a second tap on the same malformed address assigns `.invalidEmail` over
+    /// `.invalidEmail` — no change, no banner, a button that does nothing. This carries a distinct
+    /// value for EVERY failed attempt, identical repeats included.
+    private(set) var errorPresentation: ErrorPresentation?
+
+    nonisolated struct ErrorPresentation: Equatable, Sendable {
+        let code: AuthErrorCode
+        /// Monotonic; the only thing that distinguishes two identical failures.
+        let attempt: Int
+    }
 
     /// The capability-filtered button list, in render order. `SignInCapabilities.visibleProviders`
     /// is the ONE table (Task 5) — this is the screen's view of it, never a second copy.
@@ -78,11 +91,11 @@ import Observation
     func submit() async {
         guard !state.isLoading else { return }   // de-dupe rapid double-taps
         guard EmailShape.isValid(state.email) else {
-            state.error = .invalidEmail
+            fail(.invalidEmail)
             return
         }
         guard state.password.count >= Self.minPasswordLength else {
-            state.error = .weakPassword
+            fail(.weakPassword)
             return
         }
         beginLoading()
@@ -117,7 +130,7 @@ import Observation
             state.isLoading = false
             // A cancel is the user's own choice: back to idle, NO banner. Only a real failure
             // carries a code to render.
-            if case .failed(let code) = error { state.error = code }
+            if case .failed(let code) = error { fail(code) }
             return
         }
 
@@ -134,7 +147,7 @@ import Observation
     func forgotPassword() async {
         guard !state.isLoading else { return }
         guard EmailShape.isValid(state.email) else {
-            state.error = .invalidEmail
+            fail(.invalidEmail)
             return
         }
         beginLoading()
@@ -157,7 +170,14 @@ import Observation
 
     private func finish(with error: AuthErrorCode) {
         state.isLoading = false
-        state.error = error
+        fail(error)
+    }
+
+    /// The ONE place a failure is recorded — every arm above routes through it, which is what makes
+    /// "a repeat is still an event" a property of the view model rather than of each call site.
+    private func fail(_ code: AuthErrorCode) {
+        state.error = code
+        errorPresentation = ErrorPresentation(code: code, attempt: (errorPresentation?.attempt ?? 0) + 1)
     }
 
     /// Spec §13's post-sign-in rule, asked of Task 8's matrix rather than re-derived here.

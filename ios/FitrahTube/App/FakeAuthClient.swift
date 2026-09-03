@@ -15,10 +15,16 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// (`AuthClient.swift`). Two subscribers both see everything.
     var state: AsyncStream<AuthState> { broadcaster.stream }
 
+    /// Fix round 1 / M5: `signIn(email:)`, `signUp(email:)` and `signIn(with:)` share one body, so
+    /// nothing downstream could tell which one ran — `SignInViewModelTests`' mode-toggle test named
+    /// a fact it did not pin. Recorded in order.
+    nonisolated enum EntryPoint: Sendable, Equatable { case signIn, signUp, credential }
+
     private struct Storage {
         var user: AuthUser
         var scriptedErrors: [AuthErrorCode]
         var nextError: AuthErrorCode?
+        var entryPoints: [EntryPoint] = []
     }
 
     /// `Mutex` rather than `@unchecked Sendable` + bare vars: `AuthClient` is `Sendable` (it refines
@@ -50,9 +56,12 @@ nonisolated final class FakeAuthClient: AuthClient {
         signedInUser().map { BearerToken(value: "fake-id-token-\($0.uid)", identity: $0.uid) }
     }
 
-    func signIn(email: String, password: String) async throws(AuthErrorCode) -> AuthUser { try signInSucceeds() }
-    func signUp(email: String, password: String) async throws(AuthErrorCode) -> AuthUser { try signInSucceeds() }
-    func signIn(with credential: OAuthCredential) async throws(AuthErrorCode) -> AuthUser { try signInSucceeds() }
+    /// Every sign-in entry point that has been called, in order.
+    var entryPoints: [EntryPoint] { storage.withLock { $0.entryPoints } }
+
+    func signIn(email: String, password: String) async throws(AuthErrorCode) -> AuthUser { try signInSucceeds(.signIn) }
+    func signUp(email: String, password: String) async throws(AuthErrorCode) -> AuthUser { try signInSucceeds(.signUp) }
+    func signIn(with credential: OAuthCredential) async throws(AuthErrorCode) -> AuthUser { try signInSucceeds(.credential) }
 
     func sendPasswordReset(email: String) async throws(AuthErrorCode) { try consumeError() }
     func sendVerificationEmail() async throws(AuthErrorCode) { try consumeError() }
@@ -75,7 +84,10 @@ nonisolated final class FakeAuthClient: AuthClient {
 
     // MARK: -
 
-    private func signInSucceeds() throws(AuthErrorCode) -> AuthUser {
+    /// Recorded BEFORE the scripted error is consumed: a refused attempt still reached this entry
+    /// point, which is the fact a caller-routing assertion needs.
+    private func signInSucceeds(_ entryPoint: EntryPoint) throws(AuthErrorCode) -> AuthUser {
+        storage.withLock { $0.entryPoints.append(entryPoint) }
         try consumeError()
         let user = storage.withLock { $0.user }
         transition(to: .signedIn(user))

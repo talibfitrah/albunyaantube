@@ -29,9 +29,12 @@ struct SignInScreen: View {
                                             capabilities: container.capabilities)
             }
         }
-        .onChange(of: viewModel?.state.error) { _, error in
-            guard let error else { return }
-            banner = BannerMessage(text: String(localized: String.LocalizationValue(error.messageKey)))
+        // Fix round 1 / I1: driven off `errorPresentation`, NOT `state.error`. Neither pre-network
+        // gate clears the error first, so a second tap on the same malformed address was not a
+        // value change and raised no banner at all — the one path a confused user takes went mute.
+        .onChange(of: viewModel?.errorPresentation) { _, presentation in
+            guard let presentation else { return }
+            banner = BannerMessage(text: String(localized: String.LocalizationValue(presentation.code.messageKey)))
         }
         .onChange(of: viewModel?.state.passwordResetSent) { _, sent in
             guard sent == true else { return }
@@ -117,6 +120,11 @@ struct SignInScreen: View {
         .buttonStyle(.borderedProminent)
         .tint(.brand)
         .disabled(model.state.isLoading)
+        // Fix round 1 / M4: while loading the title is at `.opacity(0)` and so out of the
+        // accessibility tree, leaving an unlabelled `ProgressView` — VoiceOver announced a button
+        // with no name mid-submit. Label and value, the floor for every stateful control.
+        .accessibilityLabel(submitTitle(model))
+        .accessibilityValue(model.state.isLoading ? String(localized: "loading") : "")
         .accessibilityIdentifier("signIn.submit")
 
         if model.state.mode == .signIn {
@@ -214,14 +222,19 @@ private extension View {
 }
 
 #if DEBUG
+// Fix round 1 / M1: `sharedFake` has `capabilities: nil` -> `.current()` -> all-false with no
+// plist, so both previews rendered the unavailable `EmptyStateView` and nothing anywhere showed
+// this screen's actual layout. The all-true capabilities are the seam Task 5 left for exactly this.
+private let previewCapabilities = SignInCapabilities(emailPassword: true, google: true, apple: true)
+
 #Preview {
     NavigationStack { SignInScreen() }
-        .environment(\.container, .sharedFake)
+        .environment(\.container, .fake(capabilities: previewCapabilities))
 }
 
 #Preview("RTL") {
     NavigationStack { SignInScreen() }
-        .environment(\.container, .sharedFake)
+        .environment(\.container, .fake(capabilities: previewCapabilities))
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }
