@@ -198,6 +198,8 @@ struct MainShellView: View {
             AboutView()
         case .offline:
             SavedScreen()
+        case .signIn:
+            SignInScreen()
         }
     }
 

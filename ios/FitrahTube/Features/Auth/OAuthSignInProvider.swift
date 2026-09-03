@@ -7,7 +7,21 @@ import Foundation
 /// per-flow state (Apple's nonce and its in-flight continuation) across a suspension.
 @MainActor protocol OAuthSignInProvider: AnyObject {
     var isAvailable: Bool { get }
-    func presentSignIn() async throws(AuthErrorCode) -> OAuthCredential
+    func presentSignIn() async throws(OAuthSignInFailure) -> OAuthCredential
+}
+
+/// Why a provider leg ended without a credential. Task 5 shipped a bare `AuthErrorCode`, which
+/// collapsed **the user dismissing the sheet** into `.googleSignInFailed`/`.appleSignInFailed` — so
+/// deliberately backing out of Apple's dialog raised an error banner over a screen the user had just
+/// decided not to use. A cancel is not a failure and gets no copy at all (Task 10 ruling).
+///
+/// A dedicated type, rather than a 14th `AuthErrorCode` case: every code in that table is something
+/// a screen RENDERS, and `.cancelled` renders nothing — it would be the one case with a `messageKey`
+/// no user can ever see.
+nonisolated enum OAuthSignInFailure: Error, Sendable, Equatable {
+    /// The user dismissed the provider's sheet. Silent: back to idle, never a banner.
+    case cancelled
+    case failed(AuthErrorCode)
 }
 
 /// The sign-in affordances a screen may render, in the order Task 10 renders them. Deliberately a

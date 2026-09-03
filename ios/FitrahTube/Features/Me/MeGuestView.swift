@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Guest Me tab (spec D11: 5 tabs, guest Me shows local favorites + a sign-in card, never a
 /// forced sign-in -- Android instead forces a sign-in screen here, which iOS deliberately does
-/// not port). Real sign-in is a phase-4 dependency (accounts/auth); this screen is the
-/// placeholder Phase 1 ships until then.
+/// not port). Phase 4 Task 10 made the card's button live: it pushes `Route.signIn`, which is a
+/// destination the user chooses, never a gate in front of the catalog.
 struct MeGuestView: View {
     @Environment(\.container) private var container
     @Environment(\.router) private var router
@@ -53,12 +53,11 @@ struct MeGuestView: View {
                 .font(TypeScale.body(widthClass))
                 .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.center)
-            // ponytail: sign-in needs phase-4 auth (accounts/Firebase); this button intentionally
-            // pushes nothing yet -- wire it to the real sign-in flow when that phase lands.
-            Button(String(localized: "me_guest_sign_in")) {}
+            // Phase 4 Task 10: live. The screen it pushes is the ONLY sign-in surface -- the tab
+            // itself stays a guest tab (D11: never a forced sign-in).
+            Button(String(localized: "me_guest_sign_in")) { router.push(.signIn) }
                 .buttonStyle(.borderedProminent)
                 .tint(.brand)
-                .disabled(true)
         }
         .frame(maxWidth: .infinity)
         .padding(Spacing.lg(widthClass))

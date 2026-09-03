@@ -19,25 +19,32 @@ import UIKit
     /// cannot disagree about who is available.
     var isAvailable: Bool { SignInCapabilities.current().google }
 
-    func presentSignIn() async throws(AuthErrorCode) -> OAuthCredential {
+    func presentSignIn() async throws(OAuthSignInFailure) -> OAuthCredential {
         // Configure-first, and not merely "read the client id": the `GIDConfiguration` hand-off
         // lives INSIDE `FirebaseBootstrap`'s configure latch, so a path that read `googleClientID`
         // and skipped the latch would reach a `GIDSignIn` whose `configuration` is still nil.
         guard FirebaseBootstrap.configureIfPossible(), let presenter = Self.presenter else {
-            throw .googleSignInFailed
+            throw .failed(.googleSignInFailed)
         }
         do {
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter)
-            guard let idToken = result.user.idToken?.tokenString else { throw AuthErrorCode.googleSignInFailed }
+            guard let idToken = result.user.idToken?.tokenString else { throw OAuthSignInFailure.failed(.googleSignInFailed) }
             // `google.com` — `FirebaseAuth.GoogleAuthProvider.id`, spelled literally so this file's
             // output stays readable without importing FirebaseAuth.
             return OAuthCredential(providerID: "google.com", idToken: idToken,
                                    accessTokenOrNonce: result.user.accessToken.tokenString)
+        } catch let failure as OAuthSignInFailure {
+            throw failure
         } catch {
-            // Every GIDSignIn failure — cancellation included — is one app code: this is the
-            // pre-Firebase leg, so there is no `NSError` domain worth mapping (`AuthErrorCode`
-            // carries `googleSignInFailed` for exactly this, Task 4's table).
-            throw AuthErrorCode.googleSignInFailed
+            // The ONE case worth telling apart: the user backed out. `NS_ERROR_ENUM` bridges
+            // `kGIDSignInErrorCodeCanceled` to `GIDSignInError.canceled`, and the domain is checked
+            // too so a `-5` from some other `NSError` can never read as a cancel. Everything else is
+            // one app code — this is the pre-Firebase leg, with no domain worth mapping further.
+            let nsError = error as NSError
+            if nsError.domain == kGIDSignInErrorDomain, nsError.code == GIDSignInError.canceled.rawValue {
+                throw .cancelled
+            }
+            throw .failed(.googleSignInFailed)
         }
     }
 

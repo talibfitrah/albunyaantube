@@ -552,6 +552,28 @@
         }
       }
     },
+    "auth_apple_button": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تسجيل الدخول باستخدام Apple"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in with Apple"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggen met Apple"
+          }
+        }
+      }
+    },
     "auth_create_account_link": {
       "localizations": {
         "ar": {
@@ -614,6 +636,28 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Email"
+          }
+        }
+      }
+    },
+    "auth_error_apple": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر تسجيل الدخول باستخدام Apple"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't sign in with Apple"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggen met Apple is mislukt"
           }
         }
       }

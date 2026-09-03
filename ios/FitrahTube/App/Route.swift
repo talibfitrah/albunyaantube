@@ -47,6 +47,9 @@ nonisolated enum Route: Hashable, Sendable {
     case about
     /// Phase 3 Task 6: the Saved (offline library) screen — the ONE Route case Phase 3 adds.
     case offline
+    /// Phase 4 Task 10: the sign-in screen, pushed from the guest Me tab's card. iOS never forces
+    /// it (D11 / RULING 31) — it is a destination, never a gate.
+    case signIn
 }
 
 extension Route {

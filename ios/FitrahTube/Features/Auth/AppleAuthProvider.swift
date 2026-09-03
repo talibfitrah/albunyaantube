@@ -34,10 +34,11 @@ import UIKit
     /// `performRequests()`, so `presentationAnchor(for:)` never has to invent one.
     private var anchor: ASPresentationAnchor!
 
-    func presentSignIn() async throws(AuthErrorCode) -> OAuthCredential {
+    func presentSignIn() async throws(OAuthSignInFailure) -> OAuthCredential {
         // BEFORE the claim below, so a refused re-entrant call never runs the release path and
-        // clears the first flow's latch.
-        guard !isPresenting else { throw .appleSignInFailed }
+        // clears the first flow's latch. `SignInViewModel` refuses the second tap itself, so this
+        // is the backstop, not the user-visible path.
+        guard !isPresenting else { throw .failed(.appleSignInFailed) }
         isPresenting = true
         defer { isPresenting = false }
         // Same configure-first rule as Google's: the credential is only worth anything if Firebase
@@ -46,7 +47,7 @@ import UIKit
         // does not guarantee Apple ever calls back, which is the same orphaned-continuation hang by
         // another route. Refuse before `performRequests()`, never during.
         guard FirebaseBootstrap.configureIfPossible(), let window = Self.keyWindow else {
-            throw .appleSignInFailed
+            throw .failed(.appleSignInFailed)
         }
         anchor = window
         let rawNonce = Self.randomNonce()
@@ -65,13 +66,22 @@ import UIKit
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let identityToken = credential.identityToken,
                   let idToken = String(data: identityToken, encoding: .utf8) else {
-                throw AuthErrorCode.appleSignInFailed
+                throw OAuthSignInFailure.failed(.appleSignInFailed)
             }
             return OAuthCredential(providerID: "apple.com", idToken: idToken, accessTokenOrNonce: rawNonce)
+        } catch let failure as OAuthSignInFailure {
+            throw failure
         } catch {
-            // Cancellation included: this is the pre-Firebase leg, so there is no Firebase NSError
-            // domain to map and `.appleSignInFailed` is the one code Task 4's table carries for it.
-            throw AuthErrorCode.appleSignInFailed
+            // The ONE case worth telling apart: dismissing Apple's sheet is the user's own choice,
+            // and an error banner over it is wrong. The domain is checked alongside the code so a
+            // `1001` from another `NSError` can never read as a cancel. Everything else is one app
+            // code — this is the pre-Firebase leg, with no Firebase domain to map.
+            let nsError = error as NSError
+            if nsError.domain == ASAuthorizationError.errorDomain,
+               nsError.code == ASAuthorizationError.canceled.rawValue {
+                throw .cancelled
+            }
+            throw .failed(.appleSignInFailed)
         }
     }
 

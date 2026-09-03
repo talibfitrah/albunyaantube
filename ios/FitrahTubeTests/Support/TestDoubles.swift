@@ -72,25 +72,34 @@ func noSleep(_ duration: Duration) async throws {}
 /// never asked" (ruling F11) is a property a caller's test can actually break: a screen that asks
 /// one anyway gets an error, not a silent success. `presentCount` is how a caller's test proves it
 /// was not asked at all.
+/// Task 10 adds two knobs, both defaulted so every existing call site is unchanged: `error` now
+/// also fails an AVAILABLE provider (the cancel and SDK-failure legs -- `isAvailable == false` can
+/// only ever express "never asked"), and `gate` holds the flow open so a caller's re-entrancy guard
+/// is testable with no clock.
 @MainActor final class FakeOAuthProvider: OAuthSignInProvider {
     let isAvailable: Bool
     let credential: OAuthCredential
-    let error: AuthErrorCode
+    let error: OAuthSignInFailure?
+    let gate: Gate?
     private(set) var presentCount = 0
 
     init(isAvailable: Bool = true,
          credential: OAuthCredential = OAuthCredential(providerID: "google.com",
                                                        idToken: "fake-id-token",
                                                        accessTokenOrNonce: "fake-access-token"),
-         error: AuthErrorCode = .googleSignInFailed) {
+         error: OAuthSignInFailure? = nil,
+         gate: Gate? = nil) {
         self.isAvailable = isAvailable
         self.credential = credential
         self.error = error
+        self.gate = gate
     }
 
-    func presentSignIn() async throws(AuthErrorCode) -> OAuthCredential {
+    func presentSignIn() async throws(OAuthSignInFailure) -> OAuthCredential {
         presentCount += 1
-        guard isAvailable else { throw error }
+        if let gate { await gate.block() }
+        guard isAvailable else { throw error ?? .failed(.googleSignInFailed) }
+        if let error { throw error }
         return credential
     }
 }

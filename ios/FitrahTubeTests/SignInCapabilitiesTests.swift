@@ -61,7 +61,7 @@ import Testing
         #expect(provider.isAvailable == (FirebaseBootstrap.googleClientID != nil))
         if !FirebaseBootstrap.optionsFileExists {
             #expect(provider.isAvailable == false)
-            await #expect(throws: AuthErrorCode.googleSignInFailed) { try await provider.presentSignIn() }
+            await #expect(throws: OAuthSignInFailure.failed(.googleSignInFailed)) { try await provider.presentSignIn() }
         }
 
         let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
@@ -79,7 +79,7 @@ import Testing
         #expect(provider.isAvailable == SignInCapabilities.current().apple)
         if !FirebaseBootstrap.optionsFileExists {
             #expect(provider.isAvailable == false)
-            await #expect(throws: AuthErrorCode.appleSignInFailed) { try await provider.presentSignIn() }
+            await #expect(throws: OAuthSignInFailure.failed(.appleSignInFailed)) { try await provider.presentSignIn() }
         }
     }
 
@@ -100,7 +100,7 @@ import Testing
         #expect(provider.isPresenting == false)
 
         provider.isPresenting = true
-        await #expect(throws: AuthErrorCode.appleSignInFailed) { try await provider.presentSignIn() }
+        await #expect(throws: OAuthSignInFailure.failed(.appleSignInFailed)) { try await provider.presentSignIn() }
         #expect(provider.isPresenting, "the refused call must leave the first flow's latch claimed")
 
         provider.isPresenting = false
@@ -116,6 +116,6 @@ import Testing
         #expect(available.presentCount == 1)
 
         let unavailable = FakeOAuthProvider(isAvailable: false)
-        await #expect(throws: AuthErrorCode.googleSignInFailed) { try await unavailable.presentSignIn() }
+        await #expect(throws: OAuthSignInFailure.failed(.googleSignInFailed)) { try await unavailable.presentSignIn() }
     }
 }

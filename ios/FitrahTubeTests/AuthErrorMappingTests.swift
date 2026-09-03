@@ -64,10 +64,10 @@ private enum FirebaseCode {
     /// Every code an auth screen can render must have copy in all three locales — a missing key
     /// resolves to the key itself, which is what the user would see.
     ///
-    /// `.appleSignInFailed` is EXCLUDED on purpose: `auth_error_apple` is authored in Task 10 with
-    /// the Apple button it belongs to (this task ships no strings). Delete the filter then.
+    /// Task 10 authored `auth_error_apple` with the Apple button it belongs to, so the exclusion
+    /// `.appleSignInFailed` used to carry is gone and the table is covered whole.
     @Test func everyMessageKeyResolvesInEnglishArabicAndDutch() {
-        for code in AuthErrorCode.allCases where code != .appleSignInFailed {
+        for code in AuthErrorCode.allCases {
             for locale in ["en", "ar", "nl"] {
                 let bundle = Format.localizedBundle(for: Locale(identifier: locale))
                 let value = bundle.localizedString(forKey: code.messageKey, value: nil, table: nil)

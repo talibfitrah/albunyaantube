@@ -271,6 +271,17 @@ EXTRA_KEYS = {
     # ExoPlayer DefaultTimeBar with no accessibility label at all.
     "shorts_more_options_cd": {"en": "More options", "ar": "المزيد من الخيارات", "nl": "Meer opties"},
     "shorts_seek_cd": {"en": "Seek", "ar": "التنقل في المقطع", "nl": "Zoeken in video"},
+    # Sign in with Apple (Phase 4 Task 10). Both keys are iOS-only: Android ships no Apple button
+    # at all, so there is no source string to port -- its federated row is Google + Microsoft, and
+    # Microsoft is refused for iOS (spec §3 Out: auth_microsoft_button,
+    # auth_microsoft_unavailable_tv, auth_error_microsoft).
+    "auth_apple_button": {"en": "Sign in with Apple", "ar": "تسجيل الدخول باستخدام Apple", "nl": "Inloggen met Apple"},
+    # WHAT, never why.
+    "auth_error_apple": {
+        "en": "Couldn't sign in with Apple",
+        "ar": "تعذّر تسجيل الدخول باستخدام Apple",
+        "nl": "Inloggen met Apple is mislukt",
+    },
     # offline_footer_format (Phase 3 Task 3): the Saved screen's storage footer, rendered by
     # `OfflineStorage.footer` -- authored here (ahead of Task 5's offline_* batch) because the
     # footer math ships with the pure engine. Args: %1$ count of saved items, %2$/%3$ localized
