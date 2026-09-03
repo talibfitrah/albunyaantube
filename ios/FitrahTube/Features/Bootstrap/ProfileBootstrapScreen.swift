@@ -148,17 +148,24 @@ struct ProfileBootstrapScreen: View {
                     .font(TypeScale.body(widthClass))
                     .foregroundStyle(Color.textSecondary)
                     .padding(.leading, Spacing.md(widthClass))
-                TextField(String(localized: "bootstrap_phone_hint"), text: $bindable.phoneNumber)
+                    // Decoration, not content: VoiceOver reads the field's own label instead.
+                    .accessibilityHidden(true)
+                // The placeholder is the ONLY country hint on this screen (ruling C1 — no country
+                // picker), so it has to show the SHAPE: a dial code then the national number.
+                // Without it a user types their national number after the fixed "+", gets a disabled
+                // button, and is never told a dial code is required. Digits need no translation,
+                // hence `verbatim`; `bootstrap_phone_hint` stays the field's label.
+                TextField(String(localized: "bootstrap_phone_hint"), text: $bindable.phoneNumber,
+                          prompt: Text(verbatim: "31612345678"))
                     .textContentType(.telephoneNumber)
                     .keyboardType(.phonePad)
                     .autocorrectionDisabled()
                     .font(TypeScale.body(widthClass))
                     .padding(Spacing.md(widthClass))
+                    .accessibilityLabel(String(localized: "bootstrap_phone_label"))
             }
             .frame(minHeight: 44)
             .background(Color.homeCard, in: RoundedRectangle(cornerRadius: Radius.card))
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(String(localized: "bootstrap_phone_label"))
         }
     }
 

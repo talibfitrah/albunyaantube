@@ -68,9 +68,16 @@ import Observation
 
     var phoneNumber: String {
         get { state.phoneNumber }
-        // The "+" is the screen's fixed prefix, so a pasted "+31…" would otherwise become "++31…"
-        // and never validate. Dropped here, where both the field and a paste route through.
-        set { state.phoneNumber = newValue.filter { $0 != "+" }; state.error = nil }
+        // ONE rule: every character that IS a digit becomes its ASCII digit, everything else is
+        // dropped. That covers the three ways this field gets input the validator would refuse —
+        // the "+" the screen already renders as a fixed prefix (a pasted "+31…" would otherwise
+        // become "++31…"), the spaces and dashes `.telephoneNumber` autofill hands over, and the
+        // Arabic-Indic digits an Arabic keypad produces, which the server's ASCII-only `@Pattern`
+        // rejects. Normalised here, where the field, a paste and autofill all route through.
+        set {
+            state.phoneNumber = newValue.compactMap { $0.wholeNumberValue.map(String.init) }.joined()
+            state.error = nil
+        }
     }
 
     var password: String {
@@ -165,11 +172,12 @@ import Observation
     ///
     /// `String(format:)` takes no locale and so never localizes its digits — a `DateFormatter` on
     /// `Locale.current` would emit Arabic-Indic digits for an `ar` user and the backend would 400 on
-    /// every submit. The calendar is the one the picker rendered in (`Calendar.current` in the app),
-    /// NOT UTC: a user at UTC+13 picking 2000-01-01 holds an instant that is still 1999-12-31 in
-    /// UTC, and sending that would make every such account a day younger than it is.
+    /// every submit. The TIME ZONE is the picker's (`Calendar.current` in the app), NOT UTC: a user
+    /// at UTC+13 picking 2000-01-01 holds an instant that is still 1999-12-31 in UTC, and sending
+    /// that would make every such account a day younger than it is. The NUMBERING is always
+    /// Gregorian (`BootstrapValidator.gregorian`) — the picker may render Hijri, the wire may not.
     nonisolated static func wireDate(_ date: Date, calendar: Calendar) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        let parts = BootstrapValidator.gregorian(calendar).dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 }

@@ -18,21 +18,53 @@ nonisolated enum BootstrapValidator {
     static let minAgeYears = 13
     static let minPasswordLength = 8
 
-    /// `CompleteProfileRequest.java:22`, verbatim — client and server agree byte-for-byte, so a form
-    /// this accepts can never be the one the server's `@Pattern` then rejects.
+    /// `CompleteProfileRequest.java:22`, verbatim — and `.asciiOnlyDigits()`, without which the two
+    /// are only byte-identical and not equivalent: Swift's `\d` is Unicode-aware while Java's
+    /// `@Pattern` is ASCII-only, so `+3١٢٣٤٥٦٧` used to pass the enabled button and 400 at the server
+    /// as an unexplained "couldn't save your profile". The digits a user actually types are
+    /// normalised to ASCII at the field (`ProfileBootstrapViewModel.phoneNumber`), so this only ever
+    /// refuses input that no keypad produced.
     ///
     /// Computed, not a `static let`: `Regex<Substring>` is not `Sendable`, so under
     /// `SWIFT_STRICT_CONCURRENCY: complete` a stored static is a compile error. The literal is
     /// re-built per call, which on one 15-character field is not a cost worth an
     /// `nonisolated(unsafe)` escape hatch.
-    static var phonePattern: Regex<Substring> { /^\+[1-9]\d{7,14}$/ }
+    static var phonePattern: Regex<Substring> { /^\+[1-9]\d{7,14}$/.asciiOnlyDigits() }
+
+    /// The GREGORIAN calendar on `calendar`'s time zone.
+    ///
+    /// `Calendar.current` is the device's REGION calendar, which an Arabic/Gulf user can and does set
+    /// to Islamic (Umm al-Qura) — the audience this app is built for. Left alone it corrupts both
+    /// consumers at once: the wire `dateOfBirth` becomes a Hijri-numbered "1420-09-24" the backend
+    /// parses as the year 1420, and the age gate counts thirteen LUNAR years (~12 y 7 m), passing a
+    /// genuinely under-13 user for a ~4.7-month window. Normalised HERE rather than at the default
+    /// arguments so an injected calendar is fixed too — the callers all mean "the day the picker
+    /// showed", never "the Hijri numbering of it". The time zone is kept: that is the other half of
+    /// the wire date and is deliberate.
+    static func gregorian(_ calendar: Calendar) -> Calendar {
+        guard calendar.identifier != .gregorian else { return calendar }
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        return gregorian
+    }
 
     /// `dob.isAfter(today.minusYears(13))` (`ProfileBootstrapViewModel.kt:220`), in whole DAYS: a
     /// `DatePicker` hands over an instant with a time-of-day, and comparing instants would read the
     /// morning of a user's thirteenth birthday as a few hours under age.
     static func isUnderMinimumAge(dob: Date, today: Date, calendar: Calendar = .current) -> Bool {
-        let startOfToday = calendar.startOfDay(for: today)
-        guard let threshold = calendar.date(byAdding: .year, value: -minAgeYears, to: startOfToday) else {
+        let calendar = gregorian(calendar)
+        // The DOB on the wire is the day the picker SHOWED (local), but the server measures it
+        // against `LocalDate.now(clock)` — a UTC day, which east of Greenwich is still yesterday.
+        // Take the earlier of the two: being told "you're too young" for one day is a correctable
+        // form error, and the server's answer is an irreversible tombstone.
+        var utc = calendar
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let localToday = calendar.startOfDay(for: today)
+        let utcParts = utc.dateComponents([.year, .month, .day], from: today)
+        let utcToday = calendar.date(from: DateComponents(year: utcParts.year, month: utcParts.month,
+                                                          day: utcParts.day)) ?? localToday
+        guard let threshold = calendar.date(byAdding: .year, value: -minAgeYears,
+                                            to: min(localToday, utcToday)) else {
             // Unreachable for a Gregorian calendar; refusing to guess is the safe leg — the server
             // still enforces the gate, and its rejection is permanent.
             return false

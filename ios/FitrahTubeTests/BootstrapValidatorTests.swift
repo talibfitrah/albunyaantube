@@ -18,6 +18,14 @@ struct BootstrapValidatorTests {
         return calendar
     }()
 
+    /// What an Arabic/Gulf user can and does set the device REGION calendar to — the audience this
+    /// app is built for. Injected here exactly as `Calendar.current` would arrive from the app.
+    private static let hijri: Calendar = {
+        var calendar = Calendar(identifier: .islamicUmmAlQura)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }()
+
     private static func day(_ year: Int, _ month: Int, _ day: Int) -> Date {
         calendar.date(from: DateComponents(year: year, month: month, day: day))!
     }
@@ -28,10 +36,11 @@ struct BootstrapValidatorTests {
 
     private func firstError(name: String = "Aisha", dob: Date? = validDOB, phone: String = "+31612345678",
                             password: String = "hunter2hunter2", passwordConfirm: String = "hunter2hunter2",
-                            passwordRequired: Bool = false, today: Date = today) -> BootstrapError? {
+                            passwordRequired: Bool = false, today: Date = today,
+                            calendar: Calendar = calendar) -> BootstrapError? {
         BootstrapValidator.firstError(name: name, dob: dob, phone: phone, password: password,
                                       passwordConfirm: passwordConfirm, passwordRequired: passwordRequired,
-                                      today: today, calendar: Self.calendar)
+                                      today: today, calendar: calendar)
     }
 
     // MARK: - Field order
@@ -91,9 +100,10 @@ struct BootstrapValidatorTests {
                                                      calendar: Self.calendar))
     }
 
-    /// A 29 February birthday has no 13th anniversary in 2026, so the boundary lands on the calendar's
-    /// own clamping rather than on a date that exists. `2026-02-28 - 13y` is `2013-02-28`, which a
-    /// 2013-02-28 birth is not after (eligible) and a 2013-03-01 birth is (under age).
+    /// A 29 February birthday has no 13th anniversary in 2025, so the boundary lands on the calendar's
+    /// own clamping rather than on a date that exists. `2025-02-28 - 13y` is `2012-02-28`, which a
+    /// 2012-02-29 birth IS after (under age); `2025-03-01 - 13y` is `2012-03-01`, which it is not
+    /// (eligible).
     @Test func aLeapDayBirthdayResolvesThroughTheCalendar() {
         let leapDay = Self.day(2012, 2, 29)
         #expect(BootstrapValidator.isUnderMinimumAge(dob: leapDay, today: Self.day(2025, 2, 28),
@@ -108,6 +118,34 @@ struct BootstrapValidatorTests {
         let birthdayEvening = Self.day(2013, 9, 3).addingTimeInterval(23 * 3600)
         #expect(BootstrapValidator.isUnderMinimumAge(dob: birthdayEvening, today: Self.day(2026, 9, 3),
                                                      calendar: Self.calendar) == false)
+    }
+
+    /// The gate counts GREGORIAN years whatever the device's region calendar is. Umm al-Qura years
+    /// are lunar (~354 days), so thirteen of them elapse at ~12 y 7 m: from 2013-09-03 to 2026-06-03
+    /// is 12 y 9 m — genuinely under 13 — and a Hijri-counting gate waves that user through.
+    @Test func theAgeGateCountsGregorianYearsOnAHijriDeviceCalendar() {
+        let dob = Self.day(2013, 9, 3)
+        let today = Self.day(2026, 6, 3)
+        #expect(BootstrapValidator.isUnderMinimumAge(dob: dob, today: today, calendar: Self.hijri))
+        #expect(firstError(dob: dob, today: today, calendar: Self.hijri) == .underAge)
+        // The eligible side stays eligible: the calendar is normalised, not made stricter.
+        #expect(BootstrapValidator.isUnderMinimumAge(dob: dob, today: Self.day(2026, 9, 3),
+                                                     calendar: Self.hijri) == false)
+    }
+
+    /// The client's "today" is the device's LOCAL day; the server's is `LocalDate.now(clock)` in UTC,
+    /// which east of Greenwich is still yesterday. The server's rejection is a permanent tombstone,
+    /// so the earlier of the two days wins — a correctable form error for one day beats that.
+    @Test func theUtcDayCountsWhenItIsBehindTheDeviceDay() {
+        var plus13 = Calendar(identifier: .gregorian)
+        plus13.timeZone = TimeZone(secondsFromGMT: 13 * 3600)!
+        let dob = plus13.date(from: DateComponents(year: 2013, month: 9, day: 3))!
+        let birthdayMorning = plus13.date(from: DateComponents(year: 2026, month: 9, day: 3, hour: 9))!
+        #expect(BootstrapValidator.isUnderMinimumAge(dob: dob, today: birthdayMorning, calendar: plus13),
+                "UTC is still 2026-09-02, and the server would tombstone the account")
+        #expect(BootstrapValidator.isUnderMinimumAge(dob: dob, today: birthdayMorning.addingTimeInterval(86_400),
+                                                     calendar: plus13) == false,
+                "one day later UTC has caught up and the margin must let go")
     }
 
     // MARK: - Phone (CompleteProfileRequest.java:22, byte-for-byte)
@@ -132,6 +170,19 @@ struct BootstrapValidatorTests {
         for phone in refused {
             #expect(firstError(phone: phone) == .invalidPhone, "\(phone) should be refused")
         }
+    }
+
+    /// The literal matches the server's, the SEMANTICS have to as well: Swift's `\d` is Unicode-aware
+    /// and Java's `@Pattern` is ASCII-only, so a mixed-digit entry used to pass the enabled button and
+    /// 400 at the server as an unexplained "couldn't save your profile".
+    @Test func thePhoneRuleRejectsNonAsciiDigitsAsTheServersPatternDoes() {
+        // "+3" then Arabic-Indic ١٢٣٤٥٦٧ — escaped so the source stays readable left to right.
+        let mixed = "+3\u{0661}\u{0662}\u{0663}\u{0664}\u{0665}\u{0666}\u{0667}"
+        #expect(firstError(phone: mixed) == .invalidPhone)
+        // Wholly Arabic-Indic never matched `[1-9]` either; the setter is what turns those into
+        // ASCII before they arrive here (`thePhoneSetterNormalisesToAsciiDigits`).
+        #expect(firstError(phone: "+\u{0663}\u{0661}\u{0666}\u{0661}\u{0662}\u{0663}\u{0664}\u{0665}\u{0666}\u{0667}\u{0668}")
+                == .invalidPhone)
     }
 
     // MARK: - Password (only when the account has no password provider)

@@ -183,6 +183,40 @@ struct ProfileBootstrapViewModelTests {
         #expect(body(profilePosts(fixture.transport)[0])["dateOfBirth"] == "2000-01-01")
     }
 
+    /// The wire date is GREGORIAN whatever the device's region calendar is. An Umm al-Qura device —
+    /// the audience this app is built for — used to ship "1420-09-24" for a 2000-01-01 birthday, a
+    /// permanently wrong DOB the backend parses as the year 1420.
+    @Test func theWireDateIsGregorianOnAHijriDeviceCalendar() async {
+        var hijri = Calendar(identifier: .islamicUmmAlQura)
+        hijri.timeZone = TimeZone(identifier: "UTC")!
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)),
+                           responses: [.json(200, Self.meJSON), .json(200, Self.meJSON)],
+                           calendar: hijri)
+        fill(fixture.model)
+        await fixture.model.submit()
+        #expect(body(profilePosts(fixture.transport)[0])["dateOfBirth"] == "2000-01-01")
+    }
+
+    /// ONE rule for the phone field: every character that IS a digit becomes its ASCII digit and
+    /// everything else is dropped. `.telephoneNumber` autofill hands over spaces and dashes, and an
+    /// Arabic keypad hands over Arabic-Indic digits — both used to dead-end on `.invalidPhone` with
+    /// no way for the user to see what was wrong.
+    @Test func thePhoneSetterNormalisesToAsciiDigits() {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)))
+        fill(fixture.model)
+
+        fixture.model.phoneNumber = "+31 6 1234-5678"
+        #expect(fixture.model.state.phoneNumber == "31612345678")
+        #expect(fixture.model.isFormValid)
+
+        // ٣١٦١٢٣٤٥٦٧٨ — escaped so the source stays readable left to right.
+        fixture.model.phoneNumber =
+            "\u{0663}\u{0661}\u{0666}\u{0661}\u{0662}\u{0663}\u{0664}\u{0665}\u{0666}\u{0667}\u{0668}"
+        #expect(fixture.model.state.phoneNumber == "31612345678")
+        #expect(fixture.model.e164 == "+31612345678")
+        #expect(fixture.model.isFormValid)
+    }
+
     /// `RootView` routes off `AccountSession.state.me?.status`, and nothing else re-reads `/me` — so
     /// without this refresh a completed profile stays `pending_profile` and the screen never exits.
     @Test func theSessionIsRefreshedSoTheRouterCanLeaveTheScreen() async {
