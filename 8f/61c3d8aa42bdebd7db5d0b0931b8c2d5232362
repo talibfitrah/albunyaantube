@@ -1,0 +1,57 @@
+ios/FitrahTube/App/FakeAuthClient.swift
+  s_66ddb7c44de816::t_0dc65c6b015c02 2,50-53
+ios/Packages/FitrahAPI/Sources/FitrahAPI/AuthTokenProviding.swift
+  s_66ddb7c44de816::t_64284612ce1ad5 12-30
+ios/FitrahTubeTests/AuthorizedTransportTests.swift
+  s_66ddb7c44de816::t_6e51076c6285b5 1-17,19-79,81-141
+  s_66ddb7c44de816::t_262e3e8a6fe796 18,80
+ios/Packages/FitrahAPI/Sources/FitrahAPI/AuthMiddleware.swift
+  s_66ddb7c44de816::t_db632f9d1b25b1 12
+ios/FitrahTube/Features/Auth/AuthorizedTransport.swift
+  s_66ddb7c44de816::t_21e1a69cc3d994 1-77,79-85
+  s_66ddb7c44de816::t_09042ce1eb2fe0 78
+ios/FitrahTubeTests/AccountClientTests.swift
+  s_66ddb7c44de816::t_a30686988f7101 1-94,96-182
+  s_66ddb7c44de816::t_262e3e8a6fe796 95
+ios/FitrahTube/Features/Auth/FirebaseAuthClient.swift
+  s_66ddb7c44de816::t_0dc65c6b015c02 2,35-40
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_66ddb7c44de816::t_e7a1626a52a2fd 101-126
+ios/FitrahTube/Features/Auth/AccountClient.swift
+  s_66ddb7c44de816::t_66b923e444fdcf 1-207
+ios/FitrahTube/Features/Auth/AuthClient.swift
+  s_66ddb7c44de816::t_0dc65c6b015c02 106
+ios/Packages/FitrahAPI/Sources/FitrahAPI/BearerRetry.swift
+  s_66ddb7c44de816::t_fdda230d5cd8b1 22,27-28,34-41
+ios/FitrahTube/App/AppContainer.swift
+  s_66ddb7c44de816::t_1cefb84c32d807 167-200
+ios/FitrahTube/App/ScriptedTransport.swift
+  s_66ddb7c44de816::t_f00d117f4821e6 1-46,50,52,54-74,100-101
+  s_66ddb7c44de816::t_937b027b83b600 79
+  s_66ddb7c44de816::t_5d8cb7122c7fc9 47-49,51,53
+  s_66ddb7c44de816::t_d52bbc38e5a016 75-78,80-99
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/AuthMiddlewareTests.swift
+  s_66ddb7c44de816::t_db632f9d1b25b1 14-16
+ios/FitrahTube/Features/Auth/AccountStatusCenter.swift
+  s_66ddb7c44de816::t_9b5c907e25919b 1-27
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/BearerRetryTests.swift
+  s_66ddb7c44de816::t_38809446889796 72-76,79
+  s_66ddb7c44de816::t_0d5a9642bf91b1 27-29,33,44-46
+  s_66ddb7c44de816::t_088ad09b0f81e3 136-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8f61c3d8aa42bdebd7db5d0b0931b8c2d5232362",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
