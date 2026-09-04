@@ -66,6 +66,19 @@ struct WeekBucketTests {
                                        calendar: Self.gregorian(zone: "Europe/Amsterdam")) == 0)
     }
 
+    /// A skipped local midnight must not swallow a week. Cuba springs forward at 00:00 on Sunday
+    /// 2026-03-08, so on a Sunday-first calendar that week's `dateInterval(of: .weekOfYear,…)?.start`
+    /// is 01:00 and the gap to the next week's start is 6 d 23 h — which
+    /// `dateComponents([.weekOfYear],…)` truncates to 0, filing last week's uploads under
+    /// "This week" for the whole of the following week.
+    @Test func aWeekWithNoLocalMidnightIsStillAFullWeek() {
+        let havana = Self.gregorian(firstWeekday: 1, zone: "America/Havana")
+        // Tuesday inside the week that starts Sunday 2026-03-08, `now` inside the next one.
+        let uploaded = Self.at(2026, 3, 10, 12, in: havana)
+        let now = Self.at(2026, 3, 17, 12, in: havana)
+        #expect(WeekBucket.weekIndexOf(uploaded, now: now, calendar: havana) == 1)
+    }
+
     @Test func theCapIsFiveThousandWeeksBack() {
         let atTheCap = Self.utc.date(byAdding: .weekOfYear, value: -WeekBucket.maxWeeksBack, to: Self.wednesday)!
         #expect(WeekBucket.weekIndexOf(atTheCap, now: Self.wednesday, calendar: Self.utc) == WeekBucket.maxWeeksBack)

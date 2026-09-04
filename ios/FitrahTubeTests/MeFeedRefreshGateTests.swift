@@ -39,6 +39,22 @@ struct MeFeedRefreshGateTests {
                                          now: Self.now, force: false) == .fetch)
     }
 
+    /// Precedence, not just the two outcomes in isolation: a channel that is BOTH fresh and inside a
+    /// backoff reads as FRESH, because the TTL check runs first (`MeFeedRepository.kt:784-816`).
+    /// Every other test in this file passes with the two `if`s swapped.
+    @Test func aStateThatIsBothFreshAndBackedOffDecidesFresh() {
+        #expect(MeFeedRefreshGate.decide(Self.state(successAgo: 60, errors: 3, backoffIn: 3_600),
+                                         now: Self.now, force: false) == .skipFresh)
+    }
+
+    /// Task 16 ENFORCES these two (the task-group bound and the per-channel deadline); their VALUES
+    /// are this file's to pin, the way `ttl` and both ladders are — otherwise a typo in either ships
+    /// silently until then.
+    @Test func theFanOutBoundAndThePerChannelDeadlineAreTheAndroidValues() {
+        #expect(MeFeedRefreshGate.maxConcurrent == 4)
+        #expect(MeFeedRefreshGate.perChannelTimeout == .seconds(15))
+    }
+
     /// Pull-to-refresh: the user asked, so neither skip applies.
     @Test func forceOverridesBothSkips() {
         #expect(MeFeedRefreshGate.decide(Self.state(successAgo: 60), now: Self.now, force: true) == .fetch)

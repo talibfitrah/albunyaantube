@@ -22,10 +22,16 @@ nonisolated enum WeekBucket {
     /// negative section index — `coerceAtLeast(0)` on Android.
     static func weekIndexOf(_ uploadedAt: Date, now: Date, calendar: Calendar) -> Int? {
         guard let uploadedWeek = calendar.dateInterval(of: .weekOfYear, for: uploadedAt)?.start,
-              let currentWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start,
-              let weeks = calendar.dateComponents([.weekOfYear], from: uploadedWeek, to: currentWeek).weekOfYear,
-              weeks <= maxWeeksBack
+              let currentWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start
         else { return nil }
+        // NOT `dateComponents([.weekOfYear], from:to:)`: it truncates toward zero, and in a zone
+        // whose spring-forward deletes local midnight on the calendar's `firstWeekday` (Havana,
+        // Santiago, Beirut, Cairo) that week's start is 01:00, so two adjacent week starts are 6 d
+        // 23 h apart and a full week reads as none. Rounding the elapsed interval is exact over the
+        // whole 5 000-week range: the error between two local week starts is the offset difference
+        // (~1 h), and week starts are recomputed each call, so it never accumulates.
+        let weeks = Int((currentWeek.timeIntervalSince(uploadedWeek) / 604_800).rounded())
+        guard weeks <= maxWeeksBack else { return nil }
         return max(weeks, 0)
     }
 
