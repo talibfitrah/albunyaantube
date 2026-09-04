@@ -1,0 +1,76 @@
+ios/FitrahTubeTests/MeViewModelTests.swift
+  s_66ddb7c44de816::t_be37b6fa294fbb 219-222,224,226
+ios/FitrahTube/Features/Profile/EditEmailSheet.swift
+  s_66ddb7c44de816::t_8303555de5e15e 57-60,67-73
+  s_66ddb7c44de816::t_d48748ec89e265 80,89-96
+  s_66ddb7c44de816::t_c00e86d0f094f8 1-56,61-66,74-79,81-88,97-149
+ios/FitrahTube/Features/Me/MeViewModel.swift
+  s_66ddb7c44de816::t_8303555de5e15e 58
+ios/FitrahTube/App/FakeAuthClient.swift
+  s_66ddb7c44de816::t_a533372ed67f04 83-85,88-93
+  s_66ddb7c44de816::t_a0f58da6f80e98 23-28,35
+  s_66ddb7c44de816::t_0d53d7c18be6fd 120-124
+ios/FitrahTube/Features/Profile/EditPasswordSheet.swift
+  s_66ddb7c44de816::t_3df7d2ddea5175 134-136,138
+  s_66ddb7c44de816::t_4bc5ef11a5fe9a 113,116,119
+  s_66ddb7c44de816::t_6b079b22af0a28 1-62,67-76,78-86,97-112,114-115,117-118,120-133,137,139-143
+  s_66ddb7c44de816::t_8303555de5e15e 63-66,77
+  s_66ddb7c44de816::t_ab1976c2351b0b 87-96
+ios/FitrahTube/Features/Shell/MainShellView.swift
+  s_66ddb7c44de816::t_49349a70fa2298 209
+  s_66ddb7c44de816::t_8303555de5e15e 210
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_66ddb7c44de816::t_0517ab93fca2ca 146-157
+ios/FitrahTube/Features/Profile/ProfileScreen.swift
+  s_66ddb7c44de816::t_10431d7984c6b9 137,141
+  s_66ddb7c44de816::t_8d8117d5d47cfe 327
+  s_66ddb7c44de816::t_85ec3106694189 39
+  s_66ddb7c44de816::t_bcf93d37d7d8f6 216,218-219,221
+  s_66ddb7c44de816::t_54d1c03d548538 158,168
+  s_66ddb7c44de816::t_511a28cf84bc42 79
+  s_66ddb7c44de816::t_f33027847a5334 188
+  s_66ddb7c44de816::t_d026109cf82388 87,100,105,108-110,115
+  s_66ddb7c44de816::t_fb66afe3deb8f9 232-233,236
+  s_66ddb7c44de816::t_f42546f6e77a1a 1-38,40-78,80-86,88-99,101-104,106-107,111-114,116-136,138-140,142-157,159-167,169-187,189-215,217,220,222-231,234-235,237-254,256-326,328-395
+  s_66ddb7c44de816::t_84f1e9d88b1c3a 255
+ios/scripts/convert-strings.py
+  s_66ddb7c44de816::t_6a60f218e6fd1e 81-98
+  s_66ddb7c44de816::t_deb9167bc8bb31 303-370
+ios/FitrahTube/Features/Profile/ProfileViewModel.swift
+  s_66ddb7c44de816::t_8303555de5e15e 73-78,131-138,140-143,145-149,151,196-198
+  s_66ddb7c44de816::t_e2ca8425788443 88,93,97-99,101-104,109-110
+  s_66ddb7c44de816::t_e6c5d01657989e 1-72,79-87,89-92,94-96,100,105-108,111-130,139,144,150,152-195,199-211
+ios/FitrahTube/App/Route.swift
+  s_66ddb7c44de816::t_b61142f118f5ff 66-69
+ios/FitrahTubeTests/MainShellRoutingTests.swift
+  s_66ddb7c44de816::t_573d412af8a0d9 61-66
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_66ddb7c44de816::t_e01393b2acab74 12641-12642,12653-12654,12839-12840,12851-12852,12861-12862,12873-12874,12927-12928,12939-12940,12949-12950,12961-12962,12971-12972,12983-12984,12993-12994,13005-13006,13015-13016,13027-13028,13103-13104,13115-13116,13169-13170,13181-13182,13191-13192,13203-13204,13213-13214,13225-13226
+ios/FitrahTubeTests/ProfileViewModelTests.swift
+  s_66ddb7c44de816::t_99d3fe1ffbba50 237-239
+  s_66ddb7c44de816::t_4f0ee22e39a3b8 1-22,26-133,135-154,157-158,161-171,174-178,180-190,192-214,216-231,234,236,240-254,256-257,259-441
+  s_66ddb7c44de816::t_2e52a030829a01 23-25,134,155-156,159-160,172-173,179,191,215,232-233,235,255,258
+ios/FitrahTube/Features/Me/MeSignedInView.swift
+  s_66ddb7c44de816::t_f5ebd8bcff4f1e 306-307
+  s_66ddb7c44de816::t_d9a3e7e3d3bfb2 318-321,323
+ios/FitrahTube/Features/Profile/EditPhoneSheet.swift
+  s_66ddb7c44de816::t_a6f460256aaa56 88-98
+  s_66ddb7c44de816::t_0d743ed75ccd7a 1-73,78-87,99-157
+  s_66ddb7c44de816::t_8303555de5e15e 74-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "05ca19f62c65e965ba9bf2f451129a6ebcc29e73",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
