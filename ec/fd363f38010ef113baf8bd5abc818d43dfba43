@@ -1,0 +1,51 @@
+ios/FitrahTube/Features/Me/MeFeedRepository.swift
+  s_66ddb7c44de816::t_d13473cfb23162 197,204-208
+  s_66ddb7c44de816::t_c7005d3fe9b247 92-93
+  s_66ddb7c44de816::t_f48a8706a33e87 280
+  s_66ddb7c44de816::t_09c1619a51ab91 282-286
+  s_66ddb7c44de816::t_53c8886367ee78 73-74,80
+  s_66ddb7c44de816::t_cda603e5c1c07d 121-124,128,136-141,143-146
+  s_66ddb7c44de816::t_78a766a14ac48a 242
+  s_66ddb7c44de816::t_b02afa9130d299 105-106
+  s_66ddb7c44de816::t_0d6e7e85bc86f2 55-57
+  s_66ddb7c44de816::t_63d4fa6f11d3cd 37-40,46
+  s_66ddb7c44de816::t_744b83441eee2c 66-69
+ios/FitrahTube/Features/Me/MeViewModel.swift
+  s_66ddb7c44de816::t_1b0f22281cc8dc 134-138,140
+  s_66ddb7c44de816::t_392992bdbf1b38 133,139,141
+ios/FitrahTube/App/AppContainer.swift
+  s_66ddb7c44de816::t_2b593b473eae2e 599-602
+  s_66ddb7c44de816::t_627c57d10fd75d 187,190-194,199,201
+ios/FitrahTubeTests/MeFeedRepositoryTests.swift
+  s_66ddb7c44de816::t_a4e0881ba9fb7e 329-335,342,346-349,356-379
+  s_66ddb7c44de816::t_ac4e8195db6ffe 3
+  s_66ddb7c44de816::t_eca2a6234b52ac 336-341
+  s_66ddb7c44de816::t_a6d09c17894ffd 60-62,66-70
+  s_66ddb7c44de816::t_73df75f6aacd11 193-225
+ios/FitrahTubeTests/MeViewModelTests.swift
+  s_66ddb7c44de816::t_d6dee051126324 94-110
+ios/FitrahTube/Features/Me/MeSignedInView.swift
+  s_66ddb7c44de816::t_cd997c1fb0050e 177-180,184,186
+  s_66ddb7c44de816::t_9206b87425e9b7 124,128,132,134-141,145,149-161
+  s_66ddb7c44de816::t_775cb705c3929f 103,109-112
+  s_66ddb7c44de816::t_d9443274bb8024 202-212
+  s_66ddb7c44de816::t_b2cfc1732574c8 58-65
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_66ddb7c44de816::t_6890c71c5d68a2 113-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ecfd363f38010ef113baf8bd5abc818d43dfba43",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
