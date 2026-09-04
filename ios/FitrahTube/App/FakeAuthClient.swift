@@ -20,12 +20,19 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// a fact it did not pin. Recorded in order.
     nonisolated enum EntryPoint: Sendable, Equatable { case signIn, signUp, credential }
 
+    /// Task 17: the credential-mutating calls, in order. The email sheet's contract is "re-auth,
+    /// then `verifyBeforeUpdateEmail`, and NEVER an `updateEmail`-shaped call" — an ORDER and an
+    /// absence, neither of which a per-method flag can express. Only these three are recorded:
+    /// nothing else in the suite asserts on a call sequence.
+    nonisolated enum Operation: Sendable, Equatable { case reauthenticate, updatePassword, verifyBeforeUpdateEmail }
+
     private struct Storage {
         var user: AuthUser
         var scriptedErrors: [AuthErrorCode]
         var nextError: AuthErrorCode?
         var reloadedUser: AuthUser?
         var entryPoints: [EntryPoint] = []
+        var operations: [Operation] = []
     }
 
     /// `Mutex` rather than `@unchecked Sendable` + bare vars: `AuthClient` is `Sendable` (it refines
@@ -73,11 +80,17 @@ nonisolated final class FakeAuthClient: AuthClient {
     func signUp(email: String, password: String) async throws(AuthErrorCode) -> AuthUser { try signInSucceeds(.signUp) }
     func signIn(with credential: OAuthCredential) async throws(AuthErrorCode) -> AuthUser { try signInSucceeds(.credential) }
 
+    /// Every recorded operation, in order.
+    var operations: [Operation] { storage.withLock { $0.operations } }
+
     func sendPasswordReset(email: String) async throws(AuthErrorCode) { try consumeError() }
     func sendVerificationEmail() async throws(AuthErrorCode) { try consumeError() }
-    func reauthenticate(password: String) async throws(AuthErrorCode) { try consumeError() }
-    func updatePassword(_ new: String) async throws(AuthErrorCode) { try consumeError() }
-    func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { try consumeError() }
+
+    // Recorded BEFORE the scripted error is consumed, for `signInSucceeds`'s reason: a refused
+    // attempt still reached the call, which is the fact a sequence assertion needs.
+    func reauthenticate(password: String) async throws(AuthErrorCode) { try record(.reauthenticate) }
+    func updatePassword(_ new: String) async throws(AuthErrorCode) { try record(.updatePassword) }
+    func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { try record(.verifyBeforeUpdateEmail) }
 
     func reload() async throws(AuthErrorCode) -> AuthUser {
         try consumeError()
@@ -102,6 +115,11 @@ nonisolated final class FakeAuthClient: AuthClient {
         let user = storage.withLock { $0.user }
         transition(to: .signedIn(user))
         return user
+    }
+
+    private func record(_ operation: Operation) throws(AuthErrorCode) {
+        storage.withLock { $0.operations.append(operation) }
+        try consumeError()
     }
 
     /// `nextError` first, then the scripted queue. Both are consumed, so a scripted failure never

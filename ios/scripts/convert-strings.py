@@ -78,7 +78,24 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           "settings_account_header", "settings_account_signed_in_as",
           "settings_account_signed_in_default", "settings_account_sign_out",
           "settings_account_sign_out_confirm_title", "settings_account_sign_out_confirm_body",
-          "settings_account_sign_out_confirm_action", "settings_account_sign_out_cancel"}
+          "settings_account_sign_out_confirm_action", "settings_account_sign_out_cancel",
+          # Task 17, the SAME class as Task 9 / M3, Task 12 / D1 and Task 13, fourth occurrence:
+          # these twelve live only in `values/strings.xml` -- no values-ar, no values-nl entry at
+          # all -- so the en->ar/nl fallback shipped the English sentence as the Arabic and Dutch
+          # value (verified in the pre-change catalog: every one carried its English text under
+          # `needs_review` in both). Task 17 is what first RENDERS them (the Profile screen and its
+          # age-ineligible dialog), so an Arabic user would get an English form on the screen they
+          # edit their own name on. Refused here and re-authored under EXTRA_KEYS, en
+          # byte-identical to Android's. The rest of the profile/edit keys (profile_email_label,
+          # profile_phone, profile_phone_unset, profile_add, profile_edit, profile_password,
+          # profile_delete_account*, profile_error_rate_limited_short and every edit_email_*/
+          # edit_password_*/edit_phone_* key) ARE translated on Android and are ported unchanged.
+          # profile_password_dots is "••••••••••" in all three locales -- a mask, not prose, exactly
+          # like the shipped `ok` key -- and is likewise ported unchanged.
+          "profile_title", "profile_personal_info", "profile_display_name", "profile_date_of_birth",
+          "profile_dob_pick", "profile_save", "profile_save_success", "profile_email_locked",
+          "profile_error_network", "profile_error_rate_limited",
+          "profile_error_age_dialog_title", "profile_error_age_dialog_message"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -282,6 +299,74 @@ EXTRA_KEYS = {
         "en": "Cancel",
         "ar": "إلغاء",
         "nl": "Annuleren",
+    },
+    # Task 17: the twelve REFUSED above. `en` is Android's own value verbatim; `ar`/`nl` are
+    # authored here because Android has neither. Copy rules hold -- no "Download", no "ad-free",
+    # and both failure strings say WHAT went wrong, never why.
+    "profile_title": {
+        "en": "Profile",
+        "ar": "الملف الشخصي",
+        "nl": "Profiel",
+    },
+    "profile_personal_info": {
+        "en": "Personal info",
+        "ar": "المعلومات الشخصية",
+        "nl": "Persoonlijke gegevens",
+    },
+    # Byte-identical `ar`/`nl` to the already-translated bootstrap_display_name_hint and
+    # bootstrap_dob_label: the same field must not have two spellings across two screens.
+    "profile_display_name": {
+        "en": "Display name",
+        "ar": "الاسم المعروض",
+        "nl": "Weergavenaam",
+    },
+    "profile_date_of_birth": {
+        "en": "Date of birth",
+        "ar": "تاريخ الميلاد",
+        "nl": "Geboortedatum",
+    },
+    "profile_dob_pick": {
+        "en": "Pick a date",
+        "ar": "اختر تاريخًا",
+        "nl": "Kies een datum",
+    },
+    "profile_save": {
+        "en": "Save",
+        "ar": "حفظ",
+        "nl": "Opslaan",
+    },
+    "profile_save_success": {
+        "en": "Profile updated",
+        "ar": "تم تحديث الملف الشخصي",
+        "nl": "Profiel bijgewerkt",
+    },
+    "profile_email_locked": {
+        "en": "Linked to your sign-in",
+        "ar": "مرتبط بتسجيل دخولك",
+        "nl": "Gekoppeld aan je aanmelding",
+    },
+    "profile_error_network": {
+        "en": "Couldn't save. Check your connection.",
+        "ar": "تعذّر الحفظ. تحقق من اتصالك.",
+        "nl": "Kon niet opslaan. Controleer je verbinding.",
+    },
+    # `%1$lld` in every locale: EXTRA_KEYS bypass `rewrite_specifiers`, so the iOS spelling of
+    # Android's `%1$d` is written out here. Arg parity across the three is what `check_arg_subset`
+    # would have enforced on a ported key.
+    "profile_error_rate_limited": {
+        "en": "Too many updates. Try again in %1$lld min.",
+        "ar": "عدد كبير من التحديثات. حاول مرة أخرى بعد %1$lld دقيقة.",
+        "nl": "Te veel wijzigingen. Probeer het over %1$lld min. opnieuw.",
+    },
+    "profile_error_age_dialog_title": {
+        "en": "Account no longer eligible",
+        "ar": "الحساب لم يعد مؤهلًا",
+        "nl": "Account niet langer geschikt",
+    },
+    "profile_error_age_dialog_message": {
+        "en": "Your date of birth no longer meets our age requirement. You'll be signed out.",
+        "ar": "تاريخ ميلادك لم يعد يستوفي شرط العمر. سيتم تسجيل خروجك.",
+        "nl": "Je geboortedatum voldoet niet meer aan onze leeftijdseis. Je wordt afgemeld.",
     },
     "me_guest_title": {
         "en": "Sign in to sync your favorites",

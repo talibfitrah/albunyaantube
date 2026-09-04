@@ -206,6 +206,8 @@ struct MainShellView: View {
             ProfileBootstrapScreen()
         case .ageIneligible:
             AgeIneligibleScreen()
+        case .profile:
+            ProfileScreen()
         }
     }
 

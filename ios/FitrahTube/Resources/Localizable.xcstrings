@@ -12638,8 +12638,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Date of birth"
+            "state": "translated",
+            "value": "تاريخ الميلاد"
           }
         },
         "en": {
@@ -12650,8 +12650,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Date of birth"
+            "state": "translated",
+            "value": "Geboortedatum"
           }
         }
       }
@@ -12836,8 +12836,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Display name"
+            "state": "translated",
+            "value": "الاسم المعروض"
           }
         },
         "en": {
@@ -12848,8 +12848,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Display name"
+            "state": "translated",
+            "value": "Weergavenaam"
           }
         }
       }
@@ -12858,8 +12858,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Pick a date"
+            "state": "translated",
+            "value": "اختر تاريخًا"
           }
         },
         "en": {
@@ -12870,8 +12870,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Pick a date"
+            "state": "translated",
+            "value": "Kies een datum"
           }
         }
       }
@@ -12924,8 +12924,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Linked to your sign-in"
+            "state": "translated",
+            "value": "مرتبط بتسجيل دخولك"
           }
         },
         "en": {
@@ -12936,8 +12936,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Linked to your sign-in"
+            "state": "translated",
+            "value": "Gekoppeld aan je aanmelding"
           }
         }
       }
@@ -12946,8 +12946,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Your date of birth no longer meets our age requirement. You'll be signed out."
+            "state": "translated",
+            "value": "تاريخ ميلادك لم يعد يستوفي شرط العمر. سيتم تسجيل خروجك."
           }
         },
         "en": {
@@ -12958,8 +12958,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Your date of birth no longer meets our age requirement. You'll be signed out."
+            "state": "translated",
+            "value": "Je geboortedatum voldoet niet meer aan onze leeftijdseis. Je wordt afgemeld."
           }
         }
       }
@@ -12968,8 +12968,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Account no longer eligible"
+            "state": "translated",
+            "value": "الحساب لم يعد مؤهلًا"
           }
         },
         "en": {
@@ -12980,8 +12980,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Account no longer eligible"
+            "state": "translated",
+            "value": "Account niet langer geschikt"
           }
         }
       }
@@ -12990,8 +12990,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Couldn't save. Check your connection."
+            "state": "translated",
+            "value": "تعذّر الحفظ. تحقق من اتصالك."
           }
         },
         "en": {
@@ -13002,8 +13002,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Couldn't save. Check your connection."
+            "state": "translated",
+            "value": "Kon niet opslaan. Controleer je verbinding."
           }
         }
       }
@@ -13012,8 +13012,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Too many updates. Try again in %1$lld min."
+            "state": "translated",
+            "value": "عدد كبير من التحديثات. حاول مرة أخرى بعد %1$lld دقيقة."
           }
         },
         "en": {
@@ -13024,8 +13024,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Too many updates. Try again in %1$lld min."
+            "state": "translated",
+            "value": "Te veel wijzigingen. Probeer het over %1$lld min. opnieuw."
           }
         }
       }
@@ -13100,8 +13100,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Personal info"
+            "state": "translated",
+            "value": "المعلومات الشخصية"
           }
         },
         "en": {
@@ -13112,8 +13112,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Personal info"
+            "state": "translated",
+            "value": "Persoonlijke gegevens"
           }
         }
       }
@@ -13166,8 +13166,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Save"
+            "state": "translated",
+            "value": "حفظ"
           }
         },
         "en": {
@@ -13178,8 +13178,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Save"
+            "state": "translated",
+            "value": "Opslaan"
           }
         }
       }
@@ -13188,8 +13188,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Profile updated"
+            "state": "translated",
+            "value": "تم تحديث الملف الشخصي"
           }
         },
         "en": {
@@ -13200,8 +13200,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Profile updated"
+            "state": "translated",
+            "value": "Profiel bijgewerkt"
           }
         }
       }
@@ -13210,8 +13210,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Profile"
+            "state": "translated",
+            "value": "الملف الشخصي"
           }
         },
         "en": {
@@ -13222,8 +13222,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Profile"
+            "state": "translated",
+            "value": "Profiel"
           }
         }
       }

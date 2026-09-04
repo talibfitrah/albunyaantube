@@ -216,13 +216,14 @@ struct MeViewModelTests {
         }
     }
 
-    /// RULING 28 again, as arithmetic: only `.signOut` has a destination in Task 13, so only
-    /// `.signOut` renders. Tasks 17/25/27/29 each widen `MeKebabItem.landed` and edit this test.
-    @Test func onlySignOutHasADestinationAtTaskThirteen() async throws {
+    /// RULING 28 again, as arithmetic: Task 17 landed `Route.profile`, so `.profile` renders
+    /// alongside `.signOut` and the other three still do not. Tasks 25/27/29 each widen
+    /// `MeKebabItem.landed` further and edit this test.
+    @Test func onlyProfileAndSignOutHaveADestinationAtTaskSeventeen() async throws {
         let plain = makeModel(session: try await makeSession(role: "user"), stores: makeStores())
-        #expect(plain.enabledKebabItems == [.signOut])
+        #expect(plain.enabledKebabItems == [.profile, .signOut])
         let moderator = makeModel(session: try await makeSession(role: "admin"), stores: makeStores())
-        #expect(moderator.enabledKebabItems == [.signOut])
+        #expect(moderator.enabledKebabItems == [.profile, .signOut])
     }
 
     /// The kebab's ONE live destination, end to end: sign out drops the session, and ruling C5's

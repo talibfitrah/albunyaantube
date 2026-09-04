@@ -63,6 +63,10 @@ nonisolated enum Route: Hashable, Sendable {
     /// a different date of birth is what the age gate exists to stop); this case is the same screen
     /// for a caller inside the shell.
     case ageIneligible
+    /// Phase 4 Task 17: the Profile screen, pushed from the signed-in Me tab's kebab. It lands
+    /// WITH `MeKebabItem.landed` growing to include `.profile` — RULING 28 refuses a kebab row
+    /// whose destination does not exist yet.
+    case profile
 }
 
 extension Route {

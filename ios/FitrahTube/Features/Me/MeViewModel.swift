@@ -55,7 +55,7 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     /// Part A and Task 19's screenshot matrix. Each later task that lands a destination adds its
     /// own case here plus its own assertion (Task 17 `.profile`, 25 `.mySubmissions`,
     /// 27 `.suggestContent`, 29 `.importYouTube`), so every re-enable is a named test edit.
-    static let landed: Set<MeKebabItem> = [.signOut]
+    static let landed: Set<MeKebabItem> = [.profile, .signOut]
 }
 
 /// Ruling C5's signed-in Me screen, over LOCAL stores only. No feed (Tasks 14-16), no History

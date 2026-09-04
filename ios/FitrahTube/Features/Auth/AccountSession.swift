@@ -143,6 +143,18 @@ nonisolated enum AccountState: Sendable, Equatable {
         user = reloaded
     }
 
+    /// Task 17: the account record the server just answered a profile edit with
+    /// (`AccountRepository.applyProfileUpdate`). Nothing re-reads `/me` after a `PUT`, so without
+    /// this every reader of `state.me` — the Profile screen's own next visit included — keeps
+    /// rendering the value the edit replaced, until some unrelated refresh happens to run.
+    ///
+    /// A DIFFERENT uid is refused, for `adopt(_:)`'s reason: swapping identity is `start()`'s job,
+    /// because only it re-scopes every per-user store first.
+    func apply(_ updated: AccountMe) {
+        guard state.me?.uid == updated.uid else { return }
+        state = .loaded(updated)
+    }
+
     /// Sign-out ONLY: the local library is deliberately kept (`AccountRepositoryImpl.kt:44-49`).
     /// Re-scoping to `""` is what hides the account's rows behind the guest's.
     func signOut() {
