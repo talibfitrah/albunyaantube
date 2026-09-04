@@ -52,12 +52,12 @@ import Testing
     /// A no-op transition emits NOTHING: Firebase's listener does not re-announce an unchanged
     /// state, so a fixture that did would let a ViewModel test pass against a sequence the real
     /// client can never produce.
-    @Test func signingOutWhileAlreadySignedOutEmitsNothing() async {
+    @Test func signingOutWhileAlreadySignedOutEmitsNothing() async throws {
         let client = FakeAuthClient(state: .signedOut, user: Self.user)
         let states = Collector(client.state)
         await states.wait(for: 1)
 
-        client.signOut()
+        try client.signOut()
         await states.settle()
         #expect(states.seen == [.signedOut])
     }
@@ -104,7 +104,7 @@ import Testing
         let second = await states.next()
         #expect(second == .signedIn(signedIn))
 
-        client.signOut()
+        try client.signOut()
         let third = await states.next()
         #expect(third == .signedOut)
     }
@@ -151,7 +151,7 @@ import Testing
         #expect(seen == [.signedOut])
     }
 
-    @Test func theUnavailableClientHasNoUserNoTokenAndASilentSignOut() async {
+    @Test func theUnavailableClientHasNoUserNoTokenAndASilentSignOut() async throws {
         let client = UnavailableAuthClient()
         // Ruling F12, pinned by the compiler: `AuthClient` REFINES `AuthTokenProviding`, so the
         // container's one auth object is handed straight to `AuthMiddleware` (Task 6) and
@@ -160,7 +160,7 @@ import Testing
         let provider: any AuthTokenProviding = client
         #expect(await provider.idToken(forceRefresh: true) == nil)
         #expect(await client.currentUser() == nil)
-        client.signOut()
+        try client.signOut()
         #expect(await client.currentUser() == nil, "a silent sign-out still leaves no user")
     }
 

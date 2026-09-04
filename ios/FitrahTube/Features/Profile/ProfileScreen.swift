@@ -52,11 +52,19 @@ struct ProfileScreen: View {
             case .ageIneligible:
                 // No cancel: the account is no longer eligible either way, and a dismissable dialog
                 // would leave the user staring at a form whose Save can never succeed.
-                Button(String(localized: "ok")) { model?.confirmAgeIneligibleSignOut() }
+                Button(String(localized: "ok")) { Task { await model?.confirmAgeIneligibleSignOut() } }
             case .confirmDelete:
+                // Stage 4 / I3: a password account re-types its password INSIDE the confirmation —
+                // the same proof `EditPasswordSheet` demands before a reversible change. A
+                // federated account gets its provider's own sheet instead, from the view model.
+                if deleteModel?.requiresPassword == true {
+                    SecureField(String(localized: "edit_password_current"), text: currentPassword)
+                        .textContentType(.password)
+                        .accessibilityLabel(String(localized: "edit_password_current"))
+                }
                 // Destructive AND irreversible, so the confirm carries the destructive role and the
                 // cancel is the escape the age dialog deliberately does not have.
-                Button(String(localized: "cancel"), role: .cancel) {}
+                Button(String(localized: "cancel"), role: .cancel) { deleteModel?.password = "" }
                 Button(String(localized: "profile_delete_account_confirm"), role: .destructive) {
                     // NOT `.task`-scoped: the request outlives this screen, and the cleanup behind
                     // it is detached besides (`AccountSession.handleDeletion`).
@@ -75,7 +83,9 @@ struct ProfileScreen: View {
                                          session: container.session)
             }
             if deleteModel == nil {
-                deleteModel = DeleteAccountViewModel(account: container.account, session: container.session)
+                deleteModel = DeleteAccountViewModel(account: container.account, session: container.session,
+                                                     auth: container.auth, google: container.googleSignIn,
+                                                     apple: container.appleSignIn)
             }
             await model?.sync()
         }
@@ -99,6 +109,12 @@ struct ProfileScreen: View {
         .onChange(of: model?.state) { _, state in
             if state == .signedOut { dismiss() }
         }
+    }
+
+    /// The confirmation dialog's password field. `@State`-held optional model, so the binding is
+    /// written by hand rather than through `@Bindable`.
+    private var currentPassword: Binding<String> {
+        Binding(get: { deleteModel?.password ?? "" }, set: { deleteModel?.password = $0 })
     }
 
     /// One completion path for all three sheets: banner the confirmation, close the sheet.

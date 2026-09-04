@@ -151,4 +151,104 @@ struct AuthorizedTransportTests {
             #expect(events.posted.isEmpty, "\(path) on a foreign host must not sign the user out")
         }
     }
+
+    // MARK: - Stage 5 / M1 + M2: this backend answers a terminated account with a BARE 401
+
+    /// `grep -rn "WWW-Authenticate" backend/src/main/` returns ZERO hits — the 401 leg writes only
+    /// `{"error": "Invalid or expired token"}` — so gating the refresh on the challenge header made
+    /// the whole retry state machine dead in production. On an `allowed` host a 401 IS a bearer
+    /// rejection by construction.
+    @Test func aBare401WithNoChallengeHeaderIsStillRetriedWithARefreshedBearer() async throws {
+        let base = ScriptedTransport([.json(401, #"{"error":"Invalid or expired token"}"#),
+                                      .json(200, "{}")])
+        let tokens = VersionedTokens()
+        let events = Events()
+        let authorized = AuthorizedTransport(base: base, apiHost: Self.apiHost, tokens: tokens,
+                                             onStatusEvent: { events.posted.append($0) })
+
+        let response = try await authorized.send(request("/api/account/me"))
+
+        #expect(response.status == 200)
+        #expect(base.sent.count == 2, "the refresh dance never fired against a header-less 401")
+        #expect(base.sent.last?.headers["Authorization"] == "Bearer tok-2")
+        #expect(events.posted.isEmpty, "a recoverable 401 is not a lifecycle event")
+    }
+
+    /// The fallback verdict. `FirebaseAuthFilter` enables `checkRevoked` on `/api/account/` and both
+    /// `softDeleteUser` and `blockUser` revoke FIRST, so `verifyIdToken` throws and the filter's 401
+    /// arm returns before its `ACCOUNT_DELETED` 403 arm can run — the ruling-C13 device wipe had NO
+    /// admin-side trigger at all. Firebase's refusal of the forced refresh is the only local
+    /// evidence, and it cannot be forged by a response body.
+    @Test func aBare401WhoseRefreshIsRefusedAsUserNotFoundPostsDeletedExactlyOnce() async throws {
+        let base = ScriptedTransport([.json(401, "{}"), .json(401, "{}")])
+        let events = Events()
+        let authorized = AuthorizedTransport(
+            base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
+            onStatusEvent: { events.posted.append($0) },
+            refreshRefusal: { .userNotFound })
+
+        _ = try await authorized.send(request("/api/account/me"))
+
+        #expect(events.posted == [.deleted])
+    }
+
+    @Test func aRefusalOfUserDisabledPostsBlockedAndNeverWipes() async throws {
+        let base = ScriptedTransport([.json(401, "{}"), .json(401, "{}")])
+        let events = Events()
+        let authorized = AuthorizedTransport(
+            base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
+            onStatusEvent: { events.posted.append($0) },
+            refreshRefusal: { .userDisabled })
+
+        _ = try await authorized.send(request("/api/account/me"))
+
+        #expect(events.posted == [.blocked])
+    }
+
+    /// A 401 the client cannot explain must leave the session alone: a stall is not a deletion.
+    @Test func anUnexplainedRefusalIsNotTerminal() async throws {
+        let base = ScriptedTransport([.json(401, "{}"), .json(401, "{}")])
+        let events = Events()
+        let authorized = AuthorizedTransport(
+            base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
+            onStatusEvent: { events.posted.append($0) },
+            refreshRefusal: { .network })
+
+        _ = try await authorized.send(request("/api/account/me"))
+
+        #expect(events.posted.isEmpty)
+        #expect(AuthorizedTransport.terminalEvent(for: nil) == nil)
+        #expect(AuthorizedTransport.terminalEvent(for: .wrongPassword) == nil)
+    }
+
+    /// A foreign host is out of bearer scope, so its 401 is neither retried nor read as a verdict.
+    @Test func aForeignHosts401IsNeitherRetriedNorTerminal() async throws {
+        let base = ScriptedTransport([.json(401, "{}")])
+        let events = Events()
+        let authorized = AuthorizedTransport(
+            base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
+            onStatusEvent: { events.posted.append($0) },
+            refreshRefusal: { .userNotFound })
+
+        _ = try await authorized.send(request("/api/account/me", host: "evil.test"))
+
+        #expect(base.sent.count == 1)
+        #expect(events.posted.isEmpty)
+    }
+
+    /// A token source whose forced refresh mints a NEW bearer.
+    private final class VersionedTokens: AuthTokenProviding, @unchecked Sendable {
+        private var minted = 0
+        func idToken(forceRefresh: Bool) async -> BearerToken? {
+            minted += forceRefresh ? 1 : 0
+            return BearerToken(value: "tok-\(minted + 1)", identity: "uid-A")
+        }
+    }
+
+    /// A token source whose FORCED refresh comes back nil — Firebase refusing to re-mint.
+    private struct RefusingTokens: AuthTokenProviding {
+        func idToken(forceRefresh: Bool) async -> BearerToken? {
+            forceRefresh ? nil : BearerToken(value: "tok-stale", identity: "uid-A")
+        }
+    }
 }

@@ -43,16 +43,22 @@ struct AccountClientTests {
         #expect(transport.sent.first?.method == "GET")
     }
 
-    /// Unknown -> `.blocked`, deliberately (`AccountStatus.kt:14-27`): BLOCKED drops the user to
-    /// guest, where PENDING_PROFILE would trap them in a bootstrap form the backend 409s on re-entry.
-    /// A missing `role` reads as "user".
-    @Test func anUnknownStatusReadsAsBlockedAndAMissingRoleAsUser() async throws {
+    /// Stage 3 / I5: unknown -> `.unknown`, never `.blocked`. A missing `role` reads as "user".
+    @Test func anUnknownStatusReadsAsUnknownAndAMissingRoleAsUser() async throws {
         let (client, _) = self.client([.json(200, #"{"uid":"u1","status":"quarantined"}"#)])
         let me = try await client.me()
-        #expect(me.status == .blocked)
+        #expect(me.status == .unknown)
         #expect(me.role == "user")
         #expect(!me.isModerator)
-        #expect(AccountStatus.fromWire(nil) == .blocked)
+        // Stage 3 / I5: an unknown or missing status is `.unknown`, NEVER `.blocked`. On iOS
+        // `.blocked` is not "drop to guest": `SplashRouter` answers it with `signOut: true` and a
+        // non-dismissible "your account has been blocked" dialog, so one additive backend
+        // `UserStatus` value would have signed out every installed client and told each user
+        // something untrue.
+        #expect(AccountStatus.fromWire(nil) == .unknown)
+        #expect(AccountStatus.fromWire("SOMETHING_NEW") == .unknown)
+        #expect(AccountStatus.fromWire("") == .unknown)
+        #expect(AccountStatus.fromWire("BLOCKED") == .blocked, "the literal wire value still blocks")
         #expect(AccountStatus.fromWire("PENDING_PROFILE") == .pendingProfile)
     }
 

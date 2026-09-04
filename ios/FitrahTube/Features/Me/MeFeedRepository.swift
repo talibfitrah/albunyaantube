@@ -24,7 +24,7 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
 ///
 /// Foreground only (ruling F6): the Me tab's `.task` bursts if stale and pull-to-refresh forces.
 /// No `BGAppRefreshTask`, no `UIBackgroundModes`.
-@MainActor @Observable final class MeFeedRepository {
+@MainActor @Observable final class MeFeedRepository: UserScoped {
     /// Runs one channel's attempt under `MeFeedRefreshGate.perChannelTimeout`; `nil` means the
     /// deadline won. Injected rather than raced against a fake sleep on purpose: a race decided by
     /// the scheduler is a flaky test on a host running at load average 200+, and what is worth
@@ -68,6 +68,52 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     /// reason: the work spans awaits, and the newest decision has to win.
     private var generation = 0
 
+    /// Stage 3 / I2: this repository is a container `lazy var` with process lifetime, and nothing
+    /// used to re-scope it — not `AccountSession.scope(to:)`, not `signOut()`, not
+    /// `LocalAccountWiper.wipe()` (which sweeps the per-channel UserDefaults keys and stops there).
+    /// So account A signed out, account B signed in, and `MeSignedInView.feedSection` rendered A's
+    /// videos under B's account on the first frame — the spinner does not cover it, because its
+    /// guard is `isRefreshing && weeks.isEmpty` and `weeks` was not empty. The same survival
+    /// applied after the ruling-C13 device wipe, which is the ruling that says nothing of a deleted
+    /// account may remain renderable. Conforming to `UserScoped` and joining
+    /// `AppContainer.userScopedStores` is what puts it on the ONE list that gets re-scoped.
+    var currentUserId: String = "" {
+        didSet {
+            guard oldValue != currentUserId else { return }
+            reset()
+        }
+    }
+
+    /// Everything this repository holds for the account that just left. `generation` moves so a
+    /// `rebucket` already in flight cannot publish the old account's rows behind it, and the
+    /// in-flight refresh is cancelled for the same reason.
+    private func reset() {
+        inFlight?.cancel()
+        inFlight = nil
+        isRefreshing = false
+        weeks = []
+        allWeeks = []
+        channelIds = []
+        filter = nil
+        lastChannelCount = nil
+        loadedWeekCount = 1
+        reachedEnd = false
+        lastError = nil
+        generation += 1
+    }
+
+    /// Stage 3 / I3: the refresh currently running. `MeSignedInView` calls `refresh` from `.task`
+    /// (`force: false`), from `.refreshable` (`force: true`) and from the subscription-count
+    /// `.onChange`, and only the last lived in a slot anything cancelled — so a pull-to-refresh
+    /// during the opening burst fanned out over every channel a SECOND time (duplicate youtube.com
+    /// requests, which is what `MeFeedRefreshGate`'s TTL, backoff ladder and 250 ms stagger exist to
+    /// avoid), let the first finisher clear `isRefreshing` while the second was still running, and
+    /// raced `lastError` between rounds. Same coalescer `AccountSession.refresh` already uses.
+    private var inFlight: Task<Void, Never>?
+    /// Whether the running refresh is a forced one, so a `force: true` can supersede a `force: false`
+    /// but never the other way round.
+    private var inFlightForced = false
+
     init(atom: AtomFeedFetcher, refreshState: any KeyValueStore,
          now: @escaping () -> Date, calendar: Calendar,
          deadline: @escaping Deadline = MeFeedRepository.withDeadline,
@@ -88,9 +134,31 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     /// concern (`rebucket`), never a fetching one, and the loaded-week reset below keys off this
     /// list's size for exactly that reason (`MeViewModel.kt:181-195`: an AWAITING import that later
     /// graduates should also be able to reset the feed).
+    ///
+    /// COALESCED (Stage 3 / I3): a second `force: false` joins the running round rather than
+    /// starting a second fan-out, and a `force: true` supersedes a running `force: false` — pull to
+    /// refresh means "now", so it cancels and replaces rather than queueing behind a TTL-respecting
+    /// burst. The leader's arguments are the ones that run, as in `AccountSession.refresh`.
     func refresh(channelIds: [String], force: Bool) async {
+        if let running = inFlight {
+            guard force, !inFlightForced else {
+                await running.value
+                return
+            }
+            running.cancel()
+        }
+        inFlightForced = force
         isRefreshing = true
-        defer { isRefreshing = false }
+        let task = Task { await self.performRefresh(channelIds: channelIds, force: force) }
+        inFlight = task
+        await task.value
+        // A superseded leader must NOT clear the flag the round that replaced it is still using.
+        guard inFlight == task else { return }
+        inFlight = nil
+        isRefreshing = false
+    }
+
+    private func performRefresh(channelIds: [String], force: Bool) async {
         if lastChannelCount != channelIds.count { loadedWeekCount = 1 }
         lastChannelCount = channelIds.count
         self.channelIds = channelIds
@@ -113,8 +181,12 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
             // One rule, deliberately coarse: the banner says "couldn't refresh your feed", which is
             // true exactly when nothing this round did. A partial success renders its rows and says
             // nothing — an error over a feed that just grew would be noise.
+            // A superseded round must not write the banner (or the bucketed rows) the round that
+            // replaced it is about to write.
+            guard !Task.isCancelled else { return }
             lastError = outcomes.values.contains(.success) ? nil : String(localized: "me_refresh_error")
         }
+        guard !Task.isCancelled else { return }
         await rebucket(filter: filter)
     }
 

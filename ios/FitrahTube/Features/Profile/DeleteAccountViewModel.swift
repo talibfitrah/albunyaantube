@@ -2,7 +2,13 @@ import Foundation
 import Observation
 
 /// No success state — the terminal alert owns the screen from there (`DeleteAccountViewModel.kt:29-31`).
-nonisolated enum DeleteAccountState: Equatable { case idle, deleting, failedLastAdmin, failedNetwork, failedUnknown }
+nonisolated enum DeleteAccountState: Equatable {
+    case idle, reauthenticating, deleting
+    /// Stage 4 / I3: the re-authentication was refused — a wrong current password, a dismissed
+    /// provider sheet, or a provider credential Firebase would not accept.
+    case failedReauth
+    case failedLastAdmin, failedNetwork, failedUnknown
+}
 
 /// `DELETE /api/account/me` and nothing else. Everything that happens after the 204 — the device
 /// wipe, the Firebase delete, the sign-out and the terminal `.deleted` event — belongs to
@@ -11,17 +17,33 @@ nonisolated enum DeleteAccountState: Equatable { case idle, deleting, failedLast
 @MainActor @Observable final class DeleteAccountViewModel {
     private let account: AccountClient
     private let session: AccountSession
+    private let auth: any AuthClient
+    private let google: any OAuthSignInProvider
+    private let apple: any OAuthSignInProvider
 
     private(set) var state: DeleteAccountState = .idle
+    /// The current-password field for a password account. Never persisted, never logged, and
+    /// cleared the moment the re-authentication is over.
+    var password = ""
 
-    init(account: AccountClient, session: AccountSession) {
+    init(account: AccountClient, session: AccountSession, auth: any AuthClient,
+         google: any OAuthSignInProvider, apple: any OAuthSignInProvider) {
         self.account = account
         self.session = session
+        self.auth = auth
+        self.google = google
+        self.apple = apple
     }
+
+    /// Whether the confirmation must collect a password, or run the provider's own sheet instead.
+    var requiresPassword: Bool { session.user?.hasPasswordProvider == true }
 
     nonisolated static func messageKey(for state: DeleteAccountState) -> String? {
         switch state {
-        case .idle, .deleting: nil
+        case .idle, .reauthenticating, .deleting: nil
+        // Reused, not authored: the same "That password is incorrect" the password sheet renders
+        // for exactly the same refused re-authentication.
+        case .failedReauth: "edit_password_wrong_current"
         case .failedLastAdmin: "profile_delete_account_error_last_admin"
         case .failedNetwork: "profile_delete_account_error_network"
         case .failedUnknown: "profile_delete_account_error_unknown"
@@ -31,8 +53,24 @@ nonisolated enum DeleteAccountState: Equatable { case idle, deleting, failedLast
     /// A refusal leaves the device COMPLETELY untouched — nothing local is cleaned up on a
     /// `DELETE` the server did not honour. There is no success arm: the terminal alert owns the
     /// screen from the 204 on, so the state stays `.deleting` and the row keeps saying so.
+    /// Stage 4 / I3: the re-authentication comes FIRST, and no `DELETE` is sent without it.
+    ///
+    /// Every *reversible* credential operation in Part A already re-authenticates
+    /// (`EditEmailSheet`, `EditPasswordSheet`); the one IRREVERSIBLE operation did not, so an
+    /// `.alert` confirm button was the entire barrier between a briefly unlocked device and a
+    /// permanently tombstoned account. Firebase's own `requiresRecentLogin` cannot stand in: the
+    /// Firebase delete happens after the 204 and is deliberately `try?`-swallowed, by which point
+    /// there is nowhere left to route a re-auth prompt. Doing it here also means that delete never
+    /// meets `requiresRecentLogin` at all.
     func delete() async {
-        guard state != .deleting else { return }
+        guard state != .deleting, state != .reauthenticating else { return }
+        state = .reauthenticating
+        let reauthenticated = await reauthenticate()
+        password = ""
+        guard reauthenticated else {
+            state = .failedReauth
+            return
+        }
         state = .deleting
         do {
             try await account.deleteAccount()
@@ -42,6 +80,36 @@ nonisolated enum DeleteAccountState: Equatable { case idle, deleting, failedLast
         }
         // Not awaited: the cleanup is deliberately detached from this call's task (CF-G-5).
         session.handleDeletion(deletingFirebaseUser: true)
+    }
+
+    /// A password account re-types its password; a federated one runs its provider's own sheet and
+    /// redeems the credential, which is that provider's equivalent of the same proof.
+    private func reauthenticate() async -> Bool {
+        if requiresPassword {
+            do {
+                try await auth.reauthenticate(password: password)
+                return true
+            } catch {
+                return false
+            }
+        }
+        guard let provider = federatedProvider else { return false }
+        do {
+            let credential = try await provider.presentSignIn()
+            _ = try await auth.signIn(with: credential)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// The provider this account actually signed in with. A cancel is a refusal like any other —
+    /// the account is not deleted, and the row goes back to saying what it is.
+    private var federatedProvider: (any OAuthSignInProvider)? {
+        let ids = session.user?.providerIDs ?? []
+        if ids.contains("google.com") { return google }
+        if ids.contains("apple.com") { return apple }
+        return nil
     }
 
     private nonisolated static func state(for error: AccountError) -> DeleteAccountState {

@@ -10,3 +10,8 @@ GID_REVERSED_CLIENT_ID = com.googleusercontent.apps.000000000000-replaceme
 
 // Debug builds may override API_BASE_URL via Local.xcconfig (simulator, http://localhost or
 // https only — ATS blocks plain-http LAN hosts on devices).
+
+// Sign in with Apple: set this to anything non-empty ONLY once the App ID com.albunyaan.tube has
+// the capability enabled in the Apple Developer portal. Empty (the tracked default) hides the
+// Apple button, which is the honest answer for a build whose App ID cannot complete the flow.
+FITRAH_APPLE_SIGNIN_REGISTERED = 1

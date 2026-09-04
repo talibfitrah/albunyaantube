@@ -135,11 +135,29 @@ import Observation
                     phoneNumber: e164)
                 state.profileSaved = true
             } catch {
-                state.isLoading = false
-                // The terminal screen IS the message for an under-13 rejection; an inline error
-                // under a form the user is about to lose would be noise.
-                if error == .ageIneligible { nav = .ageIneligible } else { state.error = .saveFailed }
-                return
+                // Stage 3 / M4: both of these were decoded, thrown, tested — and then collapsed
+                // into "couldn't save your profile", which for the 409 is a dead end BY
+                // CONSTRUCTION: the server says the form is already done, and the only thing that
+                // could move the user on is the `/me` re-read this arm never issued, so the screen
+                // repeated the same refusal forever. A 403 `EMAIL_NOT_VERIFIED` is the same shape —
+                // the router lands on verification once the session is re-read.
+                switch error {
+                case .profileAlreadyCompleted, .emailNotVerified:
+                    await session.refresh()
+                    state.isLoading = false
+                    nav = .main
+                    return
+                case .ageIneligible:
+                    state.isLoading = false
+                    // The terminal screen IS the message for an under-13 rejection; an inline error
+                    // under a form the user is about to lose would be noise.
+                    nav = .ageIneligible
+                    return
+                default:
+                    state.isLoading = false
+                    state.error = .saveFailed
+                    return
+                }
             }
         }
 

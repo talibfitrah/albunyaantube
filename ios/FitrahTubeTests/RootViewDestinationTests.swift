@@ -1,4 +1,7 @@
+import FitrahAPI
 import Foundation
+import InnerTubeKit
+import Synchronization
 import SwiftUI
 import Testing
 @testable import FitrahTube
@@ -60,5 +63,31 @@ struct RootViewDestinationTests {
         #expect(session.state == .signedOut)
         #expect(await container.auth.currentUser() == nil, "the auth client was signed out, not just the state")
         #expect(alert == AccountStatusAlert(.blocked))
+    }
+
+    /// Stage 5 / M5: the `.deleted` advisory is the SAME verdict the 403 envelope carries, and that
+    /// path wipes the device (ruling C13). Routing it through `signOut()` made it a fourth residue
+    /// for one server state — session dropped, every local row of a deleted account still on the
+    /// device. It goes through `handle(_:)`, which is what reaches `handleDeletion()`.
+    @Test @MainActor func theDeletedAdvisoryWipesRatherThanMerelySigningOut() async {
+        let wipes = Mutex(0)
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let transport = ScriptedTransport([.json(200, #"{"uid":"fake-uid","status":"active","role":"user"}"#)])
+        let base = URL(string: "https://api.fitrah.test/")!
+        let session = AccountSession(auth: auth,
+                                     account: AccountClient(transport: transport, baseURL: base,
+                                                            deviceId: DeviceId(value: "dev-1")),
+                                     stores: [], status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { wipes.withLock { $0 += 1 }; return nil })
+        await session.refresh()
+        #expect(session.state.me != nil)
+
+        var alert: AccountStatusAlert?
+        RootView.act(on: SplashOutcome(destination: .main, signOut: true, alert: .deleted),
+                     session: session, alert: &alert)
+        for _ in 0..<500 where wipes.withLock({ $0 }) == 0 { await Task.yield() }
+
+        #expect(wipes.withLock { $0 } == 1, "a server-deleted account was signed out but not wiped")
+        #expect(alert == AccountStatusAlert(.deleted))
     }
 }

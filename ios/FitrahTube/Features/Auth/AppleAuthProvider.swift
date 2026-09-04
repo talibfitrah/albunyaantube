@@ -103,6 +103,12 @@ import UIKit
         SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Apple persists nothing app-side: `ASAuthorizationAppleIDProvider` hands over a one-shot
+    /// credential and keeps no SDK session in this app's Keychain, so there is nothing to forget.
+    /// Declared rather than defaulted so the day a provider DOES persist something, the compiler
+    /// asks (Stage 4 / I1).
+    func signOutProvider() {}
+
     private static var keyWindow: UIWindow? {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }

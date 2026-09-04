@@ -37,7 +37,21 @@ import SwiftData
     }
 
     /// Ruling C13, in this ORDER.
-    func wipe() async {
+    ///
+    /// Returns the FIRST error it hit, or nil when everything went (Stage 5 / C2.2). The three
+    /// deletes and the save used to be `try?`-swallowed and every test ran against an infallible
+    /// in-memory store, so on a full, corrupt or unavailable persistent store the rows survived
+    /// while the app hid them, signed out and announced the account erased. The caller
+    /// (`AccountSession.performDeletion`) keeps its durable marker set on a non-nil return, so the
+    /// next launch tries again.
+    ///
+    /// It does NOT stop at the first error: the later steps (search history, the defaults sweep,
+    /// the caches, the device id) are independent of SwiftData and must still run — a store that
+    /// refused its deletes is no reason to leave the deleted account's search suggestions and
+    /// device id behind.
+    @discardableResult
+    func wipe() async -> Error? {
+        var firstError: Error?
         // 1-2. CF-G-4. A save still running while the rest of this executes is a race with the
         //      filesystem, so the work stops before its files go — and both steps route through the
         //      manager, which owns every unlink this app performs.
@@ -49,10 +63,13 @@ import SwiftData
         //    whose owner has just erased theirs. A batch delete through a context of our own, so it
         //    does not depend on which store happens to be scoped to what.
         let context = ModelContext(modelContainer)
-        try? context.delete(model: FavoriteVideo.self)
-        try? context.delete(model: SavedPlaylist.self)
-        try? context.delete(model: SubscribedChannel.self)
-        try? context.save()
+        func attempt(_ work: () throws -> Void) {
+            do { try work() } catch { firstError = firstError ?? error }
+        }
+        attempt { try context.delete(model: FavoriteVideo.self) }
+        attempt { try context.delete(model: SavedPlaylist.self) }
+        attempt { try context.delete(model: SubscribedChannel.self) }
+        attempt { try context.save() }
         // Those deletes went through a different context, so every store still holds the objects it
         // last fetched — SwiftUI would keep rendering rows whose backing model no longer exists.
         // Re-scoping to the anon sentinel is what makes each of them re-read (`UserScoped`), and it
@@ -84,5 +101,7 @@ import SwiftData
         //    together, so it goes too and the next request mints a new one
         //    (`LocalAccountDataWiper.kt:48-51`).
         defaults.removeObject(forKey: DeviceId.defaultsKey)
+
+        return firstError
     }
 }

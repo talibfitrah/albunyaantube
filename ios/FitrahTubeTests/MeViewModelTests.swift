@@ -35,7 +35,7 @@ struct MeViewModelTests {
         let session = AccountSession(
             auth: auth,
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "d1")),
-            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: {})
+            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil })
         guard role != nil else { return session }
         let running = Task { await session.start() }
         _ = try await auth.signIn(email: "a@b.test", password: "p")

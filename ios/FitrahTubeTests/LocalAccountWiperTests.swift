@@ -183,14 +183,43 @@ struct LocalAccountWiperTests {
 
     /// CF-A-9: the persisted `X-Device-Id` is what ties this install's public traffic together, so
     /// it goes with the account and the next request mints a new one (`LocalAccountDataWiper.kt:48-51`).
+    ///
+    /// Stage 3 / M5: asserted through the REAL request path. The shape this replaces re-called
+    /// `DeviceId.persisted(in:)` itself, which is not what the app sends — every client captured
+    /// its `DeviceId` at container construction and `value` was a stored `String`, so removing the
+    /// defaults key changed nothing until relaunch and every request for the rest of the session
+    /// still carried the deleted account's id. `DeviceId.value` now resolves per read, so the very
+    /// next request off an ALREADY-BUILT client is the thing this asserts.
     @Test func theDeviceIdIsForgottenSoTheNextRequestMintsANewOne() async throws {
         let fixture = makeFixture(); defer { fixture.tearDown() }
-        let before = DeviceId.persisted(in: fixture.defaults)
-        #expect(fixture.defaults.string(forKey: DeviceId.defaultsKey) == before.value)
+        let base = URL(string: "https://api.fitrah.test/")!
+        let me = #"{"uid":"u","status":"active","role":"user"}"#
+        let transport = ScriptedTransport([.json(200, me), .json(200, me)])
+        // Built BEFORE the wipe, exactly as `AppContainer` builds it at launch.
+        let client = AccountClient(transport: transport, baseURL: base,
+                                   deviceId: .persisted(in: fixture.defaults))
+        _ = try await client.me()
+        let before = transport.sent.first?.headers["X-Device-Id"]
+        #expect(before?.isEmpty == false)
 
         await fixture.wiper.wipe()
+        _ = try await client.me()
 
-        #expect(fixture.defaults.string(forKey: DeviceId.defaultsKey) == nil)
-        #expect(DeviceId.persisted(in: fixture.defaults).value != before.value)
+        #expect(fixture.defaults.string(forKey: DeviceId.defaultsKey) != nil, "the next request re-minted")
+        #expect(transport.sent.last?.headers["X-Device-Id"] != before,
+                "the deleted account's traffic stayed linked for the rest of the session")
+    }
+
+    /// Stage 5 / C2.2: the four SwiftData calls were `try?`-swallowed and every test ran against an
+    /// infallible in-memory store, so on a full or corrupt store the rows survived while the app
+    /// hid them, signed out and announced the account erased. A healthy store still reports nil,
+    /// and the later steps are unaffected — that is what the caller's marker keys off.
+    @Test func aHealthyWipeReportsNoError() async throws {
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        try seedRows(fixture)
+
+        let error = await fixture.wiper.wipe()
+
+        #expect(error == nil)
     }
 }

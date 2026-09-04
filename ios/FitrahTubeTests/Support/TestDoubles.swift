@@ -79,7 +79,9 @@ func noSleep(_ duration: Duration) async throws {}
 @MainActor final class FakeOAuthProvider: OAuthSignInProvider {
     let isAvailable: Bool
     let credential: OAuthCredential
-    let error: OAuthSignInFailure?
+    /// `var`: a suite that needs the SECOND presentation to be refused (a delete confirmation the
+    /// user backs out of) cannot rebuild the provider mid-flow.
+    var error: OAuthSignInFailure?
     let gate: Gate?
     private(set) var presentCount = 0
 
@@ -94,6 +96,11 @@ func noSleep(_ duration: Duration) async throws {}
         self.error = error
         self.gate = gate
     }
+
+    /// Stage 4 / I1: how many times the provider SDK was asked to forget its own session.
+    private(set) var signOutCount = 0
+
+    func signOutProvider() { signOutCount += 1 }
 
     func presentSignIn() async throws(OAuthSignInFailure) -> OAuthCredential {
         presentCount += 1

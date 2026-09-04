@@ -152,8 +152,26 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// evaluated from a stored-property initializer, which Swift runs BEFORE that body. The call is
     /// idempotent. With no `GoogleService-Info.plist` — this machine, CI and every fresh checkout —
     /// it returns nil and the app gets `UnavailableAuthClient`, i.e. a guest that cannot sign in.
-    private(set) lazy var auth: any AuthClient = injectedAuth ?? FirebaseAuthClient() ?? UnavailableAuthClient()
+    ///
+    /// Stage 4 / M3: the substitution itself is `#if DEBUG`, exactly as `injectedAccountStatusJSON`
+    /// already is. It was never REACHABLE in Release (`live()` passes nothing and
+    /// `LaunchArguments.debug` compiles to `[]`), but a shipped binary carrying the stored seam and
+    /// the ability to swap the auth client is dead weight in the one place dead weight is worst.
+    ///
+    /// `() -> any AuthClient` and two `return`s rather than a `??` chain: in RELEASE the DEBUG arm
+    /// is gone, and `FirebaseAuthClient() ?? UnavailableAuthClient()` on its own has no common type
+    /// to infer (the old spelling only compiled because `injectedAuth`'s `(any AuthClient)?` drove
+    /// the inference — which is exactly the kind of thing only the Release stage catches).
+    private(set) lazy var auth: any AuthClient = { () -> any AuthClient in
+        #if DEBUG
+        if let injectedAuth { return injectedAuth }
+        #endif
+        if let firebase = FirebaseAuthClient() { return firebase }
+        return UnavailableAuthClient()
+    }()
+    #if DEBUG
     private let injectedAuth: (any AuthClient)?
+    #endif
 
     /// Phase 4 Task 5: the two federated sign-in seams and the F11 capability answer Task 10 renders
     /// from. All three take the `injectedAuth` idiom — not because the real ones are unsafe (neither
@@ -161,11 +179,23 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// what the constraint is for: `GoogleService-Info.plist` is USER-BLOCKED, so a hard-wired
     /// `.current()` is all-false permanently here and Task 10's previews and Task 13's screenshot rig
     /// could never render a populated sign-in screen.
-    private(set) lazy var googleSignIn: any OAuthSignInProvider = injectedGoogleSignIn ?? GoogleAuthProvider()
-    private(set) lazy var appleSignIn: any OAuthSignInProvider = injectedAppleSignIn ?? AppleAuthProvider()
+    private(set) lazy var googleSignIn: any OAuthSignInProvider = { () -> any OAuthSignInProvider in
+        #if DEBUG
+        if let injectedGoogleSignIn { return injectedGoogleSignIn }
+        #endif
+        return GoogleAuthProvider()
+    }()
+    private(set) lazy var appleSignIn: any OAuthSignInProvider = { () -> any OAuthSignInProvider in
+        #if DEBUG
+        if let injectedAppleSignIn { return injectedAppleSignIn }
+        #endif
+        return AppleAuthProvider()
+    }()
     let capabilities: SignInCapabilities
+    #if DEBUG
     private let injectedGoogleSignIn: (any OAuthSignInProvider)?
     private let injectedAppleSignIn: (any OAuthSignInProvider)?
+    #endif
     #if DEBUG
     /// The `/me` body a FIXTURE container answers with, or nil for the default ACTIVE student.
     private let injectedAccountStatusJSON: String?
@@ -224,7 +254,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         if isFixture { return ScriptedTransport(Array(repeating: .json(200, fixtureAccountJSON), count: 4)) }
         #endif
         return AuthorizedTransport(base: URLSessionTransport(), apiHost: apiBaseURL.host() ?? "",
-                                   tokens: auth, onStatusEvent: { [accountStatus] in accountStatus.post($0) })
+                                   tokens: auth, onStatusEvent: { [accountStatus] in accountStatus.post($0) },
+                                   // Stage 5 / M1: the fallback verdict for this backend's bare 401
+                                   // on a terminated account. Same `auth` object as `tokens`, so
+                                   // there is still exactly ONE token source (ruling F12).
+                                   refreshRefusal: { [auth] in await auth.refreshRefusal() })
     }()
 
     /// Phase 4 Task 7: `/api/account/*`, over the signed transport above.
@@ -242,10 +276,17 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                                    // (fix round 1 / M1).
                                                    wipe: { [weak self] in
                                                        guard let self else {
-                                                           return assertionFailure("the container was released before the device wipe ran")
+                                                           assertionFailure("the container was released before the device wipe ran")
+                                                           return CancellationError()
                                                        }
-                                                       await makeWiper().wipe()
-                                                   })
+                                                       return await makeWiper().wipe()
+                                                   },
+                                                   // Stage 5 / C1.2: the durable "a wipe is owed"
+                                                   // flag, on the same suite every other key uses.
+                                                   marker: UserDefaultsDeletionMarker(defaults: userDefaults),
+                                                   // Stage 4 / I1: the two SDKs whose own Keychain
+                                                   // sessions outlive Firebase's sign-out.
+                                                   providers: [googleSignIn, appleSignIn])
 
     /// Phase 4 Task 18: ruling C13's device wipe, built ON DEMAND rather than stored. Reaching for
     /// `session` must not construct `offlineManager` — that builds a background `URLSession`, which
@@ -280,7 +321,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
 
     /// Every per-user local store, in ONE list. A store added here is re-scoped on every auth
     /// change for free; a store that is not is the bug this list exists to make visible.
-    private var userScopedStores: [any UserScoped] { [favorites, savedPlaylists, subscriptions] }
+    /// Stage 3 / I2: `meFeed` is on this list. It is a process-lifetime `lazy var` holding the
+    /// PREVIOUS account's bucketed videos in memory, and nothing else re-scopes it — so account B
+    /// rendered account A's feed on the first frame, and the ruling-C13 wipe left it renderable.
+    private var userScopedStores: [any UserScoped] { [favorites, savedPlaylists, subscriptions, meFeed] }
 
     #if DEBUG
     /// What a fixture container's `GET /api/account/me` answers. Task 13's `-fitrah-fake-auth`
@@ -405,11 +449,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
          isFixture: Bool = false) {
         #if DEBUG
         self.injectedAccountStatusJSON = accountStatusJSON
-        #endif
         self.injectedAuth = auth
-        self.capabilities = capabilities ?? .current()
         self.injectedGoogleSignIn = googleSignIn
         self.injectedAppleSignIn = appleSignIn
+        #endif
+        self.capabilities = capabilities ?? .current()
         self.catalog = catalog
         self.userDefaults = userDefaults
         self.modelContainer = modelContainer

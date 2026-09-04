@@ -152,7 +152,19 @@ nonisolated protocol AuthClient: AuthTokenProviding {
     func updatePassword(_ new: String) async throws(AuthErrorCode)
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode)
     func deleteUser() async throws(AuthErrorCode)
-    func signOut()
+    /// Stage 5 / C1.3: THROWS. `Auth.signOut()` assigns `_currentUser = nil` only when the Keychain
+    /// write succeeded, so a swallowed failure left the app reporting signed-out while still minting
+    /// bearers for the previous account — and the next launch restored it.
+    func signOut() throws(AuthErrorCode)
+    /// Why a forced ID-token refresh was refused, or nil when it was not (including "no session").
+    ///
+    /// Stage 5 / M1+M2: `idToken(forceRefresh:)` collapses every refusal into nil, so a TERMINATED
+    /// account was indistinguishable from a network stall. The backend answers a revoked token with
+    /// a bare 401 (`FirebaseAuthFilter` runs `verifyIdToken(token, checkRevoked)` before its 403
+    /// lifecycle arms can run), so the client's only local evidence of what happened is what
+    /// Firebase says when asked to mint a new token: `.userNotFound` = the record is gone,
+    /// `.userDisabled` = blocked.
+    func refreshRefusal() async -> AuthErrorCode?
     // `idToken(forceRefresh:)` is inherited from AuthTokenProviding — do not redeclare it.
 }
 
@@ -174,5 +186,6 @@ nonisolated struct UnavailableAuthClient: AuthClient {
     func updatePassword(_ new: String) async throws(AuthErrorCode) { throw .unknown }
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { throw .unknown }
     func deleteUser() async throws(AuthErrorCode) { throw .unknown }
-    func signOut() {}
+    func signOut() throws(AuthErrorCode) {}
+    func refreshRefusal() async -> AuthErrorCode? { nil }
 }

@@ -1,6 +1,14 @@
 // Owner's Apple Developer Team ID (rulings.md Amendment 2). Drives DEVELOPMENT_TEAM and, through
 // Info.plist's FITRAH_APPLE_SIGNIN, whether the app offers Sign in with Apple at all.
 FITRAH_TEAM_ID = 72PF8SBQR6
+// Sign in with Apple's SECOND flag (Stage 5 / M6). FITRAH_TEAM_ID being non-empty only says a
+// Team ID signed this build; it does NOT say the App ID com.albunyaan.tube has the Sign in with
+// Apple capability enabled in the developer portal -- and it does not (see the header comment in
+// FitrahTube.entitlements). With one flag the Apple button rendered in every build and
+// performRequests() would fail on the first signed device build: ruling F11's "a button that
+// cannot possibly finish". EMPTY here on purpose. Set it in the untracked Local.xcconfig -- to
+// anything non-empty -- once the portal entry exists.
+FITRAH_APPLE_SIGNIN_REGISTERED =
 // Google Sign-In's OAuth callback scheme (the REVERSED_CLIENT_ID out of GoogleService-Info.plist).
 // That file is USER-BLOCKED and git-ignored, so Local.xcconfig supplies the real value the day it
 // lands. Task 5: the default is a PLACEHOLDER, not empty -- Info.plist substitution cannot omit a

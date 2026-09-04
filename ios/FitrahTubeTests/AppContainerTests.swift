@@ -130,16 +130,35 @@ struct AppContainerTests {
 
     /// The transport posts from whatever isolation the request ran on; the center buffers one event
     /// and hands it over exactly once, so a re-render cannot route the user twice.
-    @Test func theAccountStatusCenterBuffersOneEventAndConsumesItOnce() async {
+    ///
+    /// Stage 3 / I4 + M2: the rule is TERMINAL PRECEDENCE, not "newest wins". The shape this
+    /// replaces posted `.blocked` then `.deleted` through two independent `Task { @MainActor in }`
+    /// hops and asserted the second survived — an ordering the cooperative executor never promised,
+    /// and the wrong rule besides: only `.deleted` runs the device wipe, so losing it to a
+    /// `.blocked` skips ruling C13 entirely. Asserted as a PURE comparison, which no scheduler can
+    /// reorder, plus the post path in the order that used to be the dangerous one.
+    @Test func theAccountStatusCenterKeepsTheMostTerminalEvent() async {
+        #expect(AccountStatusEvent.deleted > .blocked)
+        #expect(AccountStatusEvent.blocked > .signedOut)
+
+        let center = AccountStatusCenter()
+        center.post(.deleted)
+        center.post(.blocked)
+        center.post(.signedOut)
+        // `post` hops to the main actor; yields past all three hops, and there is no clock.
+        for _ in 0..<10 { await Task.yield() }
+        #expect(center.pending == .deleted, "a device wipe was lost behind a reversible block")
+        #expect(center.consume() == .deleted)
+        #expect(center.consume() == nil)
+    }
+
+    /// The other order, for the same reason: whichever arrives second, `.deleted` is what routes.
+    @Test func aLaterBlockedNeverOverwritesAPendingDeleted() async {
         let center = AccountStatusCenter()
         center.post(.blocked)
         center.post(.deleted)
-        // `post` hops to the main actor; one yield past both hops is enough, and there is no clock.
-        await Task.yield()
-        await Task.yield()
-        #expect(center.pending == .deleted, "drop-oldest: the newest terminal event wins")
+        for _ in 0..<10 { await Task.yield() }
         #expect(center.consume() == .deleted)
-        #expect(center.consume() == nil)
     }
 
     /// R5-1, fix round 1: stubbing the gate closed the deletion vector but not the constraint the

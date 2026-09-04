@@ -8,6 +8,14 @@ import Foundation
 @MainActor protocol OAuthSignInProvider: AnyObject {
     var isAvailable: Bool { get }
     func presentSignIn() async throws(OAuthSignInFailure) -> OAuthCredential
+    /// Forgets whatever the provider's OWN SDK persisted, on top of Firebase's sign-out.
+    ///
+    /// Stage 4 / I1: `GIDSignIn` keeps its `currentUser` — an access token **and a refresh token
+    /// for the user's Google account** — in the app's Keychain, and nothing in the app ever asked it
+    /// to sign out. That credential outlived both `AccountSession.signOut()` and the ruling-C13
+    /// device wipe, whose own dialog tells the user the account is gone. `signOut()`, never
+    /// `disconnect()` (ruling C6): revoking the grant is not what the user asked for.
+    func signOutProvider()
 }
 
 /// Why a provider leg ended without a credential. Task 5 shipped a bare `AuthErrorCode`, which
@@ -52,11 +60,24 @@ nonisolated struct SignInCapabilities: Sendable, Equatable {
                                   apple: emailPassword && appleSignInIsConfigured)
     }
 
-    /// The ONE reader of the build-time Apple flag (`AppleAuthProvider` asks through `current()`).
-    /// Non-empty means a Team ID signed this build; empty means no signing identity, so no Apple
-    /// button. There is no runtime entitlement API to consult instead.
+    /// The ONE reader of the build-time Apple flags (`AppleAuthProvider` asks through `current()`).
+    /// There is no runtime entitlement API to consult instead, so BOTH halves are build settings:
+    ///
+    ///  * `FITRAH_APPLE_SIGNIN` (= `FITRAH_TEAM_ID`) — a Team ID signed this build at all;
+    ///  * `FITRAH_APPLE_SIGNIN_REGISTERED` — the App ID `com.albunyaan.tube` actually has the Sign
+    ///    in with Apple capability enabled in the developer portal.
+    ///
+    /// Stage 5 / M6: the Team ID is committed in both tracked xcconfigs, so the first flag alone was
+    /// true in every build while the entitlements file's own header records that the App ID is NOT
+    /// registered — the F11 trap exactly, a button that renders and then fails `performRequests()`
+    /// on the first signed device build. The second flag is EMPTY in both tracked xcconfigs and is
+    /// set once, in the untracked `Local.xcconfig`, by whoever created the portal entry.
     static var appleSignInIsConfigured: Bool {
-        (Bundle.main.object(forInfoDictionaryKey: "FITRAH_APPLE_SIGNIN") as? String)?.isEmpty == false
+        info("FITRAH_APPLE_SIGNIN") && info("FITRAH_APPLE_SIGNIN_REGISTERED")
+    }
+
+    private static func info(_ key: String) -> Bool {
+        (Bundle.main.object(forInfoDictionaryKey: key) as? String)?.isEmpty == false
     }
 
     /// The pure table Task 10 renders. The `emailPassword` guard is deliberately a SECOND defence:

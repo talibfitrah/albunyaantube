@@ -119,8 +119,15 @@ run_gate() {
         return "$xcodebuild_status"
     fi
 
+    # --disable-automatic-resolution (Stage 3 / I6): ios/Packages/FitrahAPI/Package.resolved is the
+    # TRACKED resolved graph, and `xcodebuild test` above writes the APP's whole 27-pin resolution
+    # into it (with -derivedDataPath, Xcode uses the root local package's file as the workspace's).
+    # Without this flag a plain `swift test` here re-resolves against FitrahAPI's OWN four-dependency
+    # manifest and rewrites that same file down to 10 pins, stripping every Firebase/GoogleSignIn
+    # transitive revision -- the ping-pong that made the file un-trackable. With it the build and
+    # the tests are identical and the file is left alone.
     echo "== FitrahAPI package =="
-    (cd Packages/FitrahAPI && swift test) 2>&1 | grep -E "$SUMMARY"
+    (cd Packages/FitrahAPI && swift test --disable-automatic-resolution) 2>&1 | grep -E "$SUMMARY"
     local package_status=${PIPESTATUS[0]}
     if [ "$package_status" -ne 0 ]; then
         return "$package_status"

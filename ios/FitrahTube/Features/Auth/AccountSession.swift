@@ -1,6 +1,38 @@
 import Foundation
 import Observation
 
+/// Where "a device wipe is still owed for this uid" survives a process death (Stage 5 / C1.2).
+/// The wipe is the only thing that can run it: the server has already revoked and deleted the
+/// Firebase user, so no later `/me` can re-trigger `handleDeletion()` — without a durable marker
+/// the cleanup is not deferred, it is unreachable forever.
+@MainActor protocol DeletionMarking: AnyObject, Sendable {
+    var pendingUid: String? { get set }
+}
+
+/// The production marker: one `UserDefaults` key, written before the detached cleanup starts and
+/// cleared only once the wipe reported no error.
+@MainActor final class UserDefaultsDeletionMarker: DeletionMarking {
+    nonisolated static let defaultsKey = "com.albunyaan.tube.deletionPending"
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults) { self.defaults = defaults }
+
+    var pendingUid: String? {
+        get { defaults.string(forKey: Self.defaultsKey) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Self.defaultsKey) }
+            else { defaults.removeObject(forKey: Self.defaultsKey) }
+        }
+    }
+}
+
+/// The default, so the seven suites that never delete need no store at all — and so no test can
+/// write a pending-deletion flag into `UserDefaults.standard`.
+@MainActor final class InMemoryDeletionMarker: DeletionMarking {
+    var pendingUid: String?
+    init() {}
+}
+
 nonisolated enum AccountState: Sendable, Equatable {
     case signedOut, loading
     /// A lightweight (code, message) pair, never a raw response object — Android's comment
@@ -22,7 +54,14 @@ nonisolated enum AccountState: Sendable, Equatable {
     private let stores: [any UserScoped]
     private let status: AccountStatusCenter
     private let sleep: @Sendable (Duration) async -> Void
-    private let wipe: @MainActor @Sendable () async -> Void
+    /// Returns the FIRST error the wipe hit, or nil when everything went (Stage 5 / C2.2): the four
+    /// SwiftData deletes used to be `try?`-swallowed, so a full or corrupt store left every row on
+    /// disk while the app announced the account erased.
+    private let wipe: @MainActor @Sendable () async -> Error?
+    private let marker: any DeletionMarking
+    /// The federated providers, asked to forget their OWN SDK sessions on every session drop
+    /// (Stage 4 / I1). Empty is the honest default for a suite with no federated sign-in.
+    private let providers: [any OAuthSignInProvider]
 
     private(set) var state: AccountState = .signedOut
     /// The signed-in Firebase identity, which is NOT `state.me`: `SplashRouter.outcome` needs
@@ -36,13 +75,17 @@ nonisolated enum AccountState: Sendable, Equatable {
 
     init(auth: any AuthClient, account: AccountClient, stores: [any UserScoped],
          status: AccountStatusCenter, sleep: @escaping @Sendable (Duration) async -> Void,
-         wipe: @escaping @MainActor @Sendable () async -> Void) {
+         wipe: @escaping @MainActor @Sendable () async -> Error?,
+         marker: any DeletionMarking = InMemoryDeletionMarker(),
+         providers: [any OAuthSignInProvider] = []) {
         self.auth = auth
         self.account = account
         self.stores = stores
         self.status = status
         self.sleep = sleep
         self.wipe = wipe
+        self.marker = marker
+        self.providers = providers
     }
 
     /// Observes `AuthClient.state`; on each change sets every store's `currentUserId` FIRST, then
@@ -52,6 +95,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// Runs until the stream finishes (`UnavailableAuthClient` — no plist — yields once and ends)
     /// or the calling task is cancelled.
     func start() async {
+        await resumePendingDeletion()
         for await authState in auth.state {
             switch authState {
             case .signedOut:
@@ -70,6 +114,19 @@ nonisolated enum AccountState: Sendable, Equatable {
         }
     }
 
+    /// Stage 5 / C1.2 + C2.2: the wipe a previous launch owed this device. Idempotent — every step
+    /// of `LocalAccountWiper.wipe()` is a delete — so re-running it costs nothing when it already
+    /// ran, and it is the ONLY thing that can recover a cleanup interrupted by process death or
+    /// refused by a full store. The marker survives a wipe that reported an error, so the next
+    /// launch tries again.
+    ///
+    /// Runs BEFORE the auth stream so a marker left by a deletion never has a signed-in account
+    /// racing it back onto the screen.
+    func resumePendingDeletion() async {
+        guard marker.pendingUid != nil else { return }
+        if await wipe() == nil { marker.pendingUid = nil }
+    }
+
     /// Fix round 1 / I2: the refresh currently running, handed to a second caller instead of a
     /// second request. `SignInViewModel.land()` refreshes on the same auth transition `start()` is
     /// about to refresh on; with no guard both wrote `state` and the last writer won, so a
@@ -85,6 +142,12 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// calls `scope(to:)` and then `refresh()` with no suspension between them, so a `/me` answer
     /// can still never land before the stores are re-scoped
     /// (`aUidChangeScopesEveryStoreBeforeTheFirstRequest`).
+    ///
+    /// **A `.task`-scoped caller must not be the LEADER.** Only the first caller's cancellation
+    /// reaches the shared work, and every follower — `start()` included — observes whatever state
+    /// that cancellation left. Stage 3 / M6: the cancellation return now restores the pre-refresh
+    /// state rather than parking the whole app at `.loading`, but a screen whose `.task` leads is
+    /// still deciding for every other observer, so use an unstructured `Task {}` at those sites.
     func refresh(maxAttempts: Int = 3) async {
         // A follower must NOT cancel the shared work — only the caller that started it does, which
         // is what keeps `start()`'s cancellation (Task 9 / M4) reaching the retry loop.
@@ -99,6 +162,11 @@ nonisolated enum AccountState: Sendable, Equatable {
     }
 
     private func fetch(maxAttempts: Int) async {
+        // Stage 3 / M6: what the cancellation return below restores. A cancelled LEADER used to
+        // leave `.loading` standing forever — and every follower, `start()` included, returned
+        // having observed it, so `RootView` rendered a signed-in user as a guest with nothing left
+        // to re-drive `/me`.
+        let previousState = state
         state = .loading
         for attempt in 1...max(1, maxAttempts) {
             do {
@@ -127,7 +195,10 @@ nonisolated enum AccountState: Sendable, Equatable {
                     // by design and the real sleep's `try?` swallows the cancellation, so a screen
                     // that went away mid-refresh used to burn all three attempts and land on "No
                     // internet connection" — a banner over a session nobody is watching.
-                    if Task.isCancelled { return }
+                    if Task.isCancelled {
+                        state = previousState
+                        return
+                    }
                     continue
                 case .network: state = .failed(code: nil, message: String(localized: "auth_error_network"))
                 case .unknown(let status): state = .failed(code: status, message: String(localized: "auth_error_generic"))
@@ -180,7 +251,21 @@ nonisolated enum AccountState: Sendable, Equatable {
     @discardableResult
     private func dropSession() -> Bool {
         guard state != .signedOut else { return false }
-        auth.signOut()
+        do {
+            try auth.signOut()
+        } catch {
+            // Stage 5 / C1.3. `Auth.signOut()` calls `updateCurrentUser(nil, byForce: false,
+            // savingToDisk: true)`, which assigns `_currentUser = nil` ONLY when the Keychain write
+            // succeeded — so a throw means the session is still live and `idToken(forceRefresh:)`
+            // still mints bearers for it. Publishing `.signedOut` over that is a lie the very next
+            // request contradicts, and the next launch restores the account anyway. Stay signed in
+            // and say something went wrong (WHAT, not WHY).
+            state = .failed(code: nil, message: String(localized: "auth_error_generic"))
+            return false
+        }
+        // Stage 4 / I1: BOTH paths land here — the user's own sign-out and `performDeletion`'s
+        // drop — so one call site covers both, and the Google refresh token cannot outlive either.
+        for provider in providers { provider.signOutProvider() }
         user = nil
         scope(to: "")
         state = .signedOut
@@ -223,36 +308,45 @@ nonisolated enum AccountState: Sendable, Equatable {
             // Fix round 1 / I2: the latch must not SWALLOW a later `true`. The 403 envelope can
             // arrive before the user's own 204 (a concurrent `/me` against an account the server
             // deletes mid-DELETE), and that arrival latches with `false` — so the credential this
-            // path could still delete would outlive the account. Chained onto the latched task
-            // rather than run beside it: the wipe stays exactly once, and Firebase is still asked
-            // only after the device is clean.
-            if deletingFirebaseUser, !deletingFirebase {
-                deletingFirebase = true
-                Task {
-                    await deletion.value
-                    try? await auth.deleteUser()
-                }
-            }
+            // path could still delete would outlive the account.
+            //
+            // Stage 3 / I1: it is a FLAG, never a chained task. The chain this replaces awaited
+            // `deletion.value`, which only completes after `performDeletion` has run
+            // `dropSession()` — so `FirebaseAuthClient.deleteUser()` went through `requireUser()`
+            // against a nil `currentUser`, threw `.unknown`, and was swallowed by its own `try?`.
+            // The credential the chain existed to delete was never deleted. `performDeletion`
+            // re-reads this flag immediately before its own delete instead, which is BEFORE the
+            // sign-out.
+            deletingFirebase = deletingFirebase || deletingFirebaseUser
             return deletion
         }
         deletingFirebase = deletingFirebaseUser
+        // Stage 5 / C1.2: durable BEFORE the detached task exists. `deleteAccountPermanently`
+        // revokes and deletes the Firebase user, so on the next launch `/me` answers a bare 401 and
+        // nothing can reach `handleDeletion()` again — an interrupted cleanup would be owed to this
+        // device forever. `start()` redeems the marker.
+        marker.pendingUid = user?.uid ?? state.me?.uid ?? ""
         // No `@MainActor in` on the closure: `performDeletion` carries the isolation and the hop.
         let task = Task.detached {
-            await self.performDeletion(deletingFirebaseUser: deletingFirebaseUser)
+            await self.performDeletion()
         }
         deletion = task
         return task
     }
 
-    private func performDeletion(deletingFirebaseUser: Bool) async {
-        await wipe()
+    private func performDeletion() async {
+        let wipeError = await wipe()
         // `try?`: the server has already deleted the account, so there is nothing to roll back and
         // nowhere to route a failure to. A Firebase user whose `delete()` was refused
         // (`requiresRecentLogin`) is signed out below anyway, and its next `/me` answers the 403
         // envelope — the same terminal path, without a re-auth prompt for an account that no longer
-        // exists.
-        if deletingFirebaseUser { try? await auth.deleteUser() }
+        // exists. Stage 3 / I1: read HERE, so a `true` that arrived while the wipe was running
+        // still deletes the credential, and always before `dropSession()`.
+        if deletingFirebase { try? await auth.deleteUser() }
         dropSession()
+        // Stage 5 / C2.2: a wipe that hit a full or corrupt store keeps the marker, so the next
+        // launch tries again rather than leaving the rows on disk under an "account deleted" alert.
+        if wipeError == nil { marker.pendingUid = nil }
         status.post(.deleted)
     }
 

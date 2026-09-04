@@ -5,17 +5,45 @@ import SwiftUI
 struct MeTabRoot: View {
     @Environment(\.container) private var container
 
+    /// Stage 5 / M4: THREE arms, not two. Routing decides "signed in" off the FIREBASE identity
+    /// (`RootView.outcome`'s `signedIn: session.user != nil`) while this tab and Settings' Account
+    /// section decided it off the BACKEND record (`state.me != nil`), so in the `.failed` window the
+    /// app was signed in and signed out at once: the router could even send a password user to the
+    /// verification screen while the Me tab offered them a sign-in card. Telling a signed-in user
+    /// they are a guest is worse than telling them their account could not be reached, and the
+    /// second is the only one of the two that offers a way out.
+    nonisolated enum Arm: Sendable, Equatable { case guest, signedIn, unreachable }
+
+    nonisolated static func arm(signedIn: Bool, state: AccountState) -> Arm {
+        if state.me != nil { return .signedIn }
+        return signedIn ? .unreachable : .guest
+    }
+
     /// The decision, pure so it is testable without a render (`@Environment` is only populated
-    /// while a view is being rendered). `.loading`/`.failed` render the GUEST screen: both are
-    /// states in which the app knows of no account, and the guest screen is the one that is always
-    /// correct to show a user who is not (yet) known — it holds the same local favorites either way.
+    /// while a view is being rendered).
     nonisolated static func showsSignedInScreen(for state: AccountState) -> Bool { state.me != nil }
 
     var body: some View {
-        if Self.showsSignedInScreen(for: container.session.state) {
-            MeSignedInView()
-        } else {
-            MeGuestView()
+        switch Self.arm(signedIn: container.session.user != nil, state: container.session.state) {
+        case .signedIn: MeSignedInView()
+        case .guest: MeGuestView()
+        case .unreachable: unreachable
+        }
+    }
+
+    /// Reused copy, nothing authored: `auth_error_generic` is the message `AccountSession` itself
+    /// already puts on `.failed`, and `retry` is the app's one Retry label.
+    private var unreachable: some View {
+        ContentUnavailableView {
+            Text(String(localized: "auth_error_generic"))
+        } actions: {
+            Button(String(localized: "retry")) {
+                Task { await container.session.refresh() }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.brand)
+            .frame(minWidth: 44, minHeight: 44)
+            .accessibilityLabel(String(localized: "retry"))
         }
     }
 }

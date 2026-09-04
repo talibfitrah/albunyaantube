@@ -48,6 +48,14 @@ import UIKit
         }
     }
 
+    /// Stage 4 / I1. `GIDSignIn.sharedInstance.signOut()` clears the SDK's Keychain-persisted
+    /// `currentUser` — the access token AND the refresh token for the user's Google account.
+    /// Firebase's own `signOut()` clears only Firebase's items, and `LocalAccountWiper` sweeps
+    /// files, rows, defaults and caches but has no reach into another SDK's Keychain. Never
+    /// `disconnect()`: that revokes the grant server-side, which is not what "sign out" or "delete
+    /// my FitrahTube account" asked for (ruling C6).
+    func signOutProvider() { GIDSignIn.sharedInstance.signOut() }
+
     /// GIDSignIn uses this only as the presentation context for `ASWebAuthenticationSession`, so the
     /// key window's root is enough — it does not need the topmost presented controller.
     private static var presenter: UIViewController? {

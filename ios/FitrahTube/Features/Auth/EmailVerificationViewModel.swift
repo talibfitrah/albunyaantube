@@ -117,6 +117,14 @@ import Observation
                 state.error = .notYetVerified
                 return false
             }
+            // Stage 5 / C1.1: `reload()` refreshes the USER RECORD, not the cached ID token, and
+            // the backend gates on the token CLAIM (`FirebaseAuthFilter` reads
+            // `decodedToken.isEmailVerified()`). Without a forced re-mint the next
+            // `POST /api/account/profile` answers 403 `EMAIL_NOT_VERIFIED` for up to the token's
+            // remaining hour, which the bootstrap form renders as "couldn't save your profile" with
+            // no way forward. `try?`-free: `idToken` already answers nil on refusal, and a refusal
+            // here is not worth blocking a verification the reload just confirmed.
+            _ = await auth.idToken(forceRefresh: true)
             // Firebase's auth-state listener does NOT fire on a reload, so `AccountSession.user`
             // would keep the stale `isEmailVerified: false` that put the account here — and that is
             // the exact field `RootView`'s outcome reads. Without this the screen is a dead end.

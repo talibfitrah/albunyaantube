@@ -50,7 +50,7 @@ struct ProfileBootstrapViewModelTests {
         let transport = ScriptedTransport(responses)
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
-                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: {})
+                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil })
         let model = ProfileBootstrapViewModel(account: account, auth: auth, session: session,
                                               calendar: calendar, today: { Self.today })
         return Fixture(model: model, transport: transport, auth: auth, session: session)
@@ -254,14 +254,14 @@ struct ProfileBootstrapViewModelTests {
         #expect(profilePosts(fixture.transport).count == 1, "the retry re-ran ONLY the password step")
     }
 
-    @Test func aMissingCurrentUserAtThePasswordStepIsPasswordSetFailed() async {
+    @Test func aMissingCurrentUserAtThePasswordStepIsPasswordSetFailed() async throws {
         let auth = FakeAuthClient(state: .signedIn(Self.googleUser))
         let fixture = make(auth: auth, responses: [.json(200, Self.meJSON)])
         await fixture.model.load()
         fill(fixture.model, password: "hunter2hunter2")
 
         // The session expired between the profile save and the password attach.
-        auth.signOut()
+        try auth.signOut()
         await fixture.model.submit()
         #expect(fixture.model.state.error == .passwordSetFailed)
         #expect(fixture.model.state.profileSaved)
@@ -283,8 +283,6 @@ struct ProfileBootstrapViewModelTests {
 
     @Test func everyOtherProfileFailureIsSaveFailed() async {
         for response in [HTTPResponse.json(500, "{}"),
-                         .json(409, "{}"),
-                         .json(403, #"{"code":"EMAIL_NOT_VERIFIED"}"#),
                          .failing(URLError(.notConnectedToInternet))] {
             let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)),
                                responses: [response])
@@ -294,5 +292,37 @@ struct ProfileBootstrapViewModelTests {
             #expect(fixture.model.nav == .idle)
             #expect(fixture.model.state.profileSaved == false)
         }
+    }
+
+    // MARK: - Stage 3 / M4: the two AccountError arms that had no consumer
+
+    /// The 409 arm was a dead end BY CONSTRUCTION: the server says the form is already complete, so
+    /// the only thing that could move the user on is a `/me` re-read — which this arm never issued.
+    /// The screen repeated "couldn't save your profile" forever over a profile the backend had
+    /// already accepted.
+    @Test func aProfileAlreadyCompleted409RefreshesTheSessionAndMovesOn() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)),
+                           responses: [.json(409, "{}"), .json(200, Self.meJSON)])
+        fill(fixture.model)
+
+        await fixture.model.submit()
+
+        #expect(fixture.model.state.error == nil, "the server agrees the form is done")
+        #expect(fixture.model.nav == .main)
+        #expect(fixture.session.state.me != nil, "nothing re-read /me, so the router could not move")
+    }
+
+    /// Same shape for the 403: the session is re-read, the screen releases, and `SplashRouter` is
+    /// what lands the account on verification.
+    @Test func anEmailNotVerified403RefreshesTheSessionSoTheRouterCanLand() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)),
+                           responses: [.json(403, #"{"code":"EMAIL_NOT_VERIFIED"}"#), .json(200, Self.meJSON)])
+        fill(fixture.model)
+
+        await fixture.model.submit()
+
+        #expect(fixture.model.state.error == nil)
+        #expect(fixture.model.nav == .main)
+        #expect(fixture.session.state.me != nil)
     }
 }

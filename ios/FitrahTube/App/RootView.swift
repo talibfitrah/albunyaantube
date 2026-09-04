@@ -107,8 +107,16 @@ struct RootView: View {
     /// `RootView()` directly. `inout` rather than a return so an outcome carrying no alert leaves one
     /// already on screen alone.
     static func act(on outcome: SplashOutcome, session: AccountSession, alert: inout AccountStatusAlert?) {
-        if outcome.signOut { session.signOut() }
-        if let event = outcome.alert { alert = AccountStatusAlert(event) }
+        // Stage 5 / M5: through `handle(_:)`, not `signOut()`. The `.deleted` advisory is the SAME
+        // verdict the 403 envelope carries, and that path wipes the device (ruling C13); signing
+        // out only would have left every row of a server-deleted account on it — a fourth residue
+        // for one server state.
+        if let event = outcome.alert {
+            session.handle(event)
+            alert = AccountStatusAlert(event)
+        } else if outcome.signOut {
+            session.signOut()
+        }
     }
 
     private func dropToGuest() {

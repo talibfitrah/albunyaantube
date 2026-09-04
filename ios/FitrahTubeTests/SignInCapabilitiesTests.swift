@@ -18,6 +18,22 @@ import Testing
         }
     }
 
+    /// Stage 5 / M6: Apple needs BOTH build flags. `FITRAH_TEAM_ID` is committed in both tracked
+    /// xcconfigs, so `FITRAH_APPLE_SIGNIN` alone was non-empty in every build while the App ID
+    /// `com.albunyaan.tube` has no Sign in with Apple capability registered (the entitlements file's
+    /// own header records the counter-fact) — the F11 trap exactly, a button that renders and then
+    /// fails `performRequests()` on the first signed device build. `FITRAH_APPLE_SIGNIN_REGISTERED`
+    /// is EMPTY in both tracked xcconfigs, so this build must report Apple as unconfigured.
+    @Test func appleNeedsTheRegisteredFlagAndNotJustATeamId() {
+        let teamId = Bundle.main.object(forInfoDictionaryKey: "FITRAH_APPLE_SIGNIN") as? String
+        let registered = Bundle.main.object(forInfoDictionaryKey: "FITRAH_APPLE_SIGNIN_REGISTERED") as? String
+        #expect(registered?.isEmpty != false,
+                "the tracked xcconfigs must not claim a portal capability the App ID does not have")
+        #expect(SignInCapabilities.appleSignInIsConfigured == false)
+        // Stated so the assertion above cannot be read as "there is no Team ID either".
+        #expect(teamId?.isEmpty == false || teamId == nil)
+    }
+
     /// All eight combinations of the pure table. Task 10 renders exactly this list, in this order.
     @Test func theTableDrivesAllEightCombinations() {
         func visible(_ emailPassword: Bool, _ google: Bool, _ apple: Bool) -> [SignInProvider] {
@@ -70,11 +86,13 @@ import Testing
         #expect(schemes.allSatisfy { !$0.isEmpty }, "an empty URL scheme is an App Store validation nit: \(schemes)")
     }
 
-    /// Apple is hidden for the RIGHT reason. `FITRAH_APPLE_SIGNIN` carries a Team ID in this build,
-    /// so the `false` below comes from the missing Firebase options file — not from an unset flag —
-    /// which is exactly the unsigned-simulator answer ruling F11 wants.
+    /// Apple is hidden, and Stage 5 / M6 changed WHY: `FITRAH_APPLE_SIGNIN` still carries the Team
+    /// ID, but `FITRAH_APPLE_SIGNIN_REGISTERED` is empty in both tracked xcconfigs because the App
+    /// ID has no Sign in with Apple capability. Either half being false is the honest answer here;
+    /// the flag assertion itself lives in `appleNeedsTheRegisteredFlagAndNotJustATeamId`.
     @MainActor @Test func theAppleProviderIsUnavailableBecauseFirebaseIsNotConfigured() async {
-        #expect(SignInCapabilities.appleSignInIsConfigured, "FITRAH_APPLE_SIGNIN must carry the Team ID")
+        #expect(Bundle.main.object(forInfoDictionaryKey: "FITRAH_APPLE_SIGNIN") as? String != "",
+                "FITRAH_APPLE_SIGNIN must still carry the Team ID")
         let provider = AppleAuthProvider()
         #expect(provider.isAvailable == SignInCapabilities.current().apple)
         if !FirebaseBootstrap.optionsFileExists {

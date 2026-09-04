@@ -172,7 +172,13 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
     /// The age dialog's confirm. Staged deliberately (`ProfileViewModel.kt:103-108,124-127`): the
     /// `.ageIneligible` state is what puts the dialog on screen, and signing out inside the same
     /// update would be conflated past it — the user would be dropped to guest with no explanation.
-    func confirmAgeIneligibleSignOut() {
+    func confirmAgeIneligibleSignOut() async {
+        // Stage 5 / C4.1: the SAME pair `AgeIneligibleScreen.acknowledge()` runs. One server verdict
+        // (`AGE_INELIGIBLE`) had three arrivals and three different residues; a Firebase credential
+        // left behind on this path is one the server has already permanently refused. `try?` for
+        // `acknowledge()`'s reason: the tokens are revoked server-side, so a failure here changes
+        // nothing the user can act on.
+        try? await auth.deleteUser()
         session.signOut()
         state = .signedOut
     }

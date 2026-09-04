@@ -206,7 +206,24 @@ struct SettingsView: View {
     /// static table cannot express a row that appears only for a signed-in user.
     @ViewBuilder
     private var accountSection: some View {
-        if let me = container.session.state.me {
+        if MeTabRoot.arm(signedIn: container.session.user != nil,
+                         state: container.session.state) == .unreachable {
+            // Stage 5 / M4: a signed-in user whose `/me` has not landed keeps an Account section
+            // that says so and offers a retry, instead of the section silently disappearing and
+            // implying they are signed out.
+            Section(String(localized: "settings_account_header")) {
+                Text(String(localized: "auth_error_generic"))
+                    .font(TypeScale.subtitle)
+                    .foregroundStyle(Color.textSecondary)
+                    .accessibilityLabel(String(localized: "settings_account_header"))
+                    .accessibilityValue(String(localized: "auth_error_generic"))
+                Button(String(localized: "retry")) {
+                    Task { await container.session.refresh() }
+                }
+                .frame(minHeight: 44)
+                .accessibilityLabel(String(localized: "retry"))
+            }
+        } else if let me = container.session.state.me {
             Section(String(localized: "settings_account_header")) {
                 // Label = the role, value = who — the same split `CategoryPill` makes (gate B1-I7),
                 // so VoiceOver reads "Account, <email>" rather than one fused sentence.

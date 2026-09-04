@@ -36,16 +36,23 @@ packages:
   InnerTubeKit:
     path: Packages/InnerTubeKit
   # Phase 4 Task 1, resolved 2026-09-02 from floors `from: "11.0.0"` / `from: "8.0.0"`, then pinned
-  # to what actually came back. `exactVersion` is not prudence: /ios/FitrahTube.xcodeproj/ and
-  # /ios/DerivedData/ are both gitignored (.gitignore:199,204), and that is where the resolved graph
-  # lives (with -derivedDataPath, Xcode records it in DerivedData/SourcePackages/
-  # workspace-state.json and writes no Package.resolved into the workspace at all) -- so a floating
-  # `from:` would make the gate's reproducibility a function of the day it runs. Xcode does mirror
-  # the resolution into the root local package's tracked Packages/FitrahAPI/Package.resolved, which
-  # carries the exact revisions; this file carries the requirement, and the two must agree.
-  # Re-resolve by hand (`xcodebuild -resolvePackageDependencies -scheme FitrahTube
+  # to what actually came back. `exactVersion` pins only these two TOP-LEVEL requirements.
+  #
+  # THE PINNED TRANSITIVE GRAPH LIVES IN ios/Packages/FitrahAPI/Package.resolved, which is TRACKED
+  # (Stage 3 / I6). /ios/FitrahTube.xcodeproj/ and /ios/DerivedData/ are gitignored, and with
+  # -derivedDataPath Xcode writes no Package.resolved into the workspace -- it mirrors the app's
+  # whole resolution (27 pins: FirebaseAuth's GoogleUtilities, GTMSessionFetcher, AppCheck,
+  # Promises, ... as well as this package's own four) into the ROOT LOCAL PACKAGE's resolved file,
+  # which is that one. So that file, not this one, is what makes a fresh checkout resolve an
+  # authentication dependency to the same revisions.
+  #
+  # The two writers used to ping-pong: `xcodebuild test` writes the 27-pin app graph, then
+  # test.sh's `(cd Packages/FitrahAPI && swift test)` re-resolved against FitrahAPI's OWN manifest
+  # and rewrote the same file down to 10 pins, stripping every Firebase revision. The package
+  # stages now pass --disable-automatic-resolution, so the app graph is the only thing that writes
+  # it. Re-resolve by hand (`xcodebuild -resolvePackageDependencies -scheme FitrahTube
   # -derivedDataPath DerivedData`, ~128 s) before gating after any change here -- a cold resolve
-  # does not fit inside test.sh's 300 s watchdog.
+  # does not fit inside test.sh's 300 s watchdog -- and commit the resulting Package.resolved.
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
     exactVersion: "11.15.0"
@@ -148,6 +155,10 @@ targets:
         # available" can only be answered by what the build was configured with. Empty
         # FITRAH_TEAM_ID (no signing identity) => no Apple button.
         FITRAH_APPLE_SIGNIN: $(FITRAH_TEAM_ID)
+        # Stage 5 / M6: the SECOND half. FITRAH_APPLE_SIGNIN only says a Team ID signed the build;
+        # this says the App ID actually has the capability registered. Empty in both tracked
+        # xcconfigs, set once in the untracked Local.xcconfig. SignInCapabilities requires both.
+        FITRAH_APPLE_SIGNIN_REGISTERED: $(FITRAH_APPLE_SIGNIN_REGISTERED)
 
   FitrahTubeTests:
     type: bundle.unit-test

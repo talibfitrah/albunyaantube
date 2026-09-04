@@ -11,6 +11,26 @@ struct SplashRouterTests {
         #expect(SplashRouter.destination(onboardingCompleted: true) == .main)
     }
 
+    // MARK: - Stage 3 / I5: an unrecognised status is not a terminal one
+
+    /// The whole point of `.unknown`: it takes the `status == nil` "guest for now" row — signed in,
+    /// main shell, NO sign-out and NO alert — so a backend that adds a `UserStatus` value cannot
+    /// terminate every installed session.
+    @Test func anUnknownStatusRoutesToMainWithNoSignOutAndNoAlert() {
+        let outcome = SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
+                                           hasPasswordProvider: false, isEmailVerified: true,
+                                           status: .unknown)
+        #expect(outcome == SplashOutcome(destination: .main))
+    }
+
+    /// And it does not swallow §13: a password account that has not verified still goes there.
+    @Test func anUnknownStatusStillHonoursTheVerificationBranch() {
+        let outcome = SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
+                                           hasPasswordProvider: true, isEmailVerified: false,
+                                           status: .unknown)
+        #expect(outcome == SplashOutcome(destination: .emailVerification))
+    }
+
     // MARK: - Spec §6 matrix
 
     /// Onboarding outranks every signed-in state: a first launch that happens to carry a session
@@ -119,8 +139,11 @@ struct SplashRouterTests {
         #expect(AccountStatus.fromWire("PENDING_PROFILE") == .pendingProfile)
     }
 
-    @Test func fromWireUnknownOrMissingIsBlocked() {
-        #expect(AccountStatus.fromWire("something_new") == .blocked)
-        #expect(AccountStatus.fromWire(nil) == .blocked)
+    /// Stage 3 / I5: unknown and missing are `.unknown`, which the matrix above routes to the main
+    /// shell with no sign-out and no alert. `.blocked` is reserved for the literal wire value.
+    @Test func fromWireUnknownOrMissingIsUnknownNotBlocked() {
+        #expect(AccountStatus.fromWire("something_new") == .unknown)
+        #expect(AccountStatus.fromWire(nil) == .unknown)
+        #expect(AccountStatus.fromWire("blocked") == .blocked)
     }
 }

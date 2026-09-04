@@ -60,7 +60,7 @@ struct ProfileViewModelTests {
         let account = AccountClient(transport: transport, baseURL: Self.base,
                                     deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
-                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: {})
+                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil })
         if me != nil { await session.refresh(maxAttempts: 1) }
         let model = ProfileViewModel(account: account, auth: auth, session: session,
                                      calendar: Self.calendar, today: { Self.today })
@@ -233,10 +233,15 @@ struct ProfileViewModelTests {
         model.displayName = "Aisha K"
         await model.save()
 
-        model.confirmAgeIneligibleSignOut()
+        await model.confirmAgeIneligibleSignOut()
 
         #expect(model.state == .signedOut)
         #expect(fixture.session.state == .signedOut)
+        // Stage 5 / C4.1: the SAME pair `AgeIneligibleScreen.acknowledge()` runs. One server
+        // verdict had three arrivals and three different residues; a Firebase credential left
+        // behind here is one the server has already permanently refused.
+        #expect(fixture.auth.operations == [.deleteUser],
+                "the age-ineligible profile path signed out but left the Firebase user behind")
     }
 
     @Test func aRateLimitedErrorRendersTheMinutesThroughFormat() async {

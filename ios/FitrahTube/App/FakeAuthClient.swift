@@ -37,6 +37,15 @@ nonisolated final class FakeAuthClient: AuthClient {
         var reloadedUser: AuthUser?
         var entryPoints: [EntryPoint] = []
         var operations: [Operation] = []
+        /// Stage 5 / C3.1: the claims the ID TOKEN carries, which LAG the user record until a
+        /// forced refresh — nil until one happens, i.e. the token still says what it said when the
+        /// fixture was built. `reload()` refreshes the record and never the token, which is the
+        /// exact gap `EmailVerificationViewModel` has to close before the backend (which gates on
+        /// the token claim) will accept a just-verified account.
+        var tokenClaims: AuthUser?
+        /// Every `idToken(forceRefresh:)` argument, in order.
+        var tokenRefreshes: [Bool] = []
+        var refreshRefusal: AuthErrorCode?
     }
 
     /// `Mutex` rather than `@unchecked Sendable` + bare vars: `AuthClient` is `Sendable` (it refines
@@ -73,8 +82,36 @@ nonisolated final class FakeAuthClient: AuthClient {
 
     /// The uid rides along so `BearerRetry`'s cross-account guard is exercisable from a fixture:
     /// two `FakeAuthClient`s with different uids are two different signing identities.
+    ///
+    /// Stage 5 / C3.1: the token's CLAIMS are versioned separately from the user record. Until a
+    /// forced refresh the value carries the claims the fixture was built with, even after a
+    /// `reload()` has flipped `isEmailVerified` on the record — the real client behaves exactly
+    /// this way and the old one-line fake could never disagree with itself.
     func idToken(forceRefresh: Bool) async -> BearerToken? {
-        signedInUser().map { BearerToken(value: "fake-id-token-\($0.uid)", identity: $0.uid) }
+        guard let user = signedInUser() else { return nil }
+        let claims = storage.withLock { storage -> AuthUser in
+            storage.tokenRefreshes.append(forceRefresh)
+            if forceRefresh { storage.tokenClaims = storage.reloadedUser ?? user }
+            return storage.tokenClaims ?? user
+        }
+        return BearerToken(value: "fake-id-token-\(claims.uid)-verified-\(claims.isEmailVerified)",
+                           identity: claims.uid)
+    }
+
+    /// Every `idToken(forceRefresh:)` argument, in order.
+    var tokenRefreshes: [Bool] { storage.withLock { $0.tokenRefreshes } }
+
+    /// What the next `refreshRefusal()` answers. Stage 5 / M1: a terminated account's forced
+    /// refresh is refused by Firebase, and that refusal is the only local evidence the client has
+    /// when the backend answers a bare 401.
+    var nextRefreshRefusal: AuthErrorCode? {
+        get { storage.withLock { $0.refreshRefusal } }
+        set { storage.withLock { $0.refreshRefusal = newValue } }
+    }
+
+    func refreshRefusal() async -> AuthErrorCode? {
+        guard signedInUser() != nil else { return nil }
+        return storage.withLock { $0.refreshRefusal }
     }
 
     /// Every sign-in entry point that has been called, in order.
@@ -102,12 +139,27 @@ nonisolated final class FakeAuthClient: AuthClient {
         return reloadedUser ?? user
     }
 
+    /// Stage 3 / M1: the "is anyone signed in?" guard `reload()` above and every `requireUser()`
+    /// member of `FirebaseAuthClient` already have. Without it this fake deleted nothing and said
+    /// it had, which is what let `AccountSession`'s chained late-delete ship green over a path that
+    /// ran AFTER the sign-out and could therefore never delete anything.
+    /// The guard runs BEFORE the recording, unlike the three `record(...)` members above: a
+    /// scripted refusal still *reached* Firebase and is worth recording, but a delete with nobody
+    /// signed in never touched a credential at all — recording it is the exact lie this guard
+    /// exists to stop.
     func deleteUser() async throws(AuthErrorCode) {
+        guard signedInUser() != nil else { throw AuthErrorCode.unknown }
         try record(.deleteUser)
         transition(to: .signedOut)
     }
 
-    func signOut() { transition(to: .signedOut) }
+    /// Stage 5 / C3.2: failure-injectable. A total, unconditional `signOut()` could never observe
+    /// production swallowing a Keychain error. Not in `operations` — that sequence is about
+    /// CREDENTIAL mutations, and a sign-out mutates none.
+    func signOut() throws(AuthErrorCode) {
+        try consumeError()
+        transition(to: .signedOut)
+    }
 
     // MARK: -
 

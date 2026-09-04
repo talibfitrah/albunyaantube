@@ -43,21 +43,31 @@ struct DeleteAccountTests {
         let status: AccountStatusCenter
         let transport: ScriptedTransport
         let wipes: WipeSpy
+        let google: FakeOAuthProvider
     }
 
     /// `responses` are consumed in order: the `/me` that loads the account, then the DELETE.
-    private func makeFixture(delete response: HTTPResponse) -> Fixture {
-        let auth = FakeAuthClient(state: .signedOut)
+    ///
+    /// Stage 4 / I3: the fixture account is a PASSWORD account (`FakeAuthClient.defaultUser`), so
+    /// every test that expects the DELETE to go out fills `model.password` first — the confirm now
+    /// re-authenticates before it sends anything.
+    private func makeFixture(delete response: HTTPResponse,
+                             user: AuthUser = FakeAuthClient.defaultUser) -> Fixture {
+        let auth = FakeAuthClient(state: .signedOut, user: user)
         let transport = ScriptedTransport([.json(200, Self.meJSON), response])
         let status = AccountStatusCenter()
         let wipes = WipeSpy()
+        let google = FakeOAuthProvider()
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [], status: status,
-                                     sleep: { _ in }, wipe: { [wipes] in wipes.record() })
+                                     sleep: { _ in }, wipe: { [wipes] in wipes.record(); return nil })
         wipes.session = session
         wipes.auth = auth
-        return Fixture(model: DeleteAccountViewModel(account: account, session: session),
-                       session: session, auth: auth, status: status, transport: transport, wipes: wipes)
+        let model = DeleteAccountViewModel(account: account, session: session, auth: auth,
+                                           google: google, apple: FakeOAuthProvider(isAvailable: false))
+        model.password = "hunter2"
+        return Fixture(model: model, session: session, auth: auth, status: status,
+                       transport: transport, wipes: wipes, google: google)
     }
 
     /// Drives `start()` to a loaded account. Bounded `Task.yield()` loops, never a sleep.
@@ -96,11 +106,11 @@ struct DeleteAccountTests {
 
         #expect(fixture.transport.sent.last?.method == "DELETE")
         #expect(fixture.wipes.count == 1)
-        #expect(fixture.wipes.observations.first?.authOperations == [],
+        #expect(fixture.wipes.observations.first?.authOperations == [.reauthenticate],
                 "Firebase was asked to delete the user before the device was wiped")
         #expect(fixture.wipes.observations.first?.wasSignedOut == false,
                 "the session was dropped before the device was wiped")
-        #expect(fixture.auth.operations == [.deleteUser])
+        #expect(fixture.auth.operations == [.reauthenticate, .deleteUser])
         #expect(fixture.session.state == .signedOut)
         // The terminal alert owns the screen from here, so the view model never reports success.
         #expect(fixture.model.state == .deleting)
@@ -127,7 +137,7 @@ struct DeleteAccountTests {
         #expect(fixture.wipes.count == 1)
         #expect(fixture.wipes.observations.first?.wasCancelled == false)
         #expect(fixture.session.state == .signedOut)
-        #expect(fixture.auth.operations == [.deleteUser])
+        #expect(fixture.auth.operations == [.reauthenticate, .deleteUser])
     }
 
     /// Both paths reach the wiper, and only one of them ever runs it: the 204 path posts `.deleted`
@@ -191,7 +201,7 @@ struct DeleteAccountTests {
 
         #expect(fixture.model.state == .failedLastAdmin)
         #expect(fixture.wipes.count == 0)
-        #expect(fixture.auth.operations.isEmpty)
+        #expect(fixture.auth.operations == [.reauthenticate])
         #expect(fixture.session.state.me?.uid == "fake-uid")
         #expect(fixture.status.pending == nil)
     }
@@ -231,5 +241,130 @@ struct DeleteAccountTests {
                          "profile_delete_account_error_unknown"])
         #expect(DeleteAccountViewModel.messageKey(for: .idle) == nil)
         #expect(DeleteAccountViewModel.messageKey(for: .deleting) == nil)
+        #expect(DeleteAccountViewModel.messageKey(for: .reauthenticating) == nil)
+        // Reused, not authored: the same copy the password sheet renders for the same refusal.
+        #expect(DeleteAccountViewModel.messageKey(for: .failedReauth) == "edit_password_wrong_current")
+    }
+
+    // MARK: - Stage 4 / I3: the re-authentication gate
+
+    /// The pin. An `.alert` confirm button was the entire barrier in front of an IRREVERSIBLE,
+    /// unrecoverable operation, while every reversible one (`EditEmailSheet`, `EditPasswordSheet`)
+    /// re-authenticated first. Anyone with a briefly unlocked device could destroy the account.
+    @Test func aWrongCurrentPasswordSendsNoDeleteAtAll() async throws {
+        let fixture = makeFixture(delete: .json(204, ""))
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        fixture.auth.nextError = .wrongPassword
+        fixture.model.password = "not-the-password"
+
+        await fixture.model.delete()
+        for _ in 0..<200 { await Task.yield() }
+
+        #expect(fixture.model.state == .failedReauth)
+        #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false,
+                "the account was deleted without proving who was holding the device")
+        #expect(fixture.wipes.count == 0)
+        #expect(fixture.session.state.me?.uid == "fake-uid")
+    }
+
+    /// The password is not left in memory once the attempt is over, whichever way it went.
+    @Test func theTypedPasswordIsClearedAfterTheAttempt() async throws {
+        let fixture = makeFixture(delete: .json(204, ""))
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        fixture.auth.nextError = .wrongPassword
+
+        await fixture.model.delete()
+
+        #expect(fixture.model.password.isEmpty)
+    }
+
+    /// A Google-only account has no password to type, so the proof is the provider's own sheet.
+    @Test func aGoogleOnlyAccountReAuthenticatesThroughItsProvider() async throws {
+        let google = AuthUser(uid: "fake-uid", email: "student@fitrah.test",
+                              isEmailVerified: true, providerIDs: ["google.com"])
+        let fixture = makeFixture(delete: .json(204, ""), user: google)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        #expect(fixture.model.requiresPassword == false)
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(fixture.google.presentCount == 1, "the provider sheet was never presented")
+        #expect(fixture.auth.entryPoints.contains(.credential))
+        #expect(fixture.transport.sent.last?.method == "DELETE")
+    }
+
+    /// A dismissed provider sheet is a refusal like any other — nothing is deleted.
+    @Test func aRefusedProviderReAuthenticationSendsNoDelete() async throws {
+        let google = AuthUser(uid: "fake-uid", email: "student@fitrah.test",
+                              isEmailVerified: true, providerIDs: ["google.com"])
+        let fixture = makeFixture(delete: .json(204, ""), user: google)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        fixture.google.error = .cancelled
+
+        await fixture.model.delete()
+        for _ in 0..<200 { await Task.yield() }
+
+        #expect(fixture.model.state == .failedReauth)
+        #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false)
+        #expect(fixture.wipes.count == 0)
+    }
+
+    // MARK: - Stage 5 / C1.2 + C2.2: the durable marker
+
+    /// A cleanup interrupted by process death — or refused by a full store — is owed to this device
+    /// forever otherwise: the server has revoked and deleted the Firebase user, so the next `/me`
+    /// answers a bare 401 and nothing can reach `handleDeletion()` again.
+    @Test func aPendingMarkerMakesTheNextLaunchWipe() async throws {
+        let marker = InMemoryDeletionMarker()
+        marker.pendingUid = "fake-uid"
+        let wipes = WipeSpy()
+        let auth = FakeAuthClient(state: .signedOut)
+        let transport = ScriptedTransport([.json(200, Self.meJSON)])
+        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: auth, account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
+
+        await session.resumePendingDeletion()
+
+        #expect(wipes.count == 1)
+        #expect(marker.pendingUid == nil, "the marker survived a wipe that succeeded")
+    }
+
+    @Test func noMarkerMeansNoLaunchWipe() async throws {
+        let marker = InMemoryDeletionMarker()
+        let wipes = WipeSpy()
+        let auth = FakeAuthClient(state: .signedOut)
+        let transport = ScriptedTransport([.json(200, Self.meJSON)])
+        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: auth, account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
+
+        await session.resumePendingDeletion()
+
+        #expect(wipes.count == 0)
+    }
+
+    /// A wipe that hit a full or corrupt store KEEPS the marker, so the next launch tries again
+    /// rather than leaving the rows on disk under an "account deleted" alert.
+    @Test func aFailedWipeKeepsTheMarkerSoTheNextLaunchTriesAgain() async throws {
+        struct StoreFull: Error {}
+        let marker = InMemoryDeletionMarker()
+        let auth = FakeAuthClient(state: .signedOut)
+        let transport = ScriptedTransport([.json(200, Self.meJSON), .json(204, "")])
+        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let status = AccountStatusCenter()
+        let session = AccountSession(auth: auth, account: account, stores: [], status: status,
+                                     sleep: { _ in }, wipe: { StoreFull() }, marker: marker)
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { session.state.me != nil }
+
+        await session.handleDeletion(deletingFirebaseUser: false).value
+
+        #expect(marker.pendingUid == "fake-uid",
+                "the app announced the account erased over rows that are still on disk")
     }
 }

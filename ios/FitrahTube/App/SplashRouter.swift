@@ -29,7 +29,7 @@ nonisolated enum SplashRouter {
     ///   signed out                                 -> main (guest)
     ///   BLOCKED / DELETED                          -> sign out -> main (guest) + terminal alert
     ///   password provider AND !emailVerified       -> emailVerification   (§13, ahead of status)
-    ///   status == nil (network)                    -> main (guest; caller retries fetchMe)
+    ///   status == nil (network) / unknown wire     -> main (guest; the foreground refresh retries)
     ///   PENDING_PROFILE                            -> profileBootstrap
     ///   ACTIVE                                     -> main
     ///
@@ -45,7 +45,10 @@ nonisolated enum SplashRouter {
         switch status {
         case .blocked: return SplashOutcome(destination: .main, signOut: true, alert: .blocked)
         case .deleted: return SplashOutcome(destination: .main, signOut: true, alert: .deleted)
-        case nil, .active, .pendingProfile: break
+        // Stage 3 / I5: `.unknown` rides the `status == nil` row — signed in, guest shell, no
+        // sign-out and no alert. A status this build cannot name is a reason to keep asking, never
+        // a reason to terminate a session fleet-wide.
+        case nil, .unknown, .active, .pendingProfile: break
         }
 
         if hasPasswordProvider, !isEmailVerified { return SplashOutcome(destination: .emailVerification) }

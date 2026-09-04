@@ -99,9 +99,32 @@ nonisolated final class FirebaseAuthClient: AuthClient {
         try await mapped { try await Self.requireUser().delete() }
     }
 
-    /// Local only — the listener above turns it into `.signedOut`. Firebase's `signOut()` throws
-    /// solely on a keychain failure, and there is no useful recovery: the user asked to leave.
-    func signOut() { try? Auth.auth().signOut() }
+    /// Local only — the listener above turns it into `.signedOut`. Stage 5 / C1.3: the keychain
+    /// failure it throws on is NOT ignorable. `Auth.signOut()` calls `updateCurrentUser(nil,
+    /// byForce: false, savingToDisk: true)`, which assigns `_currentUser = nil` only when that write
+    /// succeeded — so a swallowed throw leaves a live session minting bearers under a UI that says
+    /// signed out. `AccountSession.dropSession()` is what refuses to publish `.signedOut` over it.
+    func signOut() throws(AuthErrorCode) {
+        do {
+            try Auth.auth().signOut()
+        } catch {
+            let error = error as NSError
+            throw error.domain == AuthErrors.domain ? AuthErrorCode(firebaseCode: error.code) : .unknown
+        }
+    }
+
+    /// Asks for a fresh token and reports why it was refused. Deliberately not `mapped`: this
+    /// answers nil for BOTH "no session" and "it worked", because neither is a terminal verdict.
+    func refreshRefusal() async -> AuthErrorCode? {
+        guard let user = Auth.auth().currentUser else { return nil }
+        do {
+            _ = try await user.getIDToken(forcingRefresh: true)
+            return nil
+        } catch {
+            let error = error as NSError
+            return error.domain == AuthErrors.domain ? AuthErrorCode(firebaseCode: error.code) : .unknown
+        }
+    }
 
     // MARK: - Firebase → app
 

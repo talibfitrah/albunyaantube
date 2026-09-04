@@ -30,7 +30,7 @@ struct SignInViewModelTests {
         let session = AccountSession(
             auth: auth,
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
-            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: {})
+            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil })
         return (SignInViewModel(auth: auth, session: session, capabilities: capabilities), transport)
     }
 
@@ -314,5 +314,35 @@ struct SignInViewModelTests {
         for (input, expected) in table {
             #expect(EmailShape.isValid(input) == expected, "\(input)")
         }
+    }
+
+    // MARK: - Stage 4 / I2: the sign-in screen is not an account-existence oracle
+
+    /// "No account found with that email" beside "Email or password is incorrect" told an attacker
+    /// with an email list which addresses hold FitrahTube accounts — and "is this address registered
+    /// with an Islamic-content app" is not a neutral fact for this audience. The password-reset path
+    /// already collapses every failure to one code and says so; this is the same rule on the leg
+    /// that was inconsistent.
+    @Test func aSignInAgainstAnUnknownEmailRendersTheWrongPasswordCopy() async {
+        let auth = FakeAuthClient(state: .signedOut, scriptedErrors: [.userNotFound])
+        let fixture = make(auth: auth)
+
+        fixture.model.email = "someone@fitrah.test"
+        fixture.model.password = "hunter2"
+        await fixture.model.submit()
+
+        #expect(fixture.model.state.error == .wrongPassword)
+        #expect(fixture.model.state.error?.messageKey == "auth_error_wrong_password")
+    }
+
+    /// The CODE is untouched, so legs where the account's existence is already known — the
+    /// re-authentication in `EditPasswordSheet` and in the delete confirmation — keep the accurate
+    /// message. Only what this screen renders collapses.
+    @Test func onlyThePresentedCodeCollapsesNotTheTable() {
+        #expect(SignInViewModel.presented(.userNotFound) == .wrongPassword)
+        #expect(SignInViewModel.presented(.wrongPassword) == .wrongPassword)
+        #expect(SignInViewModel.presented(.userDisabled) == .userDisabled)
+        #expect(AuthErrorCode.userNotFound.messageKey == "auth_error_user_not_found",
+                "the distinct code stays available to the re-auth legs")
     }
 }

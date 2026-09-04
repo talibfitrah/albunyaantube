@@ -171,7 +171,22 @@ import Observation
 
     private func finish(with error: AuthErrorCode) {
         state.isLoading = false
-        fail(error)
+        fail(Self.presented(error))
+    }
+
+    /// Stage 4 / I2: on the SIGN-IN leg, `.userNotFound` renders `.wrongPassword`'s copy.
+    ///
+    /// "No account found with that email" next to "Email or password is incorrect" turns this
+    /// screen into a membership oracle: an attacker with an email list learns which addresses hold
+    /// FitrahTube accounts, and "is this address registered with an Islamic-content app" is not a
+    /// neutral fact for this audience. The password-reset path already gets this right and says so
+    /// (every failure is ONE code); this is the same rule on the leg that was inconsistent.
+    ///
+    /// The CODE is untouched, so legs where the account's existence is already known — the
+    /// re-authentication in `EditPasswordSheet` and in the delete confirmation — keep the accurate
+    /// message. Only what this screen renders collapses.
+    nonisolated static func presented(_ error: AuthErrorCode) -> AuthErrorCode {
+        error == .userNotFound ? .wrongPassword : error
     }
 
     /// The ONE place a failure is recorded — every arm above routes through it, which is what makes

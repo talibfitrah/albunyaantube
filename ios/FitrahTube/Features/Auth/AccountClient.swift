@@ -5,12 +5,25 @@ import InnerTubeKit
 /// Client-side mirror of the backend's `UserStatus`; the wire form is `AccountMeResponse.status`.
 nonisolated enum AccountStatus: String, Sendable, CaseIterable {
     case active = "active", pendingProfile = "pending_profile", blocked = "blocked", deleted = "deleted"
+    /// A `status` this build does not recognise, or none at all. Its raw value can never come off
+    /// the wire, so `fromWire` is the only producer.
+    case unknown = ""
 
-    /// Unknown -> `.blocked`, deliberately (`AccountStatus.kt:14-27`): BLOCKED drops the user to
-    /// guest, where PENDING_PROFILE would trap them in a bootstrap form the backend 409s on
-    /// re-entry (`AccountController.java` -> `ProfileAlreadyCompletedException`).
+    /// Stage 3 / I5: unknown is NOT `.blocked`. On Android `.blocked` merely drops to guest; here
+    /// `SplashRouter` answers it with `signOut: true` and a NON-DISMISSIBLE "your account has been
+    /// blocked" dialog (`RootView.swift`), so one additive backend `UserStatus` value — or one
+    /// serialisation regression on an optional field — would sign out every installed client and
+    /// tell each user something untrue. `.unknown` takes the `status == nil` row instead: stay
+    /// signed in, render the shell, keep asking.
+    ///
+    /// The Android comment this used to cite (`AccountStatus.kt:14-27`) justifies `.blocked` only
+    /// against `.pendingProfile`, which would trap the user in a bootstrap form the backend 409s on
+    /// re-entry. `.unknown` avoids that trap too — it is not `.pendingProfile` either.
     static func fromWire(_ raw: String?) -> AccountStatus {
-        AccountStatus(rawValue: raw?.lowercased() ?? "") ?? .blocked
+        guard let raw, let known = AccountStatus(rawValue: raw.lowercased()), known != .unknown else {
+            return .unknown
+        }
+        return known
     }
 }
 

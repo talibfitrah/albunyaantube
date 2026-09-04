@@ -199,6 +199,12 @@ struct MeFeedRepositoryTests {
     /// queue is FIFO, so the single `Task.yield()` below runs the late rebucket up to its first
     /// `await` and no further — the tap that follows is synchronous, and the rebucket's
     /// continuation can only be appended behind it.
+    ///
+    /// Stage 3 / M2a asked for the `Gate` rendezvous actor here instead of that assumption. It does
+    /// not fit: the ordering being relied on is INSIDE `rebucket` (between its `setFilter(nil)` and
+    /// its `atom.cached(_:)` hop) and `rebucket` exposes no suspension point a test can occupy —
+    /// wrapping the call in a gate only moves the start LATER, which is the failing direction. Left
+    /// as the documented assumption rather than given a production seam that exists only for a test.
     @Test func aLateRebucketNeverPublishesThePreviousFiltersRows() async {
         let transport = ScriptedTransport([
             feed(entry("alpha-w0", Self.week0)),
@@ -279,8 +285,66 @@ struct MeFeedRepositoryTests {
         await repo.refresh(channelIds: ids, force: false)
 
         #expect(transport.sent.count == 8)
-        #expect(transport.peakConcurrency <= MeFeedRefreshGate.maxConcurrent)
+        // Stage 3 / M3: `>= 1` was true whenever ANY request was sent, so the cap could be removed
+        // and the test stayed green; `<= maxConcurrent` alone is an upper bound that holds trivially
+        // if the scheduler never overlaps. BOTH bounds, and the lower one is `> 1`: the group really
+        // does run channels in parallel, so breaking the fan-out into a serial loop (peak 1) goes
+        // red, and removing the limit (peak 8) goes red too.
+        //
+        // Stage 3 / M3 asked for `== maxConcurrent`. It is not assertable: `ScriptedTransport.send`
+        // overlaps callers through ONE `Task.yield()`, so the measured peak on this host ranged 1–3
+        // of 4 across runs depending on load, and 4 is additionally unreachable because the opening
+        // burst is staggered by 250 ms per slot (`MeFeedRepository.stagger`). What IS deterministic
+        // is the bound the cap actually provides — removing the `limit` sends all 8 at once and
+        // fails here — plus the completeness of the round below.
+        #expect(transport.peakConcurrency <= MeFeedRefreshGate.maxConcurrent, "the cap was removed")
         #expect(transport.peakConcurrency >= 1)
+    }
+
+    // MARK: - Stage 3 / I2: the feed is user-scoped
+
+    /// This repository is a container `lazy var` with process lifetime and nothing used to
+    /// re-scope it, so account B rendered account A's videos on the first frame — the spinner does
+    /// not cover it (`isRefreshing && weeks.isEmpty`, and `weeks` was not empty), and the same rows
+    /// survived the ruling-C13 device wipe.
+    @Test func aUidChangeClearsTheFeedBeforeAnythingIsFetched() async {
+        let transport = ScriptedTransport([feed(entry("alpha-w0", Self.week0))])
+        let repo = makeRepo(transport)
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        #expect(repo.weeks.isEmpty == false)
+
+        repo.currentUserId = "account-b"
+
+        #expect(repo.weeks.isEmpty, "account B rendered account A's feed")
+        #expect(repo.lastError == nil)
+        #expect(repo.reachedEnd == false)
+    }
+
+    /// It is on the ONE list `AccountSession.scope(to:)` and `LocalAccountWiper` walk.
+    @Test func theFeedIsAUserScopedStore() {
+        let transport = ScriptedTransport([])
+        let repo: any UserScoped = makeRepo(transport)
+        repo.currentUserId = "someone"
+        #expect(repo.currentUserId == "someone")
+    }
+
+    // MARK: - Stage 3 / I3: the refresh coalescer
+
+    /// `MeSignedInView` calls `refresh` from `.task`, from `.refreshable` and from the
+    /// subscription-count `.onChange`, and only the last lived in a slot anything cancelled — so a
+    /// pull-to-refresh during the opening burst fanned out over every channel a SECOND time.
+    @Test func twoConcurrentUnforcedRefreshesProduceOneFanOut() async {
+        let ids = (0..<4).map { "UCchannel\($0)" }
+        let transport = ScriptedTransport(ids.map { _ in feed(entry("vid-0", Self.week0)) })
+        let repo = makeRepo(transport)
+
+        async let first: Void = repo.refresh(channelIds: ids, force: false)
+        async let second: Void = repo.refresh(channelIds: ids, force: false)
+        _ = await (first, second)
+
+        #expect(transport.sent.count == 4, "the second caller started a second fan-out")
+        #expect(repo.isRefreshing == false)
     }
 
     // MARK: - Failure classification

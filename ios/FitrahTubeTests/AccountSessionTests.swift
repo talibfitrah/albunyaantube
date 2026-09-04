@@ -34,7 +34,7 @@ struct AccountSessionTests {
     }
 
     private func make(auth: FakeAuthClient, responses: [HTTPResponse], sleeps: SleepRecorder = SleepRecorder(),
-                      wipe: @escaping @MainActor @Sendable () async -> Void = {})
+                      wipe: @escaping @MainActor @Sendable () async -> Error? = { nil })
         -> (session: AccountSession, stores: [SpyStore], transport: ScriptedTransport, status: AccountStatusCenter) {
         let transport = ScriptedTransport(responses)
         let stores = (0..<3).map { _ in SpyStore(requestCount: { transport.sent.count }) }
@@ -44,6 +44,21 @@ struct AccountSessionTests {
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: stores, status: status, sleep: { await sleeps.record($0) }, wipe: wipe)
         return (session, stores, transport, status)
+    }
+
+    /// The stage-7 shape: a session with no spy stores, over an explicit transport, with the two
+    /// new seams (`providers`, `status`) reachable.
+    private func makeSession(auth: FakeAuthClient, transport: ScriptedTransport,
+                             status: AccountStatusCenter = AccountStatusCenter(),
+                             providers: [any OAuthSignInProvider] = [],
+                             sleeps: SleepRecorder = SleepRecorder(),
+                             blockingSleep: (@Sendable () async -> Void)? = nil) -> AccountSession {
+        AccountSession(
+            auth: auth,
+            account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
+            stores: [], status: status,
+            sleep: { await sleeps.record($0); await blockingSleep?() }, wipe: { nil },
+            providers: providers)
     }
 
     /// Drives `start()` to a loaded account. Bounded `Task.yield()` loops, never a sleep.
@@ -205,7 +220,10 @@ struct AccountSessionTests {
         await running.value
 
         #expect(transport.sent.count == 1, "the cancelled refresh does not re-drive")
-        #expect(session.state == .loading, "cancelled, not failed — no banner over an abandoned screen")
+        // Stage 3 / M6: RESTORED, not parked at `.loading`. The old end state made cancellation
+        // contagious — every follower, `start()` included, returned having observed `.loading`, and
+        // `RootView` then rendered a signed-in user as a guest with nothing left to re-drive `/me`.
+        #expect(session.state == .signedOut, "cancelled, not failed — no banner over an abandoned screen")
     }
 
     /// Fix round 1 / I2. `SignInViewModel.land()` refreshes on the same auth transition `start()`
@@ -258,7 +276,7 @@ struct AccountSessionTests {
         let auth = FakeAuthClient(state: .signedOut)
         let wipes = Mutex<Int>(0)
         let (session, stores, transport, _) = make(auth: auth, responses: [.json(200, Self.meJSON)],
-                                                   wipe: { wipes.withLock { $0 += 1 } })
+                                                   wipe: { wipes.withLock { $0 += 1 }; return nil })
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 
@@ -281,7 +299,7 @@ struct AccountSessionTests {
         let auth = FakeAuthClient(state: .signedOut)
         let wipes = Mutex<Int>(0)
         let (session, stores, _, _) = make(auth: auth, responses: [.json(200, Self.meJSON)],
-                                           wipe: { wipes.withLock { $0 += 1 } })
+                                           wipe: { wipes.withLock { $0 += 1 }; return nil })
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 
@@ -303,7 +321,7 @@ struct AccountSessionTests {
         let auth = FakeAuthClient(state: .signedOut)
         let wipes = Mutex<Int>(0)
         let (session, _, _, status) = make(auth: auth, responses: [.json(200, Self.meJSON)],
-                                           wipe: { wipes.withLock { $0 += 1 } })
+                                           wipe: { wipes.withLock { $0 += 1 }; return nil })
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 
@@ -353,5 +371,84 @@ struct AccountSessionTests {
 
         #expect(yields == 8)
         #expect(session.state.me == nil)
+    }
+
+    // MARK: - Stage 3 / M6: a cancelled leader must not park the session
+
+    /// The coalescer makes cancellation contagious: only the FIRST caller's cancellation reaches
+    /// the shared task, and every follower — `start()` included — returns having observed whatever
+    /// state it left. Leaving `.loading` standing meant `RootView` read `status == nil` and rendered
+    /// a signed-in user as a guest, with nothing left to re-drive `/me`.
+    @Test func aCancelledRefreshRestoresTheStateItFound() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let transport = ScriptedTransport([.json(200, Self.meJSON), .failing(URLError(.timedOut))])
+        let gate = Gate()
+        let session = makeSession(auth: auth, transport: transport,
+                                  sleeps: SleepRecorder(), blockingSleep: { await gate.block() })
+
+        await session.refresh()
+        let loaded = session.state
+        #expect(loaded.me != nil)
+
+        // Cancelled while the SECOND attempt's sleep is in flight, through the rendezvous actor —
+        // a yield count would be a scheduling assumption, and the injected sleep returns instantly.
+        let task = Task { await session.refresh() }
+        await gate.waitUntilBlocked()
+        task.cancel()
+        await gate.release()
+        await task.value
+
+        #expect(session.state == loaded,
+                "a cancelled leader parked the session at .loading for every other observer")
+    }
+
+    // MARK: - Stage 5 / C1.3: a refused sign-out is not a sign-out
+
+    /// `Auth.signOut()` assigns `_currentUser = nil` only when the Keychain write succeeded, so a
+    /// swallowed throw left the app reporting signed-out while `idToken(forceRefresh:)` still minted
+    /// bearers for the previous account — and the next launch restored it.
+    @Test func aFailedFirebaseSignOutDoesNotReportSignedOut() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let status = AccountStatusCenter()
+        let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
+                                  status: status)
+        await session.refresh()
+        #expect(session.state.me != nil)
+
+        auth.nextError = .unknown
+        session.signOut()
+
+        #expect(session.state != .signedOut, "the app said signed out over a live Firebase session")
+        #expect(await auth.currentUser() != nil)
+        #expect(status.pending == nil, "a .signedOut was announced for a sign-out that did not happen")
+    }
+
+    // MARK: - Stage 4 / I1: the provider SDK's own session
+
+    /// `GIDSignIn` keeps an access token AND a refresh token for the user's Google account in this
+    /// app's Keychain, and nothing ever asked it to sign out — so that credential outlived both the
+    /// user's own sign-out and the ruling-C13 device wipe, whose dialog says the account is gone.
+    @Test func signingOutForgetsTheProviderSdkSession() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let google = FakeOAuthProvider()
+        let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
+                                  providers: [google])
+        await session.refresh()
+
+        session.signOut()
+
+        #expect(google.signOutCount == 1, "the Google refresh token outlived the sign-out")
+    }
+
+    @Test func theDeletionPathAlsoForgetsTheProviderSdkSession() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let google = FakeOAuthProvider()
+        let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
+                                  providers: [google])
+        await session.refresh()
+
+        await session.handleDeletion(deletingFirebaseUser: false).value
+
+        #expect(google.signOutCount == 1, "the Google refresh token outlived the device wipe")
     }
 }

@@ -54,7 +54,7 @@ struct EmailVerificationViewModelTests {
         let transport = ScriptedTransport(responses)
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
-                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: {})
+                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil })
         let model = EmailVerificationViewModel(auth: auth, session: session, account: account,
                                                defaults: defaults, now: { clock.now })
         return Fixture(model: model, transport: transport, session: session,
@@ -273,6 +273,35 @@ struct EmailVerificationViewModelTests {
                                            isEmailVerified: fixture.session.user?.isEmailVerified ?? false,
                                            status: fixture.session.state.me?.status)
         #expect(outcome.destination == .main)
+    }
+
+    /// Stage 5 / C1.1 + C3.1. `reload()` refreshes the USER RECORD, not the cached ID token, and the
+    /// backend gates on the token CLAIM (`FirebaseAuthFilter` reads `decodedToken.isEmailVerified()`).
+    /// Without a forced re-mint the next `POST /api/account/profile` answers 403 `EMAIL_NOT_VERIFIED`
+    /// for up to the token's remaining hour, which the bootstrap form renders as "couldn't save your
+    /// profile" with no way forward.
+    ///
+    /// The fake's token now carries CLAIMS that lag `reloadedUser` until a forced refresh, so the
+    /// old one-line fake — whose token was derived from the state user and could never disagree with
+    /// itself — is no longer able to hide this.
+    @Test func aVerifiedReloadForcesAFreshIdTokenBeforeTheSessionAdoptsIt() async {
+        let auth = FakeAuthClient(state: .signedIn(Self.unverified))
+        auth.reloadedUser = Self.verified
+        let fixture = make(auth: auth, responses: [.json(200, Self.meJSON)], seedLastSentAt: Self.t0)
+        defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
+        let running = await started(fixture)
+        defer { running.cancel() }
+
+        let stale = await auth.idToken(forceRefresh: false)
+        #expect(stale?.value.hasSuffix("-verified-false") == true,
+                "the fixture token must start out carrying the claim that put the user here")
+
+        _ = await fixture.model.checkNow()
+
+        #expect(auth.tokenRefreshes.contains(true), "the ID token claim was never re-minted")
+        let fresh = await auth.idToken(forceRefresh: false)
+        #expect(fresh?.value.hasSuffix("-verified-true") == true,
+                "the next request would still carry the pre-verification claim")
     }
 
     @Test func checkNowOnAnUnverifiedReloadSaysNotYetVerified() async {

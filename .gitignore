@@ -206,10 +206,6 @@ __pycache__/
 /ios/.build/
 /ios/Packages/*/.build*/
 /ios/Packages/*/.swiftpm/
-# FitrahAPI's own Package.resolved ping-pongs on every gate run: the gate's `swift test` in that
-# package re-resolves and strips Task 1's Firebase pins, since the APP's resolution lives in the
-# git-ignored .xcodeproj/DerivedData and this file tracked only the package's own 4 deps.
-/ios/Packages/FitrahAPI/Package.resolved
 **/GoogleService-Info.plist
 /ios/Packages/*/Sources/*/openapi.yaml
 /ios/Config/Local.xcconfig

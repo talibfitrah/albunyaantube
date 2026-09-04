@@ -90,7 +90,18 @@ struct FitrahTubeApp: App {
                     Task { await container.offlineManager.reattach() }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
-                    if newPhase == .active { refreshRemoteConfigIfDue() }
+                    guard newPhase == .active else { return }
+                    refreshRemoteConfigIfDue()
+                    // Stage 5 / C2.1 + C4.2: NOTHING else re-reads `/me`. `AccountSession.refresh()`
+                    // fires only on an auth transition, on `SignInViewModel.land()` and on the
+                    // bootstrap submit — so an email change completed in the mail app never landed
+                    // on the profile, and a launch whose `/me` failed rendered a signed-in user as a
+                    // guest until relaunch. One attempt, coalesced by the session, so a scene-phase
+                    // flicker costs at most one in-flight request.
+                    //
+                    // Unstructured on purpose: a `.task`-scoped caller that LEADS the coalescer
+                    // decides the session's state for every other observer (`refresh`'s doc).
+                    Task { await container.session.refresh(maxAttempts: 1) }
                 }
                 // Overlay, not a branch replacing RootView: the refresh task/onChange above keep
                 // firing underneath, which is what lets a lowered `minAppVersion` un-block live.
