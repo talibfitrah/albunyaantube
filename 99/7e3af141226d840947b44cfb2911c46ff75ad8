@@ -1,0 +1,46 @@
+ios/FitrahTube/Features/Auth/EmailVerificationViewModel.swift
+  s_66ddb7c44de816::t_50649211b80f76 30-31
+ios/FitrahTube/App/AppContainer.swift
+  s_66ddb7c44de816::t_05372b2ca2c640 238-248
+ios/FitrahTube/Features/Auth/LocalAccountWiper.swift
+  s_66ddb7c44de816::t_cef7927d205504 65-77
+  s_66ddb7c44de816::t_b5f0d9fd4dcfb0 3
+ios/FitrahTube/Features/Me/MeFeedRepository.swift
+  s_66ddb7c44de816::t_e707e8c8697695 259-262,266
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_66ddb7c44de816::t_257b4ef0540db6 222-238
+  s_66ddb7c44de816::t_e7794c96555c1c 261-264
+ios/FitrahTubeTests/LocalAccountWiperTests.swift
+  s_66ddb7c44de816::t_d67931b3427837 3
+  s_66ddb7c44de816::t_98579a65841344 155-183
+ios/FitrahTubeTests/AccountSessionTests.swift
+  s_66ddb7c44de816::t_513faeb128dd1d 300-301,304-306,317
+  s_66ddb7c44de816::t_ff4e15fd344a21 252-256,259-261,271-272
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/AtomFeedFetcher.swift
+  s_66ddb7c44de816::t_35835e66b25a66 110-115
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_66ddb7c44de816::t_a9d34df16de703 147-166
+  s_66ddb7c44de816::t_8c4351850c54cd 67,73-85
+  s_66ddb7c44de816::t_a0af292a460fcd 114-118
+ios/FitrahTube/Features/Profile/ProfileScreen.swift
+  s_66ddb7c44de816::t_97a791032d93fb 110-129
+  s_66ddb7c44de816::t_5febc392050a88 26-34
+  s_66ddb7c44de816::t_832a624663ca4a 130
+  s_66ddb7c44de816::t_778c2b17e5ca11 50-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "997e3af141226d840947b44cfb2911c46ff75ad8",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
