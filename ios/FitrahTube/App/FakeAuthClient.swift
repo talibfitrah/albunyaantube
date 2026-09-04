@@ -22,9 +22,13 @@ nonisolated final class FakeAuthClient: AuthClient {
 
     /// Task 17: the credential-mutating calls, in order. The email sheet's contract is "re-auth,
     /// then `verifyBeforeUpdateEmail`, and NEVER an `updateEmail`-shaped call" — an ORDER and an
-    /// absence, neither of which a per-method flag can express. Only these three are recorded:
-    /// nothing else in the suite asserts on a call sequence.
-    nonisolated enum Operation: Sendable, Equatable { case reauthenticate, updatePassword, verifyBeforeUpdateEmail }
+    /// absence, neither of which a per-method flag can express. Only calls that mutate the
+    /// CREDENTIAL are recorded: nothing else in the suite asserts on a call sequence.
+    /// Task 18 adds `deleteUser` — the delete flow's contract is the same shape (the device wipe
+    /// runs first, and the admin-side path must delete no Firebase user at all).
+    nonisolated enum Operation: Sendable, Equatable {
+        case reauthenticate, updatePassword, verifyBeforeUpdateEmail, deleteUser
+    }
 
     private struct Storage {
         var user: AuthUser
@@ -99,7 +103,7 @@ nonisolated final class FakeAuthClient: AuthClient {
     }
 
     func deleteUser() async throws(AuthErrorCode) {
-        try consumeError()
+        try record(.deleteUser)
         transition(to: .signedOut)
     }
 

@@ -33,7 +33,8 @@ struct AccountSessionTests {
         func record(_ duration: Duration) async { durations.withLock { $0.append(duration) } }
     }
 
-    private func make(auth: FakeAuthClient, responses: [HTTPResponse], sleeps: SleepRecorder = SleepRecorder())
+    private func make(auth: FakeAuthClient, responses: [HTTPResponse], sleeps: SleepRecorder = SleepRecorder(),
+                      wipe: @escaping @MainActor @Sendable () async -> Void = {})
         -> (session: AccountSession, stores: [SpyStore], transport: ScriptedTransport, status: AccountStatusCenter) {
         let transport = ScriptedTransport(responses)
         let stores = (0..<3).map { _ in SpyStore(requestCount: { transport.sent.count }) }
@@ -41,7 +42,7 @@ struct AccountSessionTests {
         let session = AccountSession(
             auth: auth,
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
-            stores: stores, status: status, sleep: { await sleeps.record($0) })
+            stores: stores, status: status, sleep: { await sleeps.record($0) }, wipe: wipe)
         return (session, stores, transport, status)
     }
 
@@ -243,15 +244,23 @@ struct AccountSessionTests {
         #expect(transport.sent.count == 1, "signing out makes no request of its own")
     }
 
-    /// Task 18 adds the wipe; in THIS task `.deleted` is sign-out and nothing else, so the local rows
-    /// are still there for Task 18's test to watch disappear.
-    @Test func handleDeletedSignsOutAndWipesNothingYet() async throws {
+    /// Task 18: `.deleted` is the device wipe, and it is DETACHED — the sign-out lands after the
+    /// wipe has finished, so nothing here is true synchronously any more. Which of the two orders
+    /// runs is not cosmetic: dropping the session first re-scopes every store and re-reads it,
+    /// repopulating `items` from rows the wipe is about to delete
+    /// (`DeleteAccountTests` pins that end of it).
+    @Test func handleDeletedWipesTheDeviceThenSignsOut() async throws {
         let auth = FakeAuthClient(state: .signedOut)
-        let (session, stores, _, _) = make(auth: auth, responses: [.json(200, Self.meJSON)])
+        let wipes = Mutex<Int>(0)
+        let (session, stores, _, _) = make(auth: auth, responses: [.json(200, Self.meJSON)],
+                                           wipe: { wipes.withLock { $0 += 1 } })
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 
         session.handle(.deleted)
+        for _ in 0..<500 where session.state != .signedOut { await Task.yield() }
+
+        #expect(wipes.withLock { $0 } == 1)
         #expect(session.state == .signedOut)
         #expect(stores[0].scopes.map(\.uid) == ["fake-uid", ""])
     }

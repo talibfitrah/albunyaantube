@@ -88,6 +88,14 @@ struct RemoteImage: View {
         return URLSession(configuration: configuration)
     }()
 
+    /// Task 18: the account wipe's step 5. Both caches are private statics, so the wipe needs a
+    /// door — `URLCache.shared` alone would leave every thumbnail the deleted account's library had
+    /// loaded sitting in memory, decoded, until the process ends.
+    static func purge() {
+        cache.removeAllObjects()
+        session.configuration.urlCache?.removeAllCachedResponses()
+    }
+
     var body: some View {
         Group {
             if let image, contentMode == .fill {

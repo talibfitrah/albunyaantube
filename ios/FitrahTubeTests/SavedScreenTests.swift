@@ -207,4 +207,17 @@ actor SpyOfflineManager: OfflineSaving {
     func delete(_ id: String) async { calls.append(Call(method: "delete", id: id)) }
     func reattach() async { calls.append(Call(method: "reattach", id: "")) }
     func sweep() async { calls.append(Call(method: "sweep", id: "")) }
+
+    func cancelAll() async { calls.append(Call(method: "cancelAll", id: "")) }
+
+    func deleteAll(_ ids: [String]) async {
+        calls.append(Call(method: "deleteAll", id: ids.joined(separator: ",")))
+        await onDeleteAll?()
+    }
+
+    /// Task 18: a probe run INSIDE `deleteAll`, so `LocalAccountWiperTests` can assert what the
+    /// world still looked like at that moment — the wipe's step order is the fact under test, and
+    /// a recorded call list alone cannot say what had *not* happened yet.
+    private var onDeleteAll: (@Sendable () async -> Void)?
+    func setOnDeleteAll(_ body: @escaping @Sendable () async -> Void) { onDeleteAll = body }
 }

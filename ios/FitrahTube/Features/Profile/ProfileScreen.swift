@@ -2,10 +2,7 @@ import SwiftUI
 
 /// `Route.profile` — the Me kebab's Profile row (`ProfileFragment.kt`). Inline name and date of
 /// birth with a Save that sends **only what changed**; a read-only email row, a phone row and a
-/// password row, each opening its own sheet.
-///
-/// No "Delete account" row yet: RULING 28 refuses an affordance with nowhere to go, and Task 18 is
-/// what lands the delete flow. It arrives with its wiring, exactly as `.profile` itself did.
+/// password row, each opening its own sheet; and, last, the destructive Delete-account row.
 struct ProfileScreen: View {
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
@@ -13,7 +10,9 @@ struct ProfileScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var model: ProfileViewModel?
+    @State private var deleteModel: DeleteAccountViewModel?
     @State private var isPickingDate = false
+    @State private var confirmingDelete = false
     @State private var banner: BannerMessage?
     @State private var sheet: EditSheet?
 
@@ -46,12 +45,33 @@ struct ProfileScreen: View {
         } message: {
             Text(String(localized: "profile_error_age_dialog_message"))
         }
+        // Destructive AND irreversible, so the confirm carries the destructive role and the cancel
+        // is the escape the age dialog deliberately does not have.
+        .alert(String(localized: "profile_delete_account_dialog_title"), isPresented: $confirmingDelete) {
+            Button(String(localized: "cancel"), role: .cancel) {}
+            Button(String(localized: "profile_delete_account_confirm"), role: .destructive) {
+                // NOT `.task`-scoped: the request outlives this screen, and the cleanup behind it is
+                // detached besides (`AccountSession.handleDeletion`).
+                Task { await deleteModel?.delete() }
+            }
+        } message: {
+            Text(String(localized: "profile_delete_account_dialog_message"))
+        }
         .task {
             if model == nil {
                 model = ProfileViewModel(account: container.account, auth: container.auth,
                                          session: container.session)
             }
+            if deleteModel == nil {
+                deleteModel = DeleteAccountViewModel(account: container.account, session: container.session)
+            }
             await model?.sync()
+        }
+        // A refused delete is announced once, as a banner with a real dismiss control. There is no
+        // success arm: the terminal alert `RootView` raises owns the screen from there.
+        .onChange(of: deleteModel?.state) { _, state in
+            guard let state, let key = DeleteAccountViewModel.messageKey(for: state) else { return }
+            banner = BannerMessage(text: String(localized: String.LocalizationValue(key)))
         }
         // Android's `accountState.collect`: a `/me` that lands after this screen opened still
         // promotes it out of `.loading`, and every later change reconciles phone and email into a
@@ -108,6 +128,7 @@ struct ProfileScreen: View {
                 emailRow(draft)
                 phoneRow(draft)
                 if draft.hasPasswordProvider { passwordRow() }
+                deleteAccountRow()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // A failed save is announced once, as a banner with a real dismiss control, rather
@@ -242,6 +263,31 @@ struct ProfileScreen: View {
         ProfileRow(label: String(localized: "profile_password"),
                    value: String(localized: "profile_password_dots"),
                    action: (title: String(localized: "profile_edit"), run: { sheet = .password }))
+    }
+
+    /// Last on the screen, and the only destructive control on it. Dead while the request is in
+    /// flight — a second tap would send a second `DELETE` — and the spinner sits beside the label
+    /// rather than replacing it, so the row keeps saying what it is doing.
+    private func deleteAccountRow() -> some View {
+        let deleting = deleteModel?.state == .deleting
+        return Button(role: .destructive) { confirmingDelete = true } label: {
+            HStack(spacing: Spacing.sm) {
+                Text(String(localized: deleting ? "profile_delete_account_deleting" : "profile_delete_account"))
+                    .font(TypeScale.body(widthClass))
+                    .foregroundStyle(Color.errorText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                if deleting { ProgressView().tint(Color.errorText) }
+            }
+            .padding(Spacing.md(widthClass))
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .background(Color.homeCard, in: RoundedRectangle(cornerRadius: Radius.card))
+        }
+        .buttonStyle(.plain)
+        .disabled(deleting)
+        .accessibilityLabel(String(localized: "profile_delete_account"))
+        .accessibilityValue(deleting ? String(localized: "profile_delete_account_deleting") : "")
+        .accessibilityIdentifier("profile.deleteAccount")
     }
 }
 

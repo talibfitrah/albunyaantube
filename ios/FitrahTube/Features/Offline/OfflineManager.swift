@@ -18,6 +18,11 @@ nonisolated protocol OfflineSaving: Sendable {
     func cancel(_ id: String) async
     func retry(_ id: String) async
     func delete(_ id: String) async
+    /// Task 18 (CF-G-4): stop every non-terminal save. The account wipe deletes the directory the
+    /// engine is writing into, so the work has to be stopped BEFORE the files go, not raced with.
+    func cancelAll() async
+    /// Settings' Clear-all and the account wipe: files AND rows for the whole batch, one teardown.
+    func deleteAll(_ ids: [String]) async
     /// Relaunch: re-bind rows to live background tasks, demote orphans, resume scheduling.
     func reattach() async
     /// TTL + gate revalidation over completed rows (`OfflineSweep.decide`), then delete.
@@ -231,6 +236,20 @@ actor OfflineManager: OfflineSaving {
     }
 
     func cancel(_ id: String) async {
+        await cancelRow(id)
+        await schedule()
+    }
+
+    /// Task 18 (CF-G-4): the account wipe deletes the directory the engine writes into, so every
+    /// save stops first. Terminal rows are skipped by `cancelRow`'s own transition guard, and the
+    /// `schedule()` is ONE at the end for `deleteAll`'s reason — a `schedule()` per cancelled row
+    /// picks the next still-queued row and begins its resolve, i.e. STARTS work this exists to stop.
+    func cancelAll() async {
+        for row in await readAll() { await cancelRow(row.id) }
+        await schedule()
+    }
+
+    private func cancelRow(_ id: String) async {
         guard let row = await read(id: id), OfflineStateMachine.transition(from: row.status, on: .cancel) != nil else { return }
         await engine.cancel(id: id)
         forget(id)
@@ -254,7 +273,6 @@ actor OfflineManager: OfflineSaving {
             item.bytesWritten = 0
             try store.save()
         }
-        await schedule()
     }
 
     func retry(_ id: String) async {

@@ -2691,6 +2691,23 @@ struct OfflineManagerTests {
         #expect(rig.engine.starts.isEmpty, "a clear must never start a row it is deleting")
     }
 
+    /// Task 18 (CF-G-4): the account wipe stops every save before it deletes the files they are
+    /// writing into. Same batching rule as `deleteAll` — a `schedule()` per cancelled row picks the
+    /// next still-queued row and begins its resolve, so the loop would START work it is there to
+    /// stop. Rows SURVIVE as `cancelled` (that is what `cancel` means); `deleteAll` takes them next.
+    @Test func cancellingEveryRowStopsThemWithoutStartingAnyOfThem() async throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        for index in 0..<3 {
+            try rig.store.insert(makeOfflineItem("vid-queued-\(index)", title: "Lecture \(index)"))
+        }
+        await rig.manager.cancelAll()
+
+        #expect(rig.rowCount() == 3)
+        #expect(rig.store.items.allSatisfy { $0.status == OfflineStatus.cancelled.rawValue })
+        #expect(rig.resolver.calls.isEmpty, "a cancel-all must not burn a resolve on a row it is stopping")
+        #expect(rig.engine.starts.isEmpty, "a cancel-all must never start a row it is stopping")
+    }
+
     // MARK: - Sweep (Task 7 calls it; the gate answer is injected)
 
     @Test func sweepDeletesExpiredAndGoneAndKeepsUnreachable() async throws {

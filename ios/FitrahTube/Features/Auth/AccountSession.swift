@@ -22,6 +22,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     private let stores: [any UserScoped]
     private let status: AccountStatusCenter
     private let sleep: @Sendable (Duration) async -> Void
+    private let wipe: @MainActor @Sendable () async -> Void
 
     private(set) var state: AccountState = .signedOut
     /// The signed-in Firebase identity, which is NOT `state.me`: `SplashRouter.outcome` needs
@@ -34,12 +35,14 @@ nonisolated enum AccountState: Sendable, Equatable {
     var uid: String { state.me?.uid ?? "" }
 
     init(auth: any AuthClient, account: AccountClient, stores: [any UserScoped],
-         status: AccountStatusCenter, sleep: @escaping @Sendable (Duration) async -> Void) {
+         status: AccountStatusCenter, sleep: @escaping @Sendable (Duration) async -> Void,
+         wipe: @escaping @MainActor @Sendable () async -> Void) {
         self.auth = auth
         self.account = account
         self.stores = stores
         self.status = status
         self.sleep = sleep
+        self.wipe = wipe
     }
 
     /// Observes `AuthClient.state`; on each change sets every store's `currentUserId` FIRST, then
@@ -57,6 +60,10 @@ nonisolated enum AccountState: Sendable, Equatable {
                 state = .signedOut
             case .signedIn(let signedIn):
                 user = signedIn
+                // A new account on this device gets its own deletion latch: without this, a second
+                // account deleted in the same process would find the first one's task and wipe
+                // nothing (`handleDeletion`).
+                deletion = nil
                 scope(to: signedIn.uid)
                 await refresh()
             }
@@ -160,17 +167,27 @@ nonisolated enum AccountState: Sendable, Equatable {
     func signOut() {
         // Nothing to drop, nothing to announce — and this is what stops `RootView`'s
         // consume -> handle -> signOut path from looping on the `.signedOut` it posts below.
-        guard state != .signedOut else { return }
-        auth.signOut()
-        user = nil
-        scope(to: "")
-        state = .signedOut
+        guard dropSession() else { return }
         // `.signedOut` is not a 403: it is posted so per-account holders can release state without
         // every one of them depending on the auth client (`AccountStatusCenter.swift`).
         status.post(.signedOut)
     }
 
-    /// .blocked -> signOut; .deleted -> signOut (Task 18 adds the wipe here); .signedOut -> signOut.
+    /// The drop itself, without the announcement. `false` when there was no session to drop.
+    /// Split out so the deletion path can announce `.deleted` UNCONDITIONALLY: Firebase's own
+    /// `delete()` fires the auth listener, which may have set `.signedOut` here first, and a
+    /// terminal alert that depends on which of the two got there first is a coin toss.
+    @discardableResult
+    private func dropSession() -> Bool {
+        guard state != .signedOut else { return false }
+        auth.signOut()
+        user = nil
+        scope(to: "")
+        state = .signedOut
+        return true
+    }
+
+    /// .blocked -> signOut; .deleted -> the device wipe; .signedOut -> signOut.
     func handle(_ event: AccountStatusEvent) {
         switch event {
         case .blocked, .signedOut:
@@ -178,10 +195,53 @@ nonisolated enum AccountState: Sendable, Equatable {
             // sign-out does.
             signOut()
         case .deleted:
-            signOut()
-            // Task 18 adds the wipe here
+            handleDeletion()
         }
     }
+
+    /// The account is gone. BOTH paths land here — the admin-side 403 `ACCOUNT_DELETED` envelope
+    /// (`deletingFirebaseUser: false`; the account is already gone server-side and this user can no
+    /// longer re-authenticate, so no Firebase delete is attempted) and the user's own successful
+    /// `DELETE /api/account/me` (`true`).
+    ///
+    /// **DETACHED and uncancelled (CF-G-5).** Android runs this cleanup in `viewModelScope`, so a
+    /// user who leaves the screen while the 204 is landing keeps every local row of an account that
+    /// no longer exists. Nothing about this work belongs to a screen's lifetime.
+    ///
+    /// **Latched, so it runs exactly once.** Three arrivals are possible for one deletion: the
+    /// transport's post, `fetch()`'s own `.deletedAccount` catch, and the `.deleted` this posts —
+    /// each of which reaches `handle(_:)`. The latch is cleared on the next sign-in (`start()`), so
+    /// a second account deleted in the same process still wipes.
+    ///
+    /// **Wipe BEFORE the sign-out**, and before Firebase: `dropSession()` re-scopes every per-user
+    /// store, which re-READS it, and a re-read that lands before the rows are gone leaves deleted
+    /// objects on screen; and a Firebase failure must not be able to skip a device the server has
+    /// already erased.
+    @discardableResult
+    func handleDeletion(deletingFirebaseUser: Bool = false) -> Task<Void, Never> {
+        if let deletion { return deletion }
+        // No `@MainActor in` on the closure: `performDeletion` carries the isolation and the hop.
+        let task = Task.detached {
+            await self.performDeletion(deletingFirebaseUser: deletingFirebaseUser)
+        }
+        deletion = task
+        return task
+    }
+
+    private func performDeletion(deletingFirebaseUser: Bool) async {
+        await wipe()
+        // `try?`: the server has already deleted the account, so there is nothing to roll back and
+        // nowhere to route a failure to. A Firebase user whose `delete()` was refused
+        // (`requiresRecentLogin`) is signed out below anyway, and its next `/me` answers the 403
+        // envelope — the same terminal path, without a re-auth prompt for an account that no longer
+        // exists.
+        if deletingFirebaseUser { try? await auth.deleteUser() }
+        dropSession()
+        status.post(.deleted)
+    }
+
+    /// The deletion latch. Non-nil from the first `handleDeletion()` until the next sign-in.
+    private var deletion: Task<Void, Never>?
 
     #if DEBUG
     /// The screenshot rig's launch barrier (`FitrahTubeApp.awaitFakeAccountIfSignedIn`): yields

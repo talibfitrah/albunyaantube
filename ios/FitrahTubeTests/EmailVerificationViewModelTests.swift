@@ -54,7 +54,7 @@ struct EmailVerificationViewModelTests {
         let transport = ScriptedTransport(responses)
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
-                                     status: AccountStatusCenter(), sleep: { _ in })
+                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: {})
         let model = EmailVerificationViewModel(auth: auth, session: session, account: account,
                                                defaults: defaults, now: { clock.now })
         return Fixture(model: model, transport: transport, session: session,

@@ -234,7 +234,16 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// Phase 4 Task 9: the ONE holder of account state, and the only thing that writes
     /// `currentUserId`. Started by `RootView`'s `.task`.
     private(set) lazy var session = AccountSession(auth: auth, account: account, stores: userScopedStores,
-                                                   status: accountStatus, sleep: sessionSleep)
+                                                   status: accountStatus, sleep: sessionSleep,
+                                                   wipe: { [weak self] in await self?.makeWiper().wipe() })
+
+    /// Phase 4 Task 18: ruling C13's device wipe, built ON DEMAND rather than stored. Reaching for
+    /// `session` must not construct `offlineManager` — that builds a background `URLSession`, which
+    /// every test and preview that only wants an account would then pay for.
+    private func makeWiper() -> LocalAccountWiper {
+        LocalAccountWiper(offline: offlineManager, offlineStore: offlineStore, stores: userScopedStores,
+                          modelContainer: modelContainer, searchHistory: searchHistory, defaults: userDefaults)
+    }
 
     /// Fix round 1 / M5: a FIXTURE never burns real wall clock. Its `authorizedTransport` holds one
     /// canned `/me`, so a second refresh in a preview or the screenshot rig throws `exhausted` ->

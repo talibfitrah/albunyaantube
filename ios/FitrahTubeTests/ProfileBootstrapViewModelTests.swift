@@ -50,7 +50,7 @@ struct ProfileBootstrapViewModelTests {
         let transport = ScriptedTransport(responses)
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
-                                     status: AccountStatusCenter(), sleep: { _ in })
+                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: {})
         let model = ProfileBootstrapViewModel(account: account, auth: auth, session: session,
                                               calendar: calendar, today: { Self.today })
         return Fixture(model: model, transport: transport, auth: auth, session: session)
