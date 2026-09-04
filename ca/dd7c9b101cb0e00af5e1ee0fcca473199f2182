@@ -1,0 +1,24 @@
+backend/src/main/java/com/albunyaan/tube/security/FirebaseAuthFilter.java
+  s_66ddb7c44de816::t_9b807b24abdd3b 280-323
+  s_66ddb7c44de816::t_3cf57b27bf0fa6 47-49
+  s_66ddb7c44de816::t_23f20bba20842f 6
+  s_66ddb7c44de816::t_09a8254febcb65 242-263,265-270
+backend/src/test/java/com/albunyaan/tube/security/FirebaseAuthFilterRevokedTokenTest.java
+  s_66ddb7c44de816::t_c1e873271a35ec 1-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cadd7c9b101cb0e00af5e1ee0fcca473199f2182",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
