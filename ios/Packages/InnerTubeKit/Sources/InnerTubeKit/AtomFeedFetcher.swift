@@ -34,11 +34,11 @@ public actor AtomFeedFetcher {
     }
 
     public func latest(_ channelId: String) async throws -> [VideoItem] {
-        let cached = readCache(channelId)
+        let stored = readCache(channelId)
 
         var headers = ["Accept": "application/atom+xml"]
-        if let etag = cached?.etag { headers["If-None-Match"] = etag }
-        if let lastModified = cached?.lastModified { headers["If-Modified-Since"] = lastModified }
+        if let etag = stored?.etag { headers["If-None-Match"] = etag }
+        if let lastModified = stored?.lastModified { headers["If-Modified-Since"] = lastModified }
 
         var components = URLComponents(url: Self.feedURL, resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "channel_id", value: channelId)]
@@ -47,7 +47,7 @@ public actor AtomFeedFetcher {
         let response = try await transport.send(request)
 
         if response.status == 304 {
-            return cached?.items.map(\.videoItem) ?? []
+            return stored?.items.map(\.videoItem) ?? []
         }
         guard response.status == 200 else {
             throw AtomFeedError.httpError(response.status)
@@ -63,6 +63,14 @@ public actor AtomFeedFetcher {
         return items
     }
 
+    /// The per-channel cache with NO network call -- what the Me feed renders between refreshes,
+    /// and what it shows while a refresh is in flight. Empty for a channel never fetched.
+    /// Actor-isolated (callers write `await fetcher.cached(id)`) and declared here rather than in an
+    /// extension so it can reach the file-private `readCache`.
+    public func cached(_ channelId: String) -> [VideoItem] {
+        readCache(channelId)?.items.map(\.videoItem) ?? []
+    }
+
     private func headerValue(_ headers: [String: String], _ name: String) -> String? {
         headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
     }
@@ -74,16 +82,22 @@ public actor AtomFeedFetcher {
         var title: String
         var publishedText: String?
         var thumbnailURL: String?
+        // Persisted, not re-derived: `publishedText` is already humanized by the time it lands here,
+        // so a replay that dropped this field would hand the Me feed a list it cannot sort.
+        var publishedAt: Date?
 
         init(_ item: VideoItem) {
             id = item.id
             title = item.title
             publishedText = item.publishedText
             thumbnailURL = item.thumbnailURL?.absoluteString
+            publishedAt = item.publishedAt
         }
 
         var videoItem: VideoItem {
-            VideoItem(id: id, title: title, publishedText: publishedText, thumbnailURL: thumbnailURL.flatMap(URL.init(string:)))
+            VideoItem(
+                id: id, title: title, publishedText: publishedText,
+                thumbnailURL: thumbnailURL.flatMap(URL.init(string:)), publishedAt: publishedAt)
         }
     }
 
@@ -112,7 +126,15 @@ public actor AtomFeedFetcher {
     /// slightly stale relative text ("2 days ago" from the last 200) -- same staleness class as the
     /// cached list itself.
     static func humanizePublished(_ raw: String?, now: Date = Date(), locale: Locale = .autoupdatingCurrent) -> String? {
-        guard let raw, let date = ISO8601DateFormatter().date(from: raw) else { return nil }
+        humanizePublished(from: raw.flatMap { ISO8601DateFormatter().date(from: $0) }, now: now, locale: locale)
+    }
+
+    /// The same humanizer over an already-parsed instant. The parser calls this one so the ISO
+    /// string is parsed exactly once per entry and the resulting `Date` feeds both `publishedText`
+    /// and `VideoItem.publishedAt`; the raw-string entry point above stays for callers that only
+    /// have the string.
+    static func humanizePublished(from date: Date?, now: Date = Date(), locale: Locale = .autoupdatingCurrent) -> String? {
+        guard let date else { return nil }
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = locale
         formatter.unitsStyle = .full
@@ -135,6 +157,9 @@ public actor AtomFeedFetcher {
 }
 
 private final class AtomParserDelegate: NSObject, XMLParserDelegate {
+    // One formatter for the whole document rather than one per entry: `XMLParser` drives this
+    // delegate synchronously on a single thread, so the instance is never shared.
+    private let isoFormatter = ISO8601DateFormatter()
     private(set) var items: [VideoItem] = []
     private var inEntry = false
     private var currentElement = ""
@@ -175,12 +200,14 @@ private final class AtomParserDelegate: NSObject, XMLParserDelegate {
             if let id = videoId?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty,
                 let t = title?.trimmingCharacters(in: .whitespacesAndNewlines)
             {
+                let trimmedPublished = published?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let publishedAt = trimmedPublished.flatMap { isoFormatter.date(from: $0) }
                 items.append(
                     VideoItem(
                         id: id, title: t,
-                        publishedText: AtomFeedFetcher.humanizePublished(
-                            published?.trimmingCharacters(in: .whitespacesAndNewlines)),
-                        thumbnailURL: thumbnailURL))
+                        publishedText: AtomFeedFetcher.humanizePublished(from: publishedAt),
+                        thumbnailURL: thumbnailURL,
+                        publishedAt: publishedAt))
             }
         }
         currentElement = ""

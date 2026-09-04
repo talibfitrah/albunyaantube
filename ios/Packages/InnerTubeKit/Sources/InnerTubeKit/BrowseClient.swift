@@ -35,11 +35,17 @@ public struct VideoItem: Sendable, Equatable {
     public var publishedText: String?
     public var thumbnailURL: URL?
     public var badge: VideoBadge?
+    /// The upload instant, when the producer had one. Only the Atom path sets it (`<published>` is
+    /// an ISO 8601 timestamp); `BrowseClient` leaves it nil because YouTube hands browse a
+    /// pre-rendered relative string ("7 days ago"), never an instant. Anything that has to *sort*
+    /// or *bucket* by recency — the Me feed — needs this; anything that only displays uses
+    /// `publishedText`.
+    public var publishedAt: Date?
 
     public init(
         id: String, title: String, channelName: String? = nil, channelId: String? = nil,
         durationSeconds: Int? = nil, viewCountText: String? = nil, publishedText: String? = nil,
-        thumbnailURL: URL? = nil, badge: VideoBadge? = nil
+        thumbnailURL: URL? = nil, badge: VideoBadge? = nil, publishedAt: Date? = nil
     ) {
         self.id = id
         self.title = title
@@ -50,6 +56,7 @@ public struct VideoItem: Sendable, Equatable {
         self.publishedText = publishedText
         self.thumbnailURL = thumbnailURL
         self.badge = badge
+        self.publishedAt = publishedAt
     }
 }
 
