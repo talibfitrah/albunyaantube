@@ -4,7 +4,7 @@ import Testing
 @testable import FitrahTube
 
 /// Android's `FavoritesViewModel` (`favorites-settings-about.md:1.2,1.4`). `FavoritesViewModel`
-/// is a thin wrapper over `FavoritesStore`: `items`/`recentFavorites` are straight passthroughs,
+/// is a thin wrapper over `FavoritesStore`: `items` is a straight passthrough,
 /// `remove`/`clearAll` call the store's `toggle`/`clearAll`, and `playerArgs(for:)` builds exactly
 /// the 5-key bundle Android's `FavoritesFragment` passes to the player (no backend fetch fast path).
 @Suite(.perTest)
@@ -82,27 +82,5 @@ struct FavoritesViewModelTests {
         let favorite = try #require(viewModel.items.first)
 
         #expect(viewModel.playerArgs(for: favorite).thumbnailURL == nil)
-    }
-
-    // MARK: - recentFavorites (MeGuestView data source: first 5, most-recently-added first)
-
-    @Test func recentFavoritesIsCappedAtFiveMostRecent() throws {
-        let store = makeStore()
-        for id in ["v1", "v2", "v3", "v4", "v5", "v6"] {
-            try store.toggle(makeItem(id: id))
-        }
-        let viewModel = FavoritesViewModel(store: store)
-
-        #expect(viewModel.recentFavorites.count == 5)
-        // Store sorts by addedAt descending -- the most recently toggled ("v6") is newest.
-        #expect(viewModel.recentFavorites.map(\.videoId) == ["v6", "v5", "v4", "v3", "v2"])
-    }
-
-    @Test func recentFavoritesReturnsAllWhenFewerThanFive() throws {
-        let store = makeStore()
-        try store.toggle(makeItem(id: "v1"))
-        let viewModel = FavoritesViewModel(store: store)
-
-        #expect(viewModel.recentFavorites.map(\.videoId) == ["v1"])
     }
 }

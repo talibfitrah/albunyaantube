@@ -171,6 +171,26 @@ nonisolated enum AccountState: Sendable, Equatable {
         }
     }
 
+    #if DEBUG
+    /// The screenshot rig's launch barrier (`FitrahTubeApp.awaitFakeAccountIfSignedIn`): yields
+    /// until `/me` has landed, so the `-fitrah-seed-*` hooks write through per-user stores that
+    /// `start()` has already re-scoped. Returns the yields spent, which is the only observable
+    /// difference between stopping at the account and burning the bound.
+    /// A `while`, not `for … where`: `where` SKIPS an iteration rather than ending the loop, so the
+    /// shape this replaces spent the whole bound on every fixture launch. Waiting for `.loading` to
+    /// end is not the same test and would be wrong — the initial state is `.signedOut`, so it would
+    /// fall through before `start()` had run at all.
+    @discardableResult
+    func awaitAccount(bound: Int) async -> Int {
+        var yields = 0
+        while state.me == nil, yields < bound {
+            yields += 1
+            await Task.yield()
+        }
+        return yields
+    }
+    #endif
+
     /// Unchanged uid -> untouched store: every `currentUserId` write re-runs that store's fetch,
     /// and launch would otherwise fire three pointless SwiftData queries to set `""` to `""`.
     private func scope(to uid: String) {

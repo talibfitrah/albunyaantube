@@ -171,9 +171,11 @@ struct SettingsPickerSheet: View {
 }
 
 /// Android's `SettingsFragment` (`favorites-settings-about.md:139-253`). Account/Sign-out is
-/// omitted entirely: phase 1 has no signed-in state to show it for (spec D11: guest-only until
-/// phase 4 auth), so "hidden unless signed in" holds with nothing that ever signs in yet --
-/// `SettingsRowsTests.twelveRowsInSixSectionsNoAccountSection` proves this by construction.
+/// "hidden unless signed in": until Phase 4 nothing could sign in, so it was absent entirely; Task
+/// 13 adds it as the conditional `accountSection` below rather than as a row case, because the
+/// static table cannot express a row that appears only for a signed-in user --
+/// `SettingsRowsTests.twelveRowsInSixSectionsNoAccountRowInTheStaticTable` still proves the table
+/// itself has neither.
 struct SettingsView: View {
     @Environment(\.container) private var container
     @Environment(\.router) private var router
@@ -200,7 +202,7 @@ struct SettingsView: View {
     /// `favorites-settings-about.md:143`: Account/Sign-out is "hidden unless signed in", and until
     /// Phase 4 nothing could sign in — which is why it is a conditional Section here rather than a
     /// `SettingsSection` case. `SettingsLayout.rows` stays the unconditional twelve
-    /// (`SettingsRowsTests.twelveRowsInSixSectionsNoAccountSection` is still true of it), because a
+    /// (`SettingsRowsTests.twelveRowsInSixSectionsNoAccountRowInTheStaticTable` is still true of it), because a
     /// static table cannot express a row that appears only for a signed-in user.
     @ViewBuilder
     private var accountSection: some View {

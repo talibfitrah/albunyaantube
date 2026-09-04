@@ -59,6 +59,14 @@ struct MeSignedInView: View {
                 VStack(alignment: .leading, spacing: Spacing.lg(widthClass)) {
                     Color.clear.frame(height: 0).id(Self.topAnchor)
                     if let model {
+                        // Fix round 1 / M4: TWO readers of the one favorites store, deliberately.
+                        // `model.favoriteTiles` decides the whole-screen empty state (it is the
+                        // only place that has to know about chips as well), while the section
+                        // reads the store itself and applies the same cap through `maxRows` — the
+                        // component is shared with the guest screen, which has no `MeViewModel` to
+                        // take rows from. One store, one order, so the two can never disagree; the
+                        // day the section needs to render something the view model computes, it
+                        // takes the rows instead of the cap.
                         if model.chips.isEmpty && model.favoriteTiles.isEmpty {
                             emptyState
                         } else {

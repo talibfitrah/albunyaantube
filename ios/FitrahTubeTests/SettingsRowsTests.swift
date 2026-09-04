@@ -43,11 +43,12 @@ struct SettingsRowsTests {
         #expect(SettingsSection.allCases == [.general, .library, .playback, .downloads, .content, .aboutSupport])
     }
 
-    // Account/Sign-out (favorites-settings-about.md:143, "hidden unless signed in") never
-    // appears: phase 1 has no signed-in state to show it for (spec D11, guest-only until phase 4
-    // auth), so there is no `.signOut` case and no Account section case to ever render -- proved
-    // by construction (the type simply has none), not by a runtime visibility flag.
-    @Test func twelveRowsInSixSectionsNoAccountSection() {
+    // Account/Sign-out (favorites-settings-about.md:143, "hidden unless signed in") is not IN THIS
+    // TABLE, which is the whole claim: a static row list cannot express a row that appears only for
+    // a signed-in user, so Task 13 renders it as a conditional `Section` instead (`SettingsView`
+    // `accountSection`) and this stays a by-construction pin -- there is no `.signOut` row case and
+    // no Account section case, and no runtime visibility flag standing in for one.
+    @Test func twelveRowsInSixSectionsNoAccountRowInTheStaticTable() {
         #expect(SettingsLayout.rows.count == 12)
         #expect(SettingsSection.allCases.count == 6)
     }

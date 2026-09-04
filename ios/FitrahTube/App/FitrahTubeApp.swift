@@ -305,11 +305,17 @@ struct FitrahTubeApp: App {
     ///
     /// A bounded `Task.yield()` loop, never a sleep — the fixture transport has one canned `/me`
     /// and `sessionSleep` is `noSleep`, so this settles in a handful of yields; the bound is what
-    /// keeps a fixture that can never load from parking the launch path.
+    /// keeps a fixture that can never load from parking the launch path
+    /// (`AccountSessionTests.awaitAccount*`).
+    ///
+    /// Fix round 1 / M2: `-fitrah-fake-container` is part of the guard, not an assumption. Only the
+    /// fixture container has a canned `/me` queued, so `-fitrah-fake-auth` on a Debug launch
+    /// against the LIVE container has nothing that can land and would spend the whole bound.
     private func awaitFakeAccountIfSignedIn() async {
         #if DEBUG
-        guard AppContainer.FakeAuth.fromLaunchArguments().accountJSON != nil else { return }
-        for _ in 0..<2000 where container.session.state.me == nil { await Task.yield() }
+        guard LaunchArguments.debug.contains("-fitrah-fake-container"),
+              AppContainer.FakeAuth.fromLaunchArguments().accountJSON != nil else { return }
+        await container.session.awaitAccount(bound: 2000)
         #endif
     }
 

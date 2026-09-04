@@ -285,4 +285,31 @@ struct AccountSessionTests {
         #expect(status.consume() == .blocked)
         #expect(status.consume() == nil)
     }
+
+    // MARK: - The fixture launch barrier (fix round 1 / M1)
+
+    /// `FitrahTubeApp.awaitFakeAccountIfSignedIn` waits here before the `-fitrah-seed-*` hooks
+    /// write through per-user stores. The bound is the SAFETY NET, not the exit: a `where` clause
+    /// skips an iteration rather than ending the loop, so the shape this replaces spent all 2000
+    /// yields on every fixture launch, account landed or not.
+    @Test func awaitAccountStopsAsSoonAsTheAccountLands() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let (session, _, _, _) = make(auth: auth, responses: [.json(200, Self.meJSON)])
+        let running = Task { await session.start() }
+        defer { running.cancel() }
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+
+        let yields = await session.awaitAccount(bound: 2000)
+        #expect(session.state.me != nil)
+        #expect(yields < 2000, "the barrier kept yielding after the account landed")
+    }
+
+    /// The other half: a fixture whose `/me` can never answer must not park the launch path.
+    @Test func awaitAccountGivesUpAtTheBound() async {
+        let (session, _, _, _) = make(auth: FakeAuthClient(state: .signedOut), responses: [])
+        let yields = await session.awaitAccount(bound: 8)
+
+        #expect(yields == 8)
+        #expect(session.state.me == nil)
+    }
 }

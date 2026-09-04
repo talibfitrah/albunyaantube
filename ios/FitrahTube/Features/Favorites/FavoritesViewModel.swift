@@ -10,10 +10,6 @@ import Foundation
 
     var items: [FavoriteVideo] { store.items }
 
-    /// MeGuestView's favorites section: "up to 5 rows" (task-12 brief). Store order is already
-    /// most-recently-added first, so this is just the first 5.
-    var recentFavorites: [FavoriteVideo] { Array(items.prefix(5)) }
-
     init(store: any FavoritesStore) {
         self.store = store
     }

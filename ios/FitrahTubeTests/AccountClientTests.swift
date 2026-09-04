@@ -56,6 +56,24 @@ struct AccountClientTests {
         #expect(AccountStatus.fromWire("PENDING_PROFILE") == .pendingProfile)
     }
 
+    /// Fix round 1 / I1. Every OTHER casing assertion in this suite travels through `me()`, whose
+    /// `decode` lowercases the wire role — so a case-SENSITIVE `isModerator` passes all of them.
+    /// This one is off the wire path: an `AccountMe` built directly, which is what a test, a
+    /// preview or any future local construction does, and the only thing that holds the property's
+    /// own `lowercased()`.
+    @Test func isModeratorIgnoresCaseOffTheWirePath() {
+        func me(role: String) -> AccountMe {
+            AccountMe(uid: "u", email: nil, displayName: nil, dateOfBirth: nil, phoneNumber: nil,
+                      status: .active, role: role)
+        }
+        #expect(me(role: "ADMIN").isModerator)
+        #expect(me(role: "Admin").isModerator)
+        #expect(me(role: "MODERATOR").isModerator)
+        #expect(me(role: "Moderator").isModerator)
+        #expect(!me(role: "USER").isModerator)
+        #expect(!me(role: "").isModerator)
+    }
+
     // MARK: - Request shapes
 
     /// `POST /api/account/profile` sends exactly the three fields `CompleteProfileRequest` declares.
