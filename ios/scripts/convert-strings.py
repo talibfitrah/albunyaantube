@@ -355,13 +355,13 @@ EXTRA_KEYS = {
     # would have enforced on a ported key.
     "profile_error_rate_limited": {
         "en": "Too many updates. Try again in %1$lld min.",
-        "ar": "عدد كبير من التحديثات. حاول مرة أخرى بعد %1$lld دقيقة.",
+        "ar": "عدد كبير من التحديثات. حاول مرة أخرى بعد %1$lld د.",
         "nl": "Te veel wijzigingen. Probeer het over %1$lld min. opnieuw.",
     },
     "profile_error_age_dialog_title": {
         "en": "Account no longer eligible",
         "ar": "الحساب لم يعد مؤهلًا",
-        "nl": "Account niet langer geschikt",
+        "nl": "Account komt niet meer in aanmerking",
     },
     "profile_error_age_dialog_message": {
         "en": "Your date of birth no longer meets our age requirement. You'll be signed out.",

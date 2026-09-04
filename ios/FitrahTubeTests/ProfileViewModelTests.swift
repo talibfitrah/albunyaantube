@@ -127,15 +127,49 @@ struct ProfileViewModelTests {
         let fixture = await make(then: [.json(200, Self.meJSON(name: "Aisha K"))])
         let model = await loaded(fixture)
 
-        model.displayName = "Aisha K"
+        // Trailing spaces: the wire has always carried the TRIMMED name, so the field must show
+        // the value the record actually holds and not the one the server threw away
+        // (fix round 1 / M5).
+        model.displayName = "Aisha K  "
         await model.save()
 
         #expect(model.canSave == false)                                 // clean again
+        #expect(model.draft?.displayName == "Aisha K")
         #expect(model.original?.displayName == "Aisha K")
         #expect(model.saveSucceeded)
         // Nothing else re-reads `/me` after an edit; without the write-back the next visit renders
         // the value the edit replaced.
         #expect(fixture.session.state.me?.displayName == "Aisha K")
+    }
+
+    /// Keystrokes typed WHILE the save is in flight. The text fields stay enabled while `isSaving`
+    /// (only the Save button is disabled), so `edit(_:)` writes land during the round trip — and a
+    /// `save()` that writes back the `draft` it captured BEFORE the await deletes them, and then
+    /// calls the form clean while showing text the user never left there (fix round 1 / I1). It is
+    /// the same failure mode the observer arm above exists to prevent, one method over.
+    ///
+    /// Deterministic without a clock, `MeFeedRepositoryTests`' shape: `Task {}` inherits this main
+    /// actor and the actor's job queue is FIFO, so the single `Task.yield()` runs `save()` up to
+    /// its first `await` — inside the request — and no further; the edit that follows is
+    /// synchronous, and the save's resumption can only be appended behind it.
+    @Test func aSaveInFlightKeepsTheKeystrokesTypedDuringTheRoundTrip() async {
+        let fixture = await make(then: [.json(200, Self.meJSON(name: "Aisha K"))])
+        let model = await loaded(fixture)
+
+        model.displayName = "Aisha K"
+        let saving = Task { await model.save() }
+        await Task.yield()
+        #expect(model.isSaving, "the save already returned — nothing was typed mid-flight")
+
+        model.displayName = "Aisha Khan"
+        await saving.value
+
+        #expect(model.draft?.displayName == "Aisha Khan",
+                "a keystroke typed during the save was discarded")
+        // The server was told "Aisha K", so THAT is the record — and the form is dirty again,
+        // because what is on screen is not what was saved.
+        #expect(model.original?.displayName == "Aisha K")
+        #expect(model.canSave, "the form read clean while showing text that was never saved")
     }
 
     // MARK: - The account observer

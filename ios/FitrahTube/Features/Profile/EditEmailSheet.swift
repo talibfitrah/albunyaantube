@@ -139,7 +139,11 @@ struct EditEmailSheet: View {
                                 isLoading: model.state.saving) {
                     await model.submit()
                     if let sent = model.sentTo {
-                        onSent(Format.localizedFormat("edit_email_sent", locale: locale, sent))
+                        // `\u{2068}…\u{2069}` around the address, as `EmailVerificationScreen`
+                        // does for the same content: `edit_email_sent` is a full sentence in ar and
+                        // nl, and an unisolated address's dots and trailing period reorder in RTL.
+                        onSent(Format.localizedFormat("edit_email_sent", locale: locale,
+                                                      "\u{2068}\(sent)\u{2069}"))
                     }
                 }
             }

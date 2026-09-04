@@ -12981,7 +12981,7 @@
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Account niet langer geschikt"
+            "value": "Account komt niet meer in aanmerking"
           }
         }
       }
@@ -13013,7 +13013,7 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "عدد كبير من التحديثات. حاول مرة أخرى بعد %1$lld دقيقة."
+            "value": "عدد كبير من التحديثات. حاول مرة أخرى بعد %1$lld د."
           }
         },
         "en": {

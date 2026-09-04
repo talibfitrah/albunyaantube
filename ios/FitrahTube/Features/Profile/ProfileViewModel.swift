@@ -136,9 +136,12 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
             return
         }
 
-        state = .editing(original: original, draft: draft, saving: true, error: nil)
-        let name = draft.displayName == original.displayName
-            ? nil : draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Trimmed INTO the draft, not only into the request: the wire has always carried the
+        // trimmed name, and a field left showing "Aisha  " states a value the record does not have.
+        var sent = draft
+        sent.displayName = draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        state = .editing(original: original, draft: sent, saving: true, error: nil)
+        let name = draft.displayName == original.displayName ? nil : sent.displayName
         let dob = draft.dateOfBirth == original.dateOfBirth
             ? nil : draft.dateOfBirth.map { ProfileBootstrapViewModel.wireDate($0, calendar: calendar) }
         do {
@@ -147,10 +150,22 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
             // Nothing else re-reads `/me` after an edit, so without this every other reader of
             // `state.me` — this screen's own next visit included — keeps the replaced value.
             session.apply(updated)
-            state = .editing(original: draft, draft: draft, saving: false, error: nil)
+            // Re-read across the await, exactly as `sync()`'s `.loading` arm does: the text fields
+            // stay enabled while the request is in flight (only the button is disabled), so
+            // anything typed meanwhile is in `state` NOW — writing the captured copy back would
+            // delete those keystrokes and then call the form clean while showing text that was
+            // never saved.
+            guard case .editing(var reconciled, let onScreen, _, _) = state else { return }
+            // The server holds what was SENT, so that is the new original; a mid-flight phone or
+            // email reconcile stays, and what is on screen stays on screen — dirty again if the
+            // user typed past the save.
+            reconciled.displayName = sent.displayName
+            reconciled.dateOfBirth = sent.dateOfBirth
+            state = .editing(original: reconciled, draft: onScreen, saving: false, error: nil)
             saveSucceeded = true
         } catch {
-            state = .editing(original: original, draft: draft, saving: false, error: error)
+            guard case .editing(let reconciled, let onScreen, _, _) = state else { return }
+            state = .editing(original: reconciled, draft: onScreen, saving: false, error: error)
         }
     }
 

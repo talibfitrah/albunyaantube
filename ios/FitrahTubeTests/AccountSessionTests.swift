@@ -103,6 +103,25 @@ struct AccountSessionTests {
         #expect(stores.allSatisfy { $0.currentUserId == "fake-uid" }, "the stores were left on the old uid")
     }
 
+    /// Task 17's `apply(_:)` writes the record a profile `PUT` just answered with, and it is a
+    /// SECOND public writer of `state` beside `fetch`/`signOut` — so its uid guard does not get to
+    /// ship less pinned than the `adopt(_:)` guard it was modelled on (fix round 1 / M1).
+    @Test func applyingARecordForADifferentUidLeavesTheAccountAlone() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let (session, stores, _, _) = make(auth: auth, responses: [.json(200, Self.meJSON)])
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+        let before = session.state.me
+        #expect(before?.uid == "fake-uid")
+
+        session.apply(AccountMe(uid: "someone-else", email: "other@fitrah.test",
+                                displayName: "Someone Else", dateOfBirth: nil, phoneNumber: nil,
+                                status: .active, role: "user"))
+
+        #expect(session.state.me == before, "a foreign account record was applied")
+        #expect(stores.allSatisfy { $0.currentUserId == "fake-uid" }, "the stores were left on the old uid")
+    }
+
     // MARK: - The retry budget
 
     /// `MAX_ATTEMPTS = 3`, linear backoff `1 s * attempt` (`AccountRepositoryImpl.kt:111-147`) —
