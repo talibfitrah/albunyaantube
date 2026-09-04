@@ -68,14 +68,10 @@ import Observation
 
     var phoneNumber: String {
         get { state.phoneNumber }
-        // ONE rule: every character that IS a digit becomes its ASCII digit, everything else is
-        // dropped. That covers the three ways this field gets input the validator would refuse —
-        // the "+" the screen already renders as a fixed prefix (a pasted "+31…" would otherwise
-        // become "++31…"), the spaces and dashes `.telephoneNumber` autofill hands over, and the
-        // Arabic-Indic digits an Arabic keypad produces, which the server's ASCII-only `@Pattern`
-        // rejects. Normalised here, where the field, a paste and autofill all route through.
+        // `BootstrapValidator.normalizedDigits` — the same rule `EditPhoneSheet` applies, spelled
+        // once beside the pattern it feeds (Stage 1 / B3a).
         set {
-            state.phoneNumber = newValue.compactMap { $0.wholeNumberValue.map(String.init) }.joined()
+            state.phoneNumber = BootstrapValidator.normalizedDigits(newValue)
             state.error = nil
         }
     }
@@ -91,7 +87,7 @@ import Observation
     }
 
     /// E.164 as the server sees it.
-    var e164: String { "+" + state.phoneNumber }
+    var e164: String { BootstrapValidator.e164(state.phoneNumber) }
 
     // MARK: - Validation (ONE validator, both consumers)
 

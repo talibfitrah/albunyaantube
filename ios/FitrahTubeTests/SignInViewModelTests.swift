@@ -25,20 +25,20 @@ struct SignInViewModelTests {
     private func make(auth: FakeAuthClient,
                       responses: [HTTPResponse] = [],
                       capabilities: SignInCapabilities = allCapabilities)
-        -> (model: SignInViewModel, transport: ScriptedTransport) {
+        -> (model: SignInViewModel, transport: ScriptedTransport, session: AccountSession) {
         let transport = ScriptedTransport(responses)
         let session = AccountSession(
             auth: auth,
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil })
-        return (SignInViewModel(auth: auth, session: session, capabilities: capabilities), transport)
+        return (SignInViewModel(auth: auth, session: session, capabilities: capabilities), transport, session)
     }
 
     // MARK: - Pre-network gates
 
     @Test func aMalformedEmailIsRefusedBeforeAnyClientCall() async {
         let auth = FakeAuthClient(state: .signedOut)
-        let (model, transport) = make(auth: auth)
+        let (model, transport, _) = make(auth: auth)
         model.email = "not-an-email"
         model.password = "hunter2"
 
@@ -46,7 +46,7 @@ struct SignInViewModelTests {
 
         #expect(model.state.error == .invalidEmail)
         #expect(model.state.isLoading == false)
-        #expect(model.landing == nil)
+        #expect(model.landed == false)
         // The fixture signs in by TRANSITIONING to `.signedIn`, so a still-nil user is proof no
         // `signIn`/`signUp` ran — a stronger assertion than reading the error back.
         #expect(await auth.currentUser() == nil, "submit() reached the auth client")
@@ -55,7 +55,7 @@ struct SignInViewModelTests {
 
     @Test func aPasswordUnderSixCharactersIsRefusedBeforeAnyClientCall() async {
         let auth = FakeAuthClient(state: .signedOut)
-        let (model, _) = make(auth: auth)
+        let (model, _, _) = make(auth: auth)
         model.email = "student@fitrah.test"
         model.password = "12345"
 
@@ -71,7 +71,7 @@ struct SignInViewModelTests {
     /// `.invalidEmail` over `.invalidEmail`, nothing changed, and the button did nothing at all.
     /// Every failed attempt now carries its own presentation, identical repeats included.
     @Test func twoIdenticalValidationFailuresRaiseTwoDistinctPresentations() async {
-        let (model, _) = make(auth: FakeAuthClient(state: .signedOut))
+        let (model, _, _) = make(auth: FakeAuthClient(state: .signedOut))
         model.email = "not-an-email"
         model.password = "hunter2"
 
@@ -90,7 +90,7 @@ struct SignInViewModelTests {
     /// itself — `guard !state.isLoading` — is the same line `submit()` and `signIn(with:)` share.
     @Test func aSecondSubmitWhileLoadingIsANoOp() async {
         let auth = FakeAuthClient(state: .signedOut)
-        let (model, _) = make(auth: auth, responses: [.json(200, Self.meJSON("active"))])
+        let (model, _, session) = make(auth: auth, responses: [.json(200, Self.meJSON("active"))])
         let gate = Gate()
         let provider = FakeOAuthProvider(gate: gate)
         let inFlight = Task { await model.signIn(with: provider) }
@@ -107,14 +107,15 @@ struct SignInViewModelTests {
         // ONE sign-in ran: the provider's. The fixture's default account is a verified password
         // user on an active row, so Task 8's matrix lands it on the shell.
         #expect(provider.presentCount == 1)
-        #expect(model.landing?.destination == .main)
+        #expect(model.landed)
+        #expect(destination(session, verified: true) == .main)
     }
 
     // MARK: - The client's own errors
 
     @Test func aClientErrorSurfacesItsCodeAndClearsLoading() async {
         let auth = FakeAuthClient(state: .signedOut, scriptedErrors: [.wrongPassword])
-        let (model, _) = make(auth: auth)
+        let (model, _, _) = make(auth: auth)
         model.email = "student@fitrah.test"
         model.password = "hunter2"
 
@@ -122,12 +123,12 @@ struct SignInViewModelTests {
 
         #expect(model.state.error == .wrongPassword)
         #expect(model.state.isLoading == false)
-        #expect(model.landing == nil)
+        #expect(model.landed == false)
     }
 
     @Test func togglingTheModeSwitchesTheCallAndClearsTheError() async {
         let auth = FakeAuthClient(state: .signedOut, scriptedErrors: [.wrongPassword])
-        let (model, _) = make(auth: auth, responses: [.json(200, Self.meJSON("active"))])
+        let (model, _, session) = make(auth: auth, responses: [.json(200, Self.meJSON("active"))])
         model.email = "student@fitrah.test"
         model.password = "hunter2"
         await model.submit()
@@ -138,7 +139,8 @@ struct SignInViewModelTests {
         #expect(model.state.error == nil)
 
         await model.submit()
-        #expect(model.landing?.destination == .main)
+        #expect(model.landed)
+        #expect(destination(session, verified: true) == .main)
         // Fix round 1 / M5: both fixture legs share one body, so without this the name's "switches
         // the call" was unpinned — the entry point is recorded and asserted, not assumed.
         #expect(auth.entryPoints == [.signIn, .signUp])
@@ -148,7 +150,7 @@ struct SignInViewModelTests {
 
     @Test func forgotPasswordOnABlankEmailNeverReachesTheClient() async {
         let auth = FakeAuthClient(state: .signedOut)
-        let (model, _) = make(auth: auth)
+        let (model, _, _) = make(auth: auth)
         auth.nextError = .passwordResetFailed
 
         await model.forgotPassword()
@@ -161,7 +163,7 @@ struct SignInViewModelTests {
 
     @Test func aFailedResetSurfacesPasswordResetFailedWhateverTheClientThrew() async {
         let auth = FakeAuthClient(state: .signedOut)
-        let (model, _) = make(auth: auth)
+        let (model, _, _) = make(auth: auth)
         auth.nextError = .network
         model.email = "student@fitrah.test"
 
@@ -175,7 +177,7 @@ struct SignInViewModelTests {
 
     @Test func aSuccessfulResetSetsTheSentFlag() async {
         let auth = FakeAuthClient(state: .signedOut)
-        let (model, _) = make(auth: auth)
+        let (model, _, _) = make(auth: auth)
         model.email = "student@fitrah.test"
 
         await model.forgotPassword()
@@ -196,7 +198,11 @@ struct SignInViewModelTests {
                 == [.emailPassword, .apple])
         #expect(visible(SignInCapabilities(emailPassword: true, google: true, apple: false))
                 == [.emailPassword, .google])
-        #expect(visible(SignInCapabilities(emailPassword: false, google: true, apple: true)) == [])
+        // Stage 1 / B9: `visibleProviders` no longer re-derives the F11 rule a second time — an
+        // inconsistent value is one only a test can construct, because `SignInCapabilities.current()`
+        // ANDs both federated flags onto `emailPassword` (pinned in `SignInCapabilitiesTests`). What
+        // this screen still guarantees is the RUNTIME leg: an unavailable provider is never asked.
+        #expect(visible(SignInCapabilities(emailPassword: false, google: false, apple: false)) == [])
     }
 
     // MARK: - Provider sign-in
@@ -206,7 +212,7 @@ struct SignInViewModelTests {
     /// the provider is asked exactly once and no error is ever surfaced for a double-tap.
     @Test func aSecondProviderTapWhileOneIsInFlightIsRefusedSilently() async {
         let auth = FakeAuthClient(state: .signedOut)
-        let (model, _) = make(auth: auth, responses: [.json(200, Self.meJSON("active"))])
+        let (model, _, _) = make(auth: auth, responses: [.json(200, Self.meJSON("active"))])
         let gate = Gate()
         let provider = FakeOAuthProvider(gate: gate)
         let inFlight = Task { await model.signIn(with: provider) }
@@ -223,7 +229,7 @@ struct SignInViewModelTests {
     /// Ruling: a cancel is the user's own choice, so it is SILENT — back to idle, no banner.
     @Test func aCancelledProviderSignInReturnsToIdleWithNoError() async {
         let auth = FakeAuthClient(state: .signedOut)
-        let (model, _) = make(auth: auth)
+        let (model, _, _) = make(auth: auth)
         let provider = FakeOAuthProvider(error: .cancelled)
 
         await model.signIn(with: provider)
@@ -231,13 +237,13 @@ struct SignInViewModelTests {
         #expect(provider.presentCount == 1)
         #expect(model.state.error == nil, "a cancel must never surface a banner")
         #expect(model.state.isLoading == false)
-        #expect(model.landing == nil)
+        #expect(model.landed == false)
         #expect(await auth.currentUser() == nil)
     }
 
     @Test func aFailedProviderSignInSurfacesItsCode() async {
         let auth = FakeAuthClient(state: .signedOut)
-        let (model, _) = make(auth: auth)
+        let (model, _, _) = make(auth: auth)
         let provider = FakeOAuthProvider(error: .failed(.appleSignInFailed))
 
         await model.signIn(with: provider)
@@ -250,7 +256,7 @@ struct SignInViewModelTests {
     /// asked anyway, so a view model that skipped this guard would surface an error here.
     @Test func anUnavailableProviderIsNeverAsked() async {
         let auth = FakeAuthClient(state: .signedOut)
-        let (model, _) = make(auth: auth)
+        let (model, _, _) = make(auth: auth)
         let provider = FakeOAuthProvider(isAvailable: false)
 
         await model.signIn(with: provider)
@@ -261,18 +267,32 @@ struct SignInViewModelTests {
     }
 
     // MARK: - The landing decision (spec §13, pinned against Task 8's matrix)
+    //
+    // Stage 1 / B7: `landed` is a Bool — the model only ever announces THAT the sign-in landed, and
+    // `RootView` recomputes where. So each row below drives the matrix through `SplashRouter` over
+    // the session THIS sign-in produced, which is the same fact the stored `SplashOutcome` carried
+    // without pretending the view model routes anything.
+
+    /// Where `RootView` would send the account this sign-in just produced.
+    private func destination(_ session: AccountSession,
+                             verified: Bool, password: Bool = true) -> SplashDestination {
+        SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
+                             hasPasswordProvider: password, isEmailVerified: verified,
+                             status: session.state.me?.status).destination
+    }
 
     @Test func anUnverifiedPasswordUserLandsOnEmailVerification() async {
         let auth = FakeAuthClient(state: .signedOut,
                                   user: AuthUser(uid: "fake-uid", email: "student@fitrah.test",
                                                  isEmailVerified: false, providerIDs: ["password"]))
-        let (model, _) = make(auth: auth, responses: [.json(200, Self.meJSON("active"))])
+        let (model, _, session) = make(auth: auth, responses: [.json(200, Self.meJSON("active"))])
         model.email = "student@fitrah.test"
         model.password = "hunter2"
 
         await model.submit()
 
-        #expect(model.landing?.destination == .emailVerification)
+        #expect(model.landed)
+        #expect(destination(session, verified: false) == .emailVerification)
         #expect(model.state.isLoading == false)
         #expect(model.state.error == nil)
     }
@@ -281,27 +301,32 @@ struct SignInViewModelTests {
         let auth = FakeAuthClient(state: .signedOut,
                                   user: AuthUser(uid: "fake-uid", email: "student@fitrah.test",
                                                  isEmailVerified: true, providerIDs: ["password"]))
-        let (model, _) = make(auth: auth, responses: [.json(200, Self.meJSON("pending_profile"))])
+        let (model, _, session) = make(auth: auth, responses: [.json(200, Self.meJSON("pending_profile"))])
         model.email = "student@fitrah.test"
         model.password = "hunter2"
 
         await model.submit()
 
-        #expect(model.landing?.destination == .profileBootstrap)
+        #expect(model.landed)
+        #expect(destination(session, verified: true) == .profileBootstrap)
     }
 
     @Test func aVerifiedUserOnAnActiveAccountLandsOnTheShell() async {
         let auth = FakeAuthClient(state: .signedOut,
                                   user: AuthUser(uid: "fake-uid", email: "student@fitrah.test",
                                                  isEmailVerified: true, providerIDs: ["password"]))
-        let (model, _) = make(auth: auth, responses: [.json(200, Self.meJSON("active"))])
+        let (model, _, session) = make(auth: auth, responses: [.json(200, Self.meJSON("active"))])
         model.email = "student@fitrah.test"
         model.password = "hunter2"
 
         await model.submit()
 
-        #expect(model.landing?.destination == .main)
-        #expect(model.landing?.signOut == false)
+        #expect(model.landed)
+        let outcome = SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
+                                           hasPasswordProvider: true, isEmailVerified: true,
+                                           status: session.state.me?.status)
+        #expect(outcome.destination == .main)
+        #expect(outcome.signOut == false)
     }
 
     // MARK: - EmailShape (`EmailShape.kt:9-15`, ported verbatim)

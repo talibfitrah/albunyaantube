@@ -237,13 +237,8 @@ struct ProfileScreen: View {
     }
 
     private func dobBinding(_ model: ProfileViewModel) -> Binding<Date> {
-        Binding(get: { model.dateOfBirth ?? Self.defaultDOB() }, set: { model.dateOfBirth = $0 })
-    }
-
-    /// Opening on 18 years ago keeps the wheel near a plausible birth year rather than one that is
-    /// guaranteed to fail the gate.
-    private static func defaultDOB() -> Date {
-        Calendar.current.date(byAdding: .year, value: -18, to: Date()) ?? Date()
+        Binding(get: { model.dateOfBirth ?? BootstrapValidator.defaultDateOfBirth() },
+                set: { model.dateOfBirth = $0 })
     }
 
     // MARK: - Save

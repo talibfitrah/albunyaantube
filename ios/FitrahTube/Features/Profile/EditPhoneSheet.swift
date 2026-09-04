@@ -50,17 +50,15 @@ nonisolated enum EditPhoneError: Sendable, Equatable {
 
     var number: String {
         get { state.number }
-        // The same ONE rule the bootstrap field uses: every character that IS a digit becomes its
-        // ASCII digit, everything else is dropped — which covers the fixed "+" being pasted back
-        // in, autofill's spaces and dashes, and the Arabic-Indic digits an Arabic keypad produces
-        // and the server's ASCII-only `@Pattern` rejects.
+        // `BootstrapValidator.normalizedDigits` — the same rule the bootstrap field applies,
+        // spelled once beside the pattern it feeds (Stage 1 / B3a).
         set {
-            state.number = newValue.compactMap { $0.wholeNumberValue.map(String.init) }.joined()
+            state.number = BootstrapValidator.normalizedDigits(newValue)
             state.error = nil
         }
     }
 
-    var e164: String { "+" + state.number }
+    var e164: String { BootstrapValidator.e164(state.number) }
 
     /// `wholeMatch`, not `firstMatch`: `$` alone can match ahead of a trailing newline.
     var isValid: Bool { e164.wholeMatch(of: BootstrapValidator.phonePattern) != nil }

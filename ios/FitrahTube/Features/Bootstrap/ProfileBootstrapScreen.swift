@@ -129,12 +129,8 @@ struct ProfileBootstrapScreen: View {
     /// Opening on 18 years ago rather than today keeps the wheel near a plausible birth year instead
     /// of one that is guaranteed to be under age.
     private func dobBinding(_ model: ProfileBootstrapViewModel) -> Binding<Date> {
-        Binding(get: { model.state.dateOfBirth ?? Self.defaultDOB() },
+        Binding(get: { model.state.dateOfBirth ?? BootstrapValidator.defaultDateOfBirth() },
                 set: { model.dateOfBirth = $0 })
-    }
-
-    private static func defaultDOB() -> Date {
-        Calendar.current.date(byAdding: .year, value: -18, to: Date()) ?? Date()
     }
 
     @ViewBuilder

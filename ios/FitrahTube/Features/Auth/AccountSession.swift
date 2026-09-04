@@ -69,10 +69,6 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// record. Set from the auth stream, so it is populated before `/me` has answered.
     private(set) var user: AuthUser?
 
-    /// "" when signed out — the anon sentinel every store already defaults to, so nothing
-    /// downstream needs an optional.
-    var uid: String { state.me?.uid ?? "" }
-
     init(auth: any AuthClient, account: AccountClient, stores: [any UserScoped],
          status: AccountStatusCenter, sleep: @escaping @Sendable (Duration) async -> Void,
          wipe: @escaping @MainActor @Sendable () async -> Error?,

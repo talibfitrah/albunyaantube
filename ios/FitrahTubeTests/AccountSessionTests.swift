@@ -77,7 +77,7 @@ struct AccountSessionTests {
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 
-        #expect(session.uid == "fake-uid")
+        #expect(session.state.me?.uid == "fake-uid")
         #expect(transport.sent.count == 1)
         for store in stores {
             #expect(store.currentUserId == "fake-uid")
@@ -94,7 +94,7 @@ struct AccountSessionTests {
 
         session.signOut()
         #expect(session.state == .signedOut)
-        #expect(session.uid == "")
+        #expect(session.state.me?.uid == nil)
         #expect(stores.allSatisfy { $0.currentUserId == "" })
         #expect(stores[0].scopes.map(\.uid) == ["fake-uid", ""])
     }

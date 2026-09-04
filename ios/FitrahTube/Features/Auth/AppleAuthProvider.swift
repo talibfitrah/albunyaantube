@@ -109,12 +109,7 @@ import UIKit
     /// asks (Stage 4 / I1).
     func signOutProvider() {}
 
-    private static var keyWindow: UIWindow? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)
-    }
+    private static var keyWindow: UIWindow? { UIApplication.shared.fitrahKeyWindow }
 }
 
 extension AppleAuthProvider: ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {

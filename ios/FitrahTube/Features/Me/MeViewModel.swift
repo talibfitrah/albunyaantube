@@ -115,12 +115,9 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     /// Resolved through `selection(_:in:)` on every read rather than stored raw: a chip
     /// unsubscribed elsewhere (the channel screen's Subscribe toggle) must not leave this tab
     /// filtering by a row that no longer exists.
-    var selectedChipId: String? {
-        get { Self.selection(rawSelection, in: chips) }
-        set { rawSelection = newValue }
-    }
+    var selectedChipId: String? { Self.selection(rawSelection, in: chips) }
 
-    func setFilter(_ chipId: String?) { selectedChipId = chipId }
+    func setFilter(_ chipId: String?) { rawSelection = chipId }
 
     /// The kebab's ONE live destination in this task. `AccountSession` re-scopes every per-user
     /// store to the anon sentinel, which is what puts `MeTabRoot` back on the guest screen.

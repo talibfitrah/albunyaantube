@@ -41,9 +41,15 @@ import Testing
                 SignInCapabilities(emailPassword: emailPassword, google: google, apple: apple))
         }
         #expect(visible(false, false, false) == [])
-        #expect(visible(false, false, true) == [])
-        #expect(visible(false, true, false) == [])
-        #expect(visible(false, true, true) == [])
+        // Stage 1 / B9: the three inconsistent rows below are no longer refused a SECOND time here.
+        // `current()` is the single producer and ANDs both federated flags onto `emailPassword`
+        // (pinned by `federatedProvidersAreImpossibleWithoutFirebase` below), so a value with a
+        // federated flag set and `emailPassword` clear is one only a test can construct; the
+        // runtime `guard provider.isAvailable` in `SignInViewModel` is the defence that earns its
+        // keep, because a provider can lose its prerequisite between render and tap.
+        #expect(visible(false, false, true) == [.apple])
+        #expect(visible(false, true, false) == [.google])
+        #expect(visible(false, true, true) == [.google, .apple])
         #expect(visible(true, false, false) == [.emailPassword])
         #expect(visible(true, false, true) == [.emailPassword, .apple])
         #expect(visible(true, true, false) == [.emailPassword, .google])
@@ -51,17 +57,21 @@ import Testing
     }
 
     /// The trap this exists to prevent: a Google or Apple button with Firebase unconfigured is a
-    /// button that cannot possibly work. `current()` ANDs both onto `emailPassword`, and
-    /// `visibleProviders` refuses the combination a second time even when handed one by hand — the
-    /// struct is a plain value anybody can construct.
-    @Test func noProviderIsVisibleWithoutFirebaseEvenIfTheFlagsSayOtherwise() {
-        #expect(SignInCapabilities.visibleProviders(
-            SignInCapabilities(emailPassword: false, google: true, apple: true)) == [])
+    /// button that cannot possibly work.
+    ///
+    /// Stage 1 / B9: pinned at the ONE producer, not at three layers. `current()` ANDs both
+    /// federated flags onto `emailPassword`, so an inconsistent `SignInCapabilities` cannot be
+    /// produced by anything but a test — and `visibleProviders` no longer re-derives the rule.
+    @Test func federatedProvidersAreImpossibleWithoutFirebase() {
         // The AND in `current()` itself: with no options file neither flag can be true, whatever the
         // build-time Apple flag says.
         if !FirebaseBootstrap.optionsFileExists {
-            #expect(SignInCapabilities.current().apple == false)
-            #expect(SignInCapabilities.current().google == false)
+            let current = SignInCapabilities.current()
+            #expect(current.emailPassword == false)
+            #expect(current.apple == false)
+            #expect(current.google == false)
+            #expect(SignInCapabilities.visibleProviders(current) == [],
+                    "the rule still holds end to end: no options file, no buttons")
         }
     }
 

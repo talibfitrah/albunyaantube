@@ -40,8 +40,8 @@ struct SignInScreen: View {
             guard sent == true else { return }
             banner = BannerMessage(text: String(localized: "auth_password_reset_sent"))
         }
-        .onChange(of: viewModel?.landing) { _, landing in
-            guard landing != nil else { return }
+        .onChange(of: viewModel?.landed) { _, landed in
+            guard landed == true else { return }
             dismiss()
         }
     }

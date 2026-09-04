@@ -29,16 +29,17 @@ import Observation
 
     private(set) var state: UiState
 
-    /// Set ONCE, by a successful sign-in. **Only its non-nil-ness is behaviour**: `SignInScreen`'s
-    /// single consumer is `.onChange(of: viewModel?.landing)`, which dismisses; `RootView` then
-    /// renders where spec §13 lands the account from its OWN recomputed outcome (a computed property
-    /// over `container.session`), never from this value.
+    /// Set ONCE, by a successful sign-in, and read only for its truth: `SignInScreen`'s single
+    /// consumer is `.onChange(of: viewModel?.landed)`, which dismisses; `RootView` then renders
+    /// where spec §13 lands the account from its OWN recomputed outcome (a computed property over
+    /// `container.session`).
     ///
-    /// So why the whole `SplashOutcome` rather than the destination? Because it is what the tests
-    /// assert: storing the matrix row this sign-in produced is what lets `SignInViewModelTests` pin
-    /// Task 8's table per entry point without re-deriving the rule. **Nothing reads `signOut` or
-    /// `alert`** — `RootView` acts on its own copy of both (Task 10 re-review M6).
-    private(set) var landing: SplashOutcome?
+    /// Stage 1 / B7: a `Bool`, not a whole `SplashOutcome`. It carried a destination nothing routed
+    /// on and a `signOut`/`alert` pair nothing read — a value shaped by its tests, and a trap for
+    /// the next reader, who would reasonably assume the destination it carried is what moves the
+    /// user. `SplashRouterTests` already pins Task 8's table exhaustively; `SignInViewModelTests`
+    /// re-derives the row it needs through `SplashRouter.outcome` directly.
+    private(set) var landed = false
 
     /// Fix round 1 / I1: the banner cannot be driven off `state.error`. Neither pre-network gate
     /// clears it first, so a second tap on the same malformed address assigns `.invalidEmail` over
@@ -209,9 +210,6 @@ import Observation
     private func land(_ user: AuthUser) async {
         await session.refresh(maxAttempts: 1)
         state.isLoading = false
-        landing = SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
-                                       hasPasswordProvider: user.hasPasswordProvider,
-                                       isEmailVerified: user.isEmailVerified,
-                                       status: session.state.me?.status)
+        landed = true
     }
 }

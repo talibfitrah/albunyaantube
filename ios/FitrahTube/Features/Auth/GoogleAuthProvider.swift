@@ -59,10 +59,6 @@ import UIKit
     /// GIDSignIn uses this only as the presentation context for `ASWebAuthenticationSession`, so the
     /// key window's root is enough — it does not need the topmost presented controller.
     private static var presenter: UIViewController? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)?
-            .rootViewController
+        UIApplication.shared.fitrahKeyWindow?.rootViewController
     }
 }

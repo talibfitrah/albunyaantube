@@ -3,14 +3,6 @@ import Testing
 
 @Suite(.perTest)
 struct SplashRouterTests {
-    @Test func onboardingNotCompletedRoutesToOnboarding() {
-        #expect(SplashRouter.destination(onboardingCompleted: false) == .onboarding)
-    }
-
-    @Test func onboardingCompletedRoutesToMain() {
-        #expect(SplashRouter.destination(onboardingCompleted: true) == .main)
-    }
-
     // MARK: - Stage 3 / I5: an unrecognised status is not a terminal one
 
     /// The whole point of `.unknown`: it takes the `status == nil` "guest for now" row — signed in,

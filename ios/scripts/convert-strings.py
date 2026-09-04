@@ -253,6 +253,11 @@ EXTRA_KEYS = {
         "ar": "الملف الشخصي",
         "nl": "Profiel",
     },
+    # Stage 1 / B12: `me_kebab_sign_out`, `settings_account_sign_out` and
+    # `settings_account_sign_out_confirm_action` are byte-identical in all three locales. All three
+    # are ANDROID-PORTED, not authored here (`android/app/src/main/res/values/strings.xml:791`,
+    # `:709`, `:712`), so they stay: collapsing them would break the key-for-key parity this file
+    # exists to keep, and Android is where the split would have to be argued first.
     "me_kebab_sign_out": {
         "en": "Sign out",
         "ar": "تسجيل الخروج",

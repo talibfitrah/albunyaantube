@@ -31,6 +31,30 @@ nonisolated enum BootstrapValidator {
     /// `nonisolated(unsafe)` escape hatch.
     static var phonePattern: Regex<Substring> { /^\+[1-9]\d{7,14}$/.asciiOnlyDigits() }
 
+    /// ONE rule, both phone fields (Stage 1 / B3a): every character that IS a digit becomes its
+    /// ASCII digit, everything else is dropped. That covers the three ways these fields get input
+    /// `phonePattern` would refuse — the "+" both screens render as a fixed prefix (a pasted "+31…"
+    /// would otherwise become "++31…"), the spaces and dashes `.telephoneNumber` autofill hands
+    /// over, and the Arabic-Indic digits an Arabic keypad produces, which the server's ASCII-only
+    /// `@Pattern` rejects. It is a VALIDATION rule — which characters survive into a number the
+    /// backend will accept — so it lives beside the pattern it feeds, not twice in two view models.
+    static func normalizedDigits(_ raw: String) -> String {
+        raw.compactMap { $0.wholeNumberValue.map(String.init) }.joined()
+    }
+
+    /// E.164 as the server sees it: the fixed "+" both screens render, plus the normalised digits.
+    static func e164(_ digits: String) -> String { "+" + digits }
+
+    /// The date the pickers open on when the account has none: eighteen years ago rather than today,
+    /// so the very first flick is not out of one that is guaranteed to be under age.
+    ///
+    /// Stage 1 / B3b: ONE copy, and NOT `Calendar.current` — that is the device's REGION calendar,
+    /// which an Arabic/Gulf user can set to Islamic (Umm al-Qura), and subtracting 18 Hijri years is
+    /// ~17 y 5 m. The same `gregorian(_:)` normalisation the wire date and the age gate already use.
+    static func defaultDateOfBirth(today: Date = Date(), calendar: Calendar = .current) -> Date {
+        gregorian(calendar).date(byAdding: .year, value: -18, to: today) ?? today
+    }
+
     /// The GREGORIAN calendar on `calendar`'s time zone.
     ///
     /// `Calendar.current` is the device's REGION calendar, which an Arabic/Gulf user can and does set

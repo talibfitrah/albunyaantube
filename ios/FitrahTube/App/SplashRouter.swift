@@ -19,11 +19,6 @@ nonisolated struct SplashOutcome: Equatable {
 }
 
 nonisolated enum SplashRouter {
-    /// Phase 1's callers. Kept as the onboarding-only leg of `outcome`.
-    static func destination(onboardingCompleted: Bool) -> SplashDestination {
-        onboardingCompleted ? .main : .onboarding
-    }
-
     /// Spec §6 + §13 bullet 1, with the forced sign-in removed (D11 / RULING 31):
     ///   !onboardingCompleted                       -> onboarding
     ///   signed out                                 -> main (guest)

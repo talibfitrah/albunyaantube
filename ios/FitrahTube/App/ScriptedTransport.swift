@@ -38,19 +38,14 @@ nonisolated final class ScriptedTransport: HTTPTransport {
 
     /// Every request, in order, for assertions.
     var sent: [HTTPRequest] { state.withLock { $0.sent } }
-    var remaining: Int { state.withLock { $0.queue.count } }
     /// Peak simultaneous in-flight `send`s. Task 16 asserts the Me feed's `TaskGroup` respects
     /// `MeFeedRefreshGate.maxConcurrent`; every other caller ignores it. Kept here rather than in a
     /// subclass because this type is `final` on purpose — one canned transport, no variants.
     var peakConcurrency: Int { state.withLock { $0.peak } }
 
-    /// Both builders live on `HTTPResponse` (below) so leading-dot syntax works inside the
-    /// `[HTTPResponse]` the initializer takes — `ScriptedTransport([.json(200, "{}")])`. These
-    /// forward, so the `ScriptedTransport.json(…)` spelling the phase plan uses also compiles.
-    static func json(_ status: Int, _ body: String, headers: [String: String] = [:]) -> HTTPResponse {
-        .json(status, body, headers: headers)
-    }
-    static func failing(_ error: some Error & Sendable) -> HTTPResponse { .failing(error) }
+    // The two builders live on `HTTPResponse` (below) so leading-dot syntax works inside the
+    // `[HTTPResponse]` the initializer takes — `ScriptedTransport([.json(200, "{}")])`, which is
+    // what all ~90 call sites use.
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let next: HTTPResponse? = state.withLock {

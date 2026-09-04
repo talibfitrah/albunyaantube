@@ -745,7 +745,7 @@ extension StreamState {
         if trigger == .appear { isVisible = true } else if trigger == .disappear { isVisible = false }
         let action = CastOwnership.decide(
             state: CastOwnershipState(claimedVideoId: claimedVideoId, videoId: args.videoId,
-                                      isOfflinePlayback: isOfflinePlayback, pausedForCast: pausedForCast,
+                                      isOfflinePlayback: isOfflinePlayback,
                                       sessionActive: cast.isSessionActive, owner: castOwner,
                                       stamp: cast.castingClaim, loaded: cast.loadedClaim,
                                       failure: cast.lastLoadFailure?.claim,

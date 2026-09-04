@@ -80,14 +80,19 @@ nonisolated struct SignInCapabilities: Sendable, Equatable {
         (Bundle.main.object(forInfoDictionaryKey: key) as? String)?.isEmpty == false
     }
 
-    /// The pure table Task 10 renders. The `emailPassword` guard is deliberately a SECOND defence:
-    /// this struct is a plain value anyone can construct, and an inconsistent one must still not
-    /// produce a federated button.
+    /// The pure table Task 10 renders.
+    ///
+    /// Stage 1 / B9: the `guard capabilities.emailPassword else { return [] }` that used to open
+    /// this function is gone. It re-validated what `current()` above had just produced — three
+    /// spellings of one rule, and this was the middle one. `current()` remains the single producer
+    /// (both federated flags are ANDed onto `emailPassword` there) and `SignInViewModel`'s
+    /// `guard provider.isAvailable` remains the runtime defence, which earns its keep because a
+    /// provider can lose its prerequisite between render and tap. This layer only ever defended
+    /// against a hand-constructed inconsistent value, which only tests build.
     static func visibleProviders(_ capabilities: SignInCapabilities) -> [SignInProvider] {
-        guard capabilities.emailPassword else { return [] }
-        return SignInProvider.allCases.filter {
+        SignInProvider.allCases.filter {
             switch $0 {
-            case .emailPassword: true
+            case .emailPassword: capabilities.emailPassword
             case .google: capabilities.google
             case .apple: capabilities.apple
             }

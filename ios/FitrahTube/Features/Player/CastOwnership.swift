@@ -53,7 +53,6 @@ nonisolated struct CastOwnershipState: Sendable, Equatable {
     /// The video it plays NOW. `swapArgs` moves this; a claim never follows on its own.
     var videoId: String
     var isOfflinePlayback: Bool
-    var pausedForCast: Bool
     var sessionActive: Bool
     /// THIS screen's identity (`PlayerViewModel.castOwner`), which is what makes the two claims
     /// below answerable at all: "is this ours?" is a question about a screen, not about a video.

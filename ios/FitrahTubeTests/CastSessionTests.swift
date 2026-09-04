@@ -304,7 +304,7 @@ struct CastSessionTests {
     /// receiver is playing its video, the phone is paused for it". `failure` defaults to NO
     /// outstanding load failure, which is the state every row that is not about one is in.
     private func ownership(claim: String? = "xc7keR2piUM", video: String = "xc7keR2piUM",
-                           offline: Bool = false, paused: Bool = true, sessionActive: Bool = true,
+                           offline: Bool = false, sessionActive: Bool = true,
                            stamp: String? = "xc7keR2piUM", stampOwner: UUID = CastSessionTests.owner,
                            loaded: String? = "xc7keR2piUM",
                            loadedOwner: UUID = CastSessionTests.owner,
@@ -312,7 +312,7 @@ struct CastSessionTests {
                            failureOwner: UUID = CastSessionTests.owner,
                            visible: Bool = false) -> CastOwnershipState {
         CastOwnershipState(claimedVideoId: claim, videoId: video, isOfflinePlayback: offline,
-                           pausedForCast: paused, sessionActive: sessionActive, owner: Self.owner,
+                           sessionActive: sessionActive, owner: Self.owner,
                            stamp: stamp.map { CastClaim(videoId: $0, owner: stampOwner) },
                            loaded: loaded.map { CastClaim(videoId: $0, owner: loadedOwner) },
                            failure: failure.map { CastClaim(videoId: $0, owner: failureOwner) },
@@ -366,38 +366,30 @@ struct CastSessionTests {
                     == .startCast(videoId: Self.claimed))
             #expect(CastOwnership.decide(state: ownership(stamp: nil, loaded: nil), trigger: trigger)
                     == .startCast(videoId: Self.claimed))
-            // R7-15: nothing is paused, but the receiver IS still playing our video. Re-casting it
-            // hands `load(at: currentTime)` the phone's own stale clock and jumps the TV back to
-            // wherever the phone stopped — the receiver's mid-session position is never sampled.
-            // Adopting pauses the phone under a TV that is already playing the right thing.
-            #expect(CastOwnership.decide(state: ownership(paused: false, stamp: nil), trigger: trigger)
-                    == .adopt(videoId: Self.claimed))
+            // R7-15 used to re-assert this row with `paused: false`. `CastOwnershipState` no longer
+            // carries that field — the decision table never read it (Stage 1 / B1) — so the row is
+            // byte-identical to the one above and the duplicate is gone with the field.
             // Another screen claimed the live session while we were away: not ours to reconcile,
             // and its own claimant is the one that pays its hand-back (one screen owns a session).
-            for paused in [true, false] {
-                for loaded in [Self.claimed, Self.other, nil] {
-                    #expect(CastOwnership.decide(state: ownership(paused: paused, stamp: Self.other,
-                                                                  loaded: loaded),
-                                                 trigger: trigger) == .none)
-                }
+            for loaded in [Self.claimed, Self.other, nil] {
+                #expect(CastOwnership.decide(state: ownership(stamp: Self.other, loaded: loaded),
+                                             trigger: trigger) == .none)
             }
             // The session ended while we were off screen: hand back now, or the phone stays paused
             // at the pre-cast position with the receiver's position thrown away. Whoever holds the
-            // stamp by then is irrelevant — our player is the one that owes a resume. Never paused
-            // and the session gone is the same arm: nothing to resume, but the stale claim still
-            // has to go, or this screen can never cast this video again. WHICH position it resumes
-            // at is `receiverPosition(for:)`'s decision, not this one's.
+            // stamp by then is irrelevant — our player is the one that owes a resume. WHICH
+            // position it resumes at is `receiverPosition(for:)`'s decision, not this one's.
+            // (The pause itself is the VIEW MODEL's `pausedForCast`; the decision table never read
+            // the copy that used to sit in `CastOwnershipState` — Stage 1 / B1.)
             //
             // R9-7: whether it may PLAY is this screen's own visibility, exactly as on the
             // `.dropClaim` arm below — the seek is owed either way, the audio is not.
-            for paused in [true, false] {
-                for stamp in [Self.claimed, Self.other, nil] {
-                    for visible in [true, false] {
-                        #expect(CastOwnership.decide(state: ownership(paused: paused, sessionActive: false,
-                                                                      stamp: stamp, visible: visible),
-                                                     trigger: trigger)
-                                == .handBack(videoId: Self.claimed, resume: visible))
-                    }
+            for stamp in [Self.claimed, Self.other, nil] {
+                for visible in [true, false] {
+                    #expect(CastOwnership.decide(state: ownership(sessionActive: false,
+                                                                  stamp: stamp, visible: visible),
+                                                 trigger: trigger)
+                            == .handBack(videoId: Self.claimed, resume: visible))
                 }
             }
             // R7-8: but ONLY when the receiver was playing OUR video. A casts X and tab-switches, B
@@ -656,7 +648,7 @@ struct CastSessionTests {
         // re-cast, not take the session over and not resume on the phone under a TV playing B.
         #expect(CastOwnership.decide(
             state: CastOwnershipState(claimedVideoId: "xc7keR2piUM", videoId: "xc7keR2piUM",
-                                      isOfflinePlayback: false, pausedForCast: true,
+                                      isOfflinePlayback: false,
                                       sessionActive: cast.isSessionActive, owner: Self.owner,
                                       stamp: cast.castingClaim, loaded: cast.loadedClaim),
             trigger: .appear) == .startCast(videoId: "xc7keR2piUM"))
