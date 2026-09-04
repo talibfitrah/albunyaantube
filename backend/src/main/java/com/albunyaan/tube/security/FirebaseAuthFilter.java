@@ -3,6 +3,7 @@ package com.albunyaan.tube.security;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
@@ -43,6 +44,9 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ROLE_CLAIM = "role";
+    /** RFC 6750 §3 — the challenge both mobile clients gate their token-refresh retry on. */
+    private static final String WWW_AUTHENTICATE_HEADER = "WWW-Authenticate";
+    private static final String BEARER_CHALLENGE = "Bearer";
     /**
      * Only these role values are accepted from Firebase custom claims. Any other
      * value falls back to "user".
@@ -235,7 +239,35 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
 
             } catch (FirebaseAuthException e) {
                 logger.error("Firebase token verification failed: {}", e.getMessage());
+                // Task 19 Stage 5 §3 M1 — the lifecycle 403 arms above were
+                // unreachable for exactly the users they exist for. Both
+                // AuthService.softDeleteUser and blockUser do setDisabled(true)
+                // + revokeRefreshTokens(uid) before anything else, so on the
+                // checkRevoked namespaces verifyIdToken throws here and the
+                // client only ever saw a bare 401 — no ACCOUNT_DELETED /
+                // ACCOUNT_BLOCKED verdict, so no device wipe and no terminal
+                // dialog on either mobile client.
+                //
+                // Only these two codes are recoverable: RevocationCheckDecorator
+                // runs AFTER the base verifier, so USER_DISABLED and
+                // REVOKED_ID_TOKEN are the only failures a decode without the
+                // revocation check can still get a uid out of. EXPIRED_ID_TOKEN
+                // and friends fail the unchecked decode too — gating on them
+                // would buy a second Firebase verification on the most common
+                // 401 there is (hourly token expiry) and change nothing.
+                AuthErrorCode authErrorCode = e.getAuthErrorCode();
+                if ((authErrorCode == AuthErrorCode.USER_DISABLED
+                        || authErrorCode == AuthErrorCode.REVOKED_ID_TOKEN)
+                        && writeLifecycleVerdict(response, token)) {
+                    return;
+                }
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                // RFC 6750 §3 — without this challenge both mobile clients'
+                // one-time token-refresh retry is dead code: iOS
+                // AuthorizedTransport and Android FirebaseAuthInterceptor each
+                // gate the retry on a "WWW-Authenticate: Bearer" response
+                // header no 401 in this backend was setting.
+                response.setHeader(WWW_AUTHENTICATE_HEADER, BEARER_CHALLENGE);
                 response.getWriter().write("{\"error\": \"Invalid or expired token\"}");
                 response.setContentType("application/json");
                 return;
@@ -243,6 +275,50 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * M1 — recover the account-lifecycle verdict for a token the revocation
+     * check just rejected: decode it WITHOUT that check (signature and expiry
+     * are still verified) to get the uid, then write the SAME 403 envelope the
+     * in-band {@code isDeleted()} / {@code isBlocked()} arms write.
+     *
+     * @return {@code true} when a verdict was written and the caller must not
+     *         fall through to the 401; {@code false} for a healthy user's
+     *         merely-revoked token, an undecodable token, or a lookup failure
+     *         (401 is the safe verdict in all three — the token is invalid
+     *         either way).
+     */
+    private boolean writeLifecycleVerdict(HttpServletResponse response, String token) throws IOException {
+        String uid;
+        try {
+            uid = firebaseAuth.verifyIdToken(token, false).getUid();
+        } catch (FirebaseAuthException e) {
+            return false;
+        }
+        try {
+            Optional<User> userOpt = userRepository.findByUidUncached(uid);
+            if (userOpt.isPresent()) {
+                User u = userOpt.get();
+                if (u.isDeleted()) {
+                    writeError(response, HttpServletResponse.SC_FORBIDDEN,
+                        "ACCOUNT_DELETED", "Your account has been deleted.");
+                    return true;
+                }
+                if (u.isBlocked()) {
+                    writeError(response, HttpServletResponse.SC_FORBIDDEN,
+                        "ACCOUNT_BLOCKED", "Your account is blocked.");
+                    return true;
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Lifecycle lookup interrupted for uid {}", uid);
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException
+                 | RuntimeException e) {
+            logger.error("Lifecycle lookup after rejected token failed for uid {}: {}", uid, e.getMessage());
+        }
+        return false;
     }
 
     private void writeError(HttpServletResponse response, int status,
