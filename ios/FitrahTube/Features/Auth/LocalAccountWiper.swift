@@ -1,5 +1,6 @@
 import FitrahAPI
 import Foundation
+import InnerTubeKit
 import SwiftData
 
 /// Ruling C13's device wipe: everything this device still holds for an account that has gone away.
@@ -60,6 +61,19 @@ import SwiftData
 
         // 4. CF-G-6.
         searchHistory.clear()
+
+        // 4b. Fix round 1 / I1 + M6. One key PER SUBSCRIBED CHANNEL under each of the first two
+        //     prefixes, so their NAMES alone enumerate what the deleted account followed — and the
+        //     Atom blobs hold the titles, ids and dates of its feed. The third records that an
+        //     account with that uid was verified from this device. All three land in this same
+        //     suite (`AppContainer` builds every `UserDefaultsKeyValueStore` on it), so ONE sweep
+        //     covers them; the prefixes are the constants their own writers spell.
+        let prefixes = [AtomFeedFetcher.cacheKeyPrefix, MeFeedRepository.stateKeyPrefix,
+                        EmailVerificationViewModel.lastSentKeyPrefix]
+        for key in defaults.dictionaryRepresentation().keys
+        where prefixes.contains(where: key.hasPrefix) {
+            defaults.removeObject(forKey: key)
+        }
 
         // 5. The response cache and the decoded-thumbnail cache: an avatar or thumbnail loaded for
         //    the deleted account's library must not survive it in memory.

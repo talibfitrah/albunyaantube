@@ -249,9 +249,16 @@ struct AccountSessionTests {
     /// A block is REVERSIBLE, and an ordinary sign-out deliberately keeps the library
     /// (`AccountRepositoryImpl.kt:44-49`) — so the stores are re-scoped, never cleared, and no
     /// request is made.
+    ///
+    /// Fix round 1 / I3: with a counting `wipe:`, because "never wiped" was an assertion MESSAGE on
+    /// the store scopes while the wiper itself was invisible to this test (`make` defaults it to a
+    /// no-op) — on the phase's most destructive path. The yields are deliberate: a wipe kicked off
+    /// asynchronously would pass a synchronous zero.
     @Test func handleBlockedSignsOutAndLeavesLocalDataIntact() async throws {
         let auth = FakeAuthClient(state: .signedOut)
-        let (session, stores, transport, _) = make(auth: auth, responses: [.json(200, Self.meJSON)])
+        let wipes = Mutex<Int>(0)
+        let (session, stores, transport, _) = make(auth: auth, responses: [.json(200, Self.meJSON)],
+                                                   wipe: { wipes.withLock { $0 += 1 } })
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 
@@ -261,6 +268,8 @@ struct AccountSessionTests {
         #expect(stores.allSatisfy { $0.currentUserId == "" })
         #expect(stores[0].scopes.map(\.uid) == ["fake-uid", ""], "re-scoped, never wiped")
         #expect(transport.sent.count == 1, "signing out makes no request of its own")
+        for _ in 0..<200 { await Task.yield() }
+        #expect(wipes.withLock { $0 } == 0, "a REVERSIBLE block erased the device's library")
     }
 
     /// Task 18: `.deleted` is the device wipe, and it is DETACHED — the sign-out lands after the
@@ -288,9 +297,13 @@ struct AccountSessionTests {
     /// release state without depending on the auth client. Posted exactly once: a second `signOut()`
     /// drops nothing and announces nothing, which is what stops `RootView`'s
     /// consume -> handle -> signOut path from looping.
+    ///
+    /// The plain sign-out keeps the library too (fix round 1 / I3): only `.deleted` wipes.
     @Test func signingOutPostsSignedOutExactlyOnce() async throws {
         let auth = FakeAuthClient(state: .signedOut)
-        let (session, _, _, status) = make(auth: auth, responses: [.json(200, Self.meJSON)])
+        let wipes = Mutex<Int>(0)
+        let (session, _, _, status) = make(auth: auth, responses: [.json(200, Self.meJSON)],
+                                           wipe: { wipes.withLock { $0 += 1 } })
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 
@@ -301,6 +314,7 @@ struct AccountSessionTests {
         session.signOut()
         for _ in 0..<200 { await Task.yield() }
         #expect(status.pending == nil)
+        #expect(wipes.withLock { $0 } == 0, "an ordinary sign-out erased the device's library")
     }
 
     /// `AuthorizedTransport` posts from whatever isolation the request ran on — never the main

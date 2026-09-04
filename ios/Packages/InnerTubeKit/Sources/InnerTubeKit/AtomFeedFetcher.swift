@@ -107,7 +107,12 @@ public actor AtomFeedFetcher {
         var items: [CachedItem]
     }
 
-    private func cacheKey(_ channelId: String) -> String { "InnerTubeKit.AtomFeedFetcher.\(channelId)" }
+    /// `public` so the app's account wiper can sweep every channel's cache without re-spelling the
+    /// prefix: the key NAMES enumerate which channels a device subscribed to, so they go with the
+    /// account that followed them (`LocalAccountWiper`).
+    public static let cacheKeyPrefix = "InnerTubeKit.AtomFeedFetcher."
+
+    private func cacheKey(_ channelId: String) -> String { "\(Self.cacheKeyPrefix)\(channelId)" }
 
     private func readCache(_ channelId: String) -> Cache? {
         guard let data = keyValueStore.get(cacheKey(channelId)) else { return nil }

@@ -23,6 +23,15 @@ struct ProfileScreen: View {
         var id: String { rawValue }
     }
 
+    /// Fix round 1 / M5: the same one-slot shape for the two dialogs. Two `.alert` modifiers on one
+    /// view present one at a time anyway — silently, and in an order nothing here decided. The
+    /// precedence is now stated: an account that is no longer age-eligible is being signed out
+    /// either way, so a delete confirmation raised behind that dialog has nothing left to confirm.
+    private enum Dialog: String, Identifiable {
+        case ageIneligible, confirmDelete
+        var id: String { rawValue }
+    }
+
     var body: some View {
         ScrollView {
             content.padding(Spacing.md(widthClass))
@@ -38,24 +47,27 @@ struct ProfileScreen: View {
             case .phone: EditPhoneSheet(current: model?.draft?.phoneNumber, onUpdated: finish)
             }
         }
-        .alert(String(localized: "profile_error_age_dialog_title"), isPresented: showsAgeDialog) {
-            // No cancel: the account is no longer eligible either way, and a dismissable dialog
-            // would leave the user staring at a form whose Save can never succeed.
-            Button(String(localized: "ok")) { model?.confirmAgeIneligibleSignOut() }
-        } message: {
-            Text(String(localized: "profile_error_age_dialog_message"))
-        }
-        // Destructive AND irreversible, so the confirm carries the destructive role and the cancel
-        // is the escape the age dialog deliberately does not have.
-        .alert(String(localized: "profile_delete_account_dialog_title"), isPresented: $confirmingDelete) {
-            Button(String(localized: "cancel"), role: .cancel) {}
-            Button(String(localized: "profile_delete_account_confirm"), role: .destructive) {
-                // NOT `.task`-scoped: the request outlives this screen, and the cleanup behind it is
-                // detached besides (`AccountSession.handleDeletion`).
-                Task { await deleteModel?.delete() }
+        .alert(dialogTitle, isPresented: showsDialog, presenting: dialog) { which in
+            switch which {
+            case .ageIneligible:
+                // No cancel: the account is no longer eligible either way, and a dismissable dialog
+                // would leave the user staring at a form whose Save can never succeed.
+                Button(String(localized: "ok")) { model?.confirmAgeIneligibleSignOut() }
+            case .confirmDelete:
+                // Destructive AND irreversible, so the confirm carries the destructive role and the
+                // cancel is the escape the age dialog deliberately does not have.
+                Button(String(localized: "cancel"), role: .cancel) {}
+                Button(String(localized: "profile_delete_account_confirm"), role: .destructive) {
+                    // NOT `.task`-scoped: the request outlives this screen, and the cleanup behind
+                    // it is detached besides (`AccountSession.handleDeletion`).
+                    Task { await deleteModel?.delete() }
+                }
             }
-        } message: {
-            Text(String(localized: "profile_delete_account_dialog_message"))
+        } message: { which in
+            switch which {
+            case .ageIneligible: Text(String(localized: "profile_error_age_dialog_message"))
+            case .confirmDelete: Text(String(localized: "profile_delete_account_dialog_message"))
+            }
         }
         .task {
             if model == nil {
@@ -95,11 +107,27 @@ struct ProfileScreen: View {
         sheet = nil
     }
 
-    private var showsAgeDialog: Binding<Bool> {
-        Binding(get: { model?.error == .ageIneligible },
-                // The alert's only button already calls `confirmAgeIneligibleSignOut()`; a
-                // system-driven dismissal must not silently clear an error nothing acted on.
-                set: { _ in })
+    /// Which dialog the state asks for, age first.
+    private var dialog: Dialog? {
+        if model?.error == .ageIneligible { return .ageIneligible }
+        return confirmingDelete ? .confirmDelete : nil
+    }
+
+    private var dialogTitle: String {
+        switch dialog {
+        case .ageIneligible: String(localized: "profile_error_age_dialog_title")
+        default: String(localized: "profile_delete_account_dialog_title")
+        }
+    }
+
+    private var showsDialog: Binding<Bool> {
+        Binding(get: { dialog != nil },
+                // Only the delete confirmation is dismissible. The age dialog's own button calls
+                // `confirmAgeIneligibleSignOut()`, and a system-driven dismissal must not silently
+                // clear an error nothing acted on — its flag is `model.error`, which this never
+                // writes. Clearing the confirmation here also means a delete tapped BEHIND the age
+                // dialog does not surface after it: that account is signing out.
+                set: { presented in if !presented { confirmingDelete = false } })
     }
 
     @ViewBuilder

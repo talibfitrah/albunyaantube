@@ -256,10 +256,14 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
 
     // MARK: - Per-channel refresh state
 
+    /// One key per subscribed channel, so the prefix is also what the account wiper sweeps —
+    /// spelled once, here, next to the only writer (`LocalAccountWiper`).
+    nonisolated static let stateKeyPrefix = "MeFeedRepository.refreshState."
+
     /// The storage key for one channel's `ChannelRefreshState`. Internal so a test can plant a
     /// corrupt blob under it.
     nonisolated static func stateKey(_ channelId: String) -> String {
-        "MeFeedRepository.refreshState.\(channelId)"
+        "\(stateKeyPrefix)\(channelId)"
     }
 
     /// Internal, not private: the tests read back what a refresh recorded.

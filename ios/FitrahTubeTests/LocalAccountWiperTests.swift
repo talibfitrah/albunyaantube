@@ -1,5 +1,6 @@
 import FitrahAPI
 import Foundation
+import InnerTubeKit
 import SwiftData
 import Synchronization
 import Testing
@@ -149,6 +150,35 @@ struct LocalAccountWiperTests {
 
         #expect(fixture.searchHistory.entries.isEmpty)
         #expect(fixture.defaults.stringArray(forKey: "search_history") == nil)
+    }
+
+    /// Fix round 1 / I1 + M6: the wipe cleared no `UserDefaults` key but the search history's, so
+    /// every cached Atom feed (titles, ids, dates) and every per-channel refresh state survived a
+    /// dialog that promises the account's subscriptions are erased — and the key NAMES alone
+    /// enumerate exactly which channels it followed. The email cooldown latch (M6) is the third
+    /// shape: uid-scoped, so it records that an account with that uid existed on this device.
+    ///
+    /// An unrelated key is seeded alongside them: a prefix sweep that takes the whole domain would
+    /// be a different bug, not a fix.
+    @Test func theCachedFeedsAndPerChannelStateGoTooAndNothingUnrelatedDoes() async throws {
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        let channel = "UCmMcOjsVehVlEOteyrhjI2Q"
+        let feedKey = AtomFeedFetcher.cacheKeyPrefix + channel
+        let stateKey = MeFeedRepository.stateKey(channel)
+        let cooldownKey = EmailVerificationViewModel.lastSentKey(uid: "fake-uid")
+        fixture.defaults.set(Data(#"{"items":[]}"#.utf8), forKey: feedKey)
+        fixture.defaults.set(Data("{}".utf8), forKey: stateKey)
+        fixture.defaults.set(1.0, forKey: cooldownKey)
+        fixture.defaults.set("dark", forKey: "settings_theme")
+
+        await fixture.wiper.wipe()
+
+        #expect(fixture.defaults.data(forKey: feedKey) == nil, "the deleted account's cached feed survived")
+        #expect(fixture.defaults.data(forKey: stateKey) == nil,
+                "the key naming a channel the deleted account subscribed to survived")
+        #expect(fixture.defaults.object(forKey: cooldownKey) == nil, "the uid's verification latch survived")
+        #expect(fixture.defaults.string(forKey: "settings_theme") == "dark",
+                "the sweep took a key that has nothing to do with the account")
     }
 
     /// CF-A-9: the persisted `X-Device-Id` is what ties this install's public traffic together, so

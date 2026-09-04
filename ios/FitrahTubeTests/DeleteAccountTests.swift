@@ -64,14 +64,25 @@ struct DeleteAccountTests {
     private func signedIn(_ fixture: Fixture) async throws -> Task<Void, Never> {
         let running = Task { await fixture.session.start() }
         _ = try await fixture.auth.signIn(email: "a@b.test", password: "p")
-        for _ in 0..<500 where fixture.session.state.me == nil { await Task.yield() }
+        await yieldUntil { fixture.session.state.me != nil }
         return running
     }
 
     /// The cleanup is detached, so the caller's `await` returns before it has finished.
     private func settle(_ fixture: Fixture) async {
-        for _ in 0..<500 where fixture.session.state != .signedOut { await Task.yield() }
-        for _ in 0..<200 where fixture.status.pending == nil { await Task.yield() }
+        await yieldUntil { fixture.session.state == .signedOut }
+        await yieldUntil(200) { fixture.status.pending != nil }
+    }
+
+    /// Fix round 1 / M7: a `while`, not `for … where` — `where` SKIPS an iteration rather than
+    /// ending the loop, so that shape always spends the whole bound (`AccountSession.awaitAccount`'s
+    /// own comment). The bound is the safety net; the condition is the exit.
+    private func yieldUntil(_ bound: Int = 500, _ done: () -> Bool) async {
+        var yields = 0
+        while !done(), yields < bound {
+            yields += 1
+            await Task.yield()
+        }
     }
 
     // MARK: - The successful path
@@ -100,7 +111,11 @@ struct DeleteAccountTests {
     /// to completion, and cannot see the cancellation. An inline cleanup sees `isCancelled == true`
     /// and every cancellation-aware step inside it (the engine's URLSession work, a `Task.sleep`)
     /// would abandon a device the server has already erased.
-    @Test func theCleanupSurvivesTheCallingTaskBeingCancelled() async throws {
+    ///
+    /// Fix round 1 / M3: named for what it pins. An UNSTRUCTURED `Task { }` does not inherit
+    /// cancellation either, so this is inline-vs-not-inline — not `Task { }` vs `Task.detached { }`
+    /// (the detachment buys isolation from the caller's task-local values, which nothing here reads).
+    @Test func theCleanupIsNotPartOfTheCallingTask() async throws {
         let fixture = makeFixture(delete: .json(204, ""))
         let running = try await signedIn(fixture); defer { running.cancel() }
 
@@ -127,6 +142,26 @@ struct DeleteAccountTests {
         for _ in 0..<200 { await Task.yield() }
 
         #expect(fixture.wipes.count == 1)
+    }
+
+    /// Fix round 1 / I2: the envelope can arrive BEFORE the user's own 204 — `ProfileScreen`
+    /// re-syncs on every `session.state` change, so a concurrent `/me` against an account the server
+    /// deletes mid-DELETE is ordinary. The latch was created with `deletingFirebaseUser: false`, so
+    /// the later `true` was dropped and the Firebase credential outlived the account on the one path
+    /// where deleting it was still possible. Chained onto the latched task: exactly one wipe, and
+    /// exactly one `deleteUser` — never a second wipe to get the delete in.
+    @Test func aLateFirebaseDeleteIsChainedOntoTheLatchInsteadOfBeingDropped() async throws {
+        let fixture = makeFixture(delete: .json(204, ""))
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        fixture.session.handleDeletion(deletingFirebaseUser: false)
+        fixture.session.handleDeletion(deletingFirebaseUser: true)
+        await settle(fixture)
+        await yieldUntil { !fixture.auth.operations.isEmpty }
+
+        #expect(fixture.auth.operations == [.deleteUser],
+                "the Firebase credential outlived the account the server deleted")
+        #expect(fixture.wipes.count == 1, "the device was wiped twice to get the Firebase delete in")
     }
 
     /// The admin-side deletion: the 403 `ACCOUNT_DELETED` envelope. The account is already gone

@@ -27,7 +27,8 @@ import Observation
     /// can sign up with a different address, and a single global key would then hand the new
     /// account the previous one's latch — no verification mail, and a Resend button parked inside a
     /// cooldown it never started. The brief's `email_verification_last_sent_at` is the prefix.
-    static func lastSentKey(uid: String) -> String { "email_verification_last_sent_at.\(uid)" }
+    static let lastSentKeyPrefix = "email_verification_last_sent_at."
+    static func lastSentKey(uid: String) -> String { "\(lastSentKeyPrefix)\(uid)" }
 
     private let auth: any AuthClient
     private let session: AccountSession

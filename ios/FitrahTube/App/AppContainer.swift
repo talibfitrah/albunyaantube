@@ -235,7 +235,17 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// `currentUserId`. Started by `RootView`'s `.task`.
     private(set) lazy var session = AccountSession(auth: auth, account: account, stores: userScopedStores,
                                                    status: accountStatus, sleep: sessionSleep,
-                                                   wipe: { [weak self] in await self?.makeWiper().wipe() })
+                                                   // `[weak self]` breaks the retain cycle, but a
+                                                   // released container would then turn ruling
+                                                   // C13's wipe into a silent no-op — the one
+                                                   // failure here nothing downstream can observe
+                                                   // (fix round 1 / M1).
+                                                   wipe: { [weak self] in
+                                                       guard let self else {
+                                                           return assertionFailure("the container was released before the device wipe ran")
+                                                       }
+                                                       await makeWiper().wipe()
+                                                   })
 
     /// Phase 4 Task 18: ruling C13's device wipe, built ON DEMAND rather than stored. Reaching for
     /// `session` must not construct `offlineManager` — that builds a background `URLSession`, which

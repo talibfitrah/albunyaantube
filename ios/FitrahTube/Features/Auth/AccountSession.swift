@@ -219,7 +219,23 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// already erased.
     @discardableResult
     func handleDeletion(deletingFirebaseUser: Bool = false) -> Task<Void, Never> {
-        if let deletion { return deletion }
+        if let deletion {
+            // Fix round 1 / I2: the latch must not SWALLOW a later `true`. The 403 envelope can
+            // arrive before the user's own 204 (a concurrent `/me` against an account the server
+            // deletes mid-DELETE), and that arrival latches with `false` — so the credential this
+            // path could still delete would outlive the account. Chained onto the latched task
+            // rather than run beside it: the wipe stays exactly once, and Firebase is still asked
+            // only after the device is clean.
+            if deletingFirebaseUser, !deletingFirebase {
+                deletingFirebase = true
+                Task {
+                    await deletion.value
+                    try? await auth.deleteUser()
+                }
+            }
+            return deletion
+        }
+        deletingFirebase = deletingFirebaseUser
         // No `@MainActor in` on the closure: `performDeletion` carries the isolation and the hop.
         let task = Task.detached {
             await self.performDeletion(deletingFirebaseUser: deletingFirebaseUser)
@@ -242,6 +258,10 @@ nonisolated enum AccountState: Sendable, Equatable {
 
     /// The deletion latch. Non-nil from the first `handleDeletion()` until the next sign-in.
     private var deletion: Task<Void, Never>?
+    /// Whether the Firebase credential is already being deleted, so a second `true` (or a `true`
+    /// that arrives after a `false` latched) never asks twice. Assigned on every fresh latch, so
+    /// the next account in this process starts from its own answer.
+    private var deletingFirebase = false
 
     #if DEBUG
     /// The screenshot rig's launch barrier (`FitrahTubeApp.awaitFakeAccountIfSignedIn`): yields
