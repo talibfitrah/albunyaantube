@@ -122,18 +122,15 @@ public actor AtomFeedFetcher {
     /// gstack R4: degraded-mode rows render `publishedText` verbatim (RULING 48), so the Atom
     /// `<published>` ISO 8601 instant must be humanized at the producer to match the browse path's
     /// "7 days ago" shape. An unparseable value degrades to nil -- no subtitle beats raw ISO.
-    /// Note: the humanized string is what the per-channel cache persists, so a 304 replay serves
-    /// slightly stale relative text ("2 days ago" from the last 200) -- same staleness class as the
-    /// cached list itself.
-    static func humanizePublished(_ raw: String?, now: Date = Date(), locale: Locale = .autoupdatingCurrent) -> String? {
-        humanizePublished(from: raw.flatMap { ISO8601DateFormatter().date(from: $0) }, now: now, locale: locale)
-    }
-
-    /// The same humanizer over an already-parsed instant. The parser calls this one so the ISO
-    /// string is parsed exactly once per entry and the resulting `Date` feeds both `publishedText`
-    /// and `VideoItem.publishedAt`; the raw-string entry point above stays for callers that only
-    /// have the string.
-    static func humanizePublished(from date: Date?, now: Date = Date(), locale: Locale = .autoupdatingCurrent) -> String? {
+    ///
+    /// The parser calls this so each entry's ISO string is parsed exactly ONCE and the resulting
+    /// `Date` feeds both `publishedText` and `VideoItem.publishedAt`.
+    ///
+    /// `public` because the Me feed calls it too, and has to: the humanized string is what the
+    /// per-channel cache persists, so a cached row's `publishedText` froze at write time and would
+    /// render "2 days ago" forever. A feed row humanizes from the exact `publishedAt` at RENDER
+    /// time instead; `publishedText` stays the browse/degraded path's field.
+    public static func humanizePublished(from date: Date?, now: Date = Date(), locale: Locale = .autoupdatingCurrent) -> String? {
         guard let date else { return nil }
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = locale

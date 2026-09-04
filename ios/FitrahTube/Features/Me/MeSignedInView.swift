@@ -1,3 +1,4 @@
+import InnerTubeKit
 import SwiftUI
 
 /// The favorites block both Me screens render. Extracted from `MeGuestView.favoritesSection`
@@ -47,9 +48,17 @@ struct MeSignedInView: View {
     @Environment(\.container) private var container
     @Environment(\.router) private var router
     @Environment(\.widthClass) private var widthClass
+    @Environment(\.locale) private var locale
 
     @State private var model: MeViewModel?
     @State private var showSignOutConfirm = false
+    @State private var paginationGuard = PaginationGuard()
+    /// Geometry *state*, not an event (gate B1-C1), exactly as `ContentListView` keeps it.
+    @State private var feedFits = false
+
+    /// The container's ONE feed repository, not a per-view `@State`: it holds the loaded-week depth
+    /// and the per-channel refresh bookkeeping, which must survive this view being rebuilt.
+    private var feed: MeFeedRepository { container.meFeed }
 
     private static let topAnchor = "me-signed-in-top"
 
@@ -76,13 +85,31 @@ struct MeSignedInView: View {
                             }
                         }
                         savedLink
+                        feedSection
                     }
                 }
                 .padding(Spacing.md(widthClass))
             }
+            .refreshable {
+                paginationGuard.reset()
+                await feed.refresh(channelIds: model?.subscribedChannelIds ?? [], force: true)
+            }
+            .onContentFits { fits in
+                feedFits = fits
+                triggerFeedAutoFill()
+            }
             .onChange(of: router.scrollToTopSignal) { _, signal in
                 guard signal?.tab == .me else { return }
                 withAnimation { proxy.scrollTo(Self.topAnchor, anchor: .top) }
+            }
+            // Android's `.drop(1)` (`MeViewModel.kt:181-195`): a nil `old` is the model being built,
+            // which the `.task` below already covers -- refreshing here too would double-fetch every
+            // channel on first appearance. Every LATER change (subscribe/unsubscribe elsewhere, an
+            // import that graduates) reaches the feed, which is the bug that comment describes: a
+            // fresh install that opened Me before subscribing would otherwise stay empty forever.
+            .onChange(of: model?.subscribedChannelIds.count) { old, _ in
+                guard old != nil, let model else { return }
+                Task { await feed.refresh(channelIds: model.subscribedChannelIds, force: false) }
             }
         }
         .background(Color.background.ignoresSafeArea())
@@ -95,6 +122,10 @@ struct MeSignedInView: View {
                                     subscriptions: container.subscriptions,
                                     savedPlaylists: container.savedPlaylists)
             }
+            // Ruling F6's burst-if-stale, and the ONLY scheduled refresh there is: foreground only,
+            // no `BGAppRefreshTask`, no `UIBackgroundModes`. `force: false` leaves the TTL and the
+            // backoff ladder in charge, so a tab revisit inside 30 min sends nothing at all.
+            await feed.refresh(channelIds: model?.subscribedChannelIds ?? [], force: false)
         }
     }
 
@@ -108,14 +139,94 @@ struct MeSignedInView: View {
                 ForEach(model.chips) { chip in
                     MeChip(title: chip.title, avatarURL: chip.avatarURL,
                            isSelected: model.selectedChipId == chip.id) {
-                        // Tap-to-select, tap-again-to-clear. The feed it filters lands in Task 16;
-                        // until then the selection is the chip rail's own state.
-                        model.setFilter(model.selectedChipId == chip.id ? nil : chip.id)
+                        // Tap-to-select, tap-again-to-clear.
+                        let next = model.selectedChipId == chip.id ? nil : chip.id
+                        model.setFilter(next)
+                        // Cleared in the TAP, not in the rebucket that follows: a `.task(id:)` runs
+                        // after the render, so the frame between the tap and the rebucket would
+                        // show the old weeks under the new chip.
+                        feed.setFilter(next)
+                        paginationGuard.reset()
+                        Task { await feed.rebucket(filter: next) }
                     }
                 }
             }
             .padding(.horizontal, Spacing.xs)
         }
+    }
+
+    // MARK: - Feed
+
+    /// The week-bucketed feed over the subscribed channels' Atom caches. `LazyVStack`, not the
+    /// enclosing plain `VStack`: `onAppear` in a non-lazy stack fires for every row at once, which
+    /// would make the load-more sentinel below page the whole cache on first render.
+    @ViewBuilder
+    private var feedSection: some View {
+        LazyVStack(alignment: .leading, spacing: Spacing.lg(widthClass)) {
+            if let lastError = feed.lastError {
+                // WHAT, never WHY: `me_refresh_error` says the feed didn't refresh and how to
+                // retry. `ChannelRefreshState.lastErrorMessage` is diagnostic and stays unrendered.
+                Text(lastError)
+                    .font(TypeScale.itemMeta)
+                    .foregroundStyle(Color.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ForEach(feed.weeks) { week in
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    SectionHeader(emoji: nil, title: Self.weekTitle(week.index, locale: locale), onSeeAll: nil)
+                    ForEach(week.items, id: \.id) { feedRow($0) }
+                }
+            }
+            // The scroll-position half of the pagination rule; `triggerFeedAutoFill` is the
+            // large-screen half, for the tablet page that already fits and never scrolls.
+            if !feed.weeks.isEmpty && !feed.reachedEnd {
+                Color.clear.frame(height: 1).onAppear { feed.loadMoreWeeks() }
+            }
+        }
+    }
+
+    /// `me_week_this` / `me_week_last` / `me_week_n_ago`, looked up in the passed locale's own
+    /// `.lproj` so the count renders in that language's digits regardless of the device language.
+    private static func weekTitle(_ index: Int, locale: Locale) -> String {
+        let header = WeekBucket.headerKey(weekIndex: index)
+        guard let argument = header.argument else {
+            return Format.localizedFormat(header.key, locale: locale)
+        }
+        return Format.localizedFormat(header.key, locale: locale, Int64(argument))
+    }
+
+    /// An Atom row is missing fields, not zero fields: no duration and no view count, so `VideoRow`
+    /// renders neither chip nor "0 views".
+    private func feedRow(_ item: VideoItem) -> some View {
+        let contentItem = ContentItem(id: item.id, type: .video, title: item.title, category: nil,
+                                      description: nil, thumbnailURL: item.thumbnailURL,
+                                      durationSeconds: nil, uploadedDaysAgo: nil, viewCount: nil,
+                                      channelTitle: nil, subscribers: nil, videoCount: nil, itemCount: nil)
+        // Humanized HERE from the exact instant, never from the row's own `publishedText`: that
+        // string was humanized when the fetch WROTE the cache, so a feed served from cache (or
+        // replayed through a 304) would keep saying "2 days ago" indefinitely.
+        return VideoRow(item: contentItem,
+                        subtitle: AtomFeedFetcher.humanizePublished(from: item.publishedAt, locale: locale)) {
+            router.push(.player(PlayerArgs(videoId: item.id, title: item.title,
+                                           thumbnailURL: item.thumbnailURL)))
+        }
+        .accessibilityIdentifier("me.feed.row.\(item.id)")
+    }
+
+    /// CLAUDE.md's pagination rule: a tablet/TV page whose loaded weeks already fit the viewport
+    /// never fires the sentinel's `onAppear`, so the six `PaginationGuard` checks run on every
+    /// layout delta instead. No async commit race here -- `loadMoreWeeks()` is synchronous.
+    private func triggerFeedAutoFill() {
+        guard !feed.weeks.isEmpty else { return }
+        var attempt = paginationGuard
+        guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: !feed.reachedEnd,
+                                     paginationError: false, contentFits: feedFits,
+                                     itemCount: feed.weeks.reduce(0) { $0 + $1.items.count }) else {
+            paginationGuard = attempt
+            return
+        }
+        feed.loadMoreWeeks()
+        paginationGuard = attempt
     }
 
     private var emptyState: some View {

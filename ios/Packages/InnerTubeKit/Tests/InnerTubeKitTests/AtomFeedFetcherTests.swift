@@ -25,22 +25,20 @@ import Testing
         // gstack R4: the raw ISO 8601 `<published>` value must NOT pass through verbatim -- degraded
         // rows render `publishedText` directly, so it has to be the humanized relative form the
         // normal browse path carries. Oracle: the same humanizer over the fixture's raw value.
-        #expect(items[0].publishedText == AtomFeedFetcher.humanizePublished("2026-08-22T15:00:06+00:00"))
+        #expect(items[0].publishedText
+            == AtomFeedFetcher.humanizePublished(from: ISO8601DateFormatter().date(from: "2026-08-22T15:00:06+00:00")))
         #expect(items[0].publishedText?.contains("2026-08-22T") != true)
         #expect(items[0].thumbnailURL == URL(string: "https://i3.ytimg.com/vi/R6YoAYNxAcE/hqdefault.jpg"))
     }
 
-    @Test func humanizePublishedTurnsISO8601IntoALocalizedRelativeString() throws {
+    @Test func humanizePublishedTurnsAnInstantIntoALocalizedRelativeString() throws {
         let now = try #require(ISO8601DateFormatter().date(from: "2026-08-24T15:00:06+00:00"))
-        let text = AtomFeedFetcher.humanizePublished(
-            "2026-08-22T15:00:06+00:00", now: now, locale: Locale(identifier: "en_US"))
+        let published = try #require(ISO8601DateFormatter().date(from: "2026-08-22T15:00:06+00:00"))
+        let text = AtomFeedFetcher.humanizePublished(from: published, now: now, locale: Locale(identifier: "en_US"))
         #expect(text == "2 days ago")
-    }
-
-    @Test func humanizePublishedFallsBackToNilOnAnUnparseableDate() {
-        // nil beats a raw unparseable string on a row subtitle.
-        #expect(AtomFeedFetcher.humanizePublished("not-a-date") == nil)
-        #expect(AtomFeedFetcher.humanizePublished(nil) == nil)
+        // nil beats a raw unparseable string on a row subtitle -- an entry whose `<published>` did
+        // not parse arrives here as nil.
+        #expect(AtomFeedFetcher.humanizePublished(from: nil) == nil)
     }
 
     @Test func notModifiedReturnsPreviouslyParsedList() async throws {
@@ -77,9 +75,10 @@ import Testing
 
         let items = try await fetcher.latest(Self.channelId)
 
-        // The date-taking overload must produce exactly what the raw-string entry point does --
-        // parsing once is a refactor, not a behaviour change (RULING 48 still renders this verbatim).
-        #expect(items[0].publishedText == AtomFeedFetcher.humanizePublished("2026-08-22T15:00:06+00:00"))
+        // RULING 48 still renders this verbatim on the degraded path, so it must stay the humanized
+        // relative form and not the raw ISO instant.
+        #expect(items[0].publishedText
+            == AtomFeedFetcher.humanizePublished(from: ISO8601DateFormatter().date(from: "2026-08-22T15:00:06+00:00")))
         #expect(items.allSatisfy { $0.publishedText != nil })
         #expect(items.allSatisfy { $0.publishedText?.contains("+00:00") != true })
     }

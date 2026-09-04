@@ -174,6 +174,32 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// Phase 4 Task 7: where `authorizedTransport`'s 403 account-lifecycle envelopes land.
     private(set) lazy var accountStatus = AccountStatusCenter()
 
+    /// Phase 4 Task 16: the Me tab's subscribed-channel feed, over InnerTubeKit's ONE
+    /// `AtomFeedFetcher` (the same per-channel cache the degraded channel page reads) and the same
+    /// `UserDefaults`-backed `KeyValueStore` every other InnerTubeKit consumer here uses.
+    ///
+    /// `Calendar.autoupdatingCurrent` on purpose, and only HERE: "This week" is a claim about the
+    /// user's own calendar, so the device's calendar and time zone are the right boundary — while
+    /// every test injects an explicit one, because `Calendar.current` on an Arabic/Gulf device is
+    /// the Islamic region calendar and a suite reading it passes in one region and fails in another
+    /// (the Task 12 lesson).
+    ///
+    /// A FIXTURE container gets a canned 503 instead of the live fetcher, the same reason
+    /// `gateTransport` does: `-fitrah-seed-subscriptions` puts channels on the screenshot rig's Me
+    /// screen, and the feed's `.task` would otherwise fan out to youtube.com from a preview.
+    private(set) lazy var meFeed: MeFeedRepository = {
+        let store = UserDefaultsKeyValueStore(defaults: userDefaults)
+        #if DEBUG
+        if isFixture {
+            return MeFeedRepository(
+                atom: AtomFeedFetcher(transport: FixedStatusTransport(status: 503), keyValueStore: store),
+                refreshState: store, now: { Date() }, calendar: .autoupdatingCurrent)
+        }
+        #endif
+        return MeFeedRepository(atom: innerTube.atom, refreshState: store,
+                                now: { Date() }, calendar: .autoupdatingCurrent)
+    }()
+
     /// The hand-written clients' signed transport. Not private and not a detail, for the same
     /// reason `gateTransport` is not: `AppContainerTests` pins which one a fixture container got.
     ///

@@ -39,7 +39,8 @@ public struct VideoItem: Sendable, Equatable {
     /// an ISO 8601 timestamp); `BrowseClient` leaves it nil because YouTube hands browse a
     /// pre-rendered relative string ("7 days ago"), never an instant. Anything that has to *sort*
     /// or *bucket* by recency — the Me feed — needs this; anything that only displays uses
-    /// `publishedText`.
+    /// `publishedText` — except cached Atom rows, whose `publishedText` froze at write time; render
+    /// those from `publishedAt`.
     public var publishedAt: Date?
 
     public init(

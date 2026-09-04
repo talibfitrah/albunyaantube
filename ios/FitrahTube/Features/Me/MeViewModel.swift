@@ -97,6 +97,11 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
         }
     }
 
+    /// What `MeFeedRepository.refresh(channelIds:force:)` fans out over: the UNFILTERED subscribed
+    /// channels. Saved playlists are deliberately absent — the Atom feed is per channel, and the
+    /// chip rail merges both kinds only for filtering.
+    var subscribedChannelIds: [String] { subscriptions.items.map(\.channelId) }
+
     /// The store is already sorted most-recently-added first, so this is just the cap.
     var favoriteTiles: [FavoriteVideo] { Array(favorites.items.prefix(Self.maxFavoriteTiles)) }
 
