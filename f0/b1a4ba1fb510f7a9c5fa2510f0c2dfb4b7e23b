@@ -1,0 +1,23 @@
+ios/FitrahTubeTests/WeekBucketTests.swift
+  s_66ddb7c44de816::t_ac82847101c14d 69-81
+ios/FitrahTubeTests/MeFeedRefreshGateTests.swift
+  s_66ddb7c44de816::t_2c6d88d6564ba4 42-57
+ios/FitrahTube/Features/Me/WeekBucket.swift
+  s_66ddb7c44de816::t_29c8a32cf96dae 25,27-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f0b1a4ba1fb510f7a9c5fa2510f0c2dfb4b7e23b",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
