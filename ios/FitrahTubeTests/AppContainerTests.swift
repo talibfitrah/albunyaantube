@@ -110,6 +110,24 @@ struct AppContainerTests {
         #expect(me.status == .active)
     }
 
+    /// Fix round 1 / I3, the same failure mode once more, for the Me feed: the fixture feed
+    /// answered `FixedStatusTransport(status: 503)`, so every `-fitrah-seed-subscriptions` channel
+    /// came back `.httpError(503)` and Task 19's `me-signed-in` screenshot would have been
+    /// photographed with `me_refresh_error` painted across it. A fixture container must render the
+    /// screen it is a fixture FOR — an empty feed, no error — and still make zero requests.
+    @Test func theFixtureContainersFeedRefreshesWithoutPaintingTheRefreshError() async {
+        let suite = "fitrahtube.me-feed-fixture-tests"
+        let defaults = UserDefaults(suiteName: suite) ?? .standard
+        defaults.removePersistentDomain(forName: suite)
+        let container = AppContainer.fake(defaults: defaults)
+
+        await container.meFeed.refresh(channelIds: ["UCseededFixtureChannel"], force: true)
+
+        #expect(container.meFeed.lastError == nil,
+                "a fixture feed must not paint me_refresh_error onto the screenshot rig")
+        #expect(container.meFeed.weeks.isEmpty)
+    }
+
     /// The transport posts from whatever isolation the request ran on; the center buffers one event
     /// and hands it over exactly once, so a re-render cannot route the user twice.
     @Test func theAccountStatusCenterBuffersOneEventAndConsumesItOnce() async {

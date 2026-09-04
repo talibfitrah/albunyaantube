@@ -55,6 +55,14 @@ struct MeSignedInView: View {
     @State private var paginationGuard = PaginationGuard()
     /// Geometry *state*, not an event (gate B1-C1), exactly as `ContentListView` keeps it.
     @State private var feedFits = false
+    /// RULINGS #24's one transient-error surface, the way Home reports a failed reload that kept
+    /// its rows (`HomeView.swift:65`): it announces to VoiceOver and carries a real dismiss
+    /// control, neither of which the bare `Text` this replaces had.
+    @State private var feedBanner: BannerMessage?
+    /// The two refreshes that are NOT owned by `.task`/`.refreshable` (a subscription change and a
+    /// chip tap). Held so they are cancelled on the next one and on dismissal, instead of running
+    /// on — with, at worst, `perChannelTimeout` still on the clock behind them.
+    @State private var refreshTask: Task<Void, Never>?
 
     /// The container's ONE feed repository, not a per-view `@State`: it holds the loaded-week depth
     /// and the per-channel refresh bookkeeping, which must survive this view being rebuilt.
@@ -92,12 +100,16 @@ struct MeSignedInView: View {
             }
             .refreshable {
                 paginationGuard.reset()
-                await feed.refresh(channelIds: model?.subscribedChannelIds ?? [], force: true)
+                await refreshFeed(model?.subscribedChannelIds ?? [], force: true)
             }
             .onContentFits { fits in
                 feedFits = fits
                 triggerFeedAutoFill()
             }
+            // The companion every other autofill site pairs with `onContentFits`
+            // (`ContentListView.swift:51,101`): re-arm the guards after each completed load rather
+            // than relying on the fit margin alone changing.
+            .onChange(of: feed.weeks) { _, _ in triggerFeedAutoFill() }
             .onChange(of: router.scrollToTopSignal) { _, signal in
                 guard signal?.tab == .me else { return }
                 withAnimation { proxy.scrollTo(Self.topAnchor, anchor: .top) }
@@ -109,24 +121,44 @@ struct MeSignedInView: View {
             // fresh install that opened Me before subscribing would otherwise stay empty forever.
             .onChange(of: model?.subscribedChannelIds.count) { old, _ in
                 guard old != nil, let model else { return }
-                Task { await feed.refresh(channelIds: model.subscribedChannelIds, force: false) }
+                start { await refreshFeed(model.subscribedChannelIds, force: false) }
             }
         }
         .background(Color.background.ignoresSafeArea())
+        .transientBanner($feedBanner)
         .navigationTitle(String(localized: "nav_me"))
         .toolbar { ToolbarItem(placement: .topBarTrailing) { kebab } }
         .signOutConfirmation(isPresented: $showSignOutConfirm) { model?.signOut() }
+        .onDisappear { refreshTask?.cancel() }
         .task {
-            if model == nil {
-                model = MeViewModel(session: container.session, favorites: container.favorites,
-                                    subscriptions: container.subscriptions,
-                                    savedPlaylists: container.savedPlaylists)
-            }
+            // Bound once and read back from the local, never from the `@State` this closure just
+            // wrote: a `@State` write is not visible to the writing closure, and a nil read here
+            // would refresh over an EMPTY channel list -- which `.onChange`'s `guard old != nil`
+            // deliberately never retries.
+            let model = self.model ?? MeViewModel(session: container.session, favorites: container.favorites,
+                                                  subscriptions: container.subscriptions,
+                                                  savedPlaylists: container.savedPlaylists)
+            self.model = model
             // Ruling F6's burst-if-stale, and the ONLY scheduled refresh there is: foreground only,
             // no `BGAppRefreshTask`, no `UIBackgroundModes`. `force: false` leaves the TTL and the
             // backoff ladder in charge, so a tab revisit inside 30 min sends nothing at all.
-            await feed.refresh(channelIds: model?.subscribedChannelIds ?? [], force: false)
+            await refreshFeed(model.subscribedChannelIds, force: false)
         }
+    }
+
+    /// One refresh, one banner. Posted per COMPLETED refresh rather than from
+    /// `.onChange(of: feed.lastError)`, which cannot fire twice for the same message and so would
+    /// stay silent on a second failed pull-to-refresh.
+    private func refreshFeed(_ channelIds: [String], force: Bool) async {
+        await feed.refresh(channelIds: channelIds, force: force)
+        if let error = feed.lastError { feedBanner = BannerMessage(text: error) }
+    }
+
+    /// The one unstructured-task slot: the previous occupant is cancelled first, and `.onDisappear`
+    /// cancels the last one.
+    private func start(_ work: @escaping @MainActor () async -> Void) {
+        refreshTask?.cancel()
+        refreshTask = Task { await work() }
     }
 
     // MARK: - Chips
@@ -142,12 +174,16 @@ struct MeSignedInView: View {
                         // Tap-to-select, tap-again-to-clear.
                         let next = model.selectedChipId == chip.id ? nil : chip.id
                         model.setFilter(next)
+                        // I4's ruling: the chip always SELECTS, but only a channel chip filters
+                        // the feed — the Atom feed is per channel, so a playlist chip filtered it
+                        // to a section with no rows and no explanation.
+                        let feedFilter = MeViewModel.feedFilter(for: next, in: model.chips)
                         // Cleared in the TAP, not in the rebucket that follows: a `.task(id:)` runs
                         // after the render, so the frame between the tap and the rebucket would
                         // show the old weeks under the new chip.
-                        feed.setFilter(next)
+                        feed.setFilter(feedFilter)
                         paginationGuard.reset()
-                        Task { await feed.rebucket(filter: next) }
+                        start { await feed.rebucket(filter: feedFilter) }
                     }
                 }
             }
@@ -163,13 +199,17 @@ struct MeSignedInView: View {
     @ViewBuilder
     private var feedSection: some View {
         LazyVStack(alignment: .leading, spacing: Spacing.lg(widthClass)) {
-            if let lastError = feed.lastError {
-                // WHAT, never WHY: `me_refresh_error` says the feed didn't refresh and how to
-                // retry. `ChannelRefreshState.lastErrorMessage` is diagnostic and stays unrendered.
-                Text(lastError)
-                    .font(TypeScale.itemMeta)
-                    .foregroundStyle(Color.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // WHAT, never WHY: `me_refresh_error` says the feed didn't refresh and how to retry,
+            // and it is delivered by the banner above (`refreshFeed`) rather than as a line of
+            // low-emphasis body text no assistive technology announced.
+            // Task 19: feed empty-state copy — an EMPTY, not-refreshing feed still renders
+            // nothing, because saying so needs a string this round is not allowed to author.
+            if feed.isRefreshing && feed.weeks.isEmpty {
+                ProgressView()
+                    .tint(.brand)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md(widthClass))
+                    .accessibilityLabel(String(localized: "loading"))
             }
             ForEach(feed.weeks) { week in
                 VStack(alignment: .leading, spacing: Spacing.sm) {

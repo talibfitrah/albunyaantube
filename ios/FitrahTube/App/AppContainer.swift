@@ -184,15 +184,21 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// the Islamic region calendar and a suite reading it passes in one region and fails in another
     /// (the Task 12 lesson).
     ///
-    /// A FIXTURE container gets a canned 503 instead of the live fetcher, the same reason
+    /// A FIXTURE container gets a canned response instead of the live fetcher, the same reason
     /// `gateTransport` does: `-fitrah-seed-subscriptions` puts channels on the screenshot rig's Me
     /// screen, and the feed's `.task` would otherwise fan out to youtube.com from a preview.
+    ///
+    /// Fix round 1 / I3: an EMPTY 200, not a 503. A canned failure made every seeded channel
+    /// `.httpError(503)`, which is `me_refresh_error` painted across the `me-signed-in` screenshot
+    /// — a fixture that fails is not a fixture. `AtomFeedFetcher`'s parser is deliberately
+    /// defensive, so a body with no `<entry>` is a feed with no videos, not an error.
     private(set) lazy var meFeed: MeFeedRepository = {
         let store = UserDefaultsKeyValueStore(defaults: userDefaults)
         #if DEBUG
         if isFixture {
+            let empty = FixedStatusTransport(status: 200, body: Data("<feed/>".utf8))
             return MeFeedRepository(
-                atom: AtomFeedFetcher(transport: FixedStatusTransport(status: 503), keyValueStore: store),
+                atom: AtomFeedFetcher(transport: empty, keyValueStore: store),
                 refreshState: store, now: { Date() }, calendar: .autoupdatingCurrent)
         }
         #endif
@@ -590,7 +596,10 @@ nonisolated struct ParkedStreamResolver: StreamResolving {
 /// container's offline-gate transport — `AppContainerTests` names the type, so not private.
 struct FixedStatusTransport: HTTPTransport {
     let status: Int
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse { HTTPResponse(status: status, headers: [:], body: Data()) }
+    /// Empty for the status-only callers; the Me feed's fixture needs a 200 to carry a body
+    /// (`meFeed`, fix round 1 / I3).
+    var body = Data()
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse { HTTPResponse(status: status, headers: [:], body: body) }
 }
 #endif
 

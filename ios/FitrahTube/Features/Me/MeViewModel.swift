@@ -130,4 +130,13 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     nonisolated static func selection(_ chipId: String?, in chips: [MeChipItem]) -> String? {
         chips.contains { $0.id == chipId } ? chipId : nil
     }
+
+    /// Fix round 1 / I4 RULING: only CHANNEL chips filter the FEED. The rail merges channels and
+    /// saved playlists, but the Atom feed is per channel — routing a playlist chip into
+    /// `MeFeedRepository.setFilter` emptied the whole section with nothing to explain it. The chip
+    /// still selects and highlights; the feed simply stays unfiltered until a playlist has items
+    /// of its own to show (Task 30).
+    nonisolated static func feedFilter(for chipId: String?, in chips: [MeChipItem]) -> String? {
+        chips.first { $0.id == chipId }?.kind == .channel ? chipId : nil
+    }
 }

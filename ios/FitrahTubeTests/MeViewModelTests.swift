@@ -91,6 +91,23 @@ struct MeViewModelTests {
         #expect(MeViewModel.selection("a", in: []) == nil)
     }
 
+    /// Fix round 1 / I4 RULING: only CHANNEL chips filter the FEED. The rail merges both kinds and
+    /// the Atom feed is per channel, so routing a playlist chip into `MeFeedRepository.setFilter`
+    /// emptied the whole feed section with no message — a dead end two taps from the Me tab. The
+    /// chip still SELECTS (it highlights, and Task 30 is where its items get a home); the feed
+    /// stays unfiltered.
+    @Test func onlyChannelChipsFilterTheFeed() {
+        let chips = [
+            MeChipItem(id: "UCchannel", title: "C", avatarURL: nil, addedAt: .distantPast, kind: .channel),
+            MeChipItem(id: "PLplaylist", title: "P", avatarURL: nil, addedAt: .distantPast, kind: .playlist),
+        ]
+        #expect(MeViewModel.feedFilter(for: "UCchannel", in: chips) == "UCchannel")
+        #expect(MeViewModel.feedFilter(for: "PLplaylist", in: chips) == nil)
+        // Tap-again-to-clear, and a chip that is no longer in the rail.
+        #expect(MeViewModel.feedFilter(for: nil, in: chips) == nil)
+        #expect(MeViewModel.feedFilter(for: "UCchannel", in: []) == nil)
+    }
+
     /// The staleness this exists for: a chip unsubscribed on the channel screen must not leave the
     /// Me tab filtering by a row that no longer exists.
     @Test func aSelectionWhoseChipDisappearedResolvesToNil() async throws {

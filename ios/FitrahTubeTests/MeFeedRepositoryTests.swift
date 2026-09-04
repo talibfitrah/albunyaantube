@@ -1,5 +1,6 @@
 import Foundation
 import InnerTubeKit
+import Synchronization
 import Testing
 @testable import FitrahTube
 
@@ -56,17 +57,17 @@ struct MeFeedRepositoryTests {
         return HTTPResponse(status: 200, headers: [:], body: Data(xml.utf8))
     }
 
+    /// `sleep` defaults to a NO-OP, not to the production clock: every case but the stagger one
+    /// would otherwise really wait out `250 ms × k` per fan-out, and this gate has no wall-clock
+    /// sleeps in it.
     private func makeRepo(_ transport: ScriptedTransport,
                           feedCache: MemoryKV = MemoryKV(),
                           refreshState: MemoryKV = MemoryKV(),
-                          deadline: MeFeedRepository.Deadline? = nil) -> MeFeedRepository {
-        let atom = AtomFeedFetcher(transport: transport, keyValueStore: feedCache)
-        guard let deadline else {
-            return MeFeedRepository(atom: atom, refreshState: refreshState,
-                                    now: { Self.now }, calendar: Self.calendar)
-        }
-        return MeFeedRepository(atom: atom, refreshState: refreshState,
-                                now: { Self.now }, calendar: Self.calendar, deadline: deadline)
+                          deadline: MeFeedRepository.Deadline? = nil,
+                          sleep: @escaping MeFeedRepository.Sleep = { _ in }) -> MeFeedRepository {
+        MeFeedRepository(atom: AtomFeedFetcher(transport: transport, keyValueStore: feedCache),
+                         refreshState: refreshState, now: { Self.now }, calendar: Self.calendar,
+                         deadline: deadline ?? MeFeedRepository.withDeadline, sleep: sleep)
     }
 
     private func allItems(_ repo: MeFeedRepository) -> [String] {
@@ -189,6 +190,39 @@ struct MeFeedRepositoryTests {
         #expect(transport.sent.count == 2)
     }
 
+    /// Fix round 1 / I1: `rebucket` accumulates rows across `await atom.cached(_:)` hops, so a chip
+    /// tap landing inside that window used to be overwritten by the OLDER in-flight rebucket —
+    /// the previous filter's rows republished under the new chip, which is the exact render
+    /// `setFilter`'s synchronous clear exists to prevent.
+    ///
+    /// Deterministic without a clock: `Task {}` inherits this main actor and the main actor's job
+    /// queue is FIFO, so the single `Task.yield()` below runs the late rebucket up to its first
+    /// `await` and no further — the tap that follows is synchronous, and the rebucket's
+    /// continuation can only be appended behind it.
+    @Test func aLateRebucketNeverPublishesThePreviousFiltersRows() async {
+        let transport = ScriptedTransport([
+            feed(entry("alpha-w0", Self.week0)),
+            feed(entry("beta-w0", Self.week0Older)),
+        ])
+        let repo = makeRepo(transport)
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        await repo.refresh(channelIds: [Self.alpha, Self.beta], force: false)
+        #expect(allItems(repo).sorted() == ["alpha-w0", "beta-w0"])
+
+        // An UNFILTERED rebucket, suspended inside its `cached(_:)` loop (its own `setFilter(nil)`
+        // is a no-op — the filter is already nil — so nothing about the tap below is undone).
+        let late = Task { await repo.rebucket(filter: nil) }
+        await Task.yield()
+
+        // ...and then the user taps a chip.
+        repo.setFilter(Self.beta)
+        await late.value
+
+        #expect(repo.weeks.isEmpty,
+                "a superseded rebucket must not republish the previous filter's rows")
+    }
+
     @Test func setFilterClearsTheLoadedWeeksSynchronously() async {
         let transport = ScriptedTransport([
             feed(entry("vid-w0", Self.week0), entry("vid-w1", Self.week1))
@@ -292,23 +326,57 @@ struct MeFeedRepositoryTests {
     @Test func aChannelThatMissesThePerChannelDeadlineIsRecordedAsATimeout() async {
         let ids = [Self.alpha, Self.beta, "UCchannelGamma"]
         let transport = ScriptedTransport(ids.map { _ in feed(entry("vid-0", Self.week0)) })
-        // The deadline arm wins for every channel. Injected rather than raced against a zero
-        // sleep: the outcome of a scheduler race is not something a gate can depend on.
-        let repo = makeRepo(transport, deadline: { _ in nil })
+        // Exactly ONE channel misses its deadline; the other two run to completion. Injected
+        // rather than raced against a zero sleep: the outcome of a scheduler race is not something
+        // a gate can depend on. WHICH channel loses is the scheduler's business — that a deadline
+        // does not stop the fan-out (dispatcher addendum (f)) is not, and a seam that fails every
+        // channel could never have shown it.
+        let attempts = Mutex(0)
+        let repo = makeRepo(transport, deadline: { work in
+            let isFirst = attempts.withLock { (count: inout Int) -> Bool in
+                count += 1
+                return count == 1
+            }
+            if isFirst { return nil }
+            return await work()
+        })
 
         await repo.refresh(channelIds: ids, force: false)
 
-        // Every channel was attempted — one deadline does not stop the fan-out — and none of them
-        // escalated onto a cooldown.
+        // The two that ran sent and rendered; the one that timed out escalated nothing.
+        #expect(transport.sent.count == 2)
+        let timedOut = ids.filter { repo.state(for: $0)?.lastSuccessfulFetchAt == nil }
+        #expect(timedOut.count == 1)
         for id in ids {
             let state = repo.state(for: id)
             #expect(state?.lastAttemptAt == Self.now)
             #expect(state?.consecutiveErrorCount == 0)
             #expect(state?.backoffUntil == nil)
-            #expect(state?.lastSuccessfulFetchAt == nil)
         }
-        #expect(transport.sent.isEmpty)
-        #expect(repo.weeks.isEmpty)
+        for id in timedOut {
+            #expect(repo.state(for: id)?.lastErrorMessage
+                    == "timeout after \(MeFeedRefreshGate.perChannelTimeout)")
+        }
+        #expect(repo.weeks.map(\.index) == [0])
+        #expect(repo.lastError == nil, "a partial success is not a failed refresh")
+    }
+
+    /// Fix round 1 / M5: the 250 ms start stagger, through the same kind of injected seam the
+    /// deadline uses. Four channels launch at 0 / 250 / 500 / 750 ms so YouTube sees a paced
+    /// request stream instead of `maxConcurrent` simultaneous requests (`MeFeedRepository.kt:770`).
+    @Test func theInitialBurstIsStaggeredByTwoHundredAndFiftyMilliseconds() async {
+        let ids = (0..<4).map { "UCchannel\($0)" }
+        let transport = ScriptedTransport(ids.map { _ in feed(entry("vid-0", Self.week0)) })
+        let delays = Mutex<[Duration]>([])
+        let repo = makeRepo(transport, sleep: { duration in delays.withLock { $0.append(duration) } })
+
+        await repo.refresh(channelIds: ids, force: false)
+
+        // Sorted: four concurrent children record these, so the ORDER they land in is the
+        // scheduler's business — the spacing is what is being pinned.
+        #expect(delays.withLock { $0.sorted() }
+                == [.zero, .milliseconds(250), .milliseconds(500), .milliseconds(750)])
+        #expect(transport.sent.count == 4)
     }
 
     // MARK: - Persistence

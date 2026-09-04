@@ -34,11 +34,16 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         @escaping @Sendable () async -> MeFeedRefreshGate.Outcome
     ) async -> MeFeedRefreshGate.Outcome?
 
+    /// Sleeps. The 250 ms start stagger's clock, injected for the same reason the deadline above
+    /// is: a test asserts the SPACING between two launches and never waits for it.
+    typealias Sleep = @Sendable (Duration) async -> Void
+
     private let atom: AtomFeedFetcher
     private let states: any KeyValueStore
     private let now: () -> Date
     private let calendar: Calendar
     private let deadline: Deadline
+    private let sleep: Sleep
 
     /// The loaded prefix of `allWeeks`, newest week first.
     private(set) var weeks: [WeekSection] = []
@@ -47,6 +52,9 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     /// `me_refresh_error`, or nil. Never a raw error description: `ChannelRefreshState`'s
     /// `lastErrorMessage` is the diagnostic field and is not user-visible (Task 15, deviation 4).
     private(set) var lastError: String?
+    /// True while `refresh` is in flight. An empty feed under this is LOADING; an empty feed
+    /// without it is a feed with nothing in it, and the two must not render the same blank gap.
+    private(set) var isRefreshing = false
 
     /// Every non-empty week from the last bucketing; `weeks` is its loaded prefix.
     private var allWeeks: [WeekSection] = []
@@ -55,15 +63,21 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     private var filter: String?
     /// The UNFILTERED channel count at the last refresh (`MeViewModel.kt:181-195`).
     private var lastChannelCount: Int?
+    /// Bumped by `setFilter`; a `rebucket` that started under an older one is refused at publish
+    /// time. The `PaginationGuard.generation` pattern (`PaginationGuard.swift:14-24`), for the same
+    /// reason: the work spans awaits, and the newest decision has to win.
+    private var generation = 0
 
     init(atom: AtomFeedFetcher, refreshState: any KeyValueStore,
          now: @escaping () -> Date, calendar: Calendar,
-         deadline: @escaping Deadline = MeFeedRepository.withDeadline) {
+         deadline: @escaping Deadline = MeFeedRepository.withDeadline,
+         sleep: @escaping Sleep = MeFeedRepository.wallClockSleep) {
         self.atom = atom
         self.states = refreshState
         self.now = now
         self.calendar = calendar
         self.deadline = deadline
+        self.sleep = sleep
     }
 
     // MARK: - Refresh
@@ -75,6 +89,8 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     /// list's size for exactly that reason (`MeViewModel.kt:181-195`: an AWAITING import that later
     /// graduates should also be able to reset the feed).
     func refresh(channelIds: [String], force: Bool) async {
+        isRefreshing = true
+        defer { isRefreshing = false }
         if lastChannelCount != channelIds.count { loadedWeekCount = 1 }
         lastChannelCount = channelIds.count
         self.channelIds = channelIds
@@ -86,7 +102,8 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         } else {
             let atom = atom
             let deadline = deadline
-            let outcomes = await Self.fanOut(due, limit: MeFeedRefreshGate.maxConcurrent) { id in
+            let outcomes = await Self.fanOut(due, limit: MeFeedRefreshGate.maxConcurrent,
+                                             sleep: sleep) { id in
                 await deadline { await Self.fetch(id, atom: atom) } ?? .timeout
             }
             let after = now()
@@ -101,10 +118,14 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         await rebucket(filter: filter)
     }
 
+    /// `STAGGER_MS` (`MeFeedRepository.kt:146`): the k-th channel of the opening burst waits
+    /// `k × 250 ms` before its first request.
+    static let stagger: Duration = .milliseconds(250)
+
     /// Bounded fan-out: `limit` channels in flight, the next started as each finishes. `nonisolated`
     /// so the children run off the main actor — the only main-actor work is the bookkeeping above.
     private nonisolated static func fanOut(
-        _ ids: [String], limit: Int,
+        _ ids: [String], limit: Int, sleep: @escaping Sleep,
         run: @escaping @Sendable (String) async -> MeFeedRefreshGate.Outcome
     ) async -> [String: MeFeedRefreshGate.Outcome] {
         await withTaskGroup(of: (String, MeFeedRefreshGate.Outcome).self) { group in
@@ -112,8 +133,17 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
             var next = 0
             while next < min(max(limit, 1), ids.count) {
                 let id = ids[next]
+                // The OPENING burst only, unlike Android's `mapIndexed` (`:770`), which launches
+                // every channel at once and therefore has to scale the delay over the whole list.
+                // Here the group starts `limit` and then starts one per completion, so everything
+                // after the burst is already paced by the fetch it is replacing — scaling those
+                // too would just add 7.5 s to a 30-channel refresh.
+                let slot = next
                 next += 1
-                group.addTask { (id, await run(id)) }
+                group.addTask {
+                    await sleep(stagger * slot)
+                    return (id, await run(id))
+                }
             }
             while let (id, outcome) = await group.next() {
                 results[id] = outcome
@@ -164,12 +194,18 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     /// channel, so a playlist's videos were never fetched.
     func rebucket(filter channelId: String?) async {
         setFilter(channelId)
+        let started = generation
         let ids = channelId.map { channelIds.contains($0) ? [$0] : [] } ?? channelIds
 
         var items: [VideoItem] = []
         for id in ids {
             items += await atom.cached(id)
         }
+        // A chip tapped during those hops has already cleared the feed and moved the generation
+        // on; publishing here would put the PREVIOUS filter's rows under the new chip, which is
+        // exactly the render `setFilter`'s synchronous clear exists to prevent. The newer
+        // rebucket owns the publish.
+        guard generation == started else { return }
 
         let at = now()
         var buckets: [Int: [VideoItem]] = [:]
@@ -203,6 +239,7 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         loadedWeekCount = 1
         reachedEnd = false
         filter = channelId
+        generation += 1
     }
 
     /// F4: one more week off the SAME bucketed list, never another request.
@@ -240,12 +277,15 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         states.set(Self.stateKey(channelId), data)
     }
 
-    // MARK: - Deadline
+    // MARK: - Injected clocks
+
+    /// The production `Sleep`: the real clock. A cancelled sleep returns immediately — a cancelled
+    /// refresh must not sit out the rest of its stagger before noticing.
+    nonisolated static func wallClockSleep(_ duration: Duration) async {
+        try? await Task.sleep(for: duration)
+    }
 
     /// The production `Deadline`: whichever of the fetch and `perChannelTimeout` finishes first.
-    // ponytail: no 250 ms start stagger. `MeFeedRefreshGate.maxConcurrent` already bounds the
-    // burst to four, and a fixed stagger would add 7.5 s to a 30-channel refresh plus a second
-    // injected clock to every test. Add one here if the 429 ladder ever starts walking.
     nonisolated static func withDeadline(
         _ work: @escaping @Sendable () async -> MeFeedRefreshGate.Outcome
     ) async -> MeFeedRefreshGate.Outcome? {
