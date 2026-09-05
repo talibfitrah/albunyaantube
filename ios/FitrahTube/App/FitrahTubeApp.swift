@@ -101,7 +101,9 @@ struct FitrahTubeApp: App {
                     //
                     // Unstructured on purpose: a `.task`-scoped caller that LEADS the coalescer
                     // decides the session's state for every other observer (`refresh`'s doc).
-                    Task { await container.session.refresh(maxAttempts: 1) }
+                    //
+                    // Stage 9 / P2b: `refreshIfSignedIn`, so a GUEST foreground sends nothing.
+                    Task { await container.session.refreshIfSignedIn(maxAttempts: 1) }
                 }
                 // Overlay, not a branch replacing RootView: the refresh task/onChange above keep
                 // firing underneath, which is what lets a lowered `minAppVersion` un-block live.

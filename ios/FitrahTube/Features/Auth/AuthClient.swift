@@ -149,6 +149,12 @@ nonisolated protocol AuthClient: AuthTokenProviding {
     func sendVerificationEmail() async throws(AuthErrorCode)
     func reload() async throws(AuthErrorCode) -> AuthUser
     func reauthenticate(password: String) async throws(AuthErrorCode)
+    /// Stage 9 / P1: the FEDERATED half of the same proof, and never `signIn(with:)`.
+    /// `Auth.signIn(with:)` REPLACES `currentUser` with whoever the provider sheet returned, so a
+    /// device with a second Google account could re-point the whole Firebase session and the
+    /// `DELETE /api/account/me` that follows would tombstone the account the user did not pick.
+    /// `User.reauthenticate(with:)` refuses a credential for a different account instead.
+    func reauthenticate(with credential: OAuthCredential) async throws(AuthErrorCode)
     func updatePassword(_ new: String) async throws(AuthErrorCode)
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode)
     func deleteUser() async throws(AuthErrorCode)
@@ -183,6 +189,7 @@ nonisolated struct UnavailableAuthClient: AuthClient {
     func sendVerificationEmail() async throws(AuthErrorCode) { throw .unknown }
     func reload() async throws(AuthErrorCode) -> AuthUser { throw .unknown }
     func reauthenticate(password: String) async throws(AuthErrorCode) { throw .unknown }
+    func reauthenticate(with credential: OAuthCredential) async throws(AuthErrorCode) { throw .unknown }
     func updatePassword(_ new: String) async throws(AuthErrorCode) { throw .unknown }
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { throw .unknown }
     func deleteUser() async throws(AuthErrorCode) { throw .unknown }

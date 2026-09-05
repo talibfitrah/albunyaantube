@@ -159,6 +159,12 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     }
 
     private func performRefresh(channelIds: [String], force: Bool) async {
+        // Stage 7 re-review 2 / m3: the three assignments below are writes too, and they sat above
+        // every cancellation check — so "a superseded round writes NOTHING" was false of them. A
+        // `Task {}` body starts asynchronously, so a `force: true` that cancelled this round before
+        // it ran still reached them and stamped the superseded round's channel list over the
+        // replacing round's. This is the only window: nothing suspends between here and the fetch.
+        guard !Task.isCancelled else { return }
         if lastChannelCount != channelIds.count { loadedWeekCount = 1 }
         lastChannelCount = channelIds.count
         self.channelIds = channelIds

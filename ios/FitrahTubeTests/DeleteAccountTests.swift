@@ -295,8 +295,54 @@ struct DeleteAccountTests {
         await settle(fixture)
 
         #expect(fixture.google.presentCount == 1, "the provider sheet was never presented")
-        #expect(fixture.auth.entryPoints.contains(.credential))
+        #expect(fixture.auth.operations.contains(.reauthenticateCredential))
         #expect(fixture.transport.sent.last?.method == "DELETE")
+    }
+
+    /// Stage 9 / P1. The federated leg redeemed its credential with `auth.signIn(with:)`, which
+    /// REPLACES the Firebase session with whoever the sheet returned — so on a device with a second
+    /// Google account, picking the wrong one re-pointed the session and the `DELETE` that follows
+    /// tombstoned that account instead. Irreversible, and `BearerRetry`'s cross-account guard cannot
+    /// see a swap that happened before the request started. The absence is the assertion: no sign-in
+    /// entry point is reached at all.
+    @Test func aFederatedReAuthenticationNeverSignsIn() async throws {
+        let google = AuthUser(uid: "fake-uid", email: "student@fitrah.test",
+                              isEmailVerified: true, providerIDs: ["google.com"])
+        let fixture = makeFixture(delete: .json(204, ""), user: google)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(fixture.auth.operations == [.reauthenticateCredential, .deleteUser])
+        // `[.signIn]` is the fixture's own sign-in above; a `.credential` alongside it is the
+        // session replacement this fix exists to stop.
+        #expect(fixture.auth.entryPoints == [.signIn],
+                "the delete confirmation signed in with the sheet's credential")
+    }
+
+    /// The other half of P1: a credential for a DIFFERENT account. Firebase answers
+    /// `User.reauthenticate(with:)` with `userMismatch` — which `AuthErrorCode(firebaseCode:)` does
+    /// not name and therefore reads as `.unknown` — and that refusal must leave the device exactly
+    /// as a dismissed sheet does. `signIn(with:)` had no such answer: it succeeded, under the other
+    /// account.
+    @Test func aMismatchedProviderCredentialSendsNoDelete() async throws {
+        let google = AuthUser(uid: "fake-uid", email: "student@fitrah.test",
+                              isEmailVerified: true, providerIDs: ["google.com"])
+        let fixture = makeFixture(delete: .json(204, ""), user: google)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        fixture.auth.nextError = .unknown
+
+        await fixture.model.delete()
+        for _ in 0..<200 { await Task.yield() }
+
+        #expect(fixture.model.state == .failedReauth(password: false))
+        #expect(fixture.auth.operations == [.reauthenticateCredential],
+                "the refusal came from a sign-in, which cannot refuse a valid credential for another account")
+        #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false,
+                "a credential for another account deleted this one")
+        #expect(fixture.wipes.count == 0)
+        #expect(fixture.session.user?.uid == "fake-uid", "the session was re-pointed at another account")
     }
 
     /// A dismissed provider sheet is a refusal like any other — nothing is deleted.
@@ -384,6 +430,24 @@ struct DeleteAccountTests {
 
         #expect(marker.pendingUid == nil, "an empty uid was stored as a pending deletion")
         #expect(wipes.count == 1, "the wipe this deletion owes the device did not run")
+
+        // Stage 7 re-review 2 / m1: and not an EMPTY uid either. `if let uid` accepted `""`, which
+        // `UserDefaultsDeletionMarker`'s getter reports as pending — the same marker naming nobody,
+        // reached through a record that carries one rather than through no record at all.
+        let emptyMarker = InMemoryDeletionMarker()
+        let emptyWipes = WipeSpy()
+        let emptyTransport = ScriptedTransport([.json(200, #"{"uid":"","email":"a@b.test","status":"active","role":"user"}"#)])
+        let emptySession = AccountSession(
+            auth: FakeAuthClient(state: .signedOut),
+            account: AccountClient(transport: emptyTransport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
+            stores: [], status: AccountStatusCenter(), sleep: { _ in },
+            wipe: { [emptyWipes] in emptyWipes.record(); return StoreFull() }, marker: emptyMarker)
+        await emptySession.refresh()
+        #expect(emptySession.state.me?.uid == "", "the fixture could not carry an empty uid")
+
+        await emptySession.handleDeletion(deletingFirebaseUser: false).value
+
+        #expect(emptyMarker.pendingUid == nil, "an empty uid was stored as a pending deletion")
     }
 
     @Test func noMarkerMeansNoLaunchWipe() async throws {

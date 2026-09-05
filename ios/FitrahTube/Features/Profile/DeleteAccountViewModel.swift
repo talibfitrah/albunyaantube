@@ -74,9 +74,11 @@ nonisolated enum DeleteAccountState: Equatable {
         guard state != .deleting, state != .reauthenticating else { return }
         state = .reauthenticating
         // Read BEFORE the await: which leg ran is what the refusal message depends on (I2), and
-        // `session.user` is not this call's to assume unchanged across a provider sheet.
+        // `session.user` is not this call's to assume unchanged across a provider sheet. Stage 7
+        // re-review 2 / m2: the SAME read drives the leg — one `requiresPassword` per attempt, so
+        // the provider sheet's own suspension cannot run one leg and render the other's copy.
         let passwordLeg = requiresPassword
-        let reauthenticated = await reauthenticate()
+        let reauthenticated = await reauthenticate(password: passwordLeg)
         password = ""
         guard reauthenticated else {
             state = .failedReauth(password: passwordLeg)
@@ -95,8 +97,15 @@ nonisolated enum DeleteAccountState: Equatable {
 
     /// A password account re-types its password; a federated one runs its provider's own sheet and
     /// redeems the credential, which is that provider's equivalent of the same proof.
-    private func reauthenticate() async -> Bool {
-        if requiresPassword {
+    ///
+    /// Stage 9 / P1: the federated leg RE-AUTHENTICATES, it does not sign in. `signIn(with:)`
+    /// replaces the Firebase session with whoever the sheet returned, so on a device with a second
+    /// Google account the DELETE that follows tombstoned the account the user did not pick — and
+    /// `BearerRetry`'s cross-account guard cannot see a swap that happened before the request
+    /// started. A refused credential (Firebase's `userMismatch`) is a refusal like a dismissed
+    /// sheet: nothing is deleted.
+    private func reauthenticate(password passwordLeg: Bool) async -> Bool {
+        if passwordLeg {
             do {
                 try await auth.reauthenticate(password: password)
                 return true
@@ -107,7 +116,7 @@ nonisolated enum DeleteAccountState: Equatable {
         guard let provider = federatedProvider else { return false }
         do {
             let credential = try await provider.presentSignIn()
-            _ = try await auth.signIn(with: credential)
+            try await auth.reauthenticate(with: credential)
             return true
         } catch {
             return false

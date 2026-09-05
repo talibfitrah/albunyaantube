@@ -166,6 +166,25 @@ nonisolated enum AccountState: Sendable, Equatable {
         inFlight = nil
     }
 
+    /// The foreground hook's guard (`FitrahTubeApp`'s `scenePhase` arm) and nothing else.
+    ///
+    /// Stage 9 / P2b: a guest has no `/me` to refresh. `AccountClient.me()` has no token guard, so
+    /// `BearerRetry` sent it UNSIGNED, took the 401, found `token(true)` nil and re-sent it — two
+    /// `GET /api/account/me` on every return to the foreground for a signed-out user — and with
+    /// `maxAttempts: 1` the 401 arm cannot `continue`, so the session ran
+    /// `.signedOut -> .loading -> .failed`: an error banner over somebody who is simply not
+    /// signed in.
+    ///
+    /// The guard is HERE and not inside `refresh(maxAttempts:)` because `refresh` is also the
+    /// path taken while `user` is still nil ON PURPOSE: `SignInViewModel.land()` refreshes on the
+    /// auth transition `start()` has not necessarily observed yet — its whole reason for existing —
+    /// and `AccountSessionTests`' retry-budget suite drives `refresh()` on a `.signedOut` fixture
+    /// precisely to assert the `.failed`/`.signedOut` end states this would silence.
+    func refreshIfSignedIn(maxAttempts: Int = 3) async {
+        guard user != nil else { return }
+        await refresh(maxAttempts: maxAttempts)
+    }
+
     private func fetch(maxAttempts: Int) async {
         // Stage 3 / M6: what the cancellation return below restores. A cancelled LEADER used to
         // leave `.loading` standing forever — and every follower, `start()` included, returned
@@ -264,6 +283,14 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// terminal alert that depends on which of the two got there first is a coin toss.
     @discardableResult
     private func dropSession() -> Bool {
+        // Stage 9 / P2a: UNCONDITIONAL, and above the early return. `signOutProvider()` used to sit
+        // at the end of this function, so every path where something else reached `.signedOut`
+        // first — `performDeletion`'s await of `auth.deleteUser()`, the blocked/deleted refresh
+        // refusal, the age-ineligible teardown — returned here without ever asking the provider
+        // SDKs to forget, and Google's Keychain refresh token outlived the drop. That is the exact
+        // Stage 4 / I1 defect the `providers` list exists to close. Idempotent by construction:
+        // `GIDSignIn.signOut()` on a signed-out SDK is a no-op, and Apple's is a documented one.
+        for provider in providers { provider.signOutProvider() }
         guard state != .signedOut else { return false }
         do {
             try auth.signOut()
@@ -277,9 +304,6 @@ nonisolated enum AccountState: Sendable, Equatable {
             state = .failed(code: nil, message: String(localized: "auth_error_generic"))
             return false
         }
-        // Stage 4 / I1: BOTH paths land here — the user's own sign-out and `performDeletion`'s
-        // drop — so one call site covers both, and the Google refresh token cannot outlive either.
-        for provider in providers { provider.signOutProvider() }
         user = nil
         scope(to: "")
         state = .signedOut
@@ -344,7 +368,9 @@ nonisolated enum AccountState: Sendable, Equatable {
         // the getter reports `""` as pending — so a device with no identity to record would wipe
         // itself on the next launch whoever had signed in by then. With no uid there is no marker;
         // the wipe below still runs, it just cannot be resumed, which is the honest answer.
-        if let uid = user?.uid ?? state.me?.uid { marker.pendingUid = uid }
+        // Stage 7 re-review 2 / m1: `!uid.isEmpty` too — the getter reports `""` as pending, so an
+        // empty uid is the same marker that names nobody by a different route.
+        if let uid = user?.uid ?? state.me?.uid, !uid.isEmpty { marker.pendingUid = uid }
         // No `@MainActor in` on the closure: `performDeletion` carries the isolation and the hop.
         let task = Task.detached {
             await self.performDeletion()

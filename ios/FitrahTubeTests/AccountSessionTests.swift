@@ -477,6 +477,45 @@ struct AccountSessionTests {
         #expect(google.signOutCount == 1, "the Google refresh token outlived the sign-out")
     }
 
+    /// Stage 9 / P2a. `dropSession()` opened with `guard state != .signedOut`, and the provider
+    /// sign-out sat INSIDE it — so every path where something else reached `.signedOut` first
+    /// returned before asking the SDK to forget. `performDeletion` awaits `auth.deleteUser()`,
+    /// which fires the Firebase listener across that suspension; the blocked/deleted refusal path
+    /// is the non-racy version of the same thing. Google's Keychain refresh token survived both.
+    @Test func aListenerFirstSignOutStillForgetsTheProviderSdkSession() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let google = FakeOAuthProvider()
+        let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
+                                  providers: [google])
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+
+        // The listener wins: `start()`'s stream arm is what writes `.signedOut`, with nothing
+        // having gone through `dropSession()`.
+        try auth.signOut()
+        for _ in 0..<500 where session.state != .signedOut { await Task.yield() }
+        #expect(session.state == .signedOut)
+
+        session.signOut()
+
+        #expect(google.signOutCount == 1,
+                "the Google refresh token outlived a sign-out the Firebase listener got to first")
+    }
+
+    /// Stage 9 / P2b. The `.active` scene-phase hook refreshed unconditionally, and `AccountClient
+    /// .me()` has no token guard — so a signed-out user's every return to the foreground sent TWO
+    /// unsigned `GET /api/account/me` (the 401, then `BearerRetry`'s re-send with `token(true)`
+    /// nil) and, at `maxAttempts: 1`, ended on `.failed`: an error banner over a guest.
+    @Test func aGuestForegroundRefreshSendsNothing() async {
+        let transport = ScriptedTransport([.json(200, Self.meJSON)])
+        let session = makeSession(auth: FakeAuthClient(state: .signedOut), transport: transport)
+
+        await session.refreshIfSignedIn(maxAttempts: 1)
+
+        #expect(transport.sent.isEmpty, "a guest foreground asked the backend who it was")
+        #expect(session.state == .signedOut, "a guest was left on an error state by its own foreground")
+    }
+
     @Test func theDeletionPathAlsoForgetsTheProviderSdkSession() async throws {
         let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
         let google = FakeOAuthProvider()

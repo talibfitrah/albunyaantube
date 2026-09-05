@@ -26,8 +26,11 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// CREDENTIAL are recorded: nothing else in the suite asserts on a call sequence.
     /// Task 18 adds `deleteUser` — the delete flow's contract is the same shape (the device wipe
     /// runs first, and the admin-side path must delete no Firebase user at all).
+    /// Stage 9 / P1 adds `reauthenticateCredential` — the federated proof is an ABSENCE assertion
+    /// (`entryPoints` must never gain a `.credential`, i.e. the delete never signed anybody in)
+    /// paired with a presence one, which is exactly this recorder's shape.
     nonisolated enum Operation: Sendable, Equatable {
-        case reauthenticate, updatePassword, verifyBeforeUpdateEmail, deleteUser
+        case reauthenticate, reauthenticateCredential, updatePassword, verifyBeforeUpdateEmail, deleteUser
     }
 
     private struct Storage {
@@ -130,6 +133,7 @@ nonisolated final class FakeAuthClient: AuthClient {
     // Recorded BEFORE the scripted error is consumed, for `signInSucceeds`'s reason: a refused
     // attempt still reached the call, which is the fact a sequence assertion needs.
     func reauthenticate(password: String) async throws(AuthErrorCode) { try record(.reauthenticate) }
+    func reauthenticate(with credential: OAuthCredential) async throws(AuthErrorCode) { try record(.reauthenticateCredential) }
     func updatePassword(_ new: String) async throws(AuthErrorCode) { try record(.updatePassword) }
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { try record(.verifyBeforeUpdateEmail) }
 
