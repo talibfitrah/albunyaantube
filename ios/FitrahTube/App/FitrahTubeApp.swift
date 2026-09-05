@@ -227,7 +227,7 @@ struct FitrahTubeApp: App {
     /// deep-link URL (`DeepLinkParser` only covers video/channel/playlist/shorts) and no
     /// `simctl` tap-gesture equivalent exists, so this pushes the route directly onto the
     /// currently-selected tab's stack -- same technique as `-fitrah-tab`.
-    /// `-fitrah-route player [videoId] [playlistId] [targetVideoId]|shorts [videoId]|playlist [playlistId] [title]|channel [channelId] [name]|search|categories|subcategories <parentId> <parentName>|featured [categoryId] [categoryName]`
+    /// `-fitrah-route player [videoId] [playlistId] [targetVideoId]|shorts [videoId]|playlist [playlistId] [title]|channel [channelId] [name]|search|categories|subcategories <parentId> <parentName>|featured [categoryId] [categoryName]|favorites|settings|about|offline|profile`
     /// (`-` for a nil arg). `player` is also reachable via `-fitrah-deeplink`, but this is
     /// the one-token form the screenshot rig's other routes already use. B5 Task 4: the optional
     /// `playlistId`/`targetVideoId` (plus the `-fitrah-shuffled` flag) are the queue launch
@@ -290,6 +290,12 @@ struct FitrahTubeApp: App {
         case "offline":
             // Phase 3 Task 6: the Saved screen, for the `phase3-saved` screenshot case.
             router.push(.offline)
+        case "profile":
+            // Phase 4 Task 19: the Profile screen is reached by tapping the signed-in Me tab's
+            // kebab, which the rig cannot do, and it has no deep-link URL. No `signIn` arm beside
+            // it: that row is dropped (see `ScreenshotTests.phase4Screens`), and an arm no rig
+            // case reaches is a branch nothing proves.
+            router.push(.profile)
         default:
             break
         }

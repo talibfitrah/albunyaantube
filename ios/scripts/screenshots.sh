@@ -478,6 +478,27 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$CAST_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 
+# Phase 4 Task 19 (docs/superpowers/plans/2026-09-02-ios-phase4-accounts.md): the account screens
+# the R-G matrix cannot reach -- the two splash-router ROOT destinations picked from the fixture
+# `/me` status (pending-profile, the blocked terminal alert) and the pushed Profile route. Same
+# one-`-only-testing:`-per-invocation shape as the phase3-saved block above.
+PHASE4_OUT="$ROOT/.superpowers/sdd/2026-09-02-ios-phase4-accounts/screenshots/phase4-accounts"
+for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
+    slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
+    echo "== phase4-accounts ($device) -> $PHASE4_OUT/$slug =="
+    rm -rf "${PHASE4_OUT:?}/$slug"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$PHASE4_OUT/$slug" xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testAccountScreensPhase4 \
+        -destination "platform=iOS Simulator,name=$device" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "$device" >/dev/null 2>&1
+done
+
 # Task 6 step 5 (live acceptance): OPT-IN, same contract as B5_LIVE -- talks to youtube.com AND the
 # backend named by C_LIVE_API_BASE_URL (default: production), and files exactly ONE real content
 # report per run (reason OTHER, "iOS Plan C acceptance test - safe to dismiss"). Step 8 needs a real

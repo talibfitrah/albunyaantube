@@ -32,6 +32,15 @@ final class ScreenshotTests: XCTestCase {
         /// `testPlayerScreen` uses instead — present as soon as the host mounts, not tied to chrome
         /// auto-hide.
         case element(String)
+        /// A button by accessibility IDENTIFIER, not label. The Phase 4 account screens carry no
+        /// locale-independent row title the way the fake catalog's items do (their only stable text
+        /// is localized copy), but they do carry identifiers — `bootstrap.submit`, `profile.save`,
+        /// `settings.signOut` — which read the same in en and ar.
+        case buttonID(String)
+        /// The topmost alert. `RootView`'s terminal account dialog IS the screen for the blocked
+        /// row: `SplashRouter` routes a blocked account to the GUEST shell and raises the
+        /// non-dismissible alert over it, so nothing on the shell behind it distinguishes the state.
+        case alert
     }
 
     /// One capturable screen: the DEBUG launch hooks that land on it, plus its load anchor.
@@ -2708,6 +2717,52 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    // MARK: - Phase 4 Task 19: the account screens
+    // (docs/superpowers/plans/2026-09-02-ios-phase4-accounts.md)
+
+    /// The Phase 4 screens `Self.screens` cannot hold. The first two are ROOT destinations
+    /// `SplashRouter` picks from the fixture `/me`'s status, so they take no `-fitrah-route` at
+    /// all; the last two are pushed routes. `-fitrah-fake-auth` is read at CONTAINER CONSTRUCTION
+    /// (`AppContainer.sharedFake`), which is why the status rides a launch argument rather than a
+    /// seed that runs in the scene's `.task`.
+    ///
+    /// `sign-in` is NOT here: with no `GoogleService-Info.plist` (git-ignored, USER-BLOCKED)
+    /// `SignInCapabilities.current()` is all-false, so `SignInScreen` renders its F11 empty state
+    /// instead of the form. Photographing the real screen needs a launch hook that feeds
+    /// `AppContainer.fake(capabilities:googleSignIn:appleSignIn:)` from `sharedFake` — machinery
+    /// that does not exist, so the row is dropped rather than invented (task-19-stage7-report.md).
+    private static let phase4Screens: [Screen] = [
+        Screen(key: "profile-bootstrap", arguments: ["-fitrah-fake-auth", "pendingProfile"],
+               anchor: .buttonID("bootstrap.submit")),
+        // The non-dismissible terminal alert. `RootView`'s `.onChange(of: outcome, initial: true)`
+        // raises it on the FIRST pass, i.e. while `showSplash` is still true — so the captured
+        // backdrop is the splash, not the guest shell `SplashRouter.outcome` also asks for. That is
+        // what a blocked account actually sees at launch, and the alert is the whole subject.
+        Screen(key: "account-blocked", arguments: ["-fitrah-fake-auth", "blocked"], anchor: .alert),
+        Screen(key: "profile", arguments: ["-fitrah-fake-auth", "active", "-fitrah-route", "profile"],
+               anchor: .buttonID("profile.save")),
+        // `SettingsView.accountSection`, which renders only for a signed-in user. Its OWN row
+        // rather than `-fitrah-fake-auth active` on the shared `settings` row: prepending the
+        // Account section pushes the first Playback toggle out of the materialised hierarchy at
+        // `.accessibility3` on a phone, and `testAccessibilityTextSizes`' `settings` capture —
+        // green today — went red on `.firstSwitch` (task-19-stage7-report.md, commit 3).
+        Screen(key: "settings-account",
+               arguments: ["-fitrah-fake-auth", "active", "-fitrah-route", "settings"],
+               anchor: .buttonID("settings.signOut")),
+    ]
+
+    /// Its own case rather than rows on `Self.screens`: that table is captured by
+    /// `testCatalogScreens`, which `screenshots.sh` runs on iPads only and which is far too long to
+    /// re-run for one row. Same one-block-per-task shape as `testSavedScreenPhase3`.
+    func testAccountScreensPhase4() throws {
+        let directory = try shotsDirectory()
+        for screen in Self.phase4Screens {
+            for locale in Self.locales {
+                try capture(screen, locale: locale, extraArguments: [], suffix: "", into: directory)
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     /// `fakeContainer: false` (Plan C Task 6's live leg) launches the LIVE container: real
@@ -2783,6 +2838,10 @@ final class ScreenshotTests: XCTestCase {
             return app.buttons.element(boundBy: 1)
         case .element(let label):
             return app.otherElements.matching(NSPredicate(format: "label == %@", label)).firstMatch
+        case .buttonID(let identifier):
+            return app.buttons[identifier]
+        case .alert:
+            return app.alerts.firstMatch
         }
     }
 }

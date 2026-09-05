@@ -236,6 +236,10 @@ struct SettingsView: View {
                     showSignOutConfirm = true
                 }
                 .frame(minHeight: 44)
+                // The screenshot rig's anchor for this section (`ScreenshotTests.phase4Screens`):
+                // every label here is localized, and the one locale-independent string on screen
+                // (the email) rides an `accessibilityValue`, which no anchor can match.
+                .accessibilityIdentifier("settings.signOut")
             }
         }
     }
