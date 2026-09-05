@@ -162,7 +162,9 @@ struct EmailVerificationScreen: View {
     private func errorKey(_ error: EmailVerificationViewModel.EmailVerifyError?) -> String? {
         switch error {
         case .notYetVerified: "email_verification_not_yet"
-        case .rateLimited: "email_verification_rate_limited"
+        // One sentence for both throttles: the user waits either way, and WHICH throttle refused
+        // is a WHY (Stage 9 round 3 / (b)).
+        case .rateLimited, .throttled: "email_verification_rate_limited"
         case .network, .unknown: "email_verification_network_error"
         case nil: nil
         }

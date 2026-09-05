@@ -17,9 +17,14 @@ nonisolated enum FirebaseBootstrap {
     /// plist, which is exactly "the Google button has nothing to sign into" (Task 5's capability).
     /// Read through `FirebaseOptions` rather than a hand-rolled plist parse so the key names stay
     /// the SDK's problem.
-    static var googleClientID: String? {
-        optionsPath.flatMap(FirebaseOptions.init(contentsOfFile:))?.clientID
-    }
+    ///
+    /// Stage 9 round 3 / R3-P3: a `static let`, i.e. parsed ONCE. As a computed property it read
+    /// and parsed the plist on every access, and `SignInCapabilities.current()` reads it from
+    /// `GoogleAuthProvider.isAvailable`, `AppleAuthProvider.isAvailable`,
+    /// `SignInViewModel.signIn(with:)` and `AppContainer.init` — main-thread file I/O on every
+    /// sign-in button render and tap. The bundle cannot gain a plist mid-process, so a value that
+    /// never changes is now read as one.
+    static let googleClientID: String? = optionsPath.flatMap(FirebaseOptions.init(contentsOfFile:))?.clientID
 
     /// IDEMPOTENT and SELF-CALLING: `AppContainer.live()` runs from a stored-property initializer,
     /// which Swift evaluates BEFORE the body of `FitrahTubeApp.init()`, so the auth builder (Task 4)

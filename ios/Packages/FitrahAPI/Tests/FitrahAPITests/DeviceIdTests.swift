@@ -63,6 +63,11 @@ struct DeviceIdTests {
     /// it — two in-flight requests carrying different `X-Device-Id` values, and one id written over
     /// the other. One value, one stored key, however many readers arrive.
     ///
+    /// Stage 9 round 3 / R3-P2: two `DeviceId.persisted(in:)` INSTANCES, because that is what the
+    /// container builds — one per client, five in all. The M7 lock was per instance, so it
+    /// serialised each client against itself and nothing against the other four: the race it
+    /// claimed to close was still open on the only shape that can reach it.
+    ///
     /// No clock anywhere: the first reader is parked at its write, the second is given a bounded
     /// budget of spins to reach the suite (unsynchronised it arrives at once; under the lock it
     /// never arrives, which is the property), and the parked writer is then released.
@@ -71,11 +76,13 @@ struct DeviceIdTests {
         let defaults = GatedDefaults(suiteName: name)!
         defaults.removePersistentDomain(forName: name)
         defer { defaults.removePersistentDomain(forName: name) }
-        let deviceId = DeviceId.persisted(in: defaults)
+        // Two separate instances over one empty suite — `persisted(in:)` allocates a new store per
+        // call, so this is the container's shape and not one client racing itself.
+        let clients = [DeviceId.persisted(in: defaults), DeviceId.persisted(in: defaults)]
 
         let values = Mutex<[String]>([])
         let finished = DispatchSemaphore(value: 0)
-        for _ in 0..<2 {
+        for deviceId in clients {
             DispatchQueue.global().async {
                 let value = deviceId.value
                 values.withLock { $0.append(value) }

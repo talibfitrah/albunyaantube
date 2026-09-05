@@ -172,8 +172,8 @@ struct EmailVerificationViewModelTests {
 
     @Test func anUnsuccessfulBackendResponseFallsBackToFirebase() async {
         let auth = FakeAuthClient(state: .signedIn(Self.unverified))
-        // Only Firebase can produce `.rateLimited` from a 500, so reading it back is proof the
-        // fallback ran — and in this order, after the backend.
+        // Only Firebase can produce `.throttled` at all, so reading it back is proof the fallback
+        // ran — and in this order, after the backend.
         auth.nextError = .tooManyRequests
         let fixture = make(auth: auth, responses: [.json(500, "{}")])
         defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
@@ -182,11 +182,12 @@ struct EmailVerificationViewModelTests {
 
         #expect(fixture.transport.sent.count == 1, "the backend was not tried first")
         #expect(auth.nextError == nil, "the Firebase fallback was never asked")
-        #expect(fixture.model.state.error == .rateLimited)
-        // Stage 9 round 2 / P3: a rate-limited refusal DOES latch — see
-        // `aRateLimitedRefusalStartsTheCooldown`. Every other failure still latches nothing.
-        #expect(fixture.model.state.lastSentAt == Self.t0)
-        #expect(fixture.defaults.object(forKey: Self.key) as? Date == Self.t0)
+        #expect(fixture.model.state.error == .throttled)
+        // Stage 9 round 3 / (b): the BACKEND's 429 latches (`aRateLimitedRefusalStartsTheCooldown`);
+        // Firebase's abuse throttle does not — see the row below. Every other failure sent nothing
+        // and latches nothing either.
+        #expect(fixture.model.state.lastSentAt == nil)
+        #expect(fixture.defaults.object(forKey: Self.key) as? Date == nil)
     }
 
     /// The backend enforces the same 60 s per uid (`AccountController.java:112-116`). Routing
@@ -227,6 +228,28 @@ struct EmailVerificationViewModelTests {
 
         fixture.clock.advance(EmailVerificationViewModel.cooldown)
         #expect(fixture.model.canResend(at: fixture.clock.now), "the cooldown outlived its 60 s")
+    }
+
+    /// Stage 9 round 3 / (b). The other half: Firebase's `tooManyRequests` is an ABUSE throttle,
+    /// not evidence a mail exists, and `send()`'s auto-send latch reads the same key — so latching
+    /// on it meant an account whose very first auto-send was throttled never auto-sent again on
+    /// this device, for a mail that may never have been sent. The key is cleared only by
+    /// `LocalAccountWiper` on deletion, so that is for the life of the install.
+    @Test func aFirebaseThrottleStartsNoCooldownAndKeepsTheAutoSendOwed() async {
+        let auth = FakeAuthClient(state: .signedIn(Self.unverified))
+        auth.nextError = .tooManyRequests
+        let fixture = make(auth: auth, responses: [.json(500, "{}")])
+        defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
+
+        await fixture.model.send()
+
+        #expect(fixture.model.state.error == .throttled)
+        #expect(fixture.model.state.lastSentAt == nil, "an abuse throttle latched a send that never happened")
+        #expect(fixture.defaults.object(forKey: Self.key) as? Date == nil,
+                "the auto-send was latched for the life of the install by a refusal")
+        #expect(fixture.model.canResend(at: fixture.clock.now),
+                "Resend was parked inside a cooldown no mail started")
+        #expect(fixture.model.secondsSinceLastSend(at: fixture.clock.now) == nil)
     }
 
     /// D2's argument — routing around the server's own ruling defeats it — applies at least as hard
@@ -350,7 +373,7 @@ struct EmailVerificationViewModelTests {
 
         auth.nextError = .tooManyRequests
         #expect(await fixture.model.checkNow() == false)
-        #expect(fixture.model.state.error == .rateLimited)
+        #expect(fixture.model.state.error == .throttled)
 
         auth.nextError = .network
         #expect(await fixture.model.checkNow() == false)

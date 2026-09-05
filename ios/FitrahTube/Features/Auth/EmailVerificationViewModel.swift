@@ -9,7 +9,15 @@ import Observation
     /// `EmailVerifyError.kt`. `.network` and `.unknown` render the same copy (Android does too) —
     /// they are kept apart because "no signed-in user" and "the server was unreachable" are
     /// different bugs to read in a log, not different sentences to a user.
-    nonisolated enum EmailVerifyError: Sendable, Equatable { case notYetVerified, rateLimited, network, unknown }
+    ///
+    /// Stage 9 round 3 / (b): `.rateLimited` and `.throttled` are kept apart for the same reason,
+    /// and one caller acts on the difference. `.rateLimited` is the BACKEND's own 60 s per-uid
+    /// window (a 429, or this screen's local mirror of it), which is evidence a mail exists;
+    /// `.throttled` is Firebase's abuse throttle (`tooManyRequests`), which is evidence of nothing.
+    /// Same copy for both — the user is told to wait either way, never why.
+    nonisolated enum EmailVerifyError: Sendable, Equatable {
+        case notYetVerified, rateLimited, throttled, network, unknown
+    }
 
     nonisolated struct UiState: Equatable {
         var email = ""
@@ -133,7 +141,7 @@ import Observation
         } catch {
             state.isChecking = false
             guard !Task.isCancelled else { return false }
-            state.error = error == .tooManyRequests ? .rateLimited : .network
+            state.error = error == .tooManyRequests ? .throttled : .network
             return false
         }
     }
@@ -168,6 +176,12 @@ import Observation
             // countdown, and every tap re-hit a server that refuses. The error still surfaces; the
             // button now says when it will work. Every other failure sent nothing and latches
             // nothing.
+            //
+            // Stage 9 round 3 / (b): the BACKEND's 429 only. `send()`'s auto-send latch reads the
+            // same key, so latching on Firebase's `tooManyRequests` too meant an account whose very
+            // first auto-send hit an abuse throttle was never auto-sent again on this device — a
+            // once-per-account latch claiming a mail that may never have been sent. The 429 is
+            // different in kind: the server refuses because it already mailed this uid inside 60 s.
             guard failure == .rateLimited else { return }
         }
         let sentAt = now()
@@ -202,7 +216,9 @@ import Observation
             try await auth.sendVerificationEmail()
             return nil
         } catch {
-            return error == .tooManyRequests ? .rateLimited : .network
+            // `.throttled`, never `.rateLimited`: Firebase's throttle proves no mail (Stage 9
+            // round 3 / (b)). Same sentence on screen, different latching.
+            return error == .tooManyRequests ? .throttled : .network
         }
     }
 }

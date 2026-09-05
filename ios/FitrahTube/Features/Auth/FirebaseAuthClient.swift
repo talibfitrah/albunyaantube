@@ -1,6 +1,7 @@
 import FirebaseAuth
 import FitrahAPI
 import Foundation
+import Synchronization
 
 /// The ONE `AuthClient` conformer that imports FirebaseAuth (plan Global Constraints: Firebase
 /// names live in five app files and nowhere else — never in a ViewModel, never in a test-visible
@@ -28,6 +29,10 @@ nonisolated final class FirebaseAuthClient: AuthClient {
 
     private let broadcaster: AuthStateBroadcaster
 
+    /// Stage 9 round 3 / R3-P1: why the LAST mint was refused, recorded where the refusal actually
+    /// happened. Read (and cleared) by `refreshRefusal()`.
+    private let lastRefusal = Mutex<AuthErrorCode?>(nil)
+
     @MainActor init?() {
         guard FirebaseBootstrap.configureIfPossible() else { return nil }
         let broadcaster = AuthStateBroadcaster(
@@ -42,10 +47,28 @@ nonisolated final class FirebaseAuthClient: AuthClient {
 
     /// The uid is read from the SAME `User` the token came from, so `BearerRetry`'s cross-account
     /// guard compares two identities that were each atomic with their bearer.
+    ///
+    /// Stage 9 round 3 / R3-P1: the refusal is RECORDED here rather than discarded by a `try?`.
+    /// Firebase signs the user out before it rethrows — `User.internalGetTokenAsync`'s catch
+    /// (`User.swift:1621-1626`) calls `signOutIfTokenIsInvalid`, which for `userNotFound`,
+    /// `userDisabled`, `invalidUserToken` and `userTokenExpired` (`:1577-1587`) runs
+    /// `auth?.signOutByForce(withUserID:)` → `updateCurrentUser(nil, byForce: true, …)`
+    /// (`Auth.swift:1872-1877`), i.e. `currentUser` is already nil by the time anything can ask a
+    /// second time. Both codes `terminalEvent(for:)` maps are in that set, so re-deriving the
+    /// verdict after the fact answered nil for exactly the two cases that matter and the ruling-C13
+    /// device wipe had no working trigger on the bare-401 path.
     func idToken(forceRefresh: Bool) async -> BearerToken? {
-        guard let user = Auth.auth().currentUser,
-              let token = try? await user.getIDToken(forcingRefresh: forceRefresh) else { return nil }
-        return BearerToken(value: token, identity: user.uid)
+        guard let user = Auth.auth().currentUser else { return nil }
+        do {
+            let token = try await user.getIDToken(forcingRefresh: forceRefresh)
+            return BearerToken(value: token, identity: user.uid)
+        } catch {
+            let error = error as NSError
+            lastRefusal.withLock {
+                $0 = error.domain == AuthErrors.domain ? AuthErrorCode(firebaseCode: error.code) : .unknown
+            }
+            return nil
+        }
     }
 
     func signIn(email: String, password: String) async throws(AuthErrorCode) -> AuthUser {
@@ -126,16 +149,18 @@ nonisolated final class FirebaseAuthClient: AuthClient {
         }
     }
 
-    /// Asks for a fresh token and reports why it was refused. Deliberately not `mapped`: this
-    /// answers nil for BOTH "no session" and "it worked", because neither is a terminal verdict.
+    /// Reports what the mint above recorded, and clears it. Nil for BOTH "no session" and "it
+    /// worked", because neither is a terminal verdict.
+    ///
+    /// Stage 9 round 3 / R3-P1: no second forced mint. This used to re-ask
+    /// `Auth.auth().currentUser` for another forced token, which (a) was dead code for the only two
+    /// codes that decide anything, because Firebase had already nilled `currentUser`, and (b) cost
+    /// a second network round trip for one 401 — round 1's accepted P3, retired here.
     func refreshRefusal() async -> AuthErrorCode? {
-        guard let user = Auth.auth().currentUser else { return nil }
-        do {
-            _ = try await user.getIDToken(forcingRefresh: true)
-            return nil
-        } catch {
-            let error = error as NSError
-            return error.domain == AuthErrors.domain ? AuthErrorCode(firebaseCode: error.code) : .unknown
+        lastRefusal.withLock { refusal in
+            let recorded = refusal
+            refusal = nil
+            return recorded
         }
     }
 

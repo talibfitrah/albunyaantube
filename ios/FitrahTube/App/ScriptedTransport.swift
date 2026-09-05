@@ -33,8 +33,21 @@ nonisolated final class ScriptedTransport: HTTPTransport {
     /// Task 16's case, several tasks at once.
     private let state: Mutex<State>
 
+    /// Stage 9 round 3 / NB3: awaited INSIDE `send`, after the request is recorded and before its
+    /// response is answered, with this request's 1-based index — so a test can park exactly one
+    /// request while the round is genuinely suspended in `account.me()`. The suite could only park
+    /// a round at the caller's injected *sleep* before this, which is a different moment: the
+    /// identity change then lands between two attempts and the success arm is never reached, so
+    /// the guard on that arm could not be shown to be load-bearing on its own.
+    ///
+    /// Default nil, so every existing call site is unchanged.
+    private let park: (@Sendable (Int) async -> Void)?
+
     /// Responses are consumed in order.
-    init(_ responses: [HTTPResponse]) { state = Mutex(State(queue: responses)) }
+    init(_ responses: [HTTPResponse], park: (@Sendable (Int) async -> Void)? = nil) {
+        state = Mutex(State(queue: responses))
+        self.park = park
+    }
 
     /// Every request, in order, for assertions.
     var sent: [HTTPRequest] { state.withLock { $0.sent } }
@@ -48,15 +61,17 @@ nonisolated final class ScriptedTransport: HTTPTransport {
     // what all ~90 call sites use.
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        let next: HTTPResponse? = state.withLock {
+        let (next, index): (HTTPResponse?, Int) = state.withLock {
             $0.sent.append(request)
             $0.inFlight += 1
             $0.peak = max($0.peak, $0.inFlight)
-            return $0.queue.isEmpty ? nil : $0.queue.removeFirst()
+            return ($0.queue.isEmpty ? nil : $0.queue.removeFirst(), $0.sent.count)
         }
         // ONE suspension point so simultaneous callers actually overlap and `peakConcurrency` can
         // exceed 1. `Task.yield()`, never a sleep — the gate is hermetic and clock-free.
         await Task.yield()
+        // Still in flight while parked, which is the whole point of the park.
+        await park?(index)
         state.withLock { $0.inFlight -= 1 }
 
         guard let next else { throw Failure.exhausted(method: request.method, url: request.url) }

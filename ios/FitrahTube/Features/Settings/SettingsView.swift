@@ -204,10 +204,18 @@ struct SettingsView: View {
     /// `SettingsSection` case. `SettingsLayout.rows` stays the unconditional twelve
     /// (`SettingsRowsTests.twelveRowsInSixSectionsNoAccountRowInTheStaticTable` is still true of it), because a
     /// static table cannot express a row that appears only for a signed-in user.
+    ///
+    /// Stage 9 round 3 / (a): BOTH branches read the ONE `arm` answer computed here. The second
+    /// branch used to test `state.me != nil` on its own, so the app had two answers to "is this
+    /// user signed in" and Settings kept the whole Account section — "Signed in as …" and a Sign
+    /// Out button — for a guest holding a stale record. `MeTabRoot.arm` already asks the Firebase
+    /// identity first (Stage 9 round 2 / P2); this makes Settings ask it too instead of relying on
+    /// an invariant held by inspection in another file.
     @ViewBuilder
     private var accountSection: some View {
-        if MeTabRoot.arm(signedIn: container.session.user != nil,
-                         state: container.session.state) == .unreachable {
+        let arm = MeTabRoot.arm(signedIn: container.session.user != nil,
+                                state: container.session.state)
+        if arm == .unreachable {
             // Stage 5 / M4: a signed-in user whose `/me` has not landed keeps an Account section
             // that says so and offers a retry, instead of the section silently disappearing and
             // implying they are signed out.
@@ -223,7 +231,7 @@ struct SettingsView: View {
                 .frame(minHeight: 44)
                 .accessibilityLabel(String(localized: "retry"))
             }
-        } else if let me = container.session.state.me {
+        } else if arm == .signedIn, let me = container.session.state.me {
             Section(String(localized: "settings_account_header")) {
                 // Label = the role, value = who — the same split `CategoryPill` makes (gate B1-I7),
                 // so VoiceOver reads "Account, <email>" rather than one fused sentence.

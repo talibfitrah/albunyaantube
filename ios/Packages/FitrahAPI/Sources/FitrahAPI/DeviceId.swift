@@ -30,10 +30,17 @@ public struct DeviceId: Sendable {
     }
 }
 
-/// The persisted id's read-or-create, SERIALISED (Stage 7 fix 2 / M7). The app builds five clients
-/// at launch and they read in parallel, so an unguarded check-then-act let two first readers both
-/// see an empty suite, both mint a UUID and both store it — two simultaneous requests carrying
-/// different `X-Device-Id` values, and one id written over the other.
+/// The persisted id's read-or-create, SERIALISED PROCESS-WIDE (Stage 7 fix 2 / M7; Stage 9 round 3
+/// / R3-P2). The app builds five clients at launch and they read in parallel, so an unguarded
+/// check-then-act let two first readers both see an empty suite, both mint a UUID and both store
+/// it — two simultaneous requests carrying different `X-Device-Id` values, and one id written over
+/// the other.
+///
+/// The lock is STATIC because `persisted(in:)` allocates a new instance on every call and
+/// `AppContainer` calls it five times (`AccountClient`, `OfflineGateClient`, `IndexClient`,
+/// `ReportClient`, `DeviceIdMiddleware`). An instance lock serialised each client against itself
+/// and nothing against the other four, i.e. it closed none of the race the comment claimed — the
+/// five first readers are, by construction, five different instances.
 ///
 /// `@unchecked Sendable` for `UserDefaults`, which carries no `Sendable` conformance but is
 /// documented as thread-safe, and which the app already shares across every store and client. The
@@ -41,14 +48,14 @@ public struct DeviceId: Sendable {
 /// every request and silently fall back to `.standard` for a nil suite.
 private final class PersistedDeviceId: @unchecked Sendable {
     private let defaults: UserDefaults
-    private let lock = Mutex(())
+    private static let lock = Mutex(())
 
     init(defaults: UserDefaults) { self.defaults = defaults }
 
     /// Still resolved PER READ (Stage 3 / M5), so `LocalAccountWiper`'s "remove the key and the
     /// next request mints a new id" keeps working; the lock only makes the mint happen once.
     func value() -> String {
-        lock.withLock { _ in
+        Self.lock.withLock { _ in
             if let existing = defaults.string(forKey: DeviceId.defaultsKey) { return existing }
             let created = UUID().uuidString
             defaults.set(created, forKey: DeviceId.defaultsKey)

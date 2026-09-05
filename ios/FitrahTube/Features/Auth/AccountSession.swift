@@ -160,18 +160,31 @@ nonisolated enum AccountState: Sendable, Equatable {
             await inFlight.value
             return
         }
-        let task = Task {
+        // Declared ahead of the `Task` so the body can name the task that owns the slot. The
+        // immutable copy below is what the cancellation handler takes: a `@Sendable` closure cannot
+        // capture a mutable local under Swift 6.
+        var round: Task<Void, Never>! = nil
+        round = Task {
             await self.fetch(maxAttempts: maxAttempts)
             // Stage 9 round 2 / P1: released from INSIDE the round. The clear used to sit after the
             // await below, so the slot outlived the work it names by a main-actor turn (several,
             // under load) — and a caller arriving in that window JOINED a round that was already
             // over and returned having fetched nothing. For a new identity that is the same defect
             // `dropSession()`'s cancel closes, by another route: B awaits A's finished task and
-            // never asks for its own record. Unconditional: once `dropSession()` has cancelled and
-            // cleared the slot, the worst a late release can do is make the next caller start its
-            // own round instead of joining one, which is the safe direction.
+            // never asks for its own record.
+            //
+            // Stage 9 round 3 / NB2: CONDITIONAL, and the round-2 claim that a late release is
+            // harmless was wrong. `dropSession()` cancels and clears, cancellation takes several
+            // async hops to surface, and `start()`'s `.signedIn(B)` arm installs B's task inside
+            // that window — so an unconditional clear wiped the slot B is still using, and the
+            // next caller started a SECOND concurrent round for B instead of joining. Two rounds
+            // for one identity both pass the guards below, so the loser's `.failed` could land
+            // over the winner's `.loaded` — fix round 1 / I2's defect by another route. Only the
+            // task that owns the slot may clear it (`MeFeedRepository.refresh` does the same).
+            guard self.inFlight == round else { return }
             self.inFlight = nil
         }
+        let task = round!
         inFlight = task
         await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
@@ -209,6 +222,16 @@ nonisolated enum AccountState: Sendable, Equatable {
         // A" and a Profile save prefilled from A's record `PUT` A's name under B's bearer. A late
         // answer for an identity that is no longer current is DROPPED, never published.
         let startedFor = user?.uid
+        // Stage 9 round 3 / NB1: a round that started with NO identity adopts whoever arrives.
+        // `SignInViewModel.land()` refreshes on the auth transition `start()` has not necessarily
+        // observed yet — the whole reason it exists (`refreshIfSignedIn`'s doc above) — so
+        // `startedFor` is nil there and the strict `user?.uid == startedFor` dropped the answer to
+        // the app's primary sign-in path: `state` stayed at the `.loading` written below with
+        // nothing left to re-drive it (`MeTabRoot`'s `.loading` arm is a spinner with no Retry),
+        // and `RootView` read `status == nil` and routed a PENDING_PROFILE account to the shell.
+        // The request was signed with whatever bearer Firebase held, which is the identity that is
+        // arriving — nil is "nobody yet", never "must still be nobody".
+        func publishable() -> Bool { startedFor == nil || user?.uid == startedFor }
         // Stage 7 fix 2 / I1(a): the account ALREADY on screen stays on screen while its own
         // refresh runs. This write used to be unconditional, and the foreground refresh (Stage 5 /
         // C2.1) then drove every return to foreground through `.loaded -> .loading -> .loaded` —
@@ -222,11 +245,11 @@ nonisolated enum AccountState: Sendable, Equatable {
         for attempt in 1...max(1, maxAttempts) {
             do {
                 let me = try await account.me()
-                guard user?.uid == startedFor else { return }
+                guard publishable() else { return }
                 state = .loaded(me)
                 return
             } catch {
-                guard user?.uid == startedFor else { return }
+                guard publishable() else { return }
                 switch error {
                 // The transport already posts these (`AuthorizedTransport`'s 403 envelope check),
                 // but a terminal account must drop its session even if that post is missed —
@@ -252,7 +275,7 @@ nonisolated enum AccountState: Sendable, Equatable {
                     // The restore is identity-guarded too (Stage 9 round 2 / P1): `previousState`
                     // is the account this round found, and putting it back over a session that has
                     // since signed out or switched is the same stale write by another route.
-                    guard user?.uid == startedFor else { return }
+                    guard publishable() else { return }
                     if Task.isCancelled {
                         state = previousState
                         return

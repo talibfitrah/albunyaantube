@@ -48,6 +48,13 @@ nonisolated final class FakeAuthClient: AuthClient {
         var tokenClaims: AuthUser?
         /// Every `idToken(forceRefresh:)` argument, in order.
         var tokenRefreshes: [Bool] = []
+        /// Stage 9 round 3 / R3-P1: the code the next FORCED mint is refused with, and what that
+        /// refusal recorded for `refreshRefusal()` to report. The fake had no way to fail a mint at
+        /// all, so the one production supplier of the terminal verdict was unexpressible and every
+        /// test handed `AuthorizedTransport` an inline closure instead — which is how the real
+        /// supplier came to be dead code with a fully pinned consumer.
+        var nextMintRefusal: AuthErrorCode?
+        var recordedRefusal: AuthErrorCode?
     }
 
     /// `Mutex` rather than `@unchecked Sendable` + bare vars: `AuthClient` is `Sendable` (it refines
@@ -73,6 +80,13 @@ nonisolated final class FakeAuthClient: AuthClient {
     var user: AuthUser {
         get { storage.withLock { $0.user } }
         set { storage.withLock { $0.user = newValue } }
+    }
+
+    /// The per-call failure leg for a FORCED token mint: set it, and the next
+    /// `idToken(forceRefresh: true)` answers nil and records this code for `refreshRefusal()`.
+    var nextMintRefusal: AuthErrorCode? {
+        get { storage.withLock { $0.nextMintRefusal } }
+        set { storage.withLock { $0.nextMintRefusal = newValue } }
     }
 
     /// The per-call failure leg: set it, and the next operation throws it and clears it.
@@ -101,11 +115,20 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// this way and the old one-line fake could never disagree with itself.
     func idToken(forceRefresh: Bool) async -> BearerToken? {
         guard let user = signedInUser() else { return nil }
-        let claims = storage.withLock { storage -> AuthUser in
+        let claims = storage.withLock { storage -> AuthUser? in
             storage.tokenRefreshes.append(forceRefresh)
+            // Stage 9 round 3 / R3-P1: a refused mint RECORDS its code here, exactly where the real
+            // client records it — `refreshRefusal()` reports what this call saw and never mints
+            // again, because Firebase has already signed the user out by then.
+            if forceRefresh, let refusal = storage.nextMintRefusal {
+                storage.nextMintRefusal = nil
+                storage.recordedRefusal = refusal
+                return nil
+            }
             if forceRefresh { storage.tokenClaims = storage.reloadedUser ?? user }
             return storage.tokenClaims ?? user
         }
+        guard let claims else { return nil }
         return BearerToken(value: "fake-id-token-\(claims.uid)-verified-\(claims.isEmailVerified)",
                            identity: claims.uid)
     }
@@ -113,10 +136,16 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// Every `idToken(forceRefresh:)` argument, in order.
     var tokenRefreshes: [Bool] { storage.withLock { $0.tokenRefreshes } }
 
-    /// Stage 8 / S5: nil, like `UnavailableAuthClient`'s. The scripting seam this replaces had no
-    /// writer — the four tests that exercise the terminal-verdict path (Stage 5 / M1) hand
-    /// `AuthorizedTransport` an inline closure instead, which is the seam that actually decides.
-    func refreshRefusal() async -> AuthErrorCode? { nil }
+    /// What the last refused forced mint recorded, consumed on read — the contract
+    /// `FirebaseAuthClient` now honours (Stage 9 round 3 / R3-P1). Nil with no refusal, which is
+    /// every suite that never sets `nextMintRefusal`.
+    func refreshRefusal() async -> AuthErrorCode? {
+        storage.withLock { storage in
+            let recorded = storage.recordedRefusal
+            storage.recordedRefusal = nil
+            return recorded
+        }
+    }
 
     /// Every sign-in entry point that has been called, in order.
     var entryPoints: [EntryPoint] { storage.withLock { $0.entryPoints } }

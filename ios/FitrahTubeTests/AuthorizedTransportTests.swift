@@ -221,6 +221,33 @@ struct AuthorizedTransportTests {
         #expect(AuthorizedTransport.terminalEvent(for: .wrongPassword) == nil)
     }
 
+    /// Stage 9 round 3 / R3-P1: the REAL supplier, wired as `AppContainer` wires it, instead of an
+    /// inline closure. Every row above hands `refreshRefusal` a literal, so the transport's
+    /// handling was fully pinned while its one production source was dead: `refreshRefusal()`
+    /// re-derived the verdict from `Auth.auth().currentUser`, which Firebase has ALREADY nilled
+    /// inside the throw for exactly the two codes that decide anything
+    /// (`User.signOutIfTokenIsInvalid` → `signOutByForce`). The refusal is now recorded where the
+    /// mint fails, so this drives the contract end to end: one forced mint, the code reported once
+    /// and consumed on read.
+    @Test func aRefusedForcedMintIsTheVerdictAndCostsNoSecondMint() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        auth.nextMintRefusal = .userNotFound
+        let base = ScriptedTransport([.json(401, "{}"), .json(401, "{}")])
+        let events = Events()
+        let authorized = AuthorizedTransport(
+            base: base, apiHost: Self.apiHost, tokens: auth,
+            onStatusEvent: { events.posted.append($0) },
+            refreshRefusal: { await auth.refreshRefusal() })
+
+        _ = try await authorized.send(request("/api/account/me"))
+
+        #expect(events.posted == [.deleted],
+                "the admin-side deletion had no working trigger on the bare-401 path")
+        #expect(auth.tokenRefreshes == [false, true],
+                "the verdict cost a second forced mint, or none at all")
+        #expect(await auth.refreshRefusal() == nil, "the recorded refusal was reported twice")
+    }
+
     /// A foreign host is out of bearer scope, so its 401 is neither retried nor read as a verdict.
     @Test func aForeignHosts401IsNeitherRetriedNorTerminal() async throws {
         let base = ScriptedTransport([.json(401, "{}")])

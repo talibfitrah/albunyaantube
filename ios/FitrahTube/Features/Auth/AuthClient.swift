@@ -167,7 +167,13 @@ nonisolated protocol AuthClient: AuthTokenProviding {
     /// write succeeded, so a swallowed failure left the app reporting signed-out while still minting
     /// bearers for the previous account — and the next launch restored it.
     func signOut() throws(AuthErrorCode)
-    /// Why a forced ID-token refresh was refused, or nil when it was not (including "no session").
+    /// Why the LAST mint attempted by `idToken(forceRefresh:)` was refused, consumed on read — nil
+    /// when it was not refused, when nobody is signed in, and on every call after the first.
+    ///
+    /// Stage 9 round 3 / R3-P1: a REPORT of what the mint saw, never a second mint of its own.
+    /// Firebase force-signs the user out inside the throw for `userNotFound`/`userDisabled`
+    /// (`User.signOutIfTokenIsInvalid`), so a conformer that re-derived the verdict from
+    /// `currentUser` afterwards could only ever answer nil for the two codes that decide anything.
     ///
     /// Stage 5 / M1+M2: `idToken(forceRefresh:)` collapses every refusal into nil, so a TERMINATED
     /// account was indistinguishable from a network stall. The backend answers a revoked token with

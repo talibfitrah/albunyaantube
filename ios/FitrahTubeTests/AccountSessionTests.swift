@@ -516,6 +516,125 @@ struct AccountSessionTests {
         #expect(transport.sent.count == 3, "the dropped account's round asked again after the switch")
     }
 
+    // MARK: - Stage 9 round 3 / NB1 + NB3 + NB2
+
+    /// NB1. The identity guard round 2 added compares `user?.uid` with the uid the round STARTED
+    /// for — and `SignInViewModel.land()` starts a round with no identity at all, on purpose: it
+    /// refreshes on the auth transition `start()` has not necessarily observed yet, which is the
+    /// only reason it exists. The strict comparison therefore dropped the answer to the app's
+    /// primary sign-in path, leaving a signed-in account at `.loading` (a spinner with no Retry)
+    /// with nothing left to re-drive `/me`, and `RootView` reading `status == nil` — the
+    /// pending-profile mis-route `land()` is there to prevent.
+    ///
+    /// Parked INSIDE `account.me()` (the transport's own park), which is what makes `sent.count`
+    /// an assertion: `start()`'s `.signedIn` arm must JOIN this round, not fetch again.
+    @Test func aSignInThatLandsBeforeTheListenerStillPublishesTheAccount() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let gate = Gate()
+        let transport = ScriptedTransport([.json(200, Self.meJSON)], park: { _ in await gate.block() })
+        let session = makeSession(auth: auth, transport: transport)
+        let running = Task { await session.start() }
+        defer { running.cancel() }
+
+        // `land()`'s shape: the refresh leads the listener.
+        let landing = Task { await session.refresh(maxAttempts: 1) }
+        await gate.waitUntilBlocked()
+        #expect(session.user == nil, "the round under test must start with no identity")
+
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+        for _ in 0..<500 where session.user == nil { await Task.yield() }
+        #expect(session.user?.uid == "fake-uid")
+
+        await gate.release()
+        await landing.value
+
+        #expect(session.state.me?.uid == "fake-uid",
+                "the account the sign-in had just landed was dropped by its own identity guard")
+        #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn,
+                "a just-signed-in account was parked at a spinner with no Retry")
+        #expect(transport.sent.count == 1,
+                "start()'s .signedIn arm fetched a second time instead of joining the round")
+    }
+
+    /// NB3. The SUCCESS arm's guard, on its own. Both round-2 pins park at the injected sleep, so
+    /// the identity change lands between two attempts and the post-sleep guard returns first — the
+    /// success arm is never reached and removing its guard alone stays green. Here the round runs
+    /// at `maxAttempts: 1` (no sleep, no retry) and parks inside `account.me()`, so the answer
+    /// arrives AFTER the sign-out and the only thing that can refuse it is the guard on the write.
+    @Test func aSignOutWhileTheAnswerIsOnTheWireIsNotPublished() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let gate = Gate()
+        let transport = ScriptedTransport([.json(200, Self.meJSON), .json(200, Self.meJSON)],
+                                          park: { index in if index == 2 { await gate.block() } })
+        let session = makeSession(auth: auth, transport: transport)
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+
+        let refreshing = Task { await session.refresh(maxAttempts: 1) }
+        await gate.waitUntilBlocked()
+
+        // The LISTENER takes the identity away: nothing is cancelled, so the round runs to its
+        // success arm with the answer for an account that is no longer signed in.
+        try auth.signOut()
+        for _ in 0..<500 where session.state != .signedOut { await Task.yield() }
+        #expect(session.state == .signedOut)
+
+        await gate.release()
+        await refreshing.value
+
+        #expect(session.state == .signedOut,
+                "the /me answer on the wire when the account signed out was published anyway")
+        #expect(MeTabRoot.arm(signedIn: false, state: session.state) == .guest,
+                "the signed-in Me screen rendered for a guest")
+    }
+
+    /// NB2. A superseded round must not clear the slot its replacement is using. `dropSession()`
+    /// cancels and clears, cancellation takes several async hops to surface, and `start()`'s
+    /// `.signedIn(B)` arm installs B's round inside that window — so the old round's unconditional
+    /// release wiped B's slot and the next caller started a SECOND concurrent round for B instead
+    /// of joining. Two rounds for one identity both pass the identity guards, so the loser's
+    /// `.failed` could land over the winner's `.loaded` (fix round 1 / I2, by another route).
+    ///
+    /// Two parks: A's round is held while B's is installed and held in turn, so "who owns the
+    /// slot" is decided while both are genuinely in flight.
+    @Test func aSupersededRoundDoesNotClearTheSlotItsReplacementIsUsing() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let gateA = Gate()
+        let gateB = Gate()
+        let transport = ScriptedTransport(
+            [.json(200, Self.meJSON), .json(200, Self.meJSON),
+             .json(200, Self.meBJSON), .json(200, Self.meBJSON)],
+            park: { index in
+                if index == 2 { await gateA.block() }
+                if index == 3 { await gateB.block() }
+            })
+        let session = makeSession(auth: auth, transport: transport)
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+
+        let dropped = Task { await session.refresh(maxAttempts: 1) }
+        await gateA.waitUntilBlocked()
+
+        session.signOut()
+        auth.user = Self.accountB
+        _ = try await auth.signIn(email: "other@fitrah.test", password: "p")
+        await gateB.waitUntilBlocked()
+
+        // A's cancelled round resumes and drops its answer — and must leave B's slot alone.
+        await gateA.release()
+        await dropped.value
+
+        let third = Task { await session.refresh(maxAttempts: 1) }
+        for _ in 0..<500 where transport.sent.count == 3 { await Task.yield() }
+        #expect(transport.sent.count == 3,
+                "a third caller started a second concurrent round for account B")
+
+        await gateB.release()
+        await third.value
+        #expect(session.state.me?.uid == "uid-b")
+        #expect(transport.sent.count == 3)
+    }
+
     // MARK: - Stage 9 round 2 / P2: offline keeps the account
 
     /// `fetch` keeps a loaded account rendered across its own refresh, but the FAILURE write was
