@@ -90,7 +90,7 @@ run_gate() {
     echo "== convert-strings.py --check =="
     python3 ios/scripts/convert-strings.py --check || return $?
 
-    cd "$(dirname "$0")/.."
+    cd "$(dirname "$0")/.." || { echo "test.sh: cannot cd to ios/" >&2; return 1; }
 
     # CF-D-7: the Cast SDK is vendored, not committed (ios/Vendor/ is gitignored), so a fresh
     # checkout heals itself here. This is a ONE-TIME ~40 MB network fetch that counts against the
@@ -167,7 +167,7 @@ run_gate() {
 # when RELEASE=1 -- see the header comment. Runs in its own background job, so it re-does the same
 # repo-root -> ios/ cd run_gate did (that cd does not survive across separate background jobs).
 run_release() {
-    cd "$(dirname "$0")/.."
+    cd "$(dirname "$0")/.." || { echo "test.sh: cannot cd to ios/" >&2; return 1; }
 
     # Debug is what the gate compiles; Release flips DEBUG off (AppContainer.swift's #else branch,
     # FitrahTubeApp.swift's #else branch) so it must build too. Simulator SDK -> no code signing

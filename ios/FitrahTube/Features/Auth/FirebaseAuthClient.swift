@@ -41,7 +41,15 @@ nonisolated final class FirebaseAuthClient: AuthClient {
     /// returned at the guard WITHOUT recording, so `refreshRefusal()` handed the dead account's
     /// code to a session that had none — `.deleted`, `handleDeletion()`, and the ruling-C13 wipe
     /// running against the GUEST library.
-    private let lastRefusal = Mutex<AuthErrorCode?>(nil)
+    ///
+    /// Cubic round 6 / P2b: it carries the UID it belongs to. The box is process-global and this
+    /// client is `nonisolated`, so two requests taking 401s at once both force a mint: request 1
+    /// records its verdict (and Firebase force-signs the user out inside that same throw), request
+    /// 2's mint then reaches the no-user guard — which, clearing unconditionally, ERASED request
+    /// 1's live verdict before it could be read, and nothing posted `.deleted`. Tagging the record
+    /// is what buys NB-A and this at once: the guard clears nothing, and `refreshRefusal(signedFor:)`
+    /// answers only the account the asking request was actually signed for.
+    private let lastRefusal = Mutex<(uid: String, code: AuthErrorCode)?>(nil)
 
     @MainActor init?() {
         guard FirebaseBootstrap.configureIfPossible() else { return nil }
@@ -68,20 +76,22 @@ nonisolated final class FirebaseAuthClient: AuthClient {
     /// verdict after the fact answered nil for exactly the two cases that matter and the ruling-C13
     /// device wipe had no working trigger on the bare-401 path.
     func idToken(forceRefresh: Bool) async -> BearerToken? {
-        guard let user = Auth.auth().currentUser else {
-            lastRefusal.withLock { $0 = nil }
-            return nil
-        }
+        // No clear here (Cubic round 6 / P2b): with nobody signed in this call cannot tell a
+        // verdict a CONCURRENT mint just recorded from a stale one, and erasing it is what dropped
+        // the wipe. The uid on the record is what bounds its life instead.
+        guard let user = Auth.auth().currentUser else { return nil }
         do {
             let token = try await user.getIDToken(forcingRefresh: forceRefresh)
-            lastRefusal.withLock { $0 = nil }
+            // This account's own successful mint is the expiry of this account's own refusal, and
+            // only of that one.
+            lastRefusal.withLock { if $0?.uid == user.uid { $0 = nil } }
             return BearerToken(value: token, identity: user.uid)
         } catch {
             guard forceRefresh else { return nil }
             let error = error as NSError
-            lastRefusal.withLock {
-                $0 = error.domain == AuthErrors.domain ? AuthErrorCode(firebaseCode: error.code) : .unknown
-            }
+            let code: AuthErrorCode = error.domain == AuthErrors.domain
+                ? AuthErrorCode(firebaseCode: error.code) : .unknown
+            lastRefusal.withLock { $0 = (user.uid, code) }
             return nil
         }
     }
@@ -171,9 +181,15 @@ nonisolated final class FirebaseAuthClient: AuthClient {
     /// `Auth.auth().currentUser` for another forced token, which (a) was dead code for the only two
     /// codes that decide anything, because Firebase had already nilled `currentUser`, and (b) cost
     /// a second network round trip for one 401 — round 1's accepted P3, retired here.
-    func refreshRefusal() async -> AuthErrorCode? {
-        lastRefusal.withLock { refusal in
-            let recorded = refusal
+    func refreshRefusal(signedFor uid: String?) async -> AuthErrorCode? {
+        // Cubic round 6 / P2b + round 4 / NB-A: a verdict is reported ONLY to a request that
+        // carried this account's bearer. A 401 taken by an unsigned request (nil) has no account
+        // to read one for — which is the sequence that handed a dead account's `.userNotFound` to
+        // a guest and wiped the guest library.
+        guard let uid else { return nil }
+        return lastRefusal.withLock { refusal in
+            guard refusal?.uid == uid else { return nil }
+            let recorded = refusal?.code
             refusal = nil
             return recorded
         }

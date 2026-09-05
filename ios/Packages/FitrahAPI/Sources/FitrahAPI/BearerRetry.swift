@@ -11,6 +11,8 @@ public nonisolated enum BearerRetry {
     /// because on an allowed host a 401 is a bearer rejection by construction. A refresh
     /// returning nil re-sends the SIGNED original so the 401 surfaces honestly
     /// (`FirebaseAuthInterceptor.kt:161-175`) — never unsigned, which would hide the real cause.
+    /// When attempt 1 was ALREADY unsigned there is nothing to re-send: the original 401 is
+    /// returned rather than a byte-identical second request for a guaranteed second refusal.
     ///
     /// - Parameters:
     ///   - allowed: `BearerScope.allows(...)`. False means this request never carries a token, so
@@ -34,7 +36,12 @@ public nonisolated enum BearerRetry {
         let response = try await send(attempt)
         guard allowed, isUnauthorizedBearer(response) else { return response }
 
-        guard let refreshed = await token(true) else { return try await send(attempt) }
+        guard let refreshed = await token(true) else {
+            // Cubic round 6 / P3: an unsigned attempt has no token to have gone stale, so re-sending
+            // it is the same request for the same 401 — every guest 401 on the API host doubled.
+            guard first != nil else { return response }
+            return try await send(attempt)
+        }
         // Task 6 review I2 — the cross-account leak guard, here so BOTH adapters inherit it. If the
         // signed-in account changed between the two attempts (sign-out + sign-in as somebody else
         // while this request was in flight), the refreshed bearer belongs to a DIFFERENT user and

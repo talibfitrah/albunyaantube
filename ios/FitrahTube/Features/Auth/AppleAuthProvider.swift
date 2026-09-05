@@ -48,7 +48,10 @@ import UIKit
         // guarded here rather than substituted in `presentationAnchor(for:)`: a DETACHED anchor
         // does not guarantee Apple ever calls back, which is the same orphaned-continuation hang by
         // another route. Refuse before `performRequests()`, never during.
-        guard FirebaseBootstrap.configureIfPossible(), let window = Self.keyWindow else {
+        // Stage 9 round 5 / NB-D: the same `isAvailable` term as Google's twin, for the same
+        // reason — one guard at the provider covers every caller, and Apple's own prerequisite
+        // (`FITRAH_APPLE_SIGNIN_REGISTERED`) is not something the configure latch can see.
+        guard isAvailable, FirebaseBootstrap.configureIfPossible(), let window = Self.keyWindow else {
             throw .failed(.appleSignInFailed)
         }
         anchor = window

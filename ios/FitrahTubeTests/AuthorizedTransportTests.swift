@@ -185,7 +185,7 @@ struct AuthorizedTransportTests {
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
             onStatusEvent: { events.posted.append($0) },
-            refreshRefusal: { .userNotFound })
+            refreshRefusal: { _ in .userNotFound })
 
         _ = try await authorized.send(request("/api/account/me"))
 
@@ -198,7 +198,7 @@ struct AuthorizedTransportTests {
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
             onStatusEvent: { events.posted.append($0) },
-            refreshRefusal: { .userDisabled })
+            refreshRefusal: { _ in .userDisabled })
 
         _ = try await authorized.send(request("/api/account/me"))
 
@@ -212,7 +212,7 @@ struct AuthorizedTransportTests {
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
             onStatusEvent: { events.posted.append($0) },
-            refreshRefusal: { .network })
+            refreshRefusal: { _ in .network })
 
         _ = try await authorized.send(request("/api/account/me"))
 
@@ -237,7 +237,7 @@ struct AuthorizedTransportTests {
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: auth,
             onStatusEvent: { events.posted.append($0) },
-            refreshRefusal: { await auth.refreshRefusal() })
+            refreshRefusal: { uid in await auth.refreshRefusal(signedFor: uid) })
 
         _ = try await authorized.send(request("/api/account/me"))
 
@@ -245,7 +245,7 @@ struct AuthorizedTransportTests {
                 "the admin-side deletion had no working trigger on the bare-401 path")
         #expect(auth.tokenRefreshes == [false, true],
                 "the verdict cost a second forced mint, or none at all")
-        #expect(await auth.refreshRefusal() == nil, "the recorded refusal was reported twice")
+        #expect(await auth.refreshRefusal(signedFor: "fake-uid") == nil, "the recorded refusal was reported twice")
     }
 
     /// Stage 9 round 4 / R4-P2 + NB-A: the box's life is bounded by "until the next mint". It was
@@ -266,7 +266,7 @@ struct AuthorizedTransportTests {
         auth.nextMintRefusal = .userNotFound
         #expect(await auth.idToken(forceRefresh: true) == nil)
         #expect(await auth.idToken(forceRefresh: true) != nil, "the scripted refusal is consume-once")
-        #expect(await auth.refreshRefusal() == nil,
+        #expect(await auth.refreshRefusal(signedFor: "fake-uid") == nil,
                 "a terminal verdict outlived the successful mint that disproved it")
 
         // The no-user guard clears it too, so nothing is left for a LATER session's 401 to read as
@@ -275,8 +275,38 @@ struct AuthorizedTransportTests {
         #expect(await auth.idToken(forceRefresh: true) == nil)
         try auth.signOut()
         #expect(await auth.idToken(forceRefresh: true) == nil)
-        #expect(await auth.refreshRefusal() == nil,
+        #expect(await auth.refreshRefusal(signedFor: nil) == nil,
                 "a signed-out session read the previous account's refusal as its own")
+    }
+
+    /// Cubic round 6 / P2b. The box is process-global, so two requests taking 401s at once both
+    /// force a mint: request 1's throw records `.userNotFound` AND force-signs the user out inside
+    /// itself (`signOutIfTokenIsInvalid`), and request 2's mint then reaches the no-user guard —
+    /// which, since round 4's NB-A clear, ERASED request 1's live verdict before it could be read.
+    /// Both requests then saw nil, nothing posted `.deleted`, and the ruling-C13 wipe missed its
+    /// bare-401 trigger. Tagging the record with its uid buys NB-A (a session that carried no
+    /// bearer, or another account's, reads nothing) without that clobber — clearing
+    /// unconditionally cannot satisfy both.
+    @Test func aConcurrentNoUserMintDoesNotEraseALiveVerdict() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+
+        // Request 1: the forced mint that records the verdict.
+        auth.nextMintRefusal = .userNotFound
+        #expect(await auth.idToken(forceRefresh: true) == nil)
+        // Firebase has already signed the user out inside that throw; request 2's forced mint
+        // therefore reaches the no-user guard.
+        try auth.signOut()
+        #expect(await auth.idToken(forceRefresh: true) == nil)
+
+        // NB-A stays closed, and NOT by erasing anything: a request that carried no bearer has no
+        // account to read a verdict for, and neither has a different one.
+        #expect(await auth.refreshRefusal(signedFor: nil) == nil,
+                "a session-less 401 read the previous account's refusal as its own")
+        #expect(await auth.refreshRefusal(signedFor: "uid-b") == nil,
+                "another account's 401 read this account's refusal as its own")
+        // …and request 1, which DID sign for this account, still gets the verdict it recorded.
+        #expect(await auth.refreshRefusal(signedFor: "fake-uid") == .userNotFound,
+                "a concurrent no-user mint erased the verdict the request that took the 401 was about to read")
     }
 
     /// A foreign host is out of bearer scope, so its 401 is neither retried nor read as a verdict.
@@ -286,7 +316,7 @@ struct AuthorizedTransportTests {
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
             onStatusEvent: { events.posted.append($0) },
-            refreshRefusal: { .userNotFound })
+            refreshRefusal: { _ in .userNotFound })
 
         _ = try await authorized.send(request("/api/account/me", host: "evil.test"))
 

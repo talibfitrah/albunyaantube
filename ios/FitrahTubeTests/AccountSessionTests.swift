@@ -669,6 +669,85 @@ struct AccountSessionTests {
         #expect(transport.sent.count == 1)
     }
 
+    /// Stage 9 round 5 / NB-C. The `defer` restore must put back only the `.loading` THIS round
+    /// wrote. `matchesIdentity()` short-circuits true whenever `startedFor == nil` — NB1's shape,
+    /// deliberately — so for a nil-started round cancellation was the ONLY remaining guard, and the
+    /// restore could write `previousState` over a value another writer put there. Here:
+    /// `dropSession()` cancels A and frees the slot, B signs in and its own round publishes
+    /// `.loaded(B)`, and A's straggler then reverted the screen to `.signedOut` — a signed-in B
+    /// rendered as a guest, with nothing left to re-drive `/me` until the next foreground hook.
+    @Test func aCancelledNilStartedRoundDoesNotRestoreOverANewerIdentitysAnswer() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let gate = Gate()
+        let transport = ScriptedTransport([.json(200, Self.meJSON), .json(200, Self.meBJSON)],
+                                          park: { index in if index == 1 { await gate.block() } })
+        let session = makeSession(auth: auth, transport: transport)
+        let running = Task { await session.start() }
+        defer { running.cancel() }
+
+        // `land()`'s shape: the round leads the listener, so `startedFor` is nil and the state it
+        // found — the `previousState` the `defer` would put back — is `.signedOut`.
+        let landing = Task { await session.refresh(maxAttempts: 1) }
+        await gate.waitUntilBlocked()
+        #expect(session.user == nil, "the round under test must start with no identity")
+
+        // The drop that cancels A's round AND frees the slot, so B's sign-in leads a round of its
+        // own rather than joining this one.
+        session.signOut()
+        auth.user = Self.accountB
+        _ = try await auth.signIn(email: "other@fitrah.test", password: "p")
+        for _ in 0..<500 where session.state.me?.uid != "uid-b" { await Task.yield() }
+        #expect(session.state.me?.uid == "uid-b", "account B never published its own record")
+
+        await gate.release()
+        await landing.value
+
+        #expect(session.state.me?.uid == "uid-b",
+                "a cancelled nil-started round restored .signedOut over the account that signed in after it")
+        #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn)
+    }
+
+    /// Cubic round 6 / P2. The auth stream's own `.signedOut` arm must free the coalescing slot,
+    /// exactly as `dropSession()` does. Firebase force-signs a user out INSIDE a refused forced
+    /// mint (`signOutIfTokenIsInvalid`), so `.signedOut` arrives through the LISTENER with account
+    /// A's round still parked in the slot — and `start()`'s `.signedIn(B)` arm then reached
+    /// `refresh()`, whose first statement joins whatever is in flight. B never asked for its own
+    /// record, A's answer was correctly dropped as stale, and `MeTabRoot.arm(signedIn: true,
+    /// state: .signedOut)` is `.unreachable`: the "Something went wrong" Retry card, in the Me tab
+    /// and in Settings' Account section, for an account that had just signed in.
+    @Test func aListenerSignOutFreesTheSlotSoTheNextIdentityFetchesItsOwnRecord() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let gate = Gate()
+        let transport = ScriptedTransport([.json(200, Self.meJSON), .json(200, Self.meJSON),
+                                           .json(200, Self.meBJSON)],
+                                          park: { index in if index == 2 { await gate.block() } })
+        let session = makeSession(auth: auth, transport: transport)
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+
+        let parked = Task { await session.refresh(maxAttempts: 1) }
+        await gate.waitUntilBlocked()
+
+        // The LISTENER, not `session.signOut()` — that path already cancels, which is the whole
+        // asymmetry this closes.
+        try auth.signOut()
+        for _ in 0..<500 where session.state != .signedOut { await Task.yield() }
+        #expect(session.state == .signedOut)
+
+        auth.user = Self.accountB
+        _ = try await auth.signIn(email: "other@fitrah.test", password: "p")
+        for _ in 0..<500 where session.state.me?.uid != "uid-b" { await Task.yield() }
+
+        #expect(transport.sent.count == 3,
+                "account B joined the previous identity's parked round instead of fetching its own record")
+        #expect(session.state.me?.uid == "uid-b")
+        #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn,
+                "a just-signed-in account landed on the Retry card")
+
+        await gate.release()
+        await parked.value
+    }
+
     // MARK: - Stage 9 round 2 / P2: offline keeps the account
 
     /// `fetch` keeps a loaded account rendered across its own refresh, but the FAILURE write was

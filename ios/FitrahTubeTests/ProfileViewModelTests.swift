@@ -123,6 +123,26 @@ struct ProfileViewModelTests {
         #expect(puts(fixture.transport).isEmpty)
     }
 
+    /// Cubic round 6 / P3. Dirtiness compared `Date` INSTANTS while only the DAY round-trips —
+    /// `wireDate` is `yyyy-MM-dd` and `parseWireDate` gives it back at midnight — so a re-pick of
+    /// the same day carrying a time-of-day enabled Save and sent a no-op `PUT`. The picker's value
+    /// is day-normalised on write, in the explicit Gregorian calendar (`BootstrapValidator
+    /// .gregorian`) on the injected time zone, never `Calendar.current`. One place, so `canSave`,
+    /// `save()`'s guard and its `dob` term cannot disagree.
+    @Test func reSelectingTheSameDayAtAnotherTimeOfDayIsNotDirtyAndSendsNoPut() async {
+        let fixture = await make()
+        let model = await loaded(fixture)
+
+        // The same 2000-01-01 the record holds, three in the afternoon.
+        model.dateOfBirth = Self.day(2000, 1, 1).addingTimeInterval(15 * 3600)
+
+        #expect(model.draft == model.original, "a same-day re-pick made the form dirty")
+        #expect(model.canSave == false)
+        await model.save()
+
+        #expect(puts(fixture.transport).isEmpty, "a no-op PUT went out for a day that did not change")
+    }
+
     @Test func aSuccessfulSaveMakesTheDraftTheNewOriginalAndWritesItBackToTheSession() async {
         let fixture = await make(then: [.json(200, Self.meJSON(name: "Aisha K"))])
         let model = await loaded(fixture)

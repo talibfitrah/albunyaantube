@@ -95,6 +95,20 @@ nonisolated enum AccountState: Sendable, Equatable {
         for await authState in auth.state {
             switch authState {
             case .signedOut:
+                // Cubic round 6 / P2: the SAME drop the explicit path performs. Firebase
+                // force-signs a user out INSIDE a refused forced mint
+                // (`FirebaseAuthClient`'s trace of `signOutIfTokenIsInvalid`), so `.signedOut`
+                // arrives HERE with the previous identity's round still in the slot — and
+                // `.signedIn(B)` below then joined it instead of asking for B's own record. B
+                // never fetched, A's answer was dropped as stale, and `MeTabRoot.arm` rendered
+                // `.unreachable` — the "Something went wrong" Retry card — for a signed-in B.
+                //
+                // Guarded on `user`, because this arm also delivers the stream's FIRST element,
+                // which is the CURRENT state: on a launch with no session that is `.signedOut`,
+                // and it is not a sign-out. Unguarded it cancelled the `land()` round the sign-in
+                // screen starts ahead of the listener (round 3 / NB1) — the app's primary
+                // sign-in path, killed by its own session observer.
+                if user != nil { cancelInFlight() }
                 user = nil
                 scope(to: "")
                 state = .signedOut
@@ -248,7 +262,17 @@ nonisolated enum AccountState: Sendable, Equatable {
         // than a fourth copy of the check at each return. Identity-guarded for the same reason the
         // publishes are (round 2 / P1): putting a dropped account's state back is a stale write
         // too. `state != previousState` so the no-op case does not fire an observation.
-        defer { if Task.isCancelled, matchesIdentity(), state != previousState { state = previousState } }
+        // Stage 9 round 5 / NB-C: `state == .loading` is what makes the claim above literal.
+        // `matchesIdentity()` short-circuits true whenever `startedFor == nil` (NB1's shape, and
+        // right for PUBLISHING this round's own answer), so for a nil-started round cancellation
+        // was the only guard left and the restore could write `previousState` over a value another
+        // writer put there: `dropSession()` frees the slot mid-round, B signs in and publishes
+        // `.loaded(B)`, and the straggler reverted the screen to `.signedOut`.
+        defer {
+            if Task.isCancelled, state == .loading, matchesIdentity(), state != previousState {
+                state = previousState
+            }
+        }
         // Stage 7 fix 2 / I1(a): the account ALREADY on screen stays on screen while its own
         // refresh runs. This write used to be unconditional, and the foreground refresh (Stage 5 /
         // C2.1) then drove every return to foreground through `.loaded -> .loading -> .loaded` —
@@ -362,11 +386,8 @@ nonisolated enum AccountState: Sendable, Equatable {
         // `GIDSignIn.signOut()` on a signed-out SDK is a no-op, and Apple's is a documented one.
         for provider in providers { provider.signOutProvider() }
         // Stage 9 round 2 / P1, and above the early return for the same reason the loop is: the
-        // round in flight belongs to the identity being dropped. Left in the slot, the NEXT
-        // identity's `start()` arm found it non-nil and JOINED account A's round instead of asking
-        // for its own record — B never fetched, and A's answer landed under B's session.
-        inFlight?.cancel()
-        inFlight = nil
+        // round in flight belongs to the identity being dropped.
+        cancelInFlight()
         guard state != .signedOut else { return false }
         do {
             try auth.signOut()
@@ -384,6 +405,18 @@ nonisolated enum AccountState: Sendable, Equatable {
         scope(to: "")
         state = .signedOut
         return true
+    }
+
+    /// Both sign-out routes' shared line (Cubic round 6 / P2): the round in flight belongs to the
+    /// identity being dropped, and left in the slot the NEXT identity's `refresh()` JOINS it
+    /// instead of asking for its own record — B never fetches, A's answer is dropped as stale, and
+    /// the Me tab and Settings' Account section park on the Retry card. `dropSession()` has done
+    /// this since round 2 / P1; the auth stream's own `.signedOut` arm had not, so a
+    /// Firebase-initiated sign-out (a refused forced mint force-signs the user out) left the hole
+    /// open on the path that reaches it without going through `signOut()`.
+    private func cancelInFlight() {
+        inFlight?.cancel()
+        inFlight = nil
     }
 
     /// The age-ineligible teardown, in ONE place (Stage 8 / S7). `AgeIneligibleScreen.acknowledge()`

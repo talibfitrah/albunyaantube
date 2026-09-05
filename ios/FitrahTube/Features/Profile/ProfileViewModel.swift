@@ -89,9 +89,15 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
         set { edit { $0.displayName = newValue } }
     }
 
+    /// Cubic round 6 / P3: normalised to the START OF THE DAY on write. Only the day round-trips
+    /// — `wireDate` formats `yyyy-MM-dd` and `parseWireDate` gives it back at midnight — so
+    /// comparing the picker's raw instant made a re-pick of the SAME day dirty and sent a no-op
+    /// `PUT`. Done here, once, so `canSave`, `save()`'s guard and its `dob` term cannot disagree;
+    /// the calendar is `BootstrapValidator.gregorian(calendar)`, never `Calendar.current`, for the
+    /// reason every other date site in this flow uses it.
     var dateOfBirth: Date? {
         get { draft?.dateOfBirth }
-        set { edit { $0.dateOfBirth = newValue } }
+        set { edit { $0.dateOfBirth = newValue.map { BootstrapValidator.gregorian(calendar).startOfDay(for: $0) } } }
     }
 
     // The `.editing` payload, one accessor per field rather than one tuple: readers would otherwise

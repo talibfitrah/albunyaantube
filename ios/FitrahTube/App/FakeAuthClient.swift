@@ -54,7 +54,7 @@ nonisolated final class FakeAuthClient: AuthClient {
         /// test handed `AuthorizedTransport` an inline closure instead — which is how the real
         /// supplier came to be dead code with a fully pinned consumer.
         var nextMintRefusal: AuthErrorCode?
-        var recordedRefusal: AuthErrorCode?
+        var recordedRefusal: (uid: String, code: AuthErrorCode)?
     }
 
     /// `Mutex` rather than `@unchecked Sendable` + bare vars: `AuthClient` is `Sendable` (it refines
@@ -114,13 +114,10 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// `reload()` has flipped `isEmailVerified` on the record — the real client behaves exactly
     /// this way and the old one-line fake could never disagree with itself.
     func idToken(forceRefresh: Bool) async -> BearerToken? {
-        // Stage 9 round 4 / NB-A: the no-user guard CLEARS the box, mirroring the real client.
-        // Answering nil here without clearing is what let one identity's unconsumed refusal be
-        // read as a later, session-less 401's own verdict.
-        guard let user = signedInUser() else {
-            storage.withLock { $0.recordedRefusal = nil }
-            return nil
-        }
+        // Cubic round 6 / P2b: NO clear, mirroring the real client. With nobody signed in this
+        // call cannot tell a verdict a concurrent mint just recorded from a stale one; the uid on
+        // the record is what stops a later, session-less 401 reading it as its own.
+        guard let user = signedInUser() else { return nil }
         let claims = storage.withLock { storage -> AuthUser? in
             storage.tokenRefreshes.append(forceRefresh)
             // Stage 9 round 3 / R3-P1: a refused mint RECORDS its code here, exactly where the real
@@ -128,12 +125,14 @@ nonisolated final class FakeAuthClient: AuthClient {
             // again, because Firebase has already signed the user out by then.
             if forceRefresh, let refusal = storage.nextMintRefusal {
                 storage.nextMintRefusal = nil
-                storage.recordedRefusal = refusal
+                // Cubic round 6 / P2b: tagged with the account it belongs to, as the real client
+                // records it.
+                storage.recordedRefusal = (user.uid, refusal)
                 return nil
             }
-            // Stage 9 round 4 / R4-P2: and a SUCCESSFUL mint clears it. The box says why the last
-            // mint was refused; a mint that worked is the refusal's expiry.
-            storage.recordedRefusal = nil
+            // Stage 9 round 4 / R4-P2: and a SUCCESSFUL mint clears it — this account's own, and
+            // only that one.
+            if storage.recordedRefusal?.uid == user.uid { storage.recordedRefusal = nil }
             if forceRefresh { storage.tokenClaims = storage.reloadedUser ?? user }
             return storage.tokenClaims ?? user
         }
@@ -148,9 +147,11 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// What the last refused forced mint recorded, consumed on read — the contract
     /// `FirebaseAuthClient` now honours (Stage 9 round 3 / R3-P1). Nil with no refusal, which is
     /// every suite that never sets `nextMintRefusal`.
-    func refreshRefusal() async -> AuthErrorCode? {
-        storage.withLock { storage in
-            let recorded = storage.recordedRefusal
+    func refreshRefusal(signedFor uid: String?) async -> AuthErrorCode? {
+        guard let uid else { return nil }
+        return storage.withLock { storage in
+            guard storage.recordedRefusal?.uid == uid else { return nil }
+            let recorded = storage.recordedRefusal?.code
             storage.recordedRefusal = nil
             return recorded
         }

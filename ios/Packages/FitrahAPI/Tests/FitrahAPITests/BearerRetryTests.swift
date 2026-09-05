@@ -127,6 +127,20 @@ struct BearerRetryTests {
         #expect(response == true)
     }
 
+    /// (10) Cubic round 6 / P3. `token(false)` nil AND `token(true)` nil → the ORIGINAL 401 is
+    /// returned, never a second byte-identical unsigned send. The doc at `:11-13` promises the
+    /// re-send is never unsigned; test (7) is the signed half of that promise and this is the
+    /// other — an unsigned request that took a 401 and could not be signed doubled every guest
+    /// 401 on the API host, for a guaranteed second refusal.
+    @Test func aNilRefreshAfterAnUnsignedFirstAttemptReturnsTheOriginal401() async {
+        let recorder = Recorder()
+        let response = await run(tokens: [nil, nil], responses: [true, true], into: recorder)
+        #expect(recorder.tokenCalls == [false, true])
+        #expect(recorder.signCalls == 0)
+        #expect(recorder.sent == [0], "the identical unsigned request was sent twice for one 401")
+        #expect(response == true, "the original 401 surfaces instead")
+    }
+
     /// (8) Task 6 review I2 — the cross-account leak guard, fixed HERE so both adapters inherit it.
     /// A sign-out plus sign-in as a different account landing between the two attempts must NOT
     /// replay account A's in-flight request signed with account B's bearer

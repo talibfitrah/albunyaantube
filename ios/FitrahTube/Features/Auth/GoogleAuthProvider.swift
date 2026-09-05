@@ -25,7 +25,13 @@ import UIKit
         // Configure-first, and not merely "read the client id": the `GIDConfiguration` hand-off
         // lives INSIDE `FirebaseBootstrap`'s configure latch, so a path that read `googleClientID`
         // and skipped the latch would reach a `GIDSignIn` whose `configuration` is still nil.
-        guard FirebaseBootstrap.configureIfPossible(), let presenter = Self.presenter else {
+        //
+        // Stage 9 round 5 / NB-D: `isAvailable` FIRST, so the trap is closed once for every caller
+        // rather than at each of them. It is strictly more than the configure latch — a plist that
+        // configured fine but whose reversed client id is not among this bundle's
+        // `CFBundleURLSchemes` is what makes `GIDSignIn` raise `NSInvalidArgumentException`, an
+        // Objective-C exception the `catch` below cannot see.
+        guard isAvailable, FirebaseBootstrap.configureIfPossible(), let presenter = Self.presenter else {
             throw .failed(.googleSignInFailed)
         }
         do {

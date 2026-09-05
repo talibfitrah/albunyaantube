@@ -113,7 +113,12 @@ nonisolated enum DeleteAccountState: Equatable {
                 return false
             }
         }
-        guard let provider = federatedProvider else { return false }
+        // Stage 9 round 5 / NB-D: UNAVAILABLE is a refusal, checked before the sheet. `isAvailable`
+        // is `SignInCapabilities.current()`, which since R5-P1 also demands a callback scheme
+        // matching the plist's client id — without that `GIDSignIn` raises an uncatchable
+        // `NSInvalidArgumentException` and the app terminates on this tap. The sign-in screen has
+        // refused that call since Task 10 (`SignInViewModel:125`); this leg had not.
+        guard let provider = federatedProvider, provider.isAvailable else { return false }
         do {
             let credential = try await provider.presentSignIn()
             try await auth.reauthenticate(with: credential)

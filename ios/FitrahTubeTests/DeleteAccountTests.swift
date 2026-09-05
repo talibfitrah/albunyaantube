@@ -52,12 +52,12 @@ struct DeleteAccountTests {
     /// every test that expects the DELETE to go out fills `model.password` first — the confirm now
     /// re-authenticates before it sends anything.
     private func makeFixture(delete response: HTTPResponse,
-                             user: AuthUser = FakeAuthClient.defaultUser) -> Fixture {
+                             user: AuthUser = FakeAuthClient.defaultUser,
+                             google: FakeOAuthProvider = FakeOAuthProvider()) -> Fixture {
         let auth = FakeAuthClient(state: .signedOut, user: user)
         let transport = ScriptedTransport([.json(200, Self.meJSON), response])
         let status = AccountStatusCenter()
         let wipes = WipeSpy()
-        let google = FakeOAuthProvider()
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [], status: status,
                                      sleep: { _ in }, wipe: { [wipes] in wipes.record(); return nil })
@@ -359,6 +359,33 @@ struct DeleteAccountTests {
         #expect(fixture.model.state == .failedReauth(password: false))
         // Stage 7 fix 2 / I2: and the message it renders is not "Incorrect current password" —
         // this account has no password to have got wrong.
+        #expect(DeleteAccountViewModel.messageKey(for: fixture.model.state) == "auth_error_generic")
+        #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false)
+        #expect(fixture.wipes.count == 0)
+    }
+
+    /// Stage 9 round 5 / NB-D: an UNAVAILABLE provider is never PRESENTED. The sign-in screen
+    /// refuses that call (`SignInViewModel:125`) and this leg did not, so the uncatchable
+    /// `NSInvalidArgumentException` R5-P1 closed on the sign-in path stayed reachable one caller
+    /// over: a client id whose reversed callback scheme is not in this bundle makes
+    /// `GIDSignIn` raise, and an Objective-C exception is not a Swift `Error` — the app terminates.
+    /// Unavailable is a refusal like a dismissed sheet: nothing is deleted, and the copy says WHAT.
+    ///
+    /// `presentCount == 0` is the discriminating assertion: `FakeOAuthProvider` THROWS when it is
+    /// unavailable, so the end state was already right for the wrong reason — the real provider
+    /// traps instead of throwing.
+    @Test func anUnavailableProviderIsNeverPresentedAndSendsNoDelete() async throws {
+        let googleUser = AuthUser(uid: "fake-uid", email: "student@fitrah.test",
+                                  isEmailVerified: true, providerIDs: ["google.com"])
+        let fixture = makeFixture(delete: .json(204, ""), user: googleUser,
+                                  google: FakeOAuthProvider(isAvailable: false))
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        await fixture.model.delete()
+        for _ in 0..<200 { await Task.yield() }
+
+        #expect(fixture.google.presentCount == 0, "an unavailable provider was presented")
+        #expect(fixture.model.state == .failedReauth(password: false))
         #expect(DeleteAccountViewModel.messageKey(for: fixture.model.state) == "auth_error_generic")
         #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false)
         #expect(fixture.wipes.count == 0)

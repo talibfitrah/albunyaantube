@@ -15,11 +15,11 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
     /// Why the token source refused a forced refresh, as a lifecycle verdict (Stage 5 / M1).
     /// Default `nil` = "no local verdict", which is every existing caller and every non-Firebase
     /// token source.
-    private let refreshRefusal: @Sendable () async -> AuthErrorCode?
+    private let refreshRefusal: @Sendable (_ signedFor: String?) async -> AuthErrorCode?
 
     init(base: any HTTPTransport, apiHost: String, tokens: any AuthTokenProviding,
          onStatusEvent: @escaping @Sendable (AccountStatusEvent) -> Void,
-         refreshRefusal: @escaping @Sendable () async -> AuthErrorCode? = { nil }) {
+         refreshRefusal: @escaping @Sendable (_ signedFor: String?) async -> AuthErrorCode? = { _ in nil }) {
         self.base = base
         self.apiHost = apiHost
         self.tokens = tokens
@@ -57,6 +57,10 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
         // the refresh `BearerRetry` already performed, and asking twice would mint two round trips
         // for one 401.
         let refused = Mutex<AccountStatusEvent?>(nil)
+        // Cubic round 6 / P2b: the identity this request was SIGNED for, so a verdict is only ever
+        // reported to the account it belongs to. `AuthClient`'s refusal box is process-global and a
+        // 401 taken by a request that carried no bearer has no account to read a verdict for.
+        let signedFor = Mutex<String?>(nil)
         let response = try await BearerRetry.send(
             signed: request,
             // The stricter half of the host rule: a middleware would scope against its `baseURL`
@@ -64,9 +68,12 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
             // handed whatever URL the caller built, so the PER-REQUEST URL decides.
             allowed: BearerScope.allows(request.url, apiHost: apiHost),
             token: { forceRefresh in
-                if let token = await tokens.idToken(forceRefresh: forceRefresh) { return token }
+                if let token = await tokens.idToken(forceRefresh: forceRefresh) {
+                    signedFor.withLock { $0 = token.identity }
+                    return token
+                }
                 guard forceRefresh else { return nil }
-                let event = Self.terminalEvent(for: await refreshRefusal())
+                let event = Self.terminalEvent(for: await refreshRefusal(signedFor.withLock { $0 }))
                 refused.withLock { $0 = event }
                 return nil
             },

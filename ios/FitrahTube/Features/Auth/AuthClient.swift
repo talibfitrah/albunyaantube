@@ -170,6 +170,12 @@ nonisolated protocol AuthClient: AuthTokenProviding {
     /// Why the LAST mint attempted by `idToken(forceRefresh:)` was refused, consumed on read — nil
     /// when it was not refused, when nobody is signed in, and on every call after the first.
     ///
+    /// Cubic round 6 / P2b: `signedFor` is the uid the ASKING request carried a bearer for, and a
+    /// verdict recorded for anybody else — a nil uid included — is not this caller's to read. The
+    /// record is therefore never cleared defensively (a no-user mint cannot tell a concurrent
+    /// live verdict from a stale one, and erasing it dropped the ruling-C13 wipe), only by the
+    /// account's own successful mint or by the read that consumes it.
+    ///
     /// Stage 9 round 3 / R3-P1: a REPORT of what the mint saw, never a second mint of its own.
     /// Firebase force-signs the user out inside the throw for `userNotFound`/`userDisabled`
     /// (`User.signOutIfTokenIsInvalid`), so a conformer that re-derived the verdict from
@@ -181,7 +187,7 @@ nonisolated protocol AuthClient: AuthTokenProviding {
     /// lifecycle arms can run), so the client's only local evidence of what happened is what
     /// Firebase says when asked to mint a new token: `.userNotFound` = the record is gone,
     /// `.userDisabled` = blocked.
-    func refreshRefusal() async -> AuthErrorCode?
+    func refreshRefusal(signedFor uid: String?) async -> AuthErrorCode?
     // `idToken(forceRefresh:)` is inherited from AuthTokenProviding — do not redeclare it.
 }
 
@@ -205,5 +211,5 @@ nonisolated struct UnavailableAuthClient: AuthClient {
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { throw .unknown }
     func deleteUser() async throws(AuthErrorCode) { throw .unknown }
     func signOut() throws(AuthErrorCode) {}
-    func refreshRefusal() async -> AuthErrorCode? { nil }
+    func refreshRefusal(signedFor uid: String?) async -> AuthErrorCode? { nil }
 }
