@@ -1,0 +1,46 @@
+ios/FitrahTube/App/FakeAuthClient.swift
+  s_66ddb7c44de816::t_10c2149ff264cc 68-77
+ios/FitrahTube/Features/Auth/EmailVerificationViewModel.swift
+  s_66ddb7c44de816::t_cef11d1e73ef11 165-171
+ios/FitrahTube/App/RootView.swift
+  s_66ddb7c44de816::t_e760a9c3ef3eeb 64-66
+  s_66ddb7c44de816::t_7b08f066d78fe8 115-118
+ios/FitrahTubeTests/AccountSessionTests.swift
+  s_66ddb7c44de816::t_172593e3ddabfe 503
+  s_66ddb7c44de816::t_52b661cd7886cd 447-502,504-536,538-544
+  s_66ddb7c44de816::t_7b365add005584 16-20
+  s_66ddb7c44de816::t_e86880fb24264f 566-590
+  s_66ddb7c44de816::t_617a06e7391257 537
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_66ddb7c44de816::t_8ba026362dba0b 252-254
+  s_66ddb7c44de816::t_dd16985faaac6f 204-211
+  s_66ddb7c44de816::t_cef11d1e73ef11 163-174,224-226,229,255,261-267,326-331
+ios/FitrahTubeTests/EmailVerificationViewModelTests.swift
+  s_66ddb7c44de816::t_13088279a2a5c7 186-189
+  s_66ddb7c44de816::t_bcef69fe7eafba 204-229
+ios/scripts/test.sh
+  s_66ddb7c44de816::t_fb8f893bcdd015 152-154
+ios/FitrahTube/Features/Auth/AppleAuthProvider.swift
+  s_66ddb7c44de816::t_4665f9ea43860c 15-18
+ios/FitrahTubeTests/MeTabRootTests.swift
+  s_66ddb7c44de816::t_92edc0097bcc9b 22-26
+ios/FitrahTube/Features/Me/MeTabRoot.swift
+  s_66ddb7c44de816::t_cef11d1e73ef11 31
+  s_66ddb7c44de816::t_c83a084e6e7be8 23-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2562d919cc77e57dc2cbdbf9930f9bd9811d67cd",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
