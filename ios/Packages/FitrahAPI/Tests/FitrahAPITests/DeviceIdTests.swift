@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import FitrahAPI
 
@@ -19,6 +20,80 @@ struct DeviceIdTests {
         #expect(UUID(uuidString: first.value) != nil)
         #expect(first.value == second.value)
         #expect(defaults.string(forKey: DeviceId.defaultsKey) == first.value)
+    }
+
+    /// Holds the FIRST write open, so the check-then-act window inside `persisted(in:)` is a
+    /// rendezvous instead of the few microseconds no test can schedule into. Everything else is the
+    /// real suite.
+    private final class GatedDefaults: UserDefaults, @unchecked Sendable {
+        /// Signalled once a first read has decided to mint and is about to store its value.
+        let minting = DispatchSemaphore(value: 0)
+        /// The test releases that write when it is done watching.
+        let proceed = DispatchSemaphore(value: 0)
+        private let lock = NSLock()
+        private var firstWrite = true
+        private var readCount = 0
+
+        /// How many reads have reached the suite — i.e. how many callers got past `DeviceId`'s own
+        /// synchronisation, if it has any.
+        var reads: Int { lock.withLock { readCount } }
+
+        override func string(forKey key: String) -> String? {
+            lock.withLock { readCount += 1 }
+            return super.string(forKey: key)
+        }
+
+        override func set(_ value: Any?, forKey key: String) {
+            let isFirst = lock.withLock { () -> Bool in
+                let first = firstWrite
+                firstWrite = false
+                return first
+            }
+            if isFirst {
+                minting.signal()
+                proceed.wait()
+            }
+            super.set(value, forKey: key)
+        }
+    }
+
+    /// Stage 7 fix 2 / M7: the app builds five clients at launch and they read this concurrently.
+    /// With an unsynchronised read-or-create, a second reader arriving while the first is between
+    /// its `string(forKey:)` and its `set` sees an empty suite too, mints its own UUID and stores
+    /// it — two in-flight requests carrying different `X-Device-Id` values, and one id written over
+    /// the other. One value, one stored key, however many readers arrive.
+    ///
+    /// No clock anywhere: the first reader is parked at its write, the second is given a bounded
+    /// budget of spins to reach the suite (unsynchronised it arrives at once; under the lock it
+    /// never arrives, which is the property), and the parked writer is then released.
+    @Test func concurrentFirstReadsMintExactlyOneId() {
+        let name = "DeviceIdTests-\(UUID().uuidString)"
+        let defaults = GatedDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        defer { defaults.removePersistentDomain(forName: name) }
+        let deviceId = DeviceId.persisted(in: defaults)
+
+        let values = Mutex<[String]>([])
+        let finished = DispatchSemaphore(value: 0)
+        for _ in 0..<2 {
+            DispatchQueue.global().async {
+                let value = deviceId.value
+                values.withLock { $0.append(value) }
+                finished.signal()
+            }
+        }
+
+        defaults.minting.wait()
+        var spins = 0
+        while spins < 5_000_000, defaults.reads < 2 { spins += 1 }
+        defaults.proceed.signal()
+        finished.wait()
+        finished.wait()
+
+        let read = Set(values.withLock { $0 })
+        #expect(read.count == 1, "concurrent first reads minted more than one device id: \(read)")
+        #expect(read.first == defaults.string(forKey: DeviceId.defaultsKey),
+                "the id the requests carried is not the one that was stored")
     }
 
     @Test func reusesExistingValue() {

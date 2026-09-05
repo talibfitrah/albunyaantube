@@ -154,9 +154,9 @@ import Testing
     @Test func theUnavailableClientHasNoUserNoTokenAndASilentSignOut() async throws {
         let client = UnavailableAuthClient()
         // Ruling F12, pinned by the compiler: `AuthClient` REFINES `AuthTokenProviding`, so the
-        // container's one auth object is handed straight to `AuthMiddleware` (Task 6) and
-        // `AuthorizedTransport` (Task 7) with no adapter. A merely matching method signature does
-        // not create conformance in Swift, and this line would not compile.
+        // container's one auth object is handed straight to `AuthorizedTransport` (Task 7) with
+        // no adapter. A merely matching method signature does not create conformance in Swift, and
+        // this line would not compile.
         let provider: any AuthTokenProviding = client
         #expect(await provider.idToken(forceRefresh: true) == nil)
         #expect(await client.currentUser() == nil)

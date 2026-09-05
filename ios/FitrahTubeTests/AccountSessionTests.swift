@@ -402,6 +402,43 @@ struct AccountSessionTests {
                 "a cancelled leader parked the session at .loading for every other observer")
     }
 
+    // MARK: - Stage 7 fix 2 / I1: a refresh is not a blank screen
+
+    /// The account already on screen STAYS on screen while its own refresh runs. `fetch` used to
+    /// write `.loading` unconditionally, and the foreground refresh (S5-C2.1) then drove every
+    /// return to foreground through `.loaded -> .loading -> .loaded` — which the new third arm
+    /// (`MeTabRoot.arm`) rendered as "Something went wrong" with a Retry button, in the Me tab and
+    /// in Settings' Account section, tearing `MeSignedInView` down and re-running its `.task` blocks
+    /// each time. A `.failed` result still replaces the value (that is the row the arm is for) and a
+    /// DIFFERENT uid still resets, because the identity `start()` just set is what is compared.
+    ///
+    /// Observed through the injected sleep's rendezvous — the first attempt fails with a transport
+    /// error, so the state is inspectable while the retry is genuinely in flight, with no clock.
+    @Test func aRefreshForTheSameAccountKeepsTheAccountRendered() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let gate = Gate()
+        let transport = ScriptedTransport([.json(200, Self.meJSON),
+                                           .failing(URLError(.timedOut)),
+                                           .json(200, Self.meJSON)])
+        let session = makeSession(auth: auth, transport: transport,
+                                  sleeps: SleepRecorder(), blockingSleep: { await gate.block() })
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+        let loaded = session.state
+        #expect(loaded.me?.uid == "fake-uid")
+
+        let refreshing = Task { await session.refresh() }
+        await gate.waitUntilBlocked()
+
+        #expect(session.state == loaded, "the account on screen was blanked to .loading by its own refresh")
+        #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn,
+                "the Me tab and Settings' Account section rendered an error card over a live account")
+
+        await gate.release()
+        await refreshing.value
+        #expect(session.state.me?.uid == "fake-uid")
+    }
+
     // MARK: - Stage 5 / C1.3: a refused sign-out is not a sign-out
 
     /// `Auth.signOut()` assigns `_currentUser = nil` only when the Keychain write succeeded, so a

@@ -44,7 +44,7 @@ struct AuthorizedTransportTests {
 
     // MARK: - The two adapter facts
 
-    /// Fact 1: the Bearer reaches the configured API host and NOWHERE else. `AuthMiddleware` scopes
+    /// Fact 1: the Bearer reaches the configured API host and NOWHERE else. `BearerScope` scopes
     /// against its `baseURL`; this is the stricter half — the per-REQUEST URL decides, which is what
     /// a shared `HTTPTransport` needs (nothing upstream guarantees the caller stayed on one host).
     @Test func theBearerReachesTheApiHostAndNeverYouTube() async throws {

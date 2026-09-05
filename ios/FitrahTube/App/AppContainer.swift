@@ -143,9 +143,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// spec §10's "not loaded at all" clause, and the fixture containers' default.
     private(set) lazy var castController = CastController()
 
-    /// Phase 4 Task 4: the app's ONE auth seam, and the ONE token source `AuthMiddleware` (Task 6)
-    /// and `AuthorizedTransport` (Task 7) are handed (ruling F12 — `AuthClient` refines
-    /// `AuthTokenProviding`, so no adapter sits between them).
+    /// Phase 4 Task 4: the app's ONE auth seam, and the ONE token source `AuthorizedTransport`
+    /// (Task 7) is handed (ruling F12 — `AuthClient` refines `AuthTokenProviding`, so no adapter
+    /// sits between them).
     ///
     /// This calls `FirebaseBootstrap.configureIfPossible()` ITSELF (through `FirebaseAuthClient`'s
     /// failable init) rather than assuming `FitrahTubeApp.init()`'s warm-up already ran: `live()` is

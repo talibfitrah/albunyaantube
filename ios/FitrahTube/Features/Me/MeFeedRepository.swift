@@ -175,15 +175,18 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
                 await deadline { await Self.fetch(id, atom: atom) } ?? .timeout
             }
             let after = now()
+            // A superseded round must write NOTHING — not the banner, not the bucketed rows, and
+            // (Stage 7 fix 2 / M9) not the per-channel gate state either. This guard used to sit
+            // below the loop, so a `force: false` round that pull-to-refresh had already cancelled
+            // and replaced still stamped every channel's `lastAttempt` (and, on a failure, its
+            // backoff) underneath the round that replaced it.
+            guard !Task.isCancelled else { return }
             for (id, outcome) in outcomes {
                 write(MeFeedRefreshGate.apply(outcome, to: state(for: id), now: after), for: id)
             }
             // One rule, deliberately coarse: the banner says "couldn't refresh your feed", which is
             // true exactly when nothing this round did. A partial success renders its rows and says
             // nothing — an error over a feed that just grew would be noise.
-            // A superseded round must not write the banner (or the bucketed rows) the round that
-            // replaced it is about to write.
-            guard !Task.isCancelled else { return }
             lastError = outcomes.values.contains(.success) ? nil : String(localized: "me_refresh_error")
         }
         guard !Task.isCancelled else { return }

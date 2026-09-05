@@ -3,7 +3,7 @@ import Testing
 @testable import FitrahAPI
 
 /// Spec §8 / ruling F12: the Bearer never leaves the configured API host, and the rule has ONE
-/// copy — `AuthMiddleware` checks it against its `baseURL`, `AuthorizedTransport` against each
+/// copy — `AuthorizedTransport` checks it against each
 /// request URL, both through this.
 @Suite struct BearerScopeTests {
 

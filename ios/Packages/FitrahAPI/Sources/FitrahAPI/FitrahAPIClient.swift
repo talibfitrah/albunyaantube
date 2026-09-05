@@ -30,7 +30,7 @@ public enum FitrahAPIClient {
     /// **The generated client sends no Bearer, and nothing needs it to.** Its one call site
     /// (`AppContainer.swift` -> `LiveCatalogClient`) serves only public `/api/v1/*` paths; every
     /// Phase 4 endpoint is a hand-written client over `AuthorizedTransport`. Stage 1 / B2: the
-    /// `tokens:` parameter and the `AuthMiddleware` it installed had no production caller in any
+    /// `tokens:` parameter and the signing middleware it installed had no production caller in any
     /// build and were removed with their tests — the day a signed-in generated endpoint exists
     /// (spec §8's `POST /api/share-metadata/*`, which iOS has not built), the adapter comes back
     /// with its first consumer. `BearerRetry`, `BearerScope` and `AuthTokenProviding` STAY: they

@@ -111,11 +111,13 @@ struct RootView: View {
         // verdict the 403 envelope carries, and that path wipes the device (ruling C13); signing
         // out only would have left every row of a server-deleted account on it — a fourth residue
         // for one server state.
+        //
+        // Stage 7 fix 2 / M8: there is no `else if outcome.signOut` arm. The only two outcomes that
+        // set `signOut` (`.blocked`, `.deleted`) both carry an alert (`SplashRouter.outcome`), so
+        // that branch was unreachable — a second, live-looking path for a case that cannot occur.
         if let event = outcome.alert {
             session.handle(event)
             alert = AccountStatusAlert(event)
-        } else if outcome.signOut {
-            session.signOut()
         }
     }
 

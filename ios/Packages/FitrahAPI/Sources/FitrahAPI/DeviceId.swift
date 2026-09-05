@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Random per-install identifier sent as `X-Device-Id` on every backend call.
 /// Mirrors Android's `device_prefs/device_id` (NetworkModule.kt).
@@ -24,19 +25,37 @@ public struct DeviceId: Sendable, Equatable {
     private init(read: @escaping @Sendable () -> String) { self.read = read }
 
     public static func persisted(in defaults: UserDefaults = .standard) -> DeviceId {
-        // `UserDefaults` carries no `Sendable` conformance but is documented as thread-safe, and
-        // the app already shares one instance across every store and client. The alternative —
-        // capturing the suite name and rebuilding the object per read — would allocate on every
-        // request and silently fall back to `.standard` for a nil suite.
-        nonisolated(unsafe) let defaults = defaults
-        return DeviceId {
-            if let existing = defaults.string(forKey: defaultsKey) { return existing }
-            let created = UUID().uuidString
-            defaults.set(created, forKey: defaultsKey)
-            return created
-        }
+        let store = PersistedDeviceId(defaults: defaults)
+        return DeviceId { store.value() }
     }
 
     /// A closure has no identity to compare, so equality is what the header would carry.
     public static func == (lhs: DeviceId, rhs: DeviceId) -> Bool { lhs.value == rhs.value }
+}
+
+/// The persisted id's read-or-create, SERIALISED (Stage 7 fix 2 / M7). The app builds five clients
+/// at launch and they read in parallel, so an unguarded check-then-act let two first readers both
+/// see an empty suite, both mint a UUID and both store it — two simultaneous requests carrying
+/// different `X-Device-Id` values, and one id written over the other.
+///
+/// `@unchecked Sendable` for `UserDefaults`, which carries no `Sendable` conformance but is
+/// documented as thread-safe, and which the app already shares across every store and client. The
+/// alternative — capturing the suite name and rebuilding the object per read — would allocate on
+/// every request and silently fall back to `.standard` for a nil suite.
+private final class PersistedDeviceId: @unchecked Sendable {
+    private let defaults: UserDefaults
+    private let lock = Mutex(())
+
+    init(defaults: UserDefaults) { self.defaults = defaults }
+
+    /// Still resolved PER READ (Stage 3 / M5), so `LocalAccountWiper`'s "remove the key and the
+    /// next request mints a new id" keeps working; the lock only makes the mint happen once.
+    func value() -> String {
+        lock.withLock { _ in
+            if let existing = defaults.string(forKey: DeviceId.defaultsKey) { return existing }
+            let created = UUID().uuidString
+            defaults.set(created, forKey: DeviceId.defaultsKey)
+            return created
+        }
+    }
 }

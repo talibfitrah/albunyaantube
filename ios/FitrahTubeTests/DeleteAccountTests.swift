@@ -243,7 +243,12 @@ struct DeleteAccountTests {
         #expect(DeleteAccountViewModel.messageKey(for: .deleting) == nil)
         #expect(DeleteAccountViewModel.messageKey(for: .reauthenticating) == nil)
         // Reused, not authored: the same copy the password sheet renders for the same refusal.
-        #expect(DeleteAccountViewModel.messageKey(for: .failedReauth) == "edit_password_wrong_current")
+        #expect(DeleteAccountViewModel.messageKey(for: .failedReauth(password: true))
+                == "edit_password_wrong_current")
+        // Stage 7 fix 2 / I2: a Google or Apple account has no password, so "Incorrect current
+        // password" is a WHY, and a false one. WHAT, not WHY — and still nothing authored.
+        #expect(DeleteAccountViewModel.messageKey(for: .failedReauth(password: false))
+                == "auth_error_generic")
     }
 
     // MARK: - Stage 4 / I3: the re-authentication gate
@@ -260,7 +265,7 @@ struct DeleteAccountTests {
         await fixture.model.delete()
         for _ in 0..<200 { await Task.yield() }
 
-        #expect(fixture.model.state == .failedReauth)
+        #expect(fixture.model.state == .failedReauth(password: true))
         #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false,
                 "the account was deleted without proving who was holding the device")
         #expect(fixture.wipes.count == 0)
@@ -305,7 +310,10 @@ struct DeleteAccountTests {
         await fixture.model.delete()
         for _ in 0..<200 { await Task.yield() }
 
-        #expect(fixture.model.state == .failedReauth)
+        #expect(fixture.model.state == .failedReauth(password: false))
+        // Stage 7 fix 2 / I2: and the message it renders is not "Incorrect current password" —
+        // this account has no password to have got wrong.
+        #expect(DeleteAccountViewModel.messageKey(for: fixture.model.state) == "auth_error_generic")
         #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false)
         #expect(fixture.wipes.count == 0)
     }
@@ -330,6 +338,52 @@ struct DeleteAccountTests {
 
         #expect(wipes.count == 1)
         #expect(marker.pendingUid == nil, "the marker survived a wipe that succeeded")
+    }
+
+    /// Stage 7 fix 2 / M2. The marker carries a uid and nothing read it: a wipe that failed for
+    /// account A left it set, and the next launch wiped the device even though account B had since
+    /// signed in on it. The marker is redeemed only for the account it names — a different signed-in
+    /// uid clears it instead, because a wipe owed to A can no longer be performed without destroying
+    /// B's library.
+    @Test func aPendingMarkerForAnotherAccountIsClearedNotWiped() async throws {
+        let marker = InMemoryDeletionMarker()
+        marker.pendingUid = "someone-elses-uid"
+        let wipes = WipeSpy()
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let transport = ScriptedTransport([.json(200, Self.meJSON)])
+        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: auth, account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
+
+        await session.resumePendingDeletion()
+
+        #expect(wipes.count == 0, "another account's pending wipe erased this account's library")
+        #expect(marker.pendingUid == nil, "the stale marker survived and will wipe on the next launch too")
+    }
+
+    /// The other half of M2: `handleDeletion` used to store `""` when no uid was known, and the
+    /// getter reports `""` as pending — a marker that matches nobody, on a device that would then
+    /// wipe itself on the next launch whoever signs in. No uid, no marker; the wipe this call owes
+    /// the device still runs.
+    ///
+    /// The wipe FAILS here on purpose: a successful one clears the marker on its way out, which
+    /// would hide whatever was written.
+    @Test func noMarkerIsWrittenWithoutAUid() async throws {
+        struct StoreFull: Error {}
+        let marker = InMemoryDeletionMarker()
+        let wipes = WipeSpy()
+        let auth = FakeAuthClient(state: .signedOut)
+        let transport = ScriptedTransport([.json(200, Self.meJSON)])
+        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: auth, account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { [wipes] in wipes.record(); return StoreFull() }, marker: marker)
+
+        await session.handleDeletion(deletingFirebaseUser: false).value
+
+        #expect(marker.pendingUid == nil, "an empty uid was stored as a pending deletion")
+        #expect(wipes.count == 1, "the wipe this deletion owes the device did not run")
     }
 
     @Test func noMarkerMeansNoLaunchWipe() async throws {

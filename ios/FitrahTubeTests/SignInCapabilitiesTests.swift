@@ -23,15 +23,28 @@ import Testing
     /// `com.albunyaan.tube` has no Sign in with Apple capability registered (the entitlements file's
     /// own header records the counter-fact) — the F11 trap exactly, a button that renders and then
     /// fails `performRequests()` on the first signed device build. `FITRAH_APPLE_SIGNIN_REGISTERED`
-    /// is EMPTY in both tracked xcconfigs, so this build must report Apple as unconfigured.
+    /// is EMPTY in both tracked xcconfigs, so a build that does not override it reports Apple as
+    /// unconfigured.
+    ///
+    /// Stage 7 fix 2 / M4: the RELATION, not the tracked default. Asserting `registered.isEmpty`
+    /// made this go RED on the first machine whose (untracked, `#include?`d) `Local.xcconfig` sets
+    /// the flag — i.e. the gate broke for the developer who did the very thing the flag exists for.
+    /// What M6 is actually about is that the Team ID alone is not enough, and that holds whatever
+    /// the build says: configured EXACTLY when both flags are non-empty. The values are read the
+    /// way `SignInCapabilities` reads them, from this bundle.
     @Test func appleNeedsTheRegisteredFlagAndNotJustATeamId() {
         let teamId = Bundle.main.object(forInfoDictionaryKey: "FITRAH_APPLE_SIGNIN") as? String
         let registered = Bundle.main.object(forInfoDictionaryKey: "FITRAH_APPLE_SIGNIN_REGISTERED") as? String
-        #expect(registered?.isEmpty != false,
-                "the tracked xcconfigs must not claim a portal capability the App ID does not have")
-        #expect(SignInCapabilities.appleSignInIsConfigured == false)
-        // Stated so the assertion above cannot be read as "there is no Team ID either".
-        #expect(teamId?.isEmpty == false || teamId == nil)
+        let bothPresent = teamId?.isEmpty == false && registered?.isEmpty == false
+
+        #expect(SignInCapabilities.appleSignInIsConfigured == bothPresent,
+                "configured exactly when both flags are non-empty: FITRAH_APPLE_SIGNIN=\(teamId ?? "nil"), FITRAH_APPLE_SIGNIN_REGISTERED=\(registered ?? "nil")")
+        // The half M6 added, stated as its own row: a Team ID with no portal registration is NOT
+        // a configured Apple sign-in, which is the state both tracked xcconfigs ship.
+        if teamId?.isEmpty == false, registered?.isEmpty != false {
+            #expect(SignInCapabilities.appleSignInIsConfigured == false,
+                    "a committed Team ID alone made the Apple button claim a capability the App ID lacks")
+        }
     }
 
     /// All eight combinations of the pure table. Task 10 renders exactly this list, in this order.

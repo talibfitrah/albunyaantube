@@ -119,7 +119,16 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// Runs BEFORE the auth stream so a marker left by a deletion never has a signed-in account
     /// racing it back onto the screen.
     func resumePendingDeletion() async {
-        guard marker.pendingUid != nil else { return }
+        guard let pending = marker.pendingUid else { return }
+        // Stage 7 fix 2 / M2: the marker carries a uid and NOTHING read it. A wipe that failed for
+        // account A kept the marker, and a launch after account B had signed in on the same device
+        // wiped B's library for A's deletion. The wipe owed to A cannot be performed any more —
+        // every row on the device is B's now — so the marker is dropped rather than redeemed.
+        // A nil current user is the ordinary case: the deleted account is signed out.
+        if let signedIn = await auth.currentUser()?.uid, signedIn != pending {
+            marker.pendingUid = nil
+            return
+        }
         if await wipe() == nil { marker.pendingUid = nil }
     }
 
@@ -163,7 +172,16 @@ nonisolated enum AccountState: Sendable, Equatable {
         // having observed it, so `RootView` rendered a signed-in user as a guest with nothing left
         // to re-drive `/me`.
         let previousState = state
-        state = .loading
+        // Stage 7 fix 2 / I1(a): the account ALREADY on screen stays on screen while its own
+        // refresh runs. This write used to be unconditional, and the foreground refresh (Stage 5 /
+        // C2.1) then drove every return to foreground through `.loaded -> .loading -> .loaded` —
+        // which `MeTabRoot.arm`'s third arm rendered as "Something went wrong" with a Retry, in the
+        // Me tab and in Settings' Account section, tearing `MeSignedInView` down and re-running its
+        // `.task` blocks each time. A `.failed` result still replaces the value below; a DIFFERENT
+        // identity still clears it, because the uid `start()` has already set is what is compared —
+        // rendering account A's record while B's `/me` is in flight is the render `scope(to:)`
+        // exists to prevent.
+        if state.me == nil || state.me?.uid != user?.uid { state = .loading }
         for attempt in 1...max(1, maxAttempts) {
             do {
                 state = .loaded(try await account.me())
@@ -321,7 +339,12 @@ nonisolated enum AccountState: Sendable, Equatable {
         // revokes and deletes the Firebase user, so on the next launch `/me` answers a bare 401 and
         // nothing can reach `handleDeletion()` again — an interrupted cleanup would be owed to this
         // device forever. `start()` redeems the marker.
-        marker.pendingUid = user?.uid ?? state.me?.uid ?? ""
+        //
+        // Stage 7 fix 2 / M2: NEVER an empty uid. `?? ""` stored a marker that names nobody, and
+        // the getter reports `""` as pending — so a device with no identity to record would wipe
+        // itself on the next launch whoever had signed in by then. With no uid there is no marker;
+        // the wipe below still runs, it just cannot be resumed, which is the honest answer.
+        if let uid = user?.uid ?? state.me?.uid { marker.pendingUid = uid }
         // No `@MainActor in` on the closure: `performDeletion` carries the isolation and the hop.
         let task = Task.detached {
             await self.performDeletion()

@@ -1,10 +1,14 @@
-/// The 401 dance, ONCE (ruling F12). Both callers are a thin adapter: `AuthMiddleware` passes the
-/// OpenAPI `next` closure, `AuthorizedTransport` (Task 7) passes its wrapped `HTTPTransport.send`.
-/// Generic over the caller's request/response pair so neither transport world leaks into the other,
-/// and so the state machine is testable with no HTTP at all (`BearerRetryTests`).
+/// The 401 dance, ONCE (ruling F12). Its caller is a thin adapter: `AuthorizedTransport` (Task 7)
+/// passes its wrapped `HTTPTransport.send`. Generic over the caller's request/response pair so no
+/// transport world leaks into it, and so the state machine is testable with no HTTP at all
+/// (`BearerRetryTests`) — which is also what keeps it ready for a second adapter (Stage 1 / B2
+/// removed the generated client's, which had no production caller).
 public nonisolated enum BearerRetry {
     /// `send` is called at most twice: once signed (or unsigned when `token(false)` is nil), and
-    /// once more ONLY if the first answered 401 with `WWW-Authenticate: Bearer`. A refresh
+    /// once more ONLY if the first answer was a 401 the CALLER classified as a bearer rejection —
+    /// `AuthorizedTransport.isUnauthorizedBearer` is the status alone (Stage 5 / M2: the backend
+    /// sends no `WWW-Authenticate` header, and on an allowed host a 401 is a bearer rejection by
+    /// construction). A refresh
     /// returning nil re-sends the SIGNED original so the 401 surfaces honestly
     /// (`FirebaseAuthInterceptor.kt:161-175`) — never unsigned, which would hide the real cause.
     ///

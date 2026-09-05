@@ -6,7 +6,11 @@ nonisolated enum DeleteAccountState: Equatable {
     case idle, reauthenticating, deleting
     /// Stage 4 / I3: the re-authentication was refused — a wrong current password, a dismissed
     /// provider sheet, or a provider credential Firebase would not accept.
-    case failedReauth
+    ///
+    /// Stage 7 fix 2 / I2: WHICH leg was refused rides along, because the two refusals cannot share
+    /// one message. "Incorrect current password" over a Google or Apple account — which has no
+    /// password at all — is a refusal that states a WHY, and a false one.
+    case failedReauth(password: Bool)
     case failedLastAdmin, failedNetwork, failedUnknown
 }
 
@@ -43,7 +47,11 @@ nonisolated enum DeleteAccountState: Equatable {
         case .idle, .reauthenticating, .deleting: nil
         // Reused, not authored: the same "That password is incorrect" the password sheet renders
         // for exactly the same refused re-authentication.
-        case .failedReauth: "edit_password_wrong_current"
+        //
+        // Stage 7 fix 2 / I2: the PASSWORD leg only. A Google or Apple account that dismisses its
+        // provider sheet has no password to have got wrong, so that copy is a WHY, and a false one;
+        // the generic refusal says WHAT happened and nothing it cannot know. Also reused.
+        case .failedReauth(let password): password ? "edit_password_wrong_current" : "auth_error_generic"
         case .failedLastAdmin: "profile_delete_account_error_last_admin"
         case .failedNetwork: "profile_delete_account_error_network"
         case .failedUnknown: "profile_delete_account_error_unknown"
@@ -65,10 +73,13 @@ nonisolated enum DeleteAccountState: Equatable {
     func delete() async {
         guard state != .deleting, state != .reauthenticating else { return }
         state = .reauthenticating
+        // Read BEFORE the await: which leg ran is what the refusal message depends on (I2), and
+        // `session.user` is not this call's to assume unchanged across a provider sheet.
+        let passwordLeg = requiresPassword
         let reauthenticated = await reauthenticate()
         password = ""
         guard reauthenticated else {
-            state = .failedReauth
+            state = .failedReauth(password: passwordLeg)
             return
         }
         state = .deleting

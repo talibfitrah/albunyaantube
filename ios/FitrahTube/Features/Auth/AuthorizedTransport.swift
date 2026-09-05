@@ -4,9 +4,9 @@ import InnerTubeKit
 import Synchronization
 
 /// The hand-written clients' half of ruling F12: same host rule, same retry, different transport
-/// world. `AuthMiddleware` (`FitrahAPI`) is the generated client's half; the state machine itself is
-/// `BearerRetry` and lives in exactly one place, which this ADAPTS — it does not re-implement the
-/// 401 loop. Also the ONE place a 403 account-lifecycle envelope becomes an event.
+/// world. The state machine itself is `BearerRetry` (`FitrahAPI`), which lives in exactly one
+/// place and which this ADAPTS — it does not re-implement the 401 loop. Also the ONE place a 403
+/// account-lifecycle envelope becomes an event.
 nonisolated struct AuthorizedTransport: HTTPTransport {
     private let base: any HTTPTransport
     private let apiHost: String
@@ -59,7 +59,7 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
         let refused = Mutex<AccountStatusEvent?>(nil)
         let response = try await BearerRetry.send(
             signed: request,
-            // The stricter half of the host rule: `AuthMiddleware` scopes against its `baseURL`
+            // The stricter half of the host rule: a middleware would scope against its `baseURL`
             // because a `ClientMiddleware` only ever sees its own server, but this transport is
             // handed whatever URL the caller built, so the PER-REQUEST URL decides.
             allowed: BearerScope.allows(request.url, apiHost: apiHost),

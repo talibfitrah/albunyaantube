@@ -129,7 +129,7 @@ nonisolated struct OAuthCredential: Sendable {
 }
 
 /// Refines `AuthTokenProviding` so ONE token source really is one type: `AppContainer.auth` is
-/// handed straight to `AuthMiddleware` (Task 6) and to `AuthorizedTransport` (Task 7) with no
+/// handed straight to `AuthorizedTransport` (Task 7) with no
 /// adapter (ruling F12). A matching method signature does NOT create conformance in Swift, so the
 /// refinement is declared, not assumed.
 nonisolated protocol AuthClient: AuthTokenProviding {

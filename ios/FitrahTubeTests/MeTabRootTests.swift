@@ -25,9 +25,20 @@ import Testing
 
     /// The arm that did not exist. Telling a signed-in user they are a guest is worse than telling
     /// them their account could not be reached, and the second is the only one that offers a way out.
-    @Test func aSignedInUserWhoseMeHasNotLandedGetsTheUnreachableArm() {
-        #expect(MeTabRoot.arm(signedIn: true, state: .loading) == .unreachable)
+    ///
+    /// Stage 7 fix 2 / I1(b): `.loading` is NOT one of its rows. A request in flight is not a
+    /// failure, and pairing this arm with the foreground refresh (S5-C2.1) put
+    /// `ContentUnavailableView` "Something went wrong" over the Me tab and the Settings Account
+    /// section on every return to foreground and every cold launch.
+    @Test func aSignedInUserWhoseMeFailedGetsTheUnreachableArm() {
         #expect(MeTabRoot.arm(signedIn: true, state: .failed(code: 401, message: "x")) == .unreachable)
         #expect(MeTabRoot.arm(signedIn: true, state: .signedOut) == .unreachable)
+    }
+
+    /// Stage 7 fix 2 / I1(b): the cold-launch window — a Firebase identity restored from the
+    /// Keychain, `/me` still in flight, no previous value to keep on screen. A spinner, never the
+    /// error card and never the guest card.
+    @Test func aSignedInUserWhoseMeIsStillInFlightGetsTheLoadingArm() {
+        #expect(MeTabRoot.arm(signedIn: true, state: .loading) == .loading)
     }
 }

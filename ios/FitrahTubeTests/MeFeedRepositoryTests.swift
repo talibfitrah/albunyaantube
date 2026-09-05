@@ -347,6 +347,29 @@ struct MeFeedRepositoryTests {
         #expect(repo.isRefreshing == false)
     }
 
+    /// Stage 7 fix 2 / M9: a superseded round writes NOTHING. `performRefresh` stamped every
+    /// channel's TTL/backoff state before it checked for cancellation, so a round that had already
+    /// been cancelled and replaced still recorded its own `lastAttempt` (and, on a failure, its own
+    /// backoff) over the state the replacing round owns.
+    ///
+    /// Cancelled through the re-scope path, which is the one that cancels synchronously and needs no
+    /// second round to observe: the fan-out is held at its injected stagger, the uid changes (Stage 3
+    /// / I2's `reset()`), and the round then resumes into a cancelled task.
+    @Test func aCancelledRoundLeavesTheChannelsRefreshStateUntouched() async {
+        let transport = ScriptedTransport([feed(entry("alpha-w0", Self.week0))])
+        let gate = Gate()
+        let repo = makeRepo(transport, sleep: { _ in await gate.block() })
+
+        let running = Task { await repo.refresh(channelIds: [Self.alpha], force: false) }
+        await gate.waitUntilBlocked()
+        repo.currentUserId = "another-account"
+        await gate.release()
+        await running.value
+
+        #expect(repo.state(for: Self.alpha) == nil,
+                "a superseded round stamped the TTL/backoff state the round that replaced it owns")
+    }
+
     // MARK: - Failure classification
 
     @Test func timeoutsCancellationsAndOfflineNeverEscalateButOtherTransportFailuresDo() async {

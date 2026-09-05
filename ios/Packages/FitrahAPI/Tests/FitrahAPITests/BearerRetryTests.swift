@@ -2,7 +2,7 @@ import Testing
 @testable import FitrahAPI
 
 /// The 401 dance lives in exactly ONE place (ruling F12), so this is its whole specification.
-/// `AuthMiddleware` and Task 7's `AuthorizedTransport` are thin adapters over it and pin only their
+/// Task 7's `AuthorizedTransport` is a thin adapter over it and pins only its
 /// own two facts each — neither re-tests the state machine.
 ///
 /// The request/response pair is deliberately trivial and transport-agnostic, per the brief: a
