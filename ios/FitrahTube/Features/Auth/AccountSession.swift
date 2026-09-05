@@ -310,6 +310,27 @@ nonisolated enum AccountState: Sendable, Equatable {
         return true
     }
 
+    /// The age-ineligible teardown, in ONE place (Stage 8 / S7). `AgeIneligibleScreen.acknowledge()`
+    /// and `ProfileViewModel.confirmAgeIneligibleSignOut()` both spelled `try? await
+    /// auth.deleteUser()` then `session.signOut()`; Stage 5 / C4.1 is that one server verdict has
+    /// one residue, and copying the pair into the second site was that duplication in a new place.
+    /// Both callers keep their own navigation — that is the half that genuinely differs.
+    ///
+    /// `try?`: the tokens are already revoked server-side, so a failure here changes nothing the
+    /// user can act on (`AgeIneligibleViewModel.kt:36-40` logs and proceeds).
+    ///
+    /// Stage 9 / P2a: `.signedOut` is posted UNCONDITIONALLY, mirroring `handleDeletion`'s
+    /// `.deleted` and for the same reason. `auth.deleteUser()` fires the Firebase listener across
+    /// its own suspension, so `start()`'s stream arm can reach `.signedOut` first — and
+    /// `dropSession()` then returns false, which is how the profile path came to announce NOTHING
+    /// to the per-account holders. A terminal announcement that depends on who won that race is a
+    /// coin toss.
+    func terminateAgeIneligible() async {
+        try? await auth.deleteUser()
+        dropSession()
+        status.post(.signedOut)
+    }
+
     /// .blocked -> signOut; .deleted -> the device wipe; .signedOut -> signOut.
     func handle(_ event: AccountStatusEvent) {
         switch event {

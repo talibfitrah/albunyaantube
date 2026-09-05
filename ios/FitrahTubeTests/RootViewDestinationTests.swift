@@ -58,7 +58,7 @@ struct RootViewDestinationTests {
         #expect(session.state.me != nil, "a plain .main outcome touches neither leg")
         #expect(alert == nil)
 
-        RootView.act(on: SplashOutcome(destination: .main, signOut: true, alert: .blocked),
+        RootView.act(on: SplashOutcome(destination: .main, alert: .blocked),
                      session: session, alert: &alert)
         #expect(session.state == .signedOut)
         #expect(await container.auth.currentUser() == nil, "the auth client was signed out, not just the state")
@@ -83,7 +83,7 @@ struct RootViewDestinationTests {
         #expect(session.state.me != nil)
 
         var alert: AccountStatusAlert?
-        RootView.act(on: SplashOutcome(destination: .main, signOut: true, alert: .deleted),
+        RootView.act(on: SplashOutcome(destination: .main, alert: .deleted),
                      session: session, alert: &alert)
         for _ in 0..<500 where wipes.withLock({ $0 }) == 0 { await Task.yield() }
 

@@ -326,7 +326,7 @@ struct SignInViewModelTests {
                                            hasPasswordProvider: true, isEmailVerified: true,
                                            status: session.state.me?.status)
         #expect(outcome.destination == .main)
-        #expect(outcome.signOut == false)
+        #expect(outcome.alert == nil)
     }
 
     // MARK: - EmailShape (`EmailShape.kt:9-15`, ported verbatim)
@@ -360,14 +360,16 @@ struct SignInViewModelTests {
         #expect(fixture.model.state.error?.messageKey == "auth_error_wrong_password")
     }
 
-    /// The CODE is untouched, so legs where the account's existence is already known — the
-    /// re-authentication in `EditPasswordSheet` and in the delete confirmation — keep the accurate
-    /// message. Only what this screen renders collapses.
+    /// The CODE is untouched — `.userNotFound` still arrives distinctly, so a leg that wanted to
+    /// branch on it still can. Only what this screen renders collapses.
     @Test func onlyThePresentedCodeCollapsesNotTheTable() {
         #expect(SignInViewModel.presented(.userNotFound) == .wrongPassword)
         #expect(SignInViewModel.presented(.wrongPassword) == .wrongPassword)
         #expect(SignInViewModel.presented(.userDisabled) == .userDisabled)
-        #expect(AuthErrorCode.userNotFound.messageKey == "auth_error_user_not_found",
-                "the distinct code stays available to the re-auth legs")
+        // Stage 8 / S6: the distinct MESSAGE is gone, because no leg ever rendered it — the two
+        // edit sheets map everything but `.wrongPassword`/`.invalidCredential` to `.network` and
+        // the delete confirmation renders its own keys, so `auth_error_user_not_found` was
+        // unreachable copy, not a reserve for the re-auth legs.
+        #expect(AuthErrorCode.userNotFound.messageKey == "auth_error_wrong_password")
     }
 }

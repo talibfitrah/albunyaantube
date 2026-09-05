@@ -860,28 +860,6 @@
         }
       }
     },
-    "auth_error_user_not_found": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "No account found with that email"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No account found with that email"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "No account found with that email"
-          }
-        }
-      }
-    },
     "auth_error_weak_password": {
       "localizations": {
         "ar": {

@@ -48,7 +48,6 @@ nonisolated final class FakeAuthClient: AuthClient {
         var tokenClaims: AuthUser?
         /// Every `idToken(forceRefresh:)` argument, in order.
         var tokenRefreshes: [Bool] = []
-        var refreshRefusal: AuthErrorCode?
     }
 
     /// `Mutex` rather than `@unchecked Sendable` + bare vars: `AuthClient` is `Sendable` (it refines
@@ -104,18 +103,10 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// Every `idToken(forceRefresh:)` argument, in order.
     var tokenRefreshes: [Bool] { storage.withLock { $0.tokenRefreshes } }
 
-    /// What the next `refreshRefusal()` answers. Stage 5 / M1: a terminated account's forced
-    /// refresh is refused by Firebase, and that refusal is the only local evidence the client has
-    /// when the backend answers a bare 401.
-    var nextRefreshRefusal: AuthErrorCode? {
-        get { storage.withLock { $0.refreshRefusal } }
-        set { storage.withLock { $0.refreshRefusal = newValue } }
-    }
-
-    func refreshRefusal() async -> AuthErrorCode? {
-        guard signedInUser() != nil else { return nil }
-        return storage.withLock { $0.refreshRefusal }
-    }
+    /// Stage 8 / S5: nil, like `UnavailableAuthClient`'s. The scripting seam this replaces had no
+    /// writer — the four tests that exercise the terminal-verdict path (Stage 5 / M1) hand
+    /// `AuthorizedTransport` an inline closure instead, which is the seam that actually decides.
+    func refreshRefusal() async -> AuthErrorCode? { nil }
 
     /// Every sign-in entry point that has been called, in order.
     var entryPoints: [EntryPoint] { storage.withLock { $0.entryPoints } }

@@ -71,10 +71,9 @@ struct AuthorizedTransportTests {
     /// request carries byte-identical content — pinned, not assumed.
     @Test func aRetriedRequestCarriesTheIdenticalBody() async throws {
         let body = Data(#"{"displayName":"Aisha"}"#.utf8)
-        let (authorized, base, _) = transport([
-            HTTPResponse(status: 401, headers: ["WWW-Authenticate": "Bearer realm=\"api\""], body: Data()),
-            .json(200, "{}")
-        ])
+        // Stage 8 / S11: a plain 401. `isUnauthorizedBearer` is the status alone, so dressing the
+        // fixture with the challenge read as though the retry depended on it.
+        let (authorized, base, _) = transport([.json(401, "{}"), .json(200, "{}")])
         _ = try await authorized.send(request("/api/account/profile", method: "POST", body: body))
         #expect(base.sent.count == 2)
         #expect(base.sent.map { $0.body } == [body, body])
@@ -154,10 +153,11 @@ struct AuthorizedTransportTests {
 
     // MARK: - Stage 5 / M1 + M2: this backend answers a terminated account with a BARE 401
 
-    /// `grep -rn "WWW-Authenticate" backend/src/main/` returns ZERO hits — the 401 leg writes only
-    /// `{"error": "Invalid or expired token"}` — so gating the refresh on the challenge header made
-    /// the whole retry state machine dead in production. On an `allowed` host a 401 IS a bearer
-    /// rejection by construction.
+    /// Stage 8 / S3: the backend DOES send `WWW-Authenticate: Bearer` since `cadd7c9b`
+    /// (`FirebaseAuthFilter.java:48-49,270`) — Android's interceptor gates its retry on it. iOS
+    /// deliberately does not require it: on an `allowed` host a 401 IS a bearer rejection by
+    /// construction, so a header-less 401 (what M2 found this backend answering at the time) must
+    /// still drive the refresh. That is the case pinned here.
     @Test func aBare401WithNoChallengeHeaderIsStillRetriedWithARefreshedBearer() async throws {
         let base = ScriptedTransport([.json(401, #"{"error":"Invalid or expired token"}"#),
                                       .json(200, "{}")])

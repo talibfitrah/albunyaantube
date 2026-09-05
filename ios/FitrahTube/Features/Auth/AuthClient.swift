@@ -53,7 +53,12 @@ nonisolated enum AuthErrorCode: String, Error, Sendable, Equatable, CaseIterable
         switch self {
         case .invalidEmail: "auth_error_invalid_email"
         case .wrongPassword: "auth_error_wrong_password"
-        case .userNotFound: "auth_error_user_not_found"
+        // Stage 8 / S6: `.wrongPassword`'s copy, and the key it used to own is retired. The one
+        // production renderer of `messageKey` (`SignInScreen`) only ever sees codes that have been
+        // through `SignInViewModel.presented(_:)`, which collapses this one for Stage 4 / I2's
+        // membership-oracle reason — and no other caller renders `messageKey` at all, so the
+        // distinct string had become unreachable copy rather than a reserve.
+        case .userNotFound: "auth_error_wrong_password"
         case .userDisabled: "auth_error_user_disabled"
         case .emailAlreadyInUse: "auth_error_email_in_use"
         case .weakPassword: "auth_error_weak_password"

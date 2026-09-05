@@ -30,15 +30,19 @@ import Testing
     /// made this go RED on the first machine whose (untracked, `#include?`d) `Local.xcconfig` sets
     /// the flag — i.e. the gate broke for the developer who did the very thing the flag exists for.
     /// What M6 is actually about is that the Team ID alone is not enough, and that holds whatever
-    /// the build says: configured EXACTLY when both flags are non-empty. The values are read the
-    /// way `SignInCapabilities` reads them, from this bundle.
+    /// the build says. The values are read the way `SignInCapabilities` reads them, from this
+    /// bundle.
+    ///
+    /// Stage 8 / S9: the relation is now `configured ⇔ registered non-empty`. The Team-ID term was
+    /// `true` in every tracked configuration and the flag it was ANDed onto cannot be set without
+    /// one, so the conjunction restated its own second half. `teamId` is still read — the M6 row
+    /// below is what keeps this test saying what M6 is about.
     @Test func appleNeedsTheRegisteredFlagAndNotJustATeamId() {
         let teamId = Bundle.main.object(forInfoDictionaryKey: "FITRAH_APPLE_SIGNIN") as? String
         let registered = Bundle.main.object(forInfoDictionaryKey: "FITRAH_APPLE_SIGNIN_REGISTERED") as? String
-        let bothPresent = teamId?.isEmpty == false && registered?.isEmpty == false
 
-        #expect(SignInCapabilities.appleSignInIsConfigured == bothPresent,
-                "configured exactly when both flags are non-empty: FITRAH_APPLE_SIGNIN=\(teamId ?? "nil"), FITRAH_APPLE_SIGNIN_REGISTERED=\(registered ?? "nil")")
+        #expect(SignInCapabilities.appleSignInIsConfigured == (registered?.isEmpty == false),
+                "configured exactly when the portal-registration flag is non-empty: FITRAH_APPLE_SIGNIN=\(teamId ?? "nil"), FITRAH_APPLE_SIGNIN_REGISTERED=\(registered ?? "nil")")
         // The half M6 added, stated as its own row: a Team ID with no portal registration is NOT
         // a configured Apple sign-in, which is the state both tracked xcconfigs ship.
         if teamId?.isEmpty == false, registered?.isEmpty != false {

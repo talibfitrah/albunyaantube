@@ -10,8 +10,9 @@ nonisolated enum AccountStatus: String, Sendable, CaseIterable {
     case unknown = ""
 
     /// Stage 3 / I5: unknown is NOT `.blocked`. On Android `.blocked` merely drops to guest; here
-    /// `SplashRouter` answers it with `signOut: true` and a NON-DISMISSIBLE "your account has been
-    /// blocked" dialog (`RootView.swift`), so one additive backend `UserStatus` value — or one
+    /// `SplashRouter` answers it with a terminal `.blocked` alert — which `RootView.act` routes
+    /// through `session.handle`, i.e. a sign-out plus a NON-DISMISSIBLE "your account has been
+    /// blocked" dialog (`RootView.swift`) — so one additive backend `UserStatus` value — or one
     /// serialisation regression on an optional field — would sign out every installed client and
     /// tell each user something untrue. `.unknown` takes the `status == nil` row instead: stay
     /// signed in, render the shell, keep asking.
@@ -20,9 +21,7 @@ nonisolated enum AccountStatus: String, Sendable, CaseIterable {
     /// against `.pendingProfile`, which would trap the user in a bootstrap form the backend 409s on
     /// re-entry. `.unknown` avoids that trap too — it is not `.pendingProfile` either.
     static func fromWire(_ raw: String?) -> AccountStatus {
-        guard let raw, let known = AccountStatus(rawValue: raw.lowercased()), known != .unknown else {
-            return .unknown
-        }
+        guard let raw, let known = AccountStatus(rawValue: raw.lowercased()) else { return .unknown }
         return known
     }
 }

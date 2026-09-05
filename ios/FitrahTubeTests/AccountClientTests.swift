@@ -51,8 +51,9 @@ struct AccountClientTests {
         #expect(me.role == "user")
         #expect(!me.isModerator)
         // Stage 3 / I5: an unknown or missing status is `.unknown`, NEVER `.blocked`. On iOS
-        // `.blocked` is not "drop to guest": `SplashRouter` answers it with `signOut: true` and a
-        // non-dismissible "your account has been blocked" dialog, so one additive backend
+        // `.blocked` is not "drop to guest": `SplashRouter` answers it with a terminal `.blocked`
+        // alert, which signs out and raises a non-dismissible "your account has been blocked"
+        // dialog, so one additive backend
         // `UserStatus` value would have signed out every installed client and told each user
         // something untrue.
         #expect(AccountStatus.fromWire(nil) == .unknown)

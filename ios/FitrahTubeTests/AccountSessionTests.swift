@@ -460,6 +460,51 @@ struct AccountSessionTests {
         #expect(status.pending == nil, "a .signedOut was announced for a sign-out that did not happen")
     }
 
+    // MARK: - Stage 8 / S7 + Stage 9 / P2a: the age-ineligible teardown
+
+    /// The pair `AgeIneligibleScreen.acknowledge()` and `ProfileViewModel
+    /// .confirmAgeIneligibleSignOut()` each used to spell out — delete the credential the server has
+    /// permanently refused, THEN drop the session — folded into one method, run once.
+    @Test func theAgeIneligibleTeardownDeletesTheCredentialThenDropsTheSession() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let google = FakeOAuthProvider()
+        let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
+                                  providers: [google])
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+
+        await session.terminateAgeIneligible()
+
+        #expect(auth.operations == [.deleteUser],
+                "the credential the server permanently refused outlived the verdict")
+        #expect(session.state == .signedOut)
+        #expect(google.signOutCount == 1)
+    }
+
+    /// Stage 9 / P2a, the half that is not about the provider SDK. `auth.deleteUser()` fires the
+    /// Firebase listener across its own suspension, so `start()`'s stream arm can reach `.signedOut`
+    /// before the teardown does — and `signOut()`'s guard then skipped the announcement entirely, so
+    /// the profile path told the per-account holders nothing. Forced here rather than raced: the
+    /// listener has ALREADY won when the teardown runs.
+    @Test func theAgeIneligibleTeardownAnnouncesSignedOutEvenWhenTheListenerWonTheRace() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let status = AccountStatusCenter()
+        let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
+                                  status: status)
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+        try auth.signOut()
+        for _ in 0..<500 where session.state != .signedOut { await Task.yield() }
+        #expect(session.state == .signedOut)
+
+        await session.terminateAgeIneligible()
+        // `AccountStatusCenter.post` hops to the main actor, so the event lands a turn later.
+        for _ in 0..<500 where status.pending == nil { await Task.yield() }
+
+        #expect(status.consume() == .signedOut,
+                "the terminal announcement depended on who got to .signedOut first")
+    }
+
     // MARK: - Stage 4 / I1: the provider SDK's own session
 
     /// `GIDSignIn` keeps an access token AND a refresh token for the user's Google account in this

@@ -231,11 +231,13 @@ struct MeViewModelTests {
     @Test func signingOutDropsTheSessionAndTheTabRootFallsBackToGuest() async throws {
         let session = try await makeSession(role: "user")
         let model = makeModel(session: session, stores: makeStores())
-        #expect(MeTabRoot.showsSignedInScreen(for: session.state))
+        // Stage 8 / S2: `MeTabRoot.arm(signedIn:state:)` is what the screen actually switches on;
+        // the two-arm `showsSignedInScreen` this used to read was the decision it replaced.
+        #expect(MeTabRoot.arm(signedIn: session.user != nil, state: session.state) == .signedIn)
 
         model.signOut()
 
         #expect(session.state == .signedOut)
-        #expect(MeTabRoot.showsSignedInScreen(for: session.state) == false)
+        #expect(MeTabRoot.arm(signedIn: session.user != nil, state: session.state) == .guest)
     }
 }

@@ -183,9 +183,13 @@ import Observation
     /// neutral fact for this audience. The password-reset path already gets this right and says so
     /// (every failure is ONE code); this is the same rule on the leg that was inconsistent.
     ///
-    /// The CODE is untouched, so legs where the account's existence is already known — the
-    /// re-authentication in `EditPasswordSheet` and in the delete confirmation — keep the accurate
-    /// message. Only what this screen renders collapses.
+    /// The CODE is untouched — `.userNotFound` still arrives distinctly and can still be branched
+    /// on. Only what this screen renders collapses. Stage 8 / S6: what it does NOT do is keep a
+    /// distinct MESSAGE alive for the re-auth legs, which was the claim here: `EditPasswordSheet`
+    /// and `EditEmailSheet` map everything but `.wrongPassword`/`.invalidCredential` to `.network`,
+    /// and the delete confirmation renders its own two keys — none of them reads `messageKey` at
+    /// all. So `.userNotFound.messageKey` is `auth_error_wrong_password` and the distinct key is
+    /// retired.
     nonisolated static func presented(_ error: AuthErrorCode) -> AuthErrorCode {
         error == .userNotFound ? .wrongPassword : error
     }

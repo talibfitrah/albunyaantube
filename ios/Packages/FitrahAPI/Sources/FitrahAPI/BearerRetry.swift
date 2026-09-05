@@ -6,9 +6,9 @@
 public nonisolated enum BearerRetry {
     /// `send` is called at most twice: once signed (or unsigned when `token(false)` is nil), and
     /// once more ONLY if the first answer was a 401 the CALLER classified as a bearer rejection —
-    /// `AuthorizedTransport.isUnauthorizedBearer` is the status alone (Stage 5 / M2: the backend
-    /// sends no `WWW-Authenticate` header, and on an allowed host a 401 is a bearer rejection by
-    /// construction). A refresh
+    /// `AuthorizedTransport.isUnauthorizedBearer` is the status alone (Stage 5 / M2). Stage 8 / S3:
+    /// the backend does send `WWW-Authenticate: Bearer`, and iOS deliberately does not require it,
+    /// because on an allowed host a 401 is a bearer rejection by construction. A refresh
     /// returning nil re-sends the SIGNED original so the 401 surfaces honestly
     /// (`FirebaseAuthInterceptor.kt:161-175`) — never unsigned, which would hide the real cause.
     ///

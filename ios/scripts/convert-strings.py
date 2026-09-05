@@ -37,6 +37,13 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # Task 3 + Task 18 (ruling C8): Android's value says "downloaded"/"تم تنزيله"/"gedownload"
           # -- a banned stem in all three locales. Refused here and re-authored under EXTRA_KEYS.
           "profile_delete_account_dialog_message",
+          # Stage 8 / S6: unreachable copy. `AuthErrorCode.userNotFound.messageKey` is the only
+          # speller of this key, and its ONE production renderer (`SignInScreen`) reads codes that
+          # have been through `SignInViewModel.presented(_:)`, which maps `.userNotFound` ->
+          # `.wrongPassword` so the sign-in screen is not a membership oracle (Stage 4 / I2). The
+          # re-auth legs render their own keys, never `messageKey`. The code now points at
+          # `auth_error_wrong_password` and this key has no reader at all.
+          "auth_error_user_not_found",
           # Task 3, spec §3 Out / ruling C1: ported but permanently unreachable on iOS, so dead
           # copy. Microsoft auth was never wired up (spec §3 Out); the phone-country keys assumed a
           # picker Android never had here either -- bootstrap's and the profile edit sheet's phone

@@ -23,16 +23,18 @@ struct BearerRetryTests {
     }
 
     /// `tokens` and `responses` are consumed one per call, in order; running off the end yields
-    /// `nil` / "not a 401". `challenge` is the `WWW-Authenticate: Bearer` half of the caller's
-    /// predicate, kept separate from the 401 itself so a plain 401 is expressible. `identities` is
-    /// consumed the same way and defaults to ONE account throughout, so only the cross-account test
-    /// has to say anything about it.
+    /// `nil` / "not a 401". `identities` is consumed the same way and defaults to ONE account
+    /// throughout, so only the cross-account test has to say anything about it.
+    ///
+    /// Stage 8 / S4: there used to be a `challenge: Bool` modelling "the caller's predicate said
+    /// this 401 is not a bearer rejection". No adapter in the tree can produce that any more —
+    /// `AuthorizedTransport.isUnauthorizedBearer` is the status alone — and what it pinned
+    /// (predicate false -> no retry) is test (1)'s `responses: [false]`.
     private func run(
         allowed: Bool = true,
         tokens: [String?] = ["1"],
         identities: [String?] = [],
         responses: [Bool] = [false],
-        challenge: Bool = true,
         into recorder: Recorder
     ) async -> Bool {
         await BearerRetry.send(
@@ -49,7 +51,7 @@ struct BearerRetryTests {
                 recorder.signCalls += 1
                 return Int(token)!
             },
-            isUnauthorizedBearer: { is401 in is401 && challenge },
+            isUnauthorizedBearer: { $0 },
             send: { request in
                 recorder.sent.append(request)
                 let index = recorder.sent.count - 1
@@ -93,24 +95,15 @@ struct BearerRetryTests {
         #expect(response == false)
     }
 
-    /// (4) a 401 **with** `WWW-Authenticate: Bearer` → exactly one forced refresh and exactly two
-    /// sends, the second carrying the refreshed token.
+    /// (4) a 401 the caller classified as a bearer rejection → exactly one forced refresh and
+    /// exactly two sends, the second carrying the refreshed token. (There is no (5): Stage 8 / S4
+    /// retired it with the `challenge` knob — see `run`.)
     @Test func aBearerChallengeRefreshesOnceAndResendsWithTheNewToken() async {
         let recorder = Recorder()
         let response = await run(tokens: ["1", "2"], responses: [true, false], into: recorder)
         #expect(recorder.tokenCalls == [false, true])
         #expect(recorder.sent == [1, 2])
         #expect(response == false)
-    }
-
-    /// (5) a 401 **without** that header → one send, zero refreshes. A 401 the backend raised for
-    /// any other reason must not spend a token refresh.
-    @Test func aPlain401WithoutTheBearerChallengeIsNotRetried() async {
-        let recorder = Recorder()
-        let response = await run(tokens: ["1", "2"], responses: [true], challenge: false, into: recorder)
-        #expect(recorder.tokenCalls == [false])
-        #expect(recorder.sent == [1])
-        #expect(response == true)
     }
 
     /// (6) a second 401 after the retry → returned as-is, never a third send.

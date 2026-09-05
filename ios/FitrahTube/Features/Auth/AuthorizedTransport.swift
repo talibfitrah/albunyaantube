@@ -76,13 +76,16 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
                 return signed
             },
             isUnauthorizedBearer: { response in
-                // Stage 5 / M2: NO `WWW-Authenticate` condition. `grep -rn "WWW-Authenticate"
-                // backend/src/main/` returns zero hits — this backend's 401 leg writes only
-                // `{"error": "Invalid or expired token"}` — so gating on the challenge header made
-                // the entire refresh state machine dead in production. On an `allowed` host a 401 IS
-                // a bearer rejection by construction: `BearerScope` has already decided this URL is
-                // the configured API host, and `BearerRetry` only reaches this predicate when the
-                // request was in scope to be signed.
+                // Stage 5 / M2: NO `WWW-Authenticate` condition — deliberately, and NOT because
+                // the header is absent. Stage 8 / S3: since `cadd7c9b` the backend DOES send
+                // `WWW-Authenticate: Bearer` on its 401 leg (`FirebaseAuthFilter.java:48-49,270`),
+                // which is what Android's interceptor still gates its retry on. iOS does not
+                // require it, because on an `allowed` host a 401 IS a bearer rejection by
+                // construction: `BearerScope` has already decided this URL is the configured API
+                // host, and `BearerRetry` only reaches this predicate when the request was in scope
+                // to be signed. The status-only rule is strictly more permissive, so a backend that
+                // ever stopped sending the header cannot make this retry dead — which is the state
+                // M2 found it in.
                 response.status == 401
             },
             // `BearerRetry` re-sends the SAME request on retry, which only replays for an in-memory

@@ -26,10 +26,6 @@ struct MeTabRoot: View {
         return state == .loading ? .loading : .unreachable
     }
 
-    /// The decision, pure so it is testable without a render (`@Environment` is only populated
-    /// while a view is being rendered).
-    nonisolated static func showsSignedInScreen(for state: AccountState) -> Bool { state.me != nil }
-
     var body: some View {
         switch Self.arm(signedIn: container.session.user != nil, state: container.session.state) {
         case .signedIn: MeSignedInView()

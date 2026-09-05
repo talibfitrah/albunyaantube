@@ -11,7 +11,7 @@ import Synchronization
 /// mints a new id (CF-A-9) — had no effect until relaunch: every request for the rest of the
 /// session still carried the deleted account's id. Reading through the closure fixes that once, at
 /// the source, for all five clients instead of five times at the call sites.
-public struct DeviceId: Sendable, Equatable {
+public struct DeviceId: Sendable {
     public static let defaultsKey = "com.albunyaan.tube.deviceId"
 
     private let read: @Sendable () -> String
@@ -28,9 +28,6 @@ public struct DeviceId: Sendable, Equatable {
         let store = PersistedDeviceId(defaults: defaults)
         return DeviceId { store.value() }
     }
-
-    /// A closure has no identity to compare, so equality is what the header would carry.
-    public static func == (lhs: DeviceId, rhs: DeviceId) -> Bool { lhs.value == rhs.value }
 }
 
 /// The persisted id's read-or-create, SERIALISED (Stage 7 fix 2 / M7). The app builds five clients

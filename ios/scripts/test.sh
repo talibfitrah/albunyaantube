@@ -2,7 +2,7 @@
 # Runs the iOS per-task gate under a 300s wall-clock watchdog (AGENTS.md mandate):
 #   convert-strings.py --check (catalog must already be up to date) -> xcodegen generate ->
 #   xcodebuild test (Debug, iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test
-#   (FitrahAPI + InnerTubeKit packages). Ordinary tasks stop here.
+#   (FitrahAPI + InnerTubeKit packages) -> Package.resolved drift check. Ordinary tasks stop here.
 # RELEASE=1 bash ios/scripts/test.sh additionally builds Release (simulator SDK -- compiles the
 # non-DEBUG paths) after the gate passes, in its own separate 300s watchdog window: the
 # Debug->Release flip invalidates the ~320 SPM package compile units the gate just built, and
@@ -142,6 +142,18 @@ run_gate() {
     local innertube_status=${PIPESTATUS[0]}
     if [ "$innertube_status" -ne 0 ]; then
         return "$innertube_status"
+    fi
+
+    # Stage 8 / S12: ios/Packages/FitrahAPI/Package.resolved is TRACKED and holds the app's whole
+    # 27-pin graph; a cold package build can still knock it down to FitrahAPI's own 10 pins despite
+    # --disable-automatic-resolution above, and every gate so far discovered that by hand afterwards.
+    # Relative path: run_gate has already cd'd to ios/.
+    echo "== Package.resolved =="
+    git diff --exit-code --quiet -- Packages/FitrahAPI/Package.resolved
+    local resolved_status=$?
+    if [ "$resolved_status" -ne 0 ]; then
+        echo "Package.resolved drifted (27-pin graph knocked by a cold package build) -- restore with: git show HEAD:ios/Packages/FitrahAPI/Package.resolved > ios/Packages/FitrahAPI/Package.resolved" >&2
+        return "$resolved_status"
     fi
 
     return 0

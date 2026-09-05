@@ -64,12 +64,10 @@ struct AgeIneligibleScreen: View {
     private func acknowledge() async {
         guard !isWorking else { return }
         isWorking = true
-        // `try?`: the tokens are already revoked server-side, so a network failure here changes
-        // nothing the user can act on (`AgeIneligibleViewModel.kt:36-40` logs and proceeds).
-        try? await container.auth.deleteUser()
-        // Through the session, never the auth client directly — only the session re-scopes every
-        // per-user store back to the guest sentinel.
-        container.session.signOut()
+        // Stage 8 / S7: ONE method for the pair (delete the credential the server has permanently
+        // refused, then drop the session). Through the session, never the auth client directly —
+        // only the session re-scopes every per-user store back to the guest sentinel.
+        await container.session.terminateAgeIneligible()
         // `RootView` recomputes its outcome off the dropped session and renders the guest shell; the
         // pop is for the in-shell `Route.ageIneligible` entry, where a pushed stack would survive it.
         Tab.allCases.forEach { router.popToRoot($0) }

@@ -71,14 +71,14 @@ struct SplashRouterTests {
         let outcome = SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
                                            hasPasswordProvider: false, isEmailVerified: true,
                                            status: .blocked)
-        #expect(outcome == SplashOutcome(destination: .main, signOut: true, alert: .blocked))
+        #expect(outcome == SplashOutcome(destination: .main, alert: .blocked))
     }
 
     @Test func deletedSignsOutToMainWithTerminalAlert() {
         let outcome = SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
                                            hasPasswordProvider: false, isEmailVerified: true,
                                            status: .deleted)
-        #expect(outcome == SplashOutcome(destination: .main, signOut: true, alert: .deleted))
+        #expect(outcome == SplashOutcome(destination: .main, alert: .deleted))
     }
 
     // MARK: - Spec §13 bullet 1 — verification gate, ahead of status
@@ -115,14 +115,14 @@ struct SplashRouterTests {
         let outcome = SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
                                            hasPasswordProvider: true, isEmailVerified: false,
                                            status: .blocked)
-        #expect(outcome == SplashOutcome(destination: .main, signOut: true, alert: .blocked))
+        #expect(outcome == SplashOutcome(destination: .main, alert: .blocked))
     }
 
     @Test func deletedUnverifiedStillSignsOut() {
         let outcome = SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
                                            hasPasswordProvider: true, isEmailVerified: false,
                                            status: .deleted)
-        #expect(outcome == SplashOutcome(destination: .main, signOut: true, alert: .deleted))
+        #expect(outcome == SplashOutcome(destination: .main, alert: .deleted))
     }
 
     // MARK: - Wire mapping the matrix feeds on

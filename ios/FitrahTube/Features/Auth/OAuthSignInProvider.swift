@@ -60,21 +60,22 @@ nonisolated struct SignInCapabilities: Sendable, Equatable {
                                   apple: emailPassword && appleSignInIsConfigured)
     }
 
-    /// The ONE reader of the build-time Apple flags (`AppleAuthProvider` asks through `current()`).
-    /// There is no runtime entitlement API to consult instead, so BOTH halves are build settings:
+    /// The ONE reader of the build-time Apple flag. There is no runtime entitlement API to consult
+    /// instead, so it is a build setting: `FITRAH_APPLE_SIGNIN_REGISTERED` records that the App ID
+    /// `com.albunyaan.tube` actually has the Sign in with Apple capability enabled in the developer
+    /// portal. EMPTY in both tracked xcconfigs; set once, in the untracked `Local.xcconfig`, by
+    /// whoever created that portal entry.
     ///
-    ///  * `FITRAH_APPLE_SIGNIN` (= `FITRAH_TEAM_ID`) — a Team ID signed this build at all;
-    ///  * `FITRAH_APPLE_SIGNIN_REGISTERED` — the App ID `com.albunyaan.tube` actually has the Sign
-    ///    in with Apple capability enabled in the developer portal.
+    /// Stage 5 / M6 added it because `FITRAH_APPLE_SIGNIN` (= `FITRAH_TEAM_ID`) alone was true in
+    /// every build while the App ID was not registered — the F11 trap exactly, a button that
+    /// renders and then fails `performRequests()` on the first signed device build.
     ///
-    /// Stage 5 / M6: the Team ID is committed in both tracked xcconfigs, so the first flag alone was
-    /// true in every build while the entitlements file's own header records that the App ID is NOT
-    /// registered — the F11 trap exactly, a button that renders and then fails `performRequests()`
-    /// on the first signed device build. The second flag is EMPTY in both tracked xcconfigs and is
-    /// set once, in the untracked `Local.xcconfig`, by whoever created the portal entry.
-    static var appleSignInIsConfigured: Bool {
-        info("FITRAH_APPLE_SIGNIN") && info("FITRAH_APPLE_SIGNIN_REGISTERED")
-    }
+    /// Stage 8 / S9: and it stands ALONE. The Team-ID term it was ANDed onto is `true` in every
+    /// tracked configuration, and the portal entry this flag records cannot exist without a Team ID
+    /// in the first place, so the conjunction only ever restated its own second half.
+    /// `FITRAH_APPLE_SIGNIN` stays in `project.yml`/the Info.plist (build-config removal is out of
+    /// scope) and keeps one reader: `SignInCapabilitiesTests`' M6 row.
+    static var appleSignInIsConfigured: Bool { info("FITRAH_APPLE_SIGNIN_REGISTERED") }
 
     private static func info(_ key: String) -> Bool {
         (Bundle.main.object(forInfoDictionaryKey: key) as? String)?.isEmpty == false
