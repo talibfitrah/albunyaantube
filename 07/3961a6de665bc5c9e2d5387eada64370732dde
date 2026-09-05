@@ -1,0 +1,39 @@
+ios/FitrahTubeTests/SignInCapabilitiesTests.swift
+  s_66ddb7c44de816::t_81b36717fabca3 95-127,133-138,140-141,147,149-153
+ios/FitrahTube/App/FakeAuthClient.swift
+  s_66ddb7c44de816::t_32ff84108897b0 117-123,134-136
+ios/FitrahTube/Features/Auth/GoogleAuthProvider.swift
+  s_66ddb7c44de816::t_5ebd2b6478ea69 16-21
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_66ddb7c44de816::t_5d9be4eee4eb6b 294-296
+  s_66ddb7c44de816::t_02ca3820a1bb78 243-251
+  s_66ddb7c44de816::t_b26323fcbb9fd4 234-242
+ios/FitrahTube/Features/Auth/FirebaseAuthClient.swift
+  s_66ddb7c44de816::t_089f07821d79b1 34-43
+  s_66ddb7c44de816::t_a010aa0ba837e5 71-74,77,80
+ios/FitrahTube/Features/Auth/OAuthSignInProvider.swift
+  s_66ddb7c44de816::t_885780c828c56d 66-89,91-93
+  s_66ddb7c44de816::t_9183dfc9de5a1a 41-43
+  s_66ddb7c44de816::t_9507bf7235d412 59-65,90,94-100
+ios/FitrahTubeTests/AccountSessionTests.swift
+  s_66ddb7c44de816::t_a8eb45a89e6a79 654,667-668
+  s_66ddb7c44de816::t_e19a25464c8159 638-653,655-666,669-671
+ios/FitrahTubeTests/AuthorizedTransportTests.swift
+  s_66ddb7c44de816::t_1aeee30717d806 251-281
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "073961a6de665bc5c9e2d5387eada64370732dde",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
