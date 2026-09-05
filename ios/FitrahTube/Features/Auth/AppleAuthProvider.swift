@@ -12,8 +12,10 @@ import UIKit
 /// or reusing one across flows, defeats the point — so it is generated per `presentSignIn()`.
 @MainActor final class AppleAuthProvider: NSObject, OAuthSignInProvider {
 
-    /// Both halves must hold: a Team ID signed this build (`FITRAH_APPLE_SIGNIN`, the only signal
-    /// available — there is no runtime entitlement API) AND Firebase can redeem the credential.
+    /// `FITRAH_APPLE_SIGNIN_REGISTERED` alone: the build config's record that the Sign in with
+    /// Apple capability is registered for this bundle id in the developer portal — there is no
+    /// runtime entitlement API to ask. Stage 8 / S9 dropped the `FITRAH_APPLE_SIGNIN` (Team ID)
+    /// conjunct from `appleSignInIsConfigured`, so it is no longer half of this decision.
     var isAvailable: Bool { SignInCapabilities.current().apple }
 
     /// ONE flow at a time. `pending` is a single continuation slot, so a second `presentSignIn()`

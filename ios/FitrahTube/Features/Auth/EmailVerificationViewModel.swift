@@ -162,7 +162,13 @@ import Observation
             // user has already left never gets a banner about it.
             guard !Task.isCancelled else { return }
             state.error = failure
-            return
+            // Stage 9 round 2 / P3: a `.rateLimited` refusal IS a cooldown — the backend's own 60 s
+            // per uid, usually because sign-up already mailed this account. Returning here left
+            // `lastSentAt` nil, so `canResend(at:)` said yes, Resend stayed enabled with no
+            // countdown, and every tap re-hit a server that refuses. The error still surfaces; the
+            // button now says when it will work. Every other failure sent nothing and latches
+            // nothing.
+            guard failure == .rateLimited else { return }
         }
         let sentAt = now()
         defaults.set(sentAt, forKey: Self.lastSentKey(uid: user.uid))

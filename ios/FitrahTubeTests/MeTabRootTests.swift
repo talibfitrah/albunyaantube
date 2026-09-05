@@ -19,8 +19,11 @@ import Testing
         let me = AccountMe(uid: "u", email: nil, displayName: nil, dateOfBirth: nil,
                            phoneNumber: nil, status: .active, role: "user")
         #expect(MeTabRoot.arm(signedIn: true, state: .loaded(me)) == .signedIn)
-        // Even with no Firebase identity yet: the backend record is what the screen renders.
-        #expect(MeTabRoot.arm(signedIn: false, state: .loaded(me)) == .signedIn)
+        // Stage 9 round 2 / P2: and NOT without the Firebase identity. A guest holding a stale
+        // record — the window `AccountSession.fetch`'s late answer used to open — was shown the
+        // signed-in Me screen. The record is a cache of an identity, never an identity of its own,
+        // and `RootView.outcome` already routes on `session.user != nil`.
+        #expect(MeTabRoot.arm(signedIn: false, state: .loaded(me)) == .guest)
     }
 
     /// The arm that did not exist. Telling a signed-in user they are a guest is worse than telling

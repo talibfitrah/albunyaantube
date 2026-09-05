@@ -183,8 +183,10 @@ struct EmailVerificationViewModelTests {
         #expect(fixture.transport.sent.count == 1, "the backend was not tried first")
         #expect(auth.nextError == nil, "the Firebase fallback was never asked")
         #expect(fixture.model.state.error == .rateLimited)
-        #expect(fixture.model.state.lastSentAt == nil, "a failed send latched a timestamp")
-        #expect(fixture.defaults.object(forKey: Self.key) == nil)
+        // Stage 9 round 2 / P3: a rate-limited refusal DOES latch — see
+        // `aRateLimitedRefusalStartsTheCooldown`. Every other failure still latches nothing.
+        #expect(fixture.model.state.lastSentAt == Self.t0)
+        #expect(fixture.defaults.object(forKey: Self.key) as? Date == Self.t0)
     }
 
     /// The backend enforces the same 60 s per uid (`AccountController.java:112-116`). Routing
@@ -199,7 +201,32 @@ struct EmailVerificationViewModelTests {
 
         #expect(fixture.model.state.error == .rateLimited)
         #expect(auth.nextError == .unknown, "a 429 fell through to Firebase")
-        #expect(fixture.model.state.lastSentAt == nil)
+        #expect(fixture.model.state.lastSentAt == Self.t0)
+    }
+
+    /// Stage 9 round 2 / P3. The 429 IS the backend's own 60 s per-uid cooldown — usually because
+    /// sign-up already mailed this account, so the screen's very first auto-send is refused. The
+    /// refusal returned before the latch, so `canResend(at:)` said yes, Resend stayed enabled with
+    /// no countdown, and every tap re-hit a server that refuses. The error still surfaces; the
+    /// button now says when it will work, and stops saying so at the boundary like any other send.
+    @Test func aRateLimitedRefusalStartsTheCooldown() async {
+        let auth = FakeAuthClient(state: .signedIn(Self.unverified))
+        auth.nextError = .unknown
+        let fixture = make(auth: auth, responses: [.json(429, #"{"retryAfterSeconds":60}"#)])
+        defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
+
+        await fixture.model.send()
+
+        #expect(fixture.model.state.error == .rateLimited)
+        #expect(fixture.model.state.lastSentAt == Self.t0, "the refusal left no cooldown to show")
+        #expect(fixture.defaults.object(forKey: Self.key) as? Date == Self.t0,
+                "the cooldown died with the process, so the next launch re-hit the server")
+        #expect(fixture.model.canResend(at: fixture.clock.now) == false,
+                "Resend stayed enabled inside the server's own cooldown")
+        #expect(fixture.model.secondsSinceLastSend(at: fixture.clock.now) == 0)
+
+        fixture.clock.advance(EmailVerificationViewModel.cooldown)
+        #expect(fixture.model.canResend(at: fixture.clock.now), "the cooldown outlived its 60 s")
     }
 
     /// D2's argument — routing around the server's own ruling defeats it — applies at least as hard

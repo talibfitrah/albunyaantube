@@ -160,10 +160,20 @@ nonisolated enum AccountState: Sendable, Equatable {
             await inFlight.value
             return
         }
-        let task = Task { await self.fetch(maxAttempts: maxAttempts) }
+        let task = Task {
+            await self.fetch(maxAttempts: maxAttempts)
+            // Stage 9 round 2 / P1: released from INSIDE the round. The clear used to sit after the
+            // await below, so the slot outlived the work it names by a main-actor turn (several,
+            // under load) — and a caller arriving in that window JOINED a round that was already
+            // over and returned having fetched nothing. For a new identity that is the same defect
+            // `dropSession()`'s cancel closes, by another route: B awaits A's finished task and
+            // never asks for its own record. Unconditional: once `dropSession()` has cancelled and
+            // cleared the slot, the worst a late release can do is make the next caller start its
+            // own round instead of joining one, which is the safe direction.
+            self.inFlight = nil
+        }
         inFlight = task
         await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
-        inFlight = nil
     }
 
     /// The foreground hook's guard (`FitrahTubeApp`'s `scenePhase` arm) and nothing else.
@@ -191,6 +201,14 @@ nonisolated enum AccountState: Sendable, Equatable {
         // having observed it, so `RootView` rendered a signed-in user as a guest with nothing left
         // to re-drive `/me`.
         let previousState = state
+        // Stage 9 round 2 / P1: the identity this round was STARTED for. Every `state` write below
+        // is guarded on it, because a `/me` answer outlives the account it was asked for: a
+        // sign-out mid-refresh was overwritten by the late `.loaded(A)` (and `MeTabRoot.arm` then
+        // rendered the signed-in Me screen for a guest), and a sign-out-then-sign-in-as-B inside
+        // the same window left `user == B` with A's record on screen — Settings said "Signed in as
+        // A" and a Profile save prefilled from A's record `PUT` A's name under B's bearer. A late
+        // answer for an identity that is no longer current is DROPPED, never published.
+        let startedFor = user?.uid
         // Stage 7 fix 2 / I1(a): the account ALREADY on screen stays on screen while its own
         // refresh runs. This write used to be unconditional, and the foreground refresh (Stage 5 /
         // C2.1) then drove every return to foreground through `.loaded -> .loading -> .loaded` —
@@ -203,9 +221,12 @@ nonisolated enum AccountState: Sendable, Equatable {
         if state.me == nil || state.me?.uid != user?.uid { state = .loading }
         for attempt in 1...max(1, maxAttempts) {
             do {
-                state = .loaded(try await account.me())
+                let me = try await account.me()
+                guard user?.uid == startedFor else { return }
+                state = .loaded(me)
                 return
             } catch {
+                guard user?.uid == startedFor else { return }
                 switch error {
                 // The transport already posts these (`AuthorizedTransport`'s 403 envelope check),
                 // but a terminal account must drop its session even if that post is missed —
@@ -228,11 +249,22 @@ nonisolated enum AccountState: Sendable, Equatable {
                     // by design and the real sleep's `try?` swallows the cancellation, so a screen
                     // that went away mid-refresh used to burn all three attempts and land on "No
                     // internet connection" — a banner over a session nobody is watching.
+                    // The restore is identity-guarded too (Stage 9 round 2 / P1): `previousState`
+                    // is the account this round found, and putting it back over a session that has
+                    // since signed out or switched is the same stale write by another route.
+                    guard user?.uid == startedFor else { return }
                     if Task.isCancelled {
                         state = previousState
                         return
                     }
                     continue
+                // Stage 9 round 2 / P2: a cached account beats an offline banner. The foreground
+                // hook runs at `maxAttempts: 1`, so the retry arm above cannot fire (`1 < 1`) and
+                // ONE transient failure on a return to the app replaced the loaded account with
+                // "No internet connection" — a Retry card in the Me tab and in Settings' Account
+                // section, and the Me-tab route to Favorites/Saved gone exactly when the device is
+                // offline. With nothing loaded for this identity it still fails, as before.
+                case .network where startedFor != nil && state.me?.uid == startedFor: return
                 case .network: state = .failed(code: nil, message: String(localized: "auth_error_network"))
                 case .unknown(let status): state = .failed(code: status, message: String(localized: "auth_error_generic"))
                 default: state = .failed(code: nil, message: String(localized: "auth_error_generic"))
@@ -291,6 +323,12 @@ nonisolated enum AccountState: Sendable, Equatable {
         // Stage 4 / I1 defect the `providers` list exists to close. Idempotent by construction:
         // `GIDSignIn.signOut()` on a signed-out SDK is a no-op, and Apple's is a documented one.
         for provider in providers { provider.signOutProvider() }
+        // Stage 9 round 2 / P1, and above the early return for the same reason the loop is: the
+        // round in flight belongs to the identity being dropped. Left in the slot, the NEXT
+        // identity's `start()` arm found it non-nil and JOINED account A's round instead of asking
+        // for its own record — B never fetched, and A's answer landed under B's session.
+        inFlight?.cancel()
+        inFlight = nil
         guard state != .signedOut else { return false }
         do {
             try auth.signOut()

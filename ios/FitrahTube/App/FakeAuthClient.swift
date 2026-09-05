@@ -65,6 +65,16 @@ nonisolated final class FakeAuthClient: AuthClient {
                                 scriptedErrors: scriptedErrors, nextError: nil))
     }
 
+    /// Stage 9 round 2 / P1: the identity the NEXT sign-in presents. A `let` here meant one fixture
+    /// carried ONE account for its whole life, so the cross-account window — account A's `/me` in
+    /// flight while B signs in on the same stream — was not expressible at all, and the uid guards
+    /// that stop A's record being published under B's session rested on inspection. Nothing else
+    /// changes: unset, every sign-in still answers the account the fixture was built with.
+    var user: AuthUser {
+        get { storage.withLock { $0.user } }
+        set { storage.withLock { $0.user = newValue } }
+    }
+
     /// The per-call failure leg: set it, and the next operation throws it and clears it.
     var nextError: AuthErrorCode? {
         get { storage.withLock { $0.nextError } }

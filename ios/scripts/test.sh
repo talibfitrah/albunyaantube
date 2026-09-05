@@ -149,7 +149,9 @@ run_gate() {
     # --disable-automatic-resolution above, and every gate so far discovered that by hand afterwards.
     # Relative path: run_gate has already cd'd to ios/.
     echo "== Package.resolved =="
-    git diff --exit-code --quiet -- Packages/FitrahAPI/Package.resolved
+    # Against HEAD, not the index (Stage 9 re-review / Minor 4): `git diff` alone compares the
+    # worktree to the INDEX, so a drift somebody had already `git add`ed passed this stage.
+    git diff --exit-code --quiet HEAD -- Packages/FitrahAPI/Package.resolved
     local resolved_status=$?
     if [ "$resolved_status" -ne 0 ]; then
         echo "Package.resolved drifted (27-pin graph knocked by a cold package build) -- restore with: git show HEAD:ios/Packages/FitrahAPI/Package.resolved > ios/Packages/FitrahAPI/Package.resolved" >&2

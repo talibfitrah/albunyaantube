@@ -13,6 +13,11 @@ struct AccountSessionTests {
 
     private static let base = URL(string: "https://api.fitrah.test/")!
     private static let meJSON = #"{"uid":"fake-uid","email":"student@fitrah.test","status":"active","role":"user"}"#
+    /// Stage 9 round 2 / P1: the SECOND account, for the cross-account window. `/me` for somebody
+    /// who is not `FakeAuthClient.defaultUser`, so "whose record is on screen" is an assertion.
+    private static let meBJSON = #"{"uid":"uid-b","email":"other@fitrah.test","status":"active","role":"user"}"#
+    private static let accountB = AuthUser(uid: "uid-b", email: "other@fitrah.test",
+                                           isEmailVerified: true, providerIDs: ["password"])
 
     /// A `UserScoped` spy that records the request count at the moment it was scoped — which is what
     /// makes "stores first, request second" an assertion instead of a hope.
@@ -439,6 +444,104 @@ struct AccountSessionTests {
         #expect(session.state.me?.uid == "fake-uid")
     }
 
+    // MARK: - Stage 9 round 2 / P1: a late answer for an identity that is gone
+
+    /// `state = .loaded(try await account.me())` had no identity check, so an answer that came back
+    /// AFTER the account it was asked for had gone was published anyway. The Firebase listener is
+    /// the honest way to lose an identity mid-round — a revoked token, a sign-out on another device
+    /// — and it cancels nothing, so the round runs to completion and writes `.loaded(A)` over
+    /// `.signedOut`. `MeTabRoot.arm` then rendered the signed-in Me screen for a guest.
+    ///
+    /// Parked at the injected sleep's rendezvous between attempt 1 and attempt 2, so the round is
+    /// genuinely in flight with no clock — the transport has no park of its own.
+    @Test func aSignOutMidRefreshIsNotOverwrittenByTheLateAnswer() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let gate = Gate()
+        let transport = ScriptedTransport([.json(200, Self.meJSON),
+                                           .failing(URLError(.timedOut)),
+                                           .json(200, Self.meJSON)])
+        let session = makeSession(auth: auth, transport: transport, blockingSleep: { await gate.block() })
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+
+        let refreshing = Task { await session.refresh() }
+        await gate.waitUntilBlocked()
+
+        try auth.signOut()
+        for _ in 0..<500 where session.state != .signedOut { await Task.yield() }
+        #expect(session.state == .signedOut)
+
+        await gate.release()
+        await refreshing.value
+
+        #expect(session.state == .signedOut,
+                "the /me answer for the account that had just signed out was published anyway")
+        #expect(MeTabRoot.arm(signedIn: false, state: session.state) == .guest,
+                "the signed-in Me screen rendered for a guest")
+    }
+
+    /// Shape two of the same defect, and the expensive one: sign out, then sign in as somebody else
+    /// inside the one in-flight `/me`. `dropSession()` left `inFlight` standing, so `start()`'s
+    /// `.signedIn(B)` arm found it and AWAITED account A's round instead of asking for B's record —
+    /// B never fetched, `user == B` while A's record was on screen, and a Profile save prefilled
+    /// from A would `PUT` A's name under B's bearer.
+    @Test func aSwitchToAnotherAccountMidRefreshFetchesItsOwnRecord() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let gate = Gate()
+        let transport = ScriptedTransport([.json(200, Self.meJSON),
+                                           .failing(URLError(.timedOut)),
+                                           .json(200, Self.meBJSON)])
+        let session = makeSession(auth: auth, transport: transport, blockingSleep: { await gate.block() })
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+
+        let refreshing = Task { await session.refresh() }
+        await gate.waitUntilBlocked()
+
+        session.signOut()
+        auth.user = Self.accountB
+        _ = try await auth.signIn(email: "other@fitrah.test", password: "p")
+        for _ in 0..<500 where session.state.me?.uid != "uid-b" { await Task.yield() }
+
+        // Asserted BEFORE the release: "started its own round" means B's request is on the wire
+        // while A's is still parked. Joining A's round leaves the count at two and B's record
+        // unfetched until A's answer lands, which is the whole bug.
+        #expect(transport.sent.count == 3, "account B joined account A's in-flight round")
+        #expect(session.state.me?.uid == "uid-b", "account B never fetched its own record")
+
+        await gate.release()
+        await refreshing.value
+
+        #expect(session.state.me?.uid == "uid-b", "account A's late answer landed under account B")
+        #expect(transport.sent.count == 3, "the dropped account's round asked again after the switch")
+    }
+
+    // MARK: - Stage 9 round 2 / P2: offline keeps the account
+
+    /// `fetch` keeps a loaded account rendered across its own refresh, but the FAILURE write was
+    /// unguarded: at the foreground hook's `maxAttempts: 1` the retry arm cannot fire (`1 < 1`), so
+    /// ONE transient error on a return to the app replaced the account with "No internet
+    /// connection" — a Retry card in the Me tab and in Settings' Account section, and the Me-tab
+    /// route to Favorites/Saved gone exactly when the device is offline. The cold-start row
+    /// (nothing loaded → `.failed`) is `aTransportErrorRetriesTwiceMoreOnLinearBackoff`, unchanged.
+    @Test func aTransientNetworkFailureOnForegroundKeepsTheAccount() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let transport = ScriptedTransport([.json(200, Self.meJSON),
+                                           .failing(URLError(.notConnectedToInternet))])
+        let session = makeSession(auth: auth, transport: transport)
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+        let loaded = session.state
+        #expect(loaded.me?.uid == "fake-uid")
+
+        await session.refreshIfSignedIn(maxAttempts: 1)
+
+        #expect(transport.sent.count == 2, "the foreground refresh did not reach the network")
+        #expect(session.state == loaded,
+                "an offline foreground replaced the loaded account with an error banner")
+        #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn)
+    }
+
     // MARK: - Stage 5 / C1.3: a refused sign-out is not a sign-out
 
     /// `Auth.signOut()` assigns `_currentUser = nil` only when the Keychain write succeeded, so a
@@ -455,6 +558,31 @@ struct AccountSessionTests {
         auth.nextError = .unknown
         session.signOut()
 
+        #expect(session.state != .signedOut, "the app said signed out over a live Firebase session")
+        #expect(await auth.currentUser() != nil)
+        #expect(status.pending == nil, "a .signedOut was announced for a sign-out that did not happen")
+    }
+
+    /// Stage 9 / P2a's direction on the one path that deliberately keeps the session ALIVE. The
+    /// provider loop is unconditional and sits ABOVE `dropSession()`'s Firebase sign-out, so a
+    /// Keychain-refused sign-out still asks the SDKs to forget: the user asked to sign out, and
+    /// forgetting an SDK session never leaves a credential alive (worst case, the next Google
+    /// sign-in is interactive instead of silent). Nothing pinned that either way — the row above
+    /// passes no providers — so the re-review flagged it as a behaviour change with no test.
+    @Test func aFailedFirebaseSignOutStillForgetsTheProviderSdkSession() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let google = FakeOAuthProvider()
+        let status = AccountStatusCenter()
+        let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
+                                  status: status, providers: [google])
+        await session.refresh()
+        #expect(session.state.me != nil)
+
+        auth.nextError = .unknown
+        session.signOut()
+
+        #expect(google.signOutCount == 1,
+                "a Keychain-refused sign-out left the provider SDK session alive")
         #expect(session.state != .signedOut, "the app said signed out over a live Firebase session")
         #expect(await auth.currentUser() != nil)
         #expect(status.pending == nil, "a .signedOut was announced for a sign-out that did not happen")

@@ -61,9 +61,9 @@ struct RootView: View {
             // per-user store, so it must outlive every screen, which is what makes the root the
             // only correct place for it.
             .task { await container.session.start() }
-            // `signOut`/`alert` are ADVISORY on the outcome (Task 8) — the caller is what acts on
-            // them, and this is the caller. `initial: true` so a launch that already resolves to a
-            // blocked account drops the session on the first pass, not on the next change.
+            // `alert` is ADVISORY on the outcome (Task 8) — the caller is what acts on it, and this
+            // is the caller. `initial: true` so a launch that already resolves to a blocked account
+            // drops the session on the first pass, not on the next change.
             .onChange(of: outcome, initial: true) { _, outcome in
                 Self.act(on: outcome, session: container.session, alert: &alert)
             }
@@ -112,9 +112,10 @@ struct RootView: View {
         // out only would have left every row of a server-deleted account on it — a fourth residue
         // for one server state.
         //
-        // Stage 7 fix 2 / M8: there is no `else if outcome.signOut` arm. The only two outcomes that
-        // set `signOut` (`.blocked`, `.deleted`) both carry an alert (`SplashRouter.outcome`), so
-        // that branch was unreachable — a second, live-looking path for a case that cannot occur.
+        // `alert` is the ONLY field this reads. Stage 7 fix 2 / M8 deleted the `else if
+        // outcome.signOut` arm as unreachable — the only two outcomes that dropped the session
+        // (`.blocked`, `.deleted`) both carry an alert, and `handle(_:)` signs out — and Stage 8 /
+        // S1 then deleted the `signOut` field itself, so there is no second field left to act on.
         if let event = outcome.alert {
             session.handle(event)
             alert = AccountStatusAlert(event)

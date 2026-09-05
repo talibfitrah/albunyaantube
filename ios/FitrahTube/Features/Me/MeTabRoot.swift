@@ -20,9 +20,15 @@ struct MeTabRoot: View {
     /// while `/me` is still going. `AccountSession.fetch` keeps a loaded account rendered across its
     /// own refresh, so this row is the FIRST load only: a restored Firebase identity, nothing to
     /// show yet.
+    ///
+    /// Stage 9 round 2 / P2: the FIREBASE identity is asked FIRST. With the backend record tested
+    /// ahead of it, a guest holding a stale `.loaded` — the window `AccountSession.fetch`'s late
+    /// answer used to open — rendered the signed-in Me screen for somebody who is signed out. The
+    /// record is a cache of an identity, never an identity of its own, and `RootView.outcome`
+    /// already routes on `session.user != nil`; this is the same question with the same answer.
     nonisolated static func arm(signedIn: Bool, state: AccountState) -> Arm {
-        if state.me != nil { return .signedIn }
         guard signedIn else { return .guest }
+        if state.me != nil { return .signedIn }
         return state == .loading ? .loading : .unreachable
     }
 
