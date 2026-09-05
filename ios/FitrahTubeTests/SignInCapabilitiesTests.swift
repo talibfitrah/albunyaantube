@@ -92,25 +92,65 @@ import Testing
         }
     }
 
+    /// Stage 9 round 5 / R5-P1: Google's SECOND prerequisite, as a pure table. The client id comes
+    /// from the (untracked, USER-BLOCKED) `GoogleService-Info.plist`; the OAuth callback scheme
+    /// comes from `GID_REVERSED_CLIENT_ID`, an xcconfig value both tracked configs ship as a
+    /// PLACEHOLDER and only the untracked `Local.xcconfig` overrides. Two independent sources,
+    /// either of which can land without the other.
+    ///
+    /// GoogleSignIn 8.0.0 builds the scheme it demands by reversing the client id's dot-separated
+    /// components and lowercasing (`GIDSignInCallbackSchemes.m:51-56`), subtracts this bundle's own
+    /// `CFBundleURLSchemes` — also lowercased (`:30-41`, `:67-72`) — and `GIDSignIn.m` raises
+    /// `NSInvalidArgumentException` over whatever is left. That is an Objective-C exception, not a
+    /// Swift `Error`, so `GoogleAuthProvider.presentSignIn()`'s `do/catch` cannot see it: the app
+    /// terminates on the first tap. Unreachable in every build that exists today (none carry the
+    /// plist) and reachable in exactly the first one that does — the build this gate protects.
+    ///
+    /// The Apple twin of this trap is `appleSignInIsConfigured` below (Stage 5 / M6): one of two
+    /// prerequisites checked, the other left to a comment.
+    @Test func theGoogleGateNeedsACallbackSchemeThatMatchesTheClientId() {
+        func matches(_ clientID: String?, _ schemes: [String]) -> Bool {
+            SignInCapabilities.googleCallbackSchemeMatches(clientID: clientID, schemes: schemes)
+        }
+        let clientID = "000000000000-abc.apps.googleusercontent.com"
+        let reversed = "com.googleusercontent.apps.000000000000-abc"
+
+        #expect(matches(clientID, ["albunyaantube", reversed]))
+        #expect(matches(clientID, ["albunyaantube", "com.googleusercontent.apps.fitrahtube-no-client-id"]) == false,
+                "a plist landed on the tracked placeholder scheme and the button rendered — the uncatchable NSInvalidArgumentException")
+        #expect(matches(nil, [reversed]) == false, "no plist, no client id, no button")
+        #expect(matches(clientID, []) == false)
+        // Both sides are lowercased before the subtraction (`GIDSignInCallbackSchemes.m:37,55`), so
+        // a scheme that differs only in case is a MATCH and must not hide the button.
+        #expect(matches(clientID, [reversed.uppercased()]))
+    }
+
     /// The Google provider never traps: with no client id it reports unavailable, and asked anyway
     /// it fails with the Google code instead of reaching a `GIDSignIn` whose `configuration` is nil
     /// (the `GIDConfiguration` hand-off lives inside `FirebaseBootstrap`'s configure latch, so the
     /// guard on that latch is what makes the failure orderly).
     ///
-    /// Also pins the URL type that carries Google's OAuth callback: an EMPTY `CFBundleURLSchemes`
-    /// entry shipped in every build until `GID_REVERSED_CLIENT_ID` got a placeholder default.
-    @MainActor @Test func theGoogleProviderIsUnavailableAndItsCallbackSchemeIsNeverEmpty() async {
+    /// Stage 9 round 5 / R5-P1: the bundle row now asserts AGREEMENT between the plist and the
+    /// scheme, not mere non-emptiness. Non-emptiness was the Task 5 nit and it is what let the
+    /// placeholder pass: `com.googleusercontent.apps.fitrahtube-no-client-id` is a perfectly
+    /// non-empty scheme for a client id nobody has. Written against the live bundle so the SAME
+    /// lines assert the configured behaviour the day a real plist lands, with no test edit.
+    @MainActor @Test func theGoogleProviderIsUnavailableAndItsCallbackSchemeAgreesWithThePlist() async {
         let provider = GoogleAuthProvider()
-        #expect(provider.isAvailable == (FirebaseBootstrap.googleClientID != nil))
+        #expect(provider.isAvailable == SignInCapabilities.current().google,
+                "the screen and the provider disagree about who is available")
         if !FirebaseBootstrap.optionsFileExists {
             #expect(provider.isAvailable == false)
             await #expect(throws: OAuthSignInFailure.failed(.googleSignInFailed)) { try await provider.presentSignIn() }
         }
 
-        let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
-        let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        let schemes = SignInCapabilities.bundleURLSchemes
         #expect(schemes.contains("albunyaantube"))
-        #expect(schemes.allSatisfy { !$0.isEmpty }, "an empty URL scheme is an App Store validation nit: \(schemes)")
+        #expect(SignInCapabilities.current().google
+                == (FirebaseBootstrap.optionsFileExists
+                    && SignInCapabilities.googleCallbackSchemeMatches(clientID: FirebaseBootstrap.googleClientID,
+                                                                      schemes: schemes)),
+                "the Google button rendered on a client id this bundle carries no callback scheme for: \(schemes)")
     }
 
     /// Apple is hidden, and Stage 5 / M6 changed WHY: `FITRAH_APPLE_SIGNIN` still carries the Team

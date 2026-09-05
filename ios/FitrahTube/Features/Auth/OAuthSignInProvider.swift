@@ -38,8 +38,9 @@ nonisolated enum SignInProvider: Sendable, Equatable, CaseIterable {
     case emailPassword, google, apple
 }
 
-/// F11: a button renders only when its prerequisite exists. Google needs a client id from the
-/// plist. Apple's entitlement CANNOT be read at runtime — there is no public API, and an unsigned
+/// F11: a button renders only when its prerequisite exists. Google needs TWO — a client id from the
+/// plist AND a callback scheme in this bundle that matches it (`googleCallbackSchemeMatches`).
+/// Apple's entitlement CANNOT be read at runtime — there is no public API, and an unsigned
 /// simulator build (`CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]: NO`, `project.yml:26`) carries no
 /// embedded entitlements at all — so `apple` is a BUILD-TIME flag: Task 2 writes
 /// `FITRAH_APPLE_SIGNIN: $(FITRAH_TEAM_ID)` into Info.plist, and a non-empty value means a Team ID
@@ -55,9 +56,48 @@ nonisolated struct SignInCapabilities: Sendable, Equatable {
     /// options file is a button that cannot possibly finish — a trap, not a degraded path.
     static func current() -> SignInCapabilities {
         let emailPassword = FirebaseBootstrap.optionsFileExists
-        return SignInCapabilities(emailPassword: emailPassword,
-                                  google: emailPassword && FirebaseBootstrap.googleClientID != nil,
-                                  apple: emailPassword && appleSignInIsConfigured)
+        return SignInCapabilities(
+            emailPassword: emailPassword,
+            google: emailPassword && googleCallbackSchemeMatches(clientID: FirebaseBootstrap.googleClientID,
+                                                                 schemes: bundleURLSchemes),
+            apple: emailPassword && appleSignInIsConfigured)
+    }
+
+    /// Google's OTHER prerequisite, as a pure table test (Stage 9 round 5 / R5-P1).
+    ///
+    /// The client id and the OAuth callback scheme come from two independent, separately-untracked
+    /// sources — `GoogleService-Info.plist` via `copy-firebase-plist.sh`, and
+    /// `GID_REVERSED_CLIENT_ID` via an `#include?`d `Local.xcconfig` — and either can land without
+    /// the other. Both tracked xcconfigs ship the placeholder
+    /// `com.googleusercontent.apps.fitrahtube-no-client-id`, so the FIRST build to carry a real
+    /// plist renders a Google button whose tap reaches `GIDSignIn.signIn(withPresenting:)`, which
+    /// raises `NSInvalidArgumentException` over the schemes it cannot find — an Objective-C
+    /// exception, not a Swift `Error`, so `GoogleAuthProvider`'s `do/catch` cannot see it and the
+    /// app terminates.
+    ///
+    /// The rule is the SDK's own, verified against the pinned checkout (GoogleSignIn 8.0.0,
+    /// `GIDSignInCallbackSchemes.m:51-56`):
+    ///
+    ///     NSArray *clientIdentifierParts = [_clientIdentifier componentsSeparatedByString:@"."];
+    ///     NSString *reversedClientIdentifier =
+    ///         [[clientIdentifierParts reverseObjectEnumerator].allObjects componentsJoinedByString:@"."];
+    ///     return reversedClientIdentifier.lowercaseString;
+    ///
+    /// `components(separatedBy:)`, not `split(separator:)`: the SDK keeps empty components, and a
+    /// rule that silently disagrees with the SDK on an edge case is the defect this closes.
+    /// `relevantURLSchemes` (`:30-41`) lowercases the bundle's side too, so the comparison is
+    /// case-insensitive on both.
+    nonisolated static func googleCallbackSchemeMatches(clientID: String?, schemes: [String]) -> Bool {
+        guard let clientID else { return false }
+        let expected = clientID.components(separatedBy: ".").reversed().joined(separator: ".").lowercased()
+        return schemes.contains { $0.lowercased() == expected }
+    }
+
+    /// Every `CFBundleURLSchemes` entry in this bundle, flattened across URL types — the same list
+    /// GoogleSignIn reads (`GIDSignInCallbackSchemes.m:30-41`).
+    static var bundleURLSchemes: [String] {
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? [])
+            .flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
     }
 
     /// The ONE reader of the build-time Apple flag. There is no runtime entitlement API to consult

@@ -114,7 +114,13 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// `reload()` has flipped `isEmailVerified` on the record — the real client behaves exactly
     /// this way and the old one-line fake could never disagree with itself.
     func idToken(forceRefresh: Bool) async -> BearerToken? {
-        guard let user = signedInUser() else { return nil }
+        // Stage 9 round 4 / NB-A: the no-user guard CLEARS the box, mirroring the real client.
+        // Answering nil here without clearing is what let one identity's unconsumed refusal be
+        // read as a later, session-less 401's own verdict.
+        guard let user = signedInUser() else {
+            storage.withLock { $0.recordedRefusal = nil }
+            return nil
+        }
         let claims = storage.withLock { storage -> AuthUser? in
             storage.tokenRefreshes.append(forceRefresh)
             // Stage 9 round 3 / R3-P1: a refused mint RECORDS its code here, exactly where the real
@@ -125,6 +131,9 @@ nonisolated final class FakeAuthClient: AuthClient {
                 storage.recordedRefusal = refusal
                 return nil
             }
+            // Stage 9 round 4 / R4-P2: and a SUCCESSFUL mint clears it. The box says why the last
+            // mint was refused; a mint that worked is the refusal's expiry.
+            storage.recordedRefusal = nil
             if forceRefresh { storage.tokenClaims = storage.reloadedUser ?? user }
             return storage.tokenClaims ?? user
         }

@@ -231,7 +231,24 @@ nonisolated enum AccountState: Sendable, Equatable {
         // and `RootView` read `status == nil` and routed a PENDING_PROFILE account to the shell.
         // The request was signed with whatever bearer Firebase held, which is the identity that is
         // arriving — nil is "nobody yet", never "must still be nobody".
-        func publishable() -> Bool { startedFor == nil || user?.uid == startedFor }
+        func matchesIdentity() -> Bool { startedFor == nil || user?.uid == startedFor }
+        // Stage 9 round 4 / NB-B: a CANCELLED round never publishes. Cancellation is advisory and
+        // nothing on the `/me` path polls it (`AccountClient` → `BearerRetry` → the transport all
+        // run to completion), so `dropSession()`'s `cancel()` does NOT stop a request already on
+        // the wire from answering 200. For a nil-started round — `land()`'s shape, which the line
+        // above deliberately admits — the identity test alone then published account A's answer
+        // under whoever signed in next: `MeTabRoot.arm` reported `.signedIn`, Settings said "Signed
+        // in as A", and a Profile save would `PUT` A's name under B's bearer.
+        func publishable() -> Bool { !Task.isCancelled && matchesIdentity() }
+        // …and it leaves `state` exactly as it found it, which is the other half. Stage 3 / M6's
+        // restore used to sit INSIDE the retry arm, after the sleep, so it covered only a round
+        // cancelled during the backoff: one cancelled before its first error, or between its
+        // answer and the write, returned at a guard above with this round's own `.loading`
+        // standing — a spinner with no Retry, contagious to every follower. One `defer` rather
+        // than a fourth copy of the check at each return. Identity-guarded for the same reason the
+        // publishes are (round 2 / P1): putting a dropped account's state back is a stale write
+        // too. `state != previousState` so the no-op case does not fire an observation.
+        defer { if Task.isCancelled, matchesIdentity(), state != previousState { state = previousState } }
         // Stage 7 fix 2 / I1(a): the account ALREADY on screen stays on screen while its own
         // refresh runs. This write used to be unconditional, and the foreground refresh (Stage 5 /
         // C2.1) then drove every return to foreground through `.loaded -> .loading -> .loaded` —
@@ -274,12 +291,10 @@ nonisolated enum AccountState: Sendable, Equatable {
                     // internet connection" — a banner over a session nobody is watching.
                     // The restore is identity-guarded too (Stage 9 round 2 / P1): `previousState`
                     // is the account this round found, and putting it back over a session that has
-                    // since signed out or switched is the same stale write by another route.
+                    // since signed out or switched is the same stale write by another route — and
+                    // since round 4 / NB-B the restore itself is the `defer` above, so a
+                    // cancellation surfacing in the sleep returns here and is restored there.
                     guard publishable() else { return }
-                    if Task.isCancelled {
-                        state = previousState
-                        return
-                    }
                     continue
                 // Stage 9 round 2 / P2: a cached account beats an offline banner. The foreground
                 // hook runs at `maxAttempts: 1`, so the retry arm above cannot fire (`1 < 1`) and

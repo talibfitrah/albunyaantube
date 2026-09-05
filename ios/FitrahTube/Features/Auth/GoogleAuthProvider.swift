@@ -13,10 +13,12 @@ import UIKit
 /// caller from elsewhere hops before it arrives. `FirebaseBootstrap` stays `nonisolated`.
 @MainActor final class GoogleAuthProvider: OAuthSignInProvider {
 
-    /// A missing client id DISABLES the button, never traps (`SignInFragment.kt:220-226`).
-    /// Equivalent to `FirebaseBootstrap.googleClientID != nil` — the client id can only come from
-    /// the options file — but asked through `SignInCapabilities` so the screen and the provider
-    /// cannot disagree about who is available.
+    /// A missing client id DISABLES the button, never traps (`SignInFragment.kt:220-226`). Asked
+    /// through `SignInCapabilities` so the screen and the provider cannot disagree about who is
+    /// available — and since Stage 9 round 5 / R5-P1 that is strictly more than
+    /// `FirebaseBootstrap.googleClientID != nil`: a client id with no matching callback scheme in
+    /// this bundle is what makes `presentSignIn()` below raise an uncatchable
+    /// `NSInvalidArgumentException` inside `GIDSignIn`.
     var isAvailable: Bool { SignInCapabilities.current().google }
 
     func presentSignIn() async throws(OAuthSignInFailure) -> OAuthCredential {

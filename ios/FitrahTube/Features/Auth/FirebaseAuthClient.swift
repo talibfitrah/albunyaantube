@@ -31,6 +31,16 @@ nonisolated final class FirebaseAuthClient: AuthClient {
 
     /// Stage 9 round 3 / R3-P1: why the LAST mint was refused, recorded where the refusal actually
     /// happened. Read (and cleared) by `refreshRefusal()`.
+    ///
+    /// Stage 9 round 4 / R4-P2 + NB-A: its life is bounded by "until the next mint". Only a FORCED
+    /// mint writes it, and every successful mint — plus the no-user guard — clears it, so a code
+    /// nobody consumed cannot outlive the session it belongs to. It used to be written by unforced
+    /// mints and cleared by nothing but a read: an unconsumed terminal code (a discarded
+    /// `EmailVerificationViewModel.checkNow()` mint, or a `token(false)` refusal whose `token(true)`
+    /// succeeded) then survived a sign-out, and the next 401 taken while `currentUser` is nil
+    /// returned at the guard WITHOUT recording, so `refreshRefusal()` handed the dead account's
+    /// code to a session that had none — `.deleted`, `handleDeletion()`, and the ruling-C13 wipe
+    /// running against the GUEST library.
     private let lastRefusal = Mutex<AuthErrorCode?>(nil)
 
     @MainActor init?() {
@@ -58,11 +68,16 @@ nonisolated final class FirebaseAuthClient: AuthClient {
     /// verdict after the fact answered nil for exactly the two cases that matter and the ruling-C13
     /// device wipe had no working trigger on the bare-401 path.
     func idToken(forceRefresh: Bool) async -> BearerToken? {
-        guard let user = Auth.auth().currentUser else { return nil }
+        guard let user = Auth.auth().currentUser else {
+            lastRefusal.withLock { $0 = nil }
+            return nil
+        }
         do {
             let token = try await user.getIDToken(forcingRefresh: forceRefresh)
+            lastRefusal.withLock { $0 = nil }
             return BearerToken(value: token, identity: user.uid)
         } catch {
+            guard forceRefresh else { return nil }
             let error = error as NSError
             lastRefusal.withLock {
                 $0 = error.domain == AuthErrors.domain ? AuthErrorCode(firebaseCode: error.code) : .unknown

@@ -635,6 +635,40 @@ struct AccountSessionTests {
         #expect(transport.sent.count == 3)
     }
 
+    /// NB-B. A CANCELLED round must never publish, even when its response is delivered anyway.
+    /// `dropSession()` cancels the in-flight round, but cancellation is advisory: nothing on the
+    /// `/me` path polls it (`AccountClient` → `BearerRetry` → the transport all run to completion),
+    /// so a request already on the wire answers 200 regardless. For a round that started with NO
+    /// identity — `SignInViewModel.land()`'s shape, and the one NB1 deliberately re-opened —
+    /// `startedFor == nil` made `publishable()` true, so account A's cancelled answer landed as
+    /// `.loaded(A)` under whoever is signed in now: `MeTabRoot.arm` reports `.signedIn`, Settings
+    /// says "Signed in as A", and a Profile save would `PUT` A's name under the current bearer.
+    ///
+    /// Cancel while PARKED inside `account.me()`, then release: the answer is delivered after the
+    /// cancellation, which is the only ordering that can reach the success arm.
+    @Test func aCancelledRoundDoesNotPublishAnAnswerDeliveredAfterTheCancel() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let gate = Gate()
+        let transport = ScriptedTransport([.json(200, Self.meJSON)], park: { _ in await gate.block() })
+        let session = makeSession(auth: auth, transport: transport)
+        let before = session.state
+
+        // `land()`'s shape: the refresh leads the listener, so the round carries no identity.
+        let landing = Task { await session.refresh(maxAttempts: 1) }
+        await gate.waitUntilBlocked()
+        #expect(session.user == nil, "the round under test must start with no identity")
+
+        landing.cancel()
+        await gate.release()
+        await landing.value
+
+        #expect(session.state.me == nil,
+                "a cancelled round published its answer, adopting an identity the session had dropped")
+        // And the OTHER half (Stage 3 / M6): it does not leave its own `.loading` standing either.
+        #expect(session.state == before, "the cancelled round parked the session at a spinner with no Retry")
+        #expect(transport.sent.count == 1)
+    }
+
     // MARK: - Stage 9 round 2 / P2: offline keeps the account
 
     /// `fetch` keeps a loaded account rendered across its own refresh, but the FAILURE write was

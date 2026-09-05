@@ -248,6 +248,37 @@ struct AuthorizedTransportTests {
         #expect(await auth.refreshRefusal() == nil, "the recorded refusal was reported twice")
     }
 
+    /// Stage 9 round 4 / R4-P2 + NB-A: the box's life is bounded by "until the next mint". It was
+    /// written by UNFORCED mints too and cleared by nothing but a read, so an unconsumed terminal
+    /// code outlived its session — `EmailVerificationViewModel.checkNow()` forces a mint and
+    /// discards the result, and a `token(false)` refusal followed by a successful `token(true)` is
+    /// the transport's own ordinary path. Later, with nobody signed in, a 401 takes
+    /// `token(true)` → nil at the no-user guard, which records NOTHING, so `refreshRefusal()`
+    /// handed back the dead account's code and `AccountSession.handle(.deleted)` wiped the GUEST
+    /// library. A successful mint and the no-user guard both clear it now.
+    ///
+    /// Driven on `FakeAuthClient`, which is the fake half of a two-implementation contract
+    /// (`AuthClient.refreshRefusal()`'s doc). `FirebaseAuthClient` carries the identical three
+    /// lines and stays **NOT PINNED** — Tier 3, no Firebase in this suite.
+    @Test func aSuccessfulMintClearsTheRecordedRefusal() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+
+        auth.nextMintRefusal = .userNotFound
+        #expect(await auth.idToken(forceRefresh: true) == nil)
+        #expect(await auth.idToken(forceRefresh: true) != nil, "the scripted refusal is consume-once")
+        #expect(await auth.refreshRefusal() == nil,
+                "a terminal verdict outlived the successful mint that disproved it")
+
+        // The no-user guard clears it too, so nothing is left for a LATER session's 401 to read as
+        // its own verdict — the sequence that wiped the guest library.
+        auth.nextMintRefusal = .userDisabled
+        #expect(await auth.idToken(forceRefresh: true) == nil)
+        try auth.signOut()
+        #expect(await auth.idToken(forceRefresh: true) == nil)
+        #expect(await auth.refreshRefusal() == nil,
+                "a signed-out session read the previous account's refusal as its own")
+    }
+
     /// A foreign host is out of bearer scope, so its 401 is neither retried nor read as a verdict.
     @Test func aForeignHosts401IsNeitherRetriedNorTerminal() async throws {
         let base = ScriptedTransport([.json(401, "{}")])
