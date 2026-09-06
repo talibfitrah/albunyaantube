@@ -1,0 +1,54 @@
+ios/FitrahTube/Features/Player/PlayerScreen.swift
+  s_66ddb7c44de816::t_242ac498f9a65d 25-30,85,91-94,98-100,102-103
+ios/FitrahTubeTests/ProfileViewModelTests.swift
+  s_66ddb7c44de816::t_300f726e13895b 238-244,253,255-263
+ios/FitrahTube/Features/Me/MeSignedInView.swift
+  s_66ddb7c44de816::t_dfd33a4c084e52 219-230,263-272,278-279
+ios/FitrahTubeTests/CastSessionTests.swift
+  s_66ddb7c44de816::t_aeaedf92bdd9bf 1391-1448
+ios/FitrahTube/Features/Profile/ProfileViewModel.swift
+  s_66ddb7c44de816::t_8d2369ccc0d661 174-185
+  s_66ddb7c44de816::t_915fb0d1bb6362 135-136,212-215
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_66ddb7c44de816::t_cae828e200e005 71-82,450-452,458-460
+ios/FitrahTubeTests/PaginationGuardTests.swift
+  s_66ddb7c44de816::t_a188dd0fa6bcf0 147-159,162,167-168,172-178,189,195,200
+  s_66ddb7c44de816::t_27dcfd64343417 160-161,163-166,169-171,179-188,190-194,196-199
+ios/FitrahTube/Features/Bootstrap/ProfileBootstrapScreen.swift
+  s_66ddb7c44de816::t_d194dd8eca90cb 5-9,22
+ios/FitrahTubeTests/ProfileBootstrapViewModelTests.swift
+  s_66ddb7c44de816::t_76274987babc93 46,53,55,58
+  s_66ddb7c44de816::t_e427aa7ebb019c 275-285,291-298,301-308
+ios/FitrahTubeTests/MeFeedRepositoryTests.swift
+  s_66ddb7c44de816::t_3b56a58f274b05 501-539
+ios/FitrahTube/Features/Bootstrap/AgeIneligibleScreen.swift
+  s_66ddb7c44de816::t_37be74ef3a65b7 3-7,9-12,44-48,56-60
+ios/FitrahTube/Features/Bootstrap/ProfileBootstrapViewModel.swift
+  s_66ddb7c44de816::t_e122886ff9f71a 11,148-157
+ios/FitrahTube/App/RootView.swift
+  s_66ddb7c44de816::t_37be74ef3a65b7 78-89
+ios/FitrahTube/Features/Player/CastOwnership.swift
+  s_66ddb7c44de816::t_2a2ee5e3021e8d 135,137-147,149-150
+  s_66ddb7c44de816::t_c383934d6e7450 136,148,151-152
+ios/FitrahTube/Features/Profile/ProfileScreen.swift
+  s_66ddb7c44de816::t_66095e0785d732 26-29,31,61-62,121,123
+ios/FitrahTube/Features/Lists/PaginationGuard.swift
+  s_66ddb7c44de816::t_2a2ee5e3021e8d 44-52,55
+  s_66ddb7c44de816::t_2d70662eafae8a 53-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5455bf6633b899da371e8f801587aa2af371a999",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
