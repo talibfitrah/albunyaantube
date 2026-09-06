@@ -1,0 +1,52 @@
+ios/FitrahTubeTests/AuthorizedTransportTests.swift
+  s_66ddb7c44de816::t_a8bd07d2b4dd09 255-264,267,278-279,284-285
+ios/FitrahTube/Features/Auth/LocalAccountWiper.swift
+  s_66ddb7c44de816::t_81cbb52cc2b884 59-61
+  s_66ddb7c44de816::t_8524e85d4c78c7 62
+ios/FitrahTubeTests/MainShellRoutingTests.swift
+  s_66ddb7c44de816::t_1a19b797e65742 46-50
+ios/FitrahTube/App/Route.swift
+  s_66ddb7c44de816::t_1a19b797e65742 53-62
+ios/FitrahTube/Features/Me/MeSignedInView.swift
+  s_66ddb7c44de816::t_94e9802d06e9f9 63-71,159-162,164-166
+ios/FitrahTube/Features/Offline/OfflineManager.swift
+  s_66ddb7c44de816::t_81cbb52cc2b884 330-336,339,342,345,1063-1064,1068,1142-1151
+  s_66ddb7c44de816::t_c731842f2c64b5 25-27,337-338
+ios/FitrahTube/Features/Me/MeFeedRepository.swift
+  s_66ddb7c44de816::t_8524e85d4c78c7 154,164,299,302
+  s_66ddb7c44de816::t_1baf3a7021e434 142-148,243-247,290-298,300
+  s_66ddb7c44de816::t_bffaaf48f7af05 149-150,167
+ios/FitrahTube/Features/Bootstrap/BootstrapValidator.swift
+  s_66ddb7c44de816::t_94e9802d06e9f9 16-19,114-121
+  s_66ddb7c44de816::t_8524e85d4c78c7 122
+ios/FitrahTubeTests/BootstrapValidatorTests.swift
+  s_66ddb7c44de816::t_ea9e97db179fe8 203-221,226-227,229-230
+  s_66ddb7c44de816::t_fd082faf66d541 228
+  s_66ddb7c44de816::t_d4115a3423b0ca 222-225
+ios/FitrahTubeTests/MeFeedRepositoryTests.swift
+  s_66ddb7c44de816::t_f469c6276711b4 342-343
+  s_66ddb7c44de816::t_0a111435781641 572-581,587,589-590,592-595,599-600,604-615
+  s_66ddb7c44de816::t_4392d9f6e69902 540-571,596-598,616
+  s_66ddb7c44de816::t_d4115a3423b0ca 582-586,588,591,601-603
+ios/FitrahTubeTests/SavedScreenTests.swift
+  s_66ddb7c44de816::t_c731842f2c64b5 213-219,222
+ios/FitrahTubeTests/LocalAccountWiperTests.swift
+  s_66ddb7c44de816::t_45fb6a3d7fb642 248
+  s_66ddb7c44de816::t_4a728d75f19322 225-247,249-250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4e811b40a04292a5b484553e095d8171014b4b5d",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
