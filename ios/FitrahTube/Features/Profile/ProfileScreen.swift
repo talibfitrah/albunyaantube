@@ -23,12 +23,12 @@ struct ProfileScreen: View {
         var id: String { rawValue }
     }
 
-    /// Fix round 1 / M5: the same one-slot shape for the two dialogs. Two `.alert` modifiers on one
-    /// view present one at a time anyway — silently, and in an order nothing here decided. The
-    /// precedence is now stated: an account that is no longer age-eligible is being signed out
-    /// either way, so a delete confirmation raised behind that dialog has nothing left to confirm.
+    /// Fix round 1 / M5: one slot, so two `.alert` modifiers on one view cannot present in an order
+    /// nothing here decided. R7-P1 #3 left one occupant: the age verdict is no longer a dialog at
+    /// all — it tears the session down when the 422 lands and `RootView` presents the terminal
+    /// screen — which also closes R7-P3 #12, the re-present this binding could not refuse.
     private enum Dialog: String, Identifiable {
-        case ageIneligible, confirmDelete
+        case confirmDelete
         var id: String { rawValue }
     }
 
@@ -49,10 +49,6 @@ struct ProfileScreen: View {
         }
         .alert(dialogTitle, isPresented: showsDialog, presenting: dialog) { which in
             switch which {
-            case .ageIneligible:
-                // No cancel: the account is no longer eligible either way, and a dismissable dialog
-                // would leave the user staring at a form whose Save can never succeed.
-                Button(String(localized: "ok")) { Task { await model?.confirmAgeIneligibleSignOut() } }
             case .confirmDelete:
                 // Stage 4 / I3: a password account re-types its password INSIDE the confirmation —
                 // the same proof `EditPasswordSheet` demands before a reversible change. A
@@ -62,8 +58,8 @@ struct ProfileScreen: View {
                         .textContentType(.password)
                         .accessibilityLabel(String(localized: "edit_password_current"))
                 }
-                // Destructive AND irreversible, so the confirm carries the destructive role and the
-                // cancel is the escape the age dialog deliberately does not have.
+                // Destructive AND irreversible, so the confirm carries the destructive role and a
+                // cancel to escape with.
                 Button(String(localized: "cancel"), role: .cancel) { deleteModel?.password = "" }
                 Button(String(localized: "profile_delete_account_confirm"), role: .destructive) {
                     // NOT `.task`-scoped: the request outlives this screen, and the cleanup behind
@@ -73,7 +69,6 @@ struct ProfileScreen: View {
             }
         } message: { which in
             switch which {
-            case .ageIneligible: Text(String(localized: "profile_error_age_dialog_message"))
             case .confirmDelete: Text(String(localized: "profile_delete_account_dialog_message"))
             }
         }
@@ -123,26 +118,12 @@ struct ProfileScreen: View {
         sheet = nil
     }
 
-    /// Which dialog the state asks for, age first.
-    private var dialog: Dialog? {
-        if model?.error == .ageIneligible { return .ageIneligible }
-        return confirmingDelete ? .confirmDelete : nil
-    }
+    private var dialog: Dialog? { confirmingDelete ? .confirmDelete : nil }
 
-    private var dialogTitle: String {
-        switch dialog {
-        case .ageIneligible: String(localized: "profile_error_age_dialog_title")
-        default: String(localized: "profile_delete_account_dialog_title")
-        }
-    }
+    private var dialogTitle: String { String(localized: "profile_delete_account_dialog_title") }
 
     private var showsDialog: Binding<Bool> {
         Binding(get: { dialog != nil },
-                // Only the delete confirmation is dismissible. The age dialog's own button calls
-                // `confirmAgeIneligibleSignOut()`, and a system-driven dismissal must not silently
-                // clear an error nothing acted on — its flag is `model.error`, which this never
-                // writes. Clearing the confirmation here also means a delete tapped BEHIND the age
-                // dialog does not surface after it: that account is signing out.
                 set: { presented in if !presented { confirmingDelete = false } })
     }
 

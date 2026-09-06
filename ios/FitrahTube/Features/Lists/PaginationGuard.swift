@@ -41,8 +41,18 @@ nonisolated struct PaginationGuard: Sendable {
 
     /// Guards 1-6, in Android's order. `contentFits` stands in for guard 6's "after layout, view
     /// still active, !canScrollVertically(1)" check -- the caller computes it via `onContentFits`.
-    mutating func shouldAutoLoad(widthClass: WidthClass, hasMore: Bool, paginationError: Bool, contentFits: Bool, itemCount: Int) -> Bool {
-        guard widthClass != .compact else { return false } // guard 1: phones never autofill (:52)
+    ///
+    /// R7-P1 #2: `compactAutoFills` is guard 1's ONE opt-out, and the Me feed is its only caller.
+    /// "Phones never autofill" is right for every network-paged list behind this type -- a phone
+    /// always scrolls, and the scroll listener is the cheaper trigger -- but the Me feed's
+    /// `loadMoreWeeks()` walks weeks that are ALREADY IN MEMORY (ruling F4, no deep paging), so a
+    /// user whose weeks are short saw week 1, fired the trigger once, got week 2, and the content
+    /// still fitted the viewport: nothing scrolled out, `reachedEnd` never flipped, and the rest of
+    /// the feed was unreachable for the session. That is the case CLAUDE.md's pagination rule
+    /// names. Defaulted `false`, so the other four callers keep guard 1 exactly as it was.
+    mutating func shouldAutoLoad(widthClass: WidthClass, hasMore: Bool, paginationError: Bool, contentFits: Bool, itemCount: Int,
+                                 compactAutoFills: Bool = false) -> Bool {
+        guard compactAutoFills || widthClass != .compact else { return false } // guard 1 (:52)
         guard hasMore else { renew(); return false } // guard 2: list exhausted (:54-57)
         guard !paginationError else { return false } // guard 3: no retry storm (:60-63)
         guard attempts < maxAttempts else { return false } // guard 4: attempt cap (:66-69)

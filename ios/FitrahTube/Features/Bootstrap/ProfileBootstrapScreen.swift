@@ -2,8 +2,11 @@ import SwiftUI
 
 /// Spec §13's `.profileBootstrap` landing: an account the backend reports as `pending_profile`
 /// completes the mandatory profile here (`ProfileBootstrapFragment.kt`). Rendered as a ROOT
-/// destination by `RootView` — there is no way past it and no tab bar under it — and, for the same
-/// account reaching it from inside the shell, as `Route.profileBootstrap`.
+/// destination by `RootView` — there is no way past it and no tab bar under it.
+///
+/// R7-P1 #3: the under-13 verdict used to be rendered IN PLACE here, off `viewModel.nav`. It is
+/// `RootView`'s `AgeIneligibleScreen` presentation now, because the 422 drops the session — which
+/// is precisely what stops rendering this screen.
 ///
 /// The phone field is ONE free-text field with a fixed leading "+" and the E.164 shape as its
 /// placeholder. No country picker (ruling C1/F5): Android's picker fed libphonenumber, which iOS does
@@ -16,16 +19,7 @@ struct ProfileBootstrapScreen: View {
     @State private var isPickingDate = false
 
     var body: some View {
-        Group {
-            if viewModel?.nav == .ageIneligible {
-                // In place, not pushed: this screen is a root destination, and the terminal screen
-                // must not be something a back gesture can leave.
-                AgeIneligibleScreen()
-            } else {
-                form
-            }
-        }
-        .task {
+        form.task {
             if viewModel == nil {
                 viewModel = ProfileBootstrapViewModel(account: container.account, auth: container.auth,
                                                       session: container.session)

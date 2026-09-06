@@ -1,19 +1,19 @@
 import SwiftUI
 
-/// The terminal under-13 screen (`AgeIneligibleFragment.kt`). Reached only from
-/// `ProfileBootstrapScreen` when the server answered 422 / `AGE_INELIGIBLE`, and it is a dead end by
-/// design: there is no back affordance, because bouncing back to the form to retry with a different
-/// date of birth is exactly what the age gate exists to prevent.
+/// The terminal under-13 screen (`AgeIneligibleFragment.kt`). `RootView` presents it as a full
+/// screen cover on `AccountSession.isAgeIneligible`, which BOTH arrivals of the 422 set — the
+/// bootstrap form's submit and the profile edit's save. A dead end by design: no back affordance,
+/// because bouncing back to the form to retry with a different date of birth is exactly what the
+/// age gate exists to prevent.
 ///
-/// The one button deletes the Firebase user and drops to guest. The backend has already revoked the
-/// account's refresh tokens, so a failed delete is not terminal — the ID token expires and the
-/// account cannot sign back in either way.
+/// R7-P1 #3: PURELY INFORMATIONAL. The Firebase delete, the sign-out and the `.signedOut`
+/// announcement all ran when the verdict arrived — leaving them on this button meant a foreground
+/// refresh could replace the screen with the blocked message and they would never run at all — so
+/// the one button only navigates, and there is nothing here to spin for.
 struct AgeIneligibleScreen: View {
     @Environment(\.container) private var container
     @Environment(\.router) private var router
     @Environment(\.widthClass) private var widthClass
-
-    @State private var isWorking = false
 
     var body: some View {
         ScrollView {
@@ -41,37 +41,24 @@ struct AgeIneligibleScreen: View {
 
     private var okButton: some View {
         let title = String(localized: "age_ineligible_ok_button")
-        return Button {
-            Task { await acknowledge() }
-        } label: {
-            ZStack {
-                // Hidden rather than removed, so the row does not jump while the delete runs.
-                Text(title).opacity(isWorking ? 0 : 1)
-                if isWorking { ProgressView().tint(Color.onBrand) }
-            }
-            .font(TypeScale.body(widthClass))
-            .foregroundStyle(Color.onBrand)
-            .frame(maxWidth: .infinity, minHeight: Size.button(widthClass))
+        return Button(action: acknowledge) {
+            Text(title)
+                .font(TypeScale.body(widthClass))
+                .foregroundStyle(Color.onBrand)
+                .frame(maxWidth: .infinity, minHeight: Size.button(widthClass))
         }
         .buttonStyle(.borderedProminent)
         .tint(.brand)
-        .disabled(isWorking)
         .accessibilityLabel(title)
-        .accessibilityValue(isWorking ? String(localized: "loading") : "")
         .accessibilityIdentifier("ageIneligible.ok")
     }
 
-    private func acknowledge() async {
-        guard !isWorking else { return }
-        isWorking = true
-        // Stage 8 / S7: ONE method for the pair (delete the credential the server has permanently
-        // refused, then drop the session). Through the session, never the auth client directly —
-        // only the session re-scopes every per-user store back to the guest sentinel.
-        await container.session.terminateAgeIneligible()
-        // `RootView` recomputes its outcome off the dropped session and renders the guest shell; the
-        // pop is for the in-shell `Route.ageIneligible` entry, where a pushed stack would survive it.
+    private func acknowledge() {
+        // Clearing the flag is what dismisses the cover; underneath it `RootView` is already
+        // rendering the guest shell. The pop clears whatever the guest had pushed before signing
+        // in, the same hygiene `RootView.dropToGuest()` applies on the other terminal path.
+        container.session.acknowledgeAgeIneligible()
         Tab.allCases.forEach { router.popToRoot($0) }
-        isWorking = false
     }
 }
 

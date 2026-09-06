@@ -132,6 +132,24 @@ nonisolated enum CastAction: Sendable, Equatable {
 /// as those three agree. Pure means the whole table is pinned without driving SwiftUI's appearance
 /// callbacks or an SDK session.
 nonisolated enum CastOwnership {
+    /// R7-P1 #1: what a change of the RAIL layout's `\\.tabIsSelected` means for this screen.
+    ///
+    /// `MainShellView.railStacks` applies the key to the whole `NavigationStack`, not to its
+    /// visible top, so it also reaches a screen buried under a push (`PlayerToolbar` pushes another
+    /// player; `ShortsOverlay` pushes a channel) -- while `.onAppear`, which drives the very same
+    /// reconcile, does not fire there until the push is popped. Left unreconciled, a tab return
+    /// re-armed an INVISIBLE claimant: it re-adopted the receiver stamp it had handed back on the
+    /// way under, so the video opened from the covering screen could no longer claim the session,
+    /// and a session end in that state took `.dropClaim(resume: true)` -- audio from a screen the
+    /// user cannot see, the exact bug T0-1 landed to fix.
+    ///
+    /// So the key says "your tab is selected", never "you are visible", and only a screen that is
+    /// also its stack's visible content may act on it. `nil` means there is nothing to reconcile.
+    static func railTrigger(tabSelected: Bool, onScreen: Bool) -> CastTrigger? {
+        guard onScreen else { return nil }
+        return tabSelected ? .appear : .disappear
+    }
+
     static func decide(state: CastOwnershipState, trigger: CastTrigger) -> CastAction {
         guard let claimed = state.claimedVideoId else {
             switch trigger {

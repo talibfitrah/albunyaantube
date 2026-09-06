@@ -68,6 +68,18 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// `hasPasswordProvider`/`isEmailVerified` (spec §13), and neither is on the backend's account
     /// record. Set from the auth stream, so it is populated before `/me` has answered.
     private(set) var user: AuthUser?
+    /// R7-P1 #3: the terminal under-13 verdict is up, and the session behind it is already gone.
+    ///
+    /// The server revokes the refresh tokens AND disables the Firebase account before it answers
+    /// 422 `AGE_INELIGIBLE` (`AccountProfileService.java:130,140`), so the session is dead the
+    /// moment the verdict lands: every later request 401s, `AuthorizedTransport` maps the refused
+    /// forced mint's `.userDisabled` to `.blocked`, and the user was shown "your account has been
+    /// blocked" — the wrong reason for a terminal state, on the one path where the reason is the
+    /// whole point — with the Firebase delete never run. So the drop happens WITH the verdict, and
+    /// this flag is what keeps the message on screen across it: `RootView` presents the screen over
+    /// whatever the outcome resolves to (the guest shell, by then), rather than routing to a
+    /// destination the very same drop tears down. Cleared by the screen's own OK.
+    private(set) var isAgeIneligible = false
 
     init(auth: any AuthClient, account: AccountClient, stores: [any UserScoped],
          status: AccountStatusCenter, sleep: @escaping @Sendable (Duration) async -> Void,
@@ -435,10 +447,17 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// to the per-account holders. A terminal announcement that depends on who won that race is a
     /// coin toss.
     func terminateAgeIneligible() async {
+        // BEFORE the awaits: the screen has to be up while the delete runs, or the drop below
+        // renders a bare guest shell for as long as Firebase takes to answer.
+        isAgeIneligible = true
         try? await auth.deleteUser()
         dropSession()
         status.post(.signedOut)
     }
+
+    /// The terminal screen's OK, and the whole of it (R7-P1 #3): the delete, the sign-out and the
+    /// announcement all ran when the verdict arrived, so acknowledging it only navigates.
+    func acknowledgeAgeIneligible() { isAgeIneligible = false }
 
     /// .blocked -> signOut; .deleted -> the device wipe; .signedOut -> signOut.
     func handle(_ event: AccountStatusEvent) {

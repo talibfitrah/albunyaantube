@@ -132,8 +132,8 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
         // The local age gate, BEFORE the request, for Task 12's reason: the server's rejection is
         // PERMANENT (revoked tokens, disabled Firebase account, tombstoned document). A mistyped
         // year would destroy the account with no recovery, so an honest mistake stays a correctable
-        // field error here. The SERVER's `.ageIneligible` is the terminal dialog below; this is not
-        // that, and must not sign anyone out.
+        // field error here. The SERVER's `.ageIneligible` is the terminal teardown below; this is
+        // not that, and must not sign anyone out.
         if let dob = draft.dateOfBirth, dob != original.dateOfBirth,
            BootstrapValidator.isUnderMinimumAge(dob: dob, today: today(), calendar: calendar) {
             state = .editing(original: original, draft: draft, saving: false,
@@ -171,19 +171,20 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
             saveSucceeded = true
         } catch {
             guard case .editing(let reconciled, let onScreen, _, _) = state else { return }
+            // R7-P1 #3, the SAME shape as the bootstrap arm and the same defect: the server has
+            // already revoked the tokens and disabled the Firebase account by the time it answers
+            // 422, so a session left standing behind a dialog is one the next foreground refresh
+            // turns into "your account has been blocked" — and `RootView` then re-routes off
+            // `.signedOut`, so the delete the dialog's OK owed never runs. The teardown goes with
+            // the verdict; `RootView` presents the terminal screen on `session.isAgeIneligible`,
+            // which is the whole message (Stage 5 / C4.1: one server verdict, one residue).
+            if case .ageIneligible = error {
+                await session.terminateAgeIneligible()
+                state = .signedOut
+                return
+            }
             state = .editing(original: reconciled, draft: onScreen, saving: false, error: error)
         }
-    }
-
-    /// The age dialog's confirm. Staged deliberately (`ProfileViewModel.kt:103-108,124-127`): the
-    /// `.ageIneligible` state is what puts the dialog on screen, and signing out inside the same
-    /// update would be conflated past it — the user would be dropped to guest with no explanation.
-    func confirmAgeIneligibleSignOut() async {
-        // Stage 5 / C4.1: one server verdict (`AGE_INELIGIBLE`) had three arrivals and three
-        // different residues. Stage 8 / S7: and ONE method now, the same one
-        // `AgeIneligibleScreen.acknowledge()` calls — this site used to spell the pair out again.
-        await session.terminateAgeIneligible()
-        state = .signedOut
     }
 
     // MARK: - Pure helpers
@@ -208,8 +209,10 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
             .date(from: DateComponents(year: year, month: month, day: day))
     }
 
-    /// The banner copy for a failed save, or nil when this error is not a banner — the age dialog
-    /// owns `.ageIneligible`, and a field-scoped validation message belongs under its own field.
+    /// The banner copy for a failed save, or nil when this error is not a banner — `.ageIneligible`
+    /// never reaches this state at all (it tears the session down in `save()`'s catch and
+    /// `RootView` presents the terminal screen), and a field-scoped validation message belongs
+    /// under its own field.
     ///
     /// Rate limiting is reported in MINUTES (`ProfileFragment.kt:182-185`), floored at one: the
     /// string says "min", and "try again in 0 min" is not an instruction.

@@ -498,4 +498,43 @@ struct MeFeedRepositoryTests {
         #expect(repo.lastError == nil)
         #expect(allItems(repo) == ["vid-0"])
     }
+
+    // MARK: - R7-P1 #2: a phone feed that fits the screen still pages
+
+    /// `MeSignedInView.triggerFeedAutoFill()`'s loop, minus SwiftUI: the geometry says the loaded
+    /// weeks fit, so the guard is asked again after every completed load. On a phone that used to
+    /// stop at guard 1 — the sentinel had already fired its one `onAppear`, nothing scrolled out,
+    /// and weeks 1 and 2 sat in `allWeeks` unreachable for the rest of the session.
+    ///
+    /// Repository-level on purpose: the weeks are ALREADY IN MEMORY (ruling F4), so what has to be
+    /// pinned is that two consecutive rounds each buy one, not that a view fires an event.
+    @Test func aPhoneFeedWhoseWeeksFitTheScreenKeepsPagingUntilItReachesTheEnd() async {
+        let transport = ScriptedTransport([
+            feed(entry("vid-w0", Self.week0), entry("vid-w1", Self.week1), entry("vid-w2", Self.week2))
+        ])
+        let repo = makeRepo(transport)
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        #expect(repo.weeks.map(\.index) == [0], "one week loaded, two more in memory")
+
+        var paginationGuard = PaginationGuard()
+        var rounds = 0
+        while !repo.reachedEnd, rounds < 10 {
+            rounds += 1
+            var attempt = paginationGuard
+            guard attempt.shouldAutoLoad(widthClass: .compact, hasMore: !repo.reachedEnd,
+                                         paginationError: false, contentFits: true,
+                                         itemCount: repo.weeks.reduce(0) { $0 + $1.items.count },
+                                         compactAutoFills: true) else {
+                paginationGuard = attempt
+                break
+            }
+            repo.loadMoreWeeks()
+            paginationGuard = attempt
+        }
+
+        #expect(repo.weeks.map(\.index) == [0, 1, 2],
+                "the phone feed stalled with its remaining weeks already in memory")
+        #expect(repo.reachedEnd)
+        #expect(transport.sent.count == 1, "paging deeper is never another request")
+    }
 }

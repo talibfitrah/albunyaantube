@@ -43,17 +43,19 @@ struct ProfileBootstrapViewModelTests {
         let transport: ScriptedTransport
         let auth: FakeAuthClient
         let session: AccountSession
+        let status: AccountStatusCenter
     }
 
     private func make(auth: FakeAuthClient, responses: [HTTPResponse] = [],
                       calendar: Calendar = ProfileBootstrapViewModelTests.calendar) -> Fixture {
         let transport = ScriptedTransport(responses)
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let status = AccountStatusCenter()
         let session = AccountSession(auth: auth, account: account, stores: [],
-                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil })
+                                     status: status, sleep: { _ in }, wipe: { nil })
         let model = ProfileBootstrapViewModel(account: account, auth: auth, session: session,
                                               calendar: calendar, today: { Self.today })
-        return Fixture(model: model, transport: transport, auth: auth, session: session)
+        return Fixture(model: model, transport: transport, auth: auth, session: session, status: status)
     }
 
     /// Fills the form with a valid submission. The phone is the NATIONAL portion — the screen owns
@@ -270,15 +272,40 @@ struct ProfileBootstrapViewModelTests {
 
     // MARK: - Failure routing
 
-    @Test func anAgeIneligibleResponseRoutesToTheTerminalScreen() async {
+    /// R7-P1 #3. The 422 arm used to NAVIGATE and nothing else, leaving a live session on an
+    /// account the server had already disabled (`AccountProfileService.java:140`, before it
+    /// answers). Any app switch then ran `refreshIfSignedIn` — `user != nil`, so no early return —
+    /// `/me` 401'd, the forced mint was refused `.userDisabled`, `AuthorizedTransport` mapped that
+    /// to `.blocked`, and the user read "your account has been blocked" over the one verdict whose
+    /// reason is the entire point. `RootView` then re-routed off `.signedOut` and the Firebase
+    /// delete the OK button owed never ran at all: a disabled credential left on the device.
+    ///
+    /// So the teardown happens WITH the verdict — one delete, one sign-out, one `.signedOut` — and
+    /// the flag is what keeps the message on screen across it.
+    @Test func anAgeIneligibleResponseTearsTheSessionDownWithTheVerdict() async {
         let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)),
                            responses: [.json(422, #"{"code":"AGE_INELIGIBLE"}"#)])
         fill(fixture.model)
         await fixture.model.submit()
 
-        #expect(fixture.model.nav == .ageIneligible)
+        #expect(fixture.session.isAgeIneligible, "the terminal screen has nothing to render it")
+        #expect(fixture.auth.operations == [.deleteUser],
+                "the credential the server permanently refused outlived the verdict")
+        #expect(await fixture.auth.currentUser() == nil)
+        // `AccountStatusCenter.post` hops to the main actor, so the event lands a turn later.
+        for _ in 0..<500 where fixture.status.pending == nil { await Task.yield() }
+        #expect(fixture.status.consume() == .signedOut, "the per-account holders were told nothing")
+
         #expect(fixture.model.state.profileSaved == false)
         #expect(fixture.model.state.error == nil, "the terminal screen is the message; no inline error")
+
+        // And the foreground hook can no longer replace it: with no user there is nothing to
+        // refresh, so no 401, no refused mint, no `.blocked`.
+        let sentAfterVerdict = fixture.transport.sent.count
+        await fixture.session.refreshIfSignedIn()
+        #expect(fixture.transport.sent.count == sentAfterVerdict,
+                "a foreground refresh went out over a session the verdict had ended")
+        #expect(fixture.session.isAgeIneligible, "and the terminal screen survived it")
     }
 
     @Test func everyOtherProfileFailureIsSaveFailed() async {

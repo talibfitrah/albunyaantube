@@ -235,33 +235,32 @@ struct ProfileViewModelTests {
 
     // MARK: - Errors
 
-    @Test func anAgeIneligibleResponseStopsAtTheDialogTriggerStateAndSignsNobodyOut() async {
+    /// R7-P1 #3, the profile edit's half of it — the SAME shape as the bootstrap arm and the same
+    /// defect. Stopping at a dialog left a live session on an account the server had already
+    /// disabled, so a background/foreground round trip while the dialog was up turned the age
+    /// verdict into "your account has been blocked" and the Firebase delete the OK button owed
+    /// never ran. One server verdict, one residue (Stage 5 / C4.1): the teardown runs when the 422
+    /// lands, and the terminal screen `RootView` presents on the flag is the message.
+    @Test func anAgeIneligibleResponseTearsTheSessionDownWithTheVerdict() async {
         let fixture = await make(then: [.json(422, #"{"code":"AGE_INELIGIBLE"}"#)])
         let model = await loaded(fixture)
 
         model.displayName = "Aisha K"
         await model.save()
-
-        #expect(model.error == .ageIneligible)
-        #expect(model.state != .signedOut)
-        #expect(fixture.session.state.me != nil)
-    }
-
-    @Test func confirmAgeIneligibleSignOutIsWhatDropsTheSession() async {
-        let fixture = await make(then: [.json(422, #"{"code":"AGE_INELIGIBLE"}"#)])
-        let model = await loaded(fixture)
-        model.displayName = "Aisha K"
-        await model.save()
-
-        await model.confirmAgeIneligibleSignOut()
 
         #expect(model.state == .signedOut)
         #expect(fixture.session.state == .signedOut)
-        // Stage 5 / C4.1: the SAME pair `AgeIneligibleScreen.acknowledge()` runs. One server
-        // verdict had three arrivals and three different residues; a Firebase credential left
-        // behind here is one the server has already permanently refused.
+        #expect(fixture.session.isAgeIneligible, "the terminal screen has nothing to render it")
         #expect(fixture.auth.operations == [.deleteUser],
-                "the age-ineligible profile path signed out but left the Firebase user behind")
+                "the age-ineligible profile path left the Firebase user behind")
+        #expect(await fixture.auth.currentUser() == nil)
+
+        // And the foreground hook can no longer replace the screen with the blocked message.
+        let sent = fixture.transport.sent.count
+        await fixture.session.refreshIfSignedIn()
+        #expect(fixture.transport.sent.count == sent,
+                "a foreground refresh went out over a session the verdict had ended")
+        #expect(fixture.session.isAgeIneligible)
     }
 
     @Test func aRateLimitedErrorRendersTheMinutesThroughFormat() async {

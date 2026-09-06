@@ -144,4 +144,58 @@ struct PaginationGuardTests {
         #expect(result == true)
         #expect(guardState.attempts == 1)
     }
+
+    // MARK: - R7-P1 #2: the Me feed's opt-in to guard 1
+
+    /// Guard 1 ("phones never autofill") is right for every NETWORK-paged list behind it: a phone
+    /// always scrolls, and the scroll listener is the cheaper trigger. It is wrong for the Me feed,
+    /// whose `loadMoreWeeks()` is `loadedWeekCount += 1` over weeks ALREADY IN MEMORY (ruling F4,
+    /// no deep paging): a user with one channel uploading once a week sees week 1, fires the
+    /// trigger once, gets week 2 — which still fits the viewport, so nothing ever scrolls out —
+    /// and the remaining weeks are unreachable forever. That is exactly the case CLAUDE.md's
+    /// pagination rule names, so the Me feed opts IN and the other four callers keep guard 1
+    /// untouched (their default is `false`).
+    @Test func aCompactCallerThatOptsInAutoFillsWhileTheContentStillFits() {
+        var optedIn = PaginationGuard()
+        let first = optedIn.shouldAutoLoad(widthClass: .compact, hasMore: true, paginationError: false,
+                                           contentFits: true, itemCount: 5, compactAutoFills: true)
+        // Twice in a row: one week appended, the content still fits, and the next one is owed.
+        let second = optedIn.shouldAutoLoad(widthClass: .compact, hasMore: true, paginationError: false,
+                                            contentFits: true, itemCount: 9, compactAutoFills: true)
+        #expect(first)
+        #expect(second, "a phone whose content still fits stalled after one page")
+
+        var other = PaginationGuard()
+        let untouched = other.shouldAutoLoad(widthClass: .compact, hasMore: true, paginationError: false,
+                                             contentFits: true, itemCount: 5)
+        #expect(untouched == false, "guard 1 moved for the four callers that never asked for it")
+    }
+
+    /// And the opt-in buys only guard 1: everything that stops a retry storm on a regular-width
+    /// screen still stops one here. Guard 6 is what hands the page back to scroll pagination the
+    /// moment the content overflows.
+    @Test func theCompactOptInStillHonoursTheOtherFiveGuards() {
+        var guardState = PaginationGuard()
+        let exhausted = guardState.shouldAutoLoad(widthClass: .compact, hasMore: false, paginationError: false,
+                                                  contentFits: true, itemCount: 5, compactAutoFills: true)
+        let errored = guardState.shouldAutoLoad(widthClass: .compact, hasMore: true, paginationError: true,
+                                                contentFits: true, itemCount: 5, compactAutoFills: true)
+        let overflowing = guardState.shouldAutoLoad(widthClass: .compact, hasMore: true, paginationError: false,
+                                                    contentFits: false, itemCount: 5, compactAutoFills: true)
+        #expect(exhausted == false, "guard 2")
+        #expect(errored == false, "guard 3")
+        #expect(overflowing == false, "guard 6: scroll pagination takes over once it overflows")
+
+        var capped = PaginationGuard()
+        var spent = 0
+        for attempt in 0..<capped.maxAttempts
+        where capped.shouldAutoLoad(widthClass: .compact, hasMore: true, paginationError: false,
+                                    contentFits: true, itemCount: attempt + 1, compactAutoFills: true) {
+            spent += 1
+        }
+        let sixth = capped.shouldAutoLoad(widthClass: .compact, hasMore: true, paginationError: false,
+                                          contentFits: true, itemCount: 99, compactAutoFills: true)
+        #expect(spent == capped.maxAttempts)
+        #expect(sixth == false, "guard 4's attempt cap")
+    }
 }

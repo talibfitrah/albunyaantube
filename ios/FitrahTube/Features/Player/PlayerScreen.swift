@@ -22,6 +22,12 @@ struct PlayerScreen: View {
     /// the compact `TabView`, which publishes nothing.
     @Environment(\.tabIsSelected) private var tabIsSelected
     @State private var model: PlayerViewModel?
+    /// R7-P1 #1: whether this screen is the visible content of its stack, tracked on the ONE seam
+    /// that already distinguishes it -- `.onAppear`/`.onDisappear` fire on a push-over and a pop,
+    /// and (in the rail layout, which is the only publisher of `\.tabIsSelected`) on nothing else.
+    /// So `tabIsSelected` and `.onAppear` finally agree about what "on screen" means: the rail's
+    /// tab-return no longer re-arms a player buried under a push.
+    @State private var isOnScreen = false
     /// B5 Task 3 (reconciliation note 3): the fullscreen exit control's latch. Suppresses the
     /// auto-enter until the device rotates out of the fullscreen orientation; no timers.
     @State private var userExitedFullscreen = false
@@ -76,17 +82,25 @@ struct PlayerScreen: View {
             // (`MainShellView.railStacks`), which fires neither this nor `.onAppear` — so the rail
             // publishes `\.tabIsSelected` instead and the `.onChange` below is that layout's half
             // of the same pair. Compact width never sets the key, so both arms stay as they were.
+            isOnScreen = false
             model?.reconcile(.disappear)
         }
         // The return leg of the release above: take the claim back if the receiver is still playing
         // our video, re-cast if the session is live but it is not, or pay the hand-back the
         // session-end arm could not (it found no stamp, because we had surrendered it).
-        .onAppear { model?.reconcile(.appear) }
+        .onAppear {
+            isOnScreen = true
+            model?.reconcile(.appear)
+        }
         // T0-1: the rail layout's `.onAppear`/`.onDisappear`. A nil model is the mount window, which
         // `didMount()` covers on its own -- and no `initial:`, because the mount path already
         // records the appearance that layout could not.
+        // R7-P1 #1: the key is applied to the whole `NavigationStack`, so it reaches a player
+        // buried under a push too -- and `.onAppear` (the other half of this pair) does not fire
+        // there until the push is popped. `railTrigger` is where the two are reconciled.
         .onChange(of: tabIsSelected) { _, selected in
-            model?.reconcile(selected ? .appear : .disappear)
+            guard let trigger = CastOwnership.railTrigger(tabSelected: selected, onScreen: isOnScreen) else { return }
+            model?.reconcile(trigger)
         }
         // Reconciliation note 3: rotating out of the fullscreen orientation re-arms the auto-enter.
         .onChange(of: verticalSizeClass) { _, new in if new != .compact { userExitedFullscreen = false } }

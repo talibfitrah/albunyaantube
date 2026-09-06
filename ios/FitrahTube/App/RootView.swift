@@ -75,6 +75,18 @@ struct RootView: View {
                 container.session.handle(event)
                 if let terminal = AccountStatusAlert(event) { alert = terminal }
             }
+            // R7-P1 #3: the terminal under-13 screen, presented OVER whatever the outcome
+            // resolves to rather than routed to. The 422 tears the session down as it lands
+            // (`AccountSession.terminateAgeIneligible`), because the server disabled the Firebase
+            // account before answering and every later request would 401 into "your account has
+            // been blocked" — so by the time this is up the destination underneath is already the
+            // guest shell, and a screen rendered BY the destination switch would be torn down by
+            // the very drop that makes it correct. A cover has no back gesture and no tab bar,
+            // which is what "terminal" means here; the flag is cleared by the screen's own OK.
+            .fullScreenCover(isPresented: Binding(get: { container.session.isAgeIneligible },
+                                                  set: { if !$0 { container.session.acknowledgeAgeIneligible() } })) {
+                AgeIneligibleScreen()
+            }
             // Non-dismissible: ONE button, no cancel role, and nothing outside it can close the
             // dialog — a blocked or deleted account cannot tap its way back into the app.
             .alert(alert.map { String(localized: String.LocalizationValue($0.titleKey)) } ?? "",

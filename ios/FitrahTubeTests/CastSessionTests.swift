@@ -1388,4 +1388,62 @@ struct CastSessionTests {
         vm.reconcile(.appear)
         #expect(player.rate == 0, "and the flag is spent exactly once")
     }
+
+    // MARK: - R7-P1 #1: the rail's tab signal and `.onAppear` agree on "on screen"
+
+    /// `MainShellView.railStacks` applies `\.tabIsSelected` to the WHOLE `NavigationStack`, so it
+    /// reaches a `PlayerScreen` buried under a push (`PlayerToolbar` pushes another player,
+    /// `ShortsOverlay` pushes a channel) — while `.onAppear`, the modifier that drives the very
+    /// same reconcile, does not fire again until that push is popped. A tab switch away and back
+    /// therefore re-armed an INVISIBLE claimant: it re-adopted the receiver stamp it had handed
+    /// back on the way under, and the video opened from the covering screen could no longer claim
+    /// the session at all — it played on the phone while the TV kept the buried screen's video.
+    ///
+    /// The pair is reconciled in `railTrigger`, which is what this drives: the view's own loop,
+    /// minus SwiftUI.
+    @Test func aTabReturnDoesNotReArmAPlayerBuriedUnderAPush() async throws {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+        vm.currentPlayer = try #require(phonePlayer(vm))
+        // `.onAppear` — this screen is the stack's visible content.
+        var onScreen = true
+        vm.reconcile(.appear)
+        vm.reconcile(.videoStarted)
+        await settle()
+        #expect(cast.castingClaim == CastClaim(videoId: Self.claimed, owner: vm.castOwner))
+        cast.recordLoad(Self.claimed, owner: vm.castOwner)   // the receiver really played ours
+
+        // A push covers it (`.onDisappear` fires on a screen that is still alive): the stamp goes
+        // back so whatever the user opens next can claim the session.
+        onScreen = false
+        vm.reconcile(.disappear)
+        #expect(cast.castingClaim == nil, "a screen going under a push hands the stamp back")
+
+        // The rail selects another tab and then this one again. Both changes reach the buried
+        // screen, because the key is published on the stack.
+        for selected in [false, true] {
+            if let trigger = CastOwnership.railTrigger(tabSelected: selected, onScreen: onScreen) {
+                vm.reconcile(trigger)
+            }
+        }
+        await settle()
+
+        #expect(cast.castingClaim == nil,
+                "a player buried under a push re-adopted the receiver stamp on a tab return")
+        #expect(cast.claimCastSource(videoId: Self.other, owner: Self.otherOwner),
+                "the screen the user is actually looking at could not claim the session")
+    }
+
+    /// The whole rule, as a table. The key means "your tab is selected", never "you are visible":
+    /// only a screen that is also its stack's visible content may act on it, and the default when
+    /// nothing publishes the key (compact width, previews, tests) stays "on screen"
+    /// (`MainShellRoutingTests.anUnpublishedTabVisibilitySignalReadsAsOnScreen`).
+    @Test func theRailSignalOnlyMovesAScreenThatIsItsStacksVisibleContent() {
+        #expect(CastOwnership.railTrigger(tabSelected: true, onScreen: true) == .appear)
+        #expect(CastOwnership.railTrigger(tabSelected: false, onScreen: true) == .disappear)
+        #expect(CastOwnership.railTrigger(tabSelected: true, onScreen: false) == nil)
+        #expect(CastOwnership.railTrigger(tabSelected: false, onScreen: false) == nil)
+    }
 }

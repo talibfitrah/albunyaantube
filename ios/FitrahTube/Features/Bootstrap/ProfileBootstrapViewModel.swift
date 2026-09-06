@@ -8,7 +8,7 @@ import Observation
 
     /// Where the screen goes once the form is settled. `.main` is advisory — `RootView` recomputes
     /// `SplashRouter.outcome` off the refreshed session and renders the shell itself.
-    nonisolated enum Nav: Sendable, Equatable { case idle, main, ageIneligible }
+    nonisolated enum Nav: Sendable, Equatable { case idle, main }
 
     nonisolated struct UiState: Equatable {
         var displayName = ""
@@ -145,9 +145,16 @@ import Observation
                     return
                 case .ageIneligible:
                     state.isLoading = false
-                    // The terminal screen IS the message for an under-13 rejection; an inline error
-                    // under a form the user is about to lose would be noise.
-                    nav = .ageIneligible
+                    // R7-P1 #3: the teardown runs WITH the verdict, not when the user acknowledges
+                    // it. The server revokes the refresh tokens and DISABLES the Firebase account
+                    // before answering (`AccountProfileService.java:130,140`), so a session kept
+                    // alive past this point is one every later request 401s on -- and the refused
+                    // forced mint maps `.userDisabled` to `.blocked`, which replaced the age
+                    // message with "your account has been blocked" and re-routed off `.signedOut`
+                    // so the Firebase delete never ran at all. `RootView` presents the terminal
+                    // screen on `session.isAgeIneligible`, over whatever the outcome now resolves
+                    // to; the terminal screen IS the message, so no inline error either.
+                    await session.terminateAgeIneligible()
                     return
                 default:
                     state.isLoading = false

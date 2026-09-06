@@ -216,11 +216,18 @@ struct MeSignedInView: View {
                     SectionHeader(emoji: nil, title: Self.weekTitle(week.index, locale: locale), onSeeAll: nil)
                     ForEach(week.items, id: \.id) { feedRow($0) }
                 }
-            }
-            // The scroll-position half of the pagination rule; `triggerFeedAutoFill` is the
-            // large-screen half, for the tablet page that already fits and never scrolls.
-            if !feed.weeks.isEmpty && !feed.reachedEnd {
-                Color.clear.frame(height: 1).onAppear { feed.loadMoreWeeks() }
+                // R7-P1 #2: the scroll-position half of the pagination rule, hung on the LAST
+                // SECTION the way `ContentListView` hangs it on the last rows
+                // (`contentGrid`'s `index >= items.count - 5`). It used to be one structurally
+                // stable `Color.clear` sentinel below this `ForEach`, with no `.id()` and a fixed
+                // position in the stack: it fired `onAppear` ONCE and never again while it stayed
+                // rendered, so a feed whose weeks are short bought exactly one extra week and then
+                // stalled with the rest already in `allWeeks`. Every appended week is a new
+                // section with a new identity, so this re-arms itself.
+                .onAppear {
+                    guard week.id == feed.weeks.last?.id else { return }
+                    feed.loadMoreWeeks()
+                }
             }
         }
     }
@@ -253,15 +260,23 @@ struct MeSignedInView: View {
         .accessibilityIdentifier("me.feed.row.\(item.id)")
     }
 
-    /// CLAUDE.md's pagination rule: a tablet/TV page whose loaded weeks already fit the viewport
-    /// never fires the sentinel's `onAppear`, so the six `PaginationGuard` checks run on every
-    /// layout delta instead. No async commit race here -- `loadMoreWeeks()` is synchronous.
+    /// CLAUDE.md's pagination rule: a page whose loaded weeks already fit the viewport never
+    /// scrolls, so the six `PaginationGuard` checks run on every layout delta instead. No async
+    /// commit race here -- `loadMoreWeeks()` is synchronous.
+    ///
+    /// R7-P1 #2: `compactAutoFills: true`, so this runs on PHONES too. Guard 1 refuses compact for
+    /// every network-paged list behind it, and rightly; the Me feed's next week costs no request at
+    /// all (ruling F4 -- `loadedWeekCount += 1` over `allWeeks`), and a phone whose weeks are short
+    /// is exactly the "items already fit, nothing will ever scroll out" case the rule names. Guards
+    /// 2-6 are untouched, so guard 6 still hands the page back to the section trigger above the
+    /// moment it overflows.
     private func triggerFeedAutoFill() {
         guard !feed.weeks.isEmpty else { return }
         var attempt = paginationGuard
         guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: !feed.reachedEnd,
                                      paginationError: false, contentFits: feedFits,
-                                     itemCount: feed.weeks.reduce(0) { $0 + $1.items.count }) else {
+                                     itemCount: feed.weeks.reduce(0) { $0 + $1.items.count },
+                                     compactAutoFills: true) else {
             paginationGuard = attempt
             return
         }
