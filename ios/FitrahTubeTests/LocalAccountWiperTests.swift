@@ -222,4 +222,30 @@ struct LocalAccountWiperTests {
 
         #expect(error == nil)
     }
+
+    /// R7-P2, the same class as C2.2 one layer out and the last swallowed step in this sequence.
+    /// `OfflineManager.write` is `await MainActor.run { try? body(store) }` returning `Void`, so
+    /// `deleteAll` could not report a row that refused to go — a full or corrupt store unlinked the
+    /// FILES, kept the row, and still answered "everything went". `wipe()` then returned nil,
+    /// `AccountSession.performDeletion` cleared `marker.pendingUid`, and no relaunch ever retried:
+    /// the exact residue C2.2 exists to prevent, arriving through the one step C2.2 did not cover.
+    ///
+    /// The marker half is `DeleteAccountTests
+    /// .aFailedWipeKeepsTheDeletionMarkerSoTheNextLaunchRetries` (a non-nil `wipe` return keeps
+    /// `pendingUid`); what was missing is a non-nil return to give it.
+    @Test func anOfflineRowThatRefusesToGoIsReportedSoTheMarkerSurvives() async throws {
+        struct StoreFull: Error {}
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        try seedRows(fixture)
+        try fixture.offlineStore.insert(makeOfflineItem("xc7keR2piUM"))
+        await fixture.offline.setDeleteAllError(StoreFull())
+
+        let error = await fixture.wiper.wipe()
+
+        #expect(error is StoreFull,
+                "the deletion marker was cleared while the saved rows were still on disk")
+        // It does NOT stop at the first error: the independent later steps still run.
+        #expect(fixture.searchHistory.entries.isEmpty)
+        #expect(fixture.count(FavoriteVideo.self) == 0)
+    }
 }

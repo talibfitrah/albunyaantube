@@ -22,7 +22,9 @@ nonisolated protocol OfflineSaving: Sendable {
     /// engine is writing into, so the work has to be stopped BEFORE the files go, not raced with.
     func cancelAll() async
     /// Settings' Clear-all and the account wipe: files AND rows for the whole batch, one teardown.
-    func deleteAll(_ ids: [String]) async
+    /// Returns the FIRST row-delete failure, or nil when everything went (R7-P2).
+    @discardableResult
+    func deleteAll(_ ids: [String]) async -> Error?
     /// Relaunch: re-bind rows to live background tasks, demote orphans, resume scheduling.
     func reattach() async
     /// TTL + gate revalidation over completed rows (`OfflineSweep.decide`), then delete.
@@ -325,12 +327,22 @@ actor OfflineManager: OfflineSaving {
     ///
     /// `deleteAll`, not a `delete` overload: `manager.delete(x)` would no longer say
     /// at the call site which of the two semantics applies.
-    func deleteAll(_ ids: [String]) async {
+    ///
+    /// R7-P2: returns the FIRST row that refused to go. `write` swallowed with `try?` and this
+    /// returned `Void`, so a full or corrupt store unlinked the FILES, kept the row, and still
+    /// answered "everything went" — `LocalAccountWiper.wipe()` then reported nil,
+    /// `AccountSession.performDeletion` cleared `marker.pendingUid`, and no relaunch retried. The
+    /// loop does not stop at the first failure: the remaining rows are independent and must still
+    /// be torn down.
+    @discardableResult
+    func deleteAll(_ ids: [String]) async -> Error? {
+        var firstError: Error?
         for id in ids {
             guard let row = await read(id: id) else { continue }
-            await tearDown(row)
+            if let error = await tearDown(row) { firstError = firstError ?? error }
         }
         await schedule()
+        return firstError
     }
 
     func reattach() async {
@@ -1048,11 +1060,12 @@ actor OfflineManager: OfflineSaving {
     }
 
     /// Cancels the task, removes every file, deletes the row — `delete`, re-save and sweep share it.
-    private func tearDown(_ row: Row) async {
+    @discardableResult
+    private func tearDown(_ row: Row) async -> Error? {
         await engine.cancel(id: row.id)   // no-op when nothing is live; cheaper than tracking it
         forget(row.id)
         removeFiles(row)
-        await write { store in
+        return await write { store in
             guard let item = store.item(id: row.id) else { return }
             try store.delete(item)
         }
@@ -1126,8 +1139,15 @@ actor OfflineManager: OfflineSaving {
         await MainActor.run { store.items.compactMap(Row.init) }
     }
 
-    /// A failed SwiftData save already rolled back and re-read inside the store; nothing to do here.
-    private func write(_ body: @MainActor @Sendable (OfflineStore) throws -> Void) async {
-        await MainActor.run { try? body(store) }
+    /// A failed SwiftData save already rolled back and re-read inside the store, so there is nothing
+    /// to REPAIR here — but there is something to REPORT (R7-P2), and the `try?` this replaces meant
+    /// the one caller whose contract depends on it (`deleteAll`, for `LocalAccountWiper`) could not
+    /// hear about a row that survived its own delete. `@discardableResult`, because every other
+    /// caller is a best-effort progress or status write with nobody to tell.
+    @discardableResult
+    private func write(_ body: @MainActor @Sendable (OfflineStore) throws -> Void) async -> Error? {
+        await MainActor.run {
+            do { try body(store); return nil } catch { return error }
+        }
     }
 }

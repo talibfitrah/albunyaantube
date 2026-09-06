@@ -60,8 +60,15 @@ struct MeSignedInView: View {
     /// control, neither of which the bare `Text` this replaces had.
     @State private var feedBanner: BannerMessage?
     /// The two refreshes that are NOT owned by `.task`/`.refreshable` (a subscription change and a
-    /// chip tap). Held so they are cancelled on the next one and on dismissal, instead of running
-    /// on — with, at worst, `perChannelTimeout` still on the clock behind them.
+    /// chip tap). Held so the next one supersedes the previous one in a single slot.
+    ///
+    /// R7-P3: the `.onDisappear` cancel below stops THIS wrapper and nothing more. The round itself
+    /// runs in `MeFeedRepository.refresh`'s unstructured `Task`, awaited with a plain `await
+    /// task.value` and no `withTaskCancellationHandler` — deliberately, unlike
+    /// `AccountSession.refresh`, because the round is SHARED: cancelling it on one screen's
+    /// dismissal would cancel it for every other caller coalesced onto it. Only supersession ends a
+    /// round. Nothing is leaked by that: the coalescer admits no second fan-out and the generation
+    /// guard refuses a superseded round's writes.
     @State private var refreshTask: Task<Void, Never>?
 
     /// The container's ONE feed repository, not a per-view `@State`: it holds the loaded-week depth
@@ -149,9 +156,14 @@ struct MeSignedInView: View {
     /// One refresh, one banner. Posted per COMPLETED refresh rather than from
     /// `.onChange(of: feed.lastError)`, which cannot fire twice for the same message and so would
     /// stay silent on a second failed pull-to-refresh.
+    ///
+    /// R7-P2: the banner comes from THIS call's return value, never from `feed.lastError`. A
+    /// follower and a superseded leader both return without writing that box, so reading it
+    /// unconditionally banner'd an older failure over a refresh that had actually succeeded.
     private func refreshFeed(_ channelIds: [String], force: Bool) async {
-        await feed.refresh(channelIds: channelIds, force: force)
-        if let error = feed.lastError { feedBanner = BannerMessage(text: error) }
+        if let error = await feed.refresh(channelIds: channelIds, force: force) {
+            feedBanner = BannerMessage(text: error)
+        }
     }
 
     /// The one unstructured-task slot: the previous occupant is cancelled first, and `.onDisappear`

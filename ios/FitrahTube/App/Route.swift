@@ -50,19 +50,16 @@ nonisolated enum Route: Hashable, Sendable {
     /// Phase 4 Task 10: the sign-in screen, pushed from the guest Me tab's card. iOS never forces
     /// it (D11 / RULING 31) — it is a destination, never a gate.
     case signIn
-    /// Phase 4 Task 11: the email-verification screen. `RootView` renders it as a ROOT destination
-    /// at launch (`SplashDestination.emailVerification`); this case is the same screen reached from
-    /// inside the shell, where the account is already past the splash.
-    case emailVerification
-    /// Phase 4 Task 12: the mandatory profile form. Same shape as `.emailVerification` — `RootView`
-    /// renders it as a ROOT destination at launch (`SplashDestination.profileBootstrap`); this case
-    /// is the same screen reached from inside the shell.
-    case profileBootstrap
-    /// Phase 4 Task 12: the terminal under-13 screen. `ProfileBootstrapScreen` renders it IN PLACE
-    /// rather than pushing it (a pushed terminal screen has a back gesture, and going back to retry
-    /// a different date of birth is what the age gate exists to stop); this case is the same screen
-    /// for a caller inside the shell.
-    case ageIneligible
+    // BLOAT REMOVED (R7-P3 / round 5's correction): `.emailVerification` (Task 11),
+    // `.profileBootstrap` and `.ageIneligible` (Task 12) lived here with `MainShellView` arms and
+    // routing rows, and NOTHING ever pushed one — grep finds no `push(.emailVerification)`,
+    // `push(.profileBootstrap)` or `push(.ageIneligible)` anywhere. All three screens are reached
+    // by other means entirely: the first two as ROOT destinations through `SplashDestination`, and
+    // the terminal under-13 screen as `RootView`'s full screen cover (R7-P1 #3), which is what a
+    // pushed route could not be — a shell push has a tab bar under it and a back gesture beside it,
+    // and the age screen is a dead end by design. Part A residue, not Part B declaration; the
+    // Global Constraint is "new `Route` cases land with their screen", and these landed without
+    // their caller.
     /// Phase 4 Task 17: the Profile screen, pushed from the signed-in Me tab's kebab. It lands
     /// WITH `MeKebabItem.landed` growing to include `.profile` — RULING 28 refuses a kebab row
     /// whose destination does not exist yet.

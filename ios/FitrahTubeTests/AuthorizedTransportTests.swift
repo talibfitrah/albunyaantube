@@ -252,13 +252,19 @@ struct AuthorizedTransportTests {
     /// written by UNFORCED mints too and cleared by nothing but a read, so an unconsumed terminal
     /// code outlived its session — `EmailVerificationViewModel.checkNow()` forces a mint and
     /// discards the result, and a `token(false)` refusal followed by a successful `token(true)` is
-    /// the transport's own ordinary path. Later, with nobody signed in, a 401 takes
-    /// `token(true)` → nil at the no-user guard, which records NOTHING, so `refreshRefusal()`
-    /// handed back the dead account's code and `AccountSession.handle(.deleted)` wiped the GUEST
-    /// library. A successful mint and the no-user guard both clear it now.
+    /// the transport's own ordinary path.
+    ///
+    /// Re-review of 891d4ae5, Minor 1: the NB-A half below used to read
+    /// `refreshRefusal(signedFor: nil)`, which round 5 / R6-P2b made VACUOUS — a nil uid matches no
+    /// record, so it answers nil whatever the box holds, and the comment still described a no-user
+    /// clear that round deleted. It reads a FOREIGN uid instead, which is the shape NB-A actually
+    /// had (a LATER session's 401 taking the dead account's code as its own) and which can fail.
+    /// What refuses it now is the READ GATE — a verdict is reported only to a request that carried
+    /// that account's bearer — not an erase a concurrent no-user mint can win
+    /// (`aConcurrentNoUserMintDoesNotEraseALiveVerdict`, below).
     ///
     /// Driven on `FakeAuthClient`, which is the fake half of a two-implementation contract
-    /// (`AuthClient.refreshRefusal()`'s doc). `FirebaseAuthClient` carries the identical three
+    /// (`AuthClient.refreshRefusal(signedFor:)`'s doc). `FirebaseAuthClient` carries the identical
     /// lines and stays **NOT PINNED** — Tier 3, no Firebase in this suite.
     @Test func aSuccessfulMintClearsTheRecordedRefusal() async throws {
         let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
@@ -269,14 +275,14 @@ struct AuthorizedTransportTests {
         #expect(await auth.refreshRefusal(signedFor: "fake-uid") == nil,
                 "a terminal verdict outlived the successful mint that disproved it")
 
-        // The no-user guard clears it too, so nothing is left for a LATER session's 401 to read as
-        // its own verdict — the sequence that wiped the guest library.
+        // NB-A's own sequence: a verdict recorded for this account, then a LATER session asking
+        // whether it has one. The uid on the record is what refuses it.
         auth.nextMintRefusal = .userDisabled
         #expect(await auth.idToken(forceRefresh: true) == nil)
         try auth.signOut()
         #expect(await auth.idToken(forceRefresh: true) == nil)
-        #expect(await auth.refreshRefusal(signedFor: nil) == nil,
-                "a signed-out session read the previous account's refusal as its own")
+        #expect(await auth.refreshRefusal(signedFor: "uid-b") == nil,
+                "a later session read the previous account's refusal as its own")
     }
 
     /// Cubic round 6 / P2b. The box is process-global, so two requests taking 401s at once both

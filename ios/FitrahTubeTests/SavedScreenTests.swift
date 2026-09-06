@@ -210,9 +210,16 @@ actor SpyOfflineManager: OfflineSaving {
 
     func cancelAll() async { calls.append(Call(method: "cancelAll", id: "")) }
 
-    func deleteAll(_ ids: [String]) async {
+    /// R7-P2: the row delete can FAIL (a full or corrupt SwiftData store), and the wiper's whole
+    /// contract is that it hears about it — `LocalAccountWiper.wipe()` returning nil is what clears
+    /// the caller's durable deletion marker.
+    private var deleteAllError: Error?
+    func setDeleteAllError(_ error: Error) { deleteAllError = error }
+
+    func deleteAll(_ ids: [String]) async -> Error? {
         calls.append(Call(method: "deleteAll", id: ids.joined(separator: ",")))
         await onDeleteAll?()
+        return deleteAllError
     }
 
     /// Task 18: a probe run INSIDE `deleteAll`, so `LocalAccountWiperTests` can assert what the

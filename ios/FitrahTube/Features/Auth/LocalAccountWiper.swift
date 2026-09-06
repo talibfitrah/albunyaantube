@@ -56,7 +56,10 @@ import SwiftData
         //      filesystem, so the work stops before its files go — and both steps route through the
         //      manager, which owns every unlink this app performs.
         await offline.cancelAll()
-        await offline.deleteAll(offlineStore.items.map(\.id))
+        // R7-P2: the offline rows are the FIRST thing this deletes and were the one step that could
+        // not report a failure, so a full or corrupt store left the saved library on disk while the
+        // caller cleared its durable marker and announced the account erased.
+        firstError = await offline.deleteAll(offlineStore.items.map(\.id))
 
         // 3. Every row, ALL userIds: this is a DEVICE wipe, not a per-user one. Android scopes its
         //    deletes to the signed-in uid, which leaves a previous account's library on a device

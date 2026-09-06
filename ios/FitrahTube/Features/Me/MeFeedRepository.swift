@@ -139,11 +139,19 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     /// starting a second fan-out, and a `force: true` supersedes a running `force: false` — pull to
     /// refresh means "now", so it cancels and replaces rather than queueing behind a TTL-respecting
     /// burst. The leader's arguments are the ones that run, as in `AccountSession.refresh`.
-    func refresh(channelIds: [String], force: Bool) async {
+    /// R7-P2: RETURNS this call's own outcome — the banner copy, or nil. `MeSignedInView` used to
+    /// await this and then read `lastError` unconditionally, but a FOLLOWER (returning at `await
+    /// running.value`) and a SUPERSEDED leader (at the `guard inFlight == task`) both write nothing
+    /// to that box, so either could banner "couldn't refresh your feed" for a round some earlier
+    /// failure had recorded and a healthy round was about to clear. nil means "this call produced
+    /// no outcome of its own"; the box itself is unchanged and stays the render-time source for
+    /// anything that wants the standing state.
+    @discardableResult
+    func refresh(channelIds: [String], force: Bool) async -> String? {
         if let running = inFlight {
             guard force, !inFlightForced else {
                 await running.value
-                return
+                return nil
             }
             running.cancel()
         }
@@ -153,9 +161,10 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         inFlight = task
         await task.value
         // A superseded leader must NOT clear the flag the round that replaced it is still using.
-        guard inFlight == task else { return }
+        guard inFlight == task else { return nil }
         inFlight = nil
         isRefreshing = false
+        return lastError
     }
 
     private func performRefresh(channelIds: [String], force: Bool) async {
@@ -231,7 +240,11 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
                 if next < ids.count {
                     let id = ids[next]
                     next += 1
-                    group.addTask { (id, await run(id)) }
+                    // R7-P3: `addTaskUnlessCancelled`, so a superseded 30-channel round stops
+                    // creating children instead of creating the remaining ones only to cancel them
+                    // at birth. Efficiency only — a cancelled child answers `.timeout`, which
+                    // records the attempt and escalates nothing either way.
+                    _ = group.addTaskUnlessCancelled { (id, await run(id)) }
                 }
             }
             return results
@@ -274,9 +287,19 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     /// rail merges both) buckets nothing, which is the honest answer — the Atom feed is per
     /// channel, so a playlist's videos were never fetched.
     func rebucket(filter channelId: String?) async {
-        setFilter(channelId)
+        // R7-P2: resolved against the CURRENT subscription set, every time. `refresh()` re-drives
+        // this with the STORED filter, and a subscription-count change is exactly what re-drives
+        // the refresh (`MeSignedInView.swift:122-125`) — so unsubscribing the filtered channel
+        // anywhere else in the app left a filter naming a channel that is no longer in
+        // `channelIds`, and the old expression resolved it to `[]`: a blank feed, with no chip
+        // highlighted (its chip went with the subscription) and no message. Only a CHANNEL chip is
+        // ever a non-nil filter (`MeViewModel.feedFilter`), so "not in the set" means "gone", and a
+        // filter that is gone is no filter. The playlist-chip case the doc above describes is
+        // unaffected: that chip arrives here as nil and never as an unmatched id.
+        let live = channelId.flatMap { channelIds.contains($0) ? $0 : nil }
+        setFilter(live)
         let started = generation
-        let ids = channelId.map { channelIds.contains($0) ? [$0] : [] } ?? channelIds
+        let ids = live.map { [$0] } ?? channelIds
 
         var items: [VideoItem] = []
         for id in ids {

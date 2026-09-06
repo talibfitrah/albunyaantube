@@ -43,20 +43,11 @@ struct MainShellRoutingTests {
         #expect(leafTypeName(for: .signIn) == "SignInScreen")
     }
 
-    /// Phase 4 Task 11: the ONE new `Route` case this task adds — it lands WITH its screen, which
-    /// is what this arm pins.
-    @Test func theEmailVerificationRouteRendersTheRealScreen() {
-        #expect(leafTypeName(for: .emailVerification) == "EmailVerificationScreen")
-    }
-
-    /// Phase 4 Task 12: the TWO new `Route` cases this task adds — both land WITH their screens.
-    @Test func theProfileBootstrapRouteRendersTheRealScreen() {
-        #expect(leafTypeName(for: .profileBootstrap) == "ProfileBootstrapScreen")
-    }
-
-    @Test func theAgeIneligibleRouteRendersTheRealScreen() {
-        #expect(leafTypeName(for: .ageIneligible) == "AgeIneligibleScreen")
-    }
+    // The `.emailVerification` / `.profileBootstrap` / `.ageIneligible` rows went with their
+    // `Route` cases (R7-P3 bloat): nothing pushed any of the three, and all three screens are
+    // reached from `RootView` instead — the first two as `SplashDestination`s
+    // (`RootViewDestinationTests.everySplashDestinationRendersItsScreen`), the third as the full
+    // screen cover R7-P1 #3 presents on `AccountSession.isAgeIneligible`.
 
     /// Phase 4 Task 17: the ONE new `Route` case this task adds — it lands WITH its screen, and
     /// with the Me kebab row that pushes it (`MeKebabItem.landed`).

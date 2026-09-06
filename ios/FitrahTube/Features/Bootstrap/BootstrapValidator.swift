@@ -13,6 +13,10 @@ nonisolated enum BootstrapError: Sendable, Equatable {
 /// — so they cannot drift (`ProfileBootstrapViewModel.kt:80-108`). Pure and `nonisolated`: the
 /// suite constructs it off the main actor and hands it every date it decides on.
 nonisolated enum BootstrapValidator {
+    /// UTF-16 code units, matching `CompleteProfileRequest.java`'s `@Size(max = 40)` — see
+    /// `firstError`. `ProfileBootstrapViewModel`'s field cap is a grapheme `prefix` of the same
+    /// number, which is a bound on typing, not the gate: a 40-cluster name that exceeds 40 units is
+    /// refused here, with the field's own message.
     static let maxNameLength = 40
     /// Mirrors `AccountProfileService.MIN_AGE`.
     static let minAgeYears = 13
@@ -107,7 +111,15 @@ nonisolated enum BootstrapValidator {
                            passwordConfirm: String, passwordRequired: Bool,
                            today: Date, calendar: Calendar = .current) -> BootstrapError? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed.count > maxNameLength { return .invalidName }
+        // R7-P2: UTF-16 code units, because that is what the server counts.
+        // `CompleteProfileRequest.java:14` is `@Size(max = 40)` on a `String`, and Hibernate
+        // Validator's `SizeValidatorForCharSequence` measures `CharSequence.length()`. Swift's
+        // `String.count` is GRAPHEME CLUSTERS: a name 40 characters long to a reader can be 80
+        // units to the server (every astral scalar is a surrogate pair) or well under (a letter
+        // with combining marks), so an emoji or a tashkeel'd Arabic name passed an enabled Save
+        // button and came back 400 as the generic "couldn't save your profile" with no field
+        // pointer. Same rule, same refusal, and the copy `.invalidName` already renders.
+        if trimmed.isEmpty || trimmed.utf16.count > maxNameLength { return .invalidName }
         // Presence before age: a nil DOB has no age to test, and the age gate would have to invent
         // one to run first.
         guard let dob else { return .invalidDOB }

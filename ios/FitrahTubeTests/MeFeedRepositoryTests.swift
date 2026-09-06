@@ -339,8 +339,8 @@ struct MeFeedRepositoryTests {
         let transport = ScriptedTransport(ids.map { _ in feed(entry("vid-0", Self.week0)) })
         let repo = makeRepo(transport)
 
-        async let first: Void = repo.refresh(channelIds: ids, force: false)
-        async let second: Void = repo.refresh(channelIds: ids, force: false)
+        async let first: String? = repo.refresh(channelIds: ids, force: false)
+        async let second: String? = repo.refresh(channelIds: ids, force: false)
         _ = await (first, second)
 
         #expect(transport.sent.count == 4, "the second caller started a second fan-out")
@@ -536,5 +536,82 @@ struct MeFeedRepositoryTests {
                 "the phone feed stalled with its remaining weeks already in memory")
         #expect(repo.reachedEnd)
         #expect(transport.sent.count == 1, "paging deeper is never another request")
+    }
+
+    // MARK: - R7-P2: a chip whose channel is gone is no filter
+
+    /// `refresh()` ends with `await rebucket(filter: filter)` using the STORED filter, and the
+    /// subscription-count change is precisely what re-drives the refresh
+    /// (`MeSignedInView.swift:122-125`). So unsubscribing the filtered channel anywhere else in the
+    /// app left a filter naming a channel that is no longer in `channelIds`, `rebucket` resolved it
+    /// to `ids = []`, and the feed painted BLANK — with no chip highlighted (its chip is gone with
+    /// the subscription) and no message. Only a CHANNEL chip is ever a non-nil filter
+    /// (`MeViewModel.feedFilter`), so "not in the subscription set" means "gone".
+    @Test func aFilterWhoseChannelWasUnsubscribedElsewhereFallsBackToTheWholeFeed() async {
+        let transport = ScriptedTransport([
+            feed(entry("alpha-w0", Self.week0)),
+            feed(entry("beta-w0", Self.week0Older)),
+        ])
+        let repo = makeRepo(transport)
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        await repo.refresh(channelIds: [Self.alpha, Self.beta], force: false)
+        await repo.rebucket(filter: Self.beta)
+        #expect(allItems(repo) == ["beta-w0"], "the chip filters to its own channel while it exists")
+
+        // Beta is unsubscribed on another screen; the count change re-drives the refresh.
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+
+        #expect(allItems(repo) == ["alpha-w0"],
+                "a stale chip filter blanked the feed after an unsubscribe")
+    }
+
+    // MARK: - R7-P2: only this call's own outcome may banner
+
+    /// `MeSignedInView.refreshFeed` awaited `refresh(...)` and then read `feed.lastError`
+    /// unconditionally. A FOLLOWER returns at `await running.value` and a SUPERSEDED leader at the
+    /// `guard inFlight == task`, and NEITHER writes `lastError` — the box is only ever touched by a
+    /// round that ran to completion. So a `.task` or a pull-to-refresh that coalesced onto (or was
+    /// replaced by) a healthy round still banner'd "couldn't refresh your feed" left over from an
+    /// earlier failure. The return value is the generation guard: nil means "this call produced no
+    /// outcome of its own".
+    ///
+    /// Driven on the superseded-leader half, which is the discriminating one — the box provably
+    /// still holds the FIRST round's failure at the moment the superseded call returns, because the
+    /// round that replaced it is parked inside the transport and has written nothing yet.
+    @Test func aSupersededRoundReportsNothingWhileTheBoxStillHoldsAnOlderFailure() async {
+        let releaseA = Gate(), releaseB = Gate()
+        // #1 is alpha's failure (which sets the box), #2 is beta under the round that gets
+        // superseded, #3 is beta under the round that replaces it. Beta rather than alpha for the
+        // last two because alpha is in the 5xx backoff by then and an unforced round would fetch
+        // nothing at all.
+        let transport = ScriptedTransport(
+            [.json(500, ""), .json(500, ""), feed(entry("beta-w0", Self.week0))],
+            park: { index in
+                switch index {
+                case 2: await releaseA.block()
+                case 3: await releaseB.block()
+                default: break
+                }
+            })
+        let repo = makeRepo(transport)
+
+        let failed = await repo.refresh(channelIds: [Self.alpha], force: false)
+        #expect(failed != nil, "the round that actually failed is the one that reports it")
+
+        let superseded = Task { await repo.refresh(channelIds: [Self.beta], force: false) }
+        await releaseA.waitUntilBlocked()
+        let forced = Task { await repo.refresh(channelIds: [Self.beta], force: true) }
+        await releaseB.waitUntilBlocked()   // the replacing round is in flight and has written nothing
+        await releaseA.release()
+
+        let supersededResult = await superseded.value
+        #expect(repo.lastError != nil, "the box still holds the first round's failure at this point")
+        #expect(supersededResult == nil,
+                "a superseded round banner'd a failure some other round had recorded")
+
+        await releaseB.release()
+        let forcedResult = await forced.value
+        #expect(forcedResult == nil)
+        #expect(repo.lastError == nil, "the round that replaced it succeeded")
     }
 }

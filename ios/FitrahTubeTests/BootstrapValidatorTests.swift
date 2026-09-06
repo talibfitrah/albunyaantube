@@ -200,4 +200,32 @@ struct BootstrapValidatorTests {
         #expect(firstError(password: "12345678", passwordConfirm: "12345679",
                            passwordRequired: true) == .passwordMismatch)
     }
+
+    // MARK: - R7-P2: the name length is counted the way the server counts it
+
+    /// `CompleteProfileRequest.java:14` is `@Size(max = 40)` on a `String`, and Hibernate
+    /// Validator's `SizeValidatorForCharSequence` measures `CharSequence.length()` — UTF-16 code
+    /// units. Swift's `String.count` is GRAPHEME CLUSTERS, so a name that is 40 characters to a
+    /// reader can be 80 units to the server: every astral-plane scalar is a surrogate pair, and a
+    /// letter carrying combining marks is one cluster over several units. Those names passed an
+    /// enabled Save button and came back 400 as the generic "couldn't save your profile" with no
+    /// field pointer. Counted in UTF-16 here, the refusal is local, immediate and points at the
+    /// name field — the copy `.invalidName` already renders, no key authored.
+    @Test(arguments: [
+        // (name, isTooLong)
+        (String(repeating: "a", count: 40), false),
+        (String(repeating: "a", count: 41), true),
+        // 40 grapheme clusters, 80 UTF-16 units: `String.count` says 40 and the server says 80.
+        (String(repeating: "\u{1F600}", count: 40), true),
+        // 20 of them is 40 units — the largest name of this shape the server accepts.
+        (String(repeating: "\u{1F600}", count: 20), false),
+        // One cluster, THREE units: Arabic base letter + two combining marks. 13 clusters is 39
+        // units and passes; 14 is 42 and does not — `String.count` says 13 and 14.
+        (String(repeating: "\u{0628}\u{064E}\u{0651}", count: 13), false),
+        (String(repeating: "\u{0628}\u{064E}\u{0651}", count: 14), true),
+    ])
+    func aNameIsMeasuredInTheUtf16UnitsTheServerCounts(name: String, isTooLong: Bool) {
+        #expect((firstError(name: name) == .invalidName) == isTooLong,
+                "\(name.count) clusters / \(name.utf16.count) UTF-16 units judged against @Size(max = 40)")
+    }
 }
