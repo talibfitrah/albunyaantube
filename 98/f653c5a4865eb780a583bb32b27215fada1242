@@ -1,0 +1,47 @@
+ios/FitrahTube/Catalog/SubscriptionsStore.swift
+  s_66ddb7c44de816::t_e072d13d64d0a9 110-114,116,164-165
+ios/FitrahTube/Catalog/SavedPlaylistsStore.swift
+  s_66ddb7c44de816::t_e072d13d64d0a9 112-115,117,163-164
+  s_66ddb7c44de816::t_c04f265bc2eb70 110-111
+ios/FitrahTube/App/FitrahTubeApp.swift
+  s_66ddb7c44de816::t_c3a0e63ff6750d 214-215
+  s_66ddb7c44de816::t_96a68befbc63aa 68-71,111-121,195-213,216
+ios/FitrahTube/Sync/SyncManager.swift
+  s_66ddb7c44de816::t_ac8840980e8c5d 4-18
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_66ddb7c44de816::t_7773c0357f797f 121
+  s_66ddb7c44de816::t_aa5b97d131a5f2 65-72,96-97,106-120,122,329,437-441,474-478,480-487
+  s_66ddb7c44de816::t_c3a0e63ff6750d 442,479
+ios/FitrahTube/Persistence/FavoritesStore.swift
+  s_66ddb7c44de816::t_f6fb29a37405bd 30-36,38,113-114
+  s_66ddb7c44de816::t_c3a0e63ff6750d 115
+ios/FitrahTubeTests/SyncTriggerTests.swift
+  s_66ddb7c44de816::t_c69c42d80ade60 254-279
+  s_66ddb7c44de816::t_1fb90d5a455264 2-4,6-50,68-115,135-208,210-217,219,247,252-253,280-345,347,350,360-370,372-389,391-425
+  s_66ddb7c44de816::t_739a109e5988d6 5
+  s_66ddb7c44de816::t_78bd6462eee661 51-67
+  s_66ddb7c44de816::t_64435761f56dd7 116-134
+  s_66ddb7c44de816::t_f30bf7b5cb6304 346,348-349,351-359
+  s_66ddb7c44de816::t_90d8fd77d53dc0 371,390
+  s_66ddb7c44de816::t_5ed508fff9e370 1
+  s_66ddb7c44de816::t_dd85d555af9c49 209,218,220-246,248-251
+ios/FitrahTube/App/AppContainer.swift
+  s_66ddb7c44de816::t_c3a0e63ff6750d 308,327
+  s_66ddb7c44de816::t_4e7c7cf732c53f 92-93,95-96,98-99,275-307,309-326,328-330,352-356,516,530,587-591,615
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "98f653c5a4865eb780a583bb32b27215fada1242",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
