@@ -10,7 +10,7 @@ import Testing
 /// write being all-or-nothing, the cursor and the rows it advances past landing in ONE save, the
 /// drain order, and where `updatedAt` gets its value.
 ///
-/// Fakes only: `ScriptedSyncClient` at Task 22's seam (declared in `SyncMutexTests.swift`) and an
+/// Fakes only: `ScriptedSyncClient` at Task 22's seam (`Support/TestDoubles.swift`) and an
 /// in-memory `ModelContainer`. No Firebase, no network, no clock.
 @Suite(.perTest)
 struct SyncManagerTests {
@@ -145,6 +145,14 @@ struct SyncManagerTests {
     /// tagged to the PREVIOUS uid and wiped WITH it: tagging them to the NEW uid is exactly how
     /// user A's local library was transferred into user B's account (R-final5 / R-final6), and
     /// doing the tagging outside the transaction left a crash window that re-merged A's data into B.
+    ///
+    /// **Task 23 review M2:** and it commits in exactly ONE save. Atomicity here IS "one context,
+    /// one save, `rollback()` on the way out", so a second save inside `switchAccount` re-opens
+    /// precisely the half-applied window the rollback test exists to close — and that test would
+    /// still pass, because it only asserts what survives a throw placed before the first save. The
+    /// count is read INSIDE the pull, i.e. after the switch and after the merge's anon tag (which
+    /// finds nothing to tag here — the switch wiped the anon row — and a no-op `save()` posts no
+    /// `didSave`), and before the drain's own writes.
     @Test func bindWithADifferentUidTagsAnonRowsToThePreviousUidAndWipesThemWithIt() async throws {
         let container = self.container()
         let context = ModelContext(container)
@@ -157,11 +165,21 @@ struct SyncManagerTests {
         context.insert(SubscribedChannel(channelId: Self.channelId, title: "A's", avatarUrl: nil,
                                          userId: ""))          // the anon row, A's by residence
         try context.save()
-        let client = ScriptedSyncClient(pulls: [.page(.empty)])
+        // Scoped to THIS container: every other suite runs in parallel and saves into its own.
+        let saves = Mutex<Int>(0), atPull = Mutex<Int>(-1)
+        let token = NotificationCenter.default.addObserver(
+            forName: ModelContext.didSave, object: nil, queue: nil) { note in
+                guard let saved = note.object as? ModelContext, saved.container === container else { return }
+                saves.withLock { $0 += 1 }
+            }
+        defer { NotificationCenter.default.removeObserver(token) }
+        let client = ScriptedSyncClient(pulls: [.page(.empty)],
+                                        hook: { _, _ in atPull.withLock { $0 = saves.withLock { $0 } } })
         let manager = self.manager(client, container: container)
 
         await manager.bind(uid: Self.other)
 
+        #expect(atPull.withLock { $0 } == 1, "the account switch did not commit in ONE save")
         #expect(fetch(container, FavoriteVideo.self).isEmpty)
         #expect(fetch(container, SavedPlaylist.self).isEmpty)
         #expect(fetch(container, SubscribedChannel.self).isEmpty,
@@ -435,6 +453,44 @@ struct SyncManagerTests {
         #expect(await manager.incidents.contains { $0.contains("terminal") })
     }
 
+    /// **Task 23 review I1.** The addendum's PERMANENT arm is "400 invalid cursor -> DROP cursor
+    /// with the log line, no retry". Logging and keeping it wedges the pull FOREVER: the next run
+    /// sends the same id, gets the same 400, logs the same line and stops, with no self-heal and no
+    /// symptom beyond an account that quietly stops receiving server changes. The pre-request
+    /// validator cannot cover this — a 400 is precisely the case where the client's mirror of
+    /// `SyncController.isValidCursorId` and the server have drifted apart (Task 22 M1).
+    ///
+    /// The whole request is rejected with one status, so the wire says nothing about WHICH type's
+    /// tiebreaker was bad: all three go. That costs a re-fetch of the boundary millisecond, which
+    /// `applyPage` upserts; keeping one costs the account.
+    @Test func aServerRejectedCursorIdIsDroppedSoTheNextPullIsNotWedged() async throws {
+        let container = self.container()
+        let context = ModelContext(container)
+        context.insert(SyncState(entityType: "favorites", userId: Self.uid, lastCursor: 1_700,
+                                 lastDocId: "doc-400"))
+        try context.save()
+        // "doc-400" passes `isValidCursorId`, so the pre-request drop cannot fire and the id really
+        // does reach the wire — the server is the one rejecting it.
+        let client = ScriptedSyncClient(pulls: [.failure(SyncClientError.pullStatus(400)),
+                                                .page(.empty)])
+        let manager = self.manager(client, container: container)
+
+        await manager.pullAll(uid: Self.uid)
+
+        #expect(client.calls == [.pull], "a permanent pull entered the retry ladder")
+        let dropped = try #require(await manager.incidents.first { $0.contains("rejected lastDocId") })
+        #expect(dropped.contains("favorites"))
+        #expect(dropped.contains("doc-400"))
+        let state = try #require(fetch(container, SyncState.self).first)
+        #expect(state.lastDocId == nil, "the rejected id is still stored; the next pull wedges again")
+        #expect(state.lastCursor == 1_700, "the millisecond went with the id, re-fetching whole pages")
+
+        await manager.pullAll(uid: Self.uid)
+
+        #expect(client.pullIds == [["favorites": "doc-400"], [:]],
+                "run 1 must send the stored id and run 2 must send none")
+    }
+
     // MARK: - Push
 
     /// The fixed drain order, and the URL synthesis that has to happen before the first byte leaves.
@@ -616,4 +672,32 @@ struct SyncManagerTests {
         #expect(await manager.incidents.contains { $0.contains("ladder exhausted") })
         #expect(await manager.incidents.contains { $0.contains("no decodable body") })
     }
+
+    /// **Task 23 review M3.** Every `SyncStore` write outside the two throwing transactions used to
+    /// swallow its save with a bare `try?`. A `clearDirty` that did not commit is indistinguishable
+    /// from one that did — and the row stays dirty, so it is re-pushed on every trigger, forever,
+    /// with nothing in the ring to say why. One `save` helper, one `note()`.
+    ///
+    /// A `ModelContext.save()` cannot be made to fail on demand any more than the account switch
+    /// could, so this uses `injectedSwitchFailure`'s twin at the same DEBUG seam.
+    @Test func aSaveThatThrowsIsReportedInsteadOfSwallowed() async throws {
+        let container = self.container()
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: Self.uid,
+                                     dirty: true))
+        try context.save()
+        let client = ScriptedSyncClient(puts: [.reply(200, SyncRowEcho(deleted: false, updatedAt: 5_000))])
+        let manager = self.manager(client, container: container)
+
+        await SyncManager.$injectedSaveFailure.withValue({ throw SaveFailure.injected }) {
+            await manager.pushDirty(uid: Self.uid)
+        }
+
+        #expect(client.calls == [.put(.favorites, Self.videoId)])
+        #expect(await manager.incidents.contains { $0.contains("clear dirty") },
+                "the clearDirty save failed silently; the row re-pushes forever and nothing says so")
+    }
+
+    enum SaveFailure: Error { case injected }
 }

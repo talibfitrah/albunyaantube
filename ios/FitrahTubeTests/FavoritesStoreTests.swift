@@ -112,17 +112,28 @@ struct FavoritesStoreTests {
         #expect(store.isFavorite("v1") == true)
     }
 
+    /// Task 23 review I2's third row of the same table: this store's `== "APPROVED"` is the
+    /// spelling the M3 ruling made its two siblings match, and it was equally undistinguished from
+    /// `!= "AWAITING"` here — only a REJECTED row and a status no build has heard of tell them
+    /// apart.
     @Test func itemsExcludeAwaitingApprovalRowsButIsFavoriteDoesNot() throws {
         let container = makeContainer()
         let context = ModelContext(container)
         context.insert(FavoriteVideo(videoId: "awaiting", title: "T", channelName: "C", thumbnailUrl: nil,
                                       durationSeconds: 60, userId: "", approvalStatus: "AWAITING"))
+        context.insert(FavoriteVideo(videoId: "rejected", title: "T", channelName: "C", thumbnailUrl: nil,
+                                      durationSeconds: 60, userId: "", approvalStatus: "REJECTED"))
+        context.insert(FavoriteVideo(videoId: "unknown", title: "T", channelName: "C", thumbnailUrl: nil,
+                                      durationSeconds: 60, userId: "", approvalStatus: "SOME_LATER_STATUS"))
+        context.insert(FavoriteVideo(videoId: "approved", title: "T", channelName: "C", thumbnailUrl: nil,
+                                      durationSeconds: 60, userId: ""))
         try context.save()
 
         let store = makeStore(container: container)
 
-        #expect(store.items.isEmpty)
+        #expect(store.items.map(\.videoId) == ["approved"])
         #expect(store.isFavorite("awaiting") == true)
+        #expect(store.isFavorite("rejected") == true)
     }
 
     @Test func itemsAreScopedToCurrentUserIdAndReactToChanges() throws {

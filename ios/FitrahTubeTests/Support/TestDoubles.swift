@@ -1,6 +1,7 @@
 import Foundation
 import InnerTubeKit
 import Observation
+import Synchronization
 @testable import FitrahTube
 
 /// Shared test doubles and fixtures (gate B2-3). Each of these was copy-pasted verbatim into three
@@ -125,4 +126,149 @@ nonisolated final class MemoryKV: KeyValueStore, @unchecked Sendable {
     private var storage: [String: Data] = [:]
     func get(_ key: String) -> Data? { lock.withLock { storage[key] } }
     func set(_ key: String, _ value: Data) { lock.withLock { storage[key] = value } }
+}
+
+// MARK: - The scripted `SyncTransporting`
+
+/// Task 22 declared `SyncTransporting` as "the seam Task 23's tests script" — so this double sits at
+/// that seam, not at `HTTPTransport`: `SyncClient`'s query names, paths and cursor-id validator are
+/// `SyncClientTests`' subject and re-proving them through every manager test would couple the two.
+///
+/// Shared by `SyncMutexTests` and `SyncManagerTests` -- which is why it lives here rather than
+/// beside one of them (Task 23 review M6). Responses are
+/// consumed in order and running the queue dry THROWS — a silent repeat would let an unexpected
+/// extra request pass unnoticed, which is exactly what `ScriptedTransport` refuses for the same
+/// reason.
+final class ScriptedSyncClient: SyncTransporting {
+
+    enum Call: Equatable, Sendable {
+        case pull
+        case put(SyncEntityType, String)
+        case delete(SyncEntityType, String)
+    }
+
+    enum PullReply: Sendable {
+        case page(SyncResponse)
+        case failure(any Error & Sendable)
+    }
+
+    enum PutReply: Sendable {
+        case reply(Int, SyncRowEcho?)
+        case failure(any Error & Sendable)
+    }
+
+    enum Failure: Error, Equatable { case exhausted(String) }
+
+    private struct State {
+        var pulls: [PullReply]
+        var puts: [PutReply]
+        var deletes: [Int]
+        var calls: [Call] = []
+        var bodies: [Data] = []
+        var pullIds: [[String: String]] = []
+        var inFlight = 0
+        var peak = 0
+    }
+
+    private let state: Mutex<State>
+    /// Awaited INSIDE each method, after the call is recorded and before it is answered, with this
+    /// call's 1-based index — so a test can park exactly one request while it is genuinely in flight.
+    private let hook: (@Sendable (Call, Int) async -> Void)?
+
+    init(pulls: [PullReply] = [], puts: [PutReply] = [], deletes: [Int] = [],
+         hook: (@Sendable (Call, Int) async -> Void)? = nil) {
+        state = Mutex(State(pulls: pulls, puts: puts, deletes: deletes))
+        self.hook = hook
+    }
+
+    var calls: [Call] { state.withLock { $0.calls } }
+    /// Every PUT body, in order — what proves a synthesised `channelUrl` actually reached the wire.
+    var bodies: [Data] { state.withLock { $0.bodies } }
+    /// Every pull's cursor ids, in order, with the nils dropped — exactly the set `SyncClient` puts
+    /// on the wire (`SyncClient.swift:53` flattens a `String??` and skips it), which is what makes
+    /// "the next run pulls from no tiebreaker at all" an assertion instead of an inference.
+    var pullIds: [[String: String]] { state.withLock { $0.pullIds } }
+    /// Peak simultaneous calls. 1 is the whole point of the exclusion.
+    var peakConcurrency: Int { state.withLock { $0.peak } }
+
+    func pull(cursors: [String: Int], ids: [String: String?]) async throws -> SyncResponse {
+        let (reply, index) = enter(.pull, ids: ids.compactMapValues { $0 })
+        await run(.pull, index)
+        leave()
+        switch reply {
+        case .none: throw Failure.exhausted("pull")
+        case .some(.failure(let error)): throw error
+        case .some(.page(let page)): return page
+        }
+    }
+
+    func put(_ type: SyncEntityType, id: String, body: Data) async throws -> (status: Int, dto: SyncRowEcho?) {
+        let call = Call.put(type, id)
+        let (reply, index): (PutReply?, Int) = state.withLock {
+            $0.calls.append(call)
+            $0.bodies.append(body)
+            $0.inFlight += 1
+            $0.peak = max($0.peak, $0.inFlight)
+            return ($0.puts.isEmpty ? nil : $0.puts.removeFirst(), $0.calls.count)
+        }
+        await run(call, index)
+        leave()
+        switch reply {
+        case .none: throw Failure.exhausted("put \(type.rawValue)/\(id)")
+        case .some(.failure(let error)): throw error
+        case .some(.reply(let status, let echo)): return (status, echo)
+        }
+    }
+
+    func delete(_ type: SyncEntityType, id: String) async throws -> Int {
+        let call = Call.delete(type, id)
+        let (status, index): (Int?, Int) = state.withLock {
+            $0.calls.append(call)
+            $0.inFlight += 1
+            $0.peak = max($0.peak, $0.inFlight)
+            return ($0.deletes.isEmpty ? nil : $0.deletes.removeFirst(), $0.calls.count)
+        }
+        await run(call, index)
+        leave()
+        guard let status else { throw Failure.exhausted("delete \(type.rawValue)/\(id)") }
+        return status
+    }
+
+    private func enter(_ call: Call, ids: [String: String]) -> (PullReply?, Int) {
+        state.withLock {
+            $0.calls.append(call)
+            $0.pullIds.append(ids)
+            $0.inFlight += 1
+            $0.peak = max($0.peak, $0.inFlight)
+            return ($0.pulls.isEmpty ? nil : $0.pulls.removeFirst(), $0.calls.count)
+        }
+    }
+
+    /// ONE suspension point even with no hook, so simultaneous callers actually overlap and
+    /// `peakConcurrency` can exceed 1 — a `peak == 1` assertion is worthless otherwise.
+    private func run(_ call: Call, _ index: Int) async {
+        await Task.yield()
+        await hook?(call, index)
+    }
+
+    private func leave() { state.withLock { $0.inFlight -= 1 } }
+}
+
+extension SyncResponse {
+    /// The exhausted page: three empty item lists and no cursor — one `pullAll` iteration, then stop.
+    static var empty: SyncResponse { .page() }
+
+    static func page(subscriptions: [SubscriptionSyncDTO] = [], playlists: [PlaylistSyncDTO] = [],
+                     favorites: [FavoriteSyncDTO] = [],
+                     subscriptionsCursor: Int? = nil, subscriptionsCursorId: String? = nil,
+                     playlistsCursor: Int? = nil, playlistsCursorId: String? = nil,
+                     favoritesCursor: Int? = nil, favoritesCursorId: String? = nil) -> SyncResponse {
+        SyncResponse(
+            subscriptions: SyncPage(items: subscriptions, nextCursor: subscriptionsCursor,
+                                    nextCursorId: subscriptionsCursorId),
+            playlists: SyncPage(items: playlists, nextCursor: playlistsCursor,
+                                nextCursorId: playlistsCursorId),
+            favorites: SyncPage(items: favorites, nextCursor: favoritesCursor,
+                                nextCursorId: favoritesCursorId))
+    }
 }

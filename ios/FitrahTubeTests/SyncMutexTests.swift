@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import Synchronization
 import Testing
 @testable import FitrahTube
 
@@ -34,7 +33,11 @@ struct SyncMutexTests {
     /// and the pull count reads 2 while the first caller has not returned.
     ///
     /// "One pull" is one pull AT A TIME: serialisation, not coalescing — there is no dedupe in the
-    /// interface and Android has none either, so both callers do eventually pull.
+    /// interface and Android has none either, so both callers do eventually pull. **Task 23 review
+    /// M5:** that is the reading the brief's step 0 asked for AT THIS LAYER, and the second
+    /// `calls == [.pull, .pull]` below is what asserts it rather than coalescing. Coalescing exists,
+    /// one layer up and per uid, in `AppContainer.pushDirtySoon(uid:)` (Task 24) — do not build a
+    /// second copy of it in the manager.
     @Test func twoConcurrentSyncNowCallsProduceOnePullAtATime() async throws {
         let gate = Gate()
         let client = ScriptedSyncClient(pulls: [.page(.empty), .page(.empty)],
@@ -120,142 +123,46 @@ struct SyncMutexTests {
         await manager.syncNow(uid: Self.uid)     // hangs forever if `inFlight` was stranded
         #expect(client.calls == [.pull, .pull])
     }
-}
 
-// MARK: - The scripted `SyncTransporting`
+    /// **Task 23 review M1.** `acquire()` is a `withCheckedContinuation` and is NOT
+    /// cancellation-aware, so a caller cancelled while QUEUED on the exclusion stays parked and is
+    /// then handed the critical section by `release()` — and drains. The real instance is the push
+    /// retry: it clears its own `Task.isCancelled` guard the moment its sleep returns, then parks
+    /// on `acquire()` behind an in-flight pull, and the pull's own terminal arm calls
+    /// `unbindLocked()` from INSIDE the exclusion. The retry then wakes into a drain under a bearer
+    /// that is already gone. `unbindDuringAnInFlightPull…` covers only the parked-in-SLEEP ordering,
+    /// where the retry's own guard is what stops it.
+    ///
+    /// Cancelling the queued caller directly pins the guard itself rather than one route to it: it
+    /// is the same suspension, the same handoff, and it cannot go green by accident, since a push
+    /// cancelled before it ever reaches `acquire()` has no other guard on the path either.
+    @Test func aPushCancelledWhileQueuedOnTheExclusionDoesNotDrainAfterTheHandoff() async throws {
+        let container = AppContainer.makeModelContainer(inMemory: true)
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: "xc7keR2piUM", title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: Self.uid, dirty: true))
+        try context.save()
 
-/// Task 22 declared `SyncTransporting` as "the seam Task 23's tests script" — so this double sits at
-/// that seam, not at `HTTPTransport`: `SyncClient`'s query names, paths and cursor-id validator are
-/// `SyncClientTests`' subject and re-proving them through every manager test would couple the two.
-///
-/// Shared by `SyncMutexTests` and `SyncManagerTests` (one target, no import needed). Responses are
-/// consumed in order and running the queue dry THROWS — a silent repeat would let an unexpected
-/// extra request pass unnoticed, which is exactly what `ScriptedTransport` refuses for the same
-/// reason.
-final class ScriptedSyncClient: SyncTransporting {
+        let pullGate = Gate()
+        let client = ScriptedSyncClient(pulls: [.page(.empty)],
+                                        hook: { call, _ in if call == .pull { await pullGate.block() } })
+        let manager = SyncManager(client: client, modelContainer: container,
+                                  backoff: SyncBackoff(random: { $0.lowerBound }), sleep: { _ in })
 
-    enum Call: Equatable, Sendable {
-        case pull
-        case put(SyncEntityType, String)
-        case delete(SyncEntityType, String)
-    }
+        let pull = Task { await manager.pullAll(uid: Self.uid) }
+        await pullGate.waitUntilBlocked()
+        let push = Task { await manager.pushDirty(uid: Self.uid) }
+        // The queued push makes no call of its own, so the suite's yield idiom runs its full budget
+        // and gives it every chance to reach `acquire()` before the cancel.
+        for _ in 0..<500 where client.calls.count == 1 { await Task.yield() }
 
-    enum PullReply: Sendable {
-        case page(SyncResponse)
-        case failure(any Error & Sendable)
-    }
+        push.cancel()
+        await pullGate.release()
+        await pull.value
+        await push.value
 
-    enum PutReply: Sendable {
-        case reply(Int, SyncRowEcho?)
-        case failure(any Error & Sendable)
-    }
-
-    enum Failure: Error, Equatable { case exhausted(String) }
-
-    private struct State {
-        var pulls: [PullReply]
-        var puts: [PutReply]
-        var deletes: [Int]
-        var calls: [Call] = []
-        var bodies: [Data] = []
-        var inFlight = 0
-        var peak = 0
-    }
-
-    private let state: Mutex<State>
-    /// Awaited INSIDE each method, after the call is recorded and before it is answered, with this
-    /// call's 1-based index — so a test can park exactly one request while it is genuinely in flight.
-    private let hook: (@Sendable (Call, Int) async -> Void)?
-
-    init(pulls: [PullReply] = [], puts: [PutReply] = [], deletes: [Int] = [],
-         hook: (@Sendable (Call, Int) async -> Void)? = nil) {
-        state = Mutex(State(pulls: pulls, puts: puts, deletes: deletes))
-        self.hook = hook
-    }
-
-    var calls: [Call] { state.withLock { $0.calls } }
-    /// Every PUT body, in order — what proves a synthesised `channelUrl` actually reached the wire.
-    var bodies: [Data] { state.withLock { $0.bodies } }
-    /// Peak simultaneous calls. 1 is the whole point of the exclusion.
-    var peakConcurrency: Int { state.withLock { $0.peak } }
-
-    func pull(cursors: [String: Int], ids: [String: String?]) async throws -> SyncResponse {
-        let (reply, index) = enter(.pull)
-        await run(.pull, index)
-        leave()
-        switch reply {
-        case .none: throw Failure.exhausted("pull")
-        case .some(.failure(let error)): throw error
-        case .some(.page(let page)): return page
-        }
-    }
-
-    func put(_ type: SyncEntityType, id: String, body: Data) async throws -> (status: Int, dto: SyncRowEcho?) {
-        let call = Call.put(type, id)
-        let (reply, index): (PutReply?, Int) = state.withLock {
-            $0.calls.append(call)
-            $0.bodies.append(body)
-            $0.inFlight += 1
-            $0.peak = max($0.peak, $0.inFlight)
-            return ($0.puts.isEmpty ? nil : $0.puts.removeFirst(), $0.calls.count)
-        }
-        await run(call, index)
-        leave()
-        switch reply {
-        case .none: throw Failure.exhausted("put \(type.rawValue)/\(id)")
-        case .some(.failure(let error)): throw error
-        case .some(.reply(let status, let echo)): return (status, echo)
-        }
-    }
-
-    func delete(_ type: SyncEntityType, id: String) async throws -> Int {
-        let call = Call.delete(type, id)
-        let (status, index): (Int?, Int) = state.withLock {
-            $0.calls.append(call)
-            $0.inFlight += 1
-            $0.peak = max($0.peak, $0.inFlight)
-            return ($0.deletes.isEmpty ? nil : $0.deletes.removeFirst(), $0.calls.count)
-        }
-        await run(call, index)
-        leave()
-        guard let status else { throw Failure.exhausted("delete \(type.rawValue)/\(id)") }
-        return status
-    }
-
-    private func enter(_ call: Call) -> (PullReply?, Int) {
-        state.withLock {
-            $0.calls.append(call)
-            $0.inFlight += 1
-            $0.peak = max($0.peak, $0.inFlight)
-            return ($0.pulls.isEmpty ? nil : $0.pulls.removeFirst(), $0.calls.count)
-        }
-    }
-
-    /// ONE suspension point even with no hook, so simultaneous callers actually overlap and
-    /// `peakConcurrency` can exceed 1 — a `peak == 1` assertion is worthless otherwise.
-    private func run(_ call: Call, _ index: Int) async {
-        await Task.yield()
-        await hook?(call, index)
-    }
-
-    private func leave() { state.withLock { $0.inFlight -= 1 } }
-}
-
-extension SyncResponse {
-    /// The exhausted page: three empty item lists and no cursor — one `pullAll` iteration, then stop.
-    static var empty: SyncResponse { .page() }
-
-    static func page(subscriptions: [SubscriptionSyncDTO] = [], playlists: [PlaylistSyncDTO] = [],
-                     favorites: [FavoriteSyncDTO] = [],
-                     subscriptionsCursor: Int? = nil, subscriptionsCursorId: String? = nil,
-                     playlistsCursor: Int? = nil, playlistsCursorId: String? = nil,
-                     favoritesCursor: Int? = nil, favoritesCursorId: String? = nil) -> SyncResponse {
-        SyncResponse(
-            subscriptions: SyncPage(items: subscriptions, nextCursor: subscriptionsCursor,
-                                    nextCursorId: subscriptionsCursorId),
-            playlists: SyncPage(items: playlists, nextCursor: playlistsCursor,
-                                nextCursorId: playlistsCursorId),
-            favorites: SyncPage(items: favorites, nextCursor: favoritesCursor,
-                                nextCursorId: favoritesCursorId))
+        #expect(client.calls == [.pull], "the cancelled push drained once the exclusion was handed over")
+        let row = try #require(try ModelContext(container).fetch(FetchDescriptor<FavoriteVideo>()).first)
+        #expect(row.dirty, "the drain that must not have happened cleared the row's dirt")
     }
 }

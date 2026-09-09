@@ -195,17 +195,29 @@ struct SchemaV5MigrationTests {
     /// V5 column behaviour, same subject as the migration: an AWAITING (imported, unreviewed)
     /// channel must not render as an ordinary chip and must not count against the 30-channel cap,
     /// while `isSubscribed` stays unfiltered (matching `isFavorite`) so a re-add cannot duplicate.
+    ///
+    /// **Task 23 review I2** adds the third and fourth rows of the table. The M3 ruling made this
+    /// predicate FAIL CLOSED (`== "APPROVED"`, not `!= "AWAITING"`) and nothing distinguished the
+    /// two spellings: an APPROVED row and an AWAITING row behave identically under either, so
+    /// reverting the ruled fix was green. A REJECTED row and a status no build has heard of are
+    /// what tell them apart — under the old spelling both rendered as ordinary chips and both
+    /// counted against the cap.
     @Test func anAwaitingChannelIsHiddenFromItemsButStillReadsAsSubscribed() throws {
         let container = try ModelContainer(for: SubscribedChannel.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let seed = ModelContext(container)
         seed.insert(SubscribedChannel(channelId: "UCmMcOjsVehVlEOteyrhjI2Q", title: "Awaiting", avatarUrl: nil,
                                       approvalStatus: "AWAITING", source: "USER_IMPORT"))
+        seed.insert(SubscribedChannel(channelId: "UCrejected00000000000000", title: "Rejected", avatarUrl: nil,
+                                      approvalStatus: "REJECTED", source: "USER_IMPORT"))
+        seed.insert(SubscribedChannel(channelId: "UCunknown000000000000000", title: "Unknown", avatarUrl: nil,
+                                      approvalStatus: "SOME_LATER_STATUS", source: "USER_IMPORT"))
         seed.insert(SubscribedChannel(channelId: "UCapproved00000000000000", title: "Approved", avatarUrl: nil))
         try seed.save()
 
         let store = SwiftDataSubscriptionsStore(modelContainer: container)
         #expect(store.items.map(\.channelId) == ["UCapproved00000000000000"])
         #expect(store.isSubscribed("UCmMcOjsVehVlEOteyrhjI2Q"))
+        #expect(store.isSubscribed("UCrejected00000000000000"))
 
         // A re-add of an awaiting row must not create a second row. TWICE: `toggle` on a live row
         // unsubscribes it, so only the second call takes the re-add branch -- asserting after the
@@ -223,18 +235,23 @@ struct SchemaV5MigrationTests {
         #expect(store.items.map(\.channelId) == ["UCapproved00000000000000"])
     }
 
-    /// The playlist twin.
+    /// The playlist twin, including review I2's REJECTED and unknown-status rows.
     @Test func anAwaitingPlaylistIsHiddenFromItemsButStillReadsAsSaved() throws {
         let container = try ModelContainer(for: SavedPlaylist.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let seed = ModelContext(container)
         seed.insert(SavedPlaylist(playlistId: "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc", title: "Awaiting", thumbnailUrl: nil,
                                   itemCount: 3, approvalStatus: "AWAITING", source: "USER_IMPORT"))
+        seed.insert(SavedPlaylist(playlistId: "PLrejected", title: "Rejected", thumbnailUrl: nil,
+                                  itemCount: 2, approvalStatus: "REJECTED", source: "USER_IMPORT"))
+        seed.insert(SavedPlaylist(playlistId: "PLunknown", title: "Unknown", thumbnailUrl: nil,
+                                  itemCount: 4, approvalStatus: "SOME_LATER_STATUS", source: "USER_IMPORT"))
         seed.insert(SavedPlaylist(playlistId: "PLapproved", title: "Approved", thumbnailUrl: nil, itemCount: 1))
         try seed.save()
 
         let store = SwiftDataSavedPlaylistsStore(modelContainer: container)
         #expect(store.items.map(\.playlistId) == ["PLapproved"])
         #expect(store.isSaved("PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc"))
+        #expect(store.isSaved("PLrejected"))
 
         // Same two-call shape as the channel test above, for the same reason.
         try store.toggle(id: "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc", title: "Tombstoned", thumbnailURL: nil, itemCount: 3)

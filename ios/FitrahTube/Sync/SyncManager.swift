@@ -71,6 +71,12 @@ actor SyncManager {
     /// the happy-path switch failed with the rollback test's injected error). A task-local is
     /// scoped to the task tree that set it and propagates through the `MainActor.run` hop.
     @TaskLocal static var injectedSwitchFailure: (@Sendable () throws -> Void)?
+
+    /// Review M3's seam, and the twin of the above for the same reason: nothing on the SwiftData
+    /// path can be made to fail on demand, so "a save that throws is REPORTED, not swallowed"
+    /// needs an injected throw. Read by `SyncStore.save`, which is every write outside the two
+    /// transactions that throw on their own.
+    @TaskLocal static var injectedSaveFailure: (@Sendable () throws -> Void)?
     #endif
 
     init(client: any SyncTransporting, modelContainer: ModelContainer,
@@ -143,7 +149,7 @@ actor SyncManager {
         let container = modelContainer
         switch SyncDecisions.bind(binding: await MainActor.run { SyncStore.binding(container) }, uid: uid) {
         case .merge:
-            await MainActor.run { SyncStore.beginBinding(container, uid: uid) }
+            note(await MainActor.run { SyncStore.beginBinding(container, uid: uid) })
             await mergeLocked(uid)
         case .pullThenPush:
             await pullAllLocked(uid)
@@ -167,10 +173,10 @@ actor SyncManager {
     /// never re-enters the merge.
     private func mergeLocked(_ uid: String) async {
         let container = modelContainer
-        await MainActor.run { SyncStore.tagAnonRows(container, to: uid) }
+        note(await MainActor.run { SyncStore.tagAnonRows(container, to: uid) })
         await pullAllLocked(uid)
         await pushDirtyLocked(uid)
-        await MainActor.run { SyncStore.markMergeDone(container, uid: uid) }
+        note(await MainActor.run { SyncStore.markMergeDone(container, uid: uid) })
     }
 
     // MARK: - Pull
@@ -188,7 +194,7 @@ actor SyncManager {
         var ids = loaded.ids
 
         while !Task.isCancelled {
-            guard let body = await pullPage(cursors: cursors, ids: ids) else { return }
+            guard let body = await pullPage(uid: uid, cursors: cursors, ids: ids) else { return }
             let cursorsBefore = cursors, idsBefore = ids
             let advanced: SyncStore.Advance
             do {
@@ -220,7 +226,8 @@ actor SyncManager {
 
     /// One page, with the three-armed failure classifier in front of the ladder. Returns nil when
     /// the run must stop.
-    private func pullPage(cursors: [String: Int], ids: [String: String?]) async -> SyncResponse? {
+    private func pullPage(uid: String, cursors: [String: Int],
+                          ids: [String: String?]) async -> SyncResponse? {
         var attempt = 1
         while true {
             do {
@@ -237,6 +244,18 @@ actor SyncManager {
                     return nil
                 case .permanent:
                     note("pull rejected the request (status \(status.map(String.init) ?? "none")); no retry")
+                    // Review I1. The stored tiebreaker is the only part of this request the client
+                    // can be wrong about on its own — the pre-request validator is a hand
+                    // transcription of the server's, and a 400 is precisely the case where the two
+                    // have drifted. Keeping it wedges the pull FOREVER: same id, same 400, same
+                    // line, no self-heal. The status covers the whole three-type request, so it
+                    // cannot say which id was bad and all three go; the cost is a re-fetch from the
+                    // stored millisecond, which `applyPage` upserts.
+                    let cleared = await MainActor.run { SyncStore.dropCursorIds(modelContainer, uid: uid) }
+                    note(cleared.failure)
+                    for dropped in cleared.dropped {
+                        note("dropped server-rejected lastDocId for \(dropped.type): \(dropped.id)")
+                    }
                     return nil
                 case .transient:
                     guard attempt < Self.maxPullAttempts else {
@@ -261,11 +280,18 @@ actor SyncManager {
     // MARK: - Push
 
     private func pushDirtyLocked(_ uid: String) async {
+        // Review M1. `acquire()` is a `withCheckedContinuation` and is not cancellation-aware, so a
+        // caller cancelled while QUEUED on the exclusion stays parked and is then handed the
+        // critical section — the retry cancelled by `unbindLocked()` from inside an in-flight pull
+        // is exactly that, and it would drain the previous account's rows under whatever bearer is
+        // current next. The retry's own guard runs before `acquire()` and cannot see this.
+        guard !Task.isCancelled else { return }
         let container = modelContainer
         var transient = false
 
         for type in SyncEntityType.allCases {
-            let rows = await MainActor.run { SyncStore.dirtyRows(container, uid: uid, type: type) }
+            let (rows, failure) = await MainActor.run { SyncStore.dirtyRows(container, uid: uid, type: type) }
+            note(failure)
             var authFailed = false
             for row in rows {
                 let outcome = await push(row, type: type, uid: uid)
@@ -278,9 +304,9 @@ actor SyncManager {
                     // The same bytes will fail the same way, so the row is cleared with a warning
                     // rather than left to block every later pull forever.
                     note("push permanently rejected \(type.rawValue)/\(row.id); dropping its dirty flag")
-                    await MainActor.run {
+                    note(await MainActor.run {
                         SyncStore.clearDirty(container, uid: uid, type: type, id: row.id, serverUpdatedAt: nil)
-                    }
+                    })
                 case .transientFailure:
                     transient = true
                 }
@@ -308,9 +334,9 @@ actor SyncManager {
                 // successful DELETE as transient and re-push it forever.
                 let outcome = SyncDecisions.push(status: status, hasBody: true)
                 if outcome == .ok {
-                    await MainActor.run {
+                    note(await MainActor.run {
                         SyncStore.clearDirty(container, uid: uid, type: type, id: row.id, serverUpdatedAt: nil)
-                    }
+                    })
                 }
                 return outcome
             case .body(let body):
@@ -320,17 +346,15 @@ actor SyncManager {
                 }
                 let outcome = SyncDecisions.push(status: status, hasBody: echo != nil)
                 if outcome == .ok, let echo {
-                    await MainActor.run {
+                    note(await MainActor.run {
                         // SYNC-ECHO-01: `deleted: true` on a PUT means the server's projection
                         // knows a parent was archived, so the row is tombstoned locally rather
                         // than merely cleared. Through the tombstone writer, never `SyncCodec`.
-                        if echo.deleted {
-                            SyncStore.tombstone(container, uid: uid, type: type, id: row.id, at: echo.updatedAt)
-                        } else {
-                            SyncStore.clearDirty(container, uid: uid, type: type, id: row.id,
-                                                 serverUpdatedAt: echo.updatedAt)
-                        }
-                    }
+                        echo.deleted
+                            ? SyncStore.tombstone(container, uid: uid, type: type, id: row.id, at: echo.updatedAt)
+                            : SyncStore.clearDirty(container, uid: uid, type: type, id: row.id,
+                                                   serverUpdatedAt: echo.updatedAt)
+                    })
                 }
                 return outcome
             }
@@ -363,6 +387,10 @@ actor SyncManager {
     }
 
     // MARK: - Incidents
+
+    /// The `SyncStore` half cannot reach the ring: it runs on the main actor and every entry point
+    /// is behind a `MainActor.run` hop, so a failed save comes back as a line to note or nil.
+    private func note(_ failure: String?) { if let failure { note(failure) } }
 
     private func note(_ line: String) {
         print("SyncManager: \(line)")
@@ -421,7 +449,7 @@ enum SyncStore {
     /// colliding row at save time rather than rejecting it, so a second `insert` for the same uid
     /// silently resets `initialMergeDone` to false — a finished merge would re-run on every launch
     /// (Task 20 fix round 1 / M2).
-    static func beginBinding(_ container: ModelContainer, uid: String) {
+    static func beginBinding(_ container: ModelContainer, uid: String) -> String? {
         let context = ModelContext(container)
         if let row = try? context.fetch(FetchDescriptor<AccountBinding>(
             predicate: #Predicate { $0.userId == uid })).first {
@@ -429,24 +457,24 @@ enum SyncStore {
         } else {
             context.insert(AccountBinding(userId: uid))
         }
-        try? context.save()
+        return save(context, "begin binding")
     }
 
-    static func markMergeDone(_ container: ModelContainer, uid: String) {
+    static func markMergeDone(_ container: ModelContainer, uid: String) -> String? {
         let context = ModelContext(container)
         guard let row = try? context.fetch(FetchDescriptor<AccountBinding>(
-            predicate: #Predicate { $0.userId == uid })).first else { return }
+            predicate: #Predicate { $0.userId == uid })).first else { return nil }
         row.initialMergeDone = true
-        try? context.save()
+        return save(context, "mark merge done")
     }
 
     /// Every `userId == ""` row becomes this account's — Android's `tagAnonRowsToUid`. The anon
     /// sentinel is what every pre-sign-in write used, so this is the whole of the additive merge's
     /// local half.
-    static func tagAnonRows(_ container: ModelContainer, to uid: String) {
+    static func tagAnonRows(_ container: ModelContainer, to uid: String) -> String? {
         let context = ModelContext(container)
         tagAnonRows(context, to: uid)
-        try? context.save()
+        return save(context, "tag anon rows")
     }
 
     private static func tagAnonRows(_ context: ModelContext, to uid: String) {
@@ -526,6 +554,24 @@ enum SyncStore {
             }
         }
         return (cursors, ids, dropped)
+    }
+
+    /// Review I1: the server rejected the request these tiebreakers were part of, so they go. The
+    /// cursor MILLISECOND stays — it is the server's own last answer and was never in question —
+    /// so the next run re-fetches only from that boundary, and `applyPage` upserts what comes back.
+    /// Returns what it dropped, because "the pull is wedged on id X" is the whole diagnosis.
+    static func dropCursorIds(_ container: ModelContainer,
+                              uid: String) -> (dropped: [(type: String, id: String)],
+                                               failure: String?) {
+        let context = ModelContext(container)
+        var dropped: [(type: String, id: String)] = []
+        for type in SyncEntityType.allCases {
+            guard let row = state(context, uid: uid, entityType: type.rawValue),
+                  let id = row.lastDocId else { continue }
+            row.lastDocId = nil
+            dropped.append((type.rawValue, id))
+        }
+        return (dropped, dropped.isEmpty ? nil : save(context, "drop rejected cursor ids"))
     }
 
     // MARK: - One page, ONE save
@@ -611,7 +657,7 @@ enum SyncStore {
     /// backend's `@NotBlank` as a 400 -> `.permanentFailure` -> the row's dirt dropped and the edit
     /// silently lost. Persisted with the same save, so it is synthesised once and not on every push.
     static func dirtyRows(_ container: ModelContainer, uid: String,
-                          type: SyncEntityType) -> [PendingPush] {
+                          type: SyncEntityType) -> (rows: [PendingPush], failure: String?) {
         let context = ModelContext(container)
         var pending: [PendingPush] = []
         switch type {
@@ -645,8 +691,7 @@ enum SyncStore {
                 }))
             }
         }
-        try? context.save()
-        return pending
+        return (pending, save(context, "dirty rows"))
     }
 
     private static func payload(_ isRemoved: Bool,
@@ -668,8 +713,8 @@ enum SyncStore {
     /// that makes the guard reject every later server update to that row, permanently (gate wave-2
     /// W12, `FavoritesStore.toggle`).
     static func clearDirty(_ container: ModelContainer, uid: String, type: SyncEntityType,
-                           id: String, serverUpdatedAt: Int?) {
-        write(container, uid: uid, type: type, id: id) { row in
+                           id: String, serverUpdatedAt: Int?) -> String? {
+        write(container, uid: uid, type: type, id: id, "clear dirty") { row in
             row.dirty = false
             if let serverUpdatedAt, row.updatedAt < SyncCodec.date(millis: serverUpdatedAt) {
                 row.updatedAt = SyncCodec.date(millis: serverUpdatedAt)
@@ -678,8 +723,8 @@ enum SyncStore {
     }
 
     static func tombstone(_ container: ModelContainer, uid: String, type: SyncEntityType,
-                          id: String, at millis: Int) {
-        write(container, uid: uid, type: type, id: id) { tombstone($0, at: millis) }
+                          id: String, at millis: Int) -> String? {
+        write(container, uid: uid, type: type, id: id, "tombstone") { tombstone($0, at: millis) }
     }
 
     /// The ONE tombstone writer. `SyncCodec.apply()` is the wrong door for this: it would take
@@ -701,7 +746,8 @@ enum SyncStore {
     }
 
     private static func write(_ container: ModelContainer, uid: String, type: SyncEntityType,
-                              id: String, _ body: (any SyncableRow) -> Void) {
+                              id: String, _ what: String,
+                              _ body: (any SyncableRow) -> Void) -> String? {
         let context = ModelContext(container)
         let row: (any SyncableRow)?
         switch type {
@@ -709,9 +755,26 @@ enum SyncStore {
         case .playlists: row = try? one(context, uid: uid, playlistId: id)
         case .favorites: row = try? one(context, uid: uid, videoId: id)
         }
-        guard let row else { return }
+        guard let row else { return nil }
         body(row)
-        try? context.save()
+        return save(context, what)
+    }
+
+    /// Review M3: the ONE save for every write outside `applyPage` and `switchAccount`, which
+    /// throw on their own because they are transactions. A bare `try?` here made a merge that never
+    /// persisted, or a `clearDirty` that never committed, indistinguishable from success — and a
+    /// `clearDirty` that fails silently re-pushes its row on every trigger, forever. Returns the
+    /// incident line for the actor to `note()`, because the ring is on the other side of the hop.
+    static func save(_ context: ModelContext, _ what: String) -> String? {
+        do {
+            #if DEBUG
+            try SyncManager.injectedSaveFailure?()
+            #endif
+            try context.save()
+            return nil
+        } catch {
+            return "save failed (\(what)): \(error)"
+        }
     }
 
     private static func insert<T: PersistentModel>(_ context: ModelContext, _ model: T) -> T {
