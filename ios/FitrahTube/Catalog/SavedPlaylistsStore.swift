@@ -160,9 +160,11 @@ extension FavoritesSchemaV5 {
         let uid = currentUserId
         // V5, same rule as `SwiftDataSubscriptionsStore.refresh()`: awaiting (imported,
         // unreviewed) rows are hidden from `items`; `isSaved` stays unfiltered.
-        let awaiting = "AWAITING"
+        // Task 20 review M3, ruled: FAIL CLOSED — `== "APPROVED"`, not `!= "AWAITING"`. See
+        // `SwiftDataSubscriptionsStore.refresh()` for the full note.
+        let approved = "APPROVED"
         var descriptor = FetchDescriptor<SavedPlaylist>(
-            predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus != awaiting },
+            predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus == approved },
             sortBy: [SortDescriptor(\.addedAt, order: .reverse)]
         )
         descriptor.includePendingChanges = false // saved rows only (gate wave-4 V9)

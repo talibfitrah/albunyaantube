@@ -99,4 +99,33 @@ nonisolated enum SyncDecisions {
         default: return .transientFailure
         }
     }
+
+    // MARK: - Pull classifier (Task 22 review / I1; added by Task 23)
+
+    enum PullOutcome: Equatable, Sendable {
+        /// The account is gone or blocked. Stop the run and let go of the retry chain; Part A owns
+        /// what happens to the session (`AuthorizedTransport` turns the 403 envelope into an
+        /// `AccountStatusEvent`, `AccountSession` routes it).
+        case terminal
+        /// A transport error, a decode failure, a 5xx or a 429 — the bounded ladder, then give up
+        /// for THIS run and keep the cursor exactly where it was.
+        case transient
+        /// The server rejected the REQUEST. Retrying the same bytes cannot help.
+        case permanent
+    }
+
+    /// The pull half of the table `push` already holds. Without it a generic retry turns a revoked
+    /// account's 401 into an unbounded loop against a server that will never say yes — the same
+    /// class of bug as the unthrottled stalled-cursor spin, and just as invisible.
+    ///
+    /// `status` is nil for anything that is not an HTTP verdict: a transport error, or a response
+    /// the decoder refused (`SyncPage.items` is required, so one page omitting it fails the whole
+    /// three-type decode). Both are transient — the run stops, the cursors stay, nothing is wiped.
+    static func pull(status: Int?) -> PullOutcome {
+        switch status {
+        case 401, 403: return .terminal
+        case 400: return .permanent
+        default: return .transient
+        }
+    }
 }

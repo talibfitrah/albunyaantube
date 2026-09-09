@@ -161,6 +161,31 @@ struct SyncDecisionTests {
         }
     }
 
+    // MARK: - pull (Task 22 review / I1; added by Task 23)
+
+    /// A revoked or blocked account answers 401/403 forever. Without this arm a generic retry is an
+    /// unbounded loop against a server that will never say yes — `SyncManager` stops the run and
+    /// unbinds, and Part A's session handling owns what happens to the account.
+    @Test func a401Or403PullIsTerminalAndNeverRetried() {
+        #expect(SyncDecisions.pull(status: 401) == .terminal)
+        #expect(SyncDecisions.pull(status: 403) == .terminal)
+    }
+
+    /// 400 is the REQUEST's fault — a cursor id the server rejects. The same bytes cannot succeed,
+    /// so the cursor is dropped (with the log line) rather than sent again.
+    @Test func a400PullIsPermanentAndDropsTheCursorInsteadOfRetrying() {
+        #expect(SyncDecisions.pull(status: 400) == .permanent)
+    }
+
+    /// Everything else takes the bounded ladder and then gives up for THIS run, keeping the cursor:
+    /// 5xx, 429, and `nil` — which is both a transport error and a response the decoder refused
+    /// (`SyncPage.items` is a required key, so one page omitting it fails the whole decode).
+    @Test func everyOtherPullFailureIncludingATransportErrorIsTransient() {
+        for status in [nil, 0, 404, 429, 500, 502, 503] {
+            #expect(SyncDecisions.pull(status: status) == .transient)
+        }
+    }
+
     // MARK: - SyncBackoff (`SyncBackoff.kt:18-35`)
 
     /// 1 s doubling to a 60 s cap; the RNG stub takes the low edge of the equal-jitter window, so

@@ -117,6 +117,24 @@ struct LocalAccountWiperTests {
         #expect(fixture.count(SubscribedChannel.self) == 0)
     }
 
+    /// Task 23: the sync bookkeeping is per-account state and goes with the rest. Left behind, the
+    /// next person to sign in on this device inherits the deleted account's cursors — a `SyncState`
+    /// whose `lastCursor` is already past every row the new account has, so their first pull
+    /// returns nothing and their library looks empty.
+    @Test func theSyncCursorsAndTheAccountBindingGoWithTheRows() async throws {
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        let context = ModelContext(fixture.container)
+        context.insert(SyncState(entityType: "favorites", userId: "fake-uid", lastCursor: 1_700_000))
+        context.insert(AccountBinding(userId: "fake-uid", initialMergeDone: true))
+        try context.save()
+        #expect(fixture.count(SyncState.self) == 1)
+
+        await fixture.wiper.wipe()
+
+        #expect(fixture.count(SyncState.self) == 0)
+        #expect(fixture.count(AccountBinding.self) == 0)
+    }
+
     /// The rows are deleted through a context of the wiper's own, so every store still holds the
     /// objects it last fetched — SwiftUI would keep rendering rows whose backing model is gone.
     /// Re-scoping to the anon sentinel is what makes each store re-read.

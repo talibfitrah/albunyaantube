@@ -72,6 +72,12 @@ import SwiftData
         attempt { try context.delete(model: FavoriteVideo.self) }
         attempt { try context.delete(model: SavedPlaylist.self) }
         attempt { try context.delete(model: SubscribedChannel.self) }
+        // Task 23: the sync bookkeeping is per-account state too. Left behind, the next person to
+        // sign in on this device inherits the deleted account's cursors — `bind` reads a binding
+        // for a uid that no longer exists and a `SyncState` whose `lastCursor` is already past
+        // every row the new account has, so their first pull returns nothing.
+        attempt { try context.delete(model: SyncState.self) }
+        attempt { try context.delete(model: AccountBinding.self) }
         attempt { try context.save() }
         // Those deletes went through a different context, so every store still holds the objects it
         // last fetched — SwiftUI would keep rendering rows whose backing model no longer exists.

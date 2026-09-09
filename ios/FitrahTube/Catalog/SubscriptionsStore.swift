@@ -164,9 +164,15 @@ extension FavoritesSchemaV5 {
         // render as an ordinary chip and must not count against the 30-channel cap through
         // `items.count` above. `isSubscribed` stays UNFILTERED (matching `isFavorite`), so a
         // re-add of an awaiting channel finds the existing row instead of duplicating it.
-        let awaiting = "AWAITING"
+        //
+        // Task 20 review M3, ruled: FAIL CLOSED. `!= "AWAITING"` failed OPEN — a REJECTED row, or
+        // any status a later backend adds, rendered as an ordinary chip and counted against the
+        // cap. `== "APPROVED"` matches `SwiftDataFavoritesStore` and shows only what has actually
+        // been approved. Pre-existing rows are safe: V5's column default is "APPROVED", so the
+        // lightweight V4 -> V5 stage fills every migrated row with it.
+        let approved = "APPROVED"
         var descriptor = FetchDescriptor<SubscribedChannel>(
-            predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus != awaiting },
+            predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus == approved },
             sortBy: [SortDescriptor(\.followedAt, order: .reverse)]
         )
         descriptor.includePendingChanges = false
