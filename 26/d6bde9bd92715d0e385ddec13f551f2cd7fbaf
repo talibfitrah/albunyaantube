@@ -1,0 +1,31 @@
+ios/FitrahTube/Catalog/SavedPlaylistsStore.swift
+  s_66ddb7c44de816::t_5774ca32f2f3e9 123-125,127
+  s_66ddb7c44de816::t_79d039186c2af2 32-39,43-45,55-59
+ios/FitrahTube/App/AppContainer.swift
+  s_66ddb7c44de816::t_79d039186c2af2 560
+ios/FitrahTube/Persistence/FavoriteVideo.swift
+  s_66ddb7c44de816::t_79d039186c2af2 48-61,63,67-68
+ios/FitrahTube/Catalog/SubscriptionsStore.swift
+  s_66ddb7c44de816::t_5774ca32f2f3e9 127-131,133
+  s_66ddb7c44de816::t_79d039186c2af2 33-43,47-48,57-60
+ios/FitrahTube/Sync/SyncModels.swift
+  s_66ddb7c44de816::t_c3799bb6f16d21 1-51
+ios/FitrahTubeTests/SchemaV5MigrationTests.swift
+  s_66ddb7c44de816::t_38780222fe1bbc 1-217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "26d6bde9bd92715d0e385ddec13f551f2cd7fbaf",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
