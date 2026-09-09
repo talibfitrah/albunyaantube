@@ -67,6 +67,17 @@ nonisolated enum ApiErrorEnvelope {
         guard let regex = try? Regex("\"code\"\\s*:\\s*\"\(code)\"") else { return false }
         return String(decoding: body, as: UTF8.self).contains(regex)
     }
+
+    /// The two account-lifecycle codes this backend answers a 403 with, spelled ONCE (R9-P3 #17).
+    /// `AccountClient.failure` reads them as an `AccountError` and `AuthorizedTransport` as an
+    /// `AccountStatusEvent`; each used to carry its own copy of the pair, so a third code (or a
+    /// rename) would have had to be found twice. `.signedOut` is never produced here — it is not a
+    /// server verdict.
+    static func lifecycle(in body: Data) -> AccountStatusEvent? {
+        if hasCode("ACCOUNT_BLOCKED", in: body) { .blocked }
+        else if hasCode("ACCOUNT_DELETED", in: body) { .deleted }
+        else { nil }
+    }
 }
 
 /// Hand-written `/api/account/*` over the shared `HTTPTransport` (ruling F1: explicit status
@@ -189,9 +200,16 @@ nonisolated struct AccountClient: Sendable {
                          _ own: (Int, Data) -> AccountError? = { _, _ in nil }) -> AccountError {
         let peek = response.body.prefix(Self.maxErrorBodyBytes)
         if let own = own(response.status, peek) { return own }
+        // The lifecycle pair comes from `ApiErrorEnvelope`'s table, not from a second copy of the
+        // two code strings (R9-P3 #17).
+        if response.status == 403 {
+            switch ApiErrorEnvelope.lifecycle(in: peek) {
+            case .blocked: return .blocked
+            case .deleted: return .deletedAccount
+            case .signedOut, .none: break
+            }
+        }
         switch response.status {
-        case 403 where ApiErrorEnvelope.hasCode("ACCOUNT_BLOCKED", in: peek): return .blocked
-        case 403 where ApiErrorEnvelope.hasCode("ACCOUNT_DELETED", in: peek): return .deletedAccount
         case 422 where ApiErrorEnvelope.hasCode("AGE_INELIGIBLE", in: peek): return .ageIneligible
         case 429: return .rateLimited(retryAfterSeconds: retryAfterSeconds(response, peek))
         case 400, 422: return validationFailure(peek)

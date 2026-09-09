@@ -338,7 +338,14 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // "No internet connection" — a Retry card in the Me tab and in Settings' Account
                 // section, and the Me-tab route to Favorites/Saved gone exactly when the device is
                 // offline. With nothing loaded for this identity it still fails, as before.
-                case .network where startedFor != nil && state.me?.uid == startedFor: return
+                //
+                // R9-P3 #13: `state.me?.uid == startedFor` was a restatement — `publishable()`
+                // above has already established `user?.uid == startedFor`, and the `.loading` write
+                // below it clears `state.me` unless it already matched `user`. So "a record is
+                // loaded" IS "a record for this identity is loaded" by the time this case runs.
+                // `startedFor != nil` stays: it is what keeps a nil-started round (NB1's shape,
+                // where `matchesIdentity()` short-circuits and guarantees nothing) failing.
+                case .network where startedFor != nil && state.me != nil: return
                 case .network: state = .failed(code: nil, message: String(localized: "auth_error_network"))
                 case .unknown(let status): state = .failed(code: status, message: String(localized: "auth_error_generic"))
                 default: state = .failed(code: nil, message: String(localized: "auth_error_generic"))

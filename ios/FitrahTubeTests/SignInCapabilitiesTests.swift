@@ -158,8 +158,11 @@ import Testing
     /// ID has no Sign in with Apple capability. Either half being false is the honest answer here;
     /// the flag assertion itself lives in `appleNeedsTheRegisteredFlagAndNotJustATeamId`.
     @MainActor @Test func theAppleProviderIsUnavailableBecauseFirebaseIsNotConfigured() async {
-        #expect(Bundle.main.object(forInfoDictionaryKey: "FITRAH_APPLE_SIGNIN") as? String != "",
-                "FITRAH_APPLE_SIGNIN must still carry the Team ID")
+        // R9-P3 #7: `as? String != ""` was satisfied by the key's total ABSENCE — `nil as? String`
+        // is nil and `nil != ""` is true. Non-nil AND non-empty is the fact being claimed.
+        let teamId = Bundle.main.object(forInfoDictionaryKey: "FITRAH_APPLE_SIGNIN") as? String
+        #expect(teamId?.isEmpty == false,
+                "FITRAH_APPLE_SIGNIN must still carry the Team ID, got \(teamId as Any)")
         let provider = AppleAuthProvider()
         #expect(provider.isAvailable == SignInCapabilities.current().apple)
         if !FirebaseBootstrap.optionsFileExists {

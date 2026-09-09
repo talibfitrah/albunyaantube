@@ -58,12 +58,16 @@ nonisolated enum EditEmailError: Sendable, Equatable {
             state.error = .invalidEmail
             return
         }
+        // R9-P3 #2: the latch closes BEFORE the first suspension. `guard !state.saving` and the
+        // write used to sit either side of `await auth.currentUser()`, so two taps landing inside
+        // that hop both passed the guard and both re-authenticated.
+        state.saving = true
+        state.error = nil
         guard let user = await auth.currentUser(), let current = user.email, !current.isEmpty else {
+            state.saving = false
             state.error = .unknown
             return
         }
-        state.saving = true
-        state.error = nil
         do {
             try await auth.reauthenticate(password: state.currentPassword)
         } catch {

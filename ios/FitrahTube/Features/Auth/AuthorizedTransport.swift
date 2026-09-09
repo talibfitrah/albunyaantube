@@ -16,15 +16,20 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
     /// Default `nil` = "no local verdict", which is every existing caller and every non-Firebase
     /// token source.
     private let refreshRefusal: @Sendable (_ signedFor: String?) async -> AuthErrorCode?
+    /// The account this request is being sent FOR, read BEFORE the first mint (R9-P2). Default nil
+    /// = "this token source has no notion of identity", which is every non-Firebase source.
+    private let currentUid: @Sendable () async -> String?
 
     init(base: any HTTPTransport, apiHost: String, tokens: any AuthTokenProviding,
          onStatusEvent: @escaping @Sendable (AccountStatusEvent) -> Void,
-         refreshRefusal: @escaping @Sendable (_ signedFor: String?) async -> AuthErrorCode? = { _ in nil }) {
+         refreshRefusal: @escaping @Sendable (_ signedFor: String?) async -> AuthErrorCode? = { _ in nil },
+         currentUid: @escaping @Sendable () async -> String? = { nil }) {
         self.base = base
         self.apiHost = apiHost
         self.tokens = tokens
         self.onStatusEvent = onStatusEvent
         self.refreshRefusal = refreshRefusal
+        self.currentUid = currentUid
     }
 
     /// Firebase's own verdict on a refused forced refresh, as an account-lifecycle event.
@@ -61,6 +66,14 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
         // reported to the account it belongs to. `AuthClient`'s refusal box is process-global and a
         // 401 taken by a request that carried no bearer has no account to read a verdict for.
         let signedFor = Mutex<String?>(nil)
+        // R9-P2: seeded BEFORE the first mint, not only by a successful one. The refusal that
+        // decides a deleted account is thrown INSIDE `token(false)` when the cached token has
+        // already expired, and Firebase force-signs the user out in that same call — so by the time
+        // the forced retry asks `refreshRefusal(signedFor:)` there is no identity left to derive
+        // and the box was still nil. `refreshRefusal(nil)` answers nil by construction (round 6 /
+        // P2b), so the verdict was recorded and then unreadable: no `.deleted`, no wipe. A GUEST
+        // still reads nil here, which is the leak that guard exists to stop.
+        if let uid = await currentUid() { signedFor.withLock { $0 = uid } }
         let response = try await BearerRetry.send(
             signed: request,
             // The stricter half of the host rule: a middleware would scope against its `baseURL`
@@ -128,12 +141,11 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
         guard BearerScope.allows(request.url, apiHost: apiHost) else { return }
         let path = request.url.path()
         guard Self.envelopePaths.contains(where: path.hasPrefix) else { return }
-        let peek = response.body.prefix(Self.maxPeekBytes)
-        if ApiErrorEnvelope.hasCode("ACCOUNT_BLOCKED", in: peek) {
-            onStatusEvent(.blocked)
-        } else if ApiErrorEnvelope.hasCode("ACCOUNT_DELETED", in: peek) {
-            onStatusEvent(.deleted)
-        }
+        // R9-P3 #17: `ApiErrorEnvelope.lifecycle` is the ONE table of the two codes; `AccountClient`
+        // reads the same one into its own error type.
+        guard let event = ApiErrorEnvelope.lifecycle(in: response.body.prefix(Self.maxPeekBytes))
+        else { return }
+        onStatusEvent(event)
     }
 }
 

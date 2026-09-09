@@ -14,10 +14,34 @@ nonisolated enum BootstrapError: Sendable, Equatable {
 /// suite constructs it off the main actor and hands it every date it decides on.
 nonisolated enum BootstrapValidator {
     /// UTF-16 code units, matching `CompleteProfileRequest.java`'s `@Size(max = 40)` — see
-    /// `firstError`. `ProfileBootstrapViewModel`'s field cap is a grapheme `prefix` of the same
-    /// number, which is a bound on typing, not the gate: a 40-cluster name that exceeds 40 units is
-    /// refused here, with the field's own message.
+    /// `firstError`. `clamped(name:)` is the field cap, counted in the SAME units, so the gate and
+    /// the field cannot disagree about how long a name is.
     static let maxNameLength = 40
+
+    /// The field cap, in the units the gate counts (R8-P1).
+    ///
+    /// `String.prefix(40)` is 40 GRAPHEME CLUSTERS, and round 6 moved only the gate to UTF-16
+    /// units. That left TWO length rules: a 40-emoji name (80 units) was typeable, `firstError`
+    /// refused it as `.invalidName`, and `state.error` is written only inside `submit()` — which a
+    /// disabled Continue button never reaches. So the mandatory, unskippable `pending_profile`
+    /// screen greyed its only button out permanently with nothing on screen naming the field. ONE
+    /// rule now: the field cannot hold a name the gate refuses for length, so the refusal has
+    /// nothing left to render.
+    ///
+    /// Truncated by whole `Character`s, never by units: cutting a surrogate pair in half would
+    /// leave a lone half in the field, and a name is a sequence of characters even when the budget
+    /// is spent in code units.
+    static func clamped(name: String) -> String {
+        guard name.utf16.count > maxNameLength else { return name }
+        var clamped = ""
+        var units = 0
+        for character in name {
+            units += character.utf16.count
+            guard units <= maxNameLength else { break }
+            clamped.append(character)
+        }
+        return clamped
+    }
     /// Mirrors `AccountProfileService.MIN_AGE`.
     static let minAgeYears = 13
     static let minPasswordLength = 8

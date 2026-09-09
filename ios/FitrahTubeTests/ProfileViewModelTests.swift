@@ -6,9 +6,10 @@ import Testing
 
 /// Task 17. What nothing else pins: the `PUT` is provably PARTIAL (a name-only edit carries no
 /// `dateOfBirth` and no `phoneNumber` key at all), the account observer reconciles only the fields
-/// something else can change, `.ageIneligible` stops at a dialog-trigger state instead of signing
-/// anyone out, the local under-13 gate runs before the request that would destroy the account
-/// permanently, and `verifyBeforeUpdateEmail` is the ONLY email path there is.
+/// something else can change, a server `.ageIneligible` tears the session down WITH the verdict
+/// (R7-P1 #3 reversed round 5's dialog-trigger state — the server has already disabled the account
+/// by the time it answers), the local under-13 gate runs before the request that would destroy the
+/// account permanently, and `verifyBeforeUpdateEmail` is the ONLY email path there is.
 ///
 /// Fakes only — `ScriptedTransport` for `/api/account/*`, `FakeAuthClient` for Firebase, an
 /// injected calendar and an injected `today`. No clock, no network, no sleeps.

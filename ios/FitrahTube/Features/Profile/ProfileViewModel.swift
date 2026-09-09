@@ -170,7 +170,6 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
             state = .editing(original: reconciled, draft: onScreen, saving: false, error: nil)
             saveSucceeded = true
         } catch {
-            guard case .editing(let reconciled, let onScreen, _, _) = state else { return }
             // R7-P1 #3, the SAME shape as the bootstrap arm and the same defect: the server has
             // already revoked the tokens and disabled the Firebase account by the time it answers
             // 422, so a session left standing behind a dialog is one the next foreground refresh
@@ -178,11 +177,15 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
             // `.signedOut`, so the delete the dialog's OK owed never runs. The teardown goes with
             // the verdict; `RootView` presents the terminal screen on `session.isAgeIneligible`,
             // which is the whole message (Stage 5 / C4.1: one server verdict, one residue).
+            // R9 nit: no `guard case .editing` in front of this, exactly as the bootstrap arm has
+            // none. The verdict is terminal and the teardown is owed whatever this screen's state
+            // has become in the meantime — a state check could only skip it.
             if case .ageIneligible = error {
                 await session.terminateAgeIneligible()
                 state = .signedOut
                 return
             }
+            guard case .editing(let reconciled, let onScreen, _, _) = state else { return }
             state = .editing(original: reconciled, draft: onScreen, saving: false, error: error)
         }
     }

@@ -228,4 +228,43 @@ struct BootstrapValidatorTests {
         #expect((firstError(name: name) == .invalidName) == isTooLong,
                 "\(name.count) clusters / \(name.utf16.count) UTF-16 units judged against @Size(max = 40)")
     }
+
+    // MARK: - R8-P1: the field cap counts what the gate counts
+
+    /// R7-P2 moved the GATE to UTF-16 units and left the field cap a grapheme `prefix(40)`, so the
+    /// two rules disagreed on exactly the names the row above refuses: the field accepted 40 emoji
+    /// (80 units) or 14 tashkeel'd Arabic clusters (42 units) untouched, `firstError` then refused
+    /// them forever, and `state.error` is written ONLY inside `submit()` — which a disabled
+    /// Continue never reaches. `pending_profile` is a ROOT destination with no back button and no
+    /// tab bar, so that was a permanent dead end with nothing on screen naming the name field.
+    ///
+    /// ONE rule now: whatever the field is allowed to HOLD, the gate accepts. Pinned as that
+    /// implication over the same shapes the row above refuses, so the two can never drift apart
+    /// again without going red here. The wiring — that the field's setter really is this clamp —
+    /// is `ProfileBootstrapViewModelTests.theNameFieldIsCappedInTheUnitsTheGateCounts`.
+    @Test(arguments: [
+        String(repeating: "\u{1F600}", count: 40),                  // 40 clusters, 80 units
+        String(repeating: "\u{0628}\u{064E}\u{0651}", count: 14),   // 14 clusters, 42 units
+        String(repeating: "a", count: 41),                          // 41 clusters, 41 units
+        String(repeating: "a", count: 40),                          // exactly at the cap
+        "Aisha",
+    ])
+    func theFieldCapCannotHoldANameTheGateRefusesForLength(typed: String) {
+        let held = BootstrapValidator.clamped(name: typed)
+        #expect(held.utf16.count <= BootstrapValidator.maxNameLength,
+                "the field would hold \(held.utf16.count) units the gate refuses")
+        #expect(firstError(name: held) == nil,
+                "Continue is disabled with no message for a name the field itself accepted")
+        // Truncated by whole characters, never mid-surrogate.
+        #expect(typed.hasPrefix(held))
+    }
+
+    /// The clamp is a LENGTH rule, not a rewrite: a name already inside the budget comes back
+    /// byte-identical, and one over it is cut at the last whole character that fits.
+    @Test func theFieldCapTruncatesOnlyWhatDoesNotFit() {
+        let forty = String(repeating: "a", count: 40)
+        #expect(BootstrapValidator.clamped(name: forty) == forty)
+        #expect(BootstrapValidator.clamped(name: String(repeating: "\u{1F600}", count: 40))
+                == String(repeating: "\u{1F600}", count: 20), "20 emoji is exactly 40 UTF-16 units")
+    }
 }

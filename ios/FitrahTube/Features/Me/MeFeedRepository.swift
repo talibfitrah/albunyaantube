@@ -144,8 +144,9 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     /// running.value`) and a SUPERSEDED leader (at the `guard inFlight == task`) both write nothing
     /// to that box, so either could banner "couldn't refresh your feed" for a round some earlier
     /// failure had recorded and a healthy round was about to clear. nil means "this call produced
-    /// no outcome of its own"; the box itself is unchanged and stays the render-time source for
-    /// anything that wants the standing state.
+    /// no outcome of its own"; the box itself is left exactly as the last COMPLETED round wrote it,
+    /// and nothing renders from it — `MeSignedInView` banners this return value and `lastError` is
+    /// the round's own bookkeeping.
     @discardableResult
     func refresh(channelIds: [String], force: Bool) async -> String? {
         if let running = inFlight {
@@ -283,21 +284,28 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
 
     /// Re-buckets from `cached(_:)` with NO fetch — the chip filter and the `loadMoreWeeks` path.
     ///
-    /// A filter naming something that is not a subscribed channel (a saved-playlist chip: the Me
-    /// rail merges both) buckets nothing, which is the honest answer — the Atom feed is per
-    /// channel, so a playlist's videos were never fetched.
+    /// A filter naming a channel that is not (or no longer) subscribed buckets the WHOLE feed
+    /// rather than nothing: see `live` below. A saved-playlist chip — the Me rail merges both kinds
+    /// — never arrives here as an id at all; `MeViewModel.feedFilter` resolves it to nil, because
+    /// the Atom feed is per channel and a playlist's videos were never fetched.
     func rebucket(filter channelId: String?) async {
         // R7-P2: resolved against the CURRENT subscription set, every time. `refresh()` re-drives
         // this with the STORED filter, and a subscription-count change is exactly what re-drives
-        // the refresh (`MeSignedInView.swift:122-125`) — so unsubscribing the filtered channel
+        // the refresh (`MeSignedInView.swift:129-132`) — so unsubscribing the filtered channel
         // anywhere else in the app left a filter naming a channel that is no longer in
         // `channelIds`, and the old expression resolved it to `[]`: a blank feed, with no chip
         // highlighted (its chip went with the subscription) and no message. Only a CHANNEL chip is
         // ever a non-nil filter (`MeViewModel.feedFilter`), so "not in the set" means "gone", and a
-        // filter that is gone is no filter. The playlist-chip case the doc above describes is
-        // unaffected: that chip arrives here as nil and never as an unmatched id.
+        // filter that is gone is no filter.
+        //
+        // R9-P2 (Cubic probe): the resolution is used and NOT written back. `setFilter(live)` used
+        // to persist it, which made this a SECOND owner of "which chip is selected": the view
+        // model's `rawSelection` keeps the id and masks it while the chip is missing
+        // (`MeViewModel.selection(_:in:)`), so an unsubscribe followed by a re-subscribe brought
+        // the highlight back over a feed whose filter this method had already destroyed. One owner
+        // now — the view model's raw selection — and both sides MASK the same way instead of one
+        // of them forgetting.
         let live = channelId.flatMap { channelIds.contains($0) ? $0 : nil }
-        setFilter(live)
         let started = generation
         let ids = live.map { [$0] } ?? channelIds
 

@@ -88,9 +88,18 @@ struct PlayerScreen: View {
         // The return leg of the release above: take the claim back if the receiver is still playing
         // our video, re-cast if the session is live but it is not, or pay the hand-back the
         // session-end arm could not (it found no stamp, because we had surrendered it).
+        //
+        // R8 substitute: through `railTrigger`, the SAME predicate the rail's `.onChange` uses --
+        // not a bare `.appear`. `.onAppear` fires on a POP too, and `Router.popToRoot` runs on
+        // whichever tab it is told to, selected or not: in the rail layout that uncovered a buried
+        // player on a tab nobody is looking at, and re-arming it there is exactly the invisible
+        // claimant T0-1 landed to stop. `tabIsSelected` is unpublished (true) in the compact
+        // `TabView`, so the phone's behaviour is unchanged.
         .onAppear {
             isOnScreen = true
-            model?.reconcile(.appear)
+            guard let trigger = CastOwnership.railTrigger(tabSelected: tabIsSelected, onScreen: true)
+            else { return }
+            model?.reconcile(trigger)
         }
         // T0-1: the rail layout's `.onAppear`/`.onDisappear`. A nil model is the mount window, which
         // `didMount()` covers on its own -- and no `initial:`, because the mount path already

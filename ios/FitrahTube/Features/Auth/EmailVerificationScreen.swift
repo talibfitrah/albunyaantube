@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Spec §13: a password account that has not verified its address lands here instead of the shell.
-/// Rendered as a ROOT destination by `RootView` (the account cannot tab away from it) and, for the
-/// same account reaching it from inside the shell, as `Route.emailVerification`.
+/// Rendered as a ROOT destination by `RootView` (the account cannot tab away from it) — the ONE way
+/// in. `Route.emailVerification` was removed in `4e811b40` because nothing ever pushed it.
 ///
 /// There is no "open your mail app" affordance and no link out — the user is told what to do and
 /// given the two actions the app itself can perform.

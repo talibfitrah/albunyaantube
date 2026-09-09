@@ -248,6 +248,66 @@ struct AuthorizedTransportTests {
         #expect(await auth.refreshRefusal(signedFor: "fake-uid") == nil, "the recorded refusal was reported twice")
     }
 
+    /// Stage 9 round 9 / R9-P2: the wipe trigger was LOST — not delayed — for the commonest shape
+    /// of the case it exists for, a deleted account whose cached ID token has already expired.
+    ///
+    /// Once the cached token is expired, `getIDToken(forcingRefresh: false)` refreshes INTERNALLY
+    /// anyway; the refresh throws `userNotFound` and Firebase force-signs the user out inside that
+    /// same call (`signOutIfTokenIsInvalid` -> `signOutByForce`). `idToken`'s catch then dropped
+    /// the verdict because the caller's PUBLIC `forceRefresh` flag was false, `signedFor` was
+    /// written only by a SUCCESSFUL mint and so stayed nil, and the forced retry returned at the
+    /// `currentUser` guard with nobody signed in. Result: no `.deleted`, no alert, no ruling-C13
+    /// device wipe, ever — the account's library stayed on the phone.
+    ///
+    /// Both halves are required, which is why one test drives both: recording the unforced refusal
+    /// gives `refreshRefusal` something to report, and the pre-attempt uid gives it somebody to
+    /// report it ABOUT.
+    @Test func anExpiredTokenOnADeletedAccountStillPostsDeletedExactlyOnce() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        auth.expiredTokenRefusal = .userNotFound
+        let base = ScriptedTransport([.json(401, "{}")])
+        let events = Events()
+        let authorized = AuthorizedTransport(
+            base: base, apiHost: Self.apiHost, tokens: auth,
+            onStatusEvent: { events.posted.append($0) },
+            refreshRefusal: { uid in await auth.refreshRefusal(signedFor: uid) },
+            currentUid: { await auth.currentUser()?.uid })
+
+        _ = try await authorized.send(request("/api/account/me"))
+
+        #expect(events.posted == [.deleted],
+                "a deleted account with an expired cached token never triggered the device wipe")
+        #expect(auth.tokenRefreshes == [false],
+                "the forced retry reached a mint — Firebase had already signed the account out")
+        #expect(base.sent.count == 1,
+                "an unsigned first attempt is never re-sent for a guaranteed second 401")
+        #expect(await auth.refreshRefusal(signedFor: "fake-uid") == nil,
+                "the recorded refusal was reported twice")
+    }
+
+    /// The other half of the same seam: a GUEST taking a 401 on the API host reads no verdict at
+    /// all. The pre-attempt uid is what a signed-in request carries; a request with no account
+    /// behind it still carries nil, which is what closes NB-A (a dead account's `.userNotFound`
+    /// handed to a guest, and the guest library wiped for it).
+    @Test func aGuestRequestReadsNoVerdictEvenWhileOneIsRecorded() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        auth.expiredTokenRefusal = .userNotFound
+        #expect(await auth.idToken(forceRefresh: false) == nil, "the expired mint records the verdict")
+
+        let base = ScriptedTransport([.json(401, "{}")])
+        let events = Events()
+        let authorized = AuthorizedTransport(
+            base: base, apiHost: Self.apiHost, tokens: auth,
+            onStatusEvent: { events.posted.append($0) },
+            refreshRefusal: { uid in await auth.refreshRefusal(signedFor: uid) },
+            // Nobody is signed in any more — Firebase signed the dead account out itself.
+            currentUid: { await auth.currentUser()?.uid })
+
+        _ = try await authorized.send(request("/api/account/me"))
+
+        #expect(events.posted.isEmpty, "a session-less 401 read the dead account's verdict as its own")
+    }
+
     /// Stage 9 round 4 / R4-P2 + NB-A: the box's life is bounded by "until the next mint". It was
     /// written by UNFORCED mints too and cleared by nothing but a read, so an unconsumed terminal
     /// code outlived its session — `EmailVerificationViewModel.checkNow()` forces a mint and

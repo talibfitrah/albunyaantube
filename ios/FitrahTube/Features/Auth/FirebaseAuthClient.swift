@@ -87,7 +87,18 @@ nonisolated final class FirebaseAuthClient: AuthClient {
             lastRefusal.withLock { if $0?.uid == user.uid { $0 = nil } }
             return BearerToken(value: token, identity: user.uid)
         } catch {
-            guard forceRefresh else { return nil }
+            // Stage 9 round 9 / R9-P2: recorded on ANY refused mint, forced or not. There used to
+            // be a `guard forceRefresh else { return nil }` here, and it read the caller's PUBLIC
+            // flag rather than what Firebase actually did: once the cached token has EXPIRED,
+            // `getIDToken(forcingRefresh: false)` refreshes internally anyway (the note above,
+            // `User.internalGetTokenAsync`), and for a deleted account that refresh throws
+            // `userNotFound` and force-signs the user out inside this same call. The verdict was
+            // therefore dropped exactly when it was the only one there would ever be — the forced
+            // retry that follows returns at the `currentUser` guard above with nobody signed in, so
+            // nothing recorded, nothing posted `.deleted`, and the ruling-C13 wipe never ran at all
+            // for the commonest shape of the case it exists for. The record is uid-scoped and this
+            // account's own next successful mint clears it, so recording from an unforced call
+            // cannot outlive what it describes.
             let error = error as NSError
             let code: AuthErrorCode = error.domain == AuthErrors.domain
                 ? AuthErrorCode(firebaseCode: error.code) : .unknown

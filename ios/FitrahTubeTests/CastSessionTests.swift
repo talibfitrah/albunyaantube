@@ -1436,6 +1436,39 @@ struct CastSessionTests {
                 "the screen the user is actually looking at could not claim the session")
     }
 
+    /// R8 substitute: the same defect through the OTHER seam. `.onAppear` fires on a POP as well as
+    /// a push-over, and `Router.popToRoot` runs on whichever tab it is told to — so uncovering a
+    /// buried player on a NON-SELECTED tab re-armed it with a bare `.appear`, re-adopting the stamp
+    /// it had handed back and locking the screen the user is actually looking at out of the
+    /// session. Both seams route through `railTrigger` now, so "on screen" means the same thing to
+    /// each: the view's own loop, minus SwiftUI.
+    @Test func aPopOnANonSelectedTabDoesNotReArmTheUncoveredPlayer() async throws {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+        vm.currentPlayer = try #require(phonePlayer(vm))
+        vm.reconcile(.appear)
+        vm.reconcile(.videoStarted)
+        await settle()
+        cast.recordLoad(Self.claimed, owner: vm.castOwner)
+
+        // A push covers it, then the user selects another tab. The stamp is already back.
+        vm.reconcile(.disappear)
+        #expect(cast.castingClaim == nil)
+
+        // `popToRoot` on that non-selected tab: `.onAppear` fires on the uncovered player.
+        if let trigger = CastOwnership.railTrigger(tabSelected: false, onScreen: true) {
+            vm.reconcile(trigger)
+        }
+        await settle()
+
+        #expect(cast.castingClaim == nil,
+                "a pop on a tab nobody is looking at re-armed an invisible claimant")
+        #expect(cast.claimCastSource(videoId: Self.other, owner: Self.otherOwner),
+                "the screen the user is actually looking at could not claim the session")
+    }
+
     /// The whole rule, as a table. The key means "your tab is selected", never "you are visible":
     /// only a screen that is also its stack's visible content may act on it, and the default when
     /// nothing publishes the key (compact width, previews, tests) stays "on screen"

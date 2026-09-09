@@ -54,6 +54,14 @@ nonisolated final class FakeAuthClient: AuthClient {
         /// test handed `AuthorizedTransport` an inline closure instead — which is how the real
         /// supplier came to be dead code with a fully pinned consumer.
         var nextMintRefusal: AuthErrorCode?
+        /// Stage 9 round 9 / R9-P2: the other half of the real client's refusal surface — the
+        /// EXPIRED cached token. `nextMintRefusal` above models a cached token that still mints,
+        /// with only the forced re-mint refused; this one models a cached token Firebase has to
+        /// refresh internally on an UNFORCED call, which then throws and force-signs the user out
+        /// inside that same call (`signOutIfTokenIsInvalid`). The distinction is the whole bug: the
+        /// unforced mint is where the verdict is thrown, and the forced retry that follows finds
+        /// nobody signed in at all.
+        var expiredTokenRefusal: AuthErrorCode?
         var recordedRefusal: (uid: String, code: AuthErrorCode)?
     }
 
@@ -89,6 +97,14 @@ nonisolated final class FakeAuthClient: AuthClient {
         set { storage.withLock { $0.nextMintRefusal = newValue } }
     }
 
+    /// R9-P2: the cached token is EXPIRED and its refusal is terminal. Set it, and the next mint —
+    /// forced or NOT — answers nil, records this code and signs the fixture out, exactly as
+    /// Firebase does inside `getIDToken(forcingRefresh: false)` for a deleted account.
+    var expiredTokenRefusal: AuthErrorCode? {
+        get { storage.withLock { $0.expiredTokenRefusal } }
+        set { storage.withLock { $0.expiredTokenRefusal = newValue } }
+    }
+
     /// The per-call failure leg: set it, and the next operation throws it and clears it.
     var nextError: AuthErrorCode? {
         get { storage.withLock { $0.nextError } }
@@ -118,6 +134,20 @@ nonisolated final class FakeAuthClient: AuthClient {
         // call cannot tell a verdict a concurrent mint just recorded from a stale one; the uid on
         // the record is what stops a later, session-less 401 reading it as its own.
         guard let user = signedInUser() else { return nil }
+        // R9-P2: the expired-cache leg, BEFORE the forced/unforced split — that is the point of it.
+        // Firebase refreshes internally on an unforced mint once the cached token has expired, and
+        // a terminal refusal there records the verdict and force-signs the user out inside the same
+        // call, so every later mint (the transport's forced retry included) finds nobody.
+        if storage.withLock({ storage -> Bool in
+            guard let refusal = storage.expiredTokenRefusal else { return false }
+            storage.tokenRefreshes.append(forceRefresh)
+            storage.expiredTokenRefusal = nil
+            storage.recordedRefusal = (user.uid, refusal)
+            return true
+        }) {
+            transition(to: .signedOut)
+            return nil
+        }
         let claims = storage.withLock { storage -> AuthUser? in
             storage.tokenRefreshes.append(forceRefresh)
             // Stage 9 round 3 / R3-P1: a refused mint RECORDS its code here, exactly where the real

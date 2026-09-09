@@ -206,8 +206,9 @@ struct MeSignedInView: View {
     // MARK: - Feed
 
     /// The week-bucketed feed over the subscribed channels' Atom caches. `LazyVStack`, not the
-    /// enclosing plain `VStack`: `onAppear` in a non-lazy stack fires for every row at once, which
-    /// would make the load-more sentinel below page the whole cache on first render.
+    /// enclosing plain `VStack`: `onAppear` in a non-lazy stack fires for every SECTION at once,
+    /// which would make the per-section load-more trigger below page the whole cache on first
+    /// render. (The single `Color.clear` sentinel that trigger replaced is gone — R7-P1 #2.)
     @ViewBuilder
     private var feedSection: some View {
         LazyVStack(alignment: .leading, spacing: Spacing.lg(widthClass)) {

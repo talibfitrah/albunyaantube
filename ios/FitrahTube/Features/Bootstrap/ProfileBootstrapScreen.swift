@@ -55,6 +55,10 @@ struct ProfileBootstrapScreen: View {
                         .font(TypeScale.body(widthClass))
                         .foregroundStyle(Color.errorText)
                         .fixedSize(horizontal: false, vertical: true)
+                    // R9-P2: the exit. Only on `.passwordSetFailed`, which is the one error this
+                    // screen can repeat forever with no other way off it — the profile is already
+                    // committed, the back button is hidden and there is no tab bar underneath.
+                    if error == .passwordSetFailed { signOutButton(viewModel) }
                 }
 
                 submitButton(viewModel)
@@ -68,8 +72,9 @@ struct ProfileBootstrapScreen: View {
     @ViewBuilder
     private func nameField(_ model: ProfileBootstrapViewModel) -> some View {
         @Bindable var bindable = model
-        // The 40-character cap lives in the view model's setter (`android:maxLength="40"`), so a
-        // paste is capped exactly as typing is.
+        // The 40-unit cap lives in the view model's setter (`android:maxLength="40"`), so a paste
+        // is capped exactly as typing is — and in the UTF-16 units the gate counts (R8-P1), so a
+        // name this field accepts can never be one the gate silently refuses.
         labelled("bootstrap_display_name_label") {
             TextField(String(localized: "bootstrap_display_name_hint"), text: $bindable.displayName)
                 .textContentType(.name)
@@ -205,6 +210,18 @@ struct ProfileBootstrapScreen: View {
         .accessibilityLabel(title)
         .accessibilityValue(model.state.isLoading ? String(localized: "loading") : "")
         .accessibilityIdentifier("bootstrap.submit")
+    }
+
+    /// The secondary action beside the failure message: `settings_account_sign_out`, the copy the
+    /// Me kebab and Settings already carry — nothing authored for this screen.
+    private func signOutButton(_ model: ProfileBootstrapViewModel) -> some View {
+        let title = String(localized: "settings_account_sign_out")
+        return Button(title) { model.signOutFromStuckPasswordStep() }
+            .font(TypeScale.body(widthClass))
+            .foregroundStyle(Color.brand)
+            .frame(maxWidth: .infinity, minHeight: Size.button(widthClass))
+            .accessibilityLabel(title)
+            .accessibilityIdentifier("bootstrap.signOut")
     }
 
     /// Label above the control, leading-aligned — RTL comes out of the alignment, never a literal.

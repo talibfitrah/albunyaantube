@@ -50,16 +50,8 @@ nonisolated enum Route: Hashable, Sendable {
     /// Phase 4 Task 10: the sign-in screen, pushed from the guest Me tab's card. iOS never forces
     /// it (D11 / RULING 31) — it is a destination, never a gate.
     case signIn
-    // BLOAT REMOVED (R7-P3 / round 5's correction): `.emailVerification` (Task 11),
-    // `.profileBootstrap` and `.ageIneligible` (Task 12) lived here with `MainShellView` arms and
-    // routing rows, and NOTHING ever pushed one — grep finds no `push(.emailVerification)`,
-    // `push(.profileBootstrap)` or `push(.ageIneligible)` anywhere. All three screens are reached
-    // by other means entirely: the first two as ROOT destinations through `SplashDestination`, and
-    // the terminal under-13 screen as `RootView`'s full screen cover (R7-P1 #3), which is what a
-    // pushed route could not be — a shell push has a tab bar under it and a back gesture beside it,
-    // and the age screen is a dead end by design. Part A residue, not Part B declaration; the
-    // Global Constraint is "new `Route` cases land with their screen", and these landed without
-    // their caller.
+    // R7-P3: `.emailVerification`, `.profileBootstrap` and `.ageIneligible` were removed — nothing
+    // ever pushed them; all three screens are reached as root destinations or a full screen cover.
     /// Phase 4 Task 17: the Profile screen, pushed from the signed-in Me tab's kebab. It lands
     /// WITH `MeKebabItem.landed` growing to include `.profile` — RULING 28 refuses a kebab row
     /// whose destination does not exist yet.

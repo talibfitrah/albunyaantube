@@ -256,6 +256,74 @@ struct ProfileBootstrapViewModelTests {
         #expect(profilePosts(fixture.transport).count == 1, "the retry re-ran ONLY the password step")
     }
 
+    /// R8-P1: the WIRING half of `BootstrapValidatorTests.theFieldCapCannotHoldANameTheGateRefuses`
+    /// — that the field's setter really is the validator's clamp, and not a second length rule.
+    /// The `prefix(40)` it replaces counted grapheme CLUSTERS while the gate counted UTF-16 units,
+    /// so 40 emoji were typeable, `isFormValid` went false, and the only button on a screen with no
+    /// back gesture greyed out with nothing on screen naming the field.
+    @Test func theNameFieldIsCappedInTheUnitsTheGateCounts() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)))
+
+        fill(fixture.model, name: String(repeating: "\u{1F600}", count: 40))
+        #expect(fixture.model.state.displayName.utf16.count <= BootstrapValidator.maxNameLength,
+                "the field held a name the gate refuses for length")
+        #expect(fixture.model.isFormValid,
+                "Continue was disabled with no message for a name the field itself accepted")
+
+        // The plain case is untouched: a 40-character ASCII name still passes whole.
+        fill(fixture.model, name: String(repeating: "a", count: 40))
+        #expect(fixture.model.state.displayName == String(repeating: "a", count: 40))
+        #expect(fixture.model.isFormValid)
+    }
+
+    // MARK: - R9-P2: the stuck password step has an exit
+
+    /// `profileSaved` sends every later `submit()` straight back into the password block, and a
+    /// Google/Apple session too old to write throws `requiresRecentLogin` on every retry. The
+    /// screen is a ROOT destination with the back button hidden and no tab bar, and nothing in
+    /// `Features/Bootstrap/` signed anyone out — so the account was stranded, with force-quitting
+    /// the app (which changes nothing) as the only move left. The action drops the session and
+    /// `SplashRouter` re-routes to sign-in.
+    @Test func aStuckPasswordStepCanSignOut() async throws {
+        let auth = FakeAuthClient(state: .signedIn(Self.googleUser))
+        let fixture = make(auth: auth, responses: [.json(200, Self.pendingJSON),  // the session's /me
+                                                   .json(200, Self.meJSON)])     // POST /profile
+        // The live session the router landed on this screen with — `dropSession()` has nothing to
+        // drop without it, which is also why this pin would false-green on a bare fixture.
+        await fixture.session.refresh(maxAttempts: 1)
+        #expect(fixture.session.state.me?.status == .pendingProfile)
+        await fixture.model.load()
+        fill(fixture.model, password: "hunter2hunter2")
+
+        auth.nextError = .unknown          // `requiresRecentLogin` is not in the mapped table
+        await fixture.model.submit()
+        #expect(fixture.model.state.error == .passwordSetFailed)
+        #expect(fixture.model.state.profileSaved, "the profile committed; only the password failed")
+
+        fixture.model.signOutFromStuckPasswordStep()
+
+        #expect(await auth.currentUser() == nil, "the user is still stranded on the screen")
+        for _ in 0..<500 where fixture.status.pending == nil { await Task.yield() }
+        #expect(fixture.status.consume() == .signedOut)
+    }
+
+    /// Not a second sign-out control: the action is the recovery for a stranded form and does
+    /// nothing on a screen that is merely incomplete.
+    @Test func theSignOutExitIsOfferedOnlyForTheStuckPasswordStep() async throws {
+        let auth = FakeAuthClient(state: .signedIn(Self.googleUser))
+        let fixture = make(auth: auth, responses: [.json(200, Self.pendingJSON)])
+        await fixture.session.refresh(maxAttempts: 1)   // a session that CAN be dropped
+
+        fixture.model.signOutFromStuckPasswordStep()
+        #expect(await auth.currentUser() != nil, "an untouched form signed the user out")
+
+        fill(fixture.model)
+        await fixture.model.submit()      // the queue is dry: `.saveFailed`, not the password step
+        #expect(fixture.model.state.error == .saveFailed)
+        fixture.model.signOutFromStuckPasswordStep()
+        #expect(await auth.currentUser() != nil, "a failed profile save is retryable in place")
+    }
+
     @Test func aMissingCurrentUserAtThePasswordStepIsPasswordSetFailed() async throws {
         let auth = FakeAuthClient(state: .signedIn(Self.googleUser))
         let fixture = make(auth: auth, responses: [.json(200, Self.meJSON)])

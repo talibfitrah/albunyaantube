@@ -258,7 +258,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                    // Stage 5 / M1: the fallback verdict for this backend's bare 401
                                    // on a terminated account. Same `auth` object as `tokens`, so
                                    // there is still exactly ONE token source (ruling F12).
-                                   refreshRefusal: { [auth] uid in await auth.refreshRefusal(signedFor: uid) })
+                                   refreshRefusal: { [auth] uid in await auth.refreshRefusal(signedFor: uid) },
+                                   // R9-P2: the account the request is sent FOR, read before the
+                                   // first mint — the mint that loses a deleted account's session
+                                   // is the one that throws the verdict.
+                                   currentUid: { [auth] in await auth.currentUser()?.uid })
     }()
 
     /// Phase 4 Task 7: `/api/account/*`, over the signed transport above.

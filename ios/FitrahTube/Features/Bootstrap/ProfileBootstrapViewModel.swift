@@ -52,11 +52,14 @@ import Observation
     // Every setter clears the standing error: a message about the previous attempt has nothing to
     // say about the text now on screen (`onDisplayNameChanged` and friends).
     /// Capped at 40 (`android:maxLength="40"`), so a paste is capped exactly as typing is and the
-    /// server's `@Size(max = 40)` can never be the thing that reports it.
+    /// server's `@Size(max = 40)` can never be the thing that reports it. R8-P1: capped by
+    /// `BootstrapValidator.clamped(name:)`, i.e. in the UTF-16 units the GATE counts — a grapheme
+    /// `prefix` was a second, looser rule, and the names it let through disabled Continue for good
+    /// with no message.
     var displayName: String {
         get { state.displayName }
         set {
-            state.displayName = String(newValue.prefix(BootstrapValidator.maxNameLength))
+            state.displayName = BootstrapValidator.clamped(name: newValue)
             state.error = nil
         }
     }
@@ -187,6 +190,25 @@ import Observation
         await session.refresh()
         state.isLoading = false
         nav = .main
+    }
+
+    /// R9-P2: the ONE way off this screen once the profile is committed and the password step keeps
+    /// failing.
+    ///
+    /// `ProfileBootstrapScreen` is a ROOT destination with `.navigationBarBackButtonHidden()` and no
+    /// tab bar, and `profileSaved` sends every later `submit()` straight back into the password
+    /// block — where a Google/Apple session too old to write throws `requiresRecentLogin` on every
+    /// retry, forever. Waiting for the session to expire produces the SAME message, not an exit, so
+    /// the only other way out was force-quitting the app, which changes nothing. Signing out drops
+    /// the session and `SplashRouter` re-routes to sign-in, where a fresh sign-in is recent enough
+    /// to attach the password. `session.signOut()`, the path the Me kebab and Settings already use
+    /// — no new teardown.
+    ///
+    /// Offered ONLY on `.passwordSetFailed`: this is the recovery for a stranded form, not a second
+    /// sign-out control on a screen that is working.
+    func signOutFromStuckPasswordStep() {
+        guard state.error == .passwordSetFailed else { return }
+        session.signOut()
     }
 
     /// ISO `yyyy-MM-dd`, in ASCII digits, for the day the picker SHOWED.

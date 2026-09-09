@@ -285,20 +285,15 @@ struct MeFeedRepositoryTests {
         await repo.refresh(channelIds: ids, force: false)
 
         #expect(transport.sent.count == 8)
-        // Stage 3 / M3: `>= 1` was true whenever ANY request was sent, so the cap could be removed
-        // and the test stayed green; `<= maxConcurrent` alone is an upper bound that holds trivially
-        // if the scheduler never overlaps. BOTH bounds, and the lower one is `> 1`: the group really
-        // does run channels in parallel, so breaking the fan-out into a serial loop (peak 1) goes
-        // red, and removing the limit (peak 8) goes red too.
-        //
-        // Stage 3 / M3 asked for `== maxConcurrent`. It is not assertable: `ScriptedTransport.send`
-        // overlaps callers through ONE `Task.yield()`, so the measured peak on this host ranged 1–3
-        // of 4 across runs depending on load, and 4 is additionally unreachable because the opening
-        // burst is staggered by 250 ms per slot (`MeFeedRepository.stagger`). What IS deterministic
-        // is the bound the cap actually provides — removing the `limit` sends all 8 at once and
-        // fails here — plus the completeness of the round below.
+        // Stage 3 / M3 asked for `== maxConcurrent`, and neither that nor any LOWER bound is
+        // assertable here: `ScriptedTransport.send` overlaps callers through ONE `Task.yield()`, so
+        // the measured peak on this host ranged 1–3 of 4 across runs depending on load, and 4 is
+        // additionally unreachable because the opening burst is staggered by 250 ms per slot
+        // (`MeFeedRepository.stagger`). R9-P3 #8: the `>= 1` companion this line used to carry was
+        // true whenever ANY request was sent — vacuous, and its comment claimed a `> 1` the code
+        // did not spell. What IS deterministic is the bound the cap actually provides (removing the
+        // `limit` sends all 8 at once and fails here) plus the completeness of the round above.
         #expect(transport.peakConcurrency <= MeFeedRefreshGate.maxConcurrent, "the cap was removed")
-        #expect(transport.peakConcurrency >= 1)
     }
 
     // MARK: - Stage 3 / I2: the feed is user-scoped
@@ -563,6 +558,39 @@ struct MeFeedRepositoryTests {
 
         #expect(allItems(repo) == ["alpha-w0"],
                 "a stale chip filter blanked the feed after an unsubscribe")
+    }
+
+    /// R9-P2 (Cubic probe): the fallback above must RESOLVE the filter, never FORGET it.
+    ///
+    /// `rebucket` used to write its resolution back through `setFilter(live)`, which made this
+    /// repository a SECOND owner of "which chip is selected". `MeViewModel` is the first: it keeps
+    /// the raw id and merely MASKS it while the chip is missing (`selection(_:in:)`), so a
+    /// re-subscribe brought the chip back highlighted — over a feed whose filter the unsubscribe
+    /// round had already destroyed. A selected chip above an unfiltered feed, and nothing to
+    /// un-stick it but tapping the chip twice. One owner now: both sides mask, neither forgets.
+    @Test func aRefilteredChannelIsStillFilteredWhenItIsResubscribed() async {
+        let transport = ScriptedTransport([
+            feed(entry("alpha-w0", Self.week0)),
+            feed(entry("beta-w0", Self.week0Older)),
+        ])
+        let repo = makeRepo(transport)
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        await repo.refresh(channelIds: [Self.alpha, Self.beta], force: false)
+
+        // The user taps beta's chip: the view sets the filter, then re-buckets (`MeSignedInView`).
+        repo.setFilter(Self.beta)
+        await repo.rebucket(filter: Self.beta)
+        #expect(allItems(repo) == ["beta-w0"])
+
+        // Beta is unsubscribed on the channel screen, then subscribed again. Both count changes
+        // re-drive the refresh, which re-buckets with the STORED filter each time.
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        #expect(allItems(repo) == ["alpha-w0"], "a chip that is gone is no filter")
+
+        await repo.refresh(channelIds: [Self.alpha, Self.beta], force: false)
+        #expect(allItems(repo) == ["beta-w0"],
+                "the chip came back highlighted over a feed that was no longer filtered")
+        #expect(transport.sent.count == 2, "nothing was re-fetched: beta is still inside the TTL")
     }
 
     // MARK: - R7-P2: only this call's own outcome may banner
