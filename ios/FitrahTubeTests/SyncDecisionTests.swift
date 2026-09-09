@@ -45,6 +45,12 @@ struct SyncDecisionTests {
     @Test func aTombstoneOlderThanTheLocalRowIsSkippedAsStale() {
         #expect(SyncDecisions.rowAction(serverDeleted: true, serverUpdatedAt: 100, localExists: true,
                                         localDirty: false, localUpdatedAt: 200) == .skipStaleTombstone)
+        // Task 21 review / M2 -- the ninth reachable combination, and the intersection of the two
+        // rules deviation 4 had to arbitrate between: `dirty` does not save a row from a NEWER
+        // tombstone (above), and it does not resurrect it from a STALE one either. The guard is the
+        // timestamp, alone.
+        #expect(SyncDecisions.rowAction(serverDeleted: true, serverUpdatedAt: 100, localExists: true,
+                                        localDirty: true, localUpdatedAt: 200) == .skipStaleTombstone)
     }
 
     /// Room's predicate is `updated_at < :ts`, strictly -- an equal timestamp is not progress.

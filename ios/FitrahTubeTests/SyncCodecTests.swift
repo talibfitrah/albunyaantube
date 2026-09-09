@@ -193,7 +193,7 @@ struct SyncCodecTests {
             channelUrl: "https://www.youtube.com/channel/\(Self.channelId)",
             approvalStatus: "AWAITING", source: "USER_IMPORT",
             importedAt: Date(timeIntervalSince1970: 1_695_000_000))
-        let body = try #require(try JSONSerialization.jsonObject(with: SyncCodec.body(for: channel)) as? [String: Any])
+        let body = try #require(try JSONSerialization.jsonObject(with: try SyncCodec.body(for: channel)) as? [String: Any])
         #expect(Set(body.keys) == ["channelUrl", "name", "avatarUrl", "subscribedAt",
                                    "approvalStatus", "source", "importedAt"])
         #expect(body["name"] as? String == "Alafasy")
@@ -209,7 +209,7 @@ struct SyncCodecTests {
             playlistUrl: "https://www.youtube.com/playlist?list=\(Self.playlistId)",
             uploaderName: "Alafasy", approvalStatus: "APPROVED", source: "USER_IMPORT",
             importedAt: Date(timeIntervalSince1970: 1_695_000_000))
-        let body = try #require(try JSONSerialization.jsonObject(with: SyncCodec.body(for: saved)) as? [String: Any])
+        let body = try #require(try JSONSerialization.jsonObject(with: try SyncCodec.body(for: saved)) as? [String: Any])
         #expect(Set(body.keys) == ["playlistUrl", "name", "uploaderName", "savedAt",
                                    "approvalStatus", "source", "importedAt"])
         #expect(body["savedAt"] as? Int == 1_690_000_000_000)
@@ -224,7 +224,7 @@ struct SyncCodecTests {
             thumbnailUrl: "https://example.test/thumb.jpg", durationSeconds: 754,
             addedAt: Date(timeIntervalSince1970: 1_690_000_000), approvalStatus: "APPROVED",
             source: "USER_IMPORT", importedAt: Date(timeIntervalSince1970: 1_695_000_000))
-        let body = try #require(try JSONSerialization.jsonObject(with: SyncCodec.body(for: video)) as? [String: Any])
+        let body = try #require(try JSONSerialization.jsonObject(with: try SyncCodec.body(for: video)) as? [String: Any])
         #expect(Set(body.keys) == ["title", "channelName", "thumbnailUrl", "durationSeconds",
                                    "addedAt", "approvalStatus", "source", "importedAt"])
         #expect(body["durationSeconds"] as? Int == 754)

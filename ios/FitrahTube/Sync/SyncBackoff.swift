@@ -11,23 +11,22 @@ import Foundation
 /// Single-writer by design -- the caller owns one instance, so this is a `mutating` value type
 /// rather than anything shared.
 nonisolated struct SyncBackoff: Sendable {
-    private let initialMillis: Int
-    private let capMillis: Int
+    /// Constants, not knobs: the schedule is Android's and nothing tunes it per call site
+    /// (Task 21 review / M1).
+    private static let initialMillis = 1_000
+    private static let capMillis = 60_000
     /// The jitter draw, injected so tests pin the window's edges instead of sampling a real RNG.
-    /// The range is in SECONDS, matching the `Duration` returned.
+    /// The range is in SECONDS, matching the `Duration` returned. The ONE thing worth substituting.
     private let random: @Sendable (ClosedRange<Double>) -> Double
     private var currentMillis = 0
 
-    init(initialMillis: Int = 1_000, capMillis: Int = 60_000,
-         random: @escaping @Sendable (ClosedRange<Double>) -> Double = { Double.random(in: $0) }) {
-        self.initialMillis = initialMillis
-        self.capMillis = capMillis
+    init(random: @escaping @Sendable (ClosedRange<Double>) -> Double = { Double.random(in: $0) }) {
         self.random = random
     }
 
     /// The wait for this attempt; the base doubles (up to the cap) for the next one.
     mutating func next() -> Duration {
-        let base = currentMillis == 0 ? initialMillis : min(currentMillis * 2, capMillis)
+        let base = currentMillis == 0 ? Self.initialMillis : min(currentMillis * 2, Self.capMillis)
         currentMillis = base
         let half = max(base / 2, 1)   // floored at 1 ms so a wait is never zero
         return .seconds(random(Double(half) / 1000 ... Double(base) / 1000))

@@ -62,25 +62,33 @@ nonisolated enum SyncCodec {
     // MARK: - Local row -> push body
 
     /// `PUT api/account/subscriptions/{id}`. A tombstone is a DELETE, so no body carries `deleted`.
-    @MainActor static func body(for row: SubscribedChannel) -> Data {
-        json(PutSubscriptionRequest(channelUrl: row.channelUrl, name: row.title,
-                                    avatarUrl: row.avatarUrl, subscribedAt: millis(row.followedAt),
-                                    approvalStatus: row.approvalStatus, source: row.source,
-                                    importedAt: row.importedAt.map(millis)))
+    ///
+    /// THROWS rather than swallowing (Task 21 review / M3). The encode cannot fail for a fixed
+    /// shape of strings and integers, but `try?` + an empty `Data` would have travelled to the
+    /// server as a 400 -> `.permanentFailure` -> a dirty row cleared with its edit lost. The
+    /// caller (`SyncManager`) maps a throw here to a permanent failure for that one row, loudly.
+    @MainActor static func body(for row: SubscribedChannel) throws -> Data {
+        try JSONEncoder().encode(
+            PutSubscriptionRequest(channelUrl: row.channelUrl, name: row.title,
+                                   avatarUrl: row.avatarUrl, subscribedAt: millis(row.followedAt),
+                                   approvalStatus: row.approvalStatus, source: row.source,
+                                   importedAt: row.importedAt.map(millis)))
     }
 
-    @MainActor static func body(for row: SavedPlaylist) -> Data {
-        json(PutPlaylistRequest(playlistUrl: row.playlistUrl, name: row.title,
-                                thumbnailUrl: row.thumbnailUrl, uploaderName: row.uploaderName,
-                                savedAt: millis(row.addedAt), approvalStatus: row.approvalStatus,
-                                source: row.source, importedAt: row.importedAt.map(millis)))
+    @MainActor static func body(for row: SavedPlaylist) throws -> Data {
+        try JSONEncoder().encode(
+            PutPlaylistRequest(playlistUrl: row.playlistUrl, name: row.title,
+                               thumbnailUrl: row.thumbnailUrl, uploaderName: row.uploaderName,
+                               savedAt: millis(row.addedAt), approvalStatus: row.approvalStatus,
+                               source: row.source, importedAt: row.importedAt.map(millis)))
     }
 
-    @MainActor static func body(for row: FavoriteVideo) -> Data {
-        json(PutFavoriteRequest(title: row.title, channelName: row.channelName,
-                                thumbnailUrl: row.thumbnailUrl, durationSeconds: row.durationSeconds,
-                                addedAt: millis(row.addedAt), approvalStatus: row.approvalStatus,
-                                source: row.source, importedAt: row.importedAt.map(millis)))
+    @MainActor static func body(for row: FavoriteVideo) throws -> Data {
+        try JSONEncoder().encode(
+            PutFavoriteRequest(title: row.title, channelName: row.channelName,
+                               thumbnailUrl: row.thumbnailUrl, durationSeconds: row.durationSeconds,
+                               addedAt: millis(row.addedAt), approvalStatus: row.approvalStatus,
+                               source: row.source, importedAt: row.importedAt.map(millis)))
     }
 
     // MARK: - Epoch millis <-> Date
@@ -124,11 +132,5 @@ nonisolated enum SyncCodec {
         let approvalStatus: String?
         let source: String?
         let importedAt: Int?
-    }
-
-    /// Encoding a fixed `Encodable` shape of strings and integers never fails (same idiom as
-    /// `PlayerRequestBuilder.swift:48`).
-    private static func json(_ body: some Encodable) -> Data {
-        (try? JSONEncoder().encode(body)) ?? Data()
     }
 }
