@@ -45,12 +45,27 @@ enum FavoritesSchemaV4: VersionedSchema {
     static var models: [any PersistentModel.Type] { [FavoriteVideo.self, SavedPlaylist.self, SubscribedChannel.self, OfflineItem.self] }
 }
 
+/// Phase 4 Task 20: the sync columns. `SubscribedChannel`/`SavedPlaylist` gain the URL and import
+/// columns the wire needs (mirroring Room v11) and the two sync bookkeeping entities arrive --
+/// every addition is a defaulted/optional property or a new entity, so the stage stays lightweight.
+/// The Room/Swift name drift (`title`/`name`, `followedAt`/`subscribedAt`, `addedAt`/`savedAt`,
+/// `isRemoved`/`deleted`) is kept DELIBERATELY: renaming a `@Model` property is not a lightweight
+/// migration, and the drift is encoded once, in the sync codec.
+enum FavoritesSchemaV5: VersionedSchema {
+    static let versionIdentifier = Schema.Version(5, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [FavoriteVideo.self, SavedPlaylist.self, SubscribedChannel.self, OfflineItem.self,
+         SyncState.self, AccountBinding.self]
+    }
+}
+
 enum FavoritesMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self, FavoritesSchemaV4.self] }
+    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self, FavoritesSchemaV4.self, FavoritesSchemaV5.self] }
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: FavoritesSchemaV1.self, toVersion: FavoritesSchemaV2.self),
          .lightweight(fromVersion: FavoritesSchemaV2.self, toVersion: FavoritesSchemaV3.self),
-         .lightweight(fromVersion: FavoritesSchemaV3.self, toVersion: FavoritesSchemaV4.self)]
+         .lightweight(fromVersion: FavoritesSchemaV3.self, toVersion: FavoritesSchemaV4.self),
+         .lightweight(fromVersion: FavoritesSchemaV4.self, toVersion: FavoritesSchemaV5.self)]
     }
 }
 

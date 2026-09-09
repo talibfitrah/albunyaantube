@@ -557,7 +557,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// `storeURL` exists so `AppContainerTests` can point the recovery path at a deliberately
     /// corrupt file; production always takes the default location.
     static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil) -> ModelContainer {
-        let schema = Schema(versionedSchema: FavoritesSchemaV4.self)
+        let schema = Schema(versionedSchema: FavoritesSchemaV5.self)
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         func build() throws -> ModelContainer {

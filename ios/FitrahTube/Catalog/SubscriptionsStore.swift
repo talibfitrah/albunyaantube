@@ -30,10 +30,22 @@ nonisolated enum SubscriptionsError: Error, Equatable {
     var updatedAt: Date
     var isRemoved: Bool
     var dirty: Bool
+    /// V5. Inline defaults (and optionals) are what make the V4 -> V5 stage *lightweight*: a
+    /// non-optional column with no default has nothing to write into the existing rows.
+    /// `channelUrl` is Room's `channelUrl`, which the sync wire requires; it is STORED data, never
+    /// a navigable affordance (owner directive: no link or redirect to YouTube, anywhere).
+    var channelUrl: String = ""
+    /// "APPROVED" | "AWAITING" -- an AWAITING row is an imported, unreviewed channel: hidden from
+    /// `items`, still `isSubscribed`. A null server value means "APPROVED" (`SyncManager.kt:379`).
+    var approvalStatus: String = "APPROVED"
+    /// "USER_IMPORT" for rows the YouTube import wrote; nil for a manual subscribe.
+    var source: String?
+    var importedAt: Date?
 
     init(channelId: String, title: String, avatarUrl: String?,
          followedAt: Date = Date(), userId: String = "", updatedAt: Date = Date(timeIntervalSince1970: 0),
-         isRemoved: Bool = false, dirty: Bool = false) {
+         isRemoved: Bool = false, dirty: Bool = false, channelUrl: String = "",
+         approvalStatus: String = "APPROVED", source: String? = nil, importedAt: Date? = nil) {
         self.channelId = channelId
         self.title = title
         self.avatarUrl = avatarUrl
@@ -42,6 +54,10 @@ nonisolated enum SubscriptionsError: Error, Equatable {
         self.updatedAt = updatedAt
         self.isRemoved = isRemoved
         self.dirty = dirty
+        self.channelUrl = channelUrl
+        self.approvalStatus = approvalStatus
+        self.source = source
+        self.importedAt = importedAt
     }
 }
 
@@ -108,8 +124,13 @@ nonisolated enum SubscriptionsError: Error, Equatable {
 
     private func refresh() {
         let uid = currentUserId
+        // V5: an AWAITING row is an imported channel the admins have not reviewed. It must not
+        // render as an ordinary chip and must not count against the 30-channel cap through
+        // `items.count` above. `isSubscribed` stays UNFILTERED (matching `isFavorite`), so a
+        // re-add of an awaiting channel finds the existing row instead of duplicating it.
+        let awaiting = "AWAITING"
         var descriptor = FetchDescriptor<SubscribedChannel>(
-            predicate: #Predicate { $0.userId == uid && $0.isRemoved == false },
+            predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus != awaiting },
             sortBy: [SortDescriptor(\.followedAt, order: .reverse)]
         )
         descriptor.includePendingChanges = false

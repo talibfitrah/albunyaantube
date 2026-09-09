@@ -29,10 +29,20 @@ nonisolated enum SavedPlaylistsError: Error, Equatable {
     var updatedAt: Date
     var isRemoved: Bool
     var dirty: Bool
+    /// V5, same rules as `SubscribedChannel`'s: defaulted or optional so the stage stays
+    /// lightweight, and `playlistUrl` is stored data, never a navigable affordance.
+    /// `itemCount` above STAYS: no sync DTO carries it, and it is what the count chip renders.
+    var playlistUrl: String = ""
+    var uploaderName: String?
+    var approvalStatus: String = "APPROVED"
+    var source: String?
+    var importedAt: Date?
 
     init(playlistId: String, title: String, thumbnailUrl: String?, itemCount: Int,
          addedAt: Date = Date(), userId: String = "", updatedAt: Date = Date(timeIntervalSince1970: 0),
-         isRemoved: Bool = false, dirty: Bool = false) {
+         isRemoved: Bool = false, dirty: Bool = false, playlistUrl: String = "",
+         uploaderName: String? = nil, approvalStatus: String = "APPROVED",
+         source: String? = nil, importedAt: Date? = nil) {
         self.playlistId = playlistId
         self.title = title
         self.thumbnailUrl = thumbnailUrl
@@ -42,6 +52,11 @@ nonisolated enum SavedPlaylistsError: Error, Equatable {
         self.updatedAt = updatedAt
         self.isRemoved = isRemoved
         self.dirty = dirty
+        self.playlistUrl = playlistUrl
+        self.uploaderName = uploaderName
+        self.approvalStatus = approvalStatus
+        self.source = source
+        self.importedAt = importedAt
     }
 }
 
@@ -105,8 +120,11 @@ nonisolated enum SavedPlaylistsError: Error, Equatable {
 
     private func refresh() {
         let uid = currentUserId
+        // V5, same rule as `SwiftDataSubscriptionsStore.refresh()`: awaiting (imported,
+        // unreviewed) rows are hidden from `items`; `isSaved` stays unfiltered.
+        let awaiting = "AWAITING"
         var descriptor = FetchDescriptor<SavedPlaylist>(
-            predicate: #Predicate { $0.userId == uid && $0.isRemoved == false },
+            predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus != awaiting },
             sortBy: [SortDescriptor(\.addedAt, order: .reverse)]
         )
         descriptor.includePendingChanges = false // saved rows only (gate wave-4 V9)
