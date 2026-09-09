@@ -380,6 +380,27 @@ struct SyncTriggerTests {
         #expect(await recording.calls == [.push(Self.uid), .push(Self.uid)])
     }
 
+    /// Task 24 review / M2: the follow-up carries the LATEST uid, not the first. Only reachable
+    /// today across an account switch that dirties a row before the outgoing account's drain has
+    /// finished; replaying the FIRST uid there would drain the wrong account's rows and leave the
+    /// new one's dirty rows unpushed until something else asked. The ordering the old code relied
+    /// on was never enforced by anything.
+    @MainActor @Test func theCoalescedFollowUpCarriesTheLatestUidNotTheFirst() async throws {
+        let gate = Gate()
+        let recording = RecordingSync(gate: gate)
+        let appContainer = AppContainer.fake(defaults: Self.isolatedDefaults(), sync: recording)
+
+        appContainer.pushDirtySoon(uid: "uid-a")
+        await gate.waitUntilBlocked()
+        appContainer.pushDirtySoon(uid: "uid-b")
+        appContainer.pushDirtySoon(uid: "uid-c")
+
+        await gate.release()
+        await settle { await recording.calls.count == 2 }
+        await drain()
+        #expect(await recording.calls == [.push("uid-a"), .push("uid-c")])
+    }
+
     // MARK: - Connectivity
 
     /// `AlBunyaanApplication.kt:206-215`: `onAvailable` pushes, and nothing else does. An

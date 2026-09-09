@@ -56,6 +56,10 @@ nonisolated enum Route: Hashable, Sendable {
     /// WITH `MeKebabItem.landed` growing to include `.profile` — RULING 28 refuses a kebab row
     /// whose destination does not exist yet.
     case profile
+    /// Phase 4 Task 25: My Submissions, pushed from the signed-in Me tab's kebab. Ruling C4 gates
+    /// the ROW to moderators and admins (`MeKebabItem.items(isModerator:)`); nothing else in the
+    /// app pushes this case, and there is no deep link to it.
+    case mySubmissions
 }
 
 extension Route {

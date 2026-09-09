@@ -475,8 +475,24 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// own coroutine precisely so the splash's route decision never waits on a network round trip
     /// (`SplashFragment.kt:129-141`). Unstructured for the same reason `refreshIfSignedIn`'s
     /// foreground caller is -- a `.task`-scoped caller would cancel it on navigation.
+    /// **The invariant** (Task 24 review / M1). The uid bound here is `AccountMe.uid`; the uid the
+    /// per-user stores are scoped by is `AuthUser.uid` (`:159`). Against the real backend they are
+    /// always the same value — `AccountController.java:111,175` derives the account document from
+    /// `principal.getUid()` — and everything downstream depends on that: if they ever diverged,
+    /// `tagAnonRows` would retag guest rows to an id no store reads and `dirtyRows(uid:)` would stay
+    /// permanently empty, i.e. sync silently dead with nothing to see.
+    ///
+    /// Stated here rather than asserted: `theBoundUidIsTheAccountsNotTheFirebaseUsers`
+    /// (`SyncTriggerTests.swift:119`) constructs the divergence deliberately, to pin WHICH of the
+    /// two fields is read, so an `assert(uid == user?.uid)` would trap that test in Debug — the one
+    /// build the gate runs.
+    ///
+    /// Task 24 review / M3: the guard consults the same three terminal conditions `syncableUid`
+    /// does. Unreachable today (a 200 `/me` cannot coexist with a terminal verdict for the same
+    /// account, and `boundUid` already blocks a rebind) — but this was the only trigger site that
+    /// did not, which is the asymmetry a later reader trips over.
     private func bindSyncIfNeeded(to uid: String) {
-        guard let sync, !uid.isEmpty, boundUid != uid else { return }
+        guard let sync, deletion == nil, !isAgeIneligible, !uid.isEmpty, boundUid != uid else { return }
         boundUid = uid
         Task { await sync.bind(uid: uid) }
     }

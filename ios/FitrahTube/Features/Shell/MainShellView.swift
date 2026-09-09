@@ -202,6 +202,8 @@ struct MainShellView: View {
             SignInScreen()
         case .profile:
             ProfileScreen()
+        case .mySubmissions:
+            MySubmissionsScreen()
         }
     }
 

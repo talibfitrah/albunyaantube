@@ -9,38 +9,29 @@ import Testing
 /// actually chosen for the route.
 @Suite(.perTest)
 struct MainShellRoutingTests {
-    private func leafTypeName(for route: Route) -> String {
-        var mirror = Mirror(reflecting: MainShellView().destination(for: route))
-        // `_ConditionalContent<A, B>` stores `.trueContent(A)` / `.falseContent(B)`; descend until
-        // the subject is no longer one of them.
-        while String(describing: mirror.subjectType).hasPrefix("_ConditionalContent"),
-              let storage = mirror.children.first(where: { $0.label == "storage" }) {
-            let payload = Mirror(reflecting: storage.value)
-            guard let inner = payload.children.first else { break }
-            mirror = Mirror(reflecting: inner.value)
-        }
-        return String(describing: mirror.subjectType)
+    /// Task 25 moved the walk itself to `Support/TestDoubles.swift` — `MySubmissionsScreen`'s four
+    /// state arms need the same descent, and a second copy is the wave-2 W9 lesson again.
+    private func leaf(for route: Route) -> String {
+        leafTypeName(of: MainShellView().destination(for: route))
     }
 
     @Test func thePlaylistRouteRendersTheRealScreen() {
-        let leaf = leafTypeName(for: .playlist(id: "PL1", title: "T", category: nil, count: 3))
-        #expect(leaf == "PlaylistDetailScreen")
+        #expect(leaf(for: .playlist(id: "PL1", title: "T", category: nil, count: 3)) == "PlaylistDetailScreen")
     }
 
     @Test func theChannelRouteRendersTheRealScreen() {
-        let leaf = leafTypeName(for: .channel(id: "UC1", name: nil, avatarURL: nil))
-        #expect(leaf == "ChannelDetailScreen")
+        #expect(leaf(for: .channel(id: "UC1", name: nil, avatarURL: nil)) == "ChannelDetailScreen")
     }
 
     /// Phase 3 Task 6: the ONE new `Route` case this plan adds.
     @Test func theOfflineRouteRendersTheSavedScreen() {
-        #expect(leafTypeName(for: .offline) == "SavedScreen")
+        #expect(leaf(for: .offline) == "SavedScreen")
     }
 
     /// Phase 4 Task 10: the ONE new `Route` case this task adds — it lands WITH its screen, which
     /// is what this arm pins.
     @Test func theSignInRouteRendersTheRealScreen() {
-        #expect(leafTypeName(for: .signIn) == "SignInScreen")
+        #expect(leaf(for: .signIn) == "SignInScreen")
     }
 
     // The `.emailVerification` / `.profileBootstrap` / `.ageIneligible` rows went with their
@@ -52,7 +43,13 @@ struct MainShellRoutingTests {
     /// Phase 4 Task 17: the ONE new `Route` case this task adds — it lands WITH its screen, and
     /// with the Me kebab row that pushes it (`MeKebabItem.landed`).
     @Test func theProfileRouteRendersTheRealScreen() {
-        #expect(leafTypeName(for: .profile) == "ProfileScreen")
+        #expect(leaf(for: .profile) == "ProfileScreen")
+    }
+
+    /// Phase 4 Task 25: the ONE new `Route` case this task adds — it lands WITH its screen, and
+    /// with the moderator-only Me kebab row that pushes it (`MeKebabItem.landed`, ruling C4).
+    @Test func theMySubmissionsRouteRendersTheRealScreen() {
+        #expect(leaf(for: .mySubmissions) == "MySubmissionsScreen")
     }
 
     /// T0-1: `railStacks` is the only publisher of `\.tabIsSelected` — the compact `TabView` sets
@@ -68,7 +65,7 @@ struct MainShellRoutingTests {
         // Guards the helper: Plan C Task 5 gave the last route its screen, so no placeholder route is
         // left to pin; two different routes resolving to two different leaves proves the walker
         // still descends to the chosen branch rather than stopping at the outer conditional.
-        #expect(leafTypeName(for: .settings) == "SettingsView")
-        #expect(leafTypeName(for: .about) == "AboutView")
+        #expect(leaf(for: .settings) == "SettingsView")
+        #expect(leaf(for: .about) == "AboutView")
     }
 }

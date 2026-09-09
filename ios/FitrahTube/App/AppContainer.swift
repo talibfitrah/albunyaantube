@@ -272,6 +272,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var account = AccountClient(transport: authorizedTransport, baseURL: apiBaseURL,
                                                   deviceId: .persisted(in: userDefaults))
 
+    /// Phase 4 Task 25: `/api/admin/approvals/*` + the submitter-owned registry writes, over the
+    /// same signed transport. Role-gated by the BACKEND (`@PreAuthorize("hasAnyRole('ADMIN',
+    /// 'MODERATOR')")`) as well as by the kebab that reaches it, so a fixture container needs no
+    /// special transport here — nothing constructs the screen without the moderator kebab row.
+    private(set) lazy var approvals = ApprovalsClient(transport: authorizedTransport, baseURL: apiBaseURL,
+                                                      deviceId: .persisted(in: userDefaults))
+
     /// Phase 4 Task 23/24: the ONE sync manager. Cheap to build (no session, no directory, no
     /// network until something triggers it), so `lazy` like every other store here.
     ///
@@ -303,21 +310,26 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// dirtied mid-drain is still pushed, and a burst costs two drains at most.
     ///
     /// An empty uid is a GUEST write: nothing to push, and no account to push it to.
+    ///
+    /// Task 24 review / M2: the follow-up carries the LATEST uid, not the one the in-flight drain
+    /// started with. Reachable across an account switch that dirties a row before the outgoing
+    /// account's drain has finished; replaying the first uid there would drain the wrong account's
+    /// rows and leave the new one's dirty rows unpushed until something else asked.
     func pushDirtySoon(uid: String) {
         guard !uid.isEmpty else { return }
-        guard pushTask == nil else { pushAgain = true; return }
+        guard pushTask == nil else { pushAgain = uid; return }
         pushTask = Task { [sync] in
             await sync.pushDirty(uid: uid)
             pushTask = nil
-            if pushAgain {
-                pushAgain = false
-                pushDirtySoon(uid: uid)
+            if let next = pushAgain {
+                pushAgain = nil
+                pushDirtySoon(uid: next)
             }
         }
     }
 
     private var pushTask: Task<Void, Never>?
-    private var pushAgain = false
+    private var pushAgain: String?
 
     /// Phase 4 Task 24: connectivity restored -> push the dirty rows at once
     /// (`AlBunyaanApplication.kt:206-215`, `onAvailable`). Losing the path does NOTHING: there is
@@ -561,6 +573,14 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     }
 
     #if DEBUG
+    /// The fixture container's sync: it records nothing and does nothing. See `fake(sync:)`.
+    nonisolated struct InertSync: SyncTriggering {
+        func bind(uid: String) async {}
+        func unbind() async {}
+        func pushDirty(uid: String) async {}
+        func syncNow(uid: String) async {}
+    }
+
     static func fake(
         catalog: any CatalogClient = FakeCatalogClient(),
         // `?? .standard`: `UserDefaults(suiteName:)` returns nil for a suite name equal to the
@@ -588,7 +608,14 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // Task 24: the `injectedBrowse` idiom once more. `SyncTriggerTests` drives the five wiring
         // sites against a recording double; without this they would need a real drain to see one
         // method name.
-        sync: (any SyncTriggering)? = nil
+        //
+        // Task 24 review / M4: the DEFAULT is a no-op, not nil. A nil built a real `SyncManager`,
+        // so any test or preview that signed in through `fake().session` — e.g.
+        // `RootViewDestinationTests.theOutcomeAdvisoriesDropTheSessionAndRaiseTheAlert` — spawned a
+        // background merge running `tagAnonRows` against the fixture container plus a bounded 503
+        // ladder, i.e. background mutation racing that test's assertions. A fixture that genuinely
+        // wants the real manager passes one.
+        sync: (any SyncTriggering)? = InertSync()
     ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
         // defaults domain. Does NOT wipe the suite -- callers that write through the returned

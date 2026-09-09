@@ -1,6 +1,7 @@
 import Foundation
 import InnerTubeKit
 import Observation
+import SwiftUI
 import Synchronization
 @testable import FitrahTube
 
@@ -66,6 +67,23 @@ func items(count: Int, prefix: String) -> [ContentItem] {
 
 /// Debounce-clock stub: tests assert on the requested `Duration`, never wait out real time.
 func noSleep(_ duration: Duration) async throws {}
+
+/// Which branch a `@ViewBuilder` switch actually chose, by name. `_ConditionalContent<A, B>` stores
+/// `.trueContent(A)` / `.falseContent(B)`, so this descends until the subject is no longer one of
+/// them and reports the leaf's type.
+///
+/// Lived as a `private func` on `MainShellRoutingTests` until Task 25 needed the same walk for
+/// `MySubmissionsScreen.stateView(_:)`'s four arms — the M6 move, not a second copy.
+@MainActor func leafTypeName(of view: some SwiftUI.View) -> String {
+    var mirror = Mirror(reflecting: view)
+    while String(describing: mirror.subjectType).hasPrefix("_ConditionalContent"),
+          let storage = mirror.children.first(where: { $0.label == "storage" }) {
+        let payload = Mirror(reflecting: storage.value)
+        guard let inner = payload.children.first else { break }
+        mirror = Mirror(reflecting: inner.value)
+    }
+    return String(describing: mirror.subjectType)
+}
 
 /// Task 5: the `OAuthSignInProvider` double. Canned credential, no SDK, no UI, no network.
 ///

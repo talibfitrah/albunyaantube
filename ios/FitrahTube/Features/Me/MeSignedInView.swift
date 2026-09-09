@@ -346,9 +346,12 @@ struct MeSignedInView: View {
                         // Task 17 landed this one and widened `MeKebabItem.landed`, which is what
                         // puts the row on screen in the first place.
                         case .profile: router.push(.profile)
-                        // Tasks 25/27/29 each land one of these the same way — so these arms are
+                        // Task 25 landed this one and widened `MeKebabItem.landed`; ruling C4's
+                        // role gate is what puts it in `enabledKebabItems` in the first place.
+                        case .mySubmissions: router.push(.mySubmissions)
+                        // Tasks 27/29 each land one of these the same way — so these arms are
                         // unreachable today and must stay a no-op rather than a placeholder screen.
-                        case .mySubmissions, .suggestContent, .importYouTube: break
+                        case .suggestContent, .importYouTube: break
                         }
                     } label: {
                         Label(String(localized: String.LocalizationValue(item.titleKey)),

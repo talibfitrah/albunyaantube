@@ -54,6 +54,11 @@ nonisolated enum AccountError: Error, Equatable {
     case emailNotVerified                       // 403 {"code":"EMAIL_NOT_VERIFIED"} on POST /profile
     case blocked, deletedAccount                // the 403 account-lifecycle envelope
     case lastAdmin                              // 409 on DELETE /me
+    /// A 409 whose meaning belongs to the ENDPOINT, not to this table (Task 25): on the submitter's
+    /// registry PATCH/DELETE it is "already reviewed" (`RegistryController.java:416,457`), on the
+    /// registry POST it is "already in the registry" (`:251`). `.profileAlreadyCompleted` and
+    /// `.lastAdmin` are the two 409s that DO have one meaning each and keep their own cases.
+    case conflict
     case network, unknown(status: Int)
 }
 
@@ -63,6 +68,22 @@ nonisolated enum AccountError: Error, Equatable {
 /// user, so this pins the exact key/value pair. The byte cap belongs to the CALLER — 1 KiB for the
 /// transport's envelope peek, 4 KiB for an error body — because the two have different budgets.
 nonisolated enum ApiErrorEnvelope {
+    /// `MAX_ERROR_BODY_BYTES` (`AccountRepositoryImpl.kt:259`): a misbehaving server returning a
+    /// multi-MB error body must not be read whole. One constant, because both hand-written clients
+    /// peek with it (`AccountClient`, `ApprovalsClient`).
+    static let maxErrorBodyBytes = 4096
+
+    /// The 429 shape, spelled ONCE (R9-P3 #17's rule applied to the second client that needs it):
+    /// body `retryAfterSeconds`, then the `Retry-After` header, then 60. Peeks the body itself so a
+    /// caller that has no other reason to read it does not have to.
+    static func retryAfterSeconds(_ response: HTTPResponse) -> Int {
+        struct Body: Decodable { let retryAfterSeconds: Int? }
+        let peek = response.body.prefix(maxErrorBodyBytes)
+        if let seconds = (try? JSONDecoder().decode(Body.self, from: peek))?.retryAfterSeconds { return seconds }
+        if let header = response.header("Retry-After"), let seconds = Int(header) { return seconds }
+        return 60
+    }
+
     static func hasCode(_ code: String, in body: Data) -> Bool {
         guard let regex = try? Regex("\"code\"\\s*:\\s*\"\(code)\"") else { return false }
         return String(decoding: body, as: UTF8.self).contains(regex)
@@ -160,9 +181,6 @@ nonisolated struct AccountClient: Sendable {
         let email, displayName, dateOfBirth, phoneNumber, status, role: String?
     }
 
-    /// `MAX_ERROR_BODY_BYTES` (`AccountRepositoryImpl.kt:259`): a misbehaving server returning a
-    /// multi-MB error body must not be read whole.
-    private static let maxErrorBodyBytes = 4096
     private static let knownValidationFields = ["displayName", "dateOfBirth", "phoneNumber"]
 
     private func send(_ method: String, _ path: String, body: Data? = nil) async throws(AccountError) -> HTTPResponse {
@@ -198,7 +216,7 @@ nonisolated struct AccountClient: Sendable {
     /// `POST /profile` and `lastAdmin` on `DELETE /me`, and only the endpoint knows which.
     private func failure(_ response: HTTPResponse,
                          _ own: (Int, Data) -> AccountError? = { _, _ in nil }) -> AccountError {
-        let peek = response.body.prefix(Self.maxErrorBodyBytes)
+        let peek = response.body.prefix(ApiErrorEnvelope.maxErrorBodyBytes)
         if let own = own(response.status, peek) { return own }
         // The lifecycle pair comes from `ApiErrorEnvelope`'s table, not from a second copy of the
         // two code strings (R9-P3 #17).
@@ -211,17 +229,10 @@ nonisolated struct AccountClient: Sendable {
         }
         switch response.status {
         case 422 where ApiErrorEnvelope.hasCode("AGE_INELIGIBLE", in: peek): return .ageIneligible
-        case 429: return .rateLimited(retryAfterSeconds: retryAfterSeconds(response, peek))
+        case 429: return .rateLimited(retryAfterSeconds: ApiErrorEnvelope.retryAfterSeconds(response))
         case 400, 422: return validationFailure(peek)
         default: return .unknown(status: response.status)
         }
-    }
-
-    private func retryAfterSeconds(_ response: HTTPResponse, _ peek: Data) -> Int {
-        struct Body: Decodable { let retryAfterSeconds: Int? }
-        if let seconds = (try? JSONDecoder().decode(Body.self, from: peek))?.retryAfterSeconds { return seconds }
-        if let header = response.header("Retry-After"), let seconds = Int(header) { return seconds }
-        return 60
     }
 
     /// `"<field>: <reason>"` (`ProfileValidationException` -> `AccountUpdateRepository.kt:81-91`),
