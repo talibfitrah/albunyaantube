@@ -8,6 +8,13 @@ nonisolated struct ImportSummary: Sendable, Equatable {
     /// `alreadyPresent` + everything the backend refused or could not resolve.
     var skipped: Int
     var alreadyPresent: Int
+    /// How many of the fresh candidates this run actually got through. A COMPLETE run ends with
+    /// `processed == candidates.count - alreadyPresent`; anything short of that is a run a 429, a
+    /// cancel or a network failure cut off. Review I1: the "this was partial" signal used to exist
+    /// ONLY in the transient DONE `progress` emission, so a screen that keeps the summary and drops
+    /// the last callback would tell a user whose connection died after chunk 1 "200 added" and
+    /// nothing else. The plan's Task 28 interface block is amended for this field.
+    var processed: Int
     var rateLimited: Bool
 }
 
@@ -96,6 +103,7 @@ nonisolated enum ImportProvenance {
             if Task.isCancelled { break }
 
             let byId = Dictionary(chunk.map { ($0.youtubeId, $0) }, uniquingKeysWith: { first, _ in first })
+            let chunkBase = processed
             progress(.writing, processed, total)
 
             for result in results {
@@ -111,15 +119,23 @@ nonisolated enum ImportProvenance {
                 case .rejected, .error:
                     rejectedOrError += 1
                 }
-                processed += 1
+                // Clamped to this chunk's candidates: a backend echoing more rows than it was sent
+                // must never push the count past `total`.
+                processed = min(processed + 1, chunkBase + chunk.count)
                 progress(.writing, processed, total)
             }
+            // Review M3: count CANDIDATES, not results. `ImportClient` drops a row whose `type`
+            // this build cannot name, and that candidate was still processed — counting results
+            // would make a fully successful run read as partial and corrupt the exact signal
+            // `processed` exists to carry.
+            processed = chunkBase + chunk.count
         }
 
         progress(.done, processed, total)
         return ImportSummary(added: added, sentForReview: sentForReview,
                              skipped: alreadyPresent + rejectedOrError,
-                             alreadyPresent: alreadyPresent, rateLimited: rateLimited)
+                             alreadyPresent: alreadyPresent, processed: processed,
+                             rateLimited: rateLimited)
     }
 
     // MARK: - Dedupe

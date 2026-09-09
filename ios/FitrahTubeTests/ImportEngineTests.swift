@@ -103,9 +103,33 @@ struct YouTubeAuthorizerTests {
     /// back a token, so "an unavailable provider is never asked" is a property a caller's test can
     /// actually break.
     @Test func anUnavailableAuthorizerFailsInsteadOfHandingBackAToken() async {
-        let authorizer = FakeYouTubeAuthorizer(isAvailable: false)
+        let authorizer = FakeYouTubeAuthorizer(hasCurrentUser: false)
         await #expect(throws: YouTubeAuthorizerError.unavailable) { try await authorizer.authorize() }
         #expect(authorizer.authorizeCount == 1)
+    }
+
+    /// Review C1. `GIDSignIn.currentUser` is nil on EVERY cold launch — the SDK's initializer
+    /// reads the bundle configuration and migrates keychain state but assigns `_currentUser`
+    /// nowhere (`GIDSignIn.m:510-540`); the only two assignments are the interactive sign-in
+    /// completion (`:936`) and a restore. Availability that reads `currentUser` alone therefore
+    /// goes false at the next launch and the Import affordance disappears for every returning
+    /// Google user, silently. The keychain-backed half is `hasPreviousSignIn` (`GIDSignIn.h:116`,
+    /// `GIDSignIn.m:213-219`), and the RELAUNCH state — no current user, a previous sign-in — must
+    /// be available AND must authorize.
+    ///
+    /// Tier 3 boundary: this pins the CONTRACT the Import screen consumes. The SDK half of
+    /// `GoogleYouTubeAuthorizer` is NOT pinned by any hermetic test and cannot be.
+    @Test func aRelaunchedSessionWithNoCurrentUserIsStillAvailableAndAuthorizes() async throws {
+        let relaunched = FakeYouTubeAuthorizer(token: Fixture.token, hasCurrentUser: false,
+                                               hasPreviousSignIn: true)
+        #expect(relaunched.isAvailable)
+        #expect(try await relaunched.authorize() == Fixture.token)
+
+        // Neither fact: no Google grant to extend, so the affordance stays HIDDEN (RULING 28) —
+        // which is what keeps an Apple or email/password account from being offered an import.
+        let signedOut = FakeYouTubeAuthorizer(hasCurrentUser: false, hasPreviousSignIn: false)
+        #expect(signedOut.isAvailable == false)
+        await #expect(throws: YouTubeAuthorizerError.unavailable) { try await signedOut.authorize() }
     }
 
     /// F9: `forget()` drops the in-memory token so the next import asks again. It must NEVER be
@@ -856,13 +880,18 @@ struct ImportPipelineTests {
         let summary = await rig.pipeline.run([], progress: log.record)
 
         #expect(rig.transport.sent.isEmpty)
+        // `processed == 0 == total`: an empty selection is COMPLETE, not partial.
         #expect(summary == ImportSummary(added: 0, sentForReview: 0, skipped: 0, alreadyPresent: 0,
-                                         rateLimited: false))
+                                         processed: 0, rateLimited: false))
         #expect(log.last == ProgressLog.Entry(phase: .done, done: 0, total: 0))
     }
 
-    /// A non-429 failure mid-run BREAKS the loop the same way, but does NOT claim the rate limit —
-    /// the DONE emission's short count is what says the run was partial.
+    /// A non-429 failure mid-run BREAKS the loop the same way, but does NOT claim the rate limit.
+    ///
+    /// Review I1: what says "this run was partial" is `summary.processed`, short of the candidates
+    /// asked for. It used to live ONLY in the transient DONE progress emission, so a screen that
+    /// keeps the summary and drops the last callback — the obvious implementation — would tell a
+    /// user whose connection died after chunk 1 "200 added" and nothing else.
     @Test func aNetworkFailureMidRunStopsWithoutClaimingTheRateLimit() async throws {
         let candidates = Self.channels(201)
         let rig = try rig([
@@ -877,6 +906,35 @@ struct ImportPipelineTests {
 
         #expect(summary.added == 200)
         #expect(summary.rateLimited == false)
+        #expect(summary.processed == 200)
+        #expect(summary.processed < candidates.count)
         #expect(log.last == ProgressLog.Entry(phase: .done, done: 200, total: 201))
+    }
+
+    /// Review M3. `ImportClient` DROPS a result row whose `type` this build cannot name
+    /// (`ImportClient.swift:84,118-119`), so a chunk can come back with fewer results than it had
+    /// candidates. `processed` counts CANDIDATES: counting results would make this fully successful
+    /// run read as partial and defeat the one signal I1 added it for.
+    @Test func aRowDroppedForAnUnnameableTypeStillCountsAsProcessed() async throws {
+        let rig = try rig([.json(200, Fixture.resolveBody([
+            Fixture.result(Fixture.channel, "CHANNEL", "APPROVED"),
+            // A type no `CandidateType` names: the client drops the row before the pipeline sees it.
+            Fixture.result(Fixture.playlist, "SHORT", "APPROVED")
+        ]))])
+        let candidates = [
+            ImportCandidate(type: .channel, youtubeId: Fixture.channel, title: "Alafasy",
+                            thumbnailUrl: nil, channelId: nil),
+            ImportCandidate(type: .playlist, youtubeId: Fixture.playlist, title: "Tafsir",
+                            thumbnailUrl: nil, channelId: nil)
+        ]
+
+        let log = ProgressLog()
+        let summary = await rig.pipeline.run(candidates, progress: log.record)
+
+        #expect(summary.added == 1)
+        #expect(rig.transport.sent.count == 1)
+        // Both candidates were processed; the run was NOT cut off.
+        #expect(summary.processed == candidates.count)
+        #expect(log.last == ProgressLog.Entry(phase: .done, done: 2, total: 2))
     }
 }

@@ -20,18 +20,40 @@ import UIKit
     private var token: String?
 
     /// Same two prerequisites Google sign-in itself needs (a client id from the plist AND a
-    /// matching callback scheme in this bundle), plus a signed-in Google user to add a scope TO.
-    var isAvailable: Bool { SignInCapabilities.current().google && GIDSignIn.sharedInstance.currentUser != nil }
+    /// matching callback scheme in this bundle), plus a Google grant to extend.
+    ///
+    /// **`currentUser` alone would be wrong, and silently so** (review C1). The SDK never restores
+    /// it at launch: its initializer reads the bundle configuration and migrates keychain state but
+    /// assigns `_currentUser` nowhere (`GIDSignIn.m:510-540`), and the only two assignments are the
+    /// interactive sign-in completion (`:936`) and a restore. Reading it alone would make Import
+    /// available for the session that signed in and unavailable in every session after — hidden,
+    /// per RULING 28, with no error and nothing to debug from. `hasPreviousSignIn` is the
+    /// keychain-backed half of the same fact ("Checks if there is a previous user sign-in saved in
+    /// keychain", `GIDSignIn.h:113-116`, implemented over `loadAuthState` at `GIDSignIn.m:213-219`)
+    /// and it survives relaunch. It stays FALSE for an Apple or email/password account, so the
+    /// hiding rule for those accounts is preserved.
+    var isAvailable: Bool {
+        SignInCapabilities.current().google
+            && (GIDSignIn.sharedInstance.currentUser != nil || GIDSignIn.sharedInstance.hasPreviousSignIn())
+    }
 
     func authorize() async throws -> String {
         if let token { return token }
         // Configure-first, `GoogleAuthProvider.presentSignIn`'s reason: the `GIDConfiguration`
         // hand-off lives inside `FirebaseBootstrap`'s configure latch.
         guard isAvailable, FirebaseBootstrap.configureIfPossible(),
-              let user = GIDSignIn.sharedInstance.currentUser,
               let presenter = Self.presenter else {
             throw YouTubeAuthorizerError.unavailable
         }
+        // The async half of `hasPreviousSignIn`, and the reason `isAvailable` can promise anything
+        // after a relaunch: there is no `currentUser` until somebody asks for one. "Attempts to
+        // restore a previous user sign-in without interaction … refreshes tokens if they have
+        // expired" (`GIDSignIn.h:118-124`) — no UI, so it cannot be a hidden consent prompt. A
+        // restore that fails means there is no Google grant left to extend, which is `.unavailable`
+        // and not `.failed`: the affordance should not have been offered.
+        var user = GIDSignIn.sharedInstance.currentUser
+        if user == nil { user = try? await GIDSignIn.sharedInstance.restorePreviousSignIn() }
+        guard let user else { throw YouTubeAuthorizerError.unavailable }
         do {
             if user.grantedScopes?.contains(Self.scope) == true {
                 // Already granted (a previous import, or a re-launch): the SDK's persisted access

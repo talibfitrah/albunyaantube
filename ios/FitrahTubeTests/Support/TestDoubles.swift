@@ -149,7 +149,13 @@ final class SleepRecorder: Sendable {
 /// never asked" is a property a caller's test can break: an Import screen that asks one anyway
 /// gets `.unavailable`, not a silent success.
 @MainActor final class FakeYouTubeAuthorizer: YouTubeAuthorizer {
-    let isAvailable: Bool
+    /// The two SDK facts `GoogleYouTubeAuthorizer.isAvailable` reads, kept APART so the RELAUNCH
+    /// state is expressible: `GIDSignIn.currentUser` is nil on every cold launch, while the
+    /// keychain-backed `hasPreviousSignIn` is not. A fake with one `isAvailable` flag could not
+    /// state the case review C1 found, which is why it now has two.
+    let hasCurrentUser: Bool
+    let hasPreviousSignIn: Bool
+    var isAvailable: Bool { hasCurrentUser || hasPreviousSignIn }
     /// `var`: a suite that needs the SECOND authorization to be refused cannot rebuild the
     /// authorizer mid-flow.
     var error: YouTubeAuthorizerError?
@@ -161,10 +167,11 @@ final class SleepRecorder: Sendable {
 
     private let token: String
 
-    init(token: String = "fake-youtube-access-token", isAvailable: Bool = true,
-         error: YouTubeAuthorizerError? = nil, gate: Gate? = nil) {
+    init(token: String = "fake-youtube-access-token", hasCurrentUser: Bool = true,
+         hasPreviousSignIn: Bool = false, error: YouTubeAuthorizerError? = nil, gate: Gate? = nil) {
         self.token = token
-        self.isAvailable = isAvailable
+        self.hasCurrentUser = hasCurrentUser
+        self.hasPreviousSignIn = hasPreviousSignIn
         self.error = error
         self.gate = gate
     }
