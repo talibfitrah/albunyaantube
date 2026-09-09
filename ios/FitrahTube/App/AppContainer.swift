@@ -274,10 +274,24 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
 
     /// Phase 4 Task 25: `/api/admin/approvals/*` + the submitter-owned registry writes, over the
     /// same signed transport. Role-gated by the BACKEND (`@PreAuthorize("hasAnyRole('ADMIN',
-    /// 'MODERATOR')")`) as well as by the kebab that reaches it, so a fixture container needs no
-    /// special transport here — nothing constructs the screen without the moderator kebab row.
-    private(set) lazy var approvals = ApprovalsClient(transport: authorizedTransport, baseURL: apiBaseURL,
-                                                      deviceId: .persisted(in: userDefaults))
+    /// 'MODERATOR')")`) as well as by the kebab that reaches it.
+    ///
+    /// Fix round 1 / M5: a FIXTURE gets the canned 503, `sync`'s arm below for `sync`'s reason —
+    /// `authorizedTransport` is the ScriptedTransport holding the fixture's four canned `/me`
+    /// bodies, and a page load would both consume slots from that queue and decode an account
+    /// record as a submissions page (`data` absent → an empty list, i.e. a screenshot of the empty
+    /// state whatever the fixture holds). Harmless only while the fixture `/me` says `role: "user"`;
+    /// one role change there and the screenshot rig walks this screen and throws `exhausted`.
+    private(set) lazy var approvals: ApprovalsClient = {
+        #if DEBUG
+        if isFixture {
+            return ApprovalsClient(transport: FixedStatusTransport(status: 503), baseURL: apiBaseURL,
+                                   deviceId: .persisted(in: userDefaults))
+        }
+        #endif
+        return ApprovalsClient(transport: authorizedTransport, baseURL: apiBaseURL,
+                               deviceId: .persisted(in: userDefaults))
+    }()
 
     /// Phase 4 Task 23/24: the ONE sync manager. Cheap to build (no session, no directory, no
     /// network until something triggers it), so `lazy` like every other store here.

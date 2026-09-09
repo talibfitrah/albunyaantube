@@ -59,8 +59,8 @@ nonisolated enum SubmissionStatus: String, Sendable, CaseIterable {
 }
 
 /// One row of My Submissions. Ruling F1: only the fields this screen renders — the DTO also carries
-/// `entityId`, `category`, `youtubeId`, `submittedBy*`, `rejectionReason`, `reviewNotes`, `source`
-/// and a free-form `metadata` map, and nothing here reads any of them.
+/// `entityId`, `category`, `youtubeId`, `submittedBy*`, `rejectionReason`, `source` and a free-form
+/// `metadata` map, and nothing here reads any of them.
 nonisolated struct Submission: Sendable, Equatable, Identifiable {
     var id: String
     var type: SubmissionType
@@ -68,7 +68,24 @@ nonisolated struct Submission: Sendable, Equatable, Identifiable {
     var thumbnailUrl: String?
     var status: SubmissionStatus
     var submitterNote: String?
+    /// The ADMIN's note back to the submitter, not the submitter's own. On the wire since
+    /// `PendingApprovalDto.java:84`, populated on every submissions path by
+    /// `ApprovalService.enrichWithStatusFields` (`:847-853`). Fix round 1 / I3: the brief's field
+    /// list omitted it, which left the one status that asks the user to ACT unable to say what to
+    /// change. Additive, so no consumer of `Submission` had to move.
+    var reviewNotes: String?
     var submittedAt: Date?
+
+    /// The note to render, or nil — Android's gate, verbatim (`MySubmissionAdapter.kt:107`:
+    /// `status == "REQUEST_CHANGES" && !reviewNotes.isNullOrBlank()`). It lives here rather than in
+    /// the row view so the rule is pinned by a test instead of by a `#Preview`: an approved row
+    /// carries the note that BOUNCED it, and showing that under a green "Approved" pill would read
+    /// as a fresh objection. Blank-not-empty, because `isNullOrBlank` trims.
+    var reviewNoteToShow: String? {
+        guard status == .requestChanges, let notes = reviewNotes,
+              !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return notes
+    }
 }
 
 nonisolated struct SubmissionPage: Sendable, Equatable {
@@ -106,8 +123,10 @@ nonisolated struct ApprovalsClient: Sendable {
 
     /// `GET api/admin/approvals/my-submissions?status&cursor&limit` (`ApprovalController.java:156`).
     /// A nil `status` is OMITTED, never sent empty: the controller 400s on a value it cannot parse,
-    /// and "omit for everything" is its documented default. Android never paginates this (limit 100,
-    /// cursor nil, `MySubmissionsRepository.kt:26`); this client accepts a cursor so the screen can.
+    /// and "omit for everything" is its documented default — which is also the branch that does NOT
+    /// paginate (`ApprovalService.getMySubmissions:496,513` routes it to `getMySubmissionsAllStatuses`,
+    /// which takes no cursor and answers `nextCursor = null`). The cursor parameter is still real:
+    /// every SINGLE-status branch pages properly, which is what a status filter would ask for.
     func mySubmissions(status: String?, cursor: String?, limit: Int) async throws(AccountError) -> SubmissionPage {
         var items: [URLQueryItem] = []
         if let status, !status.isEmpty { items.append(URLQueryItem(name: "status", value: status)) }
@@ -171,6 +190,7 @@ nonisolated struct ApprovalsClient: Sendable {
         let thumbnailUrl: String?
         let status: String?
         let submitterNote: String?
+        let reviewNotes: String?
         let submittedAt: FirestoreTimestamp?
     }
 
@@ -209,7 +229,7 @@ nonisolated struct ApprovalsClient: Sendable {
         guard let type = SubmissionType.fromWire(row.type) else { return nil }
         return Submission(id: row.id, type: type, title: row.title, thumbnailUrl: row.thumbnailUrl,
                           status: .fromWire(row.status), submitterNote: row.submitterNote,
-                          submittedAt: row.submittedAt?.date)
+                          reviewNotes: row.reviewNotes, submittedAt: row.submittedAt?.date)
     }
 
     private static func failure(_ response: HTTPResponse) -> AccountError {

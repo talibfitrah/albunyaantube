@@ -13,11 +13,17 @@ nonisolated enum MySubmissionsUiState: Equatable {
 /// cursor, and the ONE outcome table the two submitter-owned writes share.
 @MainActor @Observable final class MySubmissionsViewModel {
 
-    /// Android asks for 100 in one page and never paginates (`MySubmissionsRepository.kt:26`); the
-    /// backend caps `limit` at 100 and defaults to 20. 50 with real pagination behind it costs less
-    /// on the first paint and, unlike Android, cannot silently truncate a prolific submitter's list
-    /// at the hundredth row.
-    static let pageSize = 50
+    /// Android's 100 (`MySubmissionsRepository.kt:23`), and for the same reason: THIS screen asks
+    /// with no `status`, and that is the branch the backend does not paginate. `getMySubmissions`
+    /// treats null/empty/`ALL` as `allStatuses` (`ApprovalService.java:496`) and routes to
+    /// `getMySubmissionsAllStatuses(submittedBy, type, pageSize)` (`:513`), which takes NO cursor,
+    /// merges the four statuses by `submittedAt` desc, truncates to `pageSize` and answers
+    /// `nextCursor = null` (`:563`). So `limit` is the whole reach of this list — asking for 50 shows
+    /// the 50 most recent rows with no affordance for the rest (fix round 1 / I1; the comment here
+    /// used to claim the opposite). The backend caps `limit` at 100, so 100 is also the ceiling.
+    /// The cursor path below stays for the day this screen gains a status filter, which is what
+    /// actually unlocks the server's paginated single-status branches.
+    static let pageSize = 100
 
     private let client: ApprovalsClient
 
@@ -25,6 +31,11 @@ nonisolated enum MySubmissionsUiState: Equatable {
     /// Latched by a failed `loadMore`, read by `PaginationGuard`'s guard 3 — without it a page that
     /// fits the viewport re-fires the same failing request until the attempt cap bites.
     private(set) var paginationError = false
+    /// One page in flight at a time, and the screen's footer spinner. Owned HERE rather than as the
+    /// screen's `@State` (`ContentListView`'s shape) because fix round 1 / I2 gives this list a
+    /// SECOND trigger: a whole frame of `.onAppear`s fires across the last five rows, and the guard
+    /// that makes that cost one page has to sit where both triggers meet.
+    private(set) var isLoadingMore = false
 
     private var cursor: String?
     /// The supersession guard, this codebase's `loadGeneration` idiom (wave-3 D1) rather than
@@ -37,13 +48,20 @@ nonisolated enum MySubmissionsUiState: Equatable {
 
     init(client: ApprovalsClient) { self.client = client }
 
-    /// A full re-read from the top. `.loading` first, exactly as Android does — the rows on screen
-    /// are about to be replaced wholesale and a list that keeps stale rows through a refresh cannot
-    /// show a deletion landing.
+    /// A full re-read from the top.
+    ///
+    /// Fix round 1 / M6: rows already on screen STAY on screen while their own re-read runs — the
+    /// `AccountSession.fetch` precedent (`:323`, "the account ALREADY on screen stays on screen
+    /// while its own refresh runs"). Android paints its skeleton here, but on iOS every caller
+    /// already says a refresh is happening: `.refreshable` spins its own control, and the two
+    /// post-write refreshes come with a banner. Dropping a loaded list to `SkeletonListView` on top
+    /// of that reads as a reload, and it is the same double indicator Part A removed. A `.loading`
+    /// with nothing behind it — first load, or a re-read after the error/empty arm — still paints
+    /// the skeleton, because there the skeleton IS the only indicator.
     func refresh() async {
         generation += 1
         let mine = generation
-        state = .loading
+        if case .loaded = state {} else { state = .loading }
         cursor = nil
         paginationError = false
         do {
@@ -61,9 +79,11 @@ nonisolated enum MySubmissionsUiState: Equatable {
     /// screen's autofill commits its `PaginationGuard` attempt on.
     @discardableResult
     func loadMore() async -> Bool {
-        guard let cursor, !paginationError, case .loaded(let current) = state else { return false }
+        guard let cursor, !paginationError, !isLoadingMore, case .loaded(let current) = state else { return false }
         generation += 1
         let mine = generation
+        isLoadingMore = true
+        defer { isLoadingMore = false }
         do {
             let page = try await client.mySubmissions(status: nil, cursor: cursor, limit: Self.pageSize)
             guard mine == generation else { return true }
@@ -76,6 +96,20 @@ nonisolated enum MySubmissionsUiState: Equatable {
             paginationError = true
         }
         return true
+    }
+
+    /// The PHONE's trigger (fix round 1 / I2). `PaginationGuard`'s guard 1 refuses to autofill on a
+    /// compact width, so the screen's autofill alone never runs on the device most users hold —
+    /// CLAUDE.md asks for the scroll listener AS WELL, which is `ContentListView`'s `>=` threshold
+    /// (`ContentListView.swift:271-281`) and the reason it is `>=` rather than `==`: after a failed
+    /// page the count is unchanged, so an `==` threshold cell has already appeared and scrolling on
+    /// through the tail does nothing.
+    ///
+    /// The last five rows all fire in one frame; `loadMore`'s `isLoadingMore` guard is what makes
+    /// that ONE page rather than five.
+    func rowAppeared(at index: Int) async {
+        guard case .loaded(let rows) = state, index >= max(0, rows.count - 5) else { return }
+        await loadMore()
     }
 
     // MARK: - The two submitter-owned writes

@@ -18,7 +18,6 @@ struct MySubmissionsScreen: View {
     @State private var editing: Submission?
     @State private var confirmingDelete: Submission?
     @State private var paginationGuard = PaginationGuard()
-    @State private var isLoadingMore = false
     /// Geometry *state*, not an event (gate B1-C1), exactly as `ContentListView` keeps it.
     @State private var contentFits = false
 
@@ -93,10 +92,23 @@ struct MySubmissionsScreen: View {
             }
         case .loaded(let rows):
             LazyVStack(spacing: Spacing.md(widthClass)) {
-                ForEach(rows) { row in
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                     SubmissionRow(submission: row, locale: locale,
                                   onEdit: { editing = row },
                                   onDelete: { confirmingDelete = row })
+                        // Fix round 1 / I2: the scroll-driven half. `PaginationGuard`'s guard 1
+                        // refuses to autofill on a compact width, so on a PHONE the autofill below
+                        // never fires and this was a list with no way to reach page two.
+                        // `ContentListView`'s exact threshold; the once-per-page guard lives in
+                        // `loadMore`, so a frame that appears all five costs one page.
+                        .onAppear { Task { await model?.rowAppeared(at: index) } }
+                }
+                if model?.isLoadingMore == true {
+                    ProgressView()
+                        .tint(.brand)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.md(widthClass))
+                        .accessibilityLabel(String(localized: "loading_more"))
                 }
             }
         }
@@ -107,7 +119,7 @@ struct MySubmissionsScreen: View {
     /// commit discipline as `ContentListView.triggerAutoFill` — a rejection still writes the guard
     /// back (guards 2 and 6 renew the budget), only the attempt increment waits for a fetch to start.
     private func triggerAutoFill() {
-        guard !isLoadingMore, let model, case .loaded(let rows) = model.state else { return }
+        guard let model, !model.isLoadingMore, case .loaded(let rows) = model.state else { return }
         var attempt = paginationGuard
         guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: model.hasMore,
                                      paginationError: model.paginationError, contentFits: contentFits,
@@ -115,10 +127,8 @@ struct MySubmissionsScreen: View {
             paginationGuard = attempt
             return
         }
-        isLoadingMore = true
         Task {
             let started = await model.loadMore()
-            isLoadingMore = false
             if started, attempt.generation == paginationGuard.generation { paginationGuard = attempt }
         }
     }
@@ -154,6 +164,17 @@ struct SubmissionRow: View {
                             .font(TypeScale.caption)
                             .foregroundStyle(Color.textSecondary)
                     }
+                }
+                // The ADMIN's note, on the one status that asks the user to act (fix round 1 / I3).
+                // Italic and above the submitter's own note, as Android stacks them
+                // (`item_my_submission.xml:160-173`); no label, and no new key — the text is the
+                // admin's own words.
+                if let reviewNote = submission.reviewNoteToShow {
+                    Text(reviewNote)
+                        .font(TypeScale.body(widthClass))
+                        .italic()
+                        .foregroundStyle(Color.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if let note = submission.submitterNote, !note.isEmpty {
                     Text(String(localized: "my_submissions_submitter_note_label"))
@@ -228,14 +249,36 @@ struct SubmissionRow: View {
 }
 
 #if DEBUG
-#Preview {
-    NavigationStack { MySubmissionsScreen() }
-        .environment(\.container, .sharedFake)
+/// Fix round 1 / M4: the rows, not the screen. `.sharedFake`'s canned `/me` body has no `data` key,
+/// so a preview of the SCREEN paints `EmptyStateView` and never renders a `SubmissionRow` at all —
+/// which is what the RTL preview was supposed to be showing.
+private let previewRows = [
+    Submission(id: "s1", type: .channels, title: "Lecture series", thumbnailUrl: nil,
+               status: .requestChanges, submitterNote: "Please add this series",
+               reviewNotes: "Please add Arabic subtitles before resubmitting.", submittedAt: .now),
+    Submission(id: "s2", type: .videos, title: nil, thumbnailUrl: nil, status: .pending,
+               submitterNote: nil, reviewNotes: nil, submittedAt: .now),
+    // An adjudicated row: no kebab, and its stale review note must NOT show under the green pill.
+    Submission(id: "s3", type: .playlists, title: "Tafsir playlist", thumbnailUrl: nil,
+               status: .approved, submitterNote: nil, reviewNotes: "an earlier bounce", submittedAt: .now)
+]
+
+@ViewBuilder
+private func previewRowStack(_ locale: Locale) -> some View {
+    ScrollView {
+        LazyVStack(spacing: Spacing.md(.compact)) {
+            ForEach(previewRows) { row in
+                SubmissionRow(submission: row, locale: locale, onEdit: {}, onDelete: {})
+            }
+        }
+        .padding(Spacing.md(.compact))
+    }
 }
 
+#Preview { previewRowStack(Locale(identifier: "en")) }
+
 #Preview("RTL") {
-    NavigationStack { MySubmissionsScreen() }
-        .environment(\.container, .sharedFake)
+    previewRowStack(Locale(identifier: "ar"))
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }

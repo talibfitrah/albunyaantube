@@ -109,8 +109,8 @@ struct MySubmissionsViewModelTests {
         #expect(transport.sent[1].url.path() == "/api/admin/registry/videos/s1/submission")
     }
 
-    /// Anything else does NOT re-read: nothing about the list changed, and a refresh here would
-    /// replace the rows the user is looking at with a skeleton for no reason.
+    /// Anything else does NOT re-read: the write never happened, so nothing about the list changed
+    /// and a refresh would spend a request to paint the same rows.
     @Test func aFailedDeleteSaysSoAndLeavesTheListAlone() async throws {
         let (model, transport) = self.model([.json(200, Self.page(["s1"])), .json(500, "")])
         await model.refresh()
@@ -171,8 +171,12 @@ struct MySubmissionsViewModelTests {
 
         #expect(ids(model) == ["s1", "s2", "s3"])
         #expect(!model.hasMore)
+        // Fix round 1 / I1: 100, Android's reach (`MySubmissionsRepository.kt:23`). With no
+        // `status`, `limit` is the ENTIRE reach of this list — the backend's all-statuses branch
+        // takes no cursor and answers `nextCursor = null` — so 50 showed a prolific submitter the
+        // 50 most recent rows and nothing else.
         #expect(transport.sent.map { $0.url.query() }
-            == ["limit=50", "cursor=c2&limit=50", "cursor=c3&limit=50"])
+            == ["limit=100", "cursor=c2&limit=100", "cursor=c3&limit=100"])
     }
 
     /// A failed page keeps the rows it has and latches `paginationError`, which is
@@ -191,6 +195,62 @@ struct MySubmissionsViewModelTests {
                                              paginationError: model.paginationError, contentFits: true,
                                              itemCount: 1)
         #expect(!refused, "guard 3 refuses the retry storm a fits-on-screen page would otherwise start")
+    }
+
+    /// **Fix round 1 / I2.** `PaginationGuard`'s guard 1 refuses to autofill on a compact width, so
+    /// the autofill above is the half that never runs on a PHONE: page two was unreachable on the
+    /// device most users hold. `ContentListView`'s threshold is the other half CLAUDE.md asks for
+    /// ("autofill as well as the scroll listener"), and it lives on the ViewModel because a whole
+    /// frame of `.onAppear`s must cost ONE page — with five rows firing at once, four of them have
+    /// to bounce off an in-flight guard, and `SwiftUI`'s `.onAppear` is not something a unit test
+    /// can drive.
+    @Test func aRowNearTheEndPagesOnAPhoneAndAWholeFrameOfThemCostsOnePage() async {
+        let (model, transport) = self.model([.json(200, Self.page(["s1", "s2", "s3", "s4", "s5", "s6"],
+                                                                  nextCursor: "c2")),
+                                             .json(200, Self.page(["s7"]))])
+        await model.refresh()
+        #expect(ids(model).count == 6)
+
+        // Six rows: the threshold is index 1, so a row above it asks for nothing.
+        await model.rowAppeared(at: 0)
+        #expect(transport.sent.count == 1, "a row above the threshold must not page")
+
+        // The last five, all in one frame — spawned before this test yields, exactly as SwiftUI
+        // hands a screenful of `.onAppear`s to the MainActor. No `Gate` and no park: whichever task
+        // wins the actor sets `isLoadingMore` before its first `await`, so the other four bounce
+        // whatever the order. A parked variant would HANG for the full 60 s time limit the day the
+        // threshold regresses, instead of failing in a millisecond on the count below.
+        let frame = (1...5).map { index in Task { await model.rowAppeared(at: index) } }
+        for task in frame { await task.value }
+
+        #expect(transport.sent.count == 2, "five appearances in one frame cost exactly one page")
+        #expect(ids(model) == ["s1", "s2", "s3", "s4", "s5", "s6", "s7"])
+        #expect(!model.paginationError, "a second page would have found the queue dry")
+        #expect(!model.isLoadingMore)
+    }
+
+    // MARK: - Refresh
+
+    /// **Fix round 1 / M6.** A refresh with rows already on screen keeps them: `.refreshable` spins
+    /// its own control and both post-write refreshes come with a banner, so replacing the list with
+    /// `SkeletonListView` underneath either is a second indicator for one event. The
+    /// `AccountSession.fetch` precedent (`:323`). A first load still paints the skeleton — there it
+    /// is the only indicator — which the `.loading` assertion in the four-arms test above pins.
+    @Test func aRefreshKeepsTheRowsOnScreenWhileItIsInFlight() async {
+        let gate = Gate()
+        let transport = ScriptedTransport([.json(200, Self.page(["s1"])), .json(200, Self.page(["s2"]))],
+                                          park: { index in if index == 2 { await gate.block() } })
+        let model = makeModel(transport)
+        await model.refresh()
+        #expect(ids(model) == ["s1"])
+
+        let second = Task { await model.refresh() }
+        await gate.waitUntilBlocked()
+        #expect(ids(model) == ["s1"], "the rows stay rendered while their own re-read is in flight")
+
+        await gate.release()
+        await second.value
+        #expect(ids(model) == ["s2"])
     }
 
     /// Android's single-flight `refreshJob` (`MySubmissionsViewModel.kt:44-47`): a delete's refresh

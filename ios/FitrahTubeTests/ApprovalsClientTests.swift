@@ -135,6 +135,40 @@ struct ApprovalsClientTests {
         #expect(page.items.map(\.type) == [.channels, .playlists])
     }
 
+    // MARK: - The admin's review note (fix round 1 / I3)
+
+    /// `reviewNotes` is the ADMIN's note back to the submitter, and the brief's field list omitted
+    /// it — so a "Changes requested" row said which VERDICT it got and never which changes.
+    /// It is on the wire (`PendingApprovalDto.java:84`, populated by
+    /// `ApprovalService.enrichWithStatusFields:847-853`) and Android renders it for exactly one
+    /// status (`MySubmissionAdapter.kt:107`).
+    ///
+    /// Two halves, both pinned: the DECODE (the field arrives on every row that has one) and the
+    /// GATE (`status == REQUEST_CHANGES && !reviewNotes.isNullOrBlank()`). The gate matters on the
+    /// approved row: it still carries the note that bounced it once, and rendering that under a
+    /// green "Approved" pill would read as a fresh objection.
+    @Test func theAdminsReviewNoteDecodesAndOnlyShowsOnARequestChangesRow() async throws {
+        func row(_ id: String, _ status: String, _ notes: String) -> String {
+            """
+            {"id":"\(id)","type":"VIDEO","title":"Lecture","status":"\(status)",
+             "submitterNote":"why","reviewNotes":\(notes)}
+            """
+        }
+        let (client, _) = self.client([.json(200, Self.page([
+            row("s1", "REQUEST_CHANGES", #""Please add Arabic subtitles before resubmitting.""#),
+            row("s2", "APPROVED", #""an earlier bounce""#),
+            row("s3", "REQUEST_CHANGES", #""   ""#),
+            row("s4", "REQUEST_CHANGES", "null")
+        ]))])
+
+        let page = try await client.mySubmissions(status: nil, cursor: nil, limit: 100)
+
+        #expect(page.items.map(\.reviewNotes)
+            == ["Please add Arabic subtitles before resubmitting.", "an earlier bounce", "   ", nil])
+        #expect(page.items.map(\.reviewNoteToShow)
+            == ["Please add Arabic subtitles before resubmitting.", nil, nil, nil])
+    }
+
     // MARK: - Request shapes
 
     @Test func theListQueryCarriesStatusCursorAndLimit() async throws {

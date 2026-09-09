@@ -128,6 +128,36 @@ struct AppContainerTests {
         #expect(container.meFeed.weeks.isEmpty)
     }
 
+    /// Fix round 1 / M3 + M5, one row for both halves of `approvals`' transport.
+    ///
+    /// M3: nothing pinned that this client got the SIGNED transport. `ApprovalsClient` deliberately
+    /// mints no `Authorization` header of its own (`everyRequestCarriesTheDeviceIdAndNothingMints
+    /// ItsOwnToken`) and delegates the Bearer to `AuthorizedTransport`, so a typo handing it a bare
+    /// `URLSessionTransport()` would have failed no test and every request would have gone out
+    /// unsigned. Reflected rather than exposed: `transport` is `private` on every hand-written
+    /// client here, and one test is not a reason to widen three of them.
+    ///
+    /// M5: a FIXTURE gets the canned 503 instead, `sync`'s arm for `sync`'s reason — sharing
+    /// `authorizedTransport` there means drinking from the four canned `/me` bodies the screenshot
+    /// rig's account screens need.
+    @Test func theApprovalsClientIsSignedInProductionAndCannedInAFixture() async throws {
+        let fixture = AppContainer.fake()
+        let page = try? await fixture.approvals.mySubmissions(status: nil, cursor: nil, limit: 100)
+        #expect(page == nil, "a fixture must answer the canned 503, not a decoded account record")
+        let me = try await fixture.account.me()
+        #expect(me.uid == "fake-uid", "…and must leave the four-slot `/me` queue intact")
+
+        let production = AppContainer(catalog: FakeCatalogClient(),
+                                      modelContainer: AppContainer.makeModelContainer(inMemory: true),
+                                      apiBaseURL: URL(string: "https://api.fitrah.test/")!,
+                                      browse: FakeBrowseSource(),
+                                      auth: FakeAuthClient(state: .signedOut))
+        let transport = Mirror(reflecting: production.approvals)
+            .children.first { $0.label == "transport" }?.value
+        #expect(transport is AuthorizedTransport,
+                "the approvals client must be built over the signed transport")
+    }
+
     /// The transport posts from whatever isolation the request ran on; the center buffers one event
     /// and hands it over exactly once, so a re-render cannot route the user twice.
     ///
