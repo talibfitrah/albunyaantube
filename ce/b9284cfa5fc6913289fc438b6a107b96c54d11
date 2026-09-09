@@ -1,0 +1,48 @@
+ios/FitrahTube/Sync/SyncManager.swift
+  s_66ddb7c44de816::t_a715eb37e3ca7d 214
+  s_66ddb7c44de816::t_685e43b65f1713 1-29,31-52,59-127,159-213,215-237,246-271,273,275-311,318-332,334-369,371-396,489-531,533-607,609-658,662-750
+  s_66ddb7c44de816::t_9c54bfc6658026 53-58
+  s_66ddb7c44de816::t_1024151a8de9ae 238-245
+  s_66ddb7c44de816::t_da55c15627ae0b 397-488
+  s_66ddb7c44de816::t_a1e59f8d5ab5e8 128-158
+  s_66ddb7c44de816::t_5541396330f900 272,274,312-317,333,370,608,659-661
+  s_66ddb7c44de816::t_a8c7723228db03 30
+  s_66ddb7c44de816::t_2cfd6fc97fbb15 532
+ios/FitrahTubeTests/SyncMutexTests.swift
+  s_66ddb7c44de816::t_cb36014f99bc5d 1-261
+ios/FitrahTubeTests/SyncManagerTests.swift
+  s_66ddb7c44de816::t_dfbe8342241c8b 317-321,323-328
+  s_66ddb7c44de816::t_e8eeb2546df13a 1-201,205-241,244,249-290,292,296-298,300-301,307-308,312-316,329-619
+  s_66ddb7c44de816::t_3676070693ee02 242-243,245-248
+  s_66ddb7c44de816::t_8438490b8b282b 202-204
+  s_66ddb7c44de816::t_903678d78642cb 291,293-295,299,302-306,309-311,322
+ios/FitrahTube/Catalog/SubscriptionsStore.swift
+  s_66ddb7c44de816::t_18b39281eef601 167-173,175
+ios/FitrahTube/Catalog/SavedPlaylistsStore.swift
+  s_66ddb7c44de816::t_922eaae3c1757c 163-165,167
+ios/FitrahTubeTests/SyncDecisionTests.swift
+  s_66ddb7c44de816::t_a0a1204cd7b08e 164-188
+ios/FitrahTubeTests/LocalAccountWiperTests.swift
+  s_66ddb7c44de816::t_0dbb50185f116a 120-137
+ios/FitrahTube/Sync/SyncDecisions.swift
+  s_66ddb7c44de816::t_915241fbda7cd1 102-125,127-130
+  s_66ddb7c44de816::t_5541396330f900 126
+ios/FitrahTube/Features/Auth/LocalAccountWiper.swift
+  s_66ddb7c44de816::t_9a11e1f81a1592 75-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ceb9284cfa5fc6913289fc438b6a107b96c54d11",
+  "prompts": {},
+  "sessions": {
+    "s_66ddb7c44de816": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c3033a-e946-4efb-b1f3-32895944d07d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
