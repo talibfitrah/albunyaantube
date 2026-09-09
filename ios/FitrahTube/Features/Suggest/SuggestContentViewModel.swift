@@ -152,6 +152,24 @@ nonisolated enum SuggestUiState: Equatable {
         activeFilter == .all ? allItems : allItems.filter { $0.type == activeFilter }
     }
 
+    // MARK: - Submitted rows
+
+    /// Fix round 1 / M1. A row whose submit LANDED is in the registry now, so it must stop offering
+    /// the `+` — a second tap would 409, which is exactly the affordance RULING 28 refuses, one tap
+    /// later. The screen reports the target the sheet actually sent (nil on any failure) and the row
+    /// is stamped in place: no re-search, and the badge is decided by the same `SubmissionStatus`
+    /// table `SuggestResultRow.badgeKey` reads for every other row.
+    ///
+    /// The TYPE is part of the match, not just the id: a `SubmitTarget` names a registry collection
+    /// as well as an id, and stamping by id alone would mark a row this submit never touched.
+    func markSubmitted(_ target: SubmitTarget) {
+        guard let index = allItems.firstIndex(where: {
+            $0.youtubeId == target.youtubeId && $0.submitTarget?.type == target.type
+        }) else { return }
+        allItems[index].registryState = SubmissionStatus.pending.rawValue
+        if case .results = state { state = .results(filtered) }
+    }
+
     // MARK: - Pagination
 
     /// The next page, appended. Answers whether a fetch was actually STARTED, which is what the

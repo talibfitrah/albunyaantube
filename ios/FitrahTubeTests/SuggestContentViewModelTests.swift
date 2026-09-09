@@ -29,6 +29,11 @@ struct SuggestContentViewModelTests {
         """
     }
 
+    private static func item(_ id: String, _ type: SuggestType, registryState: String? = nil) -> SuggestItem {
+        SuggestItem(youtubeId: id, type: type, title: "Tafsir \(id)", thumbnailUrl: nil,
+                    channelTitle: "Alafasy", registryState: registryState)
+    }
+
     private static func page(_ hits: [(String, String)], nextPageToken: String? = nil) -> String {
         let token = nextPageToken.map { "\"\($0)\"" } ?? "null"
         return """
@@ -297,6 +302,11 @@ struct SuggestContentViewModelTests {
     /// Ruling C13, the same walk `MainShellRoutingTests` does: every arm resolves to a real view,
     /// the error arm to a real `ErrorStateView` with a retry — and the rate-limited arm to a state
     /// view with NO retry button, because a Retry into a rate limit is an invitation to hammer it.
+    ///
+    /// Fix round 1 / M2: `.results([])` is REACHABLE — the backend answers videos only and the user
+    /// taps the Playlists chip — and it used to send an empty `LazyVStack` to the screen, i.e. the
+    /// chips row above a blank pane with no message. An empty slice is an empty RESULT, so it says
+    /// what the `.empty` arm says.
     @Test func everyStateArmRendersARealViewAndOnlyTheErrorArmOffersRetry() {
         let screen = SuggestContentScreen()
         #expect(leafTypeName(of: screen.stateView(.idle)) == "EmptyStateView")
@@ -304,7 +314,10 @@ struct SuggestContentViewModelTests {
         #expect(leafTypeName(of: screen.stateView(.empty)) == "EmptyStateView")
         #expect(leafTypeName(of: screen.stateView(.rateLimited(90))) == "EmptyStateView")
         #expect(leafTypeName(of: screen.stateView(.error(messageKey: "suggest_error_network"))) == "ErrorStateView")
-        #expect(leafTypeName(of: screen.stateView(.results([]))).hasPrefix("LazyVStack"))
+        #expect(leafTypeName(of: screen.stateView(.results([]))) == "EmptyStateView",
+                "a chip that filters everything out is not a blank pane")
+        #expect(leafTypeName(of: screen.stateView(.results([Self.item(Self.video, .videos)])))
+                    .hasPrefix("LazyVStack"))
     }
 
     /// `SuggestResultsAdapter.kt:30-35` over Task 25's `SubmissionStatus` (Task 26 concern 4 —
@@ -319,6 +332,34 @@ struct SuggestContentViewModelTests {
         #expect(SuggestResultRow.badgeKey("REJECTED") == "suggest_already_rejected")
         #expect(SuggestResultRow.badgeKey("SOMETHING_NEW") == "suggest_already_pending",
                 "a value this build cannot name is still IN the registry — never a Submit button")
+    }
+
+    /// Fix round 1 / M1. A row that was just submitted IS in the registry, so it must stop offering
+    /// the `+` that would 409 on a second tap — RULING 28's affordance rule, one tap later. The
+    /// screen reports the target the sheet actually sent and the row is stamped in place: no
+    /// re-search, and the badge is decided by the same `SubmissionStatus` table every other row uses.
+    @Test func aSubmittedRowSwapsItsPlusForThePendingBadgeWithoutAResearch() async {
+        let (model, transport, _) = self.model([.json(200, Self.page([(Self.video, "VIDEO"),
+                                                                      (Self.channel, "CHANNEL")]))])
+        model.query = "tafsir"
+        await model.searchTask?.value
+        #expect(items(model).allSatisfy { $0.registryState == nil }, "both rows offer Submit")
+
+        // A `SubmitTarget` names a registry COLLECTION as well as an id, so a target whose type
+        // this row does not carry is not this row — stamping by id alone would mark a row the
+        // submit never touched.
+        model.markSubmitted(SubmitTarget(type: .playlists, youtubeId: Self.channel))
+        #expect(items(model).allSatisfy { $0.registryState == nil },
+                "another collection's target leaves every row alone, id match or not")
+
+        model.markSubmitted(SubmitTarget(type: .videos, youtubeId: Self.video))
+
+        let rows = items(model)
+        #expect(rows.first?.registryState == SubmissionStatus.pending.rawValue)
+        #expect(SuggestResultRow.badgeKey(rows.first?.registryState) == "suggest_already_pending",
+                "the submitted row carries the badge instead of the button that would 409")
+        #expect(rows.last?.registryState == nil, "and nothing else on the page moves")
+        #expect(transport.sent.count == 1, "stamped in place — never a second search")
     }
 
     // MARK: - `SubmitContentSheet`
@@ -389,9 +430,11 @@ struct SuggestContentViewModelTests {
         model.categoryId = "cat-1"
         model.note = "Great tafsir series"
 
-        let message = await model.submit()
+        let (message, submitted) = await model.submit()
 
         #expect(message == String(localized: "submit_content_success"))
+        #expect(submitted == SubmitTarget(type: .videos, youtubeId: Self.video),
+                "the caller is told WHICH row landed, so the screen can stamp it (fix round 1 / M1)")
         let request = try #require(transport.sent.first)
         #expect(request.method == "POST")
         #expect(request.url.path() == "/api/admin/registry/videos", "the HIT's own type is the path")
@@ -411,14 +454,16 @@ struct SuggestContentViewModelTests {
             let (model, _) = sheet([response])
             model.url = "https://youtu.be/\(Self.video)"
             model.categoryId = "cat-1"
-            #expect(await model.submit() == expected)
+            let (message, submitted) = await model.submit()
+            #expect(message == expected)
+            #expect(submitted == nil, "a failed submit stamps nothing")
         }
 
         // 429: Android renders the wait in whole hours, rounded UP (`:120`).
         let (limited, _) = sheet([.json(429, "{\"retryAfterSeconds\":3601}")])
         limited.url = "https://youtu.be/\(Self.video)"
         limited.categoryId = "cat-1"
-        let message = await limited.submit()
+        let message = await limited.submit().message
         #expect(message.hasPrefix("Daily submission limit reached"))
         #expect(message.contains("2"), "3601 s rounds up to two hours, never down to one")
     }
@@ -435,8 +480,29 @@ struct SuggestContentViewModelTests {
         #expect(model.url.isEmpty, "the sheet never puts a YouTube URL on screen")
 
         model.categoryId = "cat-1"
-        #expect(await model.submit() == String(localized: "submit_content_success"))
+        #expect(await model.submit().message == String(localized: "submit_content_success"))
         let request = try #require(transport.sent.first)
         #expect(request.url.path() == "/api/admin/registry/channels")
+    }
+
+    /// Fix round 1 / I2. `/categories` failing — or the app being launched straight into
+    /// Me -> Suggest before any catalog screen ran — left the picker a `Menu` with zero rows, so
+    /// `canSubmit` could never become true and the Submit button was permanently disabled with
+    /// nothing on screen saying why: RULING 28 inverted. An empty list is a FAILURE the sheet
+    /// states, with the retry that re-fetches it.
+    @Test func anEmptyCategoryListSaysSoAndOffersARetryInsteadOfADeadPicker() {
+        let (model, _) = sheet([])
+        let view = SubmitContentSheet(onFinish: { _, _ in })
+
+        #expect(leafTypeName(of: view.categoryField(model, [])) == "ErrorStateView",
+                "an empty picker is a failure with a retry, never a silent dead end")
+        model.url = "https://youtu.be/\(Self.video)"
+        #expect(!model.canSubmit, "and Submit stays dead — now with the reason visible")
+
+        let category = Category(id: "cat-1", name: "Tafsir", slug: "tafsir", parentId: nil)
+        #expect(leafTypeName(of: view.categoryField(model, [category])).hasPrefix("LabelledField"),
+                "a retry that succeeds puts the picker back")
+        model.categoryId = category.id
+        #expect(model.canSubmit)
     }
 }

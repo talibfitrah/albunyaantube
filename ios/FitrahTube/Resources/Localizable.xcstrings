@@ -732,20 +732,20 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign-in credential is invalid or expired"
+            "state": "translated",
+            "value": "سجّل الدخول مرة أخرى للمتابعة"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sign-in credential is invalid or expired"
+            "value": "Sign in again to continue"
           }
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign-in credential is invalid or expired"
+            "state": "translated",
+            "value": "Log opnieuw in om door te gaan"
           }
         }
       }

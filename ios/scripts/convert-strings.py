@@ -110,7 +110,14 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # sign-in. Refused here and re-authored under EXTRA_KEYS with no argument at all: 401 now
           # takes the Part A sign-in copy (`auth_error_invalid_credential`) in
           # `SuggestContentViewModel.failureState`, and every other status takes this one.
-          "suggest_error_server"}
+          "suggest_error_server",
+          # Task 27 fix round / I1: the key that 401 arm lands on. Android's "Sign-in credential is
+          # invalid or expired" is English-only there, so ar and nl shipped it `needs_review`
+          # carrying the ENGLISH sentence -- an Arabic moderator whose token expired read English
+          # from both renderers (`AuthErrorCode.messageKey` -> `SignInScreen`'s banner, and
+          # `SuggestContentViewModel.failureState`). Refused here and re-authored under EXTRA_KEYS
+          # in all three locales; the copy also moves from the credential's STATE to WHAT to do.
+          "auth_error_invalid_credential"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -808,6 +815,15 @@ EXTRA_KEYS = {
         "en": "Search is unavailable right now",
         "ar": "البحث غير متاح حاليًا",
         "nl": "Zoeken is nu niet beschikbaar",
+    },
+    # Task 27 fix round / I1: the REFUSED `auth_error_invalid_credential`, re-authored. Android's
+    # value ("Sign-in credential is invalid or expired") is English-only, so ar/nl rendered English
+    # on every screen that shows it. WHAT, never WHY: what the reader has to do, not the state of
+    # the credential -- which is also the only half of it they can act on.
+    "auth_error_invalid_credential": {
+        "en": "Sign in again to continue",
+        "ar": "سجّل الدخول مرة أخرى للمتابعة",
+        "nl": "Log opnieuw in om door te gaan",
     },
 }
 

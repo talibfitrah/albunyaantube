@@ -66,11 +66,17 @@ nonisolated enum MySubmissionsUiState: Equatable {
     /// 500, a malformed page — still goes to `.error`, because those say the rows on screen may be
     /// exactly what is wrong. With nothing loaded, `.network` fails to `.error` as before: there the
     /// error card is the only thing on screen.
+    ///
+    /// Fix round 1 / M3: the cursor is cleared before the request (this IS a re-read from the top),
+    /// so the arm that keeps the rows has to put it back — otherwise `loadMore`'s `guard let cursor`
+    /// fails and the surviving list is stranded on page one until a refresh succeeds. The rows and
+    /// the cursor they were paged with travel together or not at all.
     @discardableResult
     func refresh() async -> String? {
         generation += 1
         let mine = generation
         if case .loaded = state {} else { state = .loading }
+        let previousCursor = cursor
         cursor = nil
         paginationError = false
         do {
@@ -81,6 +87,7 @@ nonisolated enum MySubmissionsUiState: Equatable {
         } catch {
             guard mine == generation else { return nil }
             if error == .network, case .loaded = state {
+                cursor = previousCursor
                 return String(localized: "auth_error_network")
             }
             state = .error

@@ -268,4 +268,27 @@ struct LocalizationTests {
         #expect(try Self.lproj("ar").localizedString(forKey: "share_app_promo", value: nil, table: nil)
                     .hasPrefix("احصل على"))
     }
+
+    /// Task 27 fix round / I1. `auth_error_invalid_credential` is the key BOTH the sign-in banner
+    /// (`AuthErrorCode.messageKey` -> `SignInScreen`) and the Suggest screen's 401 arm
+    /// (`SuggestContentViewModel.failureState`) render, and it shipped from Part A `needs_review` in
+    /// ar and nl carrying the ENGLISH sentence — so an Arabic moderator whose token expired read
+    /// English. Re-authored through the converter, WHAT not WHY: what to do (sign in again), never
+    /// the credential mechanics.
+    @Test func theExpiredSignInCopyIsRealArabicAndDutchAndSaysWhatToDo() throws {
+        let english = try Self.lproj("en").localizedString(forKey: "auth_error_invalid_credential",
+                                                           value: nil, table: nil)
+        #expect(english == "Sign in again to continue", "WHAT to do, not the credential's state")
+        for locale in ["ar", "nl"] {
+            let value = try Self.lproj(locale).localizedString(forKey: "auth_error_invalid_credential",
+                                                               value: nil, table: nil)
+            #expect(value != english, "\(locale) renders the English sentence")
+            #expect(Self.bannedStem(in: value) == nil, "\(locale) carries a banned stem: \(value)")
+        }
+        // The exact re-authored verbs, so a revert to the English sentence is a named failure.
+        #expect(try Self.lproj("ar").localizedString(forKey: "auth_error_invalid_credential",
+                                                     value: nil, table: nil).hasPrefix("سجّل الدخول"))
+        #expect(try Self.lproj("nl").localizedString(forKey: "auth_error_invalid_credential",
+                                                     value: nil, table: nil).hasPrefix("Log opnieuw in"))
+    }
 }

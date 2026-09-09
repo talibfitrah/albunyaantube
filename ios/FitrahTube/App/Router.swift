@@ -41,6 +41,15 @@ nonisolated enum ReselectAction: Equatable {
     // `ScrollView` above up to five favourite rows, so it is not the static card this comment used
     // to claim it was).
     var scrollToTopSignal: ScrollToTopSignal?
+    /// Task 27 fix round / M7: bumped when a submission is created from a screen that is NOT My
+    /// Submissions. `MySubmissionsScreen` re-reads on a change, so the row is there when the user
+    /// gets back to it -- the same re-read the **+** ON that screen already does for its own sheet,
+    /// reaching the sibling route that has its own ViewModel and cannot be called into directly.
+    /// Cross-screen state on the router, `pendingBanner`'s precedent.
+    ///
+    /// A TOKEN, not a `Bool`: `.onChange` needs a value that actually changes, so two consecutive
+    /// submits are two refreshes rather than one silently dropped (`scrollToTopSignal`'s reason).
+    private(set) var submissionsToken = 0
 
     private var shellIsReady = false
 
@@ -52,6 +61,9 @@ nonisolated enum ReselectAction: Equatable {
     func push(_ route: Route) {
         paths[selectedTab, default: []].append(route)
     }
+
+    /// See `submissionsToken`.
+    func submissionsChanged() { submissionsToken += 1 }
 
     /// Shared tap handler for the bottom `TabView` and the leading `NavigationRailView` (task-7b)
     /// -- switching tabs assigns directly; tapping the already-selected tab reselects (pop to

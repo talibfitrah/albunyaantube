@@ -11,6 +11,7 @@ struct SuggestContentScreen: View {
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
+    @Environment(\.router) private var router
 
     @State private var model: SuggestContentViewModel?
     @State private var banner: BannerMessage?
@@ -41,9 +42,16 @@ struct SuggestContentScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .transientBanner($banner)
         .sheet(item: $submitting) { hit in
-            SubmitContentSheet(hit: hit) { message in
+            SubmitContentSheet(hit: hit) { message, submitted in
                 submitting = nil
                 banner = BannerMessage(text: message)
+                // Fix round 1 / M1: the row that landed stops offering the `+` that would now 409.
+                // Fix round 1 / M7: and My Submissions re-reads if it is on the stack — the **+**
+                // on that screen already does, because it is the screen showing the result.
+                if let submitted {
+                    model?.markSubmitted(submitted)
+                    router.submissionsChanged()
+                }
             }
         }
         .task {
@@ -90,9 +98,12 @@ struct SuggestContentScreen: View {
         case .loading:
             SkeletonListView()
         case .empty:
-            EmptyStateView(systemImage: "magnifyingglass",
-                           message: Format.localizedFormat("suggest_empty_results", locale: locale,
-                                                           model?.lastQuery ?? ""))
+            noResults
+        // Fix round 1 / M2: reachable — the backend answers videos only and the user taps the
+        // Playlists chip. It used to be an empty `LazyVStack`, i.e. the chips row above a blank
+        // pane. An empty slice of a page is an empty RESULT, and says what the `.empty` arm says.
+        case .results(let hits) where hits.isEmpty:
+            noResults
         case .rateLimited:
             // No Retry. A retry button on a rate limit is an invitation to hammer the thing that
             // is rate-limiting you, so this arm states the situation and stops there — which is
@@ -122,6 +133,14 @@ struct SuggestContentScreen: View {
                 }
             }
         }
+    }
+
+    /// The copy both empty arms render: the query it was asked for is the only thing it can name
+    /// (`suggest_empty_results` is `No results for "%1$@"`).
+    private var noResults: EmptyStateView {
+        EmptyStateView(systemImage: "magnifyingglass",
+                       message: Format.localizedFormat("suggest_empty_results", locale: locale,
+                                                       model?.lastQuery ?? ""))
     }
 
     /// CLAUDE.md's pagination rule, large-screen half. Same commit discipline as

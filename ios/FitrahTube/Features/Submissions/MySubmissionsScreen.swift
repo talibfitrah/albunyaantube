@@ -12,6 +12,7 @@ struct MySubmissionsScreen: View {
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
+    @Environment(\.router) private var router
 
     @State private var model: MySubmissionsViewModel?
     @State private var banner: BannerMessage?
@@ -54,11 +55,17 @@ struct MySubmissionsScreen: View {
         }
         .transientBanner($banner)
         .sheet(isPresented: $suggesting) {
-            SubmitContentSheet { message in
+            SubmitContentSheet { message, _ in
                 suggesting = false
                 banner = BannerMessage(text: message)
                 Task { _ = await model?.refresh() }
             }
+        }
+        // Fix round 1 / M7: a submit made from the Suggest screen — a sibling route with its own
+        // ViewModel — re-reads this list if it is on the stack, which is what the **+** above
+        // already does for its own sheet.
+        .onChange(of: router.submissionsToken) { _, _ in
+            Task { _ = await model?.refresh() }
         }
         .sheet(item: $editing) { row in
             if let model {

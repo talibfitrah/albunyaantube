@@ -126,4 +126,20 @@ struct RouterTests {
 
         #expect(observedChange)
     }
+
+    /// Task 27 fix round / M7. A submit made from the Suggest screen has to reach My Submissions,
+    /// which is a SIBLING route with its own ViewModel — the **+** ON that screen already refreshes,
+    /// because it is the screen showing the result. A TOKEN, not a flag, for `scrollToTopSignal`'s
+    /// reason: `.onChange` needs a value that actually changes, so two consecutive submits are two
+    /// refreshes rather than one silently dropped.
+    @Test func everySubmissionMadeElsewhereIsItsOwnRefreshToken() {
+        let router = Router()
+        var seen = [router.submissionsToken]
+        router.submissionsChanged()
+        seen.append(router.submissionsToken)
+        router.submissionsChanged()
+        seen.append(router.submissionsToken)
+
+        #expect(Set(seen).count == 3, "a Bool would collapse the second submit into no refresh")
+    }
 }

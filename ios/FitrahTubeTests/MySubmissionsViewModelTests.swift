@@ -257,14 +257,24 @@ struct MySubmissionsViewModelTests {
     /// message to banner — `AccountSession.fetch`'s `.network where … state.me != nil` precedent
     /// (`:369`, "a cached account beats an offline banner"). With nothing loaded it still fails to
     /// `.error`, because there the error card is the only thing on screen.
+    ///
+    /// Fix round 1 / M3: `refresh()` clears the cursor before its request, so the arm that KEEPS the
+    /// rows used to strand them — `loadMore`'s `guard let cursor` failed and the surviving list
+    /// could not page further until a refresh succeeded. The cursor the rows were paged with is
+    /// restored with them.
     @Test func aNetworkFailureKeepsTheRowsAndBannersInsteadOfBlankingTheList() async {
-        let (model, _) = self.model([.json(200, Self.page(["s1"])),
-                                     .failing(URLError(.notConnectedToInternet))])
+        let (model, transport) = self.model([.json(200, Self.page(["s1"], nextCursor: "c2")),
+                                             .failing(URLError(.notConnectedToInternet)),
+                                             .json(200, Self.page(["s2"]))])
         await model.refresh()
         let message = await model.refresh()
 
         #expect(ids(model) == ["s1"], "a stall does not cost the user what they were reading")
         #expect(message == String(localized: "auth_error_network"))
+        #expect(model.hasMore, "the rows keep the cursor they were paged with")
+        #expect(await model.loadMore(), "and the surviving list can still reach page two")
+        #expect(ids(model) == ["s1", "s2"])
+        #expect(transport.sent.count == 3)
 
         let (cold, _) = self.model([.failing(URLError(.notConnectedToInternet))])
         #expect(await cold.refresh() == nil, "nothing on screen: the error arm IS the message")

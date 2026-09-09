@@ -57,25 +57,29 @@ extension SubmissionType {
 
     var canSubmit: Bool { target != nil && categoryId != nil && !submitting }
 
-    /// Returns the message the caller banners. `POST api/admin/registry/{type}` — 201 new, 200 a
-    /// re-submit of an admin-bounced row, 409 already in the registry, 429 the daily cap.
-    func submit() async -> String {
+    /// Returns the message the caller banners, plus — on SUCCESS only — the target that landed.
+    /// `POST api/admin/registry/{type}` — 201 new, 200 a re-submit of an admin-bounced row, 409
+    /// already in the registry, 429 the daily cap.
+    ///
+    /// Fix round 1 / M1: the target travels back in the RESULT rather than as a second read off the
+    /// model, so the screen that opened the sheet cannot stamp a row on an outcome that failed.
+    func submit() async -> (message: String, submitted: SubmitTarget?) {
         guard let target, let categoryId, !submitting else {
-            return String(localized: "submit_content_error_generic")
+            return (String(localized: "submit_content_error_generic"), nil)
         }
         submitting = true
         defer { submitting = false }
         do {
             try await client.submit(type: target.type, youtubeId: target.youtubeId,
                                     note: note.isEmpty ? nil : note, categoryIds: [categoryId])
-            return String(localized: "submit_content_success")
+            return (String(localized: "submit_content_success"), target)
         } catch AccountError.conflict {
-            return String(localized: "submit_content_conflict")
+            return (String(localized: "submit_content_conflict"), nil)
         } catch AccountError.rateLimited(let seconds) {
-            return Format.localizedFormat("submit_content_rate_limited", locale: locale,
-                                          Self.wait(seconds, locale: locale))
+            return (Format.localizedFormat("submit_content_rate_limited", locale: locale,
+                                           Self.wait(seconds, locale: locale)), nil)
         } catch {
-            return String(localized: "submit_content_error_generic")
+            return (String(localized: "submit_content_error_generic"), nil)
         }
     }
 
@@ -94,7 +98,9 @@ extension SubmissionType {
 struct SubmitContentSheet: View {
     /// nil = the pasted-URL entry (the My Submissions **+**).
     var hit: SuggestItem?
-    let onFinish: (String) -> Void
+    /// The banner message, and the target that landed (nil unless the submit succeeded) so the
+    /// screen that opened this sheet can stamp the row it came from — fix round 1 / M1.
+    let onFinish: (String, SubmitTarget?) -> Void
 
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
@@ -126,7 +132,7 @@ struct SubmitContentSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 detection(model)
-                categoryPicker(model)
+                categoryField(model, container.categories.topLevel())
                 LabelledField(key: "submit_content_note_hint") {
                     TextField(String(localized: "submit_content_note_hint"),
                               text: Binding(get: { model.note }, set: { model.note = $0 }), axis: .vertical)
@@ -143,7 +149,8 @@ struct SubmitContentSheet: View {
                 EditSheetAction(title: String(localized: "submit_content_submit_button"),
                                 isLoading: model.submitting) {
                     guard model.canSubmit else { return }
-                    onFinish(await model.submit())
+                    let outcome = await model.submit()
+                    onFinish(outcome.message, outcome.submitted)
                 }
                 .disabled(!model.canSubmit)
             }
@@ -170,9 +177,30 @@ struct SubmitContentSheet: View {
 
     /// The top-level categories, from the cache the whole app already shares — a `Menu`, not a
     /// wheel: ≥44 pt, Dynamic Type, and it reads its own value to VoiceOver.
+    ///
+    /// Fix round 1 / I2: an EMPTY list is a failure, not a picker with nothing in it. `/categories`
+    /// can fail (`LiveCategoriesCache` stores the error and nothing here used to read it), and the
+    /// app can be launched straight into Me → Suggest before any catalog screen ran — either way the
+    /// `Menu` opened with zero rows, `canSubmit` could never become true, and the Submit button was
+    /// permanently disabled with nothing on screen saying why. RULING 28 inverted. So the failure is
+    /// stated, with the retry that re-fetches the list.
+    ///
+    /// Takes the categories rather than reading the container, and is internal, so the two arms are
+    /// walked by a test the way `stateView` is — the decision is what matters, not the wiring line.
+    /// Deliberately free of trailing modifiers, for the same reason.
     @ViewBuilder
-    private func categoryPicker(_ model: SubmitContentModel) -> some View {
-        let categories = container.categories.topLevel()
+    func categoryField(_ model: SubmitContentModel, _ categories: [Category]) -> some View {
+        if categories.isEmpty {
+            ErrorStateView(message: String(localized: "submit_content_error_generic")) {
+                Task { await container.categories.reload() }
+            }
+        } else {
+            categoryPicker(model, categories)
+        }
+    }
+
+    @ViewBuilder
+    private func categoryPicker(_ model: SubmitContentModel, _ categories: [Category]) -> some View {
         let selected = model.categoryId.flatMap { id in categories.first { $0.id == id } }
         let label = selected.map { Format.categoryDisplayName($0, locale: locale) }
             ?? String(localized: "submit_content_pick_category")
@@ -203,7 +231,7 @@ struct SubmitContentSheet: View {
 
 #if DEBUG
 #Preview {
-    SubmitContentSheet(onFinish: { _ in })
+    SubmitContentSheet(onFinish: { _, _ in })
         .environment(\.container, .sharedFake)
 }
 
@@ -211,7 +239,7 @@ struct SubmitContentSheet: View {
     SubmitContentSheet(hit: SuggestItem(youtubeId: "UCmMcOjsVehVlEOteyrhjI2Q", type: .channels,
                                         title: "مشاري راشد العفاسي", thumbnailUrl: nil,
                                         channelTitle: nil, registryState: nil),
-                       onFinish: { _ in })
+                       onFinish: { _, _ in })
         .environment(\.container, .sharedFake)
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
