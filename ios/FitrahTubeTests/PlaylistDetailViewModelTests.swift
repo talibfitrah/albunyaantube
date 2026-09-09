@@ -392,7 +392,9 @@ struct PlaylistDetailViewModelTests {
             let v1 = Schema(versionedSchema: FavoritesSchemaV1.self)
             let container = try ModelContainer(for: v1, configurations: ModelConfiguration(schema: v1, url: url))
             let context = ModelContext(container)
-            context.insert(FavoriteVideo(videoId: "v1", title: "T", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
+            // Named through V1 deliberately (fix round 1 / C1): `FavoriteVideo`'s shape has not
+            // changed since `2c611683`, so V2-V5 alias it -- but the seed says which one it means.
+            context.insert(FavoritesSchemaV1.FavoriteVideo(videoId: "v1", title: "T", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
             try context.save()
         }
         let container = AppContainer.makeModelContainer(inMemory: false, storeURL: url)

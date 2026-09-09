@@ -18,46 +18,82 @@ nonisolated enum SubscriptionsError: Error, Equatable {
     case capReached
 }
 
-/// Same column conventions as `FavoriteVideo` (`isRemoved`, not `deleted` -- see that file for why).
-@Model final class SubscribedChannel {
-    #Unique<SubscribedChannel>([\.channelId, \.userId])
+extension FavoritesSchemaV3 {
+    /// The V3 shape, frozen as `976d2e6f` declared it -- and unchanged at V4, which aliases it.
+    /// This is what a store written by any pre-V5 build actually holds. NEVER edit it: a column
+    /// added here changes what "V3"/"V4" hash to, and every such store becomes an unknown model
+    /// version that `makeModelContainer`'s recovery path deletes (`FavoriteVideo.swift`).
+    @Model final class SubscribedChannel {
+        #Unique<SubscribedChannel>([\.channelId, \.userId])
 
-    var channelId: String
-    var title: String
-    var avatarUrl: String?
-    var followedAt: Date
-    var userId: String
-    var updatedAt: Date
-    var isRemoved: Bool
-    var dirty: Bool
-    /// V5. Inline defaults (and optionals) are what make the V4 -> V5 stage *lightweight*: a
-    /// non-optional column with no default has nothing to write into the existing rows.
-    /// `channelUrl` is Room's `channelUrl`, which the sync wire requires; it is STORED data, never
-    /// a navigable affordance (owner directive: no link or redirect to YouTube, anywhere).
-    var channelUrl: String = ""
-    /// "APPROVED" | "AWAITING" -- an AWAITING row is an imported, unreviewed channel: hidden from
-    /// `items`, still `isSubscribed`. A null server value means "APPROVED" (`SyncManager.kt:379`).
-    var approvalStatus: String = "APPROVED"
-    /// "USER_IMPORT" for rows the YouTube import wrote; nil for a manual subscribe.
-    var source: String?
-    var importedAt: Date?
+        var channelId: String
+        var title: String
+        var avatarUrl: String?
+        var followedAt: Date
+        var userId: String
+        var updatedAt: Date
+        var isRemoved: Bool
+        var dirty: Bool
 
-    init(channelId: String, title: String, avatarUrl: String?,
-         followedAt: Date = Date(), userId: String = "", updatedAt: Date = Date(timeIntervalSince1970: 0),
-         isRemoved: Bool = false, dirty: Bool = false, channelUrl: String = "",
-         approvalStatus: String = "APPROVED", source: String? = nil, importedAt: Date? = nil) {
-        self.channelId = channelId
-        self.title = title
-        self.avatarUrl = avatarUrl
-        self.followedAt = followedAt
-        self.userId = userId
-        self.updatedAt = updatedAt
-        self.isRemoved = isRemoved
-        self.dirty = dirty
-        self.channelUrl = channelUrl
-        self.approvalStatus = approvalStatus
-        self.source = source
-        self.importedAt = importedAt
+        init(channelId: String, title: String, avatarUrl: String?,
+             followedAt: Date = Date(), userId: String = "", updatedAt: Date = Date(timeIntervalSince1970: 0),
+             isRemoved: Bool = false, dirty: Bool = false) {
+            self.channelId = channelId
+            self.title = title
+            self.avatarUrl = avatarUrl
+            self.followedAt = followedAt
+            self.userId = userId
+            self.updatedAt = updatedAt
+            self.isRemoved = isRemoved
+            self.dirty = dirty
+        }
+    }
+}
+
+extension FavoritesSchemaV5 {
+    /// The LIVE shape (`SubscribedChannel` at file scope). Same column conventions as
+    /// `FavoriteVideo` (`isRemoved`, not `deleted` -- see that file for why).
+    @Model final class SubscribedChannel {
+        #Unique<SubscribedChannel>([\.channelId, \.userId])
+
+        var channelId: String
+        var title: String
+        var avatarUrl: String?
+        var followedAt: Date
+        var userId: String
+        var updatedAt: Date
+        var isRemoved: Bool
+        var dirty: Bool
+        /// V5. Inline defaults (and optionals) are what make the V4 -> V5 stage *lightweight*: a
+        /// non-optional column with no default has nothing to write into the existing rows.
+        /// `channelUrl` is Room's `channelUrl`, which the sync wire requires; it is STORED data,
+        /// never a navigable affordance (owner directive: no link or redirect to YouTube, anywhere).
+        var channelUrl: String = ""
+        /// "APPROVED" | "AWAITING" -- an AWAITING row is an imported, unreviewed channel: hidden
+        /// from `items`, still `isSubscribed`. A null server value means "APPROVED"
+        /// (`SyncManager.kt:379`).
+        var approvalStatus: String = "APPROVED"
+        /// "USER_IMPORT" for rows the YouTube import wrote; nil for a manual subscribe.
+        var source: String?
+        var importedAt: Date?
+
+        init(channelId: String, title: String, avatarUrl: String?,
+             followedAt: Date = Date(), userId: String = "", updatedAt: Date = Date(timeIntervalSince1970: 0),
+             isRemoved: Bool = false, dirty: Bool = false, channelUrl: String = "",
+             approvalStatus: String = "APPROVED", source: String? = nil, importedAt: Date? = nil) {
+            self.channelId = channelId
+            self.title = title
+            self.avatarUrl = avatarUrl
+            self.followedAt = followedAt
+            self.userId = userId
+            self.updatedAt = updatedAt
+            self.isRemoved = isRemoved
+            self.dirty = dirty
+            self.channelUrl = channelUrl
+            self.approvalStatus = approvalStatus
+            self.source = source
+            self.importedAt = importedAt
+        }
     }
 }
 

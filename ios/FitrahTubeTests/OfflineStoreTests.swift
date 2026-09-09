@@ -21,7 +21,8 @@ struct OfflineStoreTests {
 
     /// The migration pin: a V3 store on disk (a favorite + a saved playlist + a subscription)
     /// opens under the V4 plan with every row intact, and the new `OfflineItem` entity is live —
-    /// reads AND writes. Fails against a `makeModelContainer` still on `FavoritesSchemaV3`.
+    /// reads AND writes. Fails against a `makeModelContainer` still on `FavoritesSchemaV3` --
+    /// V4 added an entity V3 lacks, so that container cannot open a store holding an `OfflineItem`.
     @Test func aV3StoreOnDiskMigratesToV4KeepingEveryRow() throws {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
@@ -30,9 +31,11 @@ struct OfflineStoreTests {
             let v3 = Schema(versionedSchema: FavoritesSchemaV3.self)
             let container = try ModelContainer(for: v3, configurations: ModelConfiguration(schema: v3, url: url))
             let context = ModelContext(container)
-            context.insert(FavoriteVideo(videoId: "v1", title: "F", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
-            context.insert(SavedPlaylist(playlistId: "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc", title: "P", thumbnailUrl: nil, itemCount: 1))
-            context.insert(SubscribedChannel(channelId: "UCmMcOjsVehVlEOteyrhjI2Q", title: "S", avatarUrl: nil))
+            // The FROZEN V3 shapes (fix round 1 / C1): the live `SavedPlaylist`/`SubscribedChannel`
+            // carry V5's columns, so seeding with them writes a file no V3 build could have written.
+            context.insert(FavoritesSchemaV3.FavoriteVideo(videoId: "v1", title: "F", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
+            context.insert(FavoritesSchemaV3.SavedPlaylist(playlistId: "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc", title: "P", thumbnailUrl: nil, itemCount: 1))
+            context.insert(FavoritesSchemaV3.SubscribedChannel(channelId: "UCmMcOjsVehVlEOteyrhjI2Q", title: "S", avatarUrl: nil))
             try context.save()
         }
 

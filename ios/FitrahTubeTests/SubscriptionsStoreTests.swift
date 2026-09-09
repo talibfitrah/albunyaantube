@@ -52,7 +52,9 @@ struct SubscriptionsStoreTests {
             let v2 = Schema(versionedSchema: FavoritesSchemaV2.self)
             let container = try ModelContainer(for: v2, configurations: ModelConfiguration(schema: v2, url: url))
             let context = ModelContext(container)
-            context.insert(SavedPlaylist(playlistId: "PL1", title: "T", thumbnailUrl: nil, itemCount: 1))
+            // The FROZEN V2 shape (fix round 1 / C1) -- the live type carries V5's five extra
+            // columns, so seeding with it writes a file no V2 build could have written.
+            context.insert(FavoritesSchemaV2.SavedPlaylist(playlistId: "PL1", title: "T", thumbnailUrl: nil, itemCount: 1))
             try context.save()
         }
         let container = AppContainer.makeModelContainer(inMemory: false, storeURL: url)

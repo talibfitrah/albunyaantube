@@ -21,20 +21,30 @@ struct SchemaV5MigrationTests {
         for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) }
     }
 
-    /// A V4 store on disk with one row of each synced type. Scoped in its own `do` block at the
-    /// call site so the V4 container is gone before the V5 plan opens the same file.
+    /// A byte-historical V4 store on disk with one row of each synced type -- written through the
+    /// FROZEN V4 types (`FavoritesSchemaV2.SavedPlaylist` and `FavoritesSchemaV3.SubscribedChannel`
+    /// as `52549ec7`/`976d2e6f` declared them, aliased forward by V4), never through the live ones.
+    /// That distinction is the whole of finding C1: writing it with today's types produces a file
+    /// no pre-V5 build could have written, and the migration it "proves" is a tautology.
     private static func makeV4Store(at url: URL) throws {
         let v4 = Schema(versionedSchema: FavoritesSchemaV4.self)
         let container = try ModelContainer(for: v4, configurations: ModelConfiguration(schema: v4, url: url))
         let context = ModelContext(container)
-        context.insert(FavoriteVideo(videoId: "xc7keR2piUM", title: "F", channelName: "C", thumbnailUrl: nil, durationSeconds: 12))
-        context.insert(SavedPlaylist(playlistId: "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc", title: "P", thumbnailUrl: nil, itemCount: 7))
-        context.insert(SubscribedChannel(channelId: "UCmMcOjsVehVlEOteyrhjI2Q", title: "S", avatarUrl: nil))
+        context.insert(FavoritesSchemaV4.FavoriteVideo(videoId: "xc7keR2piUM", title: "F", channelName: "C", thumbnailUrl: nil, durationSeconds: 12))
+        context.insert(FavoritesSchemaV4.SavedPlaylist(playlistId: "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc", title: "P", thumbnailUrl: nil, itemCount: 7))
+        context.insert(FavoritesSchemaV4.SubscribedChannel(channelId: "UCmMcOjsVehVlEOteyrhjI2Q", title: "S", avatarUrl: nil))
         try context.save()
     }
 
-    /// The migration pin: every V4 row survives the V5 stage with its values intact. Fails against
-    /// a `makeModelContainer` still on `FavoritesSchemaV4`.
+    /// The migration pin, and the assertion finding C1 says was never really made: every row of a
+    /// store written by the FROZEN V4 types survives the V4 -> V5 stage with its values intact.
+    /// Against the pre-freeze ladder (every `FavoritesSchemaVn.models` returning the LIVE types)
+    /// this fails -- V5's new columns also changed what "V4" hashed to, the store opened as
+    /// `NSCocoaErrorDomain 134504` "Cannot use staged migration with an unknown model version",
+    /// and `makeModelContainer`'s recovery path deleted it, so all three `#require`s got nil.
+    /// The earlier comment here claimed it would fail against a container still on
+    /// `FavoritesSchemaV4`; it would not -- that container reopens the same file with no migration
+    /// at all. `aSyncStateRowInsertsIntoAMigratedStoreAndRefetches` is what pins the constant flip.
     @Test func aV4StoreOnDiskMigratesToV5KeepingEveryRow() throws {
         let url = Self.temporaryStoreURL()
         defer { Self.remove(url) }
@@ -171,9 +181,15 @@ struct SchemaV5MigrationTests {
         try context.save()
         #expect(try ModelContext(container).fetch(FetchDescriptor<AccountBinding>()).first?.initialMergeDone == true)
 
-        context.insert(AccountBinding(userId: "uid-1", boundAt: Date(timeIntervalSince1970: 1_700_000_004)))
+        let rebound = Date(timeIntervalSince1970: 1_700_000_004)
+        context.insert(AccountBinding(userId: "uid-1", boundAt: rebound))
         try context.save()
         #expect(try context.fetchCount(FetchDescriptor<AccountBinding>()) == 1)
+        // What `#Unique`'s upsert actually does to the row it collides with -- on the record so
+        // Task 23 does not re-bind by inserting and silently lose an already-merged flag.
+        let reread = try #require(try ModelContext(container).fetch(FetchDescriptor<AccountBinding>()).first)
+        #expect(reread.boundAt == rebound)
+        #expect(reread.initialMergeDone == false)
     }
 
     /// V5 column behaviour, same subject as the migration: an AWAITING (imported, unreviewed)
@@ -191,10 +207,20 @@ struct SchemaV5MigrationTests {
         #expect(store.items.map(\.channelId) == ["UCapproved00000000000000"])
         #expect(store.isSubscribed("UCmMcOjsVehVlEOteyrhjI2Q"))
 
-        // A re-add of an awaiting row must not create a second row for the same channel.
+        // A re-add of an awaiting row must not create a second row. TWICE: `toggle` on a live row
+        // unsubscribes it, so only the second call takes the re-add branch -- asserting after the
+        // first call cannot tell the two paths apart, since both leave exactly one row.
+        try store.toggle(id: "UCmMcOjsVehVlEOteyrhjI2Q", name: "Tombstoned", avatarURL: nil)
         try store.toggle(id: "UCmMcOjsVehVlEOteyrhjI2Q", name: "Re-added", avatarURL: nil)
         let rows = FetchDescriptor<SubscribedChannel>(predicate: #Predicate { $0.channelId == "UCmMcOjsVehVlEOteyrhjI2Q" })
-        #expect(try ModelContext(container).fetchCount(rows) == 1)
+        let after = ModelContext(container)
+        #expect(try after.fetchCount(rows) == 1)
+        let row = try #require(try after.fetch(rows).first)
+        #expect(row.isRemoved == false)
+        #expect(row.title == "Re-added")
+        // The re-add does not launder an unreviewed row into an approved one: still hidden.
+        #expect(row.approvalStatus == "AWAITING")
+        #expect(store.items.map(\.channelId) == ["UCapproved00000000000000"])
     }
 
     /// The playlist twin.
@@ -210,8 +236,68 @@ struct SchemaV5MigrationTests {
         #expect(store.items.map(\.playlistId) == ["PLapproved"])
         #expect(store.isSaved("PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc"))
 
+        // Same two-call shape as the channel test above, for the same reason.
+        try store.toggle(id: "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc", title: "Tombstoned", thumbnailURL: nil, itemCount: 3)
         try store.toggle(id: "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc", title: "Re-added", thumbnailURL: nil, itemCount: 3)
         let rows = FetchDescriptor<SavedPlaylist>(predicate: #Predicate { $0.playlistId == "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc" })
-        #expect(try ModelContext(container).fetchCount(rows) == 1)
+        let after = ModelContext(container)
+        #expect(try after.fetchCount(rows) == 1)
+        let row = try #require(try after.fetch(rows).first)
+        #expect(row.isRemoved == false)
+        #expect(row.title == "Re-added")
+        #expect(row.approvalStatus == "AWAITING")
+        #expect(store.items.map(\.playlistId) == ["PLapproved"])
+    }
+
+    /// The freeze itself (fix round 1 / C1): every version's entity set, and every entity's stored
+    /// column set, exactly as the commit that introduced that version declared it. Adding a column
+    /// to a live entity WITHOUT declaring a `FavoritesSchemaV6` turns this red -- which is the
+    /// point: mutating a type an older version still names rewrites what THAT version hashes to,
+    /// and every store written by a shipped build becomes an unknown model version. It also pins
+    /// the assumption the nesting rests on -- a nested `@Model` keeps its plain entity name, so
+    /// `FavoritesSchemaV3.SubscribedChannel` and V5's are one CoreData entity across the stage.
+    @Test func everyFrozenVersionKeepsItsHistoricalColumnSet() {
+        func shape(_ versioned: any VersionedSchema.Type) -> [String: [String]] {
+            Schema(versionedSchema: versioned).entitiesByName.mapValues { $0.storedPropertiesByName.keys.sorted() }
+        }
+        // `423ae0ec` + `2c611683`, unchanged through V5.
+        let favoriteVideo = ["addedAt", "approvalStatus", "channelName", "dirty", "durationSeconds",
+                             "importedAt", "isRemoved", "source", "thumbnailUrl", "title",
+                             "updatedAt", "userId", "videoId"]
+        // `52549ec7`, unchanged through V4.
+        let savedPlaylistV2 = ["addedAt", "dirty", "isRemoved", "itemCount", "playlistId",
+                               "thumbnailUrl", "title", "updatedAt", "userId"]
+        // `976d2e6f`, unchanged through V4.
+        let subscribedChannelV3 = ["avatarUrl", "channelId", "dirty", "followedAt", "isRemoved",
+                                   "title", "updatedAt", "userId"]
+        // `7471ea99`, unchanged through V5.
+        let offlineItem = ["audioOnly", "bytesWritten", "channelName", "completedAt", "createdAt",
+                           "errorCode", "id", "localPath", "qualityLabel", "resumeData", "status",
+                           "thumbnailUrl", "title", "totalBytes", "videoId"]
+        // `26d6bde9`: five new columns on the playlist, four on the channel, two new entities.
+        let savedPlaylistV5 = ["addedAt", "approvalStatus", "dirty", "importedAt", "isRemoved",
+                               "itemCount", "playlistId", "playlistUrl", "source", "thumbnailUrl",
+                               "title", "updatedAt", "uploaderName", "userId"]
+        let subscribedChannelV5 = ["approvalStatus", "avatarUrl", "channelId", "channelUrl",
+                                   "dirty", "followedAt", "importedAt", "isRemoved", "source",
+                                   "title", "updatedAt", "userId"]
+
+        #expect(shape(FavoritesSchemaV1.self) == ["FavoriteVideo": favoriteVideo])
+        #expect(shape(FavoritesSchemaV2.self) == ["FavoriteVideo": favoriteVideo,
+                                                  "SavedPlaylist": savedPlaylistV2])
+        #expect(shape(FavoritesSchemaV3.self) == ["FavoriteVideo": favoriteVideo,
+                                                  "SavedPlaylist": savedPlaylistV2,
+                                                  "SubscribedChannel": subscribedChannelV3])
+        #expect(shape(FavoritesSchemaV4.self) == ["FavoriteVideo": favoriteVideo,
+                                                  "SavedPlaylist": savedPlaylistV2,
+                                                  "SubscribedChannel": subscribedChannelV3,
+                                                  "OfflineItem": offlineItem])
+        #expect(shape(FavoritesSchemaV5.self) == ["FavoriteVideo": favoriteVideo,
+                                                  "SavedPlaylist": savedPlaylistV5,
+                                                  "SubscribedChannel": subscribedChannelV5,
+                                                  "OfflineItem": offlineItem,
+                                                  "SyncState": ["entityType", "lastCursor", "lastDocId",
+                                                                "lastSyncAt", "userId"],
+                                                  "AccountBinding": ["boundAt", "initialMergeDone", "userId"]])
     }
 }
