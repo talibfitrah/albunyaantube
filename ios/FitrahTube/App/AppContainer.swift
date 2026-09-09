@@ -89,11 +89,14 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var settings: any SettingsStore = UserDefaultsSettingsStore(defaults: userDefaults)
     private(set) lazy var filters: any FilterStore = UserDefaultsFilterStore(defaults: userDefaults)
     private(set) lazy var searchHistory: any SearchHistoryStore = UserDefaultsSearchHistoryStore(defaults: userDefaults)
-    private(set) lazy var favorites: any FavoritesStore = SwiftDataFavoritesStore(modelContainer: modelContainer)
+    private(set) lazy var favorites: any FavoritesStore = SwiftDataFavoritesStore(
+        modelContainer: modelContainer, onDirty: { [weak self] in self?.pushDirtySoon(uid: $0) })
     /// Plan C Task 4: the playlist screen's Save toggle, same container/schema as favorites.
-    private(set) lazy var savedPlaylists: any SavedPlaylistsStore = SwiftDataSavedPlaylistsStore(modelContainer: modelContainer)
+    private(set) lazy var savedPlaylists: any SavedPlaylistsStore = SwiftDataSavedPlaylistsStore(
+        modelContainer: modelContainer, onDirty: { [weak self] in self?.pushDirtySoon(uid: $0) })
     /// Plan C Task 5: the channel screen's Subscribe toggle (RULING 27, 30-channel guest cap).
-    private(set) lazy var subscriptions: any SubscriptionsStore = SwiftDataSubscriptionsStore(modelContainer: modelContainer)
+    private(set) lazy var subscriptions: any SubscriptionsStore = SwiftDataSubscriptionsStore(
+        modelContainer: modelContainer, onDirty: { [weak self] in self?.pushDirtySoon(uid: $0) })
     /// Phase 3 Task 3: the Save-for-offline library rows, same container/schema as favorites.
     private(set) lazy var offlineStore = OfflineStore(modelContainer: modelContainer)
     /// Task 7 follow-up: the ONE spelling of the offline files' base directory — the manager
@@ -269,6 +272,62 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var account = AccountClient(transport: authorizedTransport, baseURL: apiBaseURL,
                                                   deviceId: .persisted(in: userDefaults))
 
+    /// Phase 4 Task 23/24: the ONE sync manager. Cheap to build (no session, no directory, no
+    /// network until something triggers it), so `lazy` like every other store here.
+    ///
+    /// A FIXTURE gets a canned 503 rather than `authorizedTransport`, the `gateTransport`
+    /// precedent: that transport is a `ScriptedTransport` holding the fixture's canned `/me`
+    /// bodies, and a pull would both consume that queue and decode an account record as a sync
+    /// page. `sessionSleep` is `noSleep` there too, so the bounded ladders spin out instantly
+    /// instead of burning the screenshot rig's wall clock. Zero network either way.
+    private(set) lazy var sync: any SyncTriggering = injectedSync ?? {
+        #if DEBUG
+        let transport: any HTTPTransport = isFixture ? FixedStatusTransport(status: 503) : authorizedTransport
+        #else
+        let transport: any HTTPTransport = authorizedTransport
+        #endif
+        return SyncManager(client: SyncClient(transport: transport, baseURL: apiBaseURL,
+                                              deviceId: .persisted(in: userDefaults)),
+                           modelContainer: modelContainer, backoff: SyncBackoff(), sleep: sessionSleep)
+    }()
+    private let injectedSync: (any SyncTriggering)?
+
+    /// The ONE push-on-change entry point (Task 24): the three local stores' writes and a restored
+    /// connection both land here.
+    ///
+    /// COALESCING, which the manager deliberately does not do. `SyncManager` serialises but never
+    /// dedupes (Task 23: "ONE pull" is read as serialisation), so five rapid toggles would queue
+    /// five tasks each waiting on the exclusion behind a network round trip, and the last four
+    /// would drain rows the first already pushed. While a drain is in flight another request sets
+    /// `pushAgain` instead of queueing, and exactly one follow-up runs after it -- so a row
+    /// dirtied mid-drain is still pushed, and a burst costs two drains at most.
+    ///
+    /// An empty uid is a GUEST write: nothing to push, and no account to push it to.
+    func pushDirtySoon(uid: String) {
+        guard !uid.isEmpty else { return }
+        guard pushTask == nil else { pushAgain = true; return }
+        pushTask = Task { [sync] in
+            await sync.pushDirty(uid: uid)
+            pushTask = nil
+            if pushAgain {
+                pushAgain = false
+                pushDirtySoon(uid: uid)
+            }
+        }
+    }
+
+    private var pushTask: Task<Void, Never>?
+    private var pushAgain = false
+
+    /// Phase 4 Task 24: connectivity restored -> push the dirty rows at once
+    /// (`AlBunyaanApplication.kt:206-215`, `onAvailable`). Losing the path does NOTHING: there is
+    /// nothing useful to do with a dirty row while the device is offline, and a push that starts
+    /// there just burns the retry ladder. Driven by `FitrahTubeApp`'s `network.isOnline` observer.
+    func connectivityChanged(isOnline: Bool) {
+        guard isOnline, let uid = session.syncableUid else { return }
+        pushDirtySoon(uid: uid)
+    }
+
     /// Phase 4 Task 9: the ONE holder of account state, and the only thing that writes
     /// `currentUserId`. Started by `RootView`'s `.task`.
     private(set) lazy var session = AccountSession(auth: auth, account: account, stores: userScopedStores,
@@ -290,7 +349,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                                    marker: UserDefaultsDeletionMarker(defaults: userDefaults),
                                                    // Stage 4 / I1: the two SDKs whose own Keychain
                                                    // sessions outlive Firebase's sign-out.
-                                                   providers: [googleSignIn, appleSignIn])
+                                                   providers: [googleSignIn, appleSignIn],
+                                                   // Task 24: sign-in binds once `/me` has landed,
+                                                   // and `dropSession` unbinds -- the ONE teardown
+                                                   // path, so the deletion needs no wiring of its own.
+                                                   sync: sync)
 
     /// Phase 4 Task 18: ruling C13's device wipe, built ON DEMAND rather than stored. Reaching for
     /// `session` must not construct `offlineManager` — that builds a background `URLSession`, which
@@ -450,6 +513,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
          googleSignIn: (any OAuthSignInProvider)? = nil,
          appleSignIn: (any OAuthSignInProvider)? = nil,
          accountStatusJSON: String? = nil,
+         sync: (any SyncTriggering)? = nil,
          isFixture: Bool = false) {
         #if DEBUG
         self.injectedAccountStatusJSON = accountStatusJSON
@@ -463,6 +527,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         self.modelContainer = modelContainer
         self.apiBaseURL = apiBaseURL
         self.injectedBrowse = browse
+        self.injectedSync = sync
         #if DEBUG
         self.isFixture = isFixture
         #endif
@@ -519,7 +584,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // Task 4 deferred this (deviation 1) because nothing could consume it. Task 13 adds it
         // together with its consumer: it is the BODY the fixture `/me` answers, so a screenshot
         // run can put the rig on a pending-profile, blocked or deleted account.
-        accountStatusJSON: String? = nil
+        accountStatusJSON: String? = nil,
+        // Task 24: the `injectedBrowse` idiom once more. `SyncTriggerTests` drives the five wiring
+        // sites against a recording double; without this they would need a real drain to see one
+        // method name.
+        sync: (any SyncTriggering)? = nil
     ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
         // defaults domain. Does NOT wipe the suite -- callers that write through the returned
@@ -543,7 +612,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                      apiBaseURL: AppConfig.apiBaseURL, browse: browse,
                      gateTransport: FixedStatusTransport(status: 503), auth: auth,
                      capabilities: capabilities, googleSignIn: googleSignIn, appleSignIn: appleSignIn,
-                     accountStatusJSON: accountStatusJSON, isFixture: true)
+                     accountStatusJSON: accountStatusJSON, sync: sync, isFixture: true)
     }
     #endif
 

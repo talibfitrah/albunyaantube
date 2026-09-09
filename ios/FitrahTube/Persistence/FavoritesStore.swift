@@ -27,8 +27,15 @@ import SwiftData
 
     private(set) var items: [FavoriteVideo] = []
 
-    init(modelContainer: ModelContainer) {
+    /// Phase 4 Task 24: "this store just dirtied a row for that uid" (`FavoritesRepository.kt:189`).
+    /// The ROW's uid, not the session's -- a write that lands while `/me` is still in flight is
+    /// still owned by the identity `AccountSession.start()` already scoped this store to. nil in
+    /// every suite that has no sync to drive.
+    private let onDirty: ((String) -> Void)?
+
+    init(modelContainer: ModelContainer, onDirty: ((String) -> Void)? = nil) {
         context = ModelContext(modelContainer)
+        self.onDirty = onDirty
         refresh()
     }
 
@@ -103,6 +110,9 @@ import SwiftData
             refresh()
             throw error
         }
+        // Task 24: HERE rather than in `toggle`/`clearAll`, so every writer -- the two that exist
+        // and any later one -- pushes by construction, and a rolled-back write pushes nothing.
+        onDirty?(currentUserId)
     }
 
     private func refresh() {

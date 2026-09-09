@@ -62,6 +62,14 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// The federated providers, asked to forget their OWN SDK sessions on every session drop
     /// (Stage 4 / I1). Empty is the honest default for a suite with no federated sign-in.
     private let providers: [any OAuthSignInProvider]
+    /// Phase 4 Task 24: the ONE consumer of "which account is current". nil in the suites with no
+    /// sync to drive -- the honest default, like `providers` above.
+    private let sync: (any SyncTriggering)?
+    /// The uid the manager is currently bound to. `refreshIfSignedIn` runs on every foreground, so
+    /// binding on each `/me` would be a merge + pull + push per foreground and the foreground
+    /// trigger's own >=15 min spacing would mean nothing. A bind belongs to the IDENTITY, not to
+    /// the request -- Android binds once per launch, from the splash (`SplashFragment.kt:129-141`).
+    private var boundUid: String?
 
     private(set) var state: AccountState = .signedOut
     /// The signed-in Firebase identity, which is NOT `state.me`: `SplashRouter.outcome` needs
@@ -85,7 +93,8 @@ nonisolated enum AccountState: Sendable, Equatable {
          status: AccountStatusCenter, sleep: @escaping @Sendable (Duration) async -> Void,
          wipe: @escaping @MainActor @Sendable () async -> Error?,
          marker: any DeletionMarking = InMemoryDeletionMarker(),
-         providers: [any OAuthSignInProvider] = []) {
+         providers: [any OAuthSignInProvider] = [],
+         sync: (any SyncTriggering)? = nil) {
         self.auth = auth
         self.account = account
         self.stores = stores
@@ -94,6 +103,23 @@ nonisolated enum AccountState: Sendable, Equatable {
         self.wipe = wipe
         self.marker = marker
         self.providers = providers
+        self.sync = sync
+    }
+
+    /// The uid ANY sync trigger may run for, or nil -- the one guard the foreground and
+    /// connectivity sites both consult (Task 24).
+    ///
+    /// Three nil arms, each for its own reason. A GUEST has no account to sync with. A `/me` still
+    /// in flight has no account uid yet, and the trigger is skipped outright rather than waited on:
+    /// Android suspended on the state flow instead and accumulated one waiter per foreground
+    /// (`AlBunyaanApplication.kt:167-185`), and the wait buys nothing here because the sign-in path
+    /// binds the moment `/me` lands. A TERMINAL verdict being handled is the sharp one: `state` is
+    /// still `.loaded` across the deletion wipe -- which is detached and survives a foreground --
+    /// and across the age-ineligible teardown's await of Firebase, so a pull started in either
+    /// window would restore the very rows being erased.
+    var syncableUid: String? {
+        guard deletion == nil, !isAgeIneligible, case .loaded(let me) = state, !me.uid.isEmpty else { return nil }
+        return me.uid
     }
 
     /// Observes `AuthClient.state`; on each change sets every store's `currentUserId` FIRST, then
@@ -300,6 +326,7 @@ nonisolated enum AccountState: Sendable, Equatable {
                 let me = try await account.me()
                 guard publishable() else { return }
                 state = .loaded(me)
+                bindSyncIfNeeded(to: me.uid)
                 return
             } catch {
                 guard publishable() else { return }
@@ -407,6 +434,12 @@ nonisolated enum AccountState: Sendable, Equatable {
         // Stage 9 round 2 / P1, and above the early return for the same reason the loop is: the
         // round in flight belongs to the identity being dropped.
         cancelInFlight()
+        // Task 24, and above the early return for that same reason: a push retry queued while the
+        // user was still signed in otherwise fires after the drop and pushes the previous account's
+        // dirty rows under whatever bearer is current (`SyncManager.unbind`, `SyncModule.kt:46-53`).
+        // This is the ONE teardown path -- sign-out, the blocked verdict, the age-ineligible
+        // teardown and the deletion all reach it -- so no caller wires an unbind of its own.
+        unbindSync()
         guard state != .signedOut else { return false }
         do {
             try auth.signOut()
@@ -436,6 +469,22 @@ nonisolated enum AccountState: Sendable, Equatable {
     private func cancelInFlight() {
         inFlight?.cancel()
         inFlight = nil
+    }
+
+    /// OFF the critical path, always: `bind` is a merge + pull + push, and Android fires it in its
+    /// own coroutine precisely so the splash's route decision never waits on a network round trip
+    /// (`SplashFragment.kt:129-141`). Unstructured for the same reason `refreshIfSignedIn`'s
+    /// foreground caller is -- a `.task`-scoped caller would cancel it on navigation.
+    private func bindSyncIfNeeded(to uid: String) {
+        guard let sync, !uid.isEmpty, boundUid != uid else { return }
+        boundUid = uid
+        Task { await sync.bind(uid: uid) }
+    }
+
+    private func unbindSync() {
+        guard let sync, boundUid != nil else { return }
+        boundUid = nil
+        Task { await sync.unbind() }
     }
 
     /// The age-ineligible teardown, in ONE place (Stage 8 / S7). `AgeIneligibleScreen.acknowledge()`

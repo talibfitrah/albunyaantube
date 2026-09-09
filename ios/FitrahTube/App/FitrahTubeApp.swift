@@ -65,6 +65,10 @@ struct FitrahTubeApp: App {
     // a later config that LOWERS `minAppVersion` un-blocks on the next refresh (or relaunch)
     // without a reinstall.
     @State private var updateRequired = false
+    // Phase 4 Task 24: last time the foreground sync fired. Its OWN timestamp, not
+    // `lastRemoteConfigRefresh`: the launch `.task` above consumes that one before the session has
+    // loaded, and sharing it would silence the first foreground sync of every launch.
+    @State private var lastSync: Date?
 
     var body: some Scene {
         WindowGroup {
@@ -104,6 +108,17 @@ struct FitrahTubeApp: App {
                     //
                     // Stage 9 / P2b: `refreshIfSignedIn`, so a GUEST foreground sends nothing.
                     Task { await container.session.refreshIfSignedIn(maxAttempts: 1) }
+                    // Task 24, riding this SAME arm rather than a second `onChange(of: scenePhase)`
+                    // -- two observers of one value have no defined order, and the sync's guard
+                    // reads the session the line above refreshes.
+                    syncOnForegroundIfDue()
+                }
+                // Task 24: connectivity restored -> push the dirty rows
+                // (`AlBunyaanApplication.kt:206-215`). `NetworkMonitor` is `@Observable`, so this
+                // fires on the same de-duped transitions the offline banner reads -- never once per
+                // `NWPathMonitor` callback.
+                .onChange(of: container.network.isOnline) { _, isOnline in
+                    container.connectivityChanged(isOnline: isOnline)
                 }
                 // Overlay, not a branch replacing RootView: the refresh task/onChange above keep
                 // firing underneath, which is what lets a lowered `minAppVersion` un-block live.
@@ -176,6 +191,29 @@ struct FitrahTubeApp: App {
     /// way (persisted last-known-good, else InnerTubeKit's bundled default, no transport), so the
     /// kill-switch and forced-update decisions are unaffected.
     static func shouldFetchRemoteConfig(isFixture: Bool, due: Bool) -> Bool { due && !isFixture }
+
+    /// Phase 4 Task 24: pull + push on every return to the foreground
+    /// (`AlBunyaanApplication.kt:167-185`), fire-and-forget like the refresh above.
+    private func syncOnForegroundIfDue() {
+        let now = Date()
+        guard let uid = container.session.syncableUid,
+              Self.shouldSyncOnForeground(uid: uid, now: now, last: lastSync,
+                                          spacing: Self.remoteConfigRefreshSpacing) else { return }
+        lastSync = now
+        Task { await container.sync.syncNow(uid: uid) }
+    }
+
+    /// The foreground rule, whole, so the glue above is one `guard` -- the `isRemoteConfigRefreshDue`
+    /// idiom, testable without a running scene.
+    ///
+    /// `uid` is `AccountSession.syncableUid`, which is nil for a guest, for a `/me` still in flight
+    /// and for a terminal verdict being handled; the spacing half IS `isRemoteConfigRefreshDue`,
+    /// because "the same >=15 min due-decision as the remote-config refresh" means the same
+    /// decision, not a second copy of it. Only the timestamp differs.
+    static func shouldSyncOnForeground(uid: String?, now: Date, last: Date?, spacing: TimeInterval) -> Bool {
+        guard uid != nil else { return false }
+        return isRemoteConfigRefreshDue(now: now, last: last, spacing: spacing)
+    }
 
     /// CF-B1-13: the spacing decision, extracted so it is testable without a running scene.
     static func isRemoteConfigRefreshDue(now: Date, last: Date?, spacing: TimeInterval) -> Bool {

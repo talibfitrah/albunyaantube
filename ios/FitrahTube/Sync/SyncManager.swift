@@ -1,6 +1,21 @@
 import Foundation
 import SwiftData
 
+/// Task 24's view of the manager: the four calls the five trigger sites make, and nothing else.
+///
+/// A protocol only because the wiring has to be assertable. Every trigger site is a one-liner whose
+/// whole content is *which* call it makes, with which uid, and under what guard — and pinning that
+/// against the real actor would mean building a `ModelContainer`, a transport and a whole drain to
+/// observe one method name. `SyncManager` is the only production conformer.
+nonisolated protocol SyncTriggering: Sendable {
+    func bind(uid: String) async
+    func unbind() async
+    func pushDirty(uid: String) async
+    func syncNow(uid: String) async
+}
+
+extension SyncManager: SyncTriggering {}
+
 /// Plan D's `SyncManager.kt`, in Swift: the thin actor over `SyncDecisions`. Every branch worth
 /// testing is a pure function in that file; what lives HERE is the exclusion, the I/O order and the
 /// transactions.

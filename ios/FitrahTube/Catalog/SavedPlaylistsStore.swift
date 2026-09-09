@@ -107,8 +107,14 @@ extension FavoritesSchemaV5 {
 
     private(set) var items: [SavedPlaylist] = []
 
-    init(modelContainer: ModelContainer) {
+    /// Phase 4 Task 24: "this store just dirtied a row for that uid" -- the playlist sibling of
+    /// `SubscriptionRepository.kt:153`.
+    /// The ROW's uid, not the session's -- see `SwiftDataFavoritesStore.onDirty`.
+    private let onDirty: ((String) -> Void)?
+
+    init(modelContainer: ModelContainer, onDirty: ((String) -> Void)? = nil) {
         context = ModelContext(modelContainer)
+        self.onDirty = onDirty
         refresh()
     }
 
@@ -154,6 +160,8 @@ extension FavoritesSchemaV5 {
             throw error
         }
         refresh()
+        // Task 24: after the save, so a rolled-back write pushes nothing.
+        onDirty?(uid)
     }
 
     private func refresh() {
