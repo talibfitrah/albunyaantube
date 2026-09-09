@@ -9,6 +9,16 @@ import SwiftData
     var items: [SavedPlaylist] { get }
     func isSaved(_ playlistId: String) -> Bool
     func toggle(id: String, title: String?, thumbnailURL: URL?, itemCount: Int?) throws
+
+    /// Phase 4 Task 28, import dedupe (`SubscriptionRepository.playlistExistsAny`): deleted- AND
+    /// status-agnostic, `SubscriptionsStore.containsAny`'s twin.
+    func containsAny(_ playlistId: String) -> Bool
+
+    /// Phase 4 Task 28: the import path's write. No cap exists for playlists, so unlike
+    /// `SubscriptionsStore.importChannel` this bypasses nothing — it exists to stamp
+    /// `playlistUrl` / `approvalStatus` / `source` / `importedAt`, which `toggle` has no reason to.
+    func importPlaylist(id: String, title: String, thumbnailUrl: String?, uploaderName: String?,
+                        approvalStatus: String, at: Date) throws
 }
 
 nonisolated enum SavedPlaylistsError: Error, Equatable {
@@ -161,6 +171,50 @@ extension FavoritesSchemaV5 {
         }
         refresh()
         // Task 24: after the save, so a rolled-back write pushes nothing.
+        onDirty?(uid)
+    }
+
+    func containsAny(_ playlistId: String) -> Bool {
+        let uid = currentUserId
+        // No `isRemoved`/`approvalStatus` clause: that IS the point (`isSaved` has both).
+        let descriptor = FetchDescriptor<SavedPlaylist>(
+            predicate: #Predicate { $0.playlistId == playlistId && $0.userId == uid }
+        )
+        return ((try? context.fetchCount(descriptor)) ?? 0) > 0
+    }
+
+    /// `itemCount` is deliberately left at 0 (or whatever a resurrected row already had): no
+    /// import DTO carries it, and inventing one would put a wrong count chip on the row.
+    func importPlaylist(id: String, title: String, thumbnailUrl: String?, uploaderName: String?,
+                        approvalStatus: String, at: Date) throws {
+        try Self.validate(id)
+        let uid = currentUserId
+        let descriptor = FetchDescriptor<SavedPlaylist>(predicate: #Predicate { $0.playlistId == id && $0.userId == uid })
+        if let existing = try context.fetch(descriptor).first {
+            existing.isRemoved = false
+            existing.dirty = true // never `updatedAt` -- the server timestamp (gate wave-2 W12)
+            existing.title = title
+            existing.thumbnailUrl = thumbnailUrl
+            existing.uploaderName = uploaderName
+            existing.playlistUrl = SyncURL.playlist(id)
+            existing.approvalStatus = approvalStatus
+            existing.source = ImportProvenance.source
+            existing.importedAt = at
+        } else {
+            context.insert(SavedPlaylist(playlistId: id, title: title, thumbnailUrl: thumbnailUrl,
+                                         itemCount: 0, addedAt: at, userId: uid, dirty: true,
+                                         playlistUrl: SyncURL.playlist(id), uploaderName: uploaderName,
+                                         approvalStatus: approvalStatus,
+                                         source: ImportProvenance.source, importedAt: at))
+        }
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            refresh()
+            throw error
+        }
+        refresh()
         onDirty?(uid)
     }
 

@@ -81,6 +81,14 @@ struct ChannelDetailViewModelTests {
             guard ids.count < SwiftDataSubscriptionsStore.cap else { throw SubscriptionsError.capReached }
             ids.insert(id)
         }
+        /// Task 28: this fake keeps no tombstones, so "any state" is the same set.
+        func containsAny(_ channelId: String) -> Bool { ids.contains(channelId) }
+        /// Task 28 / CF-A-11: the cap is bypassed here too, which is the whole point of the seam.
+        func importChannel(id: String, title: String, avatarUrl: String?,
+                           approvalStatus: String, at: Date) throws {
+            try SwiftDataSubscriptionsStore.validate(id)
+            ids.insert(id)
+        }
     }
 
     private static let channelId = "UCmMcOjsVehVlEOteyrhjI2Q"

@@ -169,6 +169,15 @@ struct PlayerToolbarTests {
     }
 
     func clearAll() throws {}
+
+    /// Task 28: this fake keeps no tombstones, so "any state" is the same set.
+    func containsAny(_ videoId: String) -> Bool { favoritedIds.contains(videoId) }
+
+    func importVideo(id: String, title: String, channelName: String, thumbnailUrl: String?,
+                     durationSeconds: Int, approvalStatus: String, at: Date) throws {
+        if let errorToThrow { throw errorToThrow }
+        favoritedIds.insert(id)
+    }
 }
 
 // MARK: - Task 5 UI preservation: the 4-button row at accessibility sizes

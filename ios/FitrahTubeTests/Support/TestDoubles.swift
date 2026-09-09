@@ -142,6 +142,48 @@ final class SleepRecorder: Sendable {
     }
 }
 
+/// Task 28: the `YouTubeAuthorizer` double. Canned token, no Google SDK, no UI, no network —
+/// `FakeOAuthProvider`'s shape, one scope over.
+///
+/// `isAvailable == false` FAILS instead of returning a token, so "an unavailable authorizer is
+/// never asked" is a property a caller's test can break: an Import screen that asks one anyway
+/// gets `.unavailable`, not a silent success.
+@MainActor final class FakeYouTubeAuthorizer: YouTubeAuthorizer {
+    let isAvailable: Bool
+    /// `var`: a suite that needs the SECOND authorization to be refused cannot rebuild the
+    /// authorizer mid-flow.
+    var error: YouTubeAuthorizerError?
+    let gate: Gate?
+    private(set) var authorizeCount = 0
+    private(set) var forgetCount = 0
+    /// What `forget()` actually dropped — the in-memory-only rule made observable (CF-A-10).
+    private(set) var heldToken: String?
+
+    private let token: String
+
+    init(token: String = "fake-youtube-access-token", isAvailable: Bool = true,
+         error: YouTubeAuthorizerError? = nil, gate: Gate? = nil) {
+        self.token = token
+        self.isAvailable = isAvailable
+        self.error = error
+        self.gate = gate
+    }
+
+    func authorize() async throws -> String {
+        authorizeCount += 1
+        if let gate { await gate.block() }
+        guard isAvailable else { throw error ?? YouTubeAuthorizerError.unavailable }
+        if let error { throw error }
+        heldToken = token
+        return token
+    }
+
+    func forget() {
+        forgetCount += 1
+        heldToken = nil
+    }
+}
+
 // MARK: - Live-leg InnerTube doubles (three byte-identical copies before the Phase 3 fold-in)
 
 /// The backend availability gate, always affirmative — the live-gated suites talk to YouTube

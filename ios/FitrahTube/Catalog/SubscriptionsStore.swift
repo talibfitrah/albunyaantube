@@ -9,6 +9,19 @@ import SwiftData
     var items: [SubscribedChannel] { get }
     func isSubscribed(_ channelId: String) -> Bool
     func toggle(id: String, name: String?, avatarURL: URL?) throws
+
+    /// Phase 4 Task 28, import dedupe (`SubscriptionRepository.channelExistsAny`): deleted- AND
+    /// status-agnostic. A soft-deleted row and an AWAITING one both mean "the user already has
+    /// this channel in some state", so neither is re-sent to the backend.
+    func containsAny(_ channelId: String) -> Bool
+
+    /// Phase 4 Task 28. **CF-A-11: this write BYPASSES the 30-channel cap**
+    /// (`SubscriptionRepository.kt:121-136`). The YouTube import is the ONE intentional exception —
+    /// it imports a user's whole subscription list, and refusing the 31st would make the feature
+    /// meaningless. Every other caller goes through `toggle`, which enforces RULING 27's cap;
+    /// `ImportPipeline` is the only production caller of this method and must stay so.
+    func importChannel(id: String, title: String, avatarUrl: String?,
+                       approvalStatus: String, at: Date) throws
 }
 
 nonisolated enum SubscriptionsError: Error, Equatable {
@@ -162,6 +175,49 @@ extension FavoritesSchemaV5 {
         }
         refresh()
         // Task 24: after the save, so a rolled-back write pushes nothing.
+        onDirty?(uid)
+    }
+
+    func containsAny(_ channelId: String) -> Bool {
+        let uid = currentUserId
+        // No `isRemoved`/`approvalStatus` clause: that IS the point (`isSubscribed` has both).
+        let descriptor = FetchDescriptor<SubscribedChannel>(
+            predicate: #Predicate { $0.channelId == channelId && $0.userId == uid }
+        )
+        return ((try? context.fetchCount(descriptor)) ?? 0) > 0
+    }
+
+    /// CF-A-11's cap bypass — see the protocol's note. Everything else matches `toggle`: validate,
+    /// resurrect-or-insert, save-or-rollback, then push.
+    func importChannel(id: String, title: String, avatarUrl: String?,
+                       approvalStatus: String, at: Date) throws {
+        try Self.validate(id)
+        let uid = currentUserId
+        let descriptor = FetchDescriptor<SubscribedChannel>(predicate: #Predicate { $0.channelId == id && $0.userId == uid })
+        if let existing = try context.fetch(descriptor).first {
+            existing.isRemoved = false
+            existing.dirty = true // never `updatedAt` -- the server timestamp (gate wave-2 W12)
+            existing.title = title
+            existing.avatarUrl = avatarUrl
+            existing.channelUrl = SyncURL.channel(id)
+            existing.approvalStatus = approvalStatus
+            existing.source = ImportProvenance.source
+            existing.importedAt = at
+        } else {
+            context.insert(SubscribedChannel(channelId: id, title: title, avatarUrl: avatarUrl,
+                                             followedAt: at, userId: uid, dirty: true,
+                                             channelUrl: SyncURL.channel(id),
+                                             approvalStatus: approvalStatus,
+                                             source: ImportProvenance.source, importedAt: at))
+        }
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            refresh()
+            throw error
+        }
+        refresh()
         onDirty?(uid)
     }
 

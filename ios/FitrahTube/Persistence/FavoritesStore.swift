@@ -13,6 +13,16 @@ import SwiftData
     func isFavorite(_ videoId: String) -> Bool
     func toggle(_ item: ContentItem) throws
     func clearAll() throws
+
+    /// Phase 4 Task 28, import dedupe (`FavoritesRepository.favoriteExistsAny`): deleted- AND
+    /// status-agnostic, unlike `isFavorite`, which filters tombstones out.
+    func containsAny(_ videoId: String) -> Bool
+
+    /// Phase 4 Task 28: the import path's write (`FavoritesRepository.addImportedFavorite`). It
+    /// takes the fields as values rather than a `ContentItem` because a PENDING row's canonical
+    /// metadata does not exist yet — `channelName` is deliberately blank there, never the `UC…` id.
+    func importVideo(id: String, title: String, channelName: String, thumbnailUrl: String?,
+                     durationSeconds: Int, approvalStatus: String, at: Date) throws
 }
 
 @MainActor @Observable final class SwiftDataFavoritesStore: FavoritesStore {
@@ -78,6 +88,44 @@ import SwiftData
                 thumbnailUrl: item.thumbnailURL?.absoluteString, durationSeconds: item.durationSeconds ?? 0,
                 userId: uid, dirty: true
             ))
+        }
+        try saveOrRollback()
+        refresh()
+    }
+
+    func containsAny(_ videoId: String) -> Bool {
+        let uid = currentUserId
+        // No `isRemoved`/`approvalStatus` clause: that IS the point (`isFavorite` filters the first).
+        let descriptor = FetchDescriptor<FavoriteVideo>(
+            predicate: #Predicate { $0.videoId == videoId && $0.userId == uid }
+        )
+        return ((try? context.fetchCount(descriptor)) ?? 0) > 0
+    }
+
+    /// Task 28's import write. `saveOrRollback` is what pushes, so this row reaches the sync
+    /// manager exactly as a manual toggle's does.
+    func importVideo(id: String, title: String, channelName: String, thumbnailUrl: String?,
+                     durationSeconds: Int, approvalStatus: String, at: Date) throws {
+        let uid = currentUserId
+        let descriptor = FetchDescriptor<FavoriteVideo>(
+            predicate: #Predicate { $0.videoId == id && $0.userId == uid }
+        )
+        if let existing = try context.fetch(descriptor).first {
+            existing.isRemoved = false
+            existing.dirty = true // not `updatedAt` -- see `toggle` (gate wave-2 W12)
+            existing.title = title
+            existing.channelName = channelName
+            existing.thumbnailUrl = thumbnailUrl
+            existing.durationSeconds = durationSeconds
+            existing.approvalStatus = approvalStatus
+            existing.source = ImportProvenance.source
+            existing.importedAt = at
+        } else {
+            context.insert(FavoriteVideo(videoId: id, title: title, channelName: channelName,
+                                         thumbnailUrl: thumbnailUrl, durationSeconds: durationSeconds,
+                                         addedAt: at, userId: uid, dirty: true,
+                                         approvalStatus: approvalStatus,
+                                         source: ImportProvenance.source, importedAt: at))
         }
         try saveOrRollback()
         refresh()

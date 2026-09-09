@@ -60,6 +60,13 @@ struct PlaylistDetailViewModelTests {
             if throwOnToggle { throw Boom() }
             if !ids.insert(id).inserted { ids.remove(id) }
         }
+        /// Task 28: this fake keeps no tombstones, so "any state" is the same set.
+        func containsAny(_ playlistId: String) -> Bool { ids.contains(playlistId) }
+        func importPlaylist(id: String, title: String, thumbnailUrl: String?, uploaderName: String?,
+                            approvalStatus: String, at: Date) throws {
+            try SwiftDataSavedPlaylistsStore.validate(id)
+            ids.insert(id)
+        }
     }
 
     private func makeVM(source: FakeSource = FakeSource(), saved: FakeSaved = FakeSaved(), title: String? = "Lectures",
