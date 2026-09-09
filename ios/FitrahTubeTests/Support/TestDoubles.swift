@@ -68,6 +68,18 @@ func items(count: Int, prefix: String) -> [ContentItem] {
 /// Debounce-clock stub: tests assert on the requested `Duration`, never wait out real time.
 func noSleep(_ duration: Duration) async throws {}
 
+/// The same stub when the test needs to READ what was asked for. Records the duration and returns
+/// immediately — no clock, no wall-clock waiting, the gate is hermetic. A `Mutex` rather than an
+/// actor so `recorded` is readable synchronously from the isolation the assertion runs on.
+///
+/// Lived as a nested type on `AccountSessionTests` until Task 27's debounce needed the identical
+/// recorder — the same move `leafTypeName(of:)` made in Task 25, not a second copy.
+final class SleepRecorder: Sendable {
+    private let durations = Mutex<[Duration]>([])
+    var recorded: [Duration] { durations.withLock { $0 } }
+    func record(_ duration: Duration) async { durations.withLock { $0.append(duration) } }
+}
+
 /// Which branch a `@ViewBuilder` switch actually chose, by name. `_ConditionalContent<A, B>` stores
 /// `.trueContent(A)` / `.falseContent(B)`, so this descends until the subject is no longer one of
 /// them and reports the leaf's type.

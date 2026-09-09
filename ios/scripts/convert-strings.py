@@ -102,7 +102,15 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           "profile_title", "profile_personal_info", "profile_display_name", "profile_date_of_birth",
           "profile_dob_pick", "profile_save", "profile_save_success", "profile_email_locked",
           "profile_error_network", "profile_error_rate_limited",
-          "profile_error_age_dialog_title", "profile_error_age_dialog_message"}
+          "profile_error_age_dialog_title", "profile_error_age_dialog_message",
+          # Task 27: the ONE Phase 4 key whose value says WHY rather than WHAT. Android's is
+          # "Server error %1$s" and its ar/nl are faithful translations of that -- so the iOS
+          # Suggest screen would have rendered "Server error 502" to the user, and (since a bearer
+          # this backend refuses twice surfaces as a bare 401) "Server error 401" for an expired
+          # sign-in. Refused here and re-authored under EXTRA_KEYS with no argument at all: 401 now
+          # takes the Part A sign-in copy (`auth_error_invalid_credential`) in
+          # `SuggestContentViewModel.failureState`, and every other status takes this one.
+          "suggest_error_server"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -790,6 +798,16 @@ EXTRA_KEYS = {
         "en": "Something went wrong",
         "ar": "حدث خطأ ما",
         "nl": "Er is iets misgegaan",
+    },
+    # Task 27: the REFUSED `suggest_error_server`, re-authored. Android's value is "Server error
+    # %1$s" -- the one Phase 4 string that told the user WHY, in a number they can do nothing with.
+    # No argument at all now, which also retires two traps the status carried: a malformed 200 body
+    # rendered as "Server error 200", and an expired sign-in as "Server error 401" (that one is a
+    # different arm entirely since this task -- `auth_error_invalid_credential`).
+    "suggest_error_server": {
+        "en": "Search is unavailable right now",
+        "ar": "البحث غير متاح حاليًا",
+        "nl": "Zoeken is nu niet beschikbaar",
     },
 }
 

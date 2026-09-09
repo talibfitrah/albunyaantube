@@ -58,7 +58,16 @@ nonisolated enum MySubmissionsUiState: Equatable {
     /// of that reads as a reload, and it is the same double indicator Part A removed. A `.loading`
     /// with nothing behind it — first load, or a re-read after the error/empty arm — still paints
     /// the skeleton, because there the skeleton IS the only indicator.
-    func refresh() async {
+    /// Re-review nit 1: a TRANSIENT failure with rows on screen keeps the rows and RETURNS the
+    /// message to banner — `AccountSession.fetch`'s `.network where … state.me != nil` precedent
+    /// (`:369`), "a cached account beats an offline banner". A pull-to-refresh in a lift has no
+    /// business replacing a list the user is reading with a Retry card. Discriminated, not blanket:
+    /// only `.network` takes that arm. Anything the SERVER decided — a revoked moderator's 403, a
+    /// 500, a malformed page — still goes to `.error`, because those say the rows on screen may be
+    /// exactly what is wrong. With nothing loaded, `.network` fails to `.error` as before: there the
+    /// error card is the only thing on screen.
+    @discardableResult
+    func refresh() async -> String? {
         generation += 1
         let mine = generation
         if case .loaded = state {} else { state = .loading }
@@ -66,13 +75,17 @@ nonisolated enum MySubmissionsUiState: Equatable {
         paginationError = false
         do {
             let page = try await client.mySubmissions(status: nil, cursor: nil, limit: Self.pageSize)
-            guard mine == generation else { return }
+            guard mine == generation else { return nil }
             cursor = page.nextCursor
             state = page.items.isEmpty ? .empty : .loaded(page.items)
         } catch {
-            guard mine == generation else { return }
+            guard mine == generation else { return nil }
+            if error == .network, case .loaded = state {
+                return String(localized: "auth_error_network")
+            }
             state = .error
         }
+        return nil
     }
 
     /// The next page, appended. Answers whether a fetch was actually STARTED, which is what the

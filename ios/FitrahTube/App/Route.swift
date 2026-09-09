@@ -60,6 +60,10 @@ nonisolated enum Route: Hashable, Sendable {
     /// the ROW to moderators and admins (`MeKebabItem.items(isModerator:)`); nothing else in the
     /// app pushes this case, and there is no deep link to it.
     case mySubmissions
+    /// Phase 4 Task 27: Suggest Content, pushed from the signed-in Me tab's kebab. Ruling C4 gates
+    /// the ROW to moderators and admins alongside `.mySubmissions` (`MeKebabItem.items(isModerator:)`
+    /// moves both together); nothing else in the app pushes this case, and there is no deep link.
+    case suggestContent
 }
 
 extension Route {

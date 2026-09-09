@@ -5,9 +5,9 @@ import SwiftUI
 /// ruling C4 gates to moderators and admins: `MeKebabItem.items(isModerator:)` is what decides
 /// whether the row exists at all, and nothing else in the app pushes this route.
 ///
-/// No FAB. Android's opens `SubmitContentBottomSheet`, which is Task 27's screen — RULING 28 refuses
-/// a button whose destination has not landed, so `my_submissions_submit_cta` stays unrendered until
-/// then.
+/// The **+** (Android's FAB, `my_submissions_submit_cta`) lands in Task 27 with the sheet it opens.
+/// It is what makes `my_submissions_empty` — "Tap + to suggest content for the library" — true;
+/// until Task 27 there was no + to tap, which was RULING 28 honoured at the cost of the copy.
 struct MySubmissionsScreen: View {
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
@@ -17,6 +17,7 @@ struct MySubmissionsScreen: View {
     @State private var banner: BannerMessage?
     @State private var editing: Submission?
     @State private var confirmingDelete: Submission?
+    @State private var suggesting = false
     @State private var paginationGuard = PaginationGuard()
     /// Geometry *state*, not an event (gate B1-C1), exactly as `ContentListView` keeps it.
     @State private var contentFits = false
@@ -28,7 +29,7 @@ struct MySubmissionsScreen: View {
         }
         .refreshable {
             paginationGuard.reset()
-            await model?.refresh()
+            if let message = await model?.refresh() { banner = BannerMessage(text: message) }
         }
         .onContentFits { fits in
             contentFits = fits
@@ -40,7 +41,25 @@ struct MySubmissionsScreen: View {
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(String(localized: "my_submissions_title"))
         .navigationBarTitleDisplayMode(.inline)
+        // Android's FAB (`fragment_my_submissions.xml`), as a toolbar +. This is the affordance
+        // `my_submissions_empty` names, so it is present in every arm — including the empty one it
+        // is being pointed at from.
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { suggesting = true } label: {
+                    Image(systemName: "plus").frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel(String(localized: "my_submissions_submit_cta"))
+            }
+        }
         .transientBanner($banner)
+        .sheet(isPresented: $suggesting) {
+            SubmitContentSheet { message in
+                suggesting = false
+                banner = BannerMessage(text: message)
+                Task { _ = await model?.refresh() }
+            }
+        }
         .sheet(item: $editing) { row in
             if let model {
                 EditSubmissionSheet(submission: row) { note in
@@ -69,7 +88,7 @@ struct MySubmissionsScreen: View {
             let model = self.model ?? MySubmissionsViewModel(client: container.approvals)
             self.model = model
             paginationGuard.reset()
-            await model.refresh()
+            if let message = await model.refresh() { banner = BannerMessage(text: message) }
         }
     }
 

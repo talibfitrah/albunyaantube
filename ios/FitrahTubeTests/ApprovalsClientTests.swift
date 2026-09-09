@@ -207,13 +207,31 @@ struct ApprovalsClientTests {
         #expect(transport.sent.first?.method == "DELETE")
         #expect(transport.sent.first?.url.path() == "/api/admin/registry/playlists/PL-1/submission")
 
-        try await client.submit(type: .channels, youtubeId: "UCmMcOjsVehVlEOteyrhjI2Q", note: "good")
+        try await client.submit(type: .channels, youtubeId: "UCmMcOjsVehVlEOteyrhjI2Q", note: "good",
+                                categoryIds: ["cat-1"])
         let post = try #require(transport.sent.last)
         #expect(post.method == "POST")
         #expect(post.url.path() == "/api/admin/registry/channels")
-        let postBody = try #require(post.body)
-        let body = try #require(try JSONSerialization.jsonObject(with: postBody) as? [String: String])
-        #expect(body == ["youtubeId": "UCmMcOjsVehVlEOteyrhjI2Q", "submitterNote": "good"])
+    }
+
+    /// Task 27's shape pin. `RegistryController.normalizeStatusAndApprovedBy` (`:128-152`) defaults
+    /// an ADMIN's own POST to `APPROVED` + `approvedBy = self` when the body carries no `status`,
+    /// so Task 25's silent body published an uncategorised row with no review the moment an admin
+    /// used the sheet. `PENDING` is in `VALID_STATUSES` (`:40`) and only the `APPROVED` branch
+    /// (`:148`) stamps `approvedBy`, so an explicit `PENDING` is honoured for every role.
+    @Test func theSubmitBodyCarriesAnExplicitPendingAndItsCategoryIds() async throws {
+        let (client, transport) = self.client([.json(201, "{}")])
+
+        try await client.submit(type: .videos, youtubeId: "xc7keR2piUM", note: "why",
+                                categoryIds: ["cat-1", "cat-2"])
+
+        // NOT a nested `#require` — that is a recursive macro expansion (Task 25's step 1).
+        let postBody = try #require(transport.sent.last?.body)
+        let body = try #require(try JSONSerialization.jsonObject(with: postBody) as? [String: Any])
+        #expect(body["status"] as? String == "PENDING", "every suggestion enters the approval flow")
+        #expect(body["categoryIds"] as? [String] == ["cat-1", "cat-2"])
+        #expect(body["youtubeId"] as? String == "xc7keR2piUM")
+        #expect(body["submitterNote"] as? String == "why")
     }
 
     /// `X-Device-Id` on every request, exactly as `AccountClient`/`SyncClient` send it. The BEARER
@@ -253,13 +271,16 @@ struct ApprovalsClientTests {
             try await client.deleteSubmission(type: .videos, id: "a")
         }
         await #expect(throws: AccountError.rateLimited(retryAfterSeconds: 90)) {
-            try await client.submit(type: .videos, youtubeId: "xc7keR2piUM", note: nil)
+            try await client.submit(type: .videos, youtubeId: "xc7keR2piUM", note: nil,
+                                    categoryIds: ["cat-1"])
         }
         await #expect(throws: AccountError.rateLimited(retryAfterSeconds: 30)) {
-            try await client.submit(type: .videos, youtubeId: "xc7keR2piUM", note: nil)
+            try await client.submit(type: .videos, youtubeId: "xc7keR2piUM", note: nil,
+                                    categoryIds: ["cat-1"])
         }
         await #expect(throws: AccountError.rateLimited(retryAfterSeconds: 60)) {
-            try await client.submit(type: .videos, youtubeId: "xc7keR2piUM", note: nil)
+            try await client.submit(type: .videos, youtubeId: "xc7keR2piUM", note: nil,
+                                    categoryIds: ["cat-1"])
         }
         // "Not your submission" — nothing the user can act on, so it is not its own case.
         await #expect(throws: AccountError.unknown(status: 403)) {

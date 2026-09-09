@@ -52,6 +52,12 @@ struct MainShellRoutingTests {
         #expect(leaf(for: .mySubmissions) == "MySubmissionsScreen")
     }
 
+    /// Phase 4 Task 27: the ONE new `Route` case this task adds — it lands WITH its screen, and
+    /// with the second half of ruling C4's moderator-only kebab pair (`MeKebabItem.landed`).
+    @Test func theSuggestContentRouteRendersTheRealScreen() {
+        #expect(leaf(for: .suggestContent) == "SuggestContentScreen")
+    }
+
     /// T0-1: `railStacks` is the only publisher of `\.tabIsSelected` — the compact `TabView` sets
     /// nothing, and neither does a sheet, a preview or a test host. So the DEFAULT is what every
     /// one of those readers gets, and it has to mean "you are on screen": `false` there would have

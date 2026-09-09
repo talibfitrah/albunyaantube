@@ -731,6 +731,9 @@ struct SearchField: View {
     /// Set by `SearchView`, which submits on the keyboard's Search key (bypassing its debounce);
     /// `nil` on the list tabs, which only ever fetch on the debounced `query` change.
     var onSubmit: (() -> Void)?
+    /// Overrides the placeholder. `nil` (every Phase 1-3 caller) keeps `search_hint`; Task 27's
+    /// Suggest screen searches YouTube through the BACKEND and says so (`suggest_search_hint`).
+    var placeholderKey: String?
 
     @Environment(\.widthClass) private var widthClass
 
@@ -754,7 +757,8 @@ struct SearchField: View {
 
     @ViewBuilder
     private var field: some View {
-        let base = TextField(String(localized: "search_hint"), text: $text)
+        let base = TextField(String(localized: String.LocalizationValue(placeholderKey ?? "search_hint")),
+                             text: $text)
             .textFieldStyle(.plain)
             .accessibilityLabel(accessibilityLabel)
         if let focus, let onSubmit {

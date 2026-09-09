@@ -253,6 +253,38 @@ struct MySubmissionsViewModelTests {
         #expect(ids(model) == ["s2"])
     }
 
+    /// **Re-review nit 1.** A TRANSIENT failure with rows on screen keeps them and hands back the
+    /// message to banner — `AccountSession.fetch`'s `.network where … state.me != nil` precedent
+    /// (`:369`, "a cached account beats an offline banner"). With nothing loaded it still fails to
+    /// `.error`, because there the error card is the only thing on screen.
+    @Test func aNetworkFailureKeepsTheRowsAndBannersInsteadOfBlankingTheList() async {
+        let (model, _) = self.model([.json(200, Self.page(["s1"])),
+                                     .failing(URLError(.notConnectedToInternet))])
+        await model.refresh()
+        let message = await model.refresh()
+
+        #expect(ids(model) == ["s1"], "a stall does not cost the user what they were reading")
+        #expect(message == String(localized: "auth_error_network"))
+
+        let (cold, _) = self.model([.failing(URLError(.notConnectedToInternet))])
+        #expect(await cold.refresh() == nil, "nothing on screen: the error arm IS the message")
+        #expect(cold.state == .error)
+    }
+
+    /// The other half of the discrimination: anything the SERVER decided still blanks to `.error`,
+    /// because those are the cases where the rows on screen may be exactly what is wrong — a
+    /// revoked moderator's 403 above all.
+    @Test func aServerDecidedFailureWithRowsOnScreenStillGoesToTheErrorArm() async {
+        for status in [403, 500] {
+            let (model, _) = self.model([.json(200, Self.page(["s1"])), .json(status, "")])
+            await model.refresh()
+            let message = await model.refresh()
+
+            #expect(model.state == .error, "\(status) is a verdict, not a stall")
+            #expect(message == nil)
+        }
+    }
+
     /// Android's single-flight `refreshJob` (`MySubmissionsViewModel.kt:44-47`): a delete's refresh
     /// and a pull-to-refresh both call this, and the OLDER answer landing last would re-introduce a
     /// row that was just removed. The generation guard refuses the superseded round's write.

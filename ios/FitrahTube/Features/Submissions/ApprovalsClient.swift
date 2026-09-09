@@ -148,8 +148,23 @@ nonisolated struct ApprovalsClient: Sendable {
     /// `POST api/admin/registry/{channels|playlists|videos}` (`RegistryController.java:203,526,903`).
     /// 201 on a new row, 200 on a re-submit of an admin-bounced (`REQUEST_CHANGES`) one; 409 when
     /// the youtubeId is already in the registry under somebody else's submission.
-    func submit(type: SubmissionType, youtubeId: String, note: String?) async throws(AccountError) {
-        let body = try encode(SubmitBody(youtubeId: youtubeId, submitterNote: note))
+    ///
+    /// **`status` is always `PENDING`, and is not a parameter.** Task 25 sent neither it nor the
+    /// categories, and `normalizeStatusAndApprovedBy` (`:128-152`) defaults an ADMIN's own POST to
+    /// `APPROVED` with `approvedBy = self` — so an admin suggesting content from this app published
+    /// an uncategorised row with no review at all. Every suggestion enters the approval flow
+    /// regardless of the caller's role: that is the product rule, and the controller honours an
+    /// explicit `PENDING` (`VALID_STATUSES` at `:40` contains it, and the `APPROVED` branch at
+    /// `:148` is the only one that stamps `approvedBy`). One value, so a parameter would only offer
+    /// callers a way to get it wrong.
+    ///
+    /// `categoryIds` is likewise mandatory here: an APPROVED row with none is invisible to every
+    /// public category filter, and the submitter is the one person who knows which category it
+    /// belongs in (Android's sheet requires the same pick, `SubmitContentBottomSheet.kt:100-101`).
+    func submit(type: SubmissionType, youtubeId: String, note: String?,
+                categoryIds: [String]) async throws(AccountError) {
+        let body = try encode(SubmitBody(youtubeId: youtubeId, submitterNote: note,
+                                         categoryIds: categoryIds, status: "PENDING"))
         let response = try await send("POST", baseURL.appending(path: "api/admin/registry/\(type.rawValue)"),
                                       body: body)
         guard response.status == 200 || response.status == 201 else { throw Self.failure(response) }
@@ -172,7 +187,12 @@ nonisolated struct ApprovalsClient: Sendable {
 
     // MARK: - Wire
 
-    private struct SubmitBody: Encodable { let youtubeId: String; let submitterNote: String? }
+    private struct SubmitBody: Encodable {
+        let youtubeId: String
+        let submitterNote: String?
+        let categoryIds: [String]
+        let status: String
+    }
     private struct NoteBody: Encodable { let submitterNote: String }
 
     private struct PageBody: Decodable {

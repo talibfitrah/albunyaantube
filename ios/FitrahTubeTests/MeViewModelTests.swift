@@ -216,19 +216,20 @@ struct MeViewModelTests {
         }
     }
 
-    /// RULING 28 again, as arithmetic: Task 17 landed `Route.profile` and Task 25
-    /// `Route.mySubmissions`, so those two render alongside `.signOut` and the other two still do
-    /// not. Tasks 27/29 each widen `MeKebabItem.landed` further and edit this test.
+    /// RULING 28 again, as arithmetic: Task 17 landed `Route.profile`, Task 25
+    /// `Route.mySubmissions` and Task 27 `Route.suggestContent`, so those three render alongside
+    /// `.signOut` and `.importYouTube` still does not. Task 29 widens `MeKebabItem.landed` one last
+    /// time and edits this test.
     ///
-    /// `.mySubmissions` is also the first landed row that is ROLE-GATED (ruling C4): the plain user
-    /// never sees it, so this is the gate as arithmetic too — `items(isModerator:)` filtered by
-    /// `landed`, with neither list rendering a greyed promise.
-    @Test func onlyProfileMySubmissionsAndSignOutHaveADestinationAtTaskTwentyFive() async throws {
+    /// Ruling C4 as arithmetic too: BOTH moderator rows now have destinations, so a moderator's
+    /// kebab gains exactly two rows over a plain user's — and a plain user's is byte-identical to
+    /// what Task 17 left, with neither list rendering a greyed promise.
+    @Test func onlyImportYouTubeStillHasNoDestinationAtTaskTwentySeven() async throws {
         let plain = makeModel(session: try await makeSession(role: "user"), stores: makeStores())
         #expect(plain.enabledKebabItems == [.profile, .signOut])
         let moderator = makeModel(session: try await makeSession(role: "admin"), stores: makeStores())
-        #expect(moderator.enabledKebabItems == [.profile, .mySubmissions, .signOut])
-        // Both moderator rows still move together; only the one with a destination renders.
+        #expect(moderator.enabledKebabItems == [.profile, .mySubmissions, .suggestContent, .signOut])
+        // Both moderator rows still move together; the one without a destination still does not render.
         #expect(MeKebabItem.items(isModerator: true)
             == [.profile, .mySubmissions, .suggestContent, .importYouTube, .signOut])
     }

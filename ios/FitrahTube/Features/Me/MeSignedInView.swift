@@ -331,8 +331,9 @@ struct MeSignedInView: View {
 
     // MARK: - Kebab
 
-    /// Renders `enabledKebabItems`, NOT `items(isModerator:)`: only `.profile` and `.signOut` have
-    /// a destination today, and RULING 28 refuses a greyed row that promises one. No `.disabled(true)`
+    /// Renders `enabledKebabItems`, NOT `items(isModerator:)`: only the rows in `MeKebabItem.landed`
+    /// have a destination today (`.importYouTube` is still Task 29's), and RULING 28 refuses a
+    /// greyed row that promises one. No `.disabled(true)`
     /// anywhere. The role gate itself is fully tested through the pure `MeKebabItem.items(
     /// isModerator:)`, which needs no rendering.
     @ViewBuilder
@@ -349,9 +350,12 @@ struct MeSignedInView: View {
                         // Task 25 landed this one and widened `MeKebabItem.landed`; ruling C4's
                         // role gate is what puts it in `enabledKebabItems` in the first place.
                         case .mySubmissions: router.push(.mySubmissions)
-                        // Tasks 27/29 each land one of these the same way — so these arms are
-                        // unreachable today and must stay a no-op rather than a placeholder screen.
-                        case .suggestContent, .importYouTube: break
+                        // Task 27 landed this one and widened `MeKebabItem.landed`; ruling C4's
+                        // role gate moves it with `.mySubmissions`, never on its own.
+                        case .suggestContent: router.push(.suggestContent)
+                        // Task 29 lands this one the same way — so this arm is unreachable today
+                        // and must stay a no-op rather than a placeholder screen.
+                        case .importYouTube: break
                         }
                     } label: {
                         Label(String(localized: String.LocalizationValue(item.titleKey)),

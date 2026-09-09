@@ -16819,19 +16819,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "خطأ في الخادم %1$@"
+            "value": "البحث غير متاح حاليًا"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Server error %1$@"
+            "value": "Search is unavailable right now"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Serverfout %1$@"
+            "value": "Zoeken is nu niet beschikbaar"
           }
         }
       }

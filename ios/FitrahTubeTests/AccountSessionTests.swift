@@ -30,14 +30,6 @@ struct AccountSessionTests {
         init(requestCount: @escaping () -> Int) { self.requestCount = requestCount }
     }
 
-    /// The injected sleep: records the duration asked for and returns immediately. No clock, no
-    /// wall-clock waiting — the gate is hermetic.
-    final class SleepRecorder: Sendable {
-        private let durations = Mutex<[Duration]>([])
-        var recorded: [Duration] { durations.withLock { $0 } }
-        func record(_ duration: Duration) async { durations.withLock { $0.append(duration) } }
-    }
-
     private func make(auth: FakeAuthClient, responses: [HTTPResponse], sleeps: SleepRecorder = SleepRecorder(),
                       wipe: @escaping @MainActor @Sendable () async -> Error? = { nil })
         -> (session: AccountSession, stores: [SpyStore], transport: ScriptedTransport, status: AccountStatusCenter) {

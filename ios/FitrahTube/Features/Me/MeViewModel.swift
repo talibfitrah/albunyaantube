@@ -58,8 +58,9 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     ///
     /// `.mySubmissions` is the first ROLE-GATED row to land: `items(isModerator:)` decides whether
     /// it is offered at all (ruling C4) and this set decides whether it has anywhere to go, so a
-    /// plain user's kebab is unchanged by Task 25.
-    static let landed: Set<MeKebabItem> = [.profile, .mySubmissions, .signOut]
+    /// plain user's kebab is unchanged by Task 25. Task 27 lands the second half of the same C4
+    /// pair, `.suggestContent`; a plain user's kebab is unchanged again.
+    static let landed: Set<MeKebabItem> = [.profile, .mySubmissions, .suggestContent, .signOut]
 }
 
 /// Ruling C5's signed-in Me screen, over LOCAL stores only. No feed (Tasks 14-16), no History

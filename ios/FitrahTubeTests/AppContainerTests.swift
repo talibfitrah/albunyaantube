@@ -152,10 +152,37 @@ struct AppContainerTests {
                                       apiBaseURL: URL(string: "https://api.fitrah.test/")!,
                                       browse: FakeBrowseSource(),
                                       auth: FakeAuthClient(state: .signedOut))
-        let transport = Mirror(reflecting: production.approvals)
-            .children.first { $0.label == "transport" }?.value
+        // Re-review nit 2: `#require`, not an optional chain. `transport` is read BY NAME, so a
+        // rename would otherwise fail as a bare `nil is AuthorizedTransport` and say nothing about
+        // the rename that caused it.
+        let transport = try #require(Mirror(reflecting: production.approvals)
+            .children.first { $0.label == "transport" }?.value,
+                                     "ApprovalsClient must keep a stored property named `transport`")
         #expect(transport is AuthorizedTransport,
                 "the approvals client must be built over the signed transport")
+    }
+
+    /// Task 27's twin of the row above, for ruling F1's fifth client. Same two halves and the same
+    /// two reasons: `YouTubeSearchClient` mints no `Authorization` header of its own
+    /// (`everyRequestCarriesTheDeviceIdAndTheBearerFromTheTransport`) so an unsigned transport would
+    /// fail no test, and a fixture must answer the canned 503 rather than drink the `/me` queue.
+    @Test func theYouTubeSearchClientIsSignedInProductionAndCannedInAFixture() async throws {
+        let fixture = AppContainer.fake()
+        let page = try? await fixture.youtubeSearch.search(q: "tafsir", type: .all, pageToken: nil)
+        #expect(page == nil, "a fixture must answer the canned 503, not a decoded account record")
+        let me = try await fixture.account.me()
+        #expect(me.uid == "fake-uid", "…and must leave the four-slot `/me` queue intact")
+
+        let production = AppContainer(catalog: FakeCatalogClient(),
+                                      modelContainer: AppContainer.makeModelContainer(inMemory: true),
+                                      apiBaseURL: URL(string: "https://api.fitrah.test/")!,
+                                      browse: FakeBrowseSource(),
+                                      auth: FakeAuthClient(state: .signedOut))
+        let transport = try #require(Mirror(reflecting: production.youtubeSearch)
+            .children.first { $0.label == "transport" }?.value,
+                                     "YouTubeSearchClient must keep a stored property named `transport`")
+        #expect(transport is AuthorizedTransport,
+                "the search client must be built over the signed transport")
     }
 
     /// The transport posts from whatever isolation the request ran on; the center buffers one event

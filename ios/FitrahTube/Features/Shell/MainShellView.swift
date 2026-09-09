@@ -204,6 +204,8 @@ struct MainShellView: View {
             ProfileScreen()
         case .mySubmissions:
             MySubmissionsScreen()
+        case .suggestContent:
+            SuggestContentScreen()
         }
     }
 

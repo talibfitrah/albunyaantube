@@ -293,6 +293,25 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                deviceId: .persisted(in: userDefaults))
     }()
 
+    /// Phase 4 Task 27: `GET api/admin/youtube/search`, over the same signed transport. Ruling F1's
+    /// fifth hand-written client (Task 26 landed it with no consumer; RULING 28 kept it unwired
+    /// until the screen that reads it). Role-gated by the BACKEND
+    /// (`@PreAuthorize("hasAnyRole('ADMIN','MODERATOR')")`) as well as by the kebab that reaches it.
+    ///
+    /// A FIXTURE gets the canned 503, `approvals`' arm for `approvals`' reason: `authorizedTransport`
+    /// there is the ScriptedTransport holding the fixture's four canned `/me` bodies, and a search
+    /// would both spend slots from that queue and decode an account record as a page of hits.
+    private(set) lazy var youtubeSearch: YouTubeSearchClient = {
+        #if DEBUG
+        if isFixture {
+            return YouTubeSearchClient(transport: FixedStatusTransport(status: 503), baseURL: apiBaseURL,
+                                       deviceId: .persisted(in: userDefaults))
+        }
+        #endif
+        return YouTubeSearchClient(transport: authorizedTransport, baseURL: apiBaseURL,
+                                   deviceId: .persisted(in: userDefaults))
+    }()
+
     /// Phase 4 Task 23/24: the ONE sync manager. Cheap to build (no session, no directory, no
     /// network until something triggers it), so `lazy` like every other store here.
     ///
