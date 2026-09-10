@@ -190,8 +190,21 @@ import Observation
     /// and the delete confirmation renders its own two keys — none of them reads `messageKey` at
     /// all. So `.userNotFound.messageKey` is `auth_error_wrong_password` and the distinct key is
     /// retired.
+    /// Task 27 re-review nit, the second row: with Firebase's email-enumeration protection ON — the
+    /// default for projects created since 2023 — a mistyped password no longer returns 17009. It
+    /// returns `ERROR_INVALID_CREDENTIAL` (17004), which `AuthErrorCode` folds into
+    /// `.invalidCredential`, whose copy is "Sign in again to continue" — an instruction with no
+    /// meaning on the SIGN-IN screen, where there is no session to sign in again to. Both re-auth
+    /// sheets already collapse the same pair (`EditEmailSheet.swift:92`,
+    /// `EditPasswordSheet.swift:98`); this is that ruling on the leg that was still inconsistent.
+    ///
+    /// Suggest's 401 arm is NOT this table and keeps the re-authored key: there the user really
+    /// does hold a session the backend refused twice, so "sign in again" is the actual remedy.
     nonisolated static func presented(_ error: AuthErrorCode) -> AuthErrorCode {
-        error == .userNotFound ? .wrongPassword : error
+        switch error {
+        case .userNotFound, .invalidCredential: .wrongPassword
+        default: error
+        }
     }
 
     /// The ONE place a failure is recorded — every arm above routes through it, which is what makes

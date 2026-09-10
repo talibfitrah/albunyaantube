@@ -44,12 +44,16 @@ struct MeViewModelTests {
         return session
     }
 
+    /// `canImportFromYouTube` defaults to FALSE — the honest answer for an email/password or Apple
+    /// account, which is what every existing case here builds. The Import row's own arms pass true.
     private func makeModel(session: AccountSession,
                            stores: (favorites: SwiftDataFavoritesStore,
                                     subscriptions: SwiftDataSubscriptionsStore,
-                                    savedPlaylists: SwiftDataSavedPlaylistsStore)) -> MeViewModel {
+                                    savedPlaylists: SwiftDataSavedPlaylistsStore),
+                           canImportFromYouTube: Bool = false) -> MeViewModel {
         MeViewModel(session: session, favorites: stores.favorites,
-                    subscriptions: stores.subscriptions, savedPlaylists: stores.savedPlaylists)
+                    subscriptions: stores.subscriptions, savedPlaylists: stores.savedPlaylists,
+                    canImportFromYouTube: { canImportFromYouTube })
     }
 
     private func favorite(_ id: String) -> ContentItem {
@@ -216,22 +220,41 @@ struct MeViewModelTests {
         }
     }
 
-    /// RULING 28 again, as arithmetic: Task 17 landed `Route.profile`, Task 25
-    /// `Route.mySubmissions` and Task 27 `Route.suggestContent`, so those three render alongside
-    /// `.signOut` and `.importYouTube` still does not. Task 29 widens `MeKebabItem.landed` one last
-    /// time and edits this test.
+    /// RULING 28 as arithmetic: Task 17 landed `Route.profile`, Task 25 `Route.mySubmissions`,
+    /// Task 27 `Route.suggestContent` and Task 29 `Route.importFromYouTube`, so `MeKebabItem.landed`
+    /// is now every case — and the ONLY thing still keeping a row off a kebab is a gate, never a
+    /// missing destination.
     ///
-    /// Ruling C4 as arithmetic too: BOTH moderator rows now have destinations, so a moderator's
-    /// kebab gains exactly two rows over a plain user's — and a plain user's is byte-identical to
-    /// what Task 17 left, with neither list rendering a greyed promise.
-    @Test func onlyImportYouTubeStillHasNoDestinationAtTaskTwentySeven() async throws {
+    /// Ruling C4 as arithmetic too: BOTH moderator rows move together, so a moderator's kebab gains
+    /// exactly two rows over a plain user's, and neither list renders a greyed promise.
+    @Test func everyKebabRowHasADestinationSinceTaskTwentyNine() async throws {
         let plain = makeModel(session: try await makeSession(role: "user"), stores: makeStores())
         #expect(plain.enabledKebabItems == [.profile, .signOut])
         let moderator = makeModel(session: try await makeSession(role: "admin"), stores: makeStores())
         #expect(moderator.enabledKebabItems == [.profile, .mySubmissions, .suggestContent, .signOut])
-        // Both moderator rows still move together; the one without a destination still does not render.
+        #expect(MeKebabItem.landed == Set(MeKebabItem.allCases))
         #expect(MeKebabItem.items(isModerator: true)
             == [.profile, .mySubmissions, .suggestContent, .importYouTube, .signOut])
+    }
+
+    /// Task 29's gate, and the reason `landed` alone stopped being the whole answer: Import needs a
+    /// signed-in GOOGLE user to extend a scope onto, so an Apple or email/password account has
+    /// nothing to authorize. RULING 28 — the row is ABSENT for those accounts, never greyed, which
+    /// is exactly the difference between these two lists.
+    @Test func theImportRowAppearsOnlyForAnAccountWithAGoogleGrant() async throws {
+        let google = makeModel(session: try await makeSession(role: "user"), stores: makeStores(),
+                               canImportFromYouTube: true)
+        #expect(google.enabledKebabItems == [.profile, .importYouTube, .signOut])
+        let apple = makeModel(session: try await makeSession(role: "user"), stores: makeStores(),
+                              canImportFromYouTube: false)
+        #expect(apple.enabledKebabItems == [.profile, .signOut])
+        // A moderator with a Google grant gets all five; the C4 pair is unaffected either way.
+        let moderator = makeModel(session: try await makeSession(role: "admin"), stores: makeStores(),
+                                  canImportFromYouTube: true)
+        #expect(moderator.enabledKebabItems
+            == [.profile, .mySubmissions, .suggestContent, .importYouTube, .signOut])
+        // Never `.disabled` — the absent row is absent, so the two lists differ in LENGTH.
+        #expect(apple.enabledKebabItems.count + 1 == google.enabledKebabItems.count)
     }
 
     /// The kebab's ONE live destination, end to end: sign out drops the session, and ruling C5's

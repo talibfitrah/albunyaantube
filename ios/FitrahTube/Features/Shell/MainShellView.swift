@@ -206,6 +206,8 @@ struct MainShellView: View {
             MySubmissionsScreen()
         case .suggestContent:
             SuggestContentScreen()
+        case .importFromYouTube:
+            ImportFromYouTubeScreen()
         }
     }
 

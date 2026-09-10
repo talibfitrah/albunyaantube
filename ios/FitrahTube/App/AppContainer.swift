@@ -312,6 +312,46 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                    deviceId: .persisted(in: userDefaults))
     }()
 
+    // MARK: - Phase 4 Task 29: the import flow
+
+    /// Ruling F9's seam. `GoogleYouTubeAuthorizer` is the sixth and last app file allowed to name a
+    /// Google SDK type; every reader above it sees `any YouTubeAuthorizer` and a `String`.
+    ///
+    /// A FIXTURE gets a fake with NEITHER Google fact, so `isAvailable` is false and the Me kebab's
+    /// Import row is absent — the screenshot rig must not depend on a Google grant it cannot have,
+    /// and RULING 28 says an unavailable affordance is not rendered at all.
+    private(set) lazy var youtubeAuthorizer: any YouTubeAuthorizer = {
+        #if DEBUG
+        if isFixture { return UnavailableYouTubeAuthorizer() }
+        #endif
+        return GoogleYouTubeAuthorizer()
+    }()
+
+    /// The ONE type in this app that addresses `googleapis.com`, and the one place a PLAIN
+    /// transport is deliberate: `authorizedTransport` would put the FitrahTube Firebase bearer and
+    /// this device's id on a request to Google. The only credential that host ever sees is the
+    /// user's own OAuth token, passed per call.
+    private(set) lazy var youtubeImportSource = YouTubeImportSource(transport: URLSessionTransport())
+
+    /// The write half. `ImportClient` addresses the FITRAHTUBE backend, so it takes the signed
+    /// transport — the two hosts are never confused. Every row goes through a STORE, which is what
+    /// marks it dirty and lets `sync` push it exactly as a manual toggle's row is pushed.
+    ///
+    /// A FIXTURE gets the canned 503 `approvals`/`youtubeSearch` get, and for the same reason: the
+    /// fixture's `authorizedTransport` is a `ScriptedTransport` holding canned `/me` bodies, and a
+    /// resolve would both spend that queue and decode an account record as a page of results.
+    private(set) lazy var importPipeline: ImportPipeline = {
+        #if DEBUG
+        let transport: any HTTPTransport = isFixture ? FixedStatusTransport(status: 503) : authorizedTransport
+        #else
+        let transport: any HTTPTransport = authorizedTransport
+        #endif
+        return ImportPipeline(client: ImportClient(transport: transport, baseURL: apiBaseURL,
+                                                   deviceId: .persisted(in: userDefaults)),
+                              favorites: favorites, subscriptions: subscriptions,
+                              playlists: savedPlaylists, now: Date.init)
+    }()
+
     /// Phase 4 Task 23/24: the ONE sync manager. Cheap to build (no session, no directory, no
     /// network until something triggers it), so `lazy` like every other store here.
     ///

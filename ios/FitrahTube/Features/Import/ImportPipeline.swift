@@ -9,12 +9,18 @@ nonisolated struct ImportSummary: Sendable, Equatable {
     var skipped: Int
     var alreadyPresent: Int
     /// How many of the fresh candidates this run actually got through. A COMPLETE run ends with
-    /// `processed == candidates.count - alreadyPresent`; anything short of that is a run a 429, a
-    /// cancel or a network failure cut off. Review I1: the "this was partial" signal used to exist
-    /// ONLY in the transient DONE `progress` emission, so a screen that keeps the summary and drops
-    /// the last callback would tell a user whose connection died after chunk 1 "200 added" and
-    /// nothing else. The plan's Task 28 interface block is amended for this field.
+    /// `processed == total`; anything short of that is a run a 429, a cancel or a network failure
+    /// cut off. Review I1: the "this was partial" signal used to exist ONLY in the transient DONE
+    /// `progress` emission, so a screen that keeps the summary and drops the last callback would
+    /// tell a user whose connection died after chunk 1 "200 added" and nothing else. The plan's
+    /// Task 28 interface block is amended for this field.
     var processed: Int
+    /// The DENOMINATOR `processed` is short of: the FRESH count this run set out to write
+    /// (`candidates.count - alreadyPresent`). Task 28 re-review: without it the partial predicate
+    /// needed a number only the screen's caller held, so the summary could not answer "was this
+    /// run complete?" on its own — and the screen would have had to keep the candidate list alive
+    /// past the run to ask. `processed < total` is the whole predicate now.
+    var total: Int
     var rateLimited: Bool
 }
 
@@ -134,7 +140,7 @@ nonisolated enum ImportProvenance {
         progress(.done, processed, total)
         return ImportSummary(added: added, sentForReview: sentForReview,
                              skipped: alreadyPresent + rejectedOrError,
-                             alreadyPresent: alreadyPresent, processed: processed,
+                             alreadyPresent: alreadyPresent, processed: processed, total: total,
                              rateLimited: rateLimited)
     }
 

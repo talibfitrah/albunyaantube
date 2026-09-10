@@ -59,8 +59,12 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     /// `.mySubmissions` is the first ROLE-GATED row to land: `items(isModerator:)` decides whether
     /// it is offered at all (ruling C4) and this set decides whether it has anywhere to go, so a
     /// plain user's kebab is unchanged by Task 25. Task 27 lands the second half of the same C4
-    /// pair, `.suggestContent`; a plain user's kebab is unchanged again.
-    static let landed: Set<MeKebabItem> = [.profile, .mySubmissions, .suggestContent, .signOut]
+    /// pair, `.suggestContent`; a plain user's kebab is unchanged again. Task 29 lands the last
+    /// one, `.importYouTube`, so every case in this enum now has somewhere to go and this set is
+    /// `allCases` — kept as a set rather than deleted because it is the assertion each of those
+    /// four tasks edited, and the day a sixth row is added it is where the row waits.
+    static let landed: Set<MeKebabItem> = [.profile, .mySubmissions, .suggestContent,
+                                           .importYouTube, .signOut]
 }
 
 /// Ruling C5's signed-in Me screen, over LOCAL stores only. No feed (Tasks 14-16), no History
@@ -70,6 +74,10 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     private let favorites: any FavoritesStore
     private let subscriptions: any SubscriptionsStore
     private let savedPlaylists: any SavedPlaylistsStore
+    /// Task 29: whether this account has a Google grant the import flow can extend, read at RENDER
+    /// time rather than captured. A closure, not `any YouTubeAuthorizer`, because that is the whole
+    /// of what this screen needs to know — the Me tab has no other business with the import feature.
+    private let canImportFromYouTube: () -> Bool
 
     /// `MeFavoritesAdapter:19-20,45` — 20 tiles, plus a trailing "See all".
     static let maxFavoriteTiles = 20
@@ -77,11 +85,13 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     private var rawSelection: String?
 
     init(session: AccountSession, favorites: any FavoritesStore,
-         subscriptions: any SubscriptionsStore, savedPlaylists: any SavedPlaylistsStore) {
+         subscriptions: any SubscriptionsStore, savedPlaylists: any SavedPlaylistsStore,
+         canImportFromYouTube: @escaping () -> Bool) {
         self.session = session
         self.favorites = favorites
         self.subscriptions = subscriptions
         self.savedPlaylists = savedPlaylists
+        self.canImportFromYouTube = canImportFromYouTube
     }
 
     /// Channels + playlists MERGED and sorted by add time, descending — never segregated.
@@ -113,8 +123,15 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     /// `MeFragment.kt:270-271` compares `ignoreCase = true`; `AccountMe.isModerator` carries that.
     var showsModeratorItems: Bool { session.state.me?.isModerator == true }
 
+    /// Task 29's second gate, and the reason `landed` alone is no longer the whole answer: Import
+    /// needs a signed-in GOOGLE user to extend a scope onto (`GIDGoogleUser.addScopes` lives on the
+    /// user, not on `GIDSignIn`), so an Apple or email/password account has nothing to authorize.
+    /// RULING 28 again: the row is ABSENT for those accounts, never rendered greyed — a greyed row
+    /// is still a visible promise, and this one could never be kept.
     var enabledKebabItems: [MeKebabItem] {
-        MeKebabItem.items(isModerator: showsModeratorItems).filter(MeKebabItem.landed.contains)
+        MeKebabItem.items(isModerator: showsModeratorItems)
+            .filter(MeKebabItem.landed.contains)
+            .filter { $0 != .importYouTube || canImportFromYouTube() }
     }
 
     /// Resolved through `selection(_:in:)` on every read rather than stored raw: a chip

@@ -144,7 +144,8 @@ struct MeSignedInView: View {
             // deliberately never retries.
             let model = self.model ?? MeViewModel(session: container.session, favorites: container.favorites,
                                                   subscriptions: container.subscriptions,
-                                                  savedPlaylists: container.savedPlaylists)
+                                                  savedPlaylists: container.savedPlaylists,
+                                                  canImportFromYouTube: { container.youtubeAuthorizer.isAvailable })
             self.model = model
             // Ruling F6's burst-if-stale, and the ONLY scheduled refresh there is: foreground only,
             // no `BGAppRefreshTask`, no `UIBackgroundModes`. `force: false` leaves the TTL and the
@@ -331,11 +332,11 @@ struct MeSignedInView: View {
 
     // MARK: - Kebab
 
-    /// Renders `enabledKebabItems`, NOT `items(isModerator:)`: only the rows in `MeKebabItem.landed`
-    /// have a destination today (`.importYouTube` is still Task 29's), and RULING 28 refuses a
-    /// greyed row that promises one. No `.disabled(true)`
-    /// anywhere. The role gate itself is fully tested through the pure `MeKebabItem.items(
-    /// isModerator:)`, which needs no rendering.
+    /// Renders `enabledKebabItems`, NOT `items(isModerator:)`: a row is offered only when it has a
+    /// destination (`MeKebabItem.landed`) AND, for `.importYouTube` since Task 29, only when this
+    /// account has a Google grant to extend. RULING 28 refuses a greyed row that promises either.
+    /// No `.disabled(true)` anywhere. The role gate itself is fully tested through the pure
+    /// `MeKebabItem.items(isModerator:)`, which needs no rendering.
     @ViewBuilder
     private var kebab: some View {
         if let model, !model.enabledKebabItems.isEmpty {
@@ -353,9 +354,10 @@ struct MeSignedInView: View {
                         // Task 27 landed this one and widened `MeKebabItem.landed`; ruling C4's
                         // role gate moves it with `.mySubmissions`, never on its own.
                         case .suggestContent: router.push(.suggestContent)
-                        // Task 29 lands this one the same way — so this arm is unreachable today
-                        // and must stay a no-op rather than a placeholder screen.
-                        case .importYouTube: break
+                        // Task 29 landed this one and completed `MeKebabItem.landed`; unlike the
+                        // C4 pair the gate here is capability, not role — `enabledKebabItems`
+                        // drops it for an account with no Google grant to extend.
+                        case .importYouTube: router.push(.importFromYouTube)
                         }
                     } label: {
                         Label(String(localized: String.LocalizationValue(item.titleKey)),

@@ -36,3 +36,16 @@ extension YouTubeAuthorizer {
     /// invisible until a device run.
     static var scope: String { "https://www.googleapis.com/auth/youtube.readonly" }
 }
+
+#if DEBUG
+/// The FIXTURE authorizer, in the app target for `FakeAuthClient`'s reason: `AppContainer.fake()`
+/// cannot see the test bundle. It has no Google grant and never will, which is the honest state of
+/// a screenshot rig — so `isAvailable` is false, the Me kebab's Import row is ABSENT (RULING 28),
+/// and `authorize()` refuses rather than inventing a token that would send the three paginators at
+/// `googleapis.com` from a fixture run.
+@MainActor final class UnavailableYouTubeAuthorizer: YouTubeAuthorizer {
+    var isAvailable: Bool { false }
+    func authorize() async throws -> String { throw YouTubeAuthorizerError.unavailable }
+    func forget() {}
+}
+#endif

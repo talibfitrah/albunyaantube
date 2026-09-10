@@ -6374,6 +6374,72 @@
         }
       }
     },
+    "import_revoke_action": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إزالة وصول يوتيوب"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove YouTube access"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YouTube-toegang intrekken"
+          }
+        }
+      }
+    },
+    "import_revoke_done": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم يعد لدى فطرة تيوب صلاحية الوصول إلى بيانات يوتيوب الخاصة بك."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FitrahTube no longer has access to your YouTube data."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FitrahTube heeft geen toegang meer tot je YouTube-gegevens."
+          }
+        }
+      }
+    },
+    "import_revoke_manage_link": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إدارة أذونات التطبيقات في حساب Google الخاص بك"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage app permissions in your Google Account"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beheer app-machtigingen in je Google-account"
+          }
+        }
+      }
+    },
     "import_youtube_button_done": {
       "localizations": {
         "ar": {
@@ -6496,6 +6562,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Opnieuw proberen"
+          }
+        }
+      }
+    },
+    "import_youtube_done_partial": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم استيراد %1$lld من %2$lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld of %2$lld imported"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld van %2$lld geïmporteerd"
           }
         }
       }

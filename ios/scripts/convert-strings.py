@@ -825,6 +825,33 @@ EXTRA_KEYS = {
         "ar": "سجّل الدخول مرة أخرى للمتابعة",
         "nl": "Log opnieuw in om door te gaan",
     },
+    # Task 29, ruling F9 -- iOS-new, all three: Android has no revoke affordance at all, so there is
+    # no source string for any of these. WHAT, never why, and the link is to GOOGLE's own
+    # account-permissions page, never YouTube (owner directive 2026-08-27): the app forgets the
+    # token it held; revoking the GRANT is the user's to do and this is where Google lets them.
+    # Deliberately NOT "disconnect"/"revoke access" in any locale -- `GIDSignIn.disconnect()` is the
+    # call this copy exists to promise the app is not making.
+    "import_revoke_action": {"en": "Remove YouTube access", "ar": "إزالة وصول يوتيوب", "nl": "YouTube-toegang intrekken"},
+    "import_revoke_done": {
+        "en": "FitrahTube no longer has access to your YouTube data.",
+        "ar": "لم يعد لدى فطرة تيوب صلاحية الوصول إلى بيانات يوتيوب الخاصة بك.",
+        "nl": "FitrahTube heeft geen toegang meer tot je YouTube-gegevens.",
+    },
+    "import_revoke_manage_link": {
+        "en": "Manage app permissions in your Google Account",
+        "ar": "إدارة أذونات التطبيقات في حساب Google الخاص بك",
+        "nl": "Beheer app-machtigingen in je Google-account",
+    },
+    # Task 29, Task 28 re-review's ruling: the DONE state's partial line. Android has no source
+    # string because Android has no `processed`/`total` on its summary -- its only "this was cut
+    # short" signal is the rate-limit sentence, which says nothing at all about a run a dead
+    # connection or a cancel ended (review I1). WHAT, never why: the two numbers, and the
+    # rate-limit line still follows when a cap is the reason.
+    "import_youtube_done_partial": {
+        "en": "%1$lld of %2$lld imported",
+        "ar": "تم استيراد %1$lld من %2$lld",
+        "nl": "%1$lld van %2$lld geïmporteerd",
+    },
 }
 
 def is_dead(key):

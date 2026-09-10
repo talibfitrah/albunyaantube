@@ -882,7 +882,9 @@ struct ImportPipelineTests {
         #expect(rig.transport.sent.isEmpty)
         // `processed == 0 == total`: an empty selection is COMPLETE, not partial.
         #expect(summary == ImportSummary(added: 0, sentForReview: 0, skipped: 0, alreadyPresent: 0,
-                                         processed: 0, rateLimited: false))
+                                         processed: 0, total: 0, rateLimited: false))
+        // Task 28 re-review: `total` is the FRESH count, so zero-of-zero is complete, not partial.
+        #expect(summary.isPartial == false)
         #expect(log.last == ProgressLog.Entry(phase: .done, done: 0, total: 0))
     }
 
@@ -908,6 +910,10 @@ struct ImportPipelineTests {
         #expect(summary.rateLimited == false)
         #expect(summary.processed == 200)
         #expect(summary.processed < candidates.count)
+        // Task 28 re-review: the DENOMINATOR is on the summary too, so the screen answers "was
+        // this partial?" without keeping the candidate list alive past the run.
+        #expect(summary.total == 201)
+        #expect(summary.isPartial)
         #expect(log.last == ProgressLog.Entry(phase: .done, done: 200, total: 201))
     }
 
@@ -935,6 +941,8 @@ struct ImportPipelineTests {
         #expect(rig.transport.sent.count == 1)
         // Both candidates were processed; the run was NOT cut off.
         #expect(summary.processed == candidates.count)
+        #expect(summary.total == candidates.count)
+        #expect(summary.isPartial == false)
         #expect(log.last == ProgressLog.Entry(phase: .done, done: 2, total: 2))
     }
 }

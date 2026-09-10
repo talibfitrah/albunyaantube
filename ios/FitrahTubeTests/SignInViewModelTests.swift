@@ -366,6 +366,16 @@ struct SignInViewModelTests {
         #expect(SignInViewModel.presented(.userNotFound) == .wrongPassword)
         #expect(SignInViewModel.presented(.wrongPassword) == .wrongPassword)
         #expect(SignInViewModel.presented(.userDisabled) == .userDisabled)
+        // Task 27 re-review nit: with email-enumeration protection on, a mistyped password comes
+        // back as 17004 -> `.invalidCredential`, whose copy is "Sign in again to continue" — a
+        // no-op instruction on the screen you sign in FROM. Both re-auth sheets already collapse
+        // the same pair; this is the leg that was still inconsistent.
+        #expect(SignInViewModel.presented(.invalidCredential) == .wrongPassword)
+        #expect(SignInViewModel.presented(.invalidCredential).messageKey == "auth_error_wrong_password")
+        // The CODE is untouched: `.invalidCredential` still arrives distinctly, and the two edit
+        // sheets and Suggest's 401 arm all still branch on it.
+        #expect(AuthErrorCode.invalidCredential.messageKey == "auth_error_invalid_credential")
+        #expect(AuthErrorCode(firebaseCode: 17004) == .invalidCredential)
         // Stage 8 / S6: the distinct MESSAGE is gone, because no leg ever rendered it — the two
         // edit sheets map everything but `.wrongPassword`/`.invalidCredential` to `.network` and
         // the delete confirmation renders its own keys, so `auth_error_user_not_found` was

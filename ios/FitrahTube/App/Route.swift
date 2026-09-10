@@ -64,6 +64,13 @@ nonisolated enum Route: Hashable, Sendable {
     /// the ROW to moderators and admins alongside `.mySubmissions` (`MeKebabItem.items(isModerator:)`
     /// moves both together); nothing else in the app pushes this case, and there is no deep link.
     case suggestContent
+    /// Phase 4 Task 29: Import from YouTube, pushed from the signed-in Me tab's kebab. Unlike the
+    /// C4 pair above this row is NOT role-gated — every signed-in user may import — but it is
+    /// gated on the account actually having a Google grant to extend
+    /// (`YouTubeAuthorizer.isAvailable`), so an Apple or email/password account never sees it
+    /// (RULING 28: absent, never disabled). Nothing else pushes this case and there is no deep
+    /// link to it.
+    case importFromYouTube
 }
 
 extension Route {

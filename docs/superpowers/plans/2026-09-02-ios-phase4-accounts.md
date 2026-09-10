@@ -1487,7 +1487,14 @@ nonisolated struct ImportClient: Sendable {
 
 nonisolated enum ImportPhase: Sendable, Equatable { case resolving, writing, done }
 nonisolated struct ImportSummary: Sendable, Equatable {
-    var added: Int; var sentForReview: Int; var skipped: Int; var alreadyPresent: Int; var rateLimited: Bool
+    var added: Int; var sentForReview: Int; var skipped: Int; var alreadyPresent: Int
+    // Amended by Task 28's fix round (review I1) and its re-review: the "was this run complete?"
+    // signal used to exist ONLY in the transient DONE `progress` emission, so a screen that keeps
+    // the summary and drops the last callback would tell a user whose connection died after chunk
+    // one "200 added" and nothing else. `total` is the FRESH count (`candidates.count -
+    // alreadyPresent`), so the predicate is `processed < total` and needs nothing the caller holds.
+    var processed: Int; var total: Int
+    var rateLimited: Bool
 }
 
 @MainActor struct ImportPipeline {
