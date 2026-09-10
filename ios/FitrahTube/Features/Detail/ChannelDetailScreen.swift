@@ -119,10 +119,22 @@ struct ChannelDetailScreen: View {
             : AnyLayout(HStackLayout(spacing: Spacing.sm))
         let subscribed = viewModel.isSubscribed
         return layout {
-            Text(viewModel.subscriberLine(for: viewModel.header.subscriberText))
-                .font(TypeScale.itemMeta).foregroundStyle(Color.brand)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("channel.subscribers")
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(viewModel.subscriberLine(for: viewModel.header.subscriberText))
+                    .font(TypeScale.itemMeta).foregroundStyle(Color.brand)
+                    .accessibilityIdentifier("channel.subscribers")
+                // Task 30 (fork F14). Without this the page says "Subscribed" for a channel that
+                // has no chip on the Me tab and contributes nothing to the feed — the exact
+                // disagreement the Pending tab exists to resolve. One shared spelling of the state
+                // (`me_awaiting_pending_label`), so the two screens cannot drift apart.
+                if viewModel.isAwaiting {
+                    Text(String(localized: "me_awaiting_pending_label"))
+                        .font(TypeScale.itemMeta)
+                        .foregroundStyle(Color.submissionPending)
+                        .accessibilityIdentifier("channel.awaiting")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             let button = Button {
                 if let key = viewModel.toggleSubscribed() {
                     banner = BannerMessage(text: String(localized: String.LocalizationValue(key)))

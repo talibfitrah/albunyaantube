@@ -278,6 +278,63 @@ struct MeAwaitingTabsTests {
                 "an account that cannot import must not burn the one offer either")
     }
 
+    // MARK: - Review: the channel page and the Pending tab must agree
+
+    /// Never loaded — these two cases read only the SUBSCRIPTION state the view model resolves in
+    /// its initialiser, so no page is ever fetched.
+    private final class UnusedBrowse: BrowseSource, @unchecked Sendable {
+        func isDegraded() async -> Bool { false }
+        func channelHeader(_ id: String) async throws -> ChannelHeader { throw BrowseSourceError.unavailable }
+        func channelVideos(_ id: String, continuation: String?) async throws -> BrowsePage<VideoItem> { throw BrowseSourceError.unavailable }
+        func channelTab(_ id: String, tab: ChannelTab, continuation: String?) async throws -> BrowsePage<VideoItem> { throw BrowseSourceError.unavailable }
+        func channelPlaylists(_ id: String, continuation: String?) async throws -> BrowsePage<PlaylistTile> { throw BrowseSourceError.unavailable }
+        func playlistItems(_ playlistId: String, continuation: String?) async throws -> BrowsePage<VideoItem> { throw BrowseSourceError.unavailable }
+    }
+
+    /// The Task 30 dispatcher's addendum. `SubscriptionsStore.isSubscribed` is unfiltered by design,
+    /// so an AWAITING channel reads as subscribed on the channel page — while the Me tab hides it
+    /// from the chip rail, the feed never fetches it, and it sits under Pending. "Subscribed" alone
+    /// is a claim the rest of the app visibly does not honour, so the page carries the SAME
+    /// `me_awaiting_pending_label` the Pending tab does.
+    ///
+    /// Unsubscribing stays available and stays honest: the tombstone drops the row out of
+    /// `awaitingItems` too, so the badge cannot outlive the subscription it explains.
+    @Test func anAwaitingChannelReadsTheSameOnTheChannelPageAndThePendingTab() async throws {
+        let stores = try stores()
+        try seedAwaiting(stores)
+        let model = model(stores, session: try await session(signedIn: true), settings: settings())
+        #expect(model.awaitingItems.map(\.id) == [Fixture.channel])
+
+        let channel = ChannelDetailViewModel(
+            channelId: Fixture.channel, name: "Alafasy", avatarURL: nil,
+            browse: UnusedBrowse(), subscriptions: stores.subscriptions)
+        // Both true at once: the row exists (so the button offers Unsubscribe) AND it is pending.
+        #expect(channel.isSubscribed, "an AWAITING row is still a row — `isSubscribed` is unfiltered")
+        #expect(channel.isAwaiting, "…and the page must say so, or it contradicts the Pending tab")
+        // The chip rail, which is what "subscribed" normally buys you, shows nothing.
+        #expect(model.chips.isEmpty)
+
+        // Unsubscribing clears BOTH, on both screens.
+        #expect(channel.toggleSubscribed() == nil)
+        #expect(channel.isSubscribed == false)
+        #expect(channel.isAwaiting == false)
+        #expect(model.awaitingCount == 0)
+        #expect(model.showsTabs == false)
+    }
+
+    /// An APPROVED subscription is subscribed and NOT pending — the badge is not simply "always on
+    /// for an imported row".
+    @Test func anApprovedChannelCarriesNoPendingBadge() async throws {
+        let stores = try stores()
+        try stores.subscriptions.importChannel(id: Fixture.channel, title: "Alafasy", avatarUrl: nil,
+                                               approvalStatus: ImportProvenance.approved, at: Self.now)
+        let channel = ChannelDetailViewModel(
+            channelId: Fixture.channel, name: "Alafasy", avatarURL: nil,
+            browse: UnusedBrowse(), subscriptions: stores.subscriptions)
+        #expect(channel.isSubscribed)
+        #expect(channel.isAwaiting == false)
+    }
+
     /// Every key these two surfaces render resolves in all three locales, and neither plural-ish
     /// label loses its number.
     @Test func everyTabAndOfferKeyResolvesInEnglishArabicAndDutch() throws {
