@@ -1,0 +1,61 @@
+ios/FitrahTubeTests/PlaylistDetailViewModelTests.swift
+  s_eca9a78768b070::t_55f807d5317454 51-53
+ios/FitrahTubeTests/PlayerToolbarTests.swift
+  s_eca9a78768b070::t_55f807d5317454 147-149
+ios/FitrahTube/Features/Me/MeViewModel.swift
+  s_eca9a78768b070::t_323a72f01c25e9 15-27,94-96,112-117,120,125,155-217
+  s_eca9a78768b070::t_2d71354c7592ce 103-111
+ios/FitrahTubeTests/MeViewModelTests.swift
+  s_eca9a78768b070::t_4244a59b09484a 53-54,57-58
+ios/FitrahTubeTests/MeAwaitingTabsTests.swift
+  s_eca9a78768b070::t_cb303a775d7a14 48-49,51-65
+  s_eca9a78768b070::t_5fe4220ab02589 1,3,210
+  s_eca9a78768b070::t_5416858f517d99 2,4,6-47,50,66-187,201-205,211,215-216,219-220,222,228-308
+  s_eca9a78768b070::t_bfc46ecf459b94 5,206-209,212-214,221
+  s_eca9a78768b070::t_2d71354c7592ce 188-200,217-218,223-227
+ios/FitrahTubeUITests/ScreenshotTests.swift
+  s_eca9a78768b070::t_910d187a3aed98 40-44,2770,2880-2882
+  s_eca9a78768b070::t_f49eab6187c17f 2759-2769,2771-2789
+ios/FitrahTube/Features/Me/MeSignedInView.swift
+  s_eca9a78768b070::t_18478fdd48c650 174-178
+  s_eca9a78768b070::t_177cd249f3ee9d 97,102-109
+  s_eca9a78768b070::t_111101605c5e38 55-57,112-120,156-161,171,183-186,240-295
+ios/FitrahTube/Features/Import/YouTubeAuthorizer.swift
+  s_eca9a78768b070::t_97ba679ed23d62 42-51,53-65
+ios/FitrahTube/App/AppContainer.swift
+  s_eca9a78768b070::t_97ba679ed23d62 325,330-339,341-343,348-359
+  s_eca9a78768b070::t_e89c2900bb0c97 340
+ios/FitrahTube/Persistence/FavoritesStore.swift
+  s_eca9a78768b070::t_bc010ed2d0190a 196-205
+  s_eca9a78768b070::t_b59de9d0385d06 26-34,49-52
+ios/FitrahTubeTests/ChannelDetailViewModelTests.swift
+  s_eca9a78768b070::t_55f807d5317454 73-75
+ios/scripts/screenshots.sh
+  s_eca9a78768b070::t_281451765bf618 502-524
+ios/FitrahTube/Catalog/SavedPlaylistsStore.swift
+  s_eca9a78768b070::t_bc010ed2d0190a 22-30,248-257
+  s_eca9a78768b070::t_b59de9d0385d06 129-133
+ios/FitrahTube/App/FitrahTubeApp.swift
+  s_eca9a78768b070::t_ef5a36c39802ef 340-345
+  s_eca9a78768b070::t_4244a59b09484a 444-476
+  s_eca9a78768b070::t_5416858f517d99 91
+ios/FitrahTube/Catalog/SubscriptionsStore.swift
+  s_eca9a78768b070::t_b59de9d0385d06 25-33,132-135
+  s_eca9a78768b070::t_bc010ed2d0190a 257-266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6ad8631491fcafb430696fc7d2e31f632ded2600",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-opus-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
