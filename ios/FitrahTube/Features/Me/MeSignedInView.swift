@@ -52,6 +52,9 @@ struct MeSignedInView: View {
 
     @State private var model: MeViewModel?
     @State private var showSignOutConfirm = false
+    /// Task 30: the one-time import offer. The PERSISTED half is `SettingsStore.importOfferShown`,
+    /// written by `consumeImportOffer()` before this is ever set — this flag only drives the sheet.
+    @State private var showImportOffer = false
     @State private var paginationGuard = PaginationGuard()
     /// Geometry *state*, not an event (gate B1-C1), exactly as `ContentListView` keeps it.
     @State private var feedFits = false
@@ -91,16 +94,30 @@ struct MeSignedInView: View {
                         // take rows from. One store, one order, so the two can never disagree; the
                         // day the section needs to render something the view model computes, it
                         // takes the rows instead of the cap.
-                        if model.chips.isEmpty && model.favoriteTiles.isEmpty {
-                            emptyState
-                        } else {
+                        if !(model.chips.isEmpty && model.favoriteTiles.isEmpty) {
                             chipRail(model)
                             MeFavoritesSection(maxRows: MeViewModel.maxFavoriteTiles) {
                                 router.push(.favorites)
                             }
+                        // Task 30 / fork F14: the whole-screen empty state is Android's
+                        // `b.meEmpty.root` (`MeFragment.kt:400-404`), and it speaks for the CONTENT
+                        // tab only. Someone whose only content is awaiting review has an empty
+                        // Content tab by definition, so on Pending it must stay out of the way —
+                        // otherwise "nothing here" covers the very list they opened the tab to see.
+                        } else if MeViewModel.shouldShowFeedEmptyState(feedIsEmpty: true,
+                                                                       selectedTab: model.selectedTab) {
+                            emptyState
                         }
                         savedLink
-                        feedSection
+                        if model.showsTabs { tabBar(model) }
+                        // Fork F14: ONE of the two, never both. The feed's own empty state speaks
+                        // for the feed only — `shouldShowFeedEmptyState` is what keeps "nothing
+                        // here" off the pending list (`MeFragment.kt:51-59`).
+                        if model.selectedTab == .pending {
+                            awaitingSection(model)
+                        } else {
+                            feedSection
+                        }
                     }
                 }
                 .padding(Spacing.md(widthClass))
@@ -136,6 +153,12 @@ struct MeSignedInView: View {
         .navigationTitle(String(localized: "nav_me"))
         .toolbar { ToolbarItem(placement: .topBarTrailing) { kebab } }
         .signOutConfirmation(isPresented: $showSignOutConfirm) { model?.signOut() }
+        .alert(String(localized: "import_offer_title"), isPresented: $showImportOffer) {
+            Button(String(localized: "import_offer_negative"), role: .cancel) {}
+            Button(String(localized: "import_offer_positive")) { router.push(.importFromYouTube) }
+        } message: {
+            Text(String(localized: "import_offer_message"))
+        }
         .onDisappear { refreshTask?.cancel() }
         .task {
             // Bound once and read back from the local, never from the `@State` this closure just
@@ -145,12 +168,22 @@ struct MeSignedInView: View {
             let model = self.model ?? MeViewModel(session: container.session, favorites: container.favorites,
                                                   subscriptions: container.subscriptions,
                                                   savedPlaylists: container.savedPlaylists,
+                                                  settings: container.settings,
                                                   canImportFromYouTube: { container.youtubeAuthorizer.isAvailable })
             self.model = model
+            #if DEBUG
+            // Task 30 screenshot hook: the rig cannot tap a segmented control, and the Pending tab
+            // is not the default, so `me-pending-tab` needs a way to land on it.
+            if LaunchArguments.debug.contains("-fitrah-me-pending") { model.select(tab: .pending) }
+            #endif
             // Ruling F6's burst-if-stale, and the ONLY scheduled refresh there is: foreground only,
             // no `BGAppRefreshTask`, no `UIBackgroundModes`. `force: false` leaves the TTL and the
             // backoff ladder in charge, so a tab revisit inside 30 min sends nothing at all.
             await refreshFeed(model.subscribedChannelIds, force: false)
+            // Task 30 (fork F14), `MeFragment.kt:428-445`: after the burst-if-stale, and at most
+            // once ever. `consumeImportOffer()` writes the persisted flag BEFORE answering, so a
+            // second arrival here — a tab revisit, a relaunch mid-dialog — cannot fire a second.
+            showImportOffer = model.consumeImportOffer()
         }
     }
 
@@ -201,6 +234,65 @@ struct MeSignedInView: View {
                 }
             }
             .padding(.horizontal, Spacing.xs)
+        }
+    }
+
+    // MARK: - Fork F14: the tab bar and the pending list
+
+    /// A segmented control, the native shape of Android's two-tab `TabLayout`. Rendered ONLY when
+    /// something is pending (`showsTabs`): an empty queue would otherwise leave permanent chrome
+    /// over a screen with nothing to switch to (`MeFragment.kt:352-368`).
+    private func tabBar(_ model: MeViewModel) -> some View {
+        Picker(String(localized: "me_awaiting_section_title"), selection: Binding(
+            get: { model.selectedTab },
+            // `select(tab:)`, not a raw write: a same-value assignment is a no-op there, so a
+            // background sync landing the first pending item cannot churn the screen (`:387-406`).
+            set: { model.select(tab: $0) }
+        )) {
+            Text(String(localized: "me_tab_content")).tag(MeTab.content)
+            Text(Format.localizedFormat("me_tab_pending", locale: locale, Int64(model.awaitingCount)))
+                .tag(MeTab.pending)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("me.tabs")
+    }
+
+    /// `AwaitingImportsAdapter`: a header carrying the total, then channels, then playlists, then
+    /// videos. **No row is tappable** — these ids are not in the registry, so there is nothing to
+    /// open; a row that navigated would 404 on the very screen it reached.
+    private func awaitingSection(_ model: MeViewModel) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                Text(String(localized: "me_awaiting_section_title"))
+                    .font(TypeScale.subtitle)
+                    .foregroundStyle(Color.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                Text(Format.localizedFormat("me_awaiting_count", locale: locale,
+                                            Int64(model.awaitingCount)))
+                    .font(TypeScale.itemMeta)
+                    .foregroundStyle(Color.textSecondary)
+            }
+            ForEach(model.awaitingItems) { item in
+                HStack(spacing: Spacing.md(widthClass)) {
+                    RemoteImage(url: item.thumbnailURL)
+                        .frame(width: 96, height: 54)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.homeThumbnail))
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text(item.title)
+                            .font(TypeScale.body(widthClass))
+                            .foregroundStyle(Color.textPrimary)
+                            .lineLimit(2)
+                        Text(String(localized: "me_awaiting_pending_label"))
+                            .font(TypeScale.itemMeta)
+                            .foregroundStyle(Color.submissionPending)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 44)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("me.awaiting.row.\(item.id)")
+            }
         }
     }
 

@@ -499,6 +499,29 @@ for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
     xcrun simctl shutdown "$device" >/dev/null 2>&1
 done
 
+# Phase 4 Task 30 (fork F14) + Task 29: the two Part B screens the R-G matrix cannot reach -- the
+# Me tab's Pending tab (needs AWAITING rows AND a way to select a tab the rig cannot tap) and the
+# import review screen (needs a token and canned googleapis pages; `-fitrah-seed-import-review` is
+# the one fixture state that supplies both, and nothing in that run leaves the device). Its own
+# invocation rather than rows on `testAccountScreensPhase4`, so a Part B re-run does not re-shoot
+# Part A's eight account screens.
+PARTB_OUT="$ROOT/.superpowers/sdd/2026-09-02-ios-phase4-accounts/screenshots/phase4-partb"
+for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
+    slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
+    echo "== phase4-partb ($device) -> $PARTB_OUT/$slug =="
+    rm -rf "${PARTB_OUT:?}/$slug"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$PARTB_OUT/$slug" xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testPartBScreensPhase4 \
+        -destination "platform=iOS Simulator,name=$device" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "$device" >/dev/null 2>&1
+done
+
 # Task 6 step 5 (live acceptance): OPT-IN, same contract as B5_LIVE -- talks to youtube.com AND the
 # backend named by C_LIVE_API_BASE_URL (default: production), and files exactly ONE real content
 # report per run (reason OTHER, "iOS Plan C acceptance test - safe to dismiss"). Step 8 needs a real

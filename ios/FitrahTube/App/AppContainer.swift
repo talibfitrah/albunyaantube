@@ -322,16 +322,41 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// and RULING 28 says an unavailable affordance is not rendered at all.
     private(set) lazy var youtubeAuthorizer: any YouTubeAuthorizer = {
         #if DEBUG
-        if isFixture { return UnavailableYouTubeAuthorizer() }
+        if isFixture { return UnavailableYouTubeAuthorizer(available: Self.seedsImportReview) }
         #endif
         return GoogleYouTubeAuthorizer()
     }()
+
+    #if DEBUG
+    /// Task 30's screenshot hook. The ONE fixture state in which the import flow is allowed past
+    /// `.authorizing`, and even then it addresses a `ScriptedTransport`, never `googleapis.com`.
+    static var seedsImportReview: Bool { LaunchArguments.debug.contains("-fitrah-seed-import-review") }
+
+    /// Three canned googleapis pages — one subscription, one playlist, one liked video, in the
+    /// order `YouTubeImportSource` walks `CandidateType.allCases`. Approved fixture ids only.
+    private static var cannedYouTubeLibrary: [HTTPResponse] {
+        [.json(200, #"{"items":[{"id":"sub-1","snippet":{"title":"Zad Channel","resourceId":{"channelId":"UCmMcOjsVehVlEOteyrhjI2Q"}}}]}"#),
+         .json(200, #"{"items":[{"id":"PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc","snippet":{"title":"Tafsir series"}}]}"#),
+         .json(200, #"{"items":[{"id":"xc7keR2piUM","snippet":{"title":"Seeded Lecture","channelId":"UCmMcOjsVehVlEOteyrhjI2Q"}}]}"#)]
+    }
+    #endif
 
     /// The ONE type in this app that addresses `googleapis.com`, and the one place a PLAIN
     /// transport is deliberate: `authorizedTransport` would put the FitrahTube Firebase bearer and
     /// this device's id on a request to Google. The only credential that host ever sees is the
     /// user's own OAuth token, passed per call.
-    private(set) lazy var youtubeImportSource = YouTubeImportSource(transport: URLSessionTransport())
+    private(set) lazy var youtubeImportSource: YouTubeImportSource = {
+        #if DEBUG
+        if isFixture {
+            // A fixture never addresses `googleapis.com`. With the screenshot hook it replays three
+            // canned pages; without it, an empty queue, whose `.exhausted` failure is what puts the
+            // screen on its error arm rather than on a request.
+            return YouTubeImportSource(transport: ScriptedTransport(
+                Self.seedsImportReview ? Self.cannedYouTubeLibrary : []))
+        }
+        #endif
+        return YouTubeImportSource(transport: URLSessionTransport())
+    }()
 
     /// The write half. `ImportClient` addresses the FITRAHTUBE backend, so it takes the signed
     /// transport — the two hosts are never confused. Every row goes through a STORE, which is what

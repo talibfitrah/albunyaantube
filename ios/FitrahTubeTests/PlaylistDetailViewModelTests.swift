@@ -48,6 +48,9 @@ struct PlaylistDetailViewModelTests {
     }
 
     @Observable final class FakeSaved: SavedPlaylistsStore {
+        /// Task 30: no fake here imports anything, so the awaiting queue is empty by
+        /// construction — never a stored `var` a test could set and then forget to clear.
+        var awaitingItems: [SavedPlaylist] { [] }
         var ids: Set<String> = []
         /// Task 9: `UserScoped` is now a protocol requirement; this fake is never re-scoped.
         var currentUserId: String = ""

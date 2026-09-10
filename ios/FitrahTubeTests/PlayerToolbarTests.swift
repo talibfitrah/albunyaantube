@@ -144,6 +144,9 @@ struct PlayerToolbarTests {
 /// Minimal `FavoritesStore` fake -- `items`/`clearAll` are unused by `FavoriteToggle`, present
 /// only to satisfy the protocol.
 @MainActor private final class FakeFavoritesStore: FavoritesStore {
+        /// Task 30: no fake here imports anything, so the awaiting queue is empty by
+        /// construction — never a stored `var` a test could set and then forget to clear.
+        var awaitingItems: [FavoriteVideo] { [] }
     enum Failure: Error { case saveFailed }
 
     /// Task 9: `UserScoped` is now a requirement of the protocol; this fake is never re-scoped.

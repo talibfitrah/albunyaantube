@@ -88,6 +88,7 @@ struct FitrahTubeApp: App {
                     seedDebugFavoritesIfRequested()
                     seedDebugSubscriptionsIfRequested()
                     seedDebugOfflineItemsIfRequested()
+                    seedDebugSubmissionsIfRequested()
                     refreshRemoteConfigIfDue()
                     // Phase 3 Task 4: re-bind rows to background tasks that outlived the last
                     // launch (creates the session, so a relaunch-for-events gets its delegate).
@@ -336,6 +337,12 @@ struct FitrahTubeApp: App {
             // it: that row is dropped (see `ScreenshotTests.phase4Screens`), and an arm no rig
             // case reaches is a branch nothing proves.
             router.push(.profile)
+        case "importFromYouTube":
+            // Phase 4 Task 30: the import review screen is reached by tapping the signed-in Me
+            // tab's kebab, which the rig cannot do, and it has no deep-link URL. Only useful
+            // alongside `-fitrah-seed-import-review`, which is what gets the flow past
+            // `.authorizing` — without it the screen photographs its error arm.
+            router.push(.importFromYouTube)
         default:
             break
         }
@@ -431,6 +438,39 @@ struct FitrahTubeApp: App {
                 errorCode: status == .failed ? "NETWORK" : nil,
                 completedAt: status == .completed ? Date() : nil)
             try? container.offlineStore.insert(item)
+        }
+        #endif
+    }
+
+    /// Phase 4 Task 30 screenshot rig: `-fitrah-seed-submissions` writes AWAITING rows — one
+    /// channel, one playlist, one video — through the three stores, which is what makes the Me
+    /// tab's Pending tab appear and gives the import review screen something to show. Rows only,
+    /// through the stores, so `refresh()` picks them up exactly as an import's do. Seed, not
+    /// toggle — same reason as `seedDebugFavoritesIfRequested`.
+    ///
+    /// The ids are the approved fixture ids, never a music-video id (owner directive).
+    private func seedDebugSubmissionsIfRequested() {
+        #if DEBUG
+        guard LaunchArguments.debug.contains("-fitrah-seed-submissions") else { return }
+        let at = Date()
+        let channel = "UCmMcOjsVehVlEOteyrhjI2Q"
+        let playlist = "PL6SWGxz3wzpSrxgiBj2PCuEf-MenhYTCc"
+        let video = "xc7keR2piUM"
+        if !container.subscriptions.containsAny(channel) {
+            try? container.subscriptions.importChannel(
+                id: channel, title: "Seeded Awaiting Channel", avatarUrl: nil,
+                approvalStatus: ImportProvenance.awaiting, at: at)
+        }
+        if !container.savedPlaylists.containsAny(playlist) {
+            try? container.savedPlaylists.importPlaylist(
+                id: playlist, title: "Seeded Awaiting Playlist", thumbnailUrl: nil,
+                uploaderName: nil, approvalStatus: ImportProvenance.awaiting, at: at)
+        }
+        if !container.favorites.containsAny(video) {
+            try? container.favorites.importVideo(
+                id: video, title: "Seeded Awaiting Lecture", channelName: "",
+                thumbnailUrl: nil, durationSeconds: 0,
+                approvalStatus: ImportProvenance.awaiting, at: at)
         }
         #endif
     }

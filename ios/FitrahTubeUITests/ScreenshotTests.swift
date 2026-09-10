@@ -37,6 +37,11 @@ final class ScreenshotTests: XCTestCase {
         /// is localized copy), but they do carry identifiers — `bootstrap.submit`, `profile.save`,
         /// `settings.signOut` — which read the same in en and ar.
         case buttonID(String)
+        /// Any element by accessibility IDENTIFIER, whatever XCUIElementType it resolves to. Task
+        /// 30's `me.tabs` is a `.segmented` `Picker`, which is a segmented CONTROL and not a
+        /// button, so `buttonID` never matched it — and the rig writes its PNG either way, so the
+        /// only symptom was a red assertion beside a screenshot that looked fine.
+        case anyID(String)
         /// The topmost alert. `RootView`'s terminal account dialog IS the screen for the blocked
         /// row: `SplashRouter` routes a blocked account to the GUEST shell and raises the
         /// non-dismissible alert over it, so nothing on the shell behind it distinguishes the state.
@@ -2751,6 +2756,38 @@ final class ScreenshotTests: XCTestCase {
                anchor: .buttonID("settings.signOut")),
     ]
 
+    /// Phase 4 Tasks 29-30. Its own table for `testAccountScreensPhase4`'s reason — and its own
+    /// CASE, so a Part B re-run does not re-shoot Part A's eight account screens.
+    private static let partBScreens: [Screen] = [
+        // Fork F14's Pending tab. `-fitrah-seed-submissions` writes one AWAITING row per store,
+        // which is what makes the tab bar exist at all (`MeViewModel.showsTabs`);
+        // `-fitrah-me-pending` selects it, because the rig cannot tap a segmented control. The
+        // anchor is the control's identifier — the section's only locale-independent text is a
+        // seeded title, and identifiers read the same in en and ar.
+        Screen(key: "me-pending-tab",
+               arguments: ["-fitrah-fake-auth", "active", "-fitrah-seed-submissions",
+                           "-fitrah-me-pending", "-fitrah-tab", "me"],
+               anchor: .anyID("me.awaiting.row.UCmMcOjsVehVlEOteyrhjI2Q")),
+        // Task 29's import review screen. `-fitrah-seed-import-review` is the ONE fixture state
+        // that lets the import flow past `.authorizing`: it makes the fixture authorizer hand back
+        // a synthetic token and points `youtubeImportSource` at three canned pages. Nothing in this
+        // run addresses `googleapis.com`. This closes part of CF-A-22 — the screen was declared
+        // unphotographable at Task 29 for exactly the machinery added here.
+        Screen(key: "import-review",
+               arguments: ["-fitrah-fake-auth", "active", "-fitrah-seed-import-review",
+                           "-fitrah-route", "importFromYouTube"],
+               anchor: .buttonID("import.confirm")),
+    ]
+
+    func testPartBScreensPhase4() throws {
+        let directory = try shotsDirectory()
+        for screen in Self.partBScreens {
+            for locale in Self.locales {
+                try capture(screen, locale: locale, extraArguments: [], suffix: "", into: directory)
+            }
+        }
+    }
+
     /// Its own case rather than rows on `Self.screens`: that table is captured by
     /// `testCatalogScreens`, which `screenshots.sh` runs on iPads only and which is far too long to
     /// re-run for one row. Same one-block-per-task shape as `testSavedScreenPhase3`.
@@ -2840,6 +2877,9 @@ final class ScreenshotTests: XCTestCase {
             return app.otherElements.matching(NSPredicate(format: "label == %@", label)).firstMatch
         case .buttonID(let identifier):
             return app.buttons[identifier]
+        case .anyID(let identifier):
+            return app.descendants(matching: .any).matching(
+                NSPredicate(format: "identifier == %@", identifier)).firstMatch
         case .alert:
             return app.alerts.firstMatch
         }

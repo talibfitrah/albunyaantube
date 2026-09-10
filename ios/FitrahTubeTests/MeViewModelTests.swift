@@ -50,9 +50,12 @@ struct MeViewModelTests {
                            stores: (favorites: SwiftDataFavoritesStore,
                                     subscriptions: SwiftDataSubscriptionsStore,
                                     savedPlaylists: SwiftDataSavedPlaylistsStore),
-                           canImportFromYouTube: Bool = false) -> MeViewModel {
+                           canImportFromYouTube: Bool = false,
+                           settings: (any SettingsStore)? = nil) -> MeViewModel {
         MeViewModel(session: session, favorites: stores.favorites,
                     subscriptions: stores.subscriptions, savedPlaylists: stores.savedPlaylists,
+                    settings: settings ?? UserDefaultsSettingsStore(
+                        defaults: UserDefaults(suiteName: "MeViewModelTests.\(UUID().uuidString)")!),
                     canImportFromYouTube: { canImportFromYouTube })
     }
 

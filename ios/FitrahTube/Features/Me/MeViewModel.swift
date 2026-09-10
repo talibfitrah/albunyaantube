@@ -12,6 +12,19 @@ nonisolated struct MeChipItem: Sendable, Equatable, Identifiable {
     var kind: Kind
 }
 
+/// `MeFragment.kt:47-48` — the two tab positions, in the order `renderTabs` adds them.
+nonisolated enum MeTab: Int, Sendable, CaseIterable, Equatable { case content = 0, pending = 1 }
+
+/// One row of the Pending tab (`AwaitingImportsAdapter.DisplayRow`): an imported id an admin has
+/// not reviewed yet. **Not tappable** — it is not in the registry, so there is nothing to open.
+nonisolated struct MeAwaitingItem: Sendable, Equatable, Identifiable {
+    enum Kind: Sendable, Equatable { case channel, playlist, video }
+    var id: String
+    var title: String
+    var thumbnailURL: URL?
+    var kind: Kind
+}
+
 /// Menu order = `res/menu/menu_me_kebab.xml`. There is deliberately NO `.history` and no
 /// `.recentlyWatched` case: ruling F10 / RULING 28 — a row that promises "coming soon" is a dead
 /// affordance, and `MeViewModelTests.thereIsNoHistoryOrRecentlyWatchedKebabItem` pins the ABSENCE.
@@ -78,19 +91,38 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     /// time rather than captured. A closure, not `any YouTubeAuthorizer`, because that is the whole
     /// of what this screen needs to know — the Me tab has no other business with the import feature.
     private let canImportFromYouTube: () -> Bool
+    /// Task 30: `importOfferShown` only. Phase 1 already persists it (`SettingsStore.swift:24`);
+    /// nothing else on this screen reads settings.
+    private let settings: any SettingsStore
 
     /// `MeFavoritesAdapter:19-20,45` — 20 tiles, plus a trailing "See all".
     static let maxFavoriteTiles = 20
 
     private var rawSelection: String?
 
+    /// `MeFragment.kt:387-406`. The setter is a no-op on a same-value write.
+    ///
+    /// **Weaker than Android's, and deliberately so.** There, `setAdapter` resets the
+    /// RecyclerView's scroll even when the adapter is unchanged, so a background sync landing the
+    /// FIRST pending item — which re-runs `renderTabs` and re-selects — jerked the user's feed back
+    /// to the top. SwiftUI has no adapter swap: a repeated selection re-evaluates `body` into an
+    /// identical tree and scrolls nothing. Measured (Task 30 red capture): reverting this guard
+    /// changed no observable behaviour, notification counts included. It stays because it is one
+    /// line and saves an invalidation — not because a bug hides behind it.
+    ///
+    /// Read through `selectedTab`, never raw: when the queue empties the tab bar goes away
+    /// (`showsTabs`) and a stored `.pending` would leave the screen rendering a list that is no
+    /// longer reachable (`:355-358` falls back to Content for exactly that).
+    private var rawTab: MeTab = .content
+
     init(session: AccountSession, favorites: any FavoritesStore,
          subscriptions: any SubscriptionsStore, savedPlaylists: any SavedPlaylistsStore,
-         canImportFromYouTube: @escaping () -> Bool) {
+         settings: any SettingsStore, canImportFromYouTube: @escaping () -> Bool) {
         self.session = session
         self.favorites = favorites
         self.subscriptions = subscriptions
         self.savedPlaylists = savedPlaylists
+        self.settings = settings
         self.canImportFromYouTube = canImportFromYouTube
     }
 
@@ -119,6 +151,70 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
 
     /// The store is already sorted most-recently-added first, so this is just the cap.
     var favoriteTiles: [FavoriteVideo] { Array(favorites.items.prefix(Self.maxFavoriteTiles)) }
+
+    // MARK: - Fork F14: awaiting imports
+
+    /// Channels, then playlists, then videos — `AwaitingImportsAdapter.buildRows`' order, which is
+    /// the import review screen's grouping (`ImportFromYouTubeScreen`). Read off the three stores'
+    /// `awaitingItems`, so it is exactly as live as the chip rail beside it.
+    var awaitingItems: [MeAwaitingItem] {
+        subscriptions.awaitingItems.map {
+            MeAwaitingItem(id: $0.channelId, title: $0.title,
+                           thumbnailURL: $0.avatarUrl.flatMap(URL.init(string:)), kind: .channel)
+        }
+        + savedPlaylists.awaitingItems.map {
+            MeAwaitingItem(id: $0.playlistId, title: $0.title,
+                           thumbnailURL: $0.thumbnailUrl.flatMap(URL.init(string:)), kind: .playlist)
+        }
+        + favorites.awaitingItems.map {
+            MeAwaitingItem(id: $0.videoId, title: $0.title,
+                           thumbnailURL: $0.thumbnailUrl.flatMap(URL.init(string:)), kind: .video)
+        }
+    }
+
+    /// The sum of the three stores. A LIVE count, not a snapshot: `ImportGraduationService` flips
+    /// these server-side when an admin reviews an id, and the next sync brings the change down.
+    var awaitingCount: Int {
+        subscriptions.awaitingItems.count + savedPlaylists.awaitingItems.count
+            + favorites.awaitingItems.count
+    }
+
+    /// `MeFragment.kt:352-368`: hidden ENTIRELY at zero. With an empty queue a two-tab bar is
+    /// permanent chrome over a screen with nothing to switch to.
+    var showsTabs: Bool { awaitingCount > 0 }
+
+    /// `:355-358`. When the last pending item clears while the user is on that tab, they fall back
+    /// to Content rather than sitting on a list that no longer exists.
+    var selectedTab: MeTab { showsTabs ? rawTab : .content }
+
+    func select(tab: MeTab) {
+        guard tab != rawTab else { return }
+        rawTab = tab
+    }
+
+    /// `MeFragment.kt:51-59`, verbatim. The screen-level empty state speaks for the FEED only:
+    /// someone whose only content is awaiting review has an empty feed by definition, so on the
+    /// Pending tab it must stay out of the way — otherwise "nothing here" covers the very list
+    /// they opened the tab to see.
+    nonisolated static func shouldShowFeedEmptyState(feedIsEmpty: Bool, selectedTab: MeTab) -> Bool {
+        feedIsEmpty && selectedTab != .pending
+    }
+
+    // MARK: - Fork F14: the one-time import offer
+
+    /// `MeFragment.kt:428-445`. Signed in, not yet shown, and — the load-bearing half — the flag is
+    /// written BEFORE the dialog is presented (`:433`), so a second launch that reaches this line
+    /// while the first dialog is still up cannot fire a second one. Returns whether to present.
+    ///
+    /// It also requires the affordance the offer leads to: the positive button pushes
+    /// `Route.importFromYouTube`, which an account with no Google grant cannot use (RULING 28 keeps
+    /// that row off the kebab for the same reason) — offering it there would be a dialog whose one
+    /// action fails.
+    func consumeImportOffer() -> Bool {
+        guard session.user != nil, canImportFromYouTube(), !settings.importOfferShown else { return false }
+        settings.importOfferShown = true
+        return true
+    }
 
     /// `MeFragment.kt:270-271` compares `ignoreCase = true`; `AccountMe.isModerator` carries that.
     var showsModeratorItems: Bool { session.state.me?.isModerator == true }

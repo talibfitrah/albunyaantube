@@ -39,13 +39,29 @@ extension YouTubeAuthorizer {
 
 #if DEBUG
 /// The FIXTURE authorizer, in the app target for `FakeAuthClient`'s reason: `AppContainer.fake()`
-/// cannot see the test bundle. It has no Google grant and never will, which is the honest state of
-/// a screenshot rig — so `isAvailable` is false, the Me kebab's Import row is ABSENT (RULING 28),
-/// and `authorize()` refuses rather than inventing a token that would send the three paginators at
-/// `googleapis.com` from a fixture run.
+/// cannot see the test bundle.
+///
+/// **`available: false` is the default and the honest one** — a screenshot rig has no Google grant,
+/// so `isAvailable` is false, the Me kebab's Import row is ABSENT (RULING 28), and `authorize()`
+/// refuses rather than inventing a token.
+///
+/// Task 30 adds the other setting, for ONE purpose: `-fitrah-seed-import-review` photographs the
+/// import review screen, which needs a token to get past `.authorizing`. The token it hands back is
+/// a synthetic string, and the only thing that ever receives it is a `ScriptedTransport` holding
+/// canned googleapis pages — nothing in a fixture run reaches `googleapis.com`.
 @MainActor final class UnavailableYouTubeAuthorizer: YouTubeAuthorizer {
-    var isAvailable: Bool { false }
-    func authorize() async throws -> String { throw YouTubeAuthorizerError.unavailable }
-    func forget() {}
+    static let fixtureToken = "fixture-youtube-access-token"
+
+    let isAvailable: Bool
+    private(set) var forgetCount = 0
+
+    init(available: Bool = false) { isAvailable = available }
+
+    func authorize() async throws -> String {
+        guard isAvailable else { throw YouTubeAuthorizerError.unavailable }
+        return Self.fixtureToken
+    }
+
+    func forget() { forgetCount += 1 }
 }
 #endif

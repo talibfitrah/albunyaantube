@@ -22,6 +22,15 @@ import SwiftData
     /// `ImportPipeline` is the only production caller of this method and must stay so.
     func importChannel(id: String, title: String, avatarUrl: String?,
                        approvalStatus: String, at: Date) throws
+
+    /// Phase 4 Task 30 (fork F14): the AWAITING rows — imported ids an admin has not reviewed yet.
+    /// `items` deliberately EXCLUDES them (the fail-closed `== "APPROVED"` filter above), so this
+    /// cannot be derived from it; it is a second fetch over the same uid, sorted the same way.
+    ///
+    /// Stored and refreshed alongside `items`, never computed on read. An import writes rows that
+    /// `items` does not contain, so NOTHING observable would change and the Me tab's Pending tab
+    /// could never appear — the count has to be part of the same observation `items` is.
+    var awaitingItems: [SubscribedChannel] { get }
 }
 
 nonisolated enum SubscriptionsError: Error, Equatable {
@@ -119,6 +128,11 @@ extension FavoritesSchemaV5 {
     }
 
     private(set) var items: [SubscribedChannel] = []
+
+    /// Task 30: the AWAITING rows, in the same order `items` uses. Refreshed by the same
+    /// `refresh()`, so one fetch pair keeps the two lists consistent by construction.
+    private(set) var awaitingItems: [SubscribedChannel] = []
+
 
     /// Phase 4 Task 24: "this store just dirtied a row for that uid" (`SubscriptionRepository.kt:135`).
     /// The ROW's uid, not the session's -- see `SwiftDataFavoritesStore.onDirty`.
@@ -240,5 +254,15 @@ extension FavoritesSchemaV5 {
         )
         descriptor.includePendingChanges = false
         items = (try? context.fetch(descriptor)) ?? []
+        // Task 30 (fork F14). Deliberately a SECOND fetch, not a filter over `items`: the
+        // descriptor above is fail-closed on `== "APPROVED"`, so an awaiting row was never in
+        // `items` to filter out of. Same uid, same tombstone rule, same order.
+        let awaiting = ImportProvenance.awaiting
+        var pending = FetchDescriptor<SubscribedChannel>(
+            predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus == awaiting },
+            sortBy: [SortDescriptor(\.followedAt, order: .reverse)]
+        )
+        pending.includePendingChanges = false
+        awaitingItems = (try? context.fetch(pending)) ?? []
     }
 }
