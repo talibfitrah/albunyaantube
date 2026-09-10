@@ -17,6 +17,8 @@ struct ImportFromYouTubeScreen: View {
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
+    /// `ProfileScreen`'s way off a pushed screen — the Done button pops, as Android's does.
+    @Environment(\.dismiss) private var dismiss
 
     @State private var model: ImportViewModel?
 
@@ -66,7 +68,19 @@ struct ImportFromYouTubeScreen: View {
     @ViewBuilder
     func stateView(_ state: ImportUiState) -> some View {
         switch state {
-        case .idle, .authorizing:
+        // Review F2: `.idle` is a RESTING state on iOS in two places Android has none —
+        // `revoke()` and the silent arm a dismissed consent sheet lands on. Android auto-starts out
+        // of Idle and never renders it, so folding it onto the "Connecting to Google…" spinner
+        // (which is what this did) left a permanent fake spinner and no way back in. It is the
+        // offer instead, in Android's own words for it: `import_offer_*`, which the catalog has
+        // carried unrendered since the converter first ran.
+        case .idle:
+            EmptyStateView(systemImage: "square.and.arrow.down.on.square",
+                           title: String(localized: "import_offer_title"),
+                           message: String(localized: "import_offer_message"),
+                           action: (String(localized: "import_offer_positive"),
+                                    { model?.start() }))
+        case .authorizing:
             spinner("import_youtube_loading_authorizing")
         case .fetching:
             spinner("import_youtube_loading_fetching")
@@ -121,9 +135,9 @@ struct ImportFromYouTubeScreen: View {
     private func partialFailureBanner(_ types: Set<CandidateType>) -> some View {
         let names = CandidateType.allCases
             .filter(types.contains)
-            .map { String(localized: String.LocalizationValue($0.shortTitleKey)) }
+            .map { Format.localizedFormat($0.shortTitleKey, locale: locale) }
             .joined(separator: ", ")
-        return Text(String(format: String(localized: "import_youtube_partial_failure"), names))
+        return Text(Format.localizedFormat("import_youtube_partial_failure", locale: locale, names))
             .font(TypeScale.body(widthClass))
             .foregroundStyle(Color.textSecondary)
             .padding(Spacing.md(widthClass))
@@ -260,14 +274,20 @@ struct ImportFromYouTubeScreen: View {
                         .multilineTextAlignment(.center)
                 }
             }
+            // Review F3: DONE, and it leaves — `ImportFromYouTubeFragment.kt:70` wires this button
+            // to `navigateUp()`, and Retry lives in the ERROR container, not this one. A retry here
+            // would re-authorize and re-fetch the whole library after a run that just succeeded,
+            // raising Google's sheet again for nothing; the rows it would find are the rows the
+            // pipeline's dedupe would then skip.
             Button {
-                model?.retry()
+                dismiss()
             } label: {
-                Text(String(localized: "import_youtube_button_retry"))
+                Text(String(localized: "import_youtube_button_done"))
                     .frame(minHeight: 44)
             }
             .buttonStyle(.bordered)
             .tint(.brand)
+            .accessibilityIdentifier("import.done")
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.lg(widthClass))

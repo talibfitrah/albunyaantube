@@ -31,6 +31,12 @@ import Observation
     /// Review → Importing transition happens across a suspension, so two taps in the same frame
     /// both see the old state.
     private var isRunning = false
+    /// Which run owns `isRunning`. Review F1: without it, a run CANCELLED by `revoke()` still ran
+    /// its own tail when it woke up, and that tail cleared the flag a run started since had set —
+    /// so a third `start()` sailed past the guard and two flows ran at once (two consent sheets,
+    /// or two passes of a non-re-entrant pipeline). Every entry point takes the next number and
+    /// every tail only clears the flag it still owns. `MeFeedRepository`'s shape.
+    private var generation = 0
 
     init(authorizer: any YouTubeAuthorizer, source: YouTubeImportSource, pipeline: ImportPipeline) {
         self.authorizer = authorizer
@@ -45,11 +51,13 @@ import Observation
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        generation += 1
+        let run = generation
         didRevoke = false
         state = .authorizing
         job = Task { [self] in
             await authorizeAndFetch()
-            isRunning = false
+            if generation == run { isRunning = false }
         }
     }
 
@@ -141,6 +149,8 @@ import Observation
         guard case .review = state, !isRunning else { return }
         let chosen = state.selectedCandidates
         isRunning = true
+        generation += 1
+        let run = generation
         // `:141-144`: a FRESH zero, not the pipeline's last emission. Seeding from the previous
         // run's value would flash that run's DONE frame for one frame of a re-import.
         state = .importing(.resolving, processed: 0, total: 0)
@@ -151,6 +161,7 @@ import Observation
                 guard case .importing = state else { return }
                 state = .importing(phase, processed: processed, total: total)
             }
+            guard generation == run else { return }
             isRunning = false
             guard !Task.isCancelled else { return }
             state = .done(summary)
@@ -172,7 +183,12 @@ import Observation
     func revoke() {
         job?.cancel()
         job = nil
+        // Review F1: bumping the generation is what makes the cancelled run's tail INERT. Clearing
+        // the flag alone was not enough — the outgoing run cleared it again when it woke up, on
+        // top of whatever run had started in between.
+        generation += 1
         isRunning = false
+        isCautionPresented = false
         authorizer.forget()
         state = .idle
         didRevoke = true

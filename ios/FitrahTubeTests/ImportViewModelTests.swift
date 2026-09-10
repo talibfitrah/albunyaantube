@@ -68,6 +68,20 @@ struct ImportViewModelTests {
     private func rig(youtube: [HTTPResponse], backend: [HTTPResponse] = [],
                      authorizer: FakeYouTubeAuthorizer = FakeYouTubeAuthorizer(token: Fixture.token),
                      backendPark: (@Sendable (Int) async -> Void)? = nil) throws -> Rig {
+        let built = try build(youtube: youtube, backend: backend, authorizer: authorizer,
+                              backendPark: backendPark)
+        return Rig(model: built.model, authorizer: authorizer, youtube: built.youtube,
+                   backend: built.backend, container: built.container)
+    }
+
+    /// The construction itself, over ANY authorizer. Review F1's test parks two runs at once, which
+    /// `FakeYouTubeAuthorizer`'s single `Gate` cannot express — so it brings its own authorizer and
+    /// takes the rest of the rig from here rather than from a second copy of it.
+    private func build(youtube: [HTTPResponse], backend: [HTTPResponse] = [],
+                       authorizer: any YouTubeAuthorizer,
+                       backendPark: (@Sendable (Int) async -> Void)? = nil)
+        throws -> (model: ImportViewModel, youtube: ScriptedTransport, backend: ScriptedTransport,
+                   container: ModelContainer) {
         let container = try ModelContainer(
             for: FavoriteVideo.self, SavedPlaylist.self, SubscribedChannel.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true))
@@ -83,11 +97,10 @@ struct ImportViewModelTests {
                                  deviceId: DeviceId(value: "dev-123")),
             favorites: favorites, subscriptions: subscriptions, playlists: playlists,
             now: { Date(timeIntervalSince1970: 1_756_800_000) })
-        return Rig(model: ImportViewModel(authorizer: authorizer,
-                                          source: YouTubeImportSource(transport: youtubeTransport),
-                                          pipeline: pipeline),
-                   authorizer: authorizer, youtube: youtubeTransport, backend: backendTransport,
-                   container: container)
+        return (ImportViewModel(authorizer: authorizer,
+                                source: YouTubeImportSource(transport: youtubeTransport),
+                                pipeline: pipeline),
+                youtubeTransport, backendTransport, container)
     }
 
     /// One of each type, all three paginators answering a single page.
@@ -471,6 +484,158 @@ struct ImportViewModelTests {
         #expect(!text.contains("youtube.com"))
         // Acceptance: the gate cannot be bypassed, so the screen has no path to `confirmImport`.
         #expect(!text.contains("confirmImport"))
+    }
+
+    // MARK: - Review findings
+
+    /// **Review F1.** `revoke()` cancels the run in flight, but that run still wakes up and runs its
+    /// own tail. Before the generation guard, the tail cleared `isRunning` — the flag a run started
+    /// SINCE had set — so the next `start()` sailed past the single-run guard and two flows ran at
+    /// once: two consent sheets, or two passes of a pipeline that is not re-entrant.
+    ///
+    /// Red-first, verified by reverting ONLY the guard and running this case alone: without it the
+    /// third `start()` really does begin a third run, and `authorizeCount` reaches 3.
+    @Test func aRevokedRunsTailCannotUnlockTheGuardForTheRunThatReplacedIt() async throws {
+        let first = Gate(), second = Gate()
+        let authorizer = GatedTwice(first: first, second: second, token: Fixture.token)
+        let model = try build(youtube: fullLibrary() + fullLibrary(), authorizer: authorizer).model
+
+        model.start()                       // run 1, parked in authorize()
+        await first.waitUntilBlocked()
+        let cancelled = model.job
+        model.revoke()                      // run 1 cancelled; its tail must now be inert
+
+        model.start()                       // run 2, parked
+        let secondRun = model.job           // held: `model.job` is what a THIRD run would replace
+        await second.waitUntilBlocked()
+        await first.release()               // run 1 wakes, sees its cancel, runs its tail
+        await cancelled?.value
+
+        // The stale tail has now run. A third start must still be refused — run 2 is in flight.
+        model.start()
+        model.retry()
+
+        await second.release()
+        // Run 2's task, NOT `model.job`: a regression makes those two different objects, and
+        // awaiting the wrong one is what turned this case into a 60 s hang instead of a failure.
+        await secondRun?.value
+
+        #expect(authorizer.authorizeCount == 2)
+        guard case .review = model.state else {
+            Issue.record("expected .review, got \(model.state)"); return
+        }
+    }
+
+    /// A two-shot authorizer: run 1 parks on `first`, run 2 on `second`. `FakeYouTubeAuthorizer`
+    /// holds ONE `Gate`, so a suite that needs two runs parked at once cannot use it.
+    ///
+    /// A THIRD call — which only a regression produces — returns immediately rather than parking on
+    /// a gate nobody releases. That is deliberate: the run this test is about must fail as a COUNT,
+    /// not as a deadlock, and a third caller queueing behind `second` would steal the continuation
+    /// run 2 is parked on (a `Gate` holds exactly one).
+    @MainActor private final class GatedTwice: YouTubeAuthorizer {
+        private let first: Gate, second: Gate, token: String
+        private(set) var authorizeCount = 0
+        private(set) var forgetCount = 0
+        var isAvailable: Bool { true }
+
+        init(first: Gate, second: Gate, token: String) {
+            self.first = first; self.second = second; self.token = token
+        }
+
+        func authorize() async throws -> String {
+            authorizeCount += 1
+            switch authorizeCount {
+            case 1: await first.block()
+            case 2: await second.block()
+            default: break
+            }
+            return token
+        }
+
+        func forget() { forgetCount += 1 }
+    }
+
+    /// **Review F2.** `.idle` is a RESTING state on iOS in two places Android has none: `revoke()`
+    /// and the silent arm a dismissed consent sheet lands on. Android auto-starts out of Idle and
+    /// never renders it — folding `.idle` onto the "Connecting to Google…" spinner therefore left a
+    /// permanent fake spinner with no way back in. Both routes into it are pinned here, and the
+    /// copy the arm renders must resolve.
+    @Test func idleIsReachableAfterARevokeAndAfterADismissedSheetAndCanStartAgain() async throws {
+        let dismissed = try rig(youtube: [], authorizer: FakeYouTubeAuthorizer(error: .cancelled))
+        dismissed.model.start()
+        await dismissed.model.job?.value
+        #expect(dismissed.model.state == .idle)
+        #expect(dismissed.model.didRevoke == false)
+
+        let revoked = try rig(youtube: fullLibrary() + fullLibrary())
+        _ = try await reviewed(revoked)
+        revoked.model.revoke()
+        #expect(revoked.model.state == .idle)
+        // The arm's own affordance works: `start()` from `.idle` runs the whole flow again.
+        revoked.model.start()
+        await revoked.model.job?.value
+        #expect(revoked.authorizer.authorizeCount == 2)
+        guard case .review = revoked.model.state else {
+            Issue.record("expected .review, got \(revoked.model.state)"); return
+        }
+        // …and starting again clears the revoke confirmation, so the screen cannot claim both
+        // "no access" and a live review at once.
+        #expect(revoked.model.didRevoke == false)
+
+        let bundle = try #require(Bundle.main.path(forResource: "en", ofType: "lproj")
+            .flatMap(Bundle.init(path:)))
+        for key in ["import_offer_title", "import_offer_message", "import_offer_positive"] {
+            #expect(bundle.localizedString(forKey: key, value: nil, table: nil) != key)
+        }
+    }
+
+    /// **Review F2, the rendering half** — `SuggestContentScreen`'s walk, one screen over. `.idle`
+    /// used to share the `.authorizing` arm, so a revoked screen sat on "Connecting to Google…"
+    /// forever with nothing connecting. Every arm renders a real view, and only the RETRYABLE error
+    /// offers a retry: an empty YouTube library is not a failure, and a button that re-runs three
+    /// empty paginators is an invitation to keep tapping it.
+    @Test func everyStateArmRendersARealViewAndIdleIsNotASpinner() {
+        let screen = ImportFromYouTubeScreen()
+        #expect(leafTypeName(of: screen.stateView(.idle)) == "EmptyStateView")
+        #expect(leafTypeName(of: screen.stateView(.authorizing)) != "EmptyStateView")
+        #expect(leafTypeName(of: screen.stateView(.authorizing))
+            == leafTypeName(of: screen.stateView(.fetching)), "both loading arms are one spinner")
+        // `contains`, not `hasPrefix`: these two arms carry trailing modifiers, so the walk stops at
+        // a `ModifiedContent` wrapper rather than the leaf (the `stateView` doc comment's rule
+        // applies to the SWITCH, not to what each arm hangs on its own body).
+        #expect(leafTypeName(of: screen.stateView(.importing(.resolving, processed: 0, total: 0)))
+            .contains("ProgressView"))
+        let doneArm = leafTypeName(of: screen.stateView(.done(ImportSummary(
+            added: 1, sentForReview: 0, skipped: 0, alreadyPresent: 0, processed: 1, total: 1,
+            rateLimited: false))))
+        #expect(doneArm.contains("VStack"))
+        #expect(!doneArm.contains("ProgressView"), "a finished import is not still spinning")
+        #expect(leafTypeName(of: screen.stateView(
+            .error(messageKey: "auth_error_generic", retryable: true))) == "ErrorStateView")
+        #expect(leafTypeName(of: screen.stateView(
+            .error(messageKey: "empty_state_no_content", retryable: false))) == "EmptyStateView",
+                "a library with nothing in it is not a failure and gets no retry")
+        #expect(leafTypeName(of: screen.stateView(
+            .review(candidates: [], selected: [], partialFailures: []))).hasPrefix("LazyVStack"))
+    }
+
+    /// **Review F3.** Android's done container carries a DONE button that navigates up
+    /// (`ImportFromYouTubeFragment.kt:70`); Retry lives in the ERROR container. A retry on the done
+    /// state would re-authorize and re-fetch the whole library after a run that just succeeded —
+    /// Google's sheet again, for rows the pipeline's dedupe would then skip.
+    @Test func theDoneArmOffersDoneAndTheRetryKeyBelongsToTheErrorArm() throws {
+        let screen = URL(filePath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "FitrahTube/Features/Import/ImportFromYouTubeScreen.swift")
+        let text = try String(contentsOf: screen, encoding: .utf8)
+        #expect(text.contains("import_youtube_button_done"))
+        // The done arm's button dismisses; nothing on this screen re-runs a SUCCEEDED import.
+        #expect(text.contains("dismiss()"))
+        let bundle = try #require(Bundle.main.path(forResource: "en", ofType: "lproj")
+            .flatMap(Bundle.init(path:)))
+        #expect(bundle.localizedString(forKey: "import_youtube_button_done", value: nil, table: nil)
+            == "Done")
     }
 
     // MARK: - The done state (Task 28 re-review's ruling)
