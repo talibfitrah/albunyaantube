@@ -63,6 +63,13 @@ import SwiftData
         refresh()
     }
 
+    /// Part B gate (stage 4 S5): the id rule the sync pull applies to server rows before they
+    /// become `#Unique` keys. YouTube video ids are exactly eleven URL-safe characters
+    /// (`StreamResolver.isValidVideoId`, `NewPipeExtractorClient.kt:1045`).
+    nonisolated static func isValid(_ videoId: String) -> Bool {
+        videoId.wholeMatch(of: /[A-Za-z0-9_-]{11}/) != nil
+    }
+
     func isFavorite(_ videoId: String) -> Bool {
         let uid = currentUserId
         let descriptor = FetchDescriptor<FavoriteVideo>(
@@ -176,6 +183,9 @@ import SwiftData
         // and any later one -- pushes by construction, and a rolled-back write pushes nothing.
         onDirty?(currentUserId)
     }
+
+    /// `UserScoped.reload()`: the sync manager's write hook.
+    func reload() { refresh() }
 
     private func refresh() {
         let uid = currentUserId

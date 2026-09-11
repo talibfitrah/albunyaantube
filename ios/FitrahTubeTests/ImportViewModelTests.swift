@@ -250,6 +250,26 @@ struct ImportViewModelTests {
         #expect(rig.authorizer.forgetCount == 1)
     }
 
+    /// Codex 13. The SDK does not observe our cancellation: a consent sheet that completes AFTER
+    /// `revoke()` — with a grant, or with a refusal — must not paint over the revoked screen. The
+    /// refusal is the sharp half: it used to land on the generic catch and write `.error` on top
+    /// of `.idle`.
+    @Test func anAuthorizationThatCompletesAfterRevokeWritesNothingEvenWhenItFails() async throws {
+        let gate = Gate()
+        let rig = try rig(youtube: fullLibrary(),
+                          authorizer: FakeYouTubeAuthorizer(token: Fixture.token, gate: gate))
+        rig.model.start()
+        await gate.waitUntilBlocked()
+        let running = rig.model.job
+        rig.model.revoke()
+        // After `forget()` the fake is unavailable, so the parked authorize wakes up and THROWS.
+        await gate.release()
+        await running?.value
+
+        #expect(rig.model.state == .idle, "a late authorization failure painted over the revoked screen")
+        #expect(rig.model.didRevoke)
+    }
+
     /// `:161-163`. `retry()` IS `start()` — the token is in memory only and the three paginators
     /// are cheap, so there is no resumable midpoint to be clever about.
     @Test func retryReRunsTheWholeFlowFromAuthorization() async throws {
@@ -429,10 +449,11 @@ struct ImportViewModelTests {
 
     // MARK: - Ruling F9: revoke
 
-    /// F9's whole point. `revoke()` forgets the token this device holds and NOTHING else — never
-    /// `disconnect()`, which revokes every scope the user ever granted (sign-in included) and signs
-    /// them out of the app. The seam offers no such call, and the two files that could reach the
-    /// SDK name it nowhere.
+    /// F9's whole point. `revoke()` forgets the token this device holds — since the Part B gate
+    /// that is the SDK's own Keychain session (`signOut()`, local only), nothing is cached above it
+    /// — and NOTHING else: never `disconnect()`, which revokes every scope the user ever granted
+    /// (sign-in included) server-side. The seam offers no such call, and no file in the feature
+    /// names it.
     @Test func revokeForgetsTheTokenResetsTheScreenAndNeverDisconnects() async throws {
         let rig = try rig(youtube: fullLibrary())
         _ = try await reviewed(rig)
@@ -463,8 +484,13 @@ struct ImportViewModelTests {
                 .map { $0.split(separator: "//", maxSplits: 1, omittingEmptySubsequences: false)[0] }
                 .joined(separator: "\n")
             #expect(!code.contains("disconnect("), "\(url.lastPathComponent) calls disconnect()")
-            #expect(!code.contains("signOut("), "\(url.lastPathComponent) signs the Google user out")
+            // The keychain half lives in the ONE SDK-naming file and nowhere else.
+            #expect(code.contains("signOut(") == (url.lastPathComponent == "GoogleYouTubeAuthorizer.swift"),
+                    "\(url.lastPathComponent): the local sign-out belongs to the authorizer alone")
         }
+        // After the forget the SDK has no session to extend: the affordance is gone until the next
+        // Google sign-in, which is the same state Google's own permissions page leaves.
+        #expect(rig.authorizer.isAvailable == false)
     }
 
     /// The confirmation links to GOOGLE's account-permissions page — never YouTube (owner
@@ -568,20 +594,24 @@ struct ImportViewModelTests {
         #expect(dismissed.model.state == .idle)
         #expect(dismissed.model.didRevoke == false)
 
-        let revoked = try rig(youtube: fullLibrary() + fullLibrary())
+        // The arm's own affordance works: `start()` from `.idle` runs the whole flow again.
+        dismissed.authorizer.error = nil
+        dismissed.model.start()
+        await dismissed.model.job?.value
+        #expect(dismissed.authorizer.authorizeCount == 2)
+
+        let revoked = try rig(youtube: fullLibrary())
         _ = try await reviewed(revoked)
         revoked.model.revoke()
         #expect(revoked.model.state == .idle)
-        // The arm's own affordance works: `start()` from `.idle` runs the whole flow again.
+        #expect(revoked.model.didRevoke)
+        // Part B gate: a revoke forgets the SDK session, so there is nothing left to authorize
+        // and the screen hides the offer (RULING 28) until the next Google sign-in. A `start()`
+        // that somehow still ran would be refused as unavailable, never a silent success.
+        #expect(revoked.authorizer.isAvailable == false)
         revoked.model.start()
         await revoked.model.job?.value
-        #expect(revoked.authorizer.authorizeCount == 2)
-        guard case .review = revoked.model.state else {
-            Issue.record("expected .review, got \(revoked.model.state)"); return
-        }
-        // …and starting again clears the revoke confirmation, so the screen cannot claim both
-        // "no access" and a live review at once.
-        #expect(revoked.model.didRevoke == false)
+        #expect(revoked.model.state == .error(messageKey: "auth_error_generic", retryable: true))
 
         let bundle = try #require(Bundle.main.path(forResource: "en", ofType: "lproj")
             .flatMap(Bundle.init(path:)))

@@ -44,6 +44,29 @@ actor SyncManager {
     private var pendingRetry: Task<Void, Never>?
     private var retriesLeft = SyncManager.maxPushRetries
 
+    /// **The identity fence** (Part B gate, stage 3 I-4 / stage 5 C1 / stage 4 S2). The exclusion
+    /// serialises WORK; it does not serialise identity. `AuthorizedTransport` mints the bearer per
+    /// request from whoever Firebase says is current, so a drain for A that is still walking its
+    /// rows when B signs in signs A's remaining PUTs with B's token — and the container's coalesced
+    /// follow-up (`AppContainer.pushDirtySoon`) is a second scheduler `unbindLocked()` never sees.
+    /// Both are closed by the same two facts, written OUTSIDE the lock so an in-flight run can read
+    /// them mid-drain: `boundUid` is the ONE uid any operation may run for, and `epoch` moves on
+    /// every bind/unbind so a run captures the number it started under and stops the moment it
+    /// changes — before the next request, before the next page write, before the next `clearDirty`.
+    private var boundUid: String?
+    private var epoch = 0
+
+    /// Stage 5 I3: the stores keep their own long-lived `ModelContext` and re-read only on their
+    /// own writes, so a pull that restored a whole library on a fresh device rendered NOTHING until
+    /// the next toggle or relaunch. Called on the main actor after every committed sync write.
+    private let onWrite: (@MainActor @Sendable () -> Void)?
+
+    /// Stage 4 S6 / Codex 10: `.advance` accepts any cursor pair that differs from the last, so a
+    /// server that keeps minting a moving cursor (or cycles between two) is neither exhausted nor
+    /// stalled, and the loop holds the ONE exclusion for as long as it runs. Same guard as
+    /// `YouTubeImportSource.maxPages`; injectable so a test can hit it in three pages.
+    private let maxPullPages: Int
+
     /// The push retry ladder is BOUNDED. `SyncClient.put` maps BOTH "no body" and "undecodable
     /// body" to a `.transientFailure`, and an undecodable body is not transient at all — it fails
     /// identically forever. Android chains one retry per transient drain with no cap, so that shape
@@ -80,21 +103,30 @@ actor SyncManager {
     #endif
 
     init(client: any SyncTransporting, modelContainer: ModelContainer,
-         backoff: SyncBackoff, sleep: @escaping @Sendable (Duration) async -> Void) {
+         backoff: SyncBackoff, sleep: @escaping @Sendable (Duration) async -> Void,
+         onWrite: (@MainActor @Sendable () -> Void)? = nil, maxPullPages: Int = 200) {
         self.client = client
         self.modelContainer = modelContainer
         self.backoff = backoff
         self.sleep = sleep
+        self.onWrite = onWrite
+        self.maxPullPages = maxPullPages
     }
 
     // MARK: - Public triggers, each under the ONE exclusion
 
+    /// The identity is taken BEFORE the lock (see `boundUid`): a bind queued behind another
+    /// account's drain is what stops that drain at its next row.
     func bind(uid: String) async {
+        boundUid = uid
+        epoch += 1
         await acquire(); defer { release() }
         await bindLocked(uid)
     }
 
     func unbind() async {
+        boundUid = nil
+        epoch += 1
         await acquire(); defer { release() }
         unbindLocked()
     }
@@ -104,17 +136,26 @@ actor SyncManager {
         await pushDirtyLocked(uid)
     }
 
+    /// Only tests call this directly; production pulls through `bind` and `syncNow`. Kept as the
+    /// seam that lets the pull loop be pinned without a merge in front of it.
     func pullAll(uid: String) async {
         await acquire(); defer { release() }
-        await pullAllLocked(uid)
+        _ = await pullAllLocked(uid)
     }
 
-    /// The foreground trigger: pull, then push.
+    /// The foreground trigger: pull, then push — the push only if the pull did not end on a
+    /// terminal verdict or an identity change (stage 5 I5).
     func syncNow(uid: String) async {
         await acquire(); defer { release() }
-        await pullAllLocked(uid)
+        guard await pullAllLocked(uid) else { return }
         await pushDirtyLocked(uid)
     }
+
+    #if DEBUG
+    /// Test seam, the `@TaskLocal`s' sibling: a suite that pins the pull loop or a single drain
+    /// must not have to script a whole merge first to satisfy the identity fence.
+    func assumeBound(uid: String) { boundUid = uid; epoch += 1 }
+    #endif
 
     // MARK: - The exclusion itself
 
@@ -146,13 +187,22 @@ actor SyncManager {
     // MARK: - bind
 
     private func bindLocked(_ uid: String) async {
+        // Stage 3 M-1: the same guard `pushDirtyLocked` has — a bind handed the exclusion under a
+        // cancelled task must not run its SwiftData half and then skip the pull and the push.
+        guard !Task.isCancelled, uid == boundUid else { return }
         let container = modelContainer
         switch SyncDecisions.bind(binding: await MainActor.run { SyncStore.binding(container) }, uid: uid) {
         case .merge:
             note(await MainActor.run { SyncStore.beginBinding(container, uid: uid) })
             await mergeLocked(uid)
         case .pullThenPush:
-            await pullAllLocked(uid)
+            // Stage 5 M1: guest rows written between two sessions of the SAME account are claimed
+            // here too. `tagAnonRows` is idempotent and the merge's additive semantics already
+            // accept it; without this line a favorite made while signed out was invisible while
+            // signed in, reappeared on the next sign-out, and was never pushed.
+            note(await MainActor.run { SyncStore.tagAnonRows(container, to: uid) })
+            await notifyWrite()
+            guard await pullAllLocked(uid) else { return }
             await pushDirtyLocked(uid)
         case .switchAccount(let previousUid):
             do {
@@ -164,24 +214,39 @@ actor SyncManager {
                 note("account switch rolled back, nothing applied: \(error)")
                 return
             }
+            await notifyWrite()
             await mergeLocked(uid)
         }
     }
 
     /// `SyncManager.kt:136-147`, in this order. Tagging after the pull loses an anon row to a
     /// server row of the same id; marking the merge done before the drain means a crash mid-push
-    /// never re-enters the merge.
+    /// never re-enters the merge. A pull that ended on a terminal verdict (or under a changed
+    /// identity) ends the merge too: pushing under a bearer the server just refused and then
+    /// stamping `initialMergeDone` for a terminal account is the "halves do not talk" seam of
+    /// stage 5 I5.
     private func mergeLocked(_ uid: String) async {
         let container = modelContainer
         note(await MainActor.run { SyncStore.tagAnonRows(container, to: uid) })
-        await pullAllLocked(uid)
+        await notifyWrite()
+        guard await pullAllLocked(uid) else { return }
         await pushDirtyLocked(uid)
         note(await MainActor.run { SyncStore.markMergeDone(container, uid: uid) })
     }
 
+    private func notifyWrite() async {
+        guard let onWrite else { return }
+        await MainActor.run { onWrite() }
+    }
+
     // MARK: - Pull
 
-    private func pullAllLocked(_ uid: String) async {
+    /// `false` when the run stopped for a reason the caller must respect: a terminal verdict, a
+    /// cancellation, or the identity moving underneath it. `true` covers every other exit —
+    /// exhausted, stalled, gave up, rejected — after which a push is still the right next step.
+    private func pullAllLocked(_ uid: String) async -> Bool {
+        guard !Task.isCancelled, uid == boundUid else { return false }
+        let run = epoch
         let container = modelContainer
         var loaded = await MainActor.run { SyncStore.cursors(container, uid: uid) }
         for dropped in loaded.dropped {
@@ -192,46 +257,69 @@ actor SyncManager {
         }
         var cursors = loaded.cursors
         var ids = loaded.ids
+        var pages = 0
 
         while !Task.isCancelled {
-            guard let body = await pullPage(uid: uid, cursors: cursors, ids: ids) else { return }
-            let cursorsBefore = cursors, idsBefore = ids
-            let advanced: SyncStore.Advance
-            do {
-                advanced = try await MainActor.run {
-                    try SyncStore.applyPage(container, uid: uid, body: body)
-                }
-            } catch {
-                note("page write failed, cursor left where it was: \(error)")
-                return
+            guard pages < maxPullPages else {
+                note("pull stopped at the \(maxPullPages)-page cap, cursor kept")
+                return true
             }
-            cursors.merge(advanced.cursors) { _, new in new }
-            ids.merge(advanced.ids) { _, new in new }
+            switch await pullPage(uid: uid, cursors: cursors, ids: ids) {
+            case .page(let body):
+                // The fence, checked AFTER the network await and BEFORE the write: the page was
+                // requested under this identity, and it is written only if that is still true.
+                guard epoch == run, !Task.isCancelled else {
+                    note("pull stopped: identity changed while page \(pages + 1) was in flight")
+                    return false
+                }
+                pages += 1
+                let cursorsBefore = cursors, idsBefore = ids
+                let advanced: SyncStore.Advance
+                do {
+                    advanced = try await MainActor.run {
+                        try SyncStore.applyPage(container, uid: uid, body: body)
+                    }
+                } catch {
+                    note("page write failed, cursor left where it was: \(error)")
+                    return true
+                }
+                for skipped in advanced.skipped { note("skipped a server row with an invalid id: \(skipped)") }
+                await notifyWrite()
+                cursors.merge(advanced.cursors) { _, new in new }
+                ids.merge(advanced.ids) { _, new in new }
 
-            let minted = body.subscriptions.nextCursor != nil || body.playlists.nextCursor != nil
-                || body.favorites.nextCursor != nil
-            switch SyncDecisions.page(mintedCursor: minted, cursorsBefore: cursorsBefore,
-                                      cursorsAfter: cursors, idsBefore: idsBefore, idsAfter: ids) {
-            case .advance:
-                continue
-            case .exhausted:
-                return
-            case .stalled:
-                noteStall(cursorsBefore: cursorsBefore, cursorsAfter: cursors,
-                          idsBefore: idsBefore, idsAfter: ids)
-                return
+                let minted = body.subscriptions.nextCursor != nil || body.playlists.nextCursor != nil
+                    || body.favorites.nextCursor != nil
+                switch SyncDecisions.page(mintedCursor: minted, cursorsBefore: cursorsBefore,
+                                          cursorsAfter: cursors, idsBefore: idsBefore, idsAfter: ids) {
+                case .advance:
+                    continue
+                case .exhausted:
+                    return true
+                case .stalled:
+                    noteStall(cursorsBefore: cursorsBefore, cursorsAfter: cursors,
+                              idsBefore: idsBefore, idsAfter: ids)
+                    return true
+                }
+            case .stopped:
+                return true
+            case .terminal:
+                return false
             }
         }
+        return false
     }
 
-    /// One page, with the three-armed failure classifier in front of the ladder. Returns nil when
-    /// the run must stop.
+    private enum PullStep { case page(SyncResponse), stopped, terminal }
+
+    /// One page, with the three-armed failure classifier in front of the ladder. `.stopped` when
+    /// the run must end but a push may follow; `.terminal` when nothing may.
     private func pullPage(uid: String, cursors: [String: Int],
-                          ids: [String: String?]) async -> SyncResponse? {
+                          ids: [String: String?]) async -> PullStep {
         var attempt = 1
         while true {
             do {
-                return try await client.pull(cursors: cursors, ids: ids)
+                return .page(try await client.pull(cursors: cursors, ids: ids))
             } catch {
                 let status = Self.pullStatus(of: error)
                 switch SyncDecisions.pull(status: status) {
@@ -241,7 +329,7 @@ actor SyncManager {
                     // on it); this side just stops and lets go of the retry chain.
                     note("pull terminal (status \(status.map(String.init) ?? "none")); stopping and unbinding")
                     unbindLocked()
-                    return nil
+                    return .terminal
                 case .permanent:
                     note("pull rejected the request (status \(status.map(String.init) ?? "none")); no retry")
                     // Review I1. The stored tiebreaker is the only part of this request the client
@@ -256,11 +344,11 @@ actor SyncManager {
                     for dropped in cleared.dropped {
                         note("dropped server-rejected lastDocId for \(dropped.type): \(dropped.id)")
                     }
-                    return nil
+                    return .stopped
                 case .transient:
                     guard attempt < Self.maxPullAttempts else {
                         note("pull gave up after \(attempt) attempts, cursor kept: \(error)")
-                        return nil
+                        return .stopped
                     }
                     await sleep(.milliseconds(200 * attempt))
                     attempt += 1
@@ -285,16 +373,23 @@ actor SyncManager {
         // critical section — the retry cancelled by `unbindLocked()` from inside an in-flight pull
         // is exactly that, and it would drain the previous account's rows under whatever bearer is
         // current next. The retry's own guard runs before `acquire()` and cannot see this.
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, uid == boundUid else { return }
+        let run = epoch
         let container = modelContainer
         var transient = false
+        var authFailed = false
 
         for type in SyncEntityType.allCases {
             let (rows, failure) = await MainActor.run { SyncStore.dirtyRows(container, uid: uid, type: type) }
             note(failure)
-            var authFailed = false
             for row in rows {
-                let outcome = await push(row, type: type, uid: uid)
+                // The fence, before every request: a bind or unbind that arrived while the previous
+                // row was on the wire moves `epoch`, and the rest of this drain belongs to nobody.
+                guard epoch == run else {
+                    note("push stopped: identity changed mid-drain")
+                    return
+                }
+                let outcome = await push(row, type: type, uid: uid, run: run)
                 switch outcome {
                 case .ok:
                     break
@@ -305,7 +400,8 @@ actor SyncManager {
                     // rather than left to block every later pull forever.
                     note("push permanently rejected \(type.rawValue)/\(row.id); dropping its dirty flag")
                     note(await MainActor.run {
-                        SyncStore.clearDirty(container, uid: uid, type: type, id: row.id, serverUpdatedAt: nil)
+                        SyncStore.clearDirty(container, uid: uid, type: type, id: row.id,
+                                             serverUpdatedAt: nil, pushedRemoved: row.isRemoved)
                     })
                 case .transientFailure:
                     transient = true
@@ -315,11 +411,13 @@ actor SyncManager {
             if authFailed { break }
         }
 
-        scheduleRetry(uid: uid, needed: transient)
+        // Stage 5 M2: a refused bearer is not a transient the ladder can wait out — it would
+        // re-drain under the same refused token up to three times.
+        scheduleRetry(uid: uid, needed: transient && !authFailed)
     }
 
     private func push(_ row: SyncStore.PendingPush, type: SyncEntityType,
-                      uid: String) async -> SyncDecisions.PushOutcome {
+                      uid: String, run: Int) async -> SyncDecisions.PushOutcome {
         let container = modelContainer
         do {
             switch row.payload {
@@ -333,9 +431,13 @@ actor SyncManager {
                 // a tombstone needs nothing from the body. Passing `false` would classify every
                 // successful DELETE as transient and re-push it forever.
                 let outcome = SyncDecisions.push(status: status, hasBody: true)
+                // The fence again, after the await: the echo of a request signed under the previous
+                // identity must not clear a flag on rows the new identity now owns.
+                guard epoch == run else { return .authFailed }
                 if outcome == .ok {
                     note(await MainActor.run {
-                        SyncStore.clearDirty(container, uid: uid, type: type, id: row.id, serverUpdatedAt: nil)
+                        SyncStore.clearDirty(container, uid: uid, type: type, id: row.id,
+                                             serverUpdatedAt: nil, pushedRemoved: row.isRemoved)
                     })
                 }
                 return outcome
@@ -345,6 +447,7 @@ actor SyncManager {
                     note("push \(type.rawValue)/\(row.id) answered \(status) with no decodable body")
                 }
                 let outcome = SyncDecisions.push(status: status, hasBody: echo != nil)
+                guard epoch == run else { return .authFailed }
                 if outcome == .ok, let echo {
                     note(await MainActor.run {
                         // SYNC-ECHO-01: `deleted: true` on a PUT means the server's projection
@@ -353,7 +456,7 @@ actor SyncManager {
                         echo.deleted
                             ? SyncStore.tombstone(container, uid: uid, type: type, id: row.id, at: echo.updatedAt)
                             : SyncStore.clearDirty(container, uid: uid, type: type, id: row.id,
-                                                   serverUpdatedAt: echo.updatedAt)
+                                                   serverUpdatedAt: echo.updatedAt, pushedRemoved: row.isRemoved)
                     })
                 }
                 return outcome
@@ -365,6 +468,9 @@ actor SyncManager {
 
     private func scheduleRetry(uid: String, needed: Bool) {
         guard needed else {
+            // Stage 3 M-2: a drain that succeeded owes nothing to a retry a previous one armed.
+            pendingRetry?.cancel()
+            pendingRetry = nil
             backoff.reset()
             retriesLeft = Self.maxPushRetries
             return
@@ -393,7 +499,12 @@ actor SyncManager {
     private func note(_ failure: String?) { if let failure { note(failure) } }
 
     private func note(_ line: String) {
+        // Stage 4 S4: lines carry server document ids and SwiftData error descriptions (which can
+        // embed row values); the ring is the assertable surface, the console is Debug-only like
+        // every other diagnostic in the app target.
+        #if DEBUG
         print("SyncManager: \(line)")
+        #endif
         incidents.append(line)
         if incidents.count > Self.maxIncidents { incidents.removeFirst() }
     }
@@ -429,12 +540,19 @@ enum SyncStore {
         enum Payload: Sendable { case tombstone, body(Data), encodeFailed }
         let id: String
         let payload: Payload
+        /// The `isRemoved` this push carries (stage 3 I-2). The only local edit these rows take
+        /// is a toggle, which always flips this bit — so a row whose bit differs when the echo
+        /// lands was edited DURING the round trip, and clearing its dirt would lose that edit.
+        let isRemoved: Bool
     }
 
     /// The types that minted a new cursor this page, and only those.
     nonisolated struct Advance: Sendable {
         var cursors: [String: Int] = [:]
         var ids: [String: String?] = [:]
+        /// Stage 4 S5: server rows whose id fails the same validator every LOCAL writer applies,
+        /// reported rather than written.
+        var skipped: [String] = []
     }
 
     // MARK: - The binding
@@ -581,8 +699,15 @@ enum SyncStore {
     /// rows which were never written — those rows are then never fetched again.
     static func applyPage(_ container: ModelContainer, uid: String, body: SyncResponse) throws -> Advance {
         let context = ModelContext(container)
+        var advance = Advance()
         do {
+            // Stage 4 S5: the same id rule every LOCAL writer enforces, because a server id is a
+            // `#Unique` key, a `Route.channel(id:)` push, a synthesised URL pushed back, and an
+            // accessibility identifier. Defence in depth against a buggy or replaced server.
             for dto in body.subscriptions.items {
+                guard SwiftDataSubscriptionsStore.isValid(dto.entityId) else {
+                    advance.skipped.append("subscriptions/\(dto.entityId.prefix(80))"); continue
+                }
                 let local = try one(context, uid: uid, channelId: dto.entityId)
                 switch action(dto.deleted, dto.updatedAt, local) {
                 case .applyRow:
@@ -596,6 +721,9 @@ enum SyncStore {
                 }
             }
             for dto in body.playlists.items {
+                guard SwiftDataSavedPlaylistsStore.isValid(dto.entityId) else {
+                    advance.skipped.append("playlists/\(dto.entityId.prefix(80))"); continue
+                }
                 let local = try one(context, uid: uid, playlistId: dto.entityId)
                 switch action(dto.deleted, dto.updatedAt, local) {
                 case .applyRow:
@@ -610,6 +738,9 @@ enum SyncStore {
                 }
             }
             for dto in body.favorites.items {
+                guard SwiftDataFavoritesStore.isValid(dto.entityId) else {
+                    advance.skipped.append("favorites/\(dto.entityId.prefix(80))"); continue
+                }
                 let local = try one(context, uid: uid, videoId: dto.entityId)
                 switch action(dto.deleted, dto.updatedAt, local) {
                 case .applyRow:
@@ -624,17 +755,23 @@ enum SyncStore {
                 }
             }
 
-            var advance = Advance()
             func advanceCursor(_ type: SyncEntityType, _ cursor: Int?, _ docId: String?) {
                 guard let cursor else { return }
                 let key = type.rawValue
                 let row = state(context, uid: uid, entityType: key)
                     ?? insert(context, SyncState(entityType: key, userId: uid))
                 row.lastCursor = cursor
-                row.lastDocId = docId
+                // Stage 4 S5: validated on the way IN, not only on the way out (`cursors(_:uid:)`),
+                // so a bad tiebreaker is never persisted and then dropped-and-noted a run later.
+                if let docId, !SyncClient.isValidCursorId(docId) {
+                    advance.skipped.append("\(key) cursor id/\(docId.prefix(80))")
+                    row.lastDocId = nil
+                } else {
+                    row.lastDocId = docId
+                }
                 row.lastSyncAt = Date()
                 advance.cursors[key] = cursor
-                advance.ids[key] = docId
+                advance.ids[key] = row.lastDocId
             }
             advanceCursor(.subscriptions, body.subscriptions.nextCursor, body.subscriptions.nextCursorId)
             advanceCursor(.playlists, body.playlists.nextCursor, body.playlists.nextCursorId)
@@ -669,7 +806,7 @@ enum SyncStore {
                 if row.channelUrl.isEmpty { row.channelUrl = SyncURL.channel(row.channelId) }
                 pending.append(PendingPush(id: row.channelId, payload: payload(row.isRemoved) {
                     try SyncCodec.body(for: row)
-                }))
+                }, isRemoved: row.isRemoved))
             }
         case .playlists:
             let rows = (try? context.fetch(FetchDescriptor<SavedPlaylist>(
@@ -679,7 +816,7 @@ enum SyncStore {
                 if row.playlistUrl.isEmpty { row.playlistUrl = SyncURL.playlist(row.playlistId) }
                 pending.append(PendingPush(id: row.playlistId, payload: payload(row.isRemoved) {
                     try SyncCodec.body(for: row)
-                }))
+                }, isRemoved: row.isRemoved))
             }
         case .favorites:
             let rows = (try? context.fetch(FetchDescriptor<FavoriteVideo>(
@@ -688,7 +825,7 @@ enum SyncStore {
             for row in rows {
                 pending.append(PendingPush(id: row.videoId, payload: payload(row.isRemoved) {
                     try SyncCodec.body(for: row)
-                }))
+                }, isRemoved: row.isRemoved))
             }
         }
         return (pending, save(context, "dirty rows"))
@@ -713,8 +850,13 @@ enum SyncStore {
     /// that makes the guard reject every later server update to that row, permanently (gate wave-2
     /// W12, `FavoritesStore.toggle`).
     static func clearDirty(_ container: ModelContainer, uid: String, type: SyncEntityType,
-                           id: String, serverUpdatedAt: Int?) -> String? {
+                           id: String, serverUpdatedAt: Int?, pushedRemoved: Bool? = nil) -> String? {
         write(container, uid: uid, type: type, id: id, "clear dirty") { row in
+            // Stage 3 I-2 / Codex 5: the echo is for the bytes that were pushed. A toggle that
+            // landed while they were on the wire flipped `isRemoved` and re-dirtied the row; that
+            // newer edit keeps its dirt and goes out with the next drain. (Two flips inside one
+            // round trip — removed and resurrected — still read as "unchanged" here; CF.)
+            if let pushedRemoved, row.isRemoved != pushedRemoved { return }
             row.dirty = false
             if let serverUpdatedAt, row.updatedAt < SyncCodec.date(millis: serverUpdatedAt) {
                 row.updatedAt = SyncCodec.date(millis: serverUpdatedAt)

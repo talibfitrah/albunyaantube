@@ -515,6 +515,7 @@ for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
         -scheme FitrahTube \
         -testPlan FitrahTubeUITests \
         -only-testing:FitrahTubeUITests/ScreenshotTests/testPartBScreensPhase4 \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testImportCautionContinueStartsTheRun \
         -destination "platform=iOS Simulator,name=$device" \
         -derivedDataPath DerivedData \
         2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"

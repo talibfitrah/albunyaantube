@@ -2,6 +2,7 @@ import FitrahAPI
 import Foundation
 import InnerTubeKit
 import SwiftData
+import Synchronization
 import Testing
 @testable import FitrahTube
 
@@ -746,9 +747,11 @@ struct ImportPipelineTests {
     }
 
     /// The canonical URLs are STORED DATA the sync wire requires — never a navigable affordance.
-    /// A PENDING video's `channelName` is deliberately `""`, NEVER the `UC…` id: the candidate
-    /// carries an id, and an id rendered where a name belongs is worse than a blank.
-    @Test func theCanonicalUrlsAreStoredAndAPendingVideosChannelNameIsBlankNeverTheChannelId() async throws {
+    /// A PENDING video's `channelName` is the uploader's TITLE when the candidate carries one, and
+    /// NEVER blank (Part B gate, Codex 4): `PutFavoriteRequest.channelName` is `@NotBlank`, so a
+    /// blank row 400s permanently, loses its dirt, and can never graduate. With no title the id
+    /// is the last resort — a name-shaped id beats a row that can never sync.
+    @Test func theCanonicalUrlsAreStoredAndAPendingVideosChannelNameIsNeverBlank() async throws {
         let rig = try rig([.json(200, Fixture.resolveBody([
             Fixture.result(Fixture.channel, "CHANNEL", "PENDING"),
             Fixture.result(Fixture.playlist, "PLAYLIST", "PENDING"),
@@ -773,9 +776,81 @@ struct ImportPipelineTests {
         let videoId = Fixture.video
         let videoRow = try #require(try context.fetch(FetchDescriptor<FavoriteVideo>(
             predicate: #Predicate { $0.videoId == videoId })).first)
-        #expect(videoRow.channelName == "")
-        #expect(videoRow.channelName != Fixture.channel)
+        #expect(videoRow.channelName == Fixture.channel, "no title on the candidate: the id is the last resort")
+        #expect(videoRow.channelName.isEmpty == false)
         #expect(videoRow.durationSeconds == 0)
+    }
+
+    /// Codex 4, the happy half: `videos.list` carries `snippet.channelTitle`, and the pending row
+    /// renders and syncs with it.
+    @Test func aPendingVideoCarriesTheUploadersTitleWhenTheCandidateHasOne() async throws {
+        let rig = try rig([.json(200, Fixture.resolveBody([Fixture.result(Fixture.video, "VIDEO", "PENDING")]))])
+
+        _ = await rig.pipeline.run([
+            ImportCandidate(type: .video, youtubeId: Fixture.video, title: "v", thumbnailUrl: nil,
+                            channelId: Fixture.channel, channelTitle: "Mishary Alafasy")
+        ], progress: { _, _, _ in })
+
+        let videoId = Fixture.video
+        let row = try #require(try ModelContext(rig.container).fetch(FetchDescriptor<FavoriteVideo>(
+            predicate: #Predicate { $0.videoId == videoId })).first)
+        #expect(row.channelName == "Mishary Alafasy")
+    }
+
+    /// Stage 4 S3 / Codex 2. The run belongs to the account it was confirmed for: a chunk whose
+    /// resolve was in flight when the session dropped must write NOTHING — the stores now belong
+    /// to nobody (or to the next account), and a guest row here is the previous user's library
+    /// handed to whoever signs in next.
+    @Test func aChunkWhoseSessionDroppedMidResolveWritesNothing() async throws {
+        let stores = Mutex<[any UserScoped]>([])
+        let rig = try rig([.json(200, Fixture.resolveBody([Fixture.result(Fixture.channel, "CHANNEL", "PENDING")]))],
+                          park: { _ in
+                              // The session drops while the resolve is on the wire.
+                              await MainActor.run { for store in stores.withLock({ $0 }) { store.currentUserId = "" } }
+                          })
+        stores.withLock { $0 = [rig.favorites, rig.subscriptions, rig.playlists] }
+
+        let summary = await rig.pipeline.run([
+            ImportCandidate(type: .channel, youtubeId: Fixture.channel, title: "c", thumbnailUrl: nil, channelId: nil)
+        ], progress: { _, _, _ in })
+
+        #expect(try ModelContext(rig.container).fetch(FetchDescriptor<SubscribedChannel>()).isEmpty,
+                "the chunk was written as guest rows after the session dropped")
+        #expect(summary.processed == 0)
+        #expect(summary.total == 1, "the run was cut short, and the summary must say so")
+    }
+
+    /// The same guard at the door: an UNSCOPED start (no account) writes nothing and asks for
+    /// nothing.
+    @Test func anUnscopedRunWritesNothingAndSendsNothing() async throws {
+        let rig = try rig([], uid: "")
+
+        let summary = await rig.pipeline.run([
+            ImportCandidate(type: .channel, youtubeId: Fixture.channel, title: "c", thumbnailUrl: nil, channelId: nil)
+        ], progress: { _, _, _ in })
+
+        #expect(rig.transport.sent.isEmpty)
+        #expect(summary == ImportSummary(added: 0, sentForReview: 0, skipped: 0, alreadyPresent: 0,
+                                         processed: 0, total: 0, rateLimited: false))
+    }
+
+    /// Stage 5 M3 / Codex 9. YouTube can repeat an item across a page boundary when the list
+    /// moves mid-pagination; the seen-TOKEN set does not catch a repeated ITEM. One resolve, one
+    /// budget unit, one row, counted once.
+    @Test func aCandidateRepeatedWithinTheRunIsResolvedAndCountedOnce() async throws {
+        let rig = try rig([.json(200, Fixture.resolveBody([Fixture.result(Fixture.channel, "CHANNEL", "PENDING")]))])
+        let candidate = ImportCandidate(type: .channel, youtubeId: Fixture.channel, title: "c",
+                                        thumbnailUrl: nil, channelId: nil)
+
+        let summary = await rig.pipeline.run([candidate, candidate], progress: { _, _, _ in })
+
+        #expect(rig.transport.sent.count == 1)
+        let body = try #require(rig.transport.sent.first?.body)
+        #expect(String(decoding: body, as: UTF8.self).components(separatedBy: Fixture.channel).count == 2,
+                "the id was sent twice in one chunk")
+        #expect(summary.total == 1)
+        #expect(summary.sentForReview == 1)
+        #expect(summary.processed == 1)
     }
 
     // MARK: The cap bypass (CF-A-11)

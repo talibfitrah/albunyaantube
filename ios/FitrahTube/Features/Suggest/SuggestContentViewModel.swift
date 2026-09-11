@@ -125,8 +125,14 @@ nonisolated enum SuggestUiState: Equatable {
     }
 
     /// The error arm's Retry: the same query again, bypassing the debounce (there is nothing to
-    /// debounce — the user pressed a button, not a key).
-    func retry() async { await search() }
+    /// debounce — the user pressed a button, not a key) but NOT the slot (Part B gate, stage 3 M-4
+    /// / Codex 12): a retry that ran outside `searchTask` was never cancelled by the next
+    /// keystroke, so a slow retry for query A could land over query B's results while the field
+    /// still said B.
+    func retry() {
+        searchTask?.cancel()
+        searchTask = Task { await self.search() }
+    }
 
     private func reset() {
         allItems = []

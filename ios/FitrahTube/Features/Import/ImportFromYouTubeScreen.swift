@@ -44,20 +44,28 @@ struct ImportFromYouTubeScreen: View {
         }
         .task {
             if model == nil {
-                let model = ImportViewModel(authorizer: container.youtubeAuthorizer,
-                                            source: container.youtubeImportSource,
-                                            pipeline: container.importPipeline)
+                // Container-owned (Part B gate, stage 3 I-5): a second push of this route while a
+                // run is still writing finds the SAME model, in `.importing`, instead of starting
+                // a second run of a pipeline that is not re-entrant.
+                let model = container.importViewModel
                 self.model = model
                 // The screen exists because the user chose Import; asking them to tap a second
                 // button to begin would be a step Android does not have either (`:83-86`).
-                model.start()
+                // A no-op while a run is in flight, by `start()`'s own guard; a model left in
+                // `.done`/`.review`/`.error` by an earlier visit starts over, which is what a user
+                // who chose Import again asked for.
+                if !model.isRunning { model.start() }
             }
         }
     }
 
+    /// The setter is DELIBERATELY a no-op (Part B gate, stage 3 I-1). SwiftUI drives an
+    /// `isPresented` binding to `false` when a button is tapped, and if that write ran BEFORE the
+    /// button's action, `dismissCaution()` would clear the flag `acceptCaution()` is guarded on —
+    /// and Continue would start nothing. Both buttons already write the model themselves, and an
+    /// alert has no other way to be dismissed, so nothing is lost by ignoring SwiftUI's write.
     private var cautionBinding: Binding<Bool> {
-        Binding(get: { model?.isCautionPresented ?? false },
-                set: { if !$0 { model?.dismissCaution() } })
+        Binding(get: { model?.isCautionPresented ?? false }, set: { _ in })
     }
 
     // MARK: - The five arms
@@ -74,6 +82,11 @@ struct ImportFromYouTubeScreen: View {
         // (which is what this did) left a permanent fake spinner and no way back in. It is the
         // offer instead, in Android's own words for it: `import_offer_*`, which the catalog has
         // carried unrendered since the converter first ran.
+        case .idle where model?.didRevoke == true:
+            // Part B gate: `forget()` drops the SDK session, so there is nothing to authorize until
+            // the next Google sign-in — RULING 28, the offer is ABSENT, and `revokeSection` below
+            // carries the whole message.
+            EmptyView()
         case .idle:
             EmptyStateView(systemImage: "square.and.arrow.down.on.square",
                            title: String(localized: "import_offer_title"),

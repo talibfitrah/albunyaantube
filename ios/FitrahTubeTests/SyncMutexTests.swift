@@ -46,6 +46,7 @@ struct SyncMutexTests {
                                         })
         let manager = self.manager(client)
 
+        await manager.assumeBound(uid: Self.uid)
         let first = Task { await manager.syncNow(uid: Self.uid) }
         await gate.waitUntilBlocked()
         let second = Task { await manager.syncNow(uid: Self.uid) }
@@ -84,10 +85,12 @@ struct SyncMutexTests {
                                   sleep: { _ in await retryGate.block() })
 
         // A transient push queues the retry; it parks in the injected sleep.
+        await manager.assumeBound(uid: Self.uid)
         await manager.pushDirty(uid: Self.uid)
         await retryGate.waitUntilBlocked()
         #expect(client.calls == [.put(.favorites, "xc7keR2piUM")])
 
+        await manager.assumeBound(uid: Self.uid)
         let pull = Task { await manager.pullAll(uid: Self.uid) }
         await pullGate.waitUntilBlocked()
         let unbind = Task { await manager.unbind() }
@@ -114,12 +117,14 @@ struct SyncMutexTests {
                                         })
         let manager = self.manager(client)
 
+        await manager.assumeBound(uid: Self.uid)
         let cancelled = Task { await manager.syncNow(uid: Self.uid) }
         await gate.waitUntilBlocked()
         cancelled.cancel()
         await gate.release()
         await cancelled.value
 
+        await manager.assumeBound(uid: Self.uid)
         await manager.syncNow(uid: Self.uid)     // hangs forever if `inFlight` was stranded
         #expect(client.calls == [.pull, .pull])
     }
@@ -149,6 +154,7 @@ struct SyncMutexTests {
         let manager = SyncManager(client: client, modelContainer: container,
                                   backoff: SyncBackoff(random: { $0.lowerBound }), sleep: { _ in })
 
+        await manager.assumeBound(uid: Self.uid)
         let pull = Task { await manager.pullAll(uid: Self.uid) }
         await pullGate.waitUntilBlocked()
         let push = Task { await manager.pushDirty(uid: Self.uid) }

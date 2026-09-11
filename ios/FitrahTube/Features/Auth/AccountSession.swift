@@ -146,7 +146,11 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // and it is not a sign-out. Unguarded it cancelled the `land()` round the sign-in
                 // screen starts ahead of the listener (round 3 / NB1) — the app's primary
                 // sign-in path, killed by its own session observer.
-                if user != nil { cancelInFlight() }
+                // Part B gate, stage 4 S2: the SAME teardown `dropSession()` runs — provider
+                // sign-out and the sync unbind included. This arm used to cancel the round only, so
+                // a Firebase-initiated sign-out left the Google SDK session alive for the next
+                // account and an armed push retry free to drain A's rows under B's bearer.
+                if user != nil { tearDown() }
                 user = nil
                 scope(to: "")
                 state = .signedOut
@@ -423,24 +427,21 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// terminal alert that depends on which of the two got there first is a coin toss.
     @discardableResult
     private func dropSession() -> Bool {
-        // Stage 9 / P2a: UNCONDITIONAL, and above the early return. `signOutProvider()` used to sit
-        // at the end of this function, so every path where something else reached `.signedOut`
-        // first — `performDeletion`'s await of `auth.deleteUser()`, the blocked/deleted refresh
-        // refusal, the age-ineligible teardown — returned here without ever asking the provider
-        // SDKs to forget, and Google's Keychain refresh token outlived the drop. That is the exact
-        // Stage 4 / I1 defect the `providers` list exists to close. Idempotent by construction:
-        // `GIDSignIn.signOut()` on a signed-out SDK is a no-op, and Apple's is a documented one.
-        for provider in providers { provider.signOutProvider() }
-        // Stage 9 round 2 / P1, and above the early return for the same reason the loop is: the
-        // round in flight belongs to the identity being dropped.
+        // Stage 9 round 2 / P1, above the early return: the round in flight belongs to the identity
+        // being dropped, whatever `state` says — a nil-started round (`land()`'s shape) must not
+        // restore its `previousState` over the account that signs in after it. Task 24: the unbind
+        // likewise, so a push retry queued while the user was still signed in cannot fire after the
+        // drop. Both are idempotent.
         cancelInFlight()
-        // Task 24, and above the early return for that same reason: a push retry queued while the
-        // user was still signed in otherwise fires after the drop and pushes the previous account's
-        // dirty rows under whatever bearer is current (`SyncManager.unbind`, `SyncModule.kt:46-53`).
-        // This is the ONE teardown path -- sign-out, the blocked verdict, the age-ineligible
-        // teardown and the deletion all reach it -- so no caller wires an unbind of its own.
         unbindSync()
+        // Stage 9 / P2a asked for the provider sign-out above this return too, because every path
+        // where something else reached `.signedOut` first — `performDeletion`'s await of
+        // `auth.deleteUser()`, the blocked/deleted refresh refusal, the age-ineligible teardown —
+        // used to return here without asking the SDKs to forget. Part B gate: that "something else"
+        // is the auth stream's `.signedOut` arm, which now runs `tearDown()` itself, so a drop the
+        // listener already performed is not performed twice here.
         guard state != .signedOut else { return false }
+        for provider in providers { provider.signOutProvider() }
         do {
             try auth.signOut()
         } catch {
@@ -469,6 +470,19 @@ nonisolated enum AccountState: Sendable, Equatable {
     private func cancelInFlight() {
         inFlight?.cancel()
         inFlight = nil
+    }
+
+    /// Everything a session drop owes BEFORE the state changes, in one place: the provider SDKs
+    /// forget their own sessions, the round in flight is cancelled (Stage 9 round 2 / P1 — it
+    /// belongs to the identity being dropped), and sync is unbound (Task 24 — a push retry queued
+    /// while the user was still signed in otherwise fires after the drop and pushes the previous
+    /// account's dirty rows under whatever bearer is current; `SyncModule.kt:46-53`). Reached by
+    /// `dropSession()` — sign-out, the blocked verdict, the age-ineligible teardown, the deletion —
+    /// and by the auth stream's own `.signedOut` arm.
+    private func tearDown() {
+        for provider in providers { provider.signOutProvider() }
+        cancelInFlight()
+        unbindSync()
     }
 
     /// OFF the critical path, always: `bind` is a merge + pull + push, and Android fires it in its
@@ -501,6 +515,16 @@ nonisolated enum AccountState: Sendable, Equatable {
         guard let sync, boundUid != nil else { return }
         boundUid = nil
         Task { await sync.unbind() }
+    }
+
+    /// The deletion's variant (stage 4 S9 / Codex 7): AWAITED, because `SyncManager.unbind()`
+    /// queues on the exclusion behind a pull already in flight, and the wipe must not run until
+    /// that pull has let go — a page that lands after the wipe would re-insert the rows the server
+    /// just erased, under a uid nobody will sign in as again.
+    private func unbindSyncAndWait() async {
+        guard let sync, boundUid != nil else { return }
+        boundUid = nil
+        await sync.unbind()
     }
 
     /// The age-ineligible teardown, in ONE place (Stage 8 / S7). `AgeIneligibleScreen.acknowledge()`
@@ -601,6 +625,10 @@ nonisolated enum AccountState: Sendable, Equatable {
     }
 
     private func performDeletion() async {
+        // Stage 4 S9: quiesce sync BEFORE the wipe, or a pull already parked in the network
+        // re-creates the rows the wipe is about to erase. `dropSession()` below still runs the
+        // (now no-op) unbind on the shared teardown path.
+        await unbindSyncAndWait()
         let wipeError = await wipe()
         // `try?`: the server has already deleted the account, so there is nothing to roll back and
         // nowhere to route a failure to. A Firebase user whose `delete()` was refused

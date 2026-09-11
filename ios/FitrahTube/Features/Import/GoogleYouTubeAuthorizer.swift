@@ -12,12 +12,15 @@ import UIKit
 /// **Main actor throughout**, `GoogleAuthProvider`'s reason: `GIDSignIn.sharedInstance` is
 /// main-thread-affine and carries no actor annotation.
 ///
-/// The token is held **in memory only** — CF-A-10. An access token expires within the hour, so the
-/// Keychain would buy persistence nothing here wants and would leave a live credential on disk
-/// after the import that needed it finished.
+/// **Nothing is cached above the SDK** (Part B gate: stage 3 I-6, stage 4 S1, Codex 3). The first
+/// version kept the last access token in a field and returned it before looking at anything else,
+/// which meant two things at once: a token older than the hour was handed to the paginators forever
+/// (three 403s, a Retry that could never succeed), and it survived sign-out — the next Google account
+/// on the device imported the previous one's library. The SDK already holds the current user's
+/// tokens and refreshes them; every call goes through it, so the token is always the CURRENT Google
+/// user's and always fresh. Android's `YouTubeAuthManager` caches nothing either. CF-A-10 is
+/// closed by construction.
 @MainActor final class GoogleYouTubeAuthorizer: YouTubeAuthorizer {
-
-    private var token: String?
 
     /// Same two prerequisites Google sign-in itself needs (a client id from the plist AND a
     /// matching callback scheme in this bundle), plus a Google grant to extend.
@@ -38,7 +41,6 @@ import UIKit
     }
 
     func authorize() async throws -> String {
-        if let token { return token }
         // Configure-first, `GoogleAuthProvider.presentSignIn`'s reason: the `GIDConfiguration`
         // hand-off lives inside `FirebaseBootstrap`'s configure latch.
         guard isAvailable, FirebaseBootstrap.configureIfPossible(),
@@ -59,14 +61,14 @@ import UIKit
                 // Already granted (a previous import, or a re-launch): the SDK's persisted access
                 // token can still be hours old, so refresh before handing it to three paginators.
                 let refreshed = try await user.refreshTokensIfNeeded()
-                return store(refreshed.accessToken.tokenString)
+                return refreshed.accessToken.tokenString
             }
             let result = try await user.addScopes([Self.scope], presenting: presenter)
             // The user can dismiss the sheet without granting; the SDK answers success either way.
             guard result.user.grantedScopes?.contains(Self.scope) == true else {
                 throw YouTubeAuthorizerError.cancelled
             }
-            return store(result.user.accessToken.tokenString)
+            return result.user.accessToken.tokenString
         } catch let failure as YouTubeAuthorizerError {
             throw failure
         } catch {
@@ -80,16 +82,13 @@ import UIKit
         }
     }
 
-    /// F9. Drops the token this object holds and NOTHING else — never `GIDSignIn.disconnect()`,
-    /// which revokes every scope the user ever granted (sign-in included) server-side, and never
-    /// `signOut()`, which is `GoogleAuthProvider.signOutProvider`'s job on a different trigger.
-    /// Revoking the grant itself is the user's to do, on Google's account-permissions page.
-    func forget() { token = nil }
-
-    private func store(_ value: String) -> String {
-        token = value
-        return value
-    }
+    /// F9, the keychain half: `signOut()` clears the SDK's LOCAL session — the persisted user, its
+    /// tokens and the scope it holds — and nothing server-side. NEVER `disconnect()`, which revokes
+    /// every scope the user ever granted (sign-in included). Consequence, deliberate: `isAvailable`
+    /// reads false until the next Google sign-in, which is the same state the Google permissions
+    /// page's remedy leaves (a revoked grant fails `restorePreviousSignIn`), so the confirmation's
+    /// "no longer has access" is true either way.
+    func forget() { GIDSignIn.sharedInstance.signOut() }
 
     /// Presentation context for `ASWebAuthenticationSession` only — the key window's root is
     /// enough (`GoogleAuthProvider.presenter`).

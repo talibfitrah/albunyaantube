@@ -78,12 +78,14 @@ struct SyncTriggerTests {
 
     private func makeSession(auth: FakeAuthClient, transport: ScriptedTransport,
                              sync: RecordingSync,
-                             wipe: @escaping @MainActor @Sendable () async -> Error? = { nil })
+                             wipe: @escaping @MainActor @Sendable () async -> Error? = { nil },
+                             providers: [any OAuthSignInProvider] = [])
         -> AccountSession {
         AccountSession(
             auth: auth,
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
-            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: wipe, sync: sync)
+            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: wipe,
+            providers: providers, sync: sync)
     }
 
     @discardableResult
@@ -183,6 +185,53 @@ struct SyncTriggerTests {
         session.signOut()
         await settle { await !sync.calls.isEmpty }
 
+        #expect(await sync.calls == [.unbind])
+    }
+
+    /// Part B gate, stage 4 S2. A FIREBASE-initiated sign-out (a refused forced mint force-signs
+    /// the user out) reaches the session through the auth stream, not through `signOut()`. That
+    /// arm used to cancel the round only: the provider SDKs kept their sessions for the next
+    /// account, and an armed push retry was free to drain A's rows under B's bearer.
+    @MainActor @Test func aFirebaseInitiatedSignOutUnbindsAndForgetsTheProvidersToo() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let sync = RecordingSync()
+        let provider = FakeOAuthProvider()
+        let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
+                                  sync: sync, providers: [provider])
+        let running = try await signIn(auth, session)
+        defer { running.cancel() }
+        await settle { await !sync.calls.isEmpty }
+        await sync.clear()
+
+        try auth.signOut()                       // Firebase's own sign-out, NOT `session.signOut()`
+        await settle { await !sync.calls.isEmpty }
+
+        #expect(await sync.calls == [.unbind])
+        #expect(provider.signOutCount == 1)
+        #expect(session.state == .signedOut)
+    }
+
+    /// Part B gate, stage 4 S9 / Codex 7. The deletion's unbind is AWAITED before the wipe:
+    /// `SyncManager.unbind()` queues behind a pull already in flight, and a page landing after
+    /// the wipe would re-insert the rows the server just erased.
+    @MainActor @Test func aDeletionWaitsForTheUnbindBeforeItWipes() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let sync = RecordingSync()
+        let unboundBeforeWipe = Mutex<Bool?>(nil)
+        let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
+                                  sync: sync, wipe: {
+                                      let seen = await sync.calls.contains(.unbind)
+                                      unboundBeforeWipe.withLock { $0 = seen }
+                                      return nil
+                                  })
+        let running = try await signIn(auth, session)
+        defer { running.cancel() }
+        await settle { await !sync.calls.isEmpty }
+        await sync.clear()
+
+        await session.handleDeletion(deletingFirebaseUser: false).value
+
+        #expect(unboundBeforeWipe.withLock { $0 } == true, "the wipe ran before sync had let go")
         #expect(await sync.calls == [.unbind])
     }
 

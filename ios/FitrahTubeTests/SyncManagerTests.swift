@@ -102,22 +102,30 @@ struct SyncManagerTests {
         #expect(binding.initialMergeDone)
     }
 
-    /// Same account, merge already finished: a plain delta pull then a dirty drain, and the anon
-    /// tagging must NOT run again.
-    @Test func bindWithTheSameUidAndTheMergeDonePullsThenPushesWithoutRetagging() async throws {
+    /// Same account, merge already finished: the merge is NOT re-entered (no `beginBinding`
+    /// reset, no second `markMergeDone`), a plain delta pull runs, then a dirty drain. The guest
+    /// rows written while signed out ARE claimed first (Part B gate, stage 5 M1 — Task 23 pinned
+    /// the opposite): a favorite made between two sessions of the same account was invisible
+    /// while signed in, reappeared on the next sign-out, and was never pushed. Guest rows belong to
+    /// the previous account (R-final5's premise), and here the previous account is this one.
+    @Test func bindWithTheSameUidAndTheMergeDoneClaimsGuestRowsThenPullsThenPushes() async throws {
         let container = self.container()
         let context = ModelContext(container)
         context.insert(AccountBinding(userId: Self.uid, initialMergeDone: true))
         context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
                                      thumbnailUrl: nil, durationSeconds: 600, userId: "", dirty: true))
         try context.save()
-        let client = ScriptedSyncClient(pulls: [.page(.empty)])
+        let client = ScriptedSyncClient(pulls: [.page(.empty)],
+                                        puts: [.reply(200, SyncRowEcho(deleted: false, updatedAt: 5_000))])
         let manager = self.manager(client, container: container)
 
         await manager.bind(uid: Self.uid)
 
-        #expect(client.calls == [.pull], "the anon row was tagged and pushed on a finished merge")
-        #expect(fetch(container, FavoriteVideo.self).first?.userId == "")
+        #expect(client.calls == [.pull, .put(.favorites, Self.videoId)])
+        let row = try #require(fetch(container, FavoriteVideo.self).first)
+        #expect(row.userId == Self.uid, "the guest row was left under the anon sentinel")
+        let binding = try #require(fetch(container, AccountBinding.self).first)
+        #expect(binding.initialMergeDone, "a finished merge was re-entered")
     }
 
     /// A prior merge that crashed mid-way left `initialMergeDone == false`. Re-enter it rather than
@@ -272,6 +280,8 @@ struct SyncManagerTests {
         ])
         let manager = self.manager(client, container: container)
 
+        await manager.assumeBound(uid: Self.uid)
+
         await manager.pullAll(uid: Self.uid)
 
         #expect(saves.withLock { $0 } == 1, "the rows and the cursor were committed separately")
@@ -296,6 +306,8 @@ struct SyncManagerTests {
             .page(.page(favorites: [Self.favorite(updatedAt: 9_999, title: "server copy")]))
         ])
         let manager = self.manager(client, container: container)
+
+        await manager.assumeBound(uid: Self.uid)
 
         await manager.pullAll(uid: Self.uid)
 
@@ -330,6 +342,8 @@ struct SyncManagerTests {
         ])
         let manager = self.manager(client, container: container)
 
+        await manager.assumeBound(uid: Self.uid)
+
         await manager.pullAll(uid: Self.uid)
 
         func check(_ row: any SyncableRow, _ title: String, _ label: String) {
@@ -359,6 +373,8 @@ struct SyncManagerTests {
         ])
         let manager = self.manager(client, container: container)
 
+        await manager.assumeBound(uid: Self.uid)
+
         await manager.pullAll(uid: Self.uid)
 
         let row = try #require(fetch(container, FavoriteVideo.self).first)
@@ -382,6 +398,8 @@ struct SyncManagerTests {
         ])
         let manager = self.manager(client, container: container)
 
+        await manager.assumeBound(uid: Self.uid)
+
         await manager.pullAll(uid: Self.uid)
 
         #expect(client.calls == [.pull], "the loop kept requesting a page that cannot advance")
@@ -401,6 +419,8 @@ struct SyncManagerTests {
         try context.save()
         let client = ScriptedSyncClient(pulls: [.page(.empty)])
         let manager = self.manager(client, container: container)
+
+        await manager.assumeBound(uid: Self.uid)
 
         await manager.pullAll(uid: Self.uid)
 
@@ -425,6 +445,8 @@ struct SyncManagerTests {
                                                 .failure(decodeFailure)])
         let manager = self.manager(client, container: container)
 
+        await manager.assumeBound(uid: Self.uid)
+
         await manager.pullAll(uid: Self.uid)
 
         #expect(client.calls.count == 3, "the bounded ladder is not three attempts")
@@ -446,6 +468,8 @@ struct SyncManagerTests {
         let container = self.container()
         let client = ScriptedSyncClient(pulls: [.failure(SyncClientError.pullStatus(403))])
         let manager = self.manager(client, container: container)
+
+        await manager.assumeBound(uid: Self.uid)
 
         await manager.pullAll(uid: Self.uid)
 
@@ -475,6 +499,8 @@ struct SyncManagerTests {
                                                 .page(.empty)])
         let manager = self.manager(client, container: container)
 
+        await manager.assumeBound(uid: Self.uid)
+
         await manager.pullAll(uid: Self.uid)
 
         #expect(client.calls == [.pull], "a permanent pull entered the retry ladder")
@@ -484,6 +510,8 @@ struct SyncManagerTests {
         let state = try #require(fetch(container, SyncState.self).first)
         #expect(state.lastDocId == nil, "the rejected id is still stored; the next pull wedges again")
         #expect(state.lastCursor == 1_700, "the millisecond went with the id, re-fetching whole pages")
+
+        await manager.assumeBound(uid: Self.uid)
 
         await manager.pullAll(uid: Self.uid)
 
@@ -513,6 +541,8 @@ struct SyncManagerTests {
         let client = ScriptedSyncClient(puts: [.reply(200, echo), .reply(200, echo), .reply(200, echo)])
         let manager = self.manager(client, container: container)
 
+        await manager.assumeBound(uid: Self.uid)
+
         await manager.pushDirty(uid: Self.uid)
 
         #expect(client.calls == [.put(.subscriptions, Self.channelId),
@@ -539,6 +569,8 @@ struct SyncManagerTests {
         let client = ScriptedSyncClient(puts: [.reply(200, SyncRowEcho(deleted: false, updatedAt: 1_700_000_000_000))])
         let manager = self.manager(client, container: container)
 
+        await manager.assumeBound(uid: Self.uid)
+
         await manager.pushDirty(uid: Self.uid)
 
         let row = try #require(fetch(container, FavoriteVideo.self).first)
@@ -557,6 +589,8 @@ struct SyncManagerTests {
         try context.save()
         let client = ScriptedSyncClient(puts: [.reply(200, SyncRowEcho(deleted: true, updatedAt: 6_000))])
         let manager = self.manager(client, container: container)
+
+        await manager.assumeBound(uid: Self.uid)
 
         await manager.pushDirty(uid: Self.uid)
 
@@ -579,6 +613,8 @@ struct SyncManagerTests {
         try context.save()
         let client = ScriptedSyncClient(deletes: [200])
         let manager = self.manager(client, container: container)
+
+        await manager.assumeBound(uid: Self.uid)
 
         await manager.pushDirty(uid: Self.uid)
 
@@ -604,6 +640,8 @@ struct SyncManagerTests {
                                                .reply(200, SyncRowEcho(deleted: false, updatedAt: 5_000))])
         let manager = self.manager(client, container: container)
 
+        await manager.assumeBound(uid: Self.uid)
+
         await manager.pushDirty(uid: Self.uid)
 
         #expect(client.calls == [.put(.subscriptions, Self.channelId), .put(.favorites, Self.videoId)])
@@ -625,6 +663,8 @@ struct SyncManagerTests {
         let client = ScriptedSyncClient(puts: [.reply(401, nil)])
         let manager = self.manager(client, container: container)
 
+        await manager.assumeBound(uid: Self.uid)
+
         await manager.pushDirty(uid: Self.uid)
 
         #expect(client.calls == [.put(.subscriptions, Self.channelId)])
@@ -642,6 +682,8 @@ struct SyncManagerTests {
         try context.save()
         let client = ScriptedSyncClient(puts: [.reply(422, nil)])
         let manager = self.manager(client, container: container)
+
+        await manager.assumeBound(uid: Self.uid)
 
         await manager.pushDirty(uid: Self.uid)
 
@@ -663,6 +705,8 @@ struct SyncManagerTests {
         // Every attempt answers 200 with no decodable body — Task 22's `dto == nil` leg.
         let client = ScriptedSyncClient(puts: Array(repeating: .reply(200, nil), count: 10))
         let manager = self.manager(client, container: container)
+
+        await manager.assumeBound(uid: Self.uid)
 
         await manager.pushDirty(uid: Self.uid)
         for _ in 0..<500 where client.calls.count < 4 { await Task.yield() }
@@ -691,12 +735,201 @@ struct SyncManagerTests {
         let manager = self.manager(client, container: container)
 
         await SyncManager.$injectedSaveFailure.withValue({ throw SaveFailure.injected }) {
+            await manager.assumeBound(uid: Self.uid)
             await manager.pushDirty(uid: Self.uid)
         }
 
         #expect(client.calls == [.put(.favorites, Self.videoId)])
         #expect(await manager.incidents.contains { $0.contains("clear dirty") },
                 "the clearDirty save failed silently; the row re-pushes forever and nothing says so")
+    }
+
+    // MARK: - Part B gate: the identity fence, the lost-toggle guard, the page cap, the write hook
+
+    /// Stage 3 I-2 / Codex 5. A toggle that lands while the row's PUT is on the wire flips
+    /// `isRemoved` and re-dirties the row; the echo of the OLD bytes must not clear that newer
+    /// edit, or the row disagrees with the server and nothing ever pushes it again.
+    @Test func aToggleLandingWhileItsPutIsInFlightKeepsItsDirt() async throws {
+        let container = self.container()
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: Self.uid, dirty: true))
+        try context.save()
+        let client = ScriptedSyncClient(
+            puts: [.reply(200, SyncRowEcho(deleted: false, updatedAt: 5_000))],
+            hook: { call, _ in
+                guard case .put = call else { return }
+                // The user unfavorites while the PUT is in flight: a second, newer local edit.
+                await MainActor.run {
+                    let mid = ModelContext(container)
+                    if let row = try? mid.fetch(FetchDescriptor<FavoriteVideo>()).first {
+                        row.isRemoved = true
+                        row.dirty = true
+                        try? mid.save()
+                    }
+                }
+            })
+        let manager = self.manager(client, container: container)
+        await manager.assumeBound(uid: Self.uid)
+
+        await manager.pushDirty(uid: Self.uid)
+
+        let row = try #require(fetch(container, FavoriteVideo.self).first)
+        #expect(row.isRemoved, "the mid-flight toggle was lost")
+        #expect(row.dirty, "the echo of the OLD bytes cleared the NEWER edit's dirt")
+    }
+
+    /// Stage 3 I-4 / stage 5 C1 / stage 4 S2. `AuthorizedTransport` mints the bearer per request
+    /// from whoever is current, so a drain for A that is still walking its rows when B binds
+    /// would sign A's remaining PUTs with B's token. The bind takes the identity BEFORE it takes
+    /// the lock, and the drain stops at its next row — and the echo of the request already on the
+    /// wire clears nothing.
+    @Test func aBindForAnotherAccountStopsTheDrainInFlightAtItsNextRow() async throws {
+        let container = self.container()
+        let context = ModelContext(container)
+        for id in ["xc7keR2piUM", "xc7keR2piUN"] {
+            context.insert(FavoriteVideo(videoId: id, title: "Lecture", channelName: "Alafasy",
+                                         thumbnailUrl: nil, durationSeconds: 600, userId: Self.uid, dirty: true))
+        }
+        try context.save()
+        let putGate = Gate()
+        let client = ScriptedSyncClient(
+            pulls: [.page(.empty)],
+            puts: [.reply(200, SyncRowEcho(deleted: false, updatedAt: 5_000)),
+                   .reply(200, SyncRowEcho(deleted: false, updatedAt: 5_000))],
+            hook: { call, index in if case .put = call, index == 1 { await putGate.block() } })
+        let manager = self.manager(client, container: container)
+        await manager.assumeBound(uid: Self.uid)
+
+        let drain = Task { await manager.pushDirty(uid: Self.uid) }
+        await putGate.waitUntilBlocked()
+        // B signs in while A's first PUT is on the wire. The bind parks on the exclusion, but its
+        // identity is already taken.
+        let bind = Task { await manager.bind(uid: Self.other) }
+        for _ in 0..<200 { await Task.yield() }
+        await putGate.release()
+        await drain.value
+        await bind.value
+
+        let puts = client.calls.filter { if case .put = $0 { true } else { false } }
+        #expect(puts.count == 1, "A's second row was pushed after B took the identity: \(client.calls)")
+        let rows = fetch(container, FavoriteVideo.self)
+        #expect(rows.allSatisfy { $0.dirty }, "an echo received after the identity changed cleared a row")
+    }
+
+    /// Stage 4 S6 / Codex 10. `.advance` accepts any cursor pair that differs from the last, so a
+    /// server that keeps minting a moving cursor holds the ONE exclusion forever. The cap ends
+    /// the run, keeps the cursor, and says so.
+    @Test func aPullThatNeverExhaustsStopsAtThePageCapAndKeepsItsCursor() async throws {
+        let container = self.container()
+        let pages: [ScriptedSyncClient.PullReply] = (1...5).map { n in
+            .page(.page(subscriptions: [Self.subscription("UCmMcOjsVehVlEOteyrhjI\(n)Q", updatedAt: n * 1_000)],
+                        subscriptionsCursor: n * 1_000, subscriptionsCursorId: "doc-\(n)"))
+        }
+        let client = ScriptedSyncClient(pulls: pages)
+        let manager = SyncManager(client: client, modelContainer: container,
+                                  backoff: SyncBackoff(random: { $0.lowerBound }), sleep: { _ in },
+                                  maxPullPages: 3)
+        await manager.assumeBound(uid: Self.uid)
+
+        await manager.pullAll(uid: Self.uid)
+
+        #expect(client.calls == [.pull, .pull, .pull])
+        #expect(await manager.incidents.contains { $0.contains("page cap") })
+        let state = try #require(fetch(container, SyncState.self).first)
+        #expect(state.lastCursor == 3_000, "the cap threw away the pages it had already written")
+    }
+
+    /// Stage 5 I5. A pull that ended on a TERMINAL verdict unbinds — and the merge that wrapped
+    /// it must stop there too: no push under a bearer the server just refused, and no
+    /// `initialMergeDone` stamped for an account that is gone.
+    @Test func aTerminalPullEndsTheMergeWithoutAPushOrAMergeDoneStamp() async throws {
+        let container = self.container()
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: "", dirty: true))
+        try context.save()
+        let client = ScriptedSyncClient(pulls: [.failure(SyncClientError.pullStatus(403))],
+                                        puts: [.reply(200, SyncRowEcho(deleted: false, updatedAt: 5_000))])
+        let manager = self.manager(client, container: container)
+
+        await manager.bind(uid: Self.uid)
+
+        #expect(client.calls == [.pull], "the merge pushed after a terminal pull: \(client.calls)")
+        let binding = try #require(fetch(container, AccountBinding.self).first)
+        #expect(binding.initialMergeDone == false, "a terminal account was stamped merge-done")
+    }
+
+    /// Stage 4 S5. A server id becomes a `#Unique` key, a route, a synthesised URL pushed back
+    /// and an accessibility identifier — so it passes the same validator every LOCAL writer
+    /// applies, or it is skipped and noted. Same for a cursor id, validated on the way IN.
+    @Test func serverRowsAndCursorIdsThatFailTheLocalIdRulesAreSkippedAndNoted() async throws {
+        let container = self.container()
+        let client = ScriptedSyncClient(pulls: [
+            .page(.page(subscriptions: [Self.subscription("../etc"), Self.subscription()],
+                        favorites: [Self.favorite("not-eleven-chars-long")],
+                        subscriptionsCursor: 2_000, subscriptionsCursorId: "__x__"))
+        ])
+        let manager = self.manager(client, container: container)
+        await manager.assumeBound(uid: Self.uid)
+
+        await manager.pullAll(uid: Self.uid)
+
+        #expect(fetch(container, SubscribedChannel.self).map(\.channelId) == [Self.channelId])
+        #expect(fetch(container, FavoriteVideo.self).isEmpty)
+        let state = try #require(fetch(container, SyncState.self).first)
+        #expect(state.lastCursor == 2_000)
+        #expect(state.lastDocId == nil, "an invalid cursor id was persisted")
+        let incidents = await manager.incidents.filter { $0.contains("invalid id") }
+        #expect(incidents.count == 3, "two rows and one cursor id: \(incidents)")
+        #expect(incidents.filter { $0.contains("cursor id") }.count == 1)
+    }
+
+    /// Stage 5 I3. The stores keep their own contexts and re-read only on their own writes, so a
+    /// pull that restored a whole library rendered NOTHING until the next toggle or relaunch. The
+    /// manager now says "I wrote" after every committed write — tagging, switching, every page.
+    @Test func everyCommittedSyncWriteReloadsTheStores() async throws {
+        let container = self.container()
+        let reloads = Mutex(0)
+        let client = ScriptedSyncClient(pulls: [
+            .page(.page(subscriptions: [Self.subscription()], subscriptionsCursor: 2_000)),
+            .page(.empty)
+        ])
+        let manager = SyncManager(client: client, modelContainer: container,
+                                  backoff: SyncBackoff(random: { $0.lowerBound }), sleep: { _ in },
+                                  onWrite: { reloads.withLock { $0 += 1 } })
+
+        await manager.bind(uid: Self.uid)
+
+        // tagAnonRows + two applied pages (the empty one still commits its cursor read).
+        #expect(reloads.withLock { $0 } == 3, "reloads: \(reloads.withLock { $0 })")
+    }
+
+    /// Stage 3 I-3, measured rather than assumed. The stores hold long-lived contexts; a row the
+    /// sync tombstoned through ITS context must not leave a stale registered object in the
+    /// store's, or the next toggle takes the wrong branch (unsubscribe on an already-removed row)
+    /// and the button does nothing.
+    @MainActor @Test func aToggleAfterAPulledTombstoneResurrectsTheRowInsteadOfReTombstoningIt() async throws {
+        let container = self.container()
+        let store = SwiftDataSubscriptionsStore(modelContainer: container)
+        store.currentUserId = Self.uid
+        try store.toggle(id: Self.channelId, name: "Alafasy", avatarURL: nil)
+        #expect(store.isSubscribed(Self.channelId))
+        // The push echo clears the dirt (through the manager's own context), then a later pull
+        // tombstones the row (again through its own context).
+        _ = SyncStore.clearDirty(container, uid: Self.uid, type: .subscriptions, id: Self.channelId,
+                                 serverUpdatedAt: 1_000, pushedRemoved: false)
+        _ = try SyncStore.applyPage(container, uid: Self.uid, body: .page(
+            subscriptions: [Self.subscription(deleted: true, updatedAt: 2_000)]))
+        store.reload()
+        #expect(store.isSubscribed(Self.channelId) == false, "the tombstone did not land")
+
+        try store.toggle(id: Self.channelId, name: "Alafasy", avatarURL: nil)
+
+        #expect(store.isSubscribed(Self.channelId), "the toggle read a stale isRemoved and un-subscribed a removed row")
+        let row = try #require(fetch(container, SubscribedChannel.self).first)
+        #expect(row.isRemoved == false)
+        #expect(row.dirty)
     }
 
     enum SaveFailure: Error { case injected }

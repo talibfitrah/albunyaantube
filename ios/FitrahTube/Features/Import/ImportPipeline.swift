@@ -70,19 +70,34 @@ nonisolated enum ImportProvenance {
     func run(_ candidates: [ImportCandidate],
              progress: @MainActor (ImportPhase, Int, Int) -> Void) async -> ImportSummary {
 
+        // Part B gate (stage 4 S3 / Codex 2): the run belongs to the account it was confirmed
+        // for. The stores write under THEIR `currentUserId` at write time, so a chunk whose resolve
+        // was in flight when the session dropped would land as guest rows (`""`) that the next
+        // sign-in's merge adopts — the previous user's YouTube library, handed to whoever is next.
+        // Every write phase is guarded on the uid the run started with; an unscoped start writes
+        // nothing at all.
+        let owner = subscriptions.currentUserId
+        guard !owner.isEmpty else {
+            return ImportSummary(added: 0, sentForReview: 0, skipped: 0, alreadyPresent: 0,
+                                 processed: 0, total: 0, rateLimited: false)
+        }
+
         // 1. Dedupe against the local rows. Deleted-agnostic AND status-agnostic: a soft-deleted
         //    row and an AWAITING one both mean "the user already has this", so re-sending it would
-        //    spend the daily item budget to write a row that already exists.
+        //    spend the daily item budget to write a row that already exists. And within the run
+        //    (stage 5 M3 / Codex 9): YouTube can repeat an item across a page boundary when the
+        //    list moves mid-pagination, and the seen-TOKEN set does not catch a repeated ITEM.
         var alreadyPresent = 0
         var fresh: [ImportCandidate] = []
+        var seen: Set<String> = []
         for candidate in candidates {
+            guard seen.insert(candidate.youtubeId).inserted else { continue }
             if containsAny(candidate) { alreadyPresent += 1 } else { fresh.append(candidate) }
         }
 
         let total = fresh.count
         var added = 0, sentForReview = 0, rejectedOrError = 0, processed = 0
         var rateLimited = false
-        progress(.resolving, 0, total)
 
         let chunks = stride(from: 0, to: total, by: ImportClient.batchSize).map {
             Array(fresh[$0..<min($0 + ImportClient.batchSize, total)])
@@ -105,8 +120,10 @@ nonisolated enum ImportProvenance {
                 break
             }
             // The cancel could have landed while that resolve was in flight. Writing here anyway
-            // is what a half-imported chunk would look like.
+            // is what a half-imported chunk would look like. And the SESSION could have dropped
+            // (see `owner`): the stores now belong to nobody, or to somebody else.
             if Task.isCancelled { break }
+            guard subscriptions.currentUserId == owner else { break }
 
             let byId = Dictionary(chunk.map { ($0.youtubeId, $0) }, uniquingKeysWith: { first, _ in first })
             let chunkBase = processed
@@ -210,10 +227,18 @@ nonisolated enum ImportProvenance {
                                              approvalStatus: ImportProvenance.awaiting, at: at)
             case .video:
                 try favorites.importVideo(id: candidate.youtubeId, title: candidate.title,
-                                          // Deliberately blank: the candidate carries the uploader's
-                                          // ID, and an id rendered where a name belongs is worse
-                                          // than a blank (`YouTubeImportRepository.kt:233,288`).
-                                          channelName: "", thumbnailUrl: candidate.thumbnailUrl,
+                                          // Part B gate (Codex 4): NEVER blank. The sync PUT for
+                                          // this row is `PutFavoriteRequest`, whose `channelName`
+                                          // is `@NotBlank`: a blank 400s as a permanent failure,
+                                          // the row's dirt is dropped, the server never gets a
+                                          // per-user row for it, and the admin's approval has
+                                          // nothing to graduate — the row stays AWAITING on this
+                                          // device forever. Android sends the blank and has the
+                                          // same hole. The uploader's TITLE now comes with the
+                                          // candidate; the id is the last resort, and a name-shaped
+                                          // id beats a row that can never sync.
+                                          channelName: candidate.channelTitle ?? candidate.channelId ?? candidate.youtubeId,
+                                          thumbnailUrl: candidate.thumbnailUrl,
                                           durationSeconds: 0,
                                           approvalStatus: ImportProvenance.awaiting, at: at)
             }

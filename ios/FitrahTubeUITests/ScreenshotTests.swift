@@ -2788,6 +2788,29 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// Part B gate, stage 3 I-1: the ONE end-to-end tap through SwiftUI's own alert. The caution
+    /// gate is presented off a custom `Binding`, and if SwiftUI wrote that binding `false` BEFORE
+    /// running the tapped button's action, Continue would start nothing — a defect no unit test
+    /// can see, because they all call `acceptCaution()` on the model directly. The fixture pipeline
+    /// answers a canned 503, so a run that starts ends on the DONE arm ("0 of N imported"), and
+    /// that arm's Done button is what proves the tap went through.
+    func testImportCautionContinueStartsTheRun() throws {
+        let screen = try XCTUnwrap(Self.partBScreens.first { $0.key == "import-review" })
+        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
+        let confirm = app.buttons["import.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 30), "the review screen never loaded")
+        confirm.tap()
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 10), "the caution gate did not appear")
+        let proceed = alert.buttons["Continue"]
+        XCTAssertTrue(proceed.waitForExistence(timeout: 5), "no Continue on the caution gate")
+        proceed.tap()
+        let done = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == %@", "import.done")).firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 30),
+                      "Continue started nothing: the run never reached its DONE arm")
+    }
+
     /// Its own case rather than rows on `Self.screens`: that table is captured by
     /// `testCatalogScreens`, which `screenshots.sh` runs on iPads only and which is far too long to
     /// re-run for one row. Same one-block-per-task shape as `testSavedScreenPhase3`.

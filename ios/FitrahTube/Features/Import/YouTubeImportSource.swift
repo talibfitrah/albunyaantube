@@ -25,6 +25,9 @@ nonisolated struct ImportCandidate: Sendable, Equatable, Identifiable {
     /// The uploader's channel id, present for VIDEO candidates only. It is an id, never a name —
     /// see `ImportPipeline`'s PENDING-video arm.
     var channelId: String?
+    /// The uploader's channel TITLE (`snippet.channelTitle`), VIDEO candidates only. Part B gate
+    /// (Codex 4): the PENDING-video row needs a non-blank `channelName` to ever sync.
+    var channelTitle: String? = nil
 
     var id: String { youtubeId }
 }
@@ -99,7 +102,8 @@ nonisolated struct YouTubeImportSource: Sendable {
                                       bearer) { (item: LikedVideoItem) in
                 ImportCandidate(type: .video, youtubeId: item.id, title: item.snippet.title,
                                 thumbnailUrl: item.snippet.thumbnails?.bestUrl,
-                                channelId: item.snippet.channelId)
+                                channelId: item.snippet.channelId,
+                                channelTitle: item.snippet.channelTitle)
             }
         }
     }
@@ -174,6 +178,7 @@ nonisolated struct YouTubeImportSource: Sendable {
         struct Snippet: Decodable {
             let title: String
             let channelId: String
+            let channelTitle: String?
             let thumbnails: Thumbnails?
         }
         let id: String

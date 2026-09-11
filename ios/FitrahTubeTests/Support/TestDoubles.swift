@@ -153,8 +153,8 @@ final class SleepRecorder: Sendable {
     /// state is expressible: `GIDSignIn.currentUser` is nil on every cold launch, while the
     /// keychain-backed `hasPreviousSignIn` is not. A fake with one `isAvailable` flag could not
     /// state the case review C1 found, which is why it now has two.
-    let hasCurrentUser: Bool
-    let hasPreviousSignIn: Bool
+    private(set) var hasCurrentUser: Bool
+    private(set) var hasPreviousSignIn: Bool
     var isAvailable: Bool { hasCurrentUser || hasPreviousSignIn }
     /// `var`: a suite that needs the SECOND authorization to be refused cannot rebuild the
     /// authorizer mid-flow.
@@ -162,7 +162,8 @@ final class SleepRecorder: Sendable {
     let gate: Gate?
     private(set) var authorizeCount = 0
     private(set) var forgetCount = 0
-    /// What `forget()` actually dropped — the in-memory-only rule made observable (CF-A-10).
+    /// The last token handed out; `forget()` drops it, and — the production contract since the
+    /// Part B gate — both SDK facts with it, so the next `authorize()` is refused as unavailable.
     private(set) var heldToken: String?
 
     private let token: String
@@ -188,6 +189,8 @@ final class SleepRecorder: Sendable {
     func forget() {
         forgetCount += 1
         heldToken = nil
+        hasCurrentUser = false
+        hasPreviousSignIn = false
     }
 }
 

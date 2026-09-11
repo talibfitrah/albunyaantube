@@ -112,7 +112,7 @@ struct SuggestContentScreen: View {
                            message: String(localized: "suggest_rate_limited"))
         case .error(let messageKey):
             ErrorStateView(message: String(localized: String.LocalizationValue(messageKey))) {
-                Task { await model?.retry() }
+                model?.retry()
             }
         case .results(let hits):
             LazyVStack(spacing: Spacing.md(widthClass)) {

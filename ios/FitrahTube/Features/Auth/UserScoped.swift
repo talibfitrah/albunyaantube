@@ -11,4 +11,13 @@
 @MainActor protocol UserScoped: AnyObject {
     /// `""` is the anon/signed-out sentinel every store already defaults to.
     var currentUserId: String { get set }
+    /// Part B gate (stage 5 I3): re-read from disk WITHOUT a uid change. The sync manager writes
+    /// through its own `ModelContext`, and a store that only re-reads on its own writes rendered a
+    /// restored library as nothing until the next toggle or relaunch. Default is a no-op for the
+    /// conformers that hold no rows of their own.
+    func reload()
+}
+
+extension UserScoped {
+    func reload() {}
 }

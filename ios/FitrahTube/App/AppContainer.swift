@@ -365,36 +365,46 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// A FIXTURE gets the canned 503 `approvals`/`youtubeSearch` get, and for the same reason: the
     /// fixture's `authorizedTransport` is a `ScriptedTransport` holding canned `/me` bodies, and a
     /// resolve would both spend that queue and decode an account record as a page of results.
-    private(set) lazy var importPipeline: ImportPipeline = {
+    private(set) lazy var importPipeline = ImportPipeline(
+        client: ImportClient(transport: signedOrFixtureTransport, baseURL: apiBaseURL,
+                             deviceId: .persisted(in: userDefaults)),
+        favorites: favorites, subscriptions: subscriptions, playlists: savedPlaylists, now: Date.init)
+
+    /// Part B gate (stage 3 I-5): the import run is owned HERE, not by the screen. The run
+    /// deliberately outlives a back-swipe (Task 29), and a screen-owned model meant a re-pushed
+    /// Import screen started a second, interleaved run of a pipeline that is not re-entrant —
+    /// double budget spend, double-counted summaries. The re-pushed screen now finds `.importing`
+    /// and renders it. `meFeed`'s precedent.
+    private(set) lazy var importViewModel = ImportViewModel(authorizer: youtubeAuthorizer,
+                                                             source: youtubeImportSource,
+                                                             pipeline: importPipeline)
+
+    /// The signed transport, except for a FIXTURE, which gets a canned 503 — the `gateTransport`
+    /// precedent: the fixture's `authorizedTransport` is a `ScriptedTransport` holding canned `/me`
+    /// bodies, and a resolve or a pull would both spend that queue and decode an account record as
+    /// a page of results. Zero network either way.
+    private var signedOrFixtureTransport: any HTTPTransport {
         #if DEBUG
-        let transport: any HTTPTransport = isFixture ? FixedStatusTransport(status: 503) : authorizedTransport
-        #else
-        let transport: any HTTPTransport = authorizedTransport
+        if isFixture { return FixedStatusTransport(status: 503) }
         #endif
-        return ImportPipeline(client: ImportClient(transport: transport, baseURL: apiBaseURL,
-                                                   deviceId: .persisted(in: userDefaults)),
-                              favorites: favorites, subscriptions: subscriptions,
-                              playlists: savedPlaylists, now: Date.init)
-    }()
+        return authorizedTransport
+    }
 
     /// Phase 4 Task 23/24: the ONE sync manager. Cheap to build (no session, no directory, no
     /// network until something triggers it), so `lazy` like every other store here.
+    /// `sessionSleep` is `noSleep` for a fixture, so the bounded ladders spin out instantly instead
+    /// of burning the screenshot rig's wall clock.
     ///
-    /// A FIXTURE gets a canned 503 rather than `authorizedTransport`, the `gateTransport`
-    /// precedent: that transport is a `ScriptedTransport` holding the fixture's canned `/me`
-    /// bodies, and a pull would both consume that queue and decode an account record as a sync
-    /// page. `sessionSleep` is `noSleep` there too, so the bounded ladders spin out instantly
-    /// instead of burning the screenshot rig's wall clock. Zero network either way.
-    private(set) lazy var sync: any SyncTriggering = injectedSync ?? {
-        #if DEBUG
-        let transport: any HTTPTransport = isFixture ? FixedStatusTransport(status: 503) : authorizedTransport
-        #else
-        let transport: any HTTPTransport = authorizedTransport
-        #endif
-        return SyncManager(client: SyncClient(transport: transport, baseURL: apiBaseURL,
-                                              deviceId: .persisted(in: userDefaults)),
-                           modelContainer: modelContainer, backoff: SyncBackoff(), sleep: sessionSleep)
-    }()
+    /// `onWrite` (Part B gate, stage 5 I3): every committed sync write re-reads the three stores,
+    /// so a library restored on a fresh device is on screen when the pull lands, not on relaunch.
+    private(set) lazy var sync: any SyncTriggering = injectedSync ?? SyncManager(
+        client: SyncClient(transport: signedOrFixtureTransport, baseURL: apiBaseURL,
+                           deviceId: .persisted(in: userDefaults)),
+        modelContainer: modelContainer, backoff: SyncBackoff(), sleep: sessionSleep,
+        onWrite: { [weak self] in
+            guard let self else { return }
+            for store in userScopedStores { store.reload() }
+        })
     private let injectedSync: (any SyncTriggering)?
 
     /// The ONE push-on-change entry point (Task 24): the three local stores' writes and a restored

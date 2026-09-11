@@ -232,6 +232,9 @@ extension FavoritesSchemaV5 {
         onDirty?(uid)
     }
 
+    /// `UserScoped.reload()`: the sync manager's write hook.
+    func reload() { refresh() }
+
     private func refresh() {
         let uid = currentUserId
         // V5, same rule as `SwiftDataSubscriptionsStore.refresh()`: awaiting (imported,

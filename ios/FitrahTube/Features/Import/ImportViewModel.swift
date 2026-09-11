@@ -30,7 +30,7 @@ import Observation
     /// The single-run guard itself. A `Task`'s own `isCancelled`/completion is not enough: the
     /// Review → Importing transition happens across a suspension, so two taps in the same frame
     /// both see the old state.
-    private var isRunning = false
+    private(set) var isRunning = false
     /// Which run owns `isRunning`. Review F1: without it, a run CANCELLED by `revoke()` still ran
     /// its own tail when it woke up, and that tail cleared the flag a run started since had set —
     /// so a third `start()` sailed past the guard and two flows ran at once (two consent sheets,
@@ -91,11 +91,15 @@ import Observation
         } catch YouTubeAuthorizerError.cancelled {
             // The user dismissed Google's consent sheet. Silent, back to the start — never a
             // banner, and never an error state offering to retry what they just declined.
+            // Part B gate (Codex 13): the SDK does not observe our cancellation, so a consent
+            // sheet that completes AFTER `revoke()` would otherwise paint over the revoked screen.
+            guard !Task.isCancelled else { return }
             state = .idle
         } catch {
             // WHAT, never why: `.unavailable` (the affordance should not have been offered) and
             // `.failed` (the SDK refused) are the same sentence to a user, and neither is a
             // membership fact about their Google account worth spelling out.
+            guard !Task.isCancelled else { return }
             state = .error(messageKey: "auth_error_generic", retryable: true)
         }
     }
