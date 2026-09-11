@@ -781,6 +781,36 @@ struct ImportPipelineTests {
         #expect(videoRow.durationSeconds == 0)
     }
 
+    /// Cubic round 1 P2: the APPROVED arm has the same never-blank chain — a registry video whose
+    /// content carries no `channelTitle` falls back to the candidate's.
+    @Test func anApprovedVideoWithoutARegistryChannelTitleFallsBackToTheCandidates() async throws {
+        let rig = try rig([.json(200, Fixture.resolveBody([
+            Fixture.result(Fixture.video, "VIDEO", "APPROVED", content: #"{"title":"Canonical Lecture"}"#)
+        ]))])
+
+        _ = await rig.pipeline.run([
+            ImportCandidate(type: .video, youtubeId: Fixture.video, title: "v", thumbnailUrl: nil,
+                            channelId: Fixture.channel, channelTitle: "Mishary Alafasy")
+        ], progress: { _, _, _ in })
+
+        let videoId = Fixture.video
+        let row = try #require(try ModelContext(rig.container).fetch(FetchDescriptor<FavoriteVideo>(
+            predicate: #Predicate { $0.videoId == videoId })).first)
+        #expect(row.title == "Canonical Lecture")
+        #expect(row.channelName == "Mishary Alafasy")
+    }
+
+    /// Cubic round 1 P3: the import door validates the id like its two siblings do — this is where
+    /// the `#Unique` key and the push payload are minted.
+    @MainActor @Test func theFavoritesImportDoorRefusesAMalformedId() throws {
+        let rig = try rig([])
+        #expect(throws: FavoritesError.invalidVideoId) {
+            try rig.favorites.importVideo(id: "../not-an-id", title: "v", channelName: "c", thumbnailUrl: nil,
+                                          durationSeconds: 0, approvalStatus: ImportProvenance.awaiting, at: Self.now)
+        }
+        #expect(rig.favorites.containsAny("../not-an-id") == false)
+    }
+
     /// Codex 4, the happy half: `videos.list` carries `snippet.channelTitle`, and the pending row
     /// renders and syncs with it.
     @Test func aPendingVideoCarriesTheUploadersTitleWhenTheCandidateHasOne() async throws {

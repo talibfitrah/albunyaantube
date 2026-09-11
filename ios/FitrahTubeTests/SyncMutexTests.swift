@@ -90,7 +90,6 @@ struct SyncMutexTests {
         await retryGate.waitUntilBlocked()
         #expect(client.calls == [.put(.favorites, "xc7keR2piUM")])
 
-        await manager.assumeBound(uid: Self.uid)
         let pull = Task { await manager.pullAll(uid: Self.uid) }
         await pullGate.waitUntilBlocked()
         let unbind = Task { await manager.unbind() }
@@ -124,7 +123,6 @@ struct SyncMutexTests {
         await gate.release()
         await cancelled.value
 
-        await manager.assumeBound(uid: Self.uid)
         await manager.syncNow(uid: Self.uid)     // hangs forever if `inFlight` was stranded
         #expect(client.calls == [.pull, .pull])
     }
@@ -154,7 +152,6 @@ struct SyncMutexTests {
         let manager = SyncManager(client: client, modelContainer: container,
                                   backoff: SyncBackoff(random: { $0.lowerBound }), sleep: { _ in })
 
-        await manager.assumeBound(uid: Self.uid)
         let pull = Task { await manager.pullAll(uid: Self.uid) }
         await pullGate.waitUntilBlocked()
         let push = Task { await manager.pushDirty(uid: Self.uid) }

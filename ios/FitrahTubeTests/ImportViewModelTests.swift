@@ -250,6 +250,29 @@ struct ImportViewModelTests {
         #expect(rig.authorizer.forgetCount == 1)
     }
 
+    /// Cubic round 1 P2 (stage 7 regression of the I-5 fix): the container-owned model outlives a
+    /// sign-out, and account A's fetch — or A's review list — must not be what account B finds.
+    /// `reset()` runs from the session drop: the run is cancelled and the screen starts over,
+    /// with nothing forgotten (the SDK session is the provider sign-out's to clear).
+    @Test func resetEndsTheRunInFlightAndLeavesNothingOfItForTheNextAccount() async throws {
+        let gate = Gate()
+        let rig = try rig(youtube: fullLibrary(),
+                          authorizer: FakeYouTubeAuthorizer(token: Fixture.token, gate: gate))
+        rig.model.start()
+        await gate.waitUntilBlocked()
+        let running = rig.model.job
+
+        rig.model.reset()
+        await gate.release()
+        await running?.value
+
+        #expect(rig.model.state == .idle, "A's fetch landed on the model B will be handed")
+        #expect(rig.model.isRunning == false)
+        #expect(rig.model.didRevoke == false)
+        #expect(rig.authorizer.forgetCount == 0, "a reset is not a revoke")
+        #expect(rig.youtube.sent.isEmpty, "the cancelled run fetched A's library anyway")
+    }
+
     /// Codex 13. The SDK does not observe our cancellation: a consent sheet that completes AFTER
     /// `revoke()` — with a grant, or with a refusal — must not paint over the revoked screen. The
     /// refusal is the sharp half: it used to land on the generic catch and write `.error` on top
@@ -270,7 +293,7 @@ struct ImportViewModelTests {
         #expect(rig.model.didRevoke)
     }
 
-    /// `:161-163`. `retry()` IS `start()` — the token is in memory only and the three paginators
+    /// `:161-163`. `retry()` IS `start()` — the SDK holds the token and the three paginators
     /// are cheap, so there is no resumable midpoint to be clever about.
     @Test func retryReRunsTheWholeFlowFromAuthorization() async throws {
         let rig = try rig(youtube: [.json(200, Fixture.page([])), .json(200, Fixture.page([])),

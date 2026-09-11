@@ -15,7 +15,7 @@ nonisolated enum SyncCodec {
 
     // MARK: - Server row -> local row
 
-    /// A null server `approvalStatus` defaults to "APPROVED" (`SyncManager.kt:379,397,415`), and
+    /// A null server `approvalStatus` defaults to ImportProvenance.approved (`SyncManager.kt:379,397,415`), and
     /// the row comes out clean: the server copy is by definition already synced.
     @MainActor static func apply(_ dto: SubscriptionSyncDTO, to row: SubscribedChannel) {
         row.channelUrl = dto.channelUrl
@@ -25,7 +25,7 @@ nonisolated enum SyncCodec {
         row.updatedAt = date(millis: dto.updatedAt)
         row.isRemoved = dto.deleted
         row.dirty = false
-        row.approvalStatus = dto.approvalStatus ?? "APPROVED"
+        row.approvalStatus = dto.approvalStatus ?? ImportProvenance.approved
         row.source = dto.source
         row.importedAt = dto.importedAt.map { date(millis: $0) }
     }
@@ -40,7 +40,7 @@ nonisolated enum SyncCodec {
         row.updatedAt = date(millis: dto.updatedAt)
         row.isRemoved = dto.deleted
         row.dirty = false
-        row.approvalStatus = dto.approvalStatus ?? "APPROVED"
+        row.approvalStatus = dto.approvalStatus ?? ImportProvenance.approved
         row.source = dto.source
         row.importedAt = dto.importedAt.map { date(millis: $0) }
     }
@@ -54,7 +54,7 @@ nonisolated enum SyncCodec {
         row.updatedAt = date(millis: dto.updatedAt)
         row.isRemoved = dto.deleted
         row.dirty = false
-        row.approvalStatus = dto.approvalStatus ?? "APPROVED"
+        row.approvalStatus = dto.approvalStatus ?? ImportProvenance.approved
         row.source = dto.source
         row.importedAt = dto.importedAt.map { date(millis: $0) }
     }

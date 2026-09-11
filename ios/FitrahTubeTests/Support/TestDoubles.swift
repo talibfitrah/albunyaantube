@@ -302,7 +302,8 @@ final class ScriptedSyncClient: SyncTransporting {
         }
     }
 
-    func delete(_ type: SyncEntityType, id: String) async throws -> Int {
+    /// A 2xx DELETE answers the row echo (the server's tombstone time); a 404 answers none.
+    func delete(_ type: SyncEntityType, id: String) async throws -> (status: Int, dto: SyncRowEcho?) {
         let call = Call.delete(type, id)
         let (status, index): (Int?, Int) = state.withLock {
             $0.calls.append(call)
@@ -313,8 +314,11 @@ final class ScriptedSyncClient: SyncTransporting {
         await run(call, index)
         leave()
         guard let status else { throw Failure.exhausted("delete \(type.rawValue)/\(id)") }
-        return status
+        return (status, (200...299).contains(status) ? SyncRowEcho(deleted: true, updatedAt: Self.deleteEchoUpdatedAt) : nil)
     }
+
+    /// The tombstone time every scripted 2xx DELETE echoes.
+    static let deleteEchoUpdatedAt = 7_000
 
     private func enter(_ call: Call, ids: [String: String]) -> (PullReply?, Int) {
         state.withLock {

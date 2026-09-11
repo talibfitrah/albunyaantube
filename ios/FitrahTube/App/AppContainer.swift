@@ -345,7 +345,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// transport is deliberate: `authorizedTransport` would put the FitrahTube Firebase bearer and
     /// this device's id on a request to Google. The only credential that host ever sees is the
     /// user's own OAuth token, passed per call.
-    private(set) lazy var youtubeImportSource: YouTubeImportSource = {
+    private lazy var youtubeImportSource: YouTubeImportSource = {
         #if DEBUG
         if isFixture {
             // A fixture never addresses `googleapis.com`. With the screenshot hook it replays three
@@ -365,7 +365,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// A FIXTURE gets the canned 503 `approvals`/`youtubeSearch` get, and for the same reason: the
     /// fixture's `authorizedTransport` is a `ScriptedTransport` holding canned `/me` bodies, and a
     /// resolve would both spend that queue and decode an account record as a page of results.
-    private(set) lazy var importPipeline = ImportPipeline(
+    private lazy var importPipeline = ImportPipeline(
         client: ImportClient(transport: signedOrFixtureTransport, baseURL: apiBaseURL,
                              deviceId: .persisted(in: userDefaults)),
         favorites: favorites, subscriptions: subscriptions, playlists: savedPlaylists, now: Date.init)
@@ -375,9 +375,19 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// Import screen started a second, interleaved run of a pipeline that is not re-entrant —
     /// double budget spend, double-counted summaries. The re-pushed screen now finds `.importing`
     /// and renders it. `meFeed`'s precedent.
-    private(set) lazy var importViewModel = ImportViewModel(authorizer: youtubeAuthorizer,
-                                                             source: youtubeImportSource,
-                                                             pipeline: importPipeline)
+    var importViewModel: ImportViewModel {
+        if let built = builtImportViewModel { return built }
+        let built = ImportViewModel(authorizer: youtubeAuthorizer, source: youtubeImportSource,
+                                    pipeline: importPipeline)
+        builtImportViewModel = built
+        return built
+    }
+    /// Stored rather than `lazy` so `endImportRun()` can reset a run without BUILDING the model on
+    /// a sign-out that never opened the screen.
+    private var builtImportViewModel: ImportViewModel?
+
+    /// The session ended: the run in flight belonged to it (`ImportViewModel.reset`).
+    func endImportRun() { builtImportViewModel?.reset() }
 
     /// The signed transport, except for a FIXTURE, which gets a canned 503 — the `gateTransport`
     /// precedent: the fixture's `authorizedTransport` is a `ScriptedTransport` holding canned `/me`

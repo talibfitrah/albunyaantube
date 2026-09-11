@@ -147,6 +147,7 @@ struct PlayerToolbarTests {
         /// Task 30: no fake here imports anything, so the awaiting queue is empty by
         /// construction — never a stored `var` a test could set and then forget to clear.
         var awaitingItems: [FavoriteVideo] { [] }
+        func reload() {}
     enum Failure: Error { case saveFailed }
 
     /// Task 9: `UserScoped` is now a requirement of the protocol; this fake is never re-scoped.

@@ -600,10 +600,10 @@ struct SyncManagerTests {
         #expect(row.updatedAt == SyncCodec.date(millis: 6_000))
     }
 
-    /// A tombstoned row is a DELETE, and `SyncTransporting.delete` hands back only a status — so
-    /// there is no server timestamp to stamp. `dirty` still goes; `updatedAt` is left exactly where
-    /// it was rather than taking a local clock.
-    @Test func aTombstonedRowIsDeletedAndClearsItsDirtWithoutStampingALocalClock() async throws {
+    /// A tombstoned row is a DELETE. Part B gate, Cubic round 1 P1: the echo's `updatedAt` — the
+    /// server's tombstone time — IS stamped (Task 22 had dropped the body, leaving the last PUT's
+    /// stamp, which the pull of the server's own tombstone then beat). Never a local clock.
+    @Test func aTombstonedRowIsDeletedAndStampsTheServersTombstoneTime() async throws {
         let container = self.container()
         let context = ModelContext(container)
         context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
@@ -621,7 +621,108 @@ struct SyncManagerTests {
         #expect(client.calls == [.delete(.favorites, Self.videoId)])
         let row = try #require(fetch(container, FavoriteVideo.self).first)
         #expect(!row.dirty)
-        #expect(row.updatedAt == SyncCodec.date(millis: 3_000))
+        #expect(row.updatedAt == SyncCodec.date(millis: ScriptedSyncClient.deleteEchoUpdatedAt))
+    }
+
+    /// The P1 in full: favorite → unfavorite (DELETE echo T2) → re-favorite → the next pull brings
+    /// the server's tombstone at T2. With the stamp the re-add carries T2 and survives
+    /// (`.skipStaleTombstone`); without it the row still carried the PUT's T1 and was wiped.
+    @Test func aReAddMadeAfterADeleteSurvivesThePullOfThatDeletesTombstone() async throws {
+        let container = self.container()
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: Self.uid,
+                                     updatedAt: SyncCodec.date(millis: 3_000), isRemoved: true, dirty: true))
+        try context.save()
+        let tombstoneTime = ScriptedSyncClient.deleteEchoUpdatedAt
+        let client = ScriptedSyncClient(
+            pulls: [.page(.page(favorites: [Self.favorite(deleted: true, updatedAt: tombstoneTime)]))],
+            deletes: [200])
+        let manager = self.manager(client, container: container)
+        await manager.assumeBound(uid: Self.uid)
+        await manager.pushDirty(uid: Self.uid)
+
+        // The user re-favorites before the next pull (a store write: resurrect + dirty, no stamp).
+        let again = ModelContext(container)
+        let readd = try #require(try again.fetch(FetchDescriptor<FavoriteVideo>()).first)
+        readd.isRemoved = false
+        readd.dirty = true
+        try again.save()
+
+        await manager.pullAll(uid: Self.uid)
+
+        let row = try #require(fetch(container, FavoriteVideo.self).first)
+        #expect(row.isRemoved == false, "the pull of the delete's own tombstone wiped the re-add")
+        #expect(row.dirty, "the re-add lost its dirt and will never be pushed")
+    }
+
+    /// Cubic round 1 P2: a guest toggle of an id the account already holds meets the `#Unique`
+    /// pair the moment it is retagged. MEASURED (revert-and-run, Part B gate): SwiftData resolves
+    /// the clash at save by clobbering, not by throwing — this case was green with the plain retag
+    /// too — so what the explicit delete buys is a DETERMINISTIC winner (the account's row, the one
+    /// the server knows) instead of whichever row SwiftData keeps. This pins the outcome, not the
+    /// mechanism: one row, the account's, its dirt untouched, nothing pushed.
+    @Test func aGuestDuplicateOfARowTheAccountAlreadyHoldsIsDroppedNotRetagged() async throws {
+        let container = self.container()
+        let context = ModelContext(container)
+        context.insert(AccountBinding(userId: Self.uid, initialMergeDone: true))
+        context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: Self.uid))
+        context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: "", dirty: true))
+        try context.save()
+        let client = ScriptedSyncClient(pulls: [.page(.empty)])
+        let manager = self.manager(client, container: container)
+
+        await manager.bind(uid: Self.uid)
+
+        let rows = fetch(container, FavoriteVideo.self)
+        #expect(rows.map(\.userId) == [Self.uid], "rows: \(rows.map { ($0.userId, $0.dirty) })")
+        #expect(client.calls == [.pull], "the duplicate was retagged and pushed")
+        #expect(await manager.incidents.filter { $0.contains("tag anon rows") }.isEmpty,
+                "the retag save failed on the unique constraint")
+    }
+
+    /// Cubic round 1 P2: the archive echo tombstones a row the stores are rendering; they must
+    /// hear about it like they hear about a pulled page.
+    @Test func anArchiveEchoTombstoneReloadsTheStores() async throws {
+        let container = self.container()
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: Self.uid, dirty: true))
+        try context.save()
+        let reloads = Mutex(0)
+        let client = ScriptedSyncClient(puts: [.reply(200, SyncRowEcho(deleted: true, updatedAt: 5_000))])
+        let manager = SyncManager(client: client, modelContainer: container,
+                                  backoff: SyncBackoff(random: { $0.lowerBound }), sleep: { _ in },
+                                  onWrite: { reloads.withLock { $0 += 1 } })
+        await manager.assumeBound(uid: Self.uid)
+
+        await manager.pushDirty(uid: Self.uid)
+
+        let row = try #require(fetch(container, FavoriteVideo.self).first)
+        #expect(row.isRemoved)
+        #expect(reloads.withLock { $0 } == 1)
+    }
+
+    /// Cubic round 1 P3: the classifier's 404 arm is the DELETE's. A PUT that 404s carries no echo
+    /// to clear the row with and would be re-sent on every drain forever; it is permanent, and
+    /// said out loud.
+    @Test func aPutThatAnswers404IsPermanentNotSilentlyRetriedForever() async throws {
+        let container = self.container()
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: Self.uid, dirty: true))
+        try context.save()
+        let client = ScriptedSyncClient(puts: [.reply(404, nil)])
+        let manager = self.manager(client, container: container)
+        await manager.assumeBound(uid: Self.uid)
+
+        await manager.pushDirty(uid: Self.uid)
+
+        let row = try #require(fetch(container, FavoriteVideo.self).first)
+        #expect(!row.dirty, "the row stays dirty and re-PUTs on every drain")
+        #expect(await manager.incidents.contains { $0.contains("404") })
     }
 
     /// Cubic R5 P1 #19: the drain is resilient, not all-or-nothing. One 5xx on a subscription used

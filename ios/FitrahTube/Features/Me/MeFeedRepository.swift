@@ -25,6 +25,9 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
 /// Foreground only (ruling F6): the Me tab's `.task` bursts if stale and pull-to-refresh forces.
 /// No `BGAppRefreshTask`, no `UIBackgroundModes`.
 @MainActor @Observable final class MeFeedRepository: UserScoped {
+    /// `UserScoped.reload()`: nothing to re-read — the sync manager never writes feed rows.
+    func reload() {}
+
     /// Runs one channel's attempt under `MeFeedRefreshGate.perChannelTimeout`; `nil` means the
     /// deadline won. Injected rather than raced against a fake sleep on purpose: a race decided by
     /// the scheduler is a flaky test on a host running at load average 200+, and what is worth

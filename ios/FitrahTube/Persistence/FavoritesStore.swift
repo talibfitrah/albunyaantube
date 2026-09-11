@@ -8,6 +8,11 @@ import SwiftData
 /// phase 4 wires real auth. `isFavorite` mirrors the DAO's `EXISTS(... deleted = 0)` check --
 /// unlike `items`, it does not filter by `approvalStatus`, so an AWAITING (imported, unreviewed)
 /// favorite still reads as favorited even though it's hidden from the list.
+nonisolated enum FavoritesError: Error, Equatable {
+    /// Eleven URL-safe characters (`SwiftDataFavoritesStore.isValid`), refused at the import door.
+    case invalidVideoId
+}
+
 @MainActor protocol FavoritesStore: AnyObject, Observable, UserScoped {
     var items: [FavoriteVideo] { get }
     func isFavorite(_ videoId: String) -> Bool
@@ -41,13 +46,13 @@ import SwiftData
     /// contract's "any favorites publisher must be a function of the current uid, re-subscribed
     /// when auth state changes" (favorites-settings-about.md:34).
     var currentUserId: String = "" {
-        didSet { refresh() }
+        didSet { reload() }
     }
 
     private(set) var items: [FavoriteVideo] = []
 
     /// Task 30: the AWAITING rows, in the same order `items` uses. Refreshed by the same
-    /// `refresh()`, so one fetch pair keeps the two lists consistent by construction.
+    /// `reload()`, so one fetch pair keeps the two lists consistent by construction.
     private(set) var awaitingItems: [FavoriteVideo] = []
 
 
@@ -60,7 +65,7 @@ import SwiftData
     init(modelContainer: ModelContainer, onDirty: ((String) -> Void)? = nil) {
         context = ModelContext(modelContainer)
         self.onDirty = onDirty
-        refresh()
+        reload()
     }
 
     /// Part B gate (stage 4 S5): the id rule the sync pull applies to server rows before they
@@ -111,7 +116,7 @@ import SwiftData
             ))
         }
         try saveOrRollback()
-        refresh()
+        reload()
     }
 
     func containsAny(_ videoId: String) -> Bool {
@@ -127,6 +132,9 @@ import SwiftData
     /// manager exactly as a manual toggle's does.
     func importVideo(id: String, title: String, channelName: String, thumbnailUrl: String?,
                      durationSeconds: Int, approvalStatus: String, at: Date) throws {
+        // Cubic round 1 P3: the same door check `importChannel`/`importPlaylist` make — this is
+        // where the `#Unique` key and the push payload are minted.
+        guard Self.isValid(id) else { throw FavoritesError.invalidVideoId }
         let uid = currentUserId
         let descriptor = FetchDescriptor<FavoriteVideo>(
             predicate: #Predicate { $0.videoId == id && $0.userId == uid }
@@ -149,7 +157,7 @@ import SwiftData
                                          source: ImportProvenance.source, importedAt: at))
         }
         try saveOrRollback()
-        refresh()
+        reload()
     }
 
     func clearAll() throws {
@@ -162,13 +170,13 @@ import SwiftData
             favorite.dirty = true // not `updatedAt` -- see `toggle` (gate wave-2 W12)
         }
         try saveOrRollback()
-        refresh()
+        reload()
     }
 
     /// Gate wave-4 V9: both writers mutate model objects *before* saving, so a failed save used to
     /// leave those mutations pending in the context -- and the next successful save of any
     /// unrelated operation then committed the toggle the user was told had failed. Rolling back
-    /// discards them at the point of failure; `refresh()` re-reads so `items` can't keep showing a
+    /// discards them at the point of failure; `reload()` re-reads so `items` can't keep showing a
     /// mutation that no longer exists. The error still propagates -- the caller decides what the
     /// user sees.
     private func saveOrRollback() throws {
@@ -176,7 +184,7 @@ import SwiftData
             try context.save()
         } catch {
             context.rollback()
-            refresh()
+            reload()
             throw error
         }
         // Task 24: HERE rather than in `toggle`/`clearAll`, so every writer -- the two that exist
@@ -184,10 +192,8 @@ import SwiftData
         onDirty?(currentUserId)
     }
 
-    /// `UserScoped.reload()`: the sync manager's write hook.
-    func reload() { refresh() }
-
-    private func refresh() {
+    /// `UserScoped.reload()`: every read, and the sync manager's write hook.
+    func reload() {
         let uid = currentUserId
         let approved = ImportProvenance.approved
         var descriptor = FetchDescriptor<FavoriteVideo>(

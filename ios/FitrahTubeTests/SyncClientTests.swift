@@ -188,12 +188,18 @@ struct SyncClientTests {
     }
 
     /// The DELETE hands back the RAW status: 404 is `.ok` (an idempotent tombstone) and only
-    /// `SyncDecisions.push` knows that, so the client must not collapse it into a throw.
-    @Test func theDeleteReturnsItsRawStatusForTheClassifier() async throws {
-        let (client, transport) = self.client([.json(404, "")])
-        let status = try await client.delete(.favorites, id: Self.videoId)
+    /// `SyncDecisions.push` knows that, so the client must not collapse it into a throw. And it
+    /// hands back the echo (Part B gate, Cubic round 1 P1): the server's tombstone time is what
+    /// `clearDirty` stamps, so a later re-add is not wiped by the pull of that very tombstone.
+    @Test func theDeleteReturnsItsRawStatusAndItsEchoForTheClassifier() async throws {
+        let (client, transport) = self.client([.json(404, ""), .json(200, #"{"deleted":true,"updatedAt":7000}"#)])
+        let (status, echo) = try await client.delete(.favorites, id: Self.videoId)
         #expect(status == 404)
+        #expect(echo == nil)
         #expect(SyncDecisions.push(status: status, hasBody: false) == .ok)
+        let (okStatus, okEcho) = try await client.delete(.favorites, id: Self.videoId)
+        #expect(okStatus == 200)
+        #expect(okEcho?.updatedAt == 7_000)
         let request = try #require(transport.sent.first)
         #expect(request.method == "DELETE")
         #expect(request.url.path() == "/api/account/favorites/\(Self.videoId)")

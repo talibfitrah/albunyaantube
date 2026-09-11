@@ -90,7 +90,6 @@ nonisolated struct Submission: Sendable, Equatable, Identifiable {
 
 nonisolated struct SubmissionPage: Sendable, Equatable {
     var items: [Submission]
-    var nextCursor: String?
 }
 
 /// Hand-written `/api/admin/approvals/my-submissions` + the three submitter-owned registry writes,
@@ -125,8 +124,8 @@ nonisolated struct ApprovalsClient: Sendable {
     /// OMITTED — "omit for everything" is the controller's documented default, and it is the branch
     /// that does NOT paginate (`ApprovalService.getMySubmissions:496,513` routes it to
     /// `getMySubmissionsAllStatuses`, which takes no cursor and answers `nextCursor = null`), so no
-    /// cursor is sent either (Part B gate, stage 1 B1 / CF-B-17). `SubmissionPage.nextCursor` is
-    /// still decoded: it is the wire shape, and the first status filter will read it.
+    /// cursor is sent or read either (Part B gate, stage 1 B1 / CF-B-17; the page's `nextCursor`
+    /// returns with the status filter, like the engine it belonged to).
     func mySubmissions(limit: Int) async throws(AccountError) -> SubmissionPage {
         let items = [URLQueryItem(name: "limit", value: String(limit))]
 
@@ -138,8 +137,7 @@ nonisolated struct ApprovalsClient: Sendable {
         guard let page = try? JSONDecoder().decode(PageBody.self, from: response.body) else {
             throw AccountError.unknown(status: response.status)
         }
-        return SubmissionPage(items: (page.data ?? []).compactMap(Self.submission),
-                              nextCursor: page.pageInfo?.nextCursor)
+        return SubmissionPage(items: (page.data ?? []).compactMap(Self.submission))
     }
 
     /// `POST api/admin/registry/{channels|playlists|videos}` (`RegistryController.java:203,526,903`).
@@ -196,8 +194,6 @@ nonisolated struct ApprovalsClient: Sendable {
         /// **Trap 1.** Not `items`. Optional so a renamed key decodes to an empty page rather than
         /// throwing — a decode error would name neither the key nor the shape that shipped.
         let data: [RowBody]?
-        let pageInfo: PageInfoBody?
-        struct PageInfoBody: Decodable { let nextCursor: String? }
     }
 
     private struct RowBody: Decodable {

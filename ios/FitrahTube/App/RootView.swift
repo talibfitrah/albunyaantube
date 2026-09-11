@@ -66,7 +66,9 @@ struct RootView: View {
             // alert's `dropToGuest()` already pops everything. View-layer glue, like the foreground
             // and connectivity hooks (CF-A-12); the decision itself is `Router.dropAccountRoutes`.
             .onChange(of: container.session.user == nil) { _, signedOut in
-                if signedOut { router.dropAccountRoutes() }
+                guard signedOut else { return }
+                router.dropAccountRoutes()
+                container.endImportRun()
             }
             // `alert` is ADVISORY on the outcome (Task 8) — the caller is what acts on it, and this
             // is the caller. `initial: true` so a launch that already resolves to a blocked account

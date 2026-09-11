@@ -90,14 +90,14 @@ extension FavoritesSchemaV5 {
         /// `itemCount` above STAYS: no sync DTO carries it, and it is what the count chip renders.
         var playlistUrl: String = ""
         var uploaderName: String?
-        var approvalStatus: String = "APPROVED"
+        var approvalStatus: String = ImportProvenance.approved
         var source: String?
         var importedAt: Date?
 
         init(playlistId: String, title: String, thumbnailUrl: String?, itemCount: Int,
              addedAt: Date = Date(), userId: String = "", updatedAt: Date = Date(timeIntervalSince1970: 0),
              isRemoved: Bool = false, dirty: Bool = false, playlistUrl: String = "",
-             uploaderName: String? = nil, approvalStatus: String = "APPROVED",
+             uploaderName: String? = nil, approvalStatus: String = ImportProvenance.approved,
              source: String? = nil, importedAt: Date? = nil) {
             self.playlistId = playlistId
             self.title = title
@@ -121,13 +121,13 @@ extension FavoritesSchemaV5 {
     private let context: ModelContext
 
     var currentUserId: String = "" {
-        didSet { refresh() }
+        didSet { reload() }
     }
 
     private(set) var items: [SavedPlaylist] = []
 
     /// Task 30: the AWAITING rows, in the same order `items` uses. Refreshed by the same
-    /// `refresh()`, so one fetch pair keeps the two lists consistent by construction.
+    /// `reload()`, so one fetch pair keeps the two lists consistent by construction.
     private(set) var awaitingItems: [SavedPlaylist] = []
 
 
@@ -139,7 +139,7 @@ extension FavoritesSchemaV5 {
     init(modelContainer: ModelContainer, onDirty: ((String) -> Void)? = nil) {
         context = ModelContext(modelContainer)
         self.onDirty = onDirty
-        refresh()
+        reload()
     }
 
     nonisolated static func isValid(_ playlistId: String) -> Bool {
@@ -180,10 +180,10 @@ extension FavoritesSchemaV5 {
             try context.save()
         } catch {
             context.rollback()
-            refresh()
+            reload()
             throw error
         }
-        refresh()
+        reload()
         // Task 24: after the save, so a rolled-back write pushes nothing.
         onDirty?(uid)
     }
@@ -225,22 +225,20 @@ extension FavoritesSchemaV5 {
             try context.save()
         } catch {
             context.rollback()
-            refresh()
+            reload()
             throw error
         }
-        refresh()
+        reload()
         onDirty?(uid)
     }
 
-    /// `UserScoped.reload()`: the sync manager's write hook.
-    func reload() { refresh() }
-
-    private func refresh() {
+    /// `UserScoped.reload()`: every read, and the sync manager's write hook.
+    func reload() {
         let uid = currentUserId
-        // V5, same rule as `SwiftDataSubscriptionsStore.refresh()`: awaiting (imported,
+        // V5, same rule as `SwiftDataSubscriptionsStore.reload()`: awaiting (imported,
         // unreviewed) rows are hidden from `items`; `isSaved` stays unfiltered.
         // Task 20 review M3, ruled: FAIL CLOSED — `== "APPROVED"`, not `!= "AWAITING"`. See
-        // `SwiftDataSubscriptionsStore.refresh()` for the full note.
+        // `SwiftDataSubscriptionsStore.reload()` for the full note.
         let approved = ImportProvenance.approved
         var descriptor = FetchDescriptor<SavedPlaylist>(
             predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus == approved },

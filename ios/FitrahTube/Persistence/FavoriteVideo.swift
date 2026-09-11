@@ -30,7 +30,7 @@ enum FavoritesSchemaV1: VersionedSchema {
     /// Defaults mirror the Room column defaults so a plain `insert(FavoriteVideo(...))` behaves
     /// like Android's fresh row: `addedAt` = now (sort key), `updatedAt` = epoch 0 (unset "server
     /// timestamp, monotonicity guard" -- only the sync layer advances it), `isRemoved`/`dirty` =
-    /// false, `approvalStatus` = "APPROVED".
+    /// false, `approvalStatus` = ImportProvenance.approved.
     ///
     /// The Room/spec column is called `deleted`, but that exact identifier is reserved by
     /// SwiftData's CoreData-backed storage: a `@Model` property literally named `deleted` mutates
@@ -69,7 +69,7 @@ enum FavoritesSchemaV1: VersionedSchema {
 
         init(videoId: String, title: String, channelName: String, thumbnailUrl: String?, durationSeconds: Int,
              addedAt: Date = Date(), userId: String = "", updatedAt: Date = Date(timeIntervalSince1970: 0),
-             isRemoved: Bool = false, dirty: Bool = false, approvalStatus: String = "APPROVED",
+             isRemoved: Bool = false, dirty: Bool = false, approvalStatus: String = ImportProvenance.approved,
              source: String? = nil, importedAt: Date? = nil) {
             self.videoId = videoId
             self.title = title

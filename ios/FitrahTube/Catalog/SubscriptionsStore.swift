@@ -24,7 +24,7 @@ import SwiftData
                        approvalStatus: String, at: Date) throws
 
     /// Phase 4 Task 30 (fork F14): the AWAITING rows — imported ids an admin has not reviewed yet.
-    /// `items` deliberately EXCLUDES them (the fail-closed `== "APPROVED"` filter above), so this
+    /// `items` deliberately EXCLUDES them (the fail-closed `== ImportProvenance.approved` filter above), so this
     /// cannot be derived from it; it is a second fetch over the same uid, sorted the same way.
     ///
     /// Stored and refreshed alongside `items`, never computed on read. An import writes rows that
@@ -91,10 +91,10 @@ extension FavoritesSchemaV5 {
         /// `channelUrl` is Room's `channelUrl`, which the sync wire requires; it is STORED data,
         /// never a navigable affordance (owner directive: no link or redirect to YouTube, anywhere).
         var channelUrl: String = ""
-        /// "APPROVED" | "AWAITING" -- an AWAITING row is an imported, unreviewed channel: hidden
-        /// from `items`, still `isSubscribed`. A null server value means "APPROVED"
+        /// ImportProvenance.approved | "AWAITING" -- an AWAITING row is an imported, unreviewed channel: hidden
+        /// from `items`, still `isSubscribed`. A null server value means ImportProvenance.approved
         /// (`SyncManager.kt:379`).
-        var approvalStatus: String = "APPROVED"
+        var approvalStatus: String = ImportProvenance.approved
         /// "USER_IMPORT" for rows the YouTube import wrote; nil for a manual subscribe.
         var source: String?
         var importedAt: Date?
@@ -102,7 +102,7 @@ extension FavoritesSchemaV5 {
         init(channelId: String, title: String, avatarUrl: String?,
              followedAt: Date = Date(), userId: String = "", updatedAt: Date = Date(timeIntervalSince1970: 0),
              isRemoved: Bool = false, dirty: Bool = false, channelUrl: String = "",
-             approvalStatus: String = "APPROVED", source: String? = nil, importedAt: Date? = nil) {
+             approvalStatus: String = ImportProvenance.approved, source: String? = nil, importedAt: Date? = nil) {
             self.channelId = channelId
             self.title = title
             self.avatarUrl = avatarUrl
@@ -124,13 +124,13 @@ extension FavoritesSchemaV5 {
     private let context: ModelContext
 
     var currentUserId: String = "" {
-        didSet { refresh() }
+        didSet { reload() }
     }
 
     private(set) var items: [SubscribedChannel] = []
 
     /// Task 30: the AWAITING rows, in the same order `items` uses. Refreshed by the same
-    /// `refresh()`, so one fetch pair keeps the two lists consistent by construction.
+    /// `reload()`, so one fetch pair keeps the two lists consistent by construction.
     private(set) var awaitingItems: [SubscribedChannel] = []
 
 
@@ -141,7 +141,7 @@ extension FavoritesSchemaV5 {
     init(modelContainer: ModelContainer, onDirty: ((String) -> Void)? = nil) {
         context = ModelContext(modelContainer)
         self.onDirty = onDirty
-        refresh()
+        reload()
     }
 
     nonisolated static func isValid(_ channelId: String) -> Bool {
@@ -184,10 +184,10 @@ extension FavoritesSchemaV5 {
             try context.save()
         } catch {
             context.rollback()
-            refresh()
+            reload()
             throw error
         }
-        refresh()
+        reload()
         // Task 24: after the save, so a rolled-back write pushes nothing.
         onDirty?(uid)
     }
@@ -228,17 +228,15 @@ extension FavoritesSchemaV5 {
             try context.save()
         } catch {
             context.rollback()
-            refresh()
+            reload()
             throw error
         }
-        refresh()
+        reload()
         onDirty?(uid)
     }
 
-    /// `UserScoped.reload()`: the sync manager's write hook.
-    func reload() { refresh() }
-
-    private func refresh() {
+    /// `UserScoped.reload()`: every read, and the sync manager's write hook.
+    func reload() {
         let uid = currentUserId
         // V5: an AWAITING row is an imported channel the admins have not reviewed. It must not
         // render as an ordinary chip and must not count against the 30-channel cap through
@@ -247,8 +245,8 @@ extension FavoritesSchemaV5 {
         //
         // Task 20 review M3, ruled: FAIL CLOSED. `!= "AWAITING"` failed OPEN — a REJECTED row, or
         // any status a later backend adds, rendered as an ordinary chip and counted against the
-        // cap. `== "APPROVED"` matches `SwiftDataFavoritesStore` and shows only what has actually
-        // been approved. Pre-existing rows are safe: V5's column default is "APPROVED", so the
+        // cap. `== ImportProvenance.approved` matches `SwiftDataFavoritesStore` and shows only what has actually
+        // been approved. Pre-existing rows are safe: V5's column default is ImportProvenance.approved, so the
         // lightweight V4 -> V5 stage fills every migrated row with it.
         let approved = ImportProvenance.approved
         var descriptor = FetchDescriptor<SubscribedChannel>(
@@ -258,7 +256,7 @@ extension FavoritesSchemaV5 {
         descriptor.includePendingChanges = false
         items = (try? context.fetch(descriptor)) ?? []
         // Task 30 (fork F14). Deliberately a SECOND fetch, not a filter over `items`: the
-        // descriptor above is fail-closed on `== "APPROVED"`, so an awaiting row was never in
+        // descriptor above is fail-closed on `== ImportProvenance.approved`, so an awaiting row was never in
         // `items` to filter out of. Same uid, same tombstone rule, same order.
         let awaiting = ImportProvenance.awaiting
         var pending = FetchDescriptor<SubscribedChannel>(

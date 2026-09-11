@@ -427,21 +427,13 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// terminal alert that depends on which of the two got there first is a coin toss.
     @discardableResult
     private func dropSession() -> Bool {
-        // Stage 9 round 2 / P1, above the early return: the round in flight belongs to the identity
-        // being dropped, whatever `state` says — a nil-started round (`land()`'s shape) must not
-        // restore its `previousState` over the account that signs in after it. Task 24: the unbind
-        // likewise, so a push retry queued while the user was still signed in cannot fire after the
-        // drop. Both are idempotent.
-        cancelInFlight()
-        unbindSync()
-        // Stage 9 / P2a asked for the provider sign-out above this return too, because every path
-        // where something else reached `.signedOut` first — `performDeletion`'s await of
-        // `auth.deleteUser()`, the blocked/deleted refresh refusal, the age-ineligible teardown —
-        // used to return here without asking the SDKs to forget. Part B gate: that "something else"
-        // is the auth stream's `.signedOut` arm, which now runs `tearDown()` itself, so a drop the
-        // listener already performed is not performed twice here.
+        // ABOVE the early return, all of it (Stage 9 round 2 / P1; Stage 9 / P2a; Task 24): the
+        // round in flight belongs to the identity being dropped whatever `state` says, the SDKs
+        // must forget on every path that reaches `.signedOut` first, and a queued push retry must
+        // not outlive the drop. Every step is idempotent, so a drop the listener already performed
+        // costs one extra no-op call and never a second spelling.
+        tearDown()
         guard state != .signedOut else { return false }
-        for provider in providers { provider.signOutProvider() }
         do {
             try auth.signOut()
         } catch {
@@ -511,20 +503,15 @@ nonisolated enum AccountState: Sendable, Equatable {
         Task { await sync.bind(uid: uid) }
     }
 
-    private func unbindSync() {
-        guard let sync, boundUid != nil else { return }
+    /// Returns the unbind it started so the ONE caller that must wait for it can (`performDeletion`:
+    /// `SyncManager.unbind()` queues on the exclusion behind a pull already in flight, and the wipe
+    /// must not run until that pull has let go — a page landing after the wipe would re-insert the
+    /// rows the server just erased). Every other caller lets it run on its own.
+    @discardableResult
+    private func unbindSync() -> Task<Void, Never>? {
+        guard let sync, boundUid != nil else { return nil }
         boundUid = nil
-        Task { await sync.unbind() }
-    }
-
-    /// The deletion's variant (stage 4 S9 / Codex 7): AWAITED, because `SyncManager.unbind()`
-    /// queues on the exclusion behind a pull already in flight, and the wipe must not run until
-    /// that pull has let go — a page that lands after the wipe would re-insert the rows the server
-    /// just erased, under a uid nobody will sign in as again.
-    private func unbindSyncAndWait() async {
-        guard let sync, boundUid != nil else { return }
-        boundUid = nil
-        await sync.unbind()
+        return Task { await sync.unbind() }
     }
 
     /// The age-ineligible teardown, in ONE place (Stage 8 / S7). `AgeIneligibleScreen.acknowledge()`
@@ -626,9 +613,8 @@ nonisolated enum AccountState: Sendable, Equatable {
 
     private func performDeletion() async {
         // Stage 4 S9: quiesce sync BEFORE the wipe, or a pull already parked in the network
-        // re-creates the rows the wipe is about to erase. `dropSession()` below still runs the
-        // (now no-op) unbind on the shared teardown path.
-        await unbindSyncAndWait()
+        // re-creates the rows the wipe is about to erase.
+        await unbindSync()?.value
         let wipeError = await wipe()
         // `try?`: the server has already deleted the account, so there is nothing to roll back and
         // nowhere to route a failure to. A Firebase user whose `delete()` was refused

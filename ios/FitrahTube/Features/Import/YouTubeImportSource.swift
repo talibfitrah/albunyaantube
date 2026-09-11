@@ -22,8 +22,8 @@ nonisolated struct ImportCandidate: Sendable, Equatable, Identifiable {
     var youtubeId: String
     var title: String
     var thumbnailUrl: String?
-    /// The uploader's channel id, present for VIDEO candidates only. It is an id, never a name —
-    /// see `ImportPipeline`'s PENDING-video arm.
+    /// The uploader's channel id, present for VIDEO candidates only. An id, which the PENDING-video
+    /// arm uses as the NAME only as a last resort behind `channelTitle`.
     var channelId: String?
     /// The uploader's channel TITLE (`snippet.channelTitle`), VIDEO candidates only. Part B gate
     /// (Codex 4): the PENDING-video row needs a non-blank `channelName` to ever sync.

@@ -20,12 +20,18 @@ struct ImportFromYouTubeScreen: View {
     /// `ProfileScreen`'s way off a pushed screen — the Done button pops, as Android's does.
     @Environment(\.dismiss) private var dismiss
 
-    @State private var model: ImportViewModel?
+    /// Container-owned (Part B gate, stage 3 I-5): a second push of this route while a run is
+    /// still writing finds the SAME model, in `.importing`, instead of starting a second run of a
+    /// pipeline that is not re-entrant. `MeSignedInView.feed`'s shape.
+    private var model: ImportViewModel { container.importViewModel }
+    /// Once per screen instance: `.task` re-fires on every re-appearance, and a `.done` screen the
+    /// user comes back to must not restart the import it just finished.
+    @State private var started = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.lg(widthClass)) {
-                stateView(model?.state ?? .idle)
+                stateView(model.state)
                 revokeSection
             }
             .padding(Spacing.md(widthClass))
@@ -37,25 +43,19 @@ struct ImportFromYouTubeScreen: View {
         // The Sharī'ah caution gate. Presented off the ViewModel's own flag, not a `@State` here,
         // so the Import button has no path to the import that does not pass through this dialog.
         .alert(String(localized: "import_caution_title"), isPresented: cautionBinding) {
-            Button(String(localized: "cancel"), role: .cancel) { model?.dismissCaution() }
-            Button(String(localized: "import_caution_continue")) { model?.acceptCaution() }
+            Button(String(localized: "cancel"), role: .cancel) { model.dismissCaution() }
+            Button(String(localized: "import_caution_continue")) { model.acceptCaution() }
         } message: {
             Text(String(localized: "import_caution_message"))
         }
         .task {
-            if model == nil {
-                // Container-owned (Part B gate, stage 3 I-5): a second push of this route while a
-                // run is still writing finds the SAME model, in `.importing`, instead of starting
-                // a second run of a pipeline that is not re-entrant.
-                let model = container.importViewModel
-                self.model = model
-                // The screen exists because the user chose Import; asking them to tap a second
-                // button to begin would be a step Android does not have either (`:83-86`).
-                // A no-op while a run is in flight, by `start()`'s own guard; a model left in
-                // `.done`/`.review`/`.error` by an earlier visit starts over, which is what a user
-                // who chose Import again asked for.
-                if !model.isRunning { model.start() }
-            }
+            guard !started else { return }
+            started = true
+            // The screen exists because the user chose Import; asking them to tap a second button
+            // to begin would be a step Android does not have either (`:83-86`). A no-op while a run
+            // is in flight, by `start()`'s own guard; a model left in `.done`/`.review`/`.error` by
+            // an earlier visit starts over, which is what a user who chose Import again asked for.
+            if !model.isRunning { model.start() }
         }
     }
 
@@ -65,7 +65,7 @@ struct ImportFromYouTubeScreen: View {
     /// and Continue would start nothing. Both buttons already write the model themselves, and an
     /// alert has no other way to be dismissed, so nothing is lost by ignoring SwiftUI's write.
     private var cautionBinding: Binding<Bool> {
-        Binding(get: { model?.isCautionPresented ?? false }, set: { _ in })
+        Binding(get: { model.isCautionPresented }, set: { _ in })
     }
 
     // MARK: - The five arms
@@ -82,7 +82,7 @@ struct ImportFromYouTubeScreen: View {
         // (which is what this did) left a permanent fake spinner and no way back in. It is the
         // offer instead, in Android's own words for it: `import_offer_*`, which the catalog has
         // carried unrendered since the converter first ran.
-        case .idle where model?.didRevoke == true:
+        case .idle where model.didRevoke:
             // Part B gate: `forget()` drops the SDK session, so there is nothing to authorize until
             // the next Google sign-in — RULING 28, the offer is ABSENT, and `revokeSection` below
             // carries the whole message.
@@ -92,7 +92,7 @@ struct ImportFromYouTubeScreen: View {
                            title: String(localized: "import_offer_title"),
                            message: String(localized: "import_offer_message"),
                            action: (String(localized: "import_offer_positive"),
-                                    { model?.start() }))
+                                    { model.start() }))
         case .authorizing:
             spinner("import_youtube_loading_authorizing")
         case .fetching:
@@ -165,7 +165,7 @@ struct ImportFromYouTubeScreen: View {
         let allOn = ids.isSubset(of: selected)
         VStack(alignment: .leading, spacing: Spacing.sm) {
             Button {
-                model?.setGroupSelected(type, !allOn)
+                model.setGroupSelected(type, !allOn)
             } label: {
                 HStack(spacing: Spacing.sm) {
                     Text(Format.localizedFormat(type.groupTitleKey, locale: locale, Int64(rows.count)))
@@ -191,7 +191,7 @@ struct ImportFromYouTubeScreen: View {
 
     private func row(_ candidate: ImportCandidate, isSelected: Bool) -> some View {
         Button {
-            model?.toggle(candidate.youtubeId)
+            model.toggle(candidate.youtubeId)
         } label: {
             HStack(spacing: Spacing.md(widthClass)) {
                 RemoteImage(url: candidate.thumbnailUrl.flatMap(URL.init(string:)))
@@ -225,7 +225,7 @@ struct ImportFromYouTubeScreen: View {
     @ViewBuilder
     private func importButton(_ selected: Set<String>) -> some View {
         Button {
-            model?.importTapped()
+            model.importTapped()
         } label: {
             Text(Format.localizedFormat("import_youtube_button_import", locale: locale,
                                         Int64(selected.count)))
@@ -312,7 +312,7 @@ struct ImportFromYouTubeScreen: View {
     private func errorArm(_ messageKey: String, _ retryable: Bool) -> some View {
         let message = String(localized: String.LocalizationValue(messageKey))
         if retryable {
-            ErrorStateView(message: message) { model?.retry() }
+            ErrorStateView(message: message) { model.retry() }
         } else {
             // No retry: an empty YouTube library is not a failure, and a button that re-runs three
             // empty paginators is an invitation to keep tapping it.
@@ -325,7 +325,7 @@ struct ImportFromYouTubeScreen: View {
     @ViewBuilder
     private var revokeSection: some View {
         Divider()
-        if model?.didRevoke == true {
+        if model.didRevoke {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text(String(localized: "import_revoke_done"))
                     .font(TypeScale.body(widthClass))
@@ -340,7 +340,7 @@ struct ImportFromYouTubeScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             Button(role: .destructive) {
-                model?.revoke()
+                model.revoke()
             } label: {
                 HStack(spacing: Spacing.md(widthClass)) {
                     Image(systemName: "key.slash")

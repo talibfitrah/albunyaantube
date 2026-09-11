@@ -115,8 +115,7 @@ struct MySubmissionsScreen: View {
         }
     }
 
-    // Part B gate (stage 1 B1 / CF-B-17): no autofill and no scroll trigger — this list never pages
-    // (see `MySubmissionsViewModel.pageSize`), so CLAUDE.md's rule has nothing to trigger.
+    // No pagination: this list never pages (`MySubmissionsViewModel.pageSize`).
 }
 
 /// One submission (`item_my_submission.xml` + `MySubmissionAdapter.bind`). The kebab is present only

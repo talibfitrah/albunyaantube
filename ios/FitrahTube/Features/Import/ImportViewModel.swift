@@ -25,7 +25,7 @@ import Observation
     private(set) var didRevoke = false
 
     /// Visible (not `private`) only so tests can `await model.job?.value` — the same rationale as
-    /// `SuggestContentViewModel.searchTask`.
+    /// `SuggestContentViewModel.searchTask`. The token lives in the SDK, never here (Part B gate).
     private(set) var job: Task<Void, Never>?
     /// The single-run guard itself. A `Task`'s own `isCancelled`/completion is not enough: the
     /// Review → Importing transition happens across a suspension, so two taps in the same frame
@@ -61,8 +61,8 @@ import Observation
         }
     }
 
-    /// `:161-163`. Identical to `start()`: the flow has no resumable midpoint, because the token is
-    /// in memory only and the three paginators are cheap to redo.
+    /// `:161-163`. Identical to `start()`: the flow has no resumable midpoint — the SDK holds the
+    /// token and the three paginators are cheap to redo.
     func retry() { start() }
 
     private func authorizeAndFetch() async {
@@ -170,6 +170,20 @@ import Observation
             guard !Task.isCancelled else { return }
             state = .done(summary)
         }
+    }
+
+    /// The session ended (stage 9 substitute review): whatever run is in flight belongs to the
+    /// account that is gone, and the container-owned screen must not show that account's
+    /// `.importing`/`.done` frame to the next one. `revoke()` minus the forget — the SDK session
+    /// is the provider sign-out's to clear, on the same teardown.
+    func reset() {
+        job?.cancel()
+        job = nil
+        generation += 1
+        isRunning = false
+        isCautionPresented = false
+        state = .idle
+        didRevoke = false
     }
 
     // MARK: - Revoke (ruling F9)

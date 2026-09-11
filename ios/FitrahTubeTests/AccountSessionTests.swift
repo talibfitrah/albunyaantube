@@ -22,6 +22,7 @@ struct AccountSessionTests {
     /// A `UserScoped` spy that records the request count at the moment it was scoped — which is what
     /// makes "stores first, request second" an assertion instead of a hope.
     @MainActor final class SpyStore: UserScoped {
+        func reload() {}
         private let requestCount: () -> Int
         private(set) var scopes: [(uid: String, requestsSoFar: Int)] = []
         var currentUserId: String = "" {
@@ -895,7 +896,10 @@ struct AccountSessionTests {
 
         session.signOut()
 
-        #expect(google.signOutCount == 1,
+        // AT LEAST once. Since the Part B gate the listener arm and `dropSession()` share one
+        // `tearDown()`, and a drop the listener already performed costs one extra idempotent
+        // call — one spelling of the teardown is worth more than an exact count here.
+        #expect(google.signOutCount >= 1,
                 "the Google refresh token outlived a sign-out the Firebase listener got to first")
     }
 

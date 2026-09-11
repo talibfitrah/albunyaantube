@@ -199,8 +199,10 @@ nonisolated enum ImportProvenance {
                 try favorites.importVideo(
                     id: result.youtubeId,
                     title: content?.title ?? candidate?.title ?? result.youtubeId,
-                    // NEVER `candidate.channelId` — that is a "UC…" id, not a name.
-                    channelName: content?.channelTitle ?? "",
+                    // Cubic round 1 P2: the same never-blank chain as the PENDING arm — the
+                    // registry's uploader title first, the candidate's, then the id as last resort.
+                    channelName: content?.channelTitle ?? candidate?.channelTitle
+                        ?? candidate?.channelId ?? result.youtubeId,
                     thumbnailUrl: content?.thumbnailUrl ?? candidate?.thumbnailUrl,
                     durationSeconds: content?.durationSeconds ?? 0,
                     approvalStatus: ImportProvenance.approved, at: at)

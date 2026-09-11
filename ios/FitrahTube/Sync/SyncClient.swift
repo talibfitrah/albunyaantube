@@ -12,7 +12,7 @@ import InnerTubeKit
 nonisolated protocol SyncTransporting: Sendable {
     func pull(cursors: [String: Int], ids: [String: String?]) async throws -> SyncResponse
     func put(_ type: SyncEntityType, id: String, body: Data) async throws -> (status: Int, dto: SyncRowEcho?)
-    func delete(_ type: SyncEntityType, id: String) async throws -> Int
+    func delete(_ type: SyncEntityType, id: String) async throws -> (status: Int, dto: SyncRowEcho?)
 }
 
 /// The ARCHIVE ECHO (SYNC-ECHO-01): a PUT that answers `deleted: true` means the server's
@@ -68,9 +68,14 @@ nonisolated struct SyncClient: SyncTransporting, Sendable {
     }
 
     /// `DELETE api/account/{type}/{id}`. The status is returned rather than thrown on: 404 is
-    /// `.ok` (an idempotent tombstone) and only `SyncDecisions.push` holds that table.
-    func delete(_ type: SyncEntityType, id: String) async throws -> Int {
-        try await send("DELETE", url(type, id)).status
+    /// `.ok` (an idempotent tombstone) and only `SyncDecisions.push` holds that table. The echo IS
+    /// read (Part B gate, Cubic round 1 P1 — Task 22's "a tombstone needs nothing from the body"
+    /// was wrong): its `updatedAt` is the server's tombstone time, and a row cleared without it
+    /// keeps its LAST PUT's stamp, so a re-add made before the next pull is wiped by the server's
+    /// own tombstone (`.applyTombstone`, older local stamp). Android stamps it (`SyncManager.kt:440`).
+    func delete(_ type: SyncEntityType, id: String) async throws -> (status: Int, dto: SyncRowEcho?) {
+        let response = try await send("DELETE", url(type, id))
+        return (response.status, try? JSONDecoder().decode(SyncRowEcho.self, from: response.body))
     }
 
     // MARK: - Cursor ids

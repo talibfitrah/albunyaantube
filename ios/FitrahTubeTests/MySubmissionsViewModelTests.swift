@@ -30,11 +30,9 @@ struct MySubmissionsViewModelTests {
         """
     }
 
-    private static func page(_ ids: [String], nextCursor: String? = nil) -> String {
-        let cursor = nextCursor.map { "\"\($0)\"" } ?? "null"
-        return """
-        {"data":[\(ids.map { row(id: $0) }.joined(separator: ","))],
-         "pageInfo":{"nextCursor":\(cursor)}}
+    private static func page(_ ids: [String]) -> String {
+        """
+        {"data":[\(ids.map { row(id: $0) }.joined(separator: ","))],"pageInfo":{"nextCursor":null}}
         """
     }
 
@@ -141,10 +139,6 @@ struct MySubmissionsViewModelTests {
         #expect(await model.updateNote(row, note: "again") == String(localized: "my_submissions_already_reviewed"))
         #expect(transport.sent.count == 5, "the 409 re-reads too")
     }
-
-    // Part B gate (stage 1 B1 / CF-B-17): the three pagination pins went with the engine. This
-    // list never pages — the all-statuses backend branch mints no cursor — so `limit` is its whole
-    // reach, which `aPageWithRows…` and the query assertion below pin.
 
     // MARK: - Refresh
 

@@ -25,10 +25,10 @@ nonisolated enum YouTubeAuthorizerError: Error, Sendable, Equatable {
     /// An OAuth 2.0 access token, WITHOUT the "Bearer " prefix. It is a credential for
     /// `googleapis.com` only: it never reaches the FitrahTube backend and is never logged.
     func authorize() async throws -> String
-    /// F9: forget the token LOCALLY — the in-memory copy and the SDK's Keychain session, which is
-    /// where the token actually lives (Part B gate, stage 4 S7: nothing is cached above the SDK
-    /// any more, so a `forget()` that cleared only a field forgot nothing and the next tap re-minted
-    /// with no consent screen under copy that said access was gone). NEVER `GIDSignIn.disconnect()`
+    /// F9: forget the token LOCALLY — the SDK's Keychain session, which is where the token lives
+    /// (Part B gate, stage 4 S7: nothing is cached above the SDK, so a `forget()` that cleared only
+    /// a field forgot nothing and the next tap re-minted with no consent screen under copy that
+    /// said access was gone). NEVER `GIDSignIn.disconnect()`
     /// — that revokes every granted scope server-side and signs the Google user out of the app
     /// (ruling C6's rule, one scope over). The grant itself is the user's to revoke on Google's
     /// account-permissions page, which the confirmation links to.

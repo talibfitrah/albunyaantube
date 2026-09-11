@@ -2,7 +2,6 @@ import FitrahAPI
 import Foundation
 import InnerTubeKit
 import SwiftData
-import Synchronization
 import Testing
 @testable import FitrahTube
 

@@ -31,11 +31,9 @@ struct ApprovalsClientTests {
         """
     }
 
-    private static func page(_ rows: [String], key: String = "data", nextCursor: String? = nil) -> String {
-        let cursor = nextCursor.map { "\"\($0)\"" } ?? "null"
-        return """
-        {"\(key)":[\(rows.joined(separator: ","))],
-         "pageInfo":{"nextCursor":\(cursor),"hasNext":\(nextCursor == nil ? "false" : "true")}}
+    private static func page(_ rows: [String], key: String = "data") -> String {
+        """
+        {"\(key)":[\(rows.joined(separator: ","))],"pageInfo":{"nextCursor":null,"hasNext":false}}
         """
     }
 
@@ -58,13 +56,6 @@ struct ApprovalsClientTests {
 
         let wrongKey = try await client.mySubmissions(limit: 50)
         #expect(wrongKey.items.isEmpty, "an `items`-keyed page is the shape trap, not an error")
-    }
-
-    @Test func nextCursorComesFromPageInfo() async throws {
-        let (client, _) = self.client([.json(200, Self.page([Self.row(id: "s1")], nextCursor: "cur-2")),
-                                       .json(200, Self.page([Self.row(id: "s2")]))])
-        #expect(try await client.mySubmissions(limit: 50).nextCursor == "cur-2")
-        #expect(try await client.mySubmissions(limit: 50).nextCursor == nil)
     }
 
     // MARK: - Trap 2: the Firestore Timestamp

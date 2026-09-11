@@ -136,12 +136,6 @@ actor SyncManager {
         await pushDirtyLocked(uid)
     }
 
-    /// Only tests call this directly; production pulls through `bind` and `syncNow`. Kept as the
-    /// seam that lets the pull loop be pinned without a merge in front of it.
-    func pullAll(uid: String) async {
-        await acquire(); defer { release() }
-        _ = await pullAllLocked(uid)
-    }
 
     /// The foreground trigger: pull, then push — the push only if the pull did not end on a
     /// terminal verdict or an identity change (stage 5 I5).
@@ -152,9 +146,16 @@ actor SyncManager {
     }
 
     #if DEBUG
-    /// Test seam, the `@TaskLocal`s' sibling: a suite that pins the pull loop or a single drain
-    /// must not have to script a whole merge first to satisfy the identity fence.
+    /// Test seams, the `@TaskLocal`s' siblings: a suite that pins the pull loop or a single drain
+    /// must not have to script a whole merge first to satisfy the identity fence. `pullAll` is
+    /// test-only (production pulls through `bind` and `syncNow`) and takes the fence itself.
     func assumeBound(uid: String) { boundUid = uid; epoch += 1 }
+
+    func pullAll(uid: String) async {
+        assumeBound(uid: uid)
+        await acquire(); defer { release() }
+        _ = await pullAllLocked(uid)
+    }
     #endif
 
     // MARK: - The exclusion itself
@@ -175,6 +176,11 @@ actor SyncManager {
     }
 
     private func unbindLocked() {
+        // The fence closes here too (stage 9 substitute review): a TERMINAL pull reaches this
+        // without going through `unbind()`, and the identity must be gone before the session's own
+        // unbind arrives — not one wasted PUT later.
+        boundUid = nil
+        epoch += 1
         // FIRST, and under the exclusion: a retry queued while the user was still signed in
         // otherwise fires after sign-out and pushes the previous account's dirty rows under
         // whatever bearer is current (`SyncManager.kt:614-628`, cubic R7 P2 / R8 P2).
@@ -425,19 +431,20 @@ actor SyncManager {
                 note("push body could not be encoded for \(type.rawValue)/\(row.id)")
                 return .permanentFailure
             case .tombstone:
-                let status = try await client.delete(type, id: row.id)
-                // `hasBody: true` deliberately: this endpoint answers with the row DTO, but
-                // `SyncTransporting.delete` hands back only the status (Task 22, ruling F1) because
-                // a tombstone needs nothing from the body. Passing `false` would classify every
-                // successful DELETE as transient and re-push it forever.
+                let (status, echo) = try await client.delete(type, id: row.id)
+                // `hasBody: true` deliberately: a 404 (already gone server-side) is `.ok` with no
+                // body, and `false` would classify it as transient and re-push it forever.
                 let outcome = SyncDecisions.push(status: status, hasBody: true)
                 // The fence again, after the await: the echo of a request signed under the previous
                 // identity must not clear a flag on rows the new identity now owns.
                 guard epoch == run else { return .authFailed }
                 if outcome == .ok {
+                    // Cubic round 1 P1: the server's tombstone time is stamped, so a later re-add
+                    // carries a stamp the pull's tombstone cannot beat. A 404 has no echo and no
+                    // server tombstone to lose to: the stamp stays.
                     note(await MainActor.run {
                         SyncStore.clearDirty(container, uid: uid, type: type, id: row.id,
-                                             serverUpdatedAt: nil, pushedRemoved: row.isRemoved)
+                                             serverUpdatedAt: echo?.updatedAt, pushedRemoved: row.isRemoved)
                     })
                 }
                 return outcome
@@ -446,8 +453,17 @@ actor SyncManager {
                 if (200...299).contains(status) && echo == nil {
                     note("push \(type.rawValue)/\(row.id) answered \(status) with no decodable body")
                 }
-                let outcome = SyncDecisions.push(status: status, hasBody: echo != nil)
                 guard epoch == run else { return .authFailed }
+                // Cubic round 1 P3: the table's 404 arm is the DELETE's ("already gone"). A PUT
+                // that 404s has no echo to clear the row with and would be re-sent on every drain;
+                // the backend's PUT is an upsert, so this is a divergence with no live trigger —
+                // classified permanent (dirt dropped, said out loud) rather than stamped with the
+                // device clock (gate wave-2 W12).
+                if status == 404 {
+                    note("push \(type.rawValue)/\(row.id) answered 404 to a PUT; treating as permanent")
+                    return .permanentFailure
+                }
+                let outcome = SyncDecisions.push(status: status, hasBody: echo != nil)
                 if outcome == .ok, let echo {
                     note(await MainActor.run {
                         // SYNC-ECHO-01: `deleted: true` on a PUT means the server's projection
@@ -458,6 +474,8 @@ actor SyncManager {
                             : SyncStore.clearDirty(container, uid: uid, type: type, id: row.id,
                                                    serverUpdatedAt: echo.updatedAt, pushedRemoved: row.isRemoved)
                     })
+                    // Cubic round 1 P2: an archive tombstone changes what the stores render.
+                    if echo.deleted { await notifyWrite() }
                 }
                 return outcome
             }
@@ -540,10 +558,11 @@ enum SyncStore {
         enum Payload: Sendable { case tombstone, body(Data), encodeFailed }
         let id: String
         let payload: Payload
-        /// The `isRemoved` this push carries (stage 3 I-2). The only local edit these rows take
-        /// is a toggle, which always flips this bit — so a row whose bit differs when the echo
-        /// lands was edited DURING the round trip, and clearing its dirt would lose that edit.
-        let isRemoved: Bool
+        /// The `isRemoved` this push carries (stage 3 I-2) — the payload already encodes it. The
+        /// only local edit these rows take is a toggle, which always flips this bit, so a row whose
+        /// bit differs when the echo lands was edited DURING the round trip, and clearing its dirt
+        /// would lose that edit.
+        var isRemoved: Bool { if case .tombstone = payload { true } else { false } }
     }
 
     /// The types that minted a new cursor this page, and only those.
@@ -595,14 +614,24 @@ enum SyncStore {
         return save(context, "tag anon rows")
     }
 
+    /// Cubic round 1 P2: an ordinary sign-out KEEPS the account's rows, and the stores accept
+    /// guest writes under `""` — so a guest toggle of an id the account already holds is a
+    /// `#Unique` collision the moment it is retagged. The account's row is authoritative (it is
+    /// the one the server knows); the guest duplicate is dropped. Android has the same hole.
     private static func tagAnonRows(_ context: ModelContext, to uid: String) {
         let anon = ""
         for row in (try? context.fetch(FetchDescriptor<SubscribedChannel>(
-            predicate: #Predicate { $0.userId == anon }))) ?? [] { row.userId = uid }
+            predicate: #Predicate { $0.userId == anon }))) ?? [] {
+            if (try? one(context, uid: uid, channelId: row.channelId)) != nil { context.delete(row) } else { row.userId = uid }
+        }
         for row in (try? context.fetch(FetchDescriptor<SavedPlaylist>(
-            predicate: #Predicate { $0.userId == anon }))) ?? [] { row.userId = uid }
+            predicate: #Predicate { $0.userId == anon }))) ?? [] {
+            if (try? one(context, uid: uid, playlistId: row.playlistId)) != nil { context.delete(row) } else { row.userId = uid }
+        }
         for row in (try? context.fetch(FetchDescriptor<FavoriteVideo>(
-            predicate: #Predicate { $0.userId == anon }))) ?? [] { row.userId = uid }
+            predicate: #Predicate { $0.userId == anon }))) ?? [] {
+            if (try? one(context, uid: uid, videoId: row.videoId)) != nil { context.delete(row) } else { row.userId = uid }
+        }
     }
 
     // MARK: - The account switch
@@ -806,7 +835,7 @@ enum SyncStore {
                 if row.channelUrl.isEmpty { row.channelUrl = SyncURL.channel(row.channelId) }
                 pending.append(PendingPush(id: row.channelId, payload: payload(row.isRemoved) {
                     try SyncCodec.body(for: row)
-                }, isRemoved: row.isRemoved))
+                }))
             }
         case .playlists:
             let rows = (try? context.fetch(FetchDescriptor<SavedPlaylist>(
@@ -816,7 +845,7 @@ enum SyncStore {
                 if row.playlistUrl.isEmpty { row.playlistUrl = SyncURL.playlist(row.playlistId) }
                 pending.append(PendingPush(id: row.playlistId, payload: payload(row.isRemoved) {
                     try SyncCodec.body(for: row)
-                }, isRemoved: row.isRemoved))
+                }))
             }
         case .favorites:
             let rows = (try? context.fetch(FetchDescriptor<FavoriteVideo>(
@@ -825,7 +854,7 @@ enum SyncStore {
             for row in rows {
                 pending.append(PendingPush(id: row.videoId, payload: payload(row.isRemoved) {
                     try SyncCodec.body(for: row)
-                }, isRemoved: row.isRemoved))
+                }))
             }
         }
         return (pending, save(context, "dirty rows"))
@@ -850,13 +879,13 @@ enum SyncStore {
     /// that makes the guard reject every later server update to that row, permanently (gate wave-2
     /// W12, `FavoritesStore.toggle`).
     static func clearDirty(_ container: ModelContainer, uid: String, type: SyncEntityType,
-                           id: String, serverUpdatedAt: Int?, pushedRemoved: Bool? = nil) -> String? {
+                           id: String, serverUpdatedAt: Int?, pushedRemoved: Bool) -> String? {
         write(container, uid: uid, type: type, id: id, "clear dirty") { row in
             // Stage 3 I-2 / Codex 5: the echo is for the bytes that were pushed. A toggle that
             // landed while they were on the wire flipped `isRemoved` and re-dirtied the row; that
             // newer edit keeps its dirt and goes out with the next drain. (Two flips inside one
             // round trip — removed and resurrected — still read as "unchanged" here; CF.)
-            if let pushedRemoved, row.isRemoved != pushedRemoved { return }
+            if row.isRemoved != pushedRemoved { return }
             row.dirty = false
             if let serverUpdatedAt, row.updatedAt < SyncCodec.date(millis: serverUpdatedAt) {
                 row.updatedAt = SyncCodec.date(millis: serverUpdatedAt)

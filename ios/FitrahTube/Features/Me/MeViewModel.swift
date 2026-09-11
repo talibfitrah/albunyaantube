@@ -60,10 +60,9 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
         }
     }
 
-    // Part B gate (stage 1 B2 / ruling b): `landed` — the Part A set of rows that had a destination
-    // yet — was DELETED once every case had one. RULING 28 is enforced by the compiler now: a kebab
-    // case with no `Route` is a compile error in `MeSignedInView.kebab`'s exhaustive switch, and a
-    // `Route` with no screen is one in `MainShellView.destination(for:)`.
+    // RULING 28 is enforced by the compiler: a kebab case with no `Route` is a compile error in
+    // `MeSignedInView.kebab`'s exhaustive switch, and a `Route` with no screen is one in
+    // `MainShellView.destination(for:)`.
 }
 
 /// Ruling C5's signed-in Me screen, over LOCAL stores only. No feed (Tasks 14-16), no History
