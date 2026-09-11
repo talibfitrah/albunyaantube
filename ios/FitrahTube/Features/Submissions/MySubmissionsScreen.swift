@@ -19,9 +19,6 @@ struct MySubmissionsScreen: View {
     @State private var editing: Submission?
     @State private var confirmingDelete: Submission?
     @State private var suggesting = false
-    @State private var paginationGuard = PaginationGuard()
-    /// Geometry *state*, not an event (gate B1-C1), exactly as `ContentListView` keeps it.
-    @State private var contentFits = false
 
     var body: some View {
         ScrollView {
@@ -29,16 +26,8 @@ struct MySubmissionsScreen: View {
                 .padding(Spacing.md(widthClass))
         }
         .refreshable {
-            paginationGuard.reset()
             if let message = await model?.refresh() { banner = BannerMessage(text: message) }
         }
-        .onContentFits { fits in
-            contentFits = fits
-            triggerAutoFill()
-        }
-        // The companion every autofill site pairs with `onContentFits`: re-arm after each completed
-        // load rather than relying on the fit margin alone changing.
-        .onChange(of: model?.state) { _, _ in triggerAutoFill() }
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(String(localized: "my_submissions_title"))
         .navigationBarTitleDisplayMode(.inline)
@@ -94,7 +83,6 @@ struct MySubmissionsScreen: View {
         .task {
             let model = self.model ?? MySubmissionsViewModel(client: container.approvals)
             self.model = model
-            paginationGuard.reset()
             if let message = await model.refresh() { banner = BannerMessage(text: message) }
         }
     }
@@ -118,46 +106,17 @@ struct MySubmissionsScreen: View {
             }
         case .loaded(let rows):
             LazyVStack(spacing: Spacing.md(widthClass)) {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                ForEach(rows) { row in
                     SubmissionRow(submission: row, locale: locale,
                                   onEdit: { editing = row },
                                   onDelete: { confirmingDelete = row })
-                        // Fix round 1 / I2: the scroll-driven half. `PaginationGuard`'s guard 1
-                        // refuses to autofill on a compact width, so on a PHONE the autofill below
-                        // never fires and this was a list with no way to reach page two.
-                        // `ContentListView`'s exact threshold; the once-per-page guard lives in
-                        // `loadMore`, so a frame that appears all five costs one page.
-                        .onAppear { Task { await model?.rowAppeared(at: index) } }
-                }
-                if model?.isLoadingMore == true {
-                    ProgressView()
-                        .tint(.brand)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.md(widthClass))
-                        .accessibilityLabel(String(localized: "loading_more"))
                 }
             }
         }
     }
 
-    /// CLAUDE.md's pagination rule: a page whose rows already fit the viewport never scrolls, so the
-    /// six `PaginationGuard` checks run on every layout delta instead of a scroll listener. Same
-    /// commit discipline as `ContentListView.triggerAutoFill` — a rejection still writes the guard
-    /// back (guards 2 and 6 renew the budget), only the attempt increment waits for a fetch to start.
-    private func triggerAutoFill() {
-        guard let model, !model.isLoadingMore, case .loaded(let rows) = model.state else { return }
-        var attempt = paginationGuard
-        guard attempt.shouldAutoLoad(widthClass: widthClass, hasMore: model.hasMore,
-                                     paginationError: model.paginationError, contentFits: contentFits,
-                                     itemCount: rows.count) else {
-            paginationGuard = attempt
-            return
-        }
-        Task {
-            let started = await model.loadMore()
-            if started, attempt.generation == paginationGuard.generation { paginationGuard = attempt }
-        }
-    }
+    // Part B gate (stage 1 B1 / CF-B-17): no autofill and no scroll trigger — this list never pages
+    // (see `MySubmissionsViewModel.pageSize`), so CLAUDE.md's rule has nothing to trigger.
 }
 
 /// One submission (`item_my_submission.xml` + `MySubmissionAdapter.bind`). The kebab is present only

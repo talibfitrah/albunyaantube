@@ -28,6 +28,32 @@ struct RouterTests {
         #expect(router.paths[.home] == [])
     }
 
+    /// Part B gate (Codex 11): an ordinary sign-out drops every tab whose path holds an
+    /// account-only screen — the whole tab, because everything above it was reached from it — and
+    /// leaves a guest's browsing stack alone.
+    @Test func droppingAccountRoutesClearsOnlyTheTabsThatHoldOne() {
+        let router = Router()
+        router.selectedTab = .me
+        router.push(.mySubmissions)
+        router.push(.suggestContent)
+        router.selectedTab = .home
+        router.push(.search)
+        router.selectedTab = .channels
+        router.push(.categories)
+        router.push(.profile)
+
+        router.dropAccountRoutes()
+
+        #expect(router.paths[.me] == [])
+        #expect(router.paths[.channels] == [], "the whole tab goes, not just the account screen")
+        #expect(router.paths[.home] == [.search], "a guest's browsing stack is untouched")
+    }
+
+    @Test func theAccountOnlyRoutesAreExactlyTheFourKebabDestinations() {
+        #expect([Route.profile, .mySubmissions, .suggestContent, .importFromYouTube].allSatisfy { $0.requiresAccount })
+        #expect([Route.signIn, .search, .favorites, .settings, .offline].allSatisfy { !$0.requiresAccount })
+    }
+
     @Test func popToRootClearsOnlyThatTabsPath() {
         let router = Router()
         router.push(.search)

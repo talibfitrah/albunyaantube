@@ -81,6 +81,13 @@ nonisolated enum ReselectAction: Equatable {
         paths[tab] = []
     }
 
+    /// Part B gate (Codex 11): every tab whose path holds an account-only screen goes back to its
+    /// root — the whole tab, not a splice, because everything ABOVE such a screen was reached from
+    /// it. Tabs with no account screen keep their stacks: a guest browsing a channel loses nothing.
+    func dropAccountRoutes() {
+        for (tab, path) in paths where path.contains(where: \.requiresAccount) { paths[tab] = [] }
+    }
+
     func reselect(_ tab: Tab) -> ReselectAction {
         if paths[tab]?.isEmpty == false {
             popToRoot(tab)

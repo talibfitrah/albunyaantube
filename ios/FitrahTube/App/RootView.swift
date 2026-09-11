@@ -61,6 +61,13 @@ struct RootView: View {
             // per-user store, so it must outlive every screen, which is what makes the root the
             // only correct place for it.
             .task { await container.session.start() }
+            // Part B gate (Codex 11): an ORDINARY sign-out — Settings, the Me kebab, a Firebase
+            // force sign-out — pops the account screens off every tab, the way the terminal
+            // alert's `dropToGuest()` already pops everything. View-layer glue, like the foreground
+            // and connectivity hooks (CF-A-12); the decision itself is `Router.dropAccountRoutes`.
+            .onChange(of: container.session.user == nil) { _, signedOut in
+                if signedOut { router.dropAccountRoutes() }
+            }
             // `alert` is ADVISORY on the outcome (Task 8) — the caller is what acts on it, and this
             // is the caller. `initial: true` so a launch that already resolves to a blocked account
             // drops the session on the first pass, not on the next change.

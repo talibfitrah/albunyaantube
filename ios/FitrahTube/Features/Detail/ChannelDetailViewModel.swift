@@ -59,7 +59,10 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
     /// the app visibly does not honour. This is the second half of the state, rendered beside the
     /// button rather than instead of it: unsubscribing an import you did not mean to keep is a
     /// legitimate thing to do, and it stays one tap away.
-    private(set) var isAwaiting = false
+    /// Part B gate (stage 5 M5): COMPUTED off the store rather than snapshotted, so a background
+    /// pull that graduates the row (the store reloads on every sync write) flips the badge here
+    /// and on the Pending tab in the same observation.
+    var isAwaiting: Bool { subscriptions.awaitingItems.contains { $0.channelId == channelId } }
     /// The browse latch holds: Videos are the Atom feed, the screen shows `browse_degraded_notice`.
     private(set) var isDegraded = false
     /// RULING 14/15: the gate answered 410 -- terminal, no Retry.
@@ -75,7 +78,6 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
         self.browse = browse
         self.subscriptions = subscriptions
         self.isSubscribed = subscriptions.isSubscribed(channelId)
-        self.isAwaiting = subscriptions.awaitingItems.contains { $0.channelId == channelId }
     }
 
     var tabs: [ChannelTabKind] { ChannelTabKind.allCases }
@@ -271,13 +273,9 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
     /// The store is synchronous, so the flag is simply re-read after the toggle. Returns the
     /// message key to show on failure, nil on success.
     func toggleSubscribed() -> String? {
-        defer {
-            isSubscribed = subscriptions.isSubscribed(channelId)
-            // Both, from the one store, after the write: unsubscribing an awaiting import
-            // tombstones the row, which drops it out of `awaitingItems` too — so the badge must
-            // not outlive the subscription it explains.
-            isAwaiting = subscriptions.awaitingItems.contains { $0.channelId == channelId }
-        }
+        // Unsubscribing an awaiting import tombstones the row, which drops it out of
+        // `awaitingItems` too — so the badge (computed) cannot outlive the subscription it explains.
+        defer { isSubscribed = subscriptions.isSubscribed(channelId) }
         do {
             try subscriptions.toggle(id: channelId, name: header.name, avatarURL: header.avatarURL)
             return nil

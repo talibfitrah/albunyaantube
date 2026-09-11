@@ -142,7 +142,7 @@ struct AppContainerTests {
     /// rig's account screens need.
     @Test func theApprovalsClientIsSignedInProductionAndCannedInAFixture() async throws {
         let fixture = AppContainer.fake()
-        let page = try? await fixture.approvals.mySubmissions(status: nil, cursor: nil, limit: 100)
+        let page = try? await fixture.approvals.mySubmissions(limit: 100)
         #expect(page == nil, "a fixture must answer the canned 503, not a decoded account record")
         let me = try await fixture.account.me()
         #expect(me.uid == "fake-uid", "…and must leave the four-slot `/me` queue intact")

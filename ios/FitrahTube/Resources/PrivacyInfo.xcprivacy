@@ -20,6 +20,9 @@
      - Other data types -- date of birth. It is not contact info at all, and Apple lists no
        birth-date type, so it lands here.
      - User ID -- the Firebase uid itself, which every profile row is keyed by.
+     - Other user content (Part B gate) -- the YouTube subscription / playlist / liked-video ids
+       and titles an import sends to `POST /api/account/import/resolve`, and the free-text
+       submitter notes on suggestions; both are stored server-side under the uid.
 
   Required-reason APIs actually used:
   - UserDefaults (CA92.1) — settings, filters, search history, onboarding flag; read and written
@@ -40,6 +43,18 @@
             <string>NSPrivacyCollectedDataTypeDeviceID</string>
             <key>NSPrivacyCollectedDataTypeLinked</key>
             <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
             <key>NSPrivacyCollectedDataTypeTracking</key>
             <false/>
             <key>NSPrivacyCollectedDataTypePurposes</key>

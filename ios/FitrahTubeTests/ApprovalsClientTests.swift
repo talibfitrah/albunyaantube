@@ -49,22 +49,22 @@ struct ApprovalsClientTests {
         let (client, _) = self.client([.json(200, Self.page([Self.row(id: "s1")])),
                                        .json(200, Self.page([Self.row(id: "s1")], key: "items"))])
 
-        let real = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+        let real = try await client.mySubmissions(limit: 50)
         #expect(real.items.map(\.id) == ["s1"])
         #expect(real.items.first?.title == "Lecture")
         #expect(real.items.first?.thumbnailUrl == "https://img.test/t.jpg")
         #expect(real.items.first?.submitterNote == "why")
         #expect(real.items.first?.type == .videos)
 
-        let wrongKey = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+        let wrongKey = try await client.mySubmissions(limit: 50)
         #expect(wrongKey.items.isEmpty, "an `items`-keyed page is the shape trap, not an error")
     }
 
     @Test func nextCursorComesFromPageInfo() async throws {
         let (client, _) = self.client([.json(200, Self.page([Self.row(id: "s1")], nextCursor: "cur-2")),
                                        .json(200, Self.page([Self.row(id: "s2")]))])
-        #expect(try await client.mySubmissions(status: nil, cursor: nil, limit: 50).nextCursor == "cur-2")
-        #expect(try await client.mySubmissions(status: nil, cursor: nil, limit: 50).nextCursor == nil)
+        #expect(try await client.mySubmissions(limit: 50).nextCursor == "cur-2")
+        #expect(try await client.mySubmissions(limit: 50).nextCursor == nil)
     }
 
     // MARK: - Trap 2: the Firestore Timestamp
@@ -86,18 +86,18 @@ struct ApprovalsClientTests {
             .json(200, Self.page([Self.row(id: "junk", submittedAt: #""not-a-time""#)])),
         ])
 
-        let object = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+        let object = try await client.mySubmissions(limit: 50)
         #expect(object.items.first?.submittedAt == Date(timeIntervalSince1970: 1_756_800_000.5))
 
-        let number = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+        let number = try await client.mySubmissions(limit: 50)
         #expect(number.items.first?.submittedAt == Date(timeIntervalSince1970: 1_756_800))
 
-        let missing = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+        let missing = try await client.mySubmissions(limit: 50)
         #expect(missing.items.count == 1)
         #expect(missing.items.first?.submittedAt == nil)
 
         // Android skips a value it cannot read rather than failing the page; so does this.
-        let junk = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+        let junk = try await client.mySubmissions(limit: 50)
         #expect(junk.items.first?.submittedAt == nil)
         #expect(junk.items.count == 1, "one unreadable field must not cost the whole page")
     }
@@ -114,7 +114,7 @@ struct ApprovalsClientTests {
             .enumerated().map { Self.row(id: "s\($0.offset)", status: $0.element) }
         let (client, _) = self.client([.json(200, Self.page(rows))])
 
-        let page = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+        let page = try await client.mySubmissions(limit: 50)
         #expect(page.items.map(\.status) == [.pending, .approved, .rejected, .requestChanges, .pending])
         #expect(SubmissionStatus.allCases.map(\.rawValue)
             == ["PENDING", "APPROVED", "REJECTED", "REQUEST_CHANGES"])
@@ -130,7 +130,7 @@ struct ApprovalsClientTests {
         let (client, _) = self.client([.json(200, Self.page([Self.row(id: "s1", type: "CHANNEL"),
                                                              Self.row(id: "s2", type: "SHORT"),
                                                              Self.row(id: "s3", type: "PLAYLIST")]))])
-        let page = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+        let page = try await client.mySubmissions(limit: 50)
         #expect(page.items.map(\.id) == ["s1", "s3"])
         #expect(page.items.map(\.type) == [.channels, .playlists])
     }
@@ -161,7 +161,7 @@ struct ApprovalsClientTests {
             row("s4", "REQUEST_CHANGES", "null")
         ]))])
 
-        let page = try await client.mySubmissions(status: nil, cursor: nil, limit: 100)
+        let page = try await client.mySubmissions(limit: 100)
 
         #expect(page.items.map(\.reviewNotes)
             == ["Please add Arabic subtitles before resubmitting.", "an earlier bounce", "   ", nil])
@@ -171,18 +171,16 @@ struct ApprovalsClientTests {
 
     // MARK: - Request shapes
 
-    @Test func theListQueryCarriesStatusCursorAndLimit() async throws {
-        let (client, transport) = self.client([.json(200, Self.page([])), .json(200, Self.page([]))])
+    /// Android never paginates it and asks for every status (`MySubmissionsRepository.kt:26`):
+    /// `status` is OMITTED (an empty value 400s) and, since the Part B gate, so is the cursor the
+    /// all-statuses branch never mints (CF-B-17).
+    @Test func theListQueryCarriesOnlyTheLimit() async throws {
+        let (client, transport) = self.client([.json(200, Self.page([]))])
 
-        _ = try await client.mySubmissions(status: "PENDING", cursor: "cur-2", limit: 25)
-        let withAll = try #require(transport.sent.first?.url)
-        #expect(withAll.path() == "/api/admin/approvals/my-submissions")
-        #expect(withAll.query() == "status=PENDING&cursor=cur-2&limit=25")
-
-        // Android never paginates it and asks for every status (`MySubmissionsRepository.kt:26`);
-        // nil means "omit", never "send an empty value the backend would 400 on".
-        _ = try await client.mySubmissions(status: nil, cursor: nil, limit: 100)
-        #expect(transport.sent.last?.url.query() == "limit=100")
+        _ = try await client.mySubmissions(limit: 100)
+        let url = try #require(transport.sent.first?.url)
+        #expect(url.path() == "/api/admin/approvals/my-submissions")
+        #expect(url.query() == "limit=100")
     }
 
     @Test func updateNotePatchesTheSubmitterNotePathForTheRowsType() async throws {
@@ -241,7 +239,7 @@ struct ApprovalsClientTests {
     @Test func everyRequestCarriesTheDeviceIdAndNothingMintsItsOwnToken() async throws {
         let (client, transport) = self.client([.json(200, Self.page([])), .json(204, ""), .json(204, "")])
 
-        _ = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+        _ = try await client.mySubmissions(limit: 50)
         try await client.updateNote(type: .videos, id: "a", note: "n")
         try await client.deleteSubmission(type: .videos, id: "a")
 
@@ -287,7 +285,7 @@ struct ApprovalsClientTests {
             try await client.updateNote(type: .videos, id: "a", note: "n")
         }
         await #expect(throws: AccountError.network) {
-            _ = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+            _ = try await client.mySubmissions(limit: 50)
         }
     }
 
@@ -296,7 +294,7 @@ struct ApprovalsClientTests {
     @Test func aMalformedPageBodyFailsRatherThanRenderingAsEmpty() async throws {
         let (client, _) = self.client([.json(200, "<html>gateway</html>")])
         await #expect(throws: AccountError.unknown(status: 200)) {
-            _ = try await client.mySubmissions(status: nil, cursor: nil, limit: 50)
+            _ = try await client.mySubmissions(limit: 50)
         }
     }
 }

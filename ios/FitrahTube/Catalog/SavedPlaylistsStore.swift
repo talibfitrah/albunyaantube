@@ -241,7 +241,7 @@ extension FavoritesSchemaV5 {
         // unreviewed) rows are hidden from `items`; `isSaved` stays unfiltered.
         // Task 20 review M3, ruled: FAIL CLOSED — `== "APPROVED"`, not `!= "AWAITING"`. See
         // `SwiftDataSubscriptionsStore.refresh()` for the full note.
-        let approved = "APPROVED"
+        let approved = ImportProvenance.approved
         var descriptor = FetchDescriptor<SavedPlaylist>(
             predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus == approved },
             sortBy: [SortDescriptor(\.addedAt, order: .reverse)]

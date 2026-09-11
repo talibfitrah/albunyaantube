@@ -167,7 +167,6 @@ struct MeAwaitingTabsTests {
         try seedAwaiting(stores, channel: true, playlist: true, video: true)
         #expect(model.awaitingCount == 3)
         #expect(model.awaitingItems.map(\.id) == [Fixture.channel, Fixture.playlist, Fixture.video])
-        #expect(model.awaitingItems.map(\.kind) == [.channel, .playlist, .video])
     }
 
     /// `MeFragment.kt:355-358`: when the last pending item clears while the user is on that tab,
@@ -185,60 +184,40 @@ struct MeAwaitingTabsTests {
         #expect(model.selectedTab == .content, "an unreachable tab cannot stay selected")
     }
 
-    /// `MeFragment.kt:387-406`, and an HONEST accounting of what carries over.
-    ///
-    /// Android's `showTab` guards a same-adapter reassignment because `setAdapter` resets the
-    /// RecyclerView's scroll even when the adapter is unchanged — so a background sync landing the
-    /// FIRST pending item, which re-runs `renderTabs` and re-selects, jerked the user's feed to the
-    /// top. **SwiftUI has no adapter swap.** A repeated `select(tab:)` re-evaluates `body` and
-    /// produces an IDENTICAL tree, which scrolls nothing; the guard in `select(tab:)` saves an
-    /// invalidation and no more. Measured, not assumed: with the guard reverted this case still
-    /// passed, including the `withObservationTracking` arm below — the same-value write published
-    /// nothing either way.
-    ///
-    /// So what this pins is the observable contract: repeated same-value selection is stable, a
-    /// real switch lands, and exactly one notification separates them.
-    @Test func aSameTabReassignmentIsANoOp() async throws {
+    /// `MeFragment.kt:387-406`. Repeated same-value selection is stable and a real switch lands;
+    /// the one-line guard in `select(tab:)` saves an invalidation and pins nothing more (Task 30
+    /// measured it vacuous — SwiftUI has no adapter swap; Part B gate ruling a).
+    @Test func aSameTabReassignmentIsStableAndARealSwitchLands() async throws {
         let stores = try stores()
         let model = model(stores, session: try await session(signedIn: true), settings: settings())
         try seedAwaiting(stores)
 
-        // `Mutex`, not `@unchecked Sendable` + a bare var: `withObservationTracking`'s `onChange`
-        // is a `@Sendable` closure called from whatever isolation performed the mutation, which is
-        // `ScriptedTransport`'s reason for the same choice.
-        let notifications = Mutex(0)
-
-        model.select(tab: .pending)
-        withObservationTracking { _ = model.selectedTab } onChange: {
-            notifications.withLock { $0 += 1 }
-        }
         model.select(tab: .pending)
         model.select(tab: .pending)
         #expect(model.selectedTab == .pending, "repeated selection is stable")
-        #expect(notifications.withLock { $0 } == 0, "a same-value write publishes nothing")
-
         model.select(tab: .content)
-        #expect(notifications.withLock { $0 } == 1)
         #expect(model.selectedTab == .content)
-
-        // And back again — the switch is not one-way, and the Pending tab is still reachable for
-        // as long as the queue is non-empty.
         model.select(tab: .pending)
-        #expect(model.selectedTab == .pending)
+        #expect(model.selectedTab == .pending, "the Pending tab is still reachable while the queue is non-empty")
     }
 
-    /// `MeFragment.kt:51-59`, the four-row truth table verbatim. The screen-level empty state
-    /// speaks for the CONTENT tab only: someone whose only content is awaiting review has an empty
-    /// Content tab by definition, so on Pending it must stay out of the way — otherwise "nothing
-    /// here" covers the very list they opened the tab to see.
-    @Test func theEmptyStateNeverCoversThePendingTab() {
-        #expect(MeViewModel.shouldShowFeedEmptyState(feedIsEmpty: true, selectedTab: .content))
-        #expect(MeViewModel.shouldShowFeedEmptyState(feedIsEmpty: true, selectedTab: .pending) == false)
-        #expect(MeViewModel.shouldShowFeedEmptyState(feedIsEmpty: false, selectedTab: .content) == false)
-        #expect(MeViewModel.shouldShowFeedEmptyState(feedIsEmpty: false, selectedTab: .pending) == false)
-    }
+    /// Part B gate (stage 3 M-3). The fallback in `selectedTab` is a READ: with the stored value
+    /// left at `.pending`, the NEXT awaiting row — a later import, a background pull — switched the
+    /// user onto Pending with no tap. The screen calls `queueEmptied()` when the tab bar goes away.
+    @Test func theNextAwaitingRowDoesNotReselectPendingOnceTheQueueEmptied() async throws {
+        let stores = try stores()
+        let model = model(stores, session: try await session(signedIn: true), settings: settings())
+        try seedAwaiting(stores)
+        model.select(tab: .pending)
+        try stores.subscriptions.toggle(id: Fixture.channel, name: nil, avatarURL: nil)
+        #expect(model.showsTabs == false)
+        model.queueEmptied()
 
-    // MARK: - The one-time import offer
+        try seedAwaiting(stores, channel: false, playlist: true, video: false)
+
+        #expect(model.showsTabs)
+        #expect(model.selectedTab == .content, "a stale stored selection switched the user onto Pending")
+    }
 
     /// `MeFragment.kt:428-445`, and `:433` in particular: the flag is written BEFORE the dialog is
     /// presented, so a second arrival — a tab revisit, a relaunch while the first dialog is still

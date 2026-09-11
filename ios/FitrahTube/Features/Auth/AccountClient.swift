@@ -69,8 +69,8 @@ nonisolated enum AccountError: Error, Equatable {
 /// transport's envelope peek, 4 KiB for an error body — because the two have different budgets.
 nonisolated enum ApiErrorEnvelope {
     /// `MAX_ERROR_BODY_BYTES` (`AccountRepositoryImpl.kt:259`): a misbehaving server returning a
-    /// multi-MB error body must not be read whole. One constant, because both hand-written clients
-    /// peek with it (`AccountClient`, `ApprovalsClient`).
+    /// multi-MB error body must not be read whole. One constant; `retryAfterSeconds` below is the
+    /// other peek that reads it, and it is what the Part B clients call.
     static let maxErrorBodyBytes = 4096
 
     /// The 429 shape, spelled ONCE (R9-P3 #17's rule applied to the second client that needs it):

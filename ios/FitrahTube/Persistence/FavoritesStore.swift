@@ -189,7 +189,7 @@ import SwiftData
 
     private func refresh() {
         let uid = currentUserId
-        let approved = "APPROVED"
+        let approved = ImportProvenance.approved
         var descriptor = FetchDescriptor<FavoriteVideo>(
             predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus == approved },
             sortBy: [SortDescriptor(\.addedAt, order: .reverse)]

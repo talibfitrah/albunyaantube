@@ -142,92 +142,9 @@ struct MySubmissionsViewModelTests {
         #expect(transport.sent.count == 5, "the 409 re-reads too")
     }
 
-    // MARK: - Pagination
-
-    /// CLAUDE.md's rule: a page whose rows already fit the viewport never scrolls, so the six
-    /// `PaginationGuard` checks run instead of a scroll listener. Drives the same loop
-    /// `MySubmissionsScreen.triggerAutoFill` runs, with `contentFits: true` throughout.
-    @Test func theLoadedRowsFittingTheScreenKeepPagingUntilTheCursorRunsOut() async {
-        let (model, transport) = self.model([.json(200, Self.page(["s1"], nextCursor: "c2")),
-                                             .json(200, Self.page(["s2"], nextCursor: "c3")),
-                                             .json(200, Self.page(["s3"]))])
-        await model.refresh()
-        #expect(model.hasMore)
-
-        var paginationGuard = PaginationGuard()
-        var rounds = 0
-        while model.hasMore, rounds < 10 {
-            rounds += 1
-            var attempt = paginationGuard
-            guard attempt.shouldAutoLoad(widthClass: .regular, hasMore: model.hasMore,
-                                         paginationError: model.paginationError, contentFits: true,
-                                         itemCount: ids(model).count) else {
-                paginationGuard = attempt
-                break
-            }
-            _ = await model.loadMore()
-            paginationGuard = attempt
-        }
-
-        #expect(ids(model) == ["s1", "s2", "s3"])
-        #expect(!model.hasMore)
-        // Fix round 1 / I1: 100, Android's reach (`MySubmissionsRepository.kt:23`). With no
-        // `status`, `limit` is the ENTIRE reach of this list — the backend's all-statuses branch
-        // takes no cursor and answers `nextCursor = null` — so 50 showed a prolific submitter the
-        // 50 most recent rows and nothing else.
-        #expect(transport.sent.map { $0.url.query() }
-            == ["limit=100", "cursor=c2&limit=100", "cursor=c3&limit=100"])
-    }
-
-    /// A failed page keeps the rows it has and latches `paginationError`, which is
-    /// `PaginationGuard`'s guard 3 — otherwise a fits-on-screen page would re-fire the same failing
-    /// request forever.
-    @Test func aFailedPageKeepsTheRowsAndStopsTheAutofill() async {
-        let (model, _) = self.model([.json(200, Self.page(["s1"], nextCursor: "c2")), .json(503, "")])
-        await model.refresh()
-
-        _ = await model.loadMore()
-
-        #expect(ids(model) == ["s1"], "a failed page never replaces what is on screen")
-        #expect(model.paginationError)
-        var attempt = PaginationGuard()
-        let refused = attempt.shouldAutoLoad(widthClass: .regular, hasMore: model.hasMore,
-                                             paginationError: model.paginationError, contentFits: true,
-                                             itemCount: 1)
-        #expect(!refused, "guard 3 refuses the retry storm a fits-on-screen page would otherwise start")
-    }
-
-    /// **Fix round 1 / I2.** `PaginationGuard`'s guard 1 refuses to autofill on a compact width, so
-    /// the autofill above is the half that never runs on a PHONE: page two was unreachable on the
-    /// device most users hold. `ContentListView`'s threshold is the other half CLAUDE.md asks for
-    /// ("autofill as well as the scroll listener"), and it lives on the ViewModel because a whole
-    /// frame of `.onAppear`s must cost ONE page — with five rows firing at once, four of them have
-    /// to bounce off an in-flight guard, and `SwiftUI`'s `.onAppear` is not something a unit test
-    /// can drive.
-    @Test func aRowNearTheEndPagesOnAPhoneAndAWholeFrameOfThemCostsOnePage() async {
-        let (model, transport) = self.model([.json(200, Self.page(["s1", "s2", "s3", "s4", "s5", "s6"],
-                                                                  nextCursor: "c2")),
-                                             .json(200, Self.page(["s7"]))])
-        await model.refresh()
-        #expect(ids(model).count == 6)
-
-        // Six rows: the threshold is index 1, so a row above it asks for nothing.
-        await model.rowAppeared(at: 0)
-        #expect(transport.sent.count == 1, "a row above the threshold must not page")
-
-        // The last five, all in one frame — spawned before this test yields, exactly as SwiftUI
-        // hands a screenful of `.onAppear`s to the MainActor. No `Gate` and no park: whichever task
-        // wins the actor sets `isLoadingMore` before its first `await`, so the other four bounce
-        // whatever the order. A parked variant would HANG for the full 60 s time limit the day the
-        // threshold regresses, instead of failing in a millisecond on the count below.
-        let frame = (1...5).map { index in Task { await model.rowAppeared(at: index) } }
-        for task in frame { await task.value }
-
-        #expect(transport.sent.count == 2, "five appearances in one frame cost exactly one page")
-        #expect(ids(model) == ["s1", "s2", "s3", "s4", "s5", "s6", "s7"])
-        #expect(!model.paginationError, "a second page would have found the queue dry")
-        #expect(!model.isLoadingMore)
-    }
+    // Part B gate (stage 1 B1 / CF-B-17): the three pagination pins went with the engine. This
+    // list never pages — the all-statuses backend branch mints no cursor — so `limit` is its whole
+    // reach, which `aPageWithRows…` and the query assertion below pin.
 
     // MARK: - Refresh
 
@@ -257,24 +174,18 @@ struct MySubmissionsViewModelTests {
     /// message to banner — `AccountSession.fetch`'s `.network where … state.me != nil` precedent
     /// (`:369`, "a cached account beats an offline banner"). With nothing loaded it still fails to
     /// `.error`, because there the error card is the only thing on screen.
-    ///
-    /// Fix round 1 / M3: `refresh()` clears the cursor before its request, so the arm that KEEPS the
-    /// rows used to strand them — `loadMore`'s `guard let cursor` failed and the surviving list
-    /// could not page further until a refresh succeeded. The cursor the rows were paged with is
-    /// restored with them.
     @Test func aNetworkFailureKeepsTheRowsAndBannersInsteadOfBlankingTheList() async {
-        let (model, transport) = self.model([.json(200, Self.page(["s1"], nextCursor: "c2")),
-                                             .failing(URLError(.notConnectedToInternet)),
-                                             .json(200, Self.page(["s2"]))])
+        let (model, transport) = self.model([.json(200, Self.page(["s1"])),
+                                             .failing(URLError(.notConnectedToInternet))])
         await model.refresh()
         let message = await model.refresh()
 
         #expect(ids(model) == ["s1"], "a stall does not cost the user what they were reading")
         #expect(message == String(localized: "auth_error_network"))
-        #expect(model.hasMore, "the rows keep the cursor they were paged with")
-        #expect(await model.loadMore(), "and the surviving list can still reach page two")
-        #expect(ids(model) == ["s1", "s2"])
-        #expect(transport.sent.count == 3)
+        #expect(transport.sent.count == 2)
+        // Fix round 1 / I1: 100, Android's reach (`MySubmissionsRepository.kt:23`) — with no
+        // `status`, `limit` is the ENTIRE reach of this list, and no cursor is ever sent.
+        #expect(transport.sent.map { $0.url.query() } == ["limit=100", "limit=100"])
 
         let (cold, _) = self.model([.failing(URLError(.notConnectedToInternet))])
         #expect(await cold.refresh() == nil, "nothing on screen: the error arm IS the message")

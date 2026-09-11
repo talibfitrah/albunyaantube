@@ -13,16 +13,14 @@ nonisolated struct MeChipItem: Sendable, Equatable, Identifiable {
 }
 
 /// `MeFragment.kt:47-48` — the two tab positions, in the order `renderTabs` adds them.
-nonisolated enum MeTab: Int, Sendable, CaseIterable, Equatable { case content = 0, pending = 1 }
+nonisolated enum MeTab: Sendable { case content, pending }
 
 /// One row of the Pending tab (`AwaitingImportsAdapter.DisplayRow`): an imported id an admin has
 /// not reviewed yet. **Not tappable** — it is not in the registry, so there is nothing to open.
 nonisolated struct MeAwaitingItem: Sendable, Equatable, Identifiable {
-    enum Kind: Sendable, Equatable { case channel, playlist, video }
     var id: String
     var title: String
     var thumbnailURL: URL?
-    var kind: Kind
 }
 
 /// Menu order = `res/menu/menu_me_kebab.xml`. There is deliberately NO `.history` and no
@@ -62,22 +60,10 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
         }
     }
 
-    /// The kebab rows that have a destination TODAY. RULING 28: a row with nowhere to go is not
-    /// rendered greyed, it is not rendered at all — a greyed row is still a visible promise, and
-    /// three of the four missing ones are Part B, so they would sit on this screen through all of
-    /// Part A and Task 19's screenshot matrix. Each later task that lands a destination adds its
-    /// own case here plus its own assertion (Task 17 `.profile`, 25 `.mySubmissions`,
-    /// 27 `.suggestContent`, 29 `.importYouTube`), so every re-enable is a named test edit.
-    ///
-    /// `.mySubmissions` is the first ROLE-GATED row to land: `items(isModerator:)` decides whether
-    /// it is offered at all (ruling C4) and this set decides whether it has anywhere to go, so a
-    /// plain user's kebab is unchanged by Task 25. Task 27 lands the second half of the same C4
-    /// pair, `.suggestContent`; a plain user's kebab is unchanged again. Task 29 lands the last
-    /// one, `.importYouTube`, so every case in this enum now has somewhere to go and this set is
-    /// `allCases` — kept as a set rather than deleted because it is the assertion each of those
-    /// four tasks edited, and the day a sixth row is added it is where the row waits.
-    static let landed: Set<MeKebabItem> = [.profile, .mySubmissions, .suggestContent,
-                                           .importYouTube, .signOut]
+    // Part B gate (stage 1 B2 / ruling b): `landed` — the Part A set of rows that had a destination
+    // yet — was DELETED once every case had one. RULING 28 is enforced by the compiler now: a kebab
+    // case with no `Route` is a compile error in `MeSignedInView.kebab`'s exhaustive switch, and a
+    // `Route` with no screen is one in `MainShellView.destination(for:)`.
 }
 
 /// Ruling C5's signed-in Me screen, over LOCAL stores only. No feed (Tasks 14-16), no History
@@ -100,19 +86,9 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
 
     private var rawSelection: String?
 
-    /// `MeFragment.kt:387-406`. The setter is a no-op on a same-value write.
-    ///
-    /// **Weaker than Android's, and deliberately so.** There, `setAdapter` resets the
-    /// RecyclerView's scroll even when the adapter is unchanged, so a background sync landing the
-    /// FIRST pending item — which re-runs `renderTabs` and re-selects — jerked the user's feed back
-    /// to the top. SwiftUI has no adapter swap: a repeated selection re-evaluates `body` into an
-    /// identical tree and scrolls nothing. Measured (Task 30 red capture): reverting this guard
-    /// changed no observable behaviour, notification counts included. It stays because it is one
-    /// line and saves an invalidation — not because a bug hides behind it.
-    ///
-    /// Read through `selectedTab`, never raw: when the queue empties the tab bar goes away
-    /// (`showsTabs`) and a stored `.pending` would leave the screen rendering a list that is no
-    /// longer reachable (`:355-358` falls back to Content for exactly that).
+    /// `MeFragment.kt:387-406`. Read through `selectedTab`, never raw: when the queue empties the
+    /// tab bar goes away (`showsTabs`) and a stored `.pending` would leave the screen rendering a
+    /// list that is no longer reachable (`:355-358` falls back to Content for exactly that).
     private var rawTab: MeTab = .content
 
     init(session: AccountSession, favorites: any FavoritesStore,
@@ -160,24 +136,21 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     var awaitingItems: [MeAwaitingItem] {
         subscriptions.awaitingItems.map {
             MeAwaitingItem(id: $0.channelId, title: $0.title,
-                           thumbnailURL: $0.avatarUrl.flatMap(URL.init(string:)), kind: .channel)
+                           thumbnailURL: $0.avatarUrl.flatMap(URL.init(string:)))
         }
         + savedPlaylists.awaitingItems.map {
             MeAwaitingItem(id: $0.playlistId, title: $0.title,
-                           thumbnailURL: $0.thumbnailUrl.flatMap(URL.init(string:)), kind: .playlist)
+                           thumbnailURL: $0.thumbnailUrl.flatMap(URL.init(string:)))
         }
         + favorites.awaitingItems.map {
             MeAwaitingItem(id: $0.videoId, title: $0.title,
-                           thumbnailURL: $0.thumbnailUrl.flatMap(URL.init(string:)), kind: .video)
+                           thumbnailURL: $0.thumbnailUrl.flatMap(URL.init(string:)))
         }
     }
 
     /// The sum of the three stores. A LIVE count, not a snapshot: `ImportGraduationService` flips
     /// these server-side when an admin reviews an id, and the next sync brings the change down.
-    var awaitingCount: Int {
-        subscriptions.awaitingItems.count + savedPlaylists.awaitingItems.count
-            + favorites.awaitingItems.count
-    }
+    var awaitingCount: Int { awaitingItems.count }
 
     /// `MeFragment.kt:352-368`: hidden ENTIRELY at zero. With an empty queue a two-tab bar is
     /// permanent chrome over a screen with nothing to switch to.
@@ -187,18 +160,18 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     /// to Content rather than sitting on a list that no longer exists.
     var selectedTab: MeTab { showsTabs ? rawTab : .content }
 
+    /// The same-value guard is one line that saves an invalidation and nothing more — measured
+    /// (Task 30): SwiftUI has no adapter swap, so Android's scroll-reset rationale does not apply.
     func select(tab: MeTab) {
         guard tab != rawTab else { return }
         rawTab = tab
     }
 
-    /// `MeFragment.kt:51-59`, verbatim. The screen-level empty state speaks for the FEED only:
-    /// someone whose only content is awaiting review has an empty feed by definition, so on the
-    /// Pending tab it must stay out of the way — otherwise "nothing here" covers the very list
-    /// they opened the tab to see.
-    nonisolated static func shouldShowFeedEmptyState(feedIsEmpty: Bool, selectedTab: MeTab) -> Bool {
-        feedIsEmpty && selectedTab != .pending
-    }
+    /// Part B gate (stage 3 M-3): the fallback in `selectedTab` is a READ; the stored value has to
+    /// be reset too, or the NEXT awaiting row — a later import, a background pull landing one —
+    /// would switch the user onto Pending with no tap. Called by the screen when the tab bar goes
+    /// away.
+    func queueEmptied() { rawTab = .content }
 
     // MARK: - Fork F14: the one-time import offer
 
@@ -219,14 +192,13 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     /// `MeFragment.kt:270-271` compares `ignoreCase = true`; `AccountMe.isModerator` carries that.
     var showsModeratorItems: Bool { session.state.me?.isModerator == true }
 
-    /// Task 29's second gate, and the reason `landed` alone is no longer the whole answer: Import
+    /// Task 29's capability gate: Import
     /// needs a signed-in GOOGLE user to extend a scope onto (`GIDGoogleUser.addScopes` lives on the
     /// user, not on `GIDSignIn`), so an Apple or email/password account has nothing to authorize.
     /// RULING 28 again: the row is ABSENT for those accounts, never rendered greyed — a greyed row
     /// is still a visible promise, and this one could never be kept.
     var enabledKebabItems: [MeKebabItem] {
         MeKebabItem.items(isModerator: showsModeratorItems)
-            .filter(MeKebabItem.landed.contains)
             .filter { $0 != .importYouTube || canImportFromYouTube() }
     }
 

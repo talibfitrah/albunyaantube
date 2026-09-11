@@ -121,17 +121,14 @@ nonisolated struct ApprovalsClient: Sendable {
 
     // MARK: - Operations
 
-    /// `GET api/admin/approvals/my-submissions?status&cursor&limit` (`ApprovalController.java:156`).
-    /// A nil `status` is OMITTED, never sent empty: the controller 400s on a value it cannot parse,
-    /// and "omit for everything" is its documented default — which is also the branch that does NOT
-    /// paginate (`ApprovalService.getMySubmissions:496,513` routes it to `getMySubmissionsAllStatuses`,
-    /// which takes no cursor and answers `nextCursor = null`). The cursor parameter is still real:
-    /// every SINGLE-status branch pages properly, which is what a status filter would ask for.
-    func mySubmissions(status: String?, cursor: String?, limit: Int) async throws(AccountError) -> SubmissionPage {
-        var items: [URLQueryItem] = []
-        if let status, !status.isEmpty { items.append(URLQueryItem(name: "status", value: status)) }
-        if let cursor, !cursor.isEmpty { items.append(URLQueryItem(name: "cursor", value: cursor)) }
-        items.append(URLQueryItem(name: "limit", value: String(limit)))
+    /// `GET api/admin/approvals/my-submissions?limit` (`ApprovalController.java:156`). `status` is
+    /// OMITTED — "omit for everything" is the controller's documented default, and it is the branch
+    /// that does NOT paginate (`ApprovalService.getMySubmissions:496,513` routes it to
+    /// `getMySubmissionsAllStatuses`, which takes no cursor and answers `nextCursor = null`), so no
+    /// cursor is sent either (Part B gate, stage 1 B1 / CF-B-17). `SubmissionPage.nextCursor` is
+    /// still decoded: it is the wire shape, and the first status filter will read it.
+    func mySubmissions(limit: Int) async throws(AccountError) -> SubmissionPage {
+        let items = [URLQueryItem(name: "limit", value: String(limit))]
 
         let response = try await send("GET", baseURL.appending(path: "api/admin/approvals/my-submissions")
                                                     .appending(queryItems: items))

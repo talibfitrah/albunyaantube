@@ -223,10 +223,9 @@ struct MeViewModelTests {
         }
     }
 
-    /// RULING 28 as arithmetic: Task 17 landed `Route.profile`, Task 25 `Route.mySubmissions`,
-    /// Task 27 `Route.suggestContent` and Task 29 `Route.importFromYouTube`, so `MeKebabItem.landed`
-    /// is now every case — and the ONLY thing still keeping a row off a kebab is a gate, never a
-    /// missing destination.
+    /// RULING 28 as arithmetic: every kebab case has a destination (the exhaustive switches in
+    /// `MeSignedInView.kebab` and `MainShellView.destination(for:)` are the proof, at compile
+    /// time), so the ONLY thing keeping a row off a kebab is a gate.
     ///
     /// Ruling C4 as arithmetic too: BOTH moderator rows move together, so a moderator's kebab gains
     /// exactly two rows over a plain user's, and neither list renders a greyed promise.
@@ -235,7 +234,6 @@ struct MeViewModelTests {
         #expect(plain.enabledKebabItems == [.profile, .signOut])
         let moderator = makeModel(session: try await makeSession(role: "admin"), stores: makeStores())
         #expect(moderator.enabledKebabItems == [.profile, .mySubmissions, .suggestContent, .signOut])
-        #expect(MeKebabItem.landed == Set(MeKebabItem.allCases))
         #expect(MeKebabItem.items(isModerator: true)
             == [.profile, .mySubmissions, .suggestContent, .importYouTube, .signOut])
     }

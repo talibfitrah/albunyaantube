@@ -104,15 +104,14 @@ struct MeSignedInView: View {
                         // tab only. Someone whose only content is awaiting review has an empty
                         // Content tab by definition, so on Pending it must stay out of the way —
                         // otherwise "nothing here" covers the very list they opened the tab to see.
-                        } else if MeViewModel.shouldShowFeedEmptyState(feedIsEmpty: true,
-                                                                       selectedTab: model.selectedTab) {
+                        } else if model.selectedTab != .pending {
                             emptyState
                         }
                         savedLink
                         if model.showsTabs { tabBar(model) }
                         // Fork F14: ONE of the two, never both. The feed's own empty state speaks
-                        // for the feed only — `shouldShowFeedEmptyState` is what keeps "nothing
-                        // here" off the pending list (`MeFragment.kt:51-59`).
+                        // for the feed only — the `selectedTab != .pending` gate above is what
+                        // keeps "nothing here" off the pending list (`MeFragment.kt:51-59`).
                         if model.selectedTab == .pending {
                             awaitingSection(model)
                         } else {
@@ -176,15 +175,21 @@ struct MeSignedInView: View {
             // is not the default, so `me-pending-tab` needs a way to land on it.
             if LaunchArguments.debug.contains("-fitrah-me-pending") { model.select(tab: .pending) }
             #endif
+            // Task 30 (fork F14), `MeFragment.kt:428-445`: at most once ever. `consumeImportOffer()`
+            // writes the persisted flag BEFORE answering, so a second arrival here — a tab revisit,
+            // a relaunch mid-dialog — cannot fire a second. Part B gate (ruling c / stage 3 M-5):
+            // BEFORE the refresh, not after — the alert needs nothing the refresh produces, a cold
+            // start with many subscriptions is a seconds-long fan-out, and a tab left during that
+            // await used to spend the one offer with no alert ever shown.
+            showImportOffer = model.consumeImportOffer()
             // Ruling F6's burst-if-stale, and the ONLY scheduled refresh there is: foreground only,
             // no `BGAppRefreshTask`, no `UIBackgroundModes`. `force: false` leaves the TTL and the
             // backoff ladder in charge, so a tab revisit inside 30 min sends nothing at all.
             await refreshFeed(model.subscribedChannelIds, force: false)
-            // Task 30 (fork F14), `MeFragment.kt:428-445`: after the burst-if-stale, and at most
-            // once ever. `consumeImportOffer()` writes the persisted flag BEFORE answering, so a
-            // second arrival here — a tab revisit, a relaunch mid-dialog — cannot fire a second.
-            showImportOffer = model.consumeImportOffer()
         }
+        // Part B gate (stage 3 M-3): when the queue empties the stored selection resets too, so
+        // the next awaiting row does not switch the user onto Pending with no tap.
+        .onChange(of: model?.showsTabs) { _, shows in if shows == false { model?.queueEmptied() } }
     }
 
     /// One refresh, one banner. Posted per COMPLETED refresh rather than from
@@ -424,9 +429,9 @@ struct MeSignedInView: View {
 
     // MARK: - Kebab
 
-    /// Renders `enabledKebabItems`, NOT `items(isModerator:)`: a row is offered only when it has a
-    /// destination (`MeKebabItem.landed`) AND, for `.importYouTube` since Task 29, only when this
-    /// account has a Google grant to extend. RULING 28 refuses a greyed row that promises either.
+    /// Renders `enabledKebabItems`, NOT `items(isModerator:)`: `.importYouTube` is offered only
+    /// when this account has a Google grant to extend. RULING 28 refuses a greyed row that promises
+    /// otherwise; every row's DESTINATION is guaranteed by this switch being exhaustive.
     /// No `.disabled(true)` anywhere. The role gate itself is fully tested through the pure
     /// `MeKebabItem.items(isModerator:)`, which needs no rendering.
     @ViewBuilder
@@ -437,18 +442,13 @@ struct MeSignedInView: View {
                     Button {
                         switch item {
                         case .signOut: showSignOutConfirm = true
-                        // Task 17 landed this one and widened `MeKebabItem.landed`, which is what
-                        // puts the row on screen in the first place.
                         case .profile: router.push(.profile)
-                        // Task 25 landed this one and widened `MeKebabItem.landed`; ruling C4's
-                        // role gate is what puts it in `enabledKebabItems` in the first place.
+                        // Ruling C4's role gate is what puts the next two in `enabledKebabItems`,
+                        // and they move together, never on their own.
                         case .mySubmissions: router.push(.mySubmissions)
-                        // Task 27 landed this one and widened `MeKebabItem.landed`; ruling C4's
-                        // role gate moves it with `.mySubmissions`, never on its own.
                         case .suggestContent: router.push(.suggestContent)
-                        // Task 29 landed this one and completed `MeKebabItem.landed`; unlike the
-                        // C4 pair the gate here is capability, not role — `enabledKebabItems`
-                        // drops it for an account with no Google grant to extend.
+                        // Capability, not role — `enabledKebabItems` drops it for an account with
+                        // no Google grant to extend.
                         case .importYouTube: router.push(.importFromYouTube)
                         }
                     } label: {

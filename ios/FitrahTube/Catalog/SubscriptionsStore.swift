@@ -250,7 +250,7 @@ extension FavoritesSchemaV5 {
         // cap. `== "APPROVED"` matches `SwiftDataFavoritesStore` and shows only what has actually
         // been approved. Pre-existing rows are safe: V5's column default is "APPROVED", so the
         // lightweight V4 -> V5 stage fills every migrated row with it.
-        let approved = "APPROVED"
+        let approved = ImportProvenance.approved
         var descriptor = FetchDescriptor<SubscribedChannel>(
             predicate: #Predicate { $0.userId == uid && $0.isRemoved == false && $0.approvalStatus == approved },
             sortBy: [SortDescriptor(\.followedAt, order: .reverse)]

@@ -18,33 +18,22 @@ nonisolated enum MySubmissionsUiState: Equatable {
     /// treats null/empty/`ALL` as `allStatuses` (`ApprovalService.java:496`) and routes to
     /// `getMySubmissionsAllStatuses(submittedBy, type, pageSize)` (`:513`), which takes NO cursor,
     /// merges the four statuses by `submittedAt` desc, truncates to `pageSize` and answers
-    /// `nextCursor = null` (`:563`). So `limit` is the whole reach of this list — asking for 50 shows
-    /// the 50 most recent rows with no affordance for the rest (fix round 1 / I1; the comment here
-    /// used to claim the opposite). The backend caps `limit` at 100, so 100 is also the ceiling.
-    /// The cursor path below stays for the day this screen gains a status filter, which is what
-    /// actually unlocks the server's paginated single-status branches.
+    /// `nextCursor = null` (`:563`). So `limit` is the whole reach of this list, and the backend
+    /// caps it at 100. Part B gate (stage 1 B1): the cursor/`loadMore`/autofill engine that used to
+    /// sit behind that null was deleted — working machinery with no wire behind it, the
+    /// `AuthMiddleware` precedent — and returns with the first status filter, which is the first
+    /// backend branch that pages (CF-B-17).
     static let pageSize = 100
 
     private let client: ApprovalsClient
 
     private(set) var state: MySubmissionsUiState = .loading
-    /// Latched by a failed `loadMore`, read by `PaginationGuard`'s guard 3 — without it a page that
-    /// fits the viewport re-fires the same failing request until the attempt cap bites.
-    private(set) var paginationError = false
-    /// One page in flight at a time, and the screen's footer spinner. Owned HERE rather than as the
-    /// screen's `@State` (`ContentListView`'s shape) because fix round 1 / I2 gives this list a
-    /// SECOND trigger: a whole frame of `.onAppear`s fires across the last five rows, and the guard
-    /// that makes that cost one page has to sit where both triggers meet.
-    private(set) var isLoadingMore = false
 
-    private var cursor: String?
     /// The supersession guard, this codebase's `loadGeneration` idiom (wave-3 D1) rather than
     /// Android's cancellable `refreshJob`: a delete's refresh and a pull-to-refresh both call
     /// `refresh()`, and the OLDER answer landing last would re-introduce a row that was just
     /// removed. Every round takes a number and refuses to write unless it is still the current one.
     private var generation = 0
-
-    var hasMore: Bool { cursor != nil }
 
     init(client: ApprovalsClient) { self.client = client }
 
@@ -67,69 +56,23 @@ nonisolated enum MySubmissionsUiState: Equatable {
     /// exactly what is wrong. With nothing loaded, `.network` fails to `.error` as before: there the
     /// error card is the only thing on screen.
     ///
-    /// Fix round 1 / M3: the cursor is cleared before the request (this IS a re-read from the top),
-    /// so the arm that keeps the rows has to put it back — otherwise `loadMore`'s `guard let cursor`
-    /// fails and the surviving list is stranded on page one until a refresh succeeds. The rows and
-    /// the cursor they were paged with travel together or not at all.
     @discardableResult
     func refresh() async -> String? {
         generation += 1
         let mine = generation
         if case .loaded = state {} else { state = .loading }
-        let previousCursor = cursor
-        cursor = nil
-        paginationError = false
         do {
-            let page = try await client.mySubmissions(status: nil, cursor: nil, limit: Self.pageSize)
+            let page = try await client.mySubmissions(limit: Self.pageSize)
             guard mine == generation else { return nil }
-            cursor = page.nextCursor
             state = page.items.isEmpty ? .empty : .loaded(page.items)
         } catch {
             guard mine == generation else { return nil }
             if error == .network, case .loaded = state {
-                cursor = previousCursor
                 return String(localized: "auth_error_network")
             }
             state = .error
         }
         return nil
-    }
-
-    /// The next page, appended. Answers whether a fetch was actually STARTED, which is what the
-    /// screen's autofill commits its `PaginationGuard` attempt on.
-    @discardableResult
-    func loadMore() async -> Bool {
-        guard let cursor, !paginationError, !isLoadingMore, case .loaded(let current) = state else { return false }
-        generation += 1
-        let mine = generation
-        isLoadingMore = true
-        defer { isLoadingMore = false }
-        do {
-            let page = try await client.mySubmissions(status: nil, cursor: cursor, limit: Self.pageSize)
-            guard mine == generation else { return true }
-            self.cursor = page.nextCursor
-            state = .loaded(current + page.items)
-        } catch {
-            guard mine == generation else { return true }
-            // The rows already on screen SURVIVE a failed page — there is nothing wrong with them,
-            // and replacing them with a full-page error would punish the user for the tail.
-            paginationError = true
-        }
-        return true
-    }
-
-    /// The PHONE's trigger (fix round 1 / I2). `PaginationGuard`'s guard 1 refuses to autofill on a
-    /// compact width, so the screen's autofill alone never runs on the device most users hold —
-    /// CLAUDE.md asks for the scroll listener AS WELL, which is `ContentListView`'s `>=` threshold
-    /// (`ContentListView.swift:271-281`) and the reason it is `>=` rather than `==`: after a failed
-    /// page the count is unchanged, so an `==` threshold cell has already appeared and scrolling on
-    /// through the tail does nothing.
-    ///
-    /// The last five rows all fire in one frame; `loadMore`'s `isLoadingMore` guard is what makes
-    /// that ONE page rather than five.
-    func rowAppeared(at index: Int) async {
-        guard case .loaded(let rows) = state, index >= max(0, rows.count - 5) else { return }
-        await loadMore()
     }
 
     // MARK: - The two submitter-owned writes

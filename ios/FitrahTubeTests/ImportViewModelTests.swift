@@ -508,6 +508,7 @@ struct ImportViewModelTests {
             .appending(path: "FitrahTube/Features/Import/ImportFromYouTubeScreen.swift")
         let text = try String(contentsOf: screen, encoding: .utf8)
         #expect(!text.contains("youtube.com"))
+        #expect(!text.contains("youtu.be"), "the short host is a YouTube link too (stage 3 M-7)")
         // Acceptance: the gate cannot be bypassed, so the screen has no path to `confirmImport`.
         #expect(!text.contains("confirmImport"))
     }

@@ -52,9 +52,9 @@ nonisolated enum Route: Hashable, Sendable {
     case signIn
     // R7-P3: `.emailVerification`, `.profileBootstrap` and `.ageIneligible` were removed — nothing
     // ever pushed them; all three screens are reached as root destinations or a full screen cover.
-    /// Phase 4 Task 17: the Profile screen, pushed from the signed-in Me tab's kebab. It lands
-    /// WITH `MeKebabItem.landed` growing to include `.profile` — RULING 28 refuses a kebab row
-    /// whose destination does not exist yet.
+    /// Phase 4 Task 17: the Profile screen, pushed from the signed-in Me tab's kebab (RULING 28: a
+    /// kebab row lands WITH its destination, which this exhaustive enum plus `MainShellView`'s
+    /// `default:`-less switch enforce at compile time).
     case profile
     /// Phase 4 Task 25: My Submissions, pushed from the signed-in Me tab's kebab. Ruling C4 gates
     /// the ROW to moderators and admins (`MeKebabItem.items(isModerator:)`); nothing else in the
@@ -71,6 +71,19 @@ nonisolated enum Route: Hashable, Sendable {
     /// (RULING 28: absent, never disabled). Nothing else pushes this case and there is no deep
     /// link to it.
     case importFromYouTube
+}
+
+extension Route {
+    /// Part B gate (Codex 11): the screens that exist only for a signed-in account. An ordinary
+    /// sign-out does not pop navigation stacks, and on an iPad a retained My Submissions stack on
+    /// the Me tab kept rendering the previous account's rows when its refresh failed offline.
+    /// `RootView` drops every tab whose path holds one of these the moment the session ends.
+    var requiresAccount: Bool {
+        switch self {
+        case .profile, .mySubmissions, .suggestContent, .importFromYouTube: true
+        default: false
+        }
+    }
 }
 
 extension Route {
