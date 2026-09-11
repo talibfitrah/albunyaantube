@@ -321,13 +321,14 @@ struct ImportViewModelTests {
     }
 
     /// WHAT, never why: `.unavailable` and `.failed` are the same sentence to a user, and neither
-    /// leaks a fact about their Google account.
-    @Test func aRefusedAuthorizationIsOneRetryableErrorWhateverTheSdkSaid() async throws {
-        for failure in [YouTubeAuthorizerError.failed, .unavailable] {
+    /// leaks a fact about their Google account. Only `.failed` offers Retry (Cubic round 2 P3):
+    /// with no Google session to extend, a retry re-fails identically until the next sign-in.
+    @Test func aRefusedAuthorizationIsOneErrorWhateverTheSdkSaidAndRetryableOnlyWhenTheSdkFailed() async throws {
+        for (failure, retryable) in [(YouTubeAuthorizerError.failed, true), (.unavailable, false)] {
             let rig = try rig(youtube: [], authorizer: FakeYouTubeAuthorizer(error: failure))
             rig.model.start()
             await rig.model.job?.value
-            #expect(rig.model.state == .error(messageKey: "auth_error_generic", retryable: true),
+            #expect(rig.model.state == .error(messageKey: "auth_error_generic", retryable: retryable),
                     "\(failure)")
         }
     }
@@ -631,11 +632,12 @@ struct ImportViewModelTests {
         #expect(revoked.model.didRevoke)
         // Part B gate: a revoke forgets the SDK session, so there is nothing left to authorize
         // and the screen hides the offer (RULING 28) until the next Google sign-in. A `start()`
-        // that somehow still ran would be refused as unavailable, never a silent success.
+        // that somehow still ran would be refused as unavailable — and NOT retryable (Cubic round
+        // 2 P3): a retry with no Google session re-fails identically.
         #expect(revoked.authorizer.isAvailable == false)
         revoked.model.start()
         await revoked.model.job?.value
-        #expect(revoked.model.state == .error(messageKey: "auth_error_generic", retryable: true))
+        #expect(revoked.model.state == .error(messageKey: "auth_error_generic", retryable: false))
 
         let bundle = try #require(Bundle.main.path(forResource: "en", ofType: "lproj")
             .flatMap(Bundle.init(path:)))

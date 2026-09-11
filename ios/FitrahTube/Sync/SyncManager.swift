@@ -175,12 +175,15 @@ actor SyncManager {
         if waiters.isEmpty { inFlight = false } else { waiters.removeFirst().resume() }
     }
 
+    /// The identity fence is NOT touched here (Part B gate, Cubic round 2 P1 — the round-1 P3
+    /// "fix" that cleared it was a regression): the public `unbind()` clears it BEFORE the lock,
+    /// and a TERMINAL pull must leave it alone. `AccountSession` keeps its own bound-uid latch and
+    /// rebinds only on a new identity, so a manager that dropped the identity on its own refused
+    /// every later `syncNow`/`pushDirty` for the rest of the process — and a `bind(B)` already
+    /// queued behind the terminal pull had taken the identity before the lock and was refused too.
+    /// The cost of leaving the fence up is one PUT under a refused bearer per trigger, which ends
+    /// on `.authFailed` with no retry ladder.
     private func unbindLocked() {
-        // The fence closes here too (stage 9 substitute review): a TERMINAL pull reaches this
-        // without going through `unbind()`, and the identity must be gone before the session's own
-        // unbind arrives — not one wasted PUT later.
-        boundUid = nil
-        epoch += 1
         // FIRST, and under the exclusion: a retry queued while the user was still signed in
         // otherwise fires after sign-out and pushes the previous account's dirty rows under
         // whatever bearer is current (`SyncManager.kt:614-628`, cubic R7 P2 / R8 P2).
@@ -333,7 +336,7 @@ actor SyncManager {
                     // The account is gone or blocked. Part A owns the routing (`AuthorizedTransport`
                     // turns the 403 envelope into an `AccountStatusEvent` and `AccountSession` acts
                     // on it); this side just stops and lets go of the retry chain.
-                    note("pull terminal (status \(status.map(String.init) ?? "none")); stopping and unbinding")
+                    note("pull terminal (status \(status.map(String.init) ?? "none")); stopping, retry ladder released")
                     unbindLocked()
                     return .terminal
                 case .permanent:

@@ -98,9 +98,12 @@ import Observation
         } catch {
             // WHAT, never why: `.unavailable` (the affordance should not have been offered) and
             // `.failed` (the SDK refused) are the same sentence to a user, and neither is a
-            // membership fact about their Google account worth spelling out.
+            // membership fact about their Google account worth spelling out. Retry is offered only
+            // for `.failed` (Cubic round 2 P3): with no Google session to extend, a retry re-fails
+            // identically until the next Google sign-in.
             guard !Task.isCancelled else { return }
-            state = .error(messageKey: "auth_error_generic", retryable: true)
+            let retryable = (error as? YouTubeAuthorizerError) != .unavailable
+            state = .error(messageKey: "auth_error_generic", retryable: retryable)
         }
     }
 

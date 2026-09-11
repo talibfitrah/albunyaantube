@@ -282,35 +282,17 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// record as a submissions page (`data` absent → an empty list, i.e. a screenshot of the empty
     /// state whatever the fixture holds). Harmless only while the fixture `/me` says `role: "user"`;
     /// one role change there and the screenshot rig walks this screen and throws `exhausted`.
-    private(set) lazy var approvals: ApprovalsClient = {
-        #if DEBUG
-        if isFixture {
-            return ApprovalsClient(transport: FixedStatusTransport(status: 503), baseURL: apiBaseURL,
-                                   deviceId: .persisted(in: userDefaults))
-        }
-        #endif
-        return ApprovalsClient(transport: authorizedTransport, baseURL: apiBaseURL,
-                               deviceId: .persisted(in: userDefaults))
-    }()
+    private(set) lazy var approvals = ApprovalsClient(transport: signedOrFixtureTransport, baseURL: apiBaseURL,
+                                                       deviceId: .persisted(in: userDefaults))
 
     /// Phase 4 Task 27: `GET api/admin/youtube/search`, over the same signed transport. Ruling F1's
     /// fifth hand-written client (Task 26 landed it with no consumer; RULING 28 kept it unwired
     /// until the screen that reads it). Role-gated by the BACKEND
     /// (`@PreAuthorize("hasAnyRole('ADMIN','MODERATOR')")`) as well as by the kebab that reaches it.
     ///
-    /// A FIXTURE gets the canned 503, `approvals`' arm for `approvals`' reason: `authorizedTransport`
-    /// there is the ScriptedTransport holding the fixture's four canned `/me` bodies, and a search
-    /// would both spend slots from that queue and decode an account record as a page of hits.
-    private(set) lazy var youtubeSearch: YouTubeSearchClient = {
-        #if DEBUG
-        if isFixture {
-            return YouTubeSearchClient(transport: FixedStatusTransport(status: 503), baseURL: apiBaseURL,
-                                       deviceId: .persisted(in: userDefaults))
-        }
-        #endif
-        return YouTubeSearchClient(transport: authorizedTransport, baseURL: apiBaseURL,
-                                   deviceId: .persisted(in: userDefaults))
-    }()
+    /// A FIXTURE gets the canned 503 (`signedOrFixtureTransport`).
+    private(set) lazy var youtubeSearch = YouTubeSearchClient(transport: signedOrFixtureTransport, baseURL: apiBaseURL,
+                                                              deviceId: .persisted(in: userDefaults))
 
     // MARK: - Phase 4 Task 29: the import flow
 

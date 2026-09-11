@@ -961,6 +961,45 @@ struct SyncManagerTests {
         #expect(binding.initialMergeDone == false, "a terminal account was stamped merge-done")
     }
 
+    /// Stage 9 round 2 P1 + its sibling: `c79cc4b7` cleared the fence on a terminal pull. The
+    /// session keeps its own bound-uid latch and never rebinds the same identity, so every later
+    /// trigger was refused for the rest of the process; and a `bind(B)` already queued behind the
+    /// terminal pull (it takes the identity BEFORE the lock) was refused too. The fence stays up.
+    @Test func aTerminalPullDoesNotKillSyncForTheRestOfTheProcess() async throws {
+        let container = self.container()
+        let client = ScriptedSyncClient(pulls: [.failure(SyncClientError.pullStatus(403)), .page(.empty)])
+        let manager = self.manager(client, container: container)
+        await manager.assumeBound(uid: Self.uid)
+
+        await manager.pullAll(uid: Self.uid)          // terminal
+        await manager.syncNow(uid: Self.uid)          // the session's next foreground
+
+        #expect(client.calls == [.pull, .pull], "the manager dropped the identity on its own: \(client.calls)")
+    }
+
+    @Test func aTerminalPullForTheOldAccountDoesNotRefuseTheBindAlreadyQueuedForTheNew() async throws {
+        let container = self.container()
+        let pullGate = Gate()
+        let client = ScriptedSyncClient(
+            pulls: [.failure(SyncClientError.pullStatus(403)), .page(.empty)],
+            hook: { call, index in if call == .pull, index == 1 { await pullGate.block() } })
+        let manager = self.manager(client, container: container)
+        await manager.assumeBound(uid: Self.uid)
+
+        let old = Task { await manager.pullAll(uid: Self.uid) }
+        await pullGate.waitUntilBlocked()
+        let new = Task { await manager.bind(uid: Self.other) }   // queued behind A's pull
+        for _ in 0..<200 { await Task.yield() }
+        await pullGate.release()
+        await old.value
+        await new.value
+
+        #expect(client.calls == [.pull, .pull], "B's bind was refused after A's terminal pull: \(client.calls)")
+        let binding = try #require(fetch(container, AccountBinding.self).first)
+        #expect(binding.userId == Self.other)
+        #expect(binding.initialMergeDone, "B's merge never ran")
+    }
+
     /// Stage 4 S5. A server id becomes a `#Unique` key, a route, a synthesised URL pushed back
     /// and an accessibility identifier — so it passes the same validator every LOCAL writer
     /// applies, or it is skipped and noted. Same for a cursor id, validated on the way IN.
