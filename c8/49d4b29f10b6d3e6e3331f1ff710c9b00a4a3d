@@ -1,0 +1,61 @@
+ios/FitrahTube/Catalog/SavedPlaylistsStore.swift
+  s_eca9a78768b070::t_983d0b63337d4e 244
+ios/FitrahTubeTests/ImportViewModelTests.swift
+  s_eca9a78768b070::t_1b3ba055ba826d 511
+ios/FitrahTube/Features/Me/MeViewModel.swift
+  s_eca9a78768b070::t_983d0b63337d4e 16,63-66,89-91,139,143,147,153,163-164,170-174,195
+ios/FitrahTube/Persistence/FavoritesStore.swift
+  s_eca9a78768b070::t_983d0b63337d4e 192
+ios/FitrahTubeTests/RouterTests.swift
+  s_eca9a78768b070::t_1b3ba055ba826d 31-56
+ios/FitrahTube/Features/Submissions/ApprovalsClient.swift
+  s_eca9a78768b070::t_983d0b63337d4e 124-131
+ios/FitrahTube/Features/Detail/ChannelDetailViewModel.swift
+  s_eca9a78768b070::t_983d0b63337d4e 62-65,276-278
+ios/FitrahTubeTests/MeViewModelTests.swift
+  s_eca9a78768b070::t_1b3ba055ba826d 226-228
+ios/FitrahTube/Features/Auth/AccountClient.swift
+  s_eca9a78768b070::t_983d0b63337d4e 72-73
+ios/FitrahTube/Resources/PrivacyInfo.xcprivacy
+  s_eca9a78768b070::t_983d0b63337d4e 23-25,54-57
+ios/FitrahTube/Features/Submissions/MySubmissionsScreen.swift
+  s_eca9a78768b070::t_983d0b63337d4e 109,118-119
+ios/FitrahTube/Features/Me/MeSignedInView.swift
+  s_eca9a78768b070::t_90419c31559759 113-114
+  s_eca9a78768b070::t_983d0b63337d4e 107,178-184,190-192,432-434,446-447,450-451
+ios/FitrahTubeTests/MySubmissionsViewModelTests.swift
+  s_eca9a78768b070::t_1b3ba055ba826d 145-147,178-179,185-188
+ios/FitrahTube/Features/Submissions/MySubmissionsViewModel.swift
+  s_eca9a78768b070::t_983d0b63337d4e 21-25,65
+ios/FitrahTubeTests/MeAwaitingTabsTests.swift
+  s_eca9a78768b070::t_1b3ba055ba826d 187-190,201,204-216,218-220
+ios/FitrahTube/App/Route.swift
+  s_eca9a78768b070::t_983d0b63337d4e 55-57,76-86
+ios/FitrahTube/App/RootView.swift
+  s_eca9a78768b070::t_983d0b63337d4e 64-70
+ios/FitrahTube/App/Router.swift
+  s_eca9a78768b070::t_983d0b63337d4e 84-90
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_eca9a78768b070::t_1b3ba055ba826d 145
+ios/FitrahTube/Catalog/SubscriptionsStore.swift
+  s_eca9a78768b070::t_983d0b63337d4e 253
+ios/FitrahTubeTests/ApprovalsClientTests.swift
+  s_eca9a78768b070::t_1b3ba055ba826d 52,59,66-67,89,92,95,100,117,133,164,180,242,288,297
+  s_eca9a78768b070::t_90419c31559759 174-178,181-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c849d4b29f10b6d3e6e3331f1ff710c9b00a4a3d",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
