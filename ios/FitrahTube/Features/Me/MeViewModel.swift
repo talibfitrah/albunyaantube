@@ -188,6 +188,14 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
         return true
     }
 
+    /// Part B gate (Cubic round 5 P1): Import is offered only to an account that ITSELF signed in
+    /// with Google — the SDK's keychain session is device-wide (`hasPreviousSignIn`), so on its own
+    /// it would offer an email/password or Apple account the previous Google user's library. Both
+    /// facts, never one: the account's provider list AND a session the SDK can extend.
+    nonisolated static func canImport(providerIDs: [String]?, sdkSessionAvailable: Bool) -> Bool {
+        providerIDs?.contains("google.com") == true && sdkSessionAvailable
+    }
+
     /// `MeFragment.kt:270-271` compares `ignoreCase = true`; `AccountMe.isModerator` carries that.
     var showsModeratorItems: Bool { session.state.me?.isModerator == true }
 

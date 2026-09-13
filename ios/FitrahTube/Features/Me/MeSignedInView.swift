@@ -168,7 +168,7 @@ struct MeSignedInView: View {
                                                   subscriptions: container.subscriptions,
                                                   savedPlaylists: container.savedPlaylists,
                                                   settings: container.settings,
-                                                  canImportFromYouTube: { container.youtubeAuthorizer.isAvailable })
+                                                  canImportFromYouTube: { container.canImportFromYouTube })
             self.model = model
             #if DEBUG
             // Task 30 screenshot hook: the rig cannot tap a segmented control, and the Pending tab

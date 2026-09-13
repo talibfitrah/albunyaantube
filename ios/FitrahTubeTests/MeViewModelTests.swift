@@ -223,6 +223,19 @@ struct MeViewModelTests {
         }
     }
 
+    /// Cubic round 5 P1: the SDK's keychain session is device-wide, so the affordance needs BOTH
+    /// the account's own `google.com` provider and the session — an email/password or Apple
+    /// account must never be offered the previous Google user's library.
+    @Test func importIsOfferedOnlyToAGoogleAccountWithAnSdkSession() {
+        #expect(MeViewModel.canImport(providerIDs: ["google.com"], sdkSessionAvailable: true))
+        #expect(MeViewModel.canImport(providerIDs: ["password", "google.com"], sdkSessionAvailable: true))
+        #expect(MeViewModel.canImport(providerIDs: ["password"], sdkSessionAvailable: true) == false,
+                "an email/password account offered a stranger's Google session")
+        #expect(MeViewModel.canImport(providerIDs: ["apple.com"], sdkSessionAvailable: true) == false)
+        #expect(MeViewModel.canImport(providerIDs: ["google.com"], sdkSessionAvailable: false) == false)
+        #expect(MeViewModel.canImport(providerIDs: nil, sdkSessionAvailable: true) == false)
+    }
+
     /// RULING 28 as arithmetic: every kebab case has a destination (the exhaustive switches in
     /// `MeSignedInView.kebab` and `MainShellView.destination(for:)` are the proof, at compile
     /// time), so the ONLY thing keeping a row off a kebab is a gate.

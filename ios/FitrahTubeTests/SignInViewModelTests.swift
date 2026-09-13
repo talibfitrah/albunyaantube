@@ -226,6 +226,23 @@ struct SignInViewModelTests {
         await inFlight.value
     }
 
+    /// Part B gate, Cubic round 5 P1: the provider SDK signed its user in and Firebase then refused
+    /// the credential. That SDK session must not outlive the failed sign-in — `GoogleYouTubeAuthorizer
+    /// .isAvailable` reads the SDK's keychain, and the next account on the device would otherwise be
+    /// offered the stranger's YouTube library.
+    @Test func aFirebaseRefusalAfterAProviderSuccessForgetsTheProviderSession() async {
+        let auth = FakeAuthClient(state: .signedOut, scriptedErrors: [.network])
+        let (model, _, _) = make(auth: auth)
+        let provider = FakeOAuthProvider()
+
+        await model.signIn(with: provider)
+
+        #expect(provider.presentCount == 1)
+        #expect(provider.signOutCount == 1, "the SDK session outlived the failed sign-in")
+        #expect(model.state.error != nil)
+        #expect(model.landed == false)
+    }
+
     /// Ruling: a cancel is the user's own choice, so it is SILENT — back to idle, no banner.
     @Test func aCancelledProviderSignInReturnsToIdleWithNoError() async {
         let auth = FakeAuthClient(state: .signedOut)

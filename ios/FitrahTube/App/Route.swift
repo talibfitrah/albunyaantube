@@ -79,9 +79,13 @@ extension Route {
     /// the Me tab kept rendering the previous account's rows when its refresh failed offline.
     /// `RootView` drops every tab whose path holds one of these the moment the session ends.
     var requiresAccount: Bool {
+        // EXHAUSTIVE, no `default:` (Cubic round 5 P3): a future account-only case must be named
+        // here or it is a compile error — the same guarantee `MainShellView.destination(for:)`
+        // gives every case a screen, applied to what a sign-out must pop.
         switch self {
         case .profile, .mySubmissions, .suggestContent, .importFromYouTube: true
-        default: false
+        case .player, .shorts, .channel, .playlist, .search, .categories, .subcategories, .featured,
+             .favorites, .settings, .about, .offline, .signIn: false
         }
     }
 }

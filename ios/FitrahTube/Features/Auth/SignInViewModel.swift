@@ -139,6 +139,12 @@ import Observation
         do {
             await land(try await auth.signIn(with: credential))
         } catch {
+            // Part B gate, Cubic round 5 P1: the provider SDK signed its user in a moment ago and
+            // Firebase then refused the credential. Left alone, that SDK session outlives the
+            // failed sign-in — and `GoogleYouTubeAuthorizer.isAvailable` reads the SDK's keychain,
+            // so the NEXT account on this device (email/password, Apple) would be offered Import
+            // and import a stranger's YouTube library. Forget it on the way out.
+            provider.signOutProvider()
             finish(with: error)
         }
     }

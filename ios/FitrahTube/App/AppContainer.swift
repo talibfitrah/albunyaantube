@@ -371,6 +371,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// The session ended: the run in flight belonged to it (`ImportViewModel.reset`).
     func endImportRun() { builtImportViewModel?.reset() }
 
+    /// The ONE spelling of "may this account import" (`MeViewModel.canImport`): the signed-in
+    /// account's own providers AND the SDK session, read at render time.
+    var canImportFromYouTube: Bool {
+        MeViewModel.canImport(providerIDs: session.user?.providerIDs,
+                              sdkSessionAvailable: youtubeAuthorizer.isAvailable)
+    }
+
     /// The signed transport, except for a FIXTURE, which gets a canned 503 — the `gateTransport`
     /// precedent: the fixture's `authorizedTransport` is a `ScriptedTransport` holding canned `/me`
     /// bodies, and a resolve or a pull would both spend that queue and decode an account record as
