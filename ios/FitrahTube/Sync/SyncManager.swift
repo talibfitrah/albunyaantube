@@ -618,23 +618,35 @@ enum SyncStore {
     }
 
     /// Cubic round 1 P2: an ordinary sign-out KEEPS the account's rows, and the stores accept
-    /// guest writes under `""` — so a guest toggle of an id the account already holds is a
-    /// `#Unique` collision the moment it is retagged. The account's row is authoritative (it is
-    /// the one the server knows); the guest duplicate is dropped. Android has the same hole.
+    /// guest writes under `""` — so a guest toggle of an id the account already holds meets the
+    /// `#Unique` pair the moment it is retagged. The account's row is the one the server knows, so
+    /// it is the one kept — but the GUEST'S INTENT is kept with it (Cubic round 3 P2): a guest add
+    /// of an id the account had removed resurrects the account's tombstone (dirty, so it pushes)
+    /// rather than vanishing under it. Android has the same hole.
     private static func tagAnonRows(_ context: ModelContext, to uid: String) {
         let anon = ""
         for row in (try? context.fetch(FetchDescriptor<SubscribedChannel>(
             predicate: #Predicate { $0.userId == anon }))) ?? [] {
-            if (try? one(context, uid: uid, channelId: row.channelId)) != nil { context.delete(row) } else { row.userId = uid }
+            if let mine = try? one(context, uid: uid, channelId: row.channelId) { adopt(row, into: mine, context) } else { row.userId = uid }
         }
         for row in (try? context.fetch(FetchDescriptor<SavedPlaylist>(
             predicate: #Predicate { $0.userId == anon }))) ?? [] {
-            if (try? one(context, uid: uid, playlistId: row.playlistId)) != nil { context.delete(row) } else { row.userId = uid }
+            if let mine = try? one(context, uid: uid, playlistId: row.playlistId) { adopt(row, into: mine, context) } else { row.userId = uid }
         }
         for row in (try? context.fetch(FetchDescriptor<FavoriteVideo>(
             predicate: #Predicate { $0.userId == anon }))) ?? [] {
-            if (try? one(context, uid: uid, videoId: row.videoId)) != nil { context.delete(row) } else { row.userId = uid }
+            if let mine = try? one(context, uid: uid, videoId: row.videoId) { adopt(row, into: mine, context) } else { row.userId = uid }
         }
+    }
+
+    /// The guest row goes; what it MEANT stays: a live guest row over a removed account row is a
+    /// re-add, and the account row is resurrected dirty so the next drain pushes it.
+    private static func adopt<Row: PersistentModel & SyncableRow>(_ guest: Row, into mine: Row, _ context: ModelContext) {
+        if mine.isRemoved, !guest.isRemoved {
+            mine.isRemoved = false
+            mine.dirty = true
+        }
+        context.delete(guest)
     }
 
     // MARK: - The account switch

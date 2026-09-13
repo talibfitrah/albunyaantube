@@ -61,12 +61,17 @@ nonisolated struct YouTubeImportSource: Sendable {
         var candidates: [ImportCandidate] = []
         var failedTypes: Set<CandidateType> = []
 
+        var seen: Set<String> = []
         for type in CandidateType.allCases {
             // Cancellable between types as well as between pages: a user who left the screen must
             // not be charged two more round trips.
             if Task.isCancelled { break }
             do {
-                candidates += try await fetch(type, bearer: bearer)
+                // Cubic round 3 P2: YouTube can repeat an item across a page boundary when the list
+                // moves mid-pagination; a repeat here is a duplicate `Identifiable` id on the
+                // review screen (one tap toggles both rows, the header over-counts). Deduped at the
+                // source, not only in the pipeline.
+                candidates += try await fetch(type, bearer: bearer).filter { seen.insert($0.youtubeId).inserted }
             } catch {
                 // Never logged with the bearer in scope; the token is not part of any diagnostic.
                 failedTypes.insert(type)

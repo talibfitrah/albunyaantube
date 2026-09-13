@@ -285,6 +285,24 @@ struct YouTubeImportSourceTests {
         #expect(transport.sent[2].url.path() == "/youtube/v3/playlists")
     }
 
+    /// Cubic round 3 P2: an item YouTube repeats across a page boundary reaches the review list
+    /// ONCE — a duplicate `Identifiable` id there makes one tap toggle two rows and the header
+    /// over-count; the pipeline's own dedupe runs too late for the screen.
+    @Test func anItemRepeatedAcrossPagesReachesTheCandidatesOnce() async {
+        let transport = ScriptedTransport([
+            .json(200, Fixture.subscriptionsPage([Fixture.channel], nextPageToken: "p2")),
+            .json(200, Fixture.subscriptionsPage([Fixture.channel, "UCmMcOjsVehVlEOteyrhjI2R"])),
+            .json(200, Fixture.playlistsPage([])),
+            .json(200, Fixture.videosPage([]))
+        ])
+        let source = YouTubeImportSource(transport: transport)
+
+        let fetched = await source.fetchAll(accessToken: "ya29.fake-access-token")
+
+        #expect(fetched.failedTypes.isEmpty)
+        #expect(fetched.candidates.map { $0.youtubeId } == [Fixture.channel, "UCmMcOjsVehVlEOteyrhjI2R"])
+    }
+
     /// Three INDEPENDENT paginators: a 403 on `playlists` (the scope granted, the resource not)
     /// must not suppress the other two (`YouTubeImportRemoteSource.kt:36-66`).
     @Test func aFailureOnPlaylistsLeavesSubscriptionsAndLikedVideosIntact() async {

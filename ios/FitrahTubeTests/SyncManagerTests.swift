@@ -683,6 +683,32 @@ struct SyncManagerTests {
                 "the retag save failed on the unique constraint")
     }
 
+    /// Cubic round 3 P2: the guest's INTENT survives the dedupe. Remove X signed in (a tombstone
+    /// the account keeps), sign out, favorite X as a guest, sign back in: the guest row goes, and
+    /// the account's tombstone is resurrected dirty so the next drain pushes the re-add.
+    @Test func aGuestReAddOverTheAccountsTombstoneResurrectsItInsteadOfVanishing() async throws {
+        let container = self.container()
+        let context = ModelContext(container)
+        context.insert(AccountBinding(userId: Self.uid, initialMergeDone: true))
+        context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: Self.uid,
+                                     updatedAt: SyncCodec.date(millis: 5_000), isRemoved: true))
+        context.insert(FavoriteVideo(videoId: Self.videoId, title: "Lecture", channelName: "Alafasy",
+                                     thumbnailUrl: nil, durationSeconds: 600, userId: "", dirty: true))
+        try context.save()
+        let client = ScriptedSyncClient(pulls: [.page(.empty)],
+                                        puts: [.reply(200, SyncRowEcho(deleted: false, updatedAt: 9_000))])
+        let manager = self.manager(client, container: container)
+
+        await manager.bind(uid: Self.uid)
+
+        let rows = fetch(container, FavoriteVideo.self)
+        #expect(rows.count == 1)
+        #expect(rows.first?.userId == Self.uid)
+        #expect(rows.first?.isRemoved == false, "the guest's re-add vanished under the account's tombstone")
+        #expect(client.calls == [.pull, .put(.favorites, Self.videoId)], "the re-add was never pushed: \(client.calls)")
+    }
+
     /// Cubic round 1 P2: the archive echo tombstones a row the stores are rendering; they must
     /// hear about it like they hear about a pulled page.
     @Test func anArchiveEchoTombstoneReloadsTheStores() async throws {
