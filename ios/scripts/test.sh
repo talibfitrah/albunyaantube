@@ -120,7 +120,7 @@ run_gate() {
     fi
 
     # --disable-automatic-resolution (Stage 3 / I6): ios/Packages/FitrahAPI/Package.resolved is the
-    # TRACKED resolved graph, and `xcodebuild test` above writes the APP's whole 27-pin resolution
+    # TRACKED resolved graph, and `xcodebuild test` above writes the APP's whole 26-pin resolution
     # into it (with -derivedDataPath, Xcode uses the root local package's file as the workspace's).
     # Without this flag a plain `swift test` here re-resolves against FitrahAPI's OWN four-dependency
     # manifest and rewrites that same file down to 10 pins, stripping every Firebase/GoogleSignIn
@@ -145,7 +145,7 @@ run_gate() {
     fi
 
     # Stage 8 / S12: ios/Packages/FitrahAPI/Package.resolved is TRACKED and holds the app's whole
-    # 27-pin graph; a cold package build can still knock it down to FitrahAPI's own 10 pins despite
+    # 26-pin graph; a cold package build can still knock it down to FitrahAPI's own 10 pins despite
     # --disable-automatic-resolution above, and every gate so far discovered that by hand afterwards.
     # Relative path: run_gate has already cd'd to ios/.
     echo "== Package.resolved =="
@@ -154,7 +154,7 @@ run_gate() {
     git diff --exit-code --quiet HEAD -- Packages/FitrahAPI/Package.resolved
     local resolved_status=$?
     if [ "$resolved_status" -ne 0 ]; then
-        echo "Package.resolved drifted (27-pin graph knocked by a cold package build) -- restore with: git show HEAD:ios/Packages/FitrahAPI/Package.resolved > ios/Packages/FitrahAPI/Package.resolved" >&2
+        echo "Package.resolved drifted (26-pin graph knocked by a cold package build) -- restore with: git show HEAD:ios/Packages/FitrahAPI/Package.resolved > ios/Packages/FitrahAPI/Package.resolved" >&2
         return "$resolved_status"
     fi
 

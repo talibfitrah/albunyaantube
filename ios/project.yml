@@ -55,7 +55,7 @@ packages:
   # which is that one. So that file, not this one, is what makes a fresh checkout resolve an
   # authentication dependency to the same revisions.
   #
-  # The two writers used to ping-pong: `xcodebuild test` writes the 27-pin app graph, then
+  # The two writers used to ping-pong: `xcodebuild test` writes the 26-pin app graph, then
   # test.sh's `(cd Packages/FitrahAPI && swift test)` re-resolved against FitrahAPI's OWN manifest
   # and rewrote the same file down to 10 pins, stripping every Firebase revision. The package
   # stages now pass --disable-automatic-resolution, so the app graph is the only thing that writes
