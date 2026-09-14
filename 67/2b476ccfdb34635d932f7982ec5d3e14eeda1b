@@ -1,0 +1,24 @@
+ios/FitrahTube/Features/Auth/FirebaseAuthClient.swift
+  s_eca9a78768b070::t_0ea61e618d91fa 70-83
+ios/project.yml
+  s_eca9a78768b070::t_3479549db5b999 41-48,52-53
+  s_eca9a78768b070::t_45de8b9e993fd7 66
+ios/FitrahTubeTests/AuthErrorMappingTests.swift
+  s_eca9a78768b070::t_7a471c2b9c2963 13-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "672b476ccfdb34635d932f7982ec5d3e14eeda1b",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-opus-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
