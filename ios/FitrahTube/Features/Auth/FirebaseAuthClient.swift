@@ -67,25 +67,46 @@ nonisolated final class FirebaseAuthClient: AuthClient {
     /// guard compares two identities that were each atomic with their bearer.
     ///
     /// Stage 9 round 3 / R3-P1: the refusal is RECORDED here rather than discarded by a `try?`.
-    /// Firebase signs the user out before it rethrows — `User.internalGetTokenAsync`'s catch
-    /// (`User.swift:1621-1626`) calls `signOutIfTokenIsInvalid`, which for `userNotFound`,
-    /// `userDisabled`, `invalidUserToken` and `userTokenExpired` (`:1577-1587`) runs
-    /// `auth?.signOutByForce(withUserID:)` → `updateCurrentUser(nil, byForce: true, …)`
-    /// (`Auth.swift:1872-1877`), i.e. `currentUser` is already nil by the time anything can ask a
-    /// second time. Both codes `terminalEvent(for:)` maps are in that set, so re-deriving the
-    /// verdict after the fact answered nil for exactly the two cases that matter and the ruling-C13
-    /// device wipe had no working trigger on the bare-401 path.
+    /// Firebase signs the user out before it rethrows — `User.internalGetTokenAsync`'s catch calls
+    /// `signOutIfTokenIsInvalid`, which for `userNotFound`, `userDisabled`, `invalidUserToken` and
+    /// `userTokenExpired` runs `auth?.signOutByForce(withUserID:)` →
+    /// `updateCurrentUser(nil, byForce: true, …)`, i.e. `currentUser` is already nil by the time
+    /// anything can ask a second time — as long as the refused user is still the current one.
+    /// `signOutByForce` guards on `_currentUser?.uid == userID` (Task 32, Codex 5), so a refusal
+    /// for an account that has since been REPLACED signs nobody out. That is the SDK protecting the
+    /// new account, and it is the reason the verdict below is trusted by its own uid tag and never
+    /// by whoever `currentUser` happens to be. Both codes `terminalEvent(for:)` maps are in that set, so
+    /// re-deriving the verdict after the fact answered nil for exactly the two cases that matter
+    /// and the ruling-C13 device wipe had no working trigger on the bare-401 path.
+    ///
+    /// **Cited by SYMBOL, not by line — and re-verify it on every Firebase major (CF-A-35).** This
+    /// is the one invariant in this file no local test can reach: it is a claim about the SDK's
+    /// internals, so the only proof is reading them. Task 32 re-read all four at 12.19.1 against
+    /// 11.15.0 and found every body BYTE-IDENTICAL — but all three line numbers this comment used
+    /// to carry had shifted with the files around them (`User.swift` 1778 → 1877 lines,
+    /// `Auth.swift` 2430 → 2411), which is exactly why the numbers are gone and the symbols stay.
+    /// Last verified: **12.19.1**.
     func idToken(forceRefresh: Bool) async -> BearerToken? {
         // No clear here (Cubic round 6 / P2b): with nobody signed in this call cannot tell a
         // verdict a CONCURRENT mint just recorded from a stale one, and erasing it is what dropped
         // the wipe. The uid on the record is what bounds its life instead.
         guard let user = Auth.auth().currentUser else { return nil }
+        // Read ONCE, and outside every `withLock` below (Task 32, security review I1). Firebase
+        // 12.12.0 turned `User.uid` from a stored property into `propertyAccessQueue.sync { _uid }`
+        // — a BLOCKING wait on a serial queue this object does not own. `Mutex` is `os_unfair_lock`
+        // underneath and blocking inside `withLock` is exactly what its contract forbids: it holds
+        // the one process-global lock that guards the ruling-C13 verdict while parked on Firebase's
+        // queue, so every concurrent 401's `refreshRefusal(signedFor:)` queues behind a wait this
+        // file does not control. No deadlock is reachable today — nothing takes that queue and then
+        // this mutex — but the lock order is now ours→theirs, and one SDK release that fires a
+        // callback under `propertyAccessQueue` would close the cycle on the wipe path.
+        let uid = user.uid
         do {
             let token = try await user.getIDToken(forcingRefresh: forceRefresh)
             // This account's own successful mint is the expiry of this account's own refusal, and
             // only of that one.
-            lastRefusal.withLock { if $0?.uid == user.uid { $0 = nil } }
-            return BearerToken(value: token, identity: user.uid)
+            lastRefusal.withLock { if $0?.uid == uid { $0 = nil } }
+            return BearerToken(value: token, identity: uid)
         } catch {
             // Stage 9 round 9 / R9-P2: recorded on ANY refused mint, forced or not. There used to
             // be a `guard forceRefresh else { return nil }` here, and it read the caller's PUBLIC
@@ -102,7 +123,7 @@ nonisolated final class FirebaseAuthClient: AuthClient {
             let error = error as NSError
             let code: AuthErrorCode = error.domain == AuthErrors.domain
                 ? AuthErrorCode(firebaseCode: error.code) : .unknown
-            lastRefusal.withLock { $0 = (user.uid, code) }
+            lastRefusal.withLock { $0 = (uid, code) }
             return nil
         }
     }

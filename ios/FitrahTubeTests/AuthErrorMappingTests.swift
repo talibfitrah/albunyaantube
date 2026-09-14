@@ -10,6 +10,14 @@ import Testing
 /// Copied from `FirebaseAuth/Sources/Swift/Utilities/AuthErrors.swift`; the SDK case name is in the
 /// comment. Written out here, rather than read off the SDK, so this target imports nothing
 /// Firebase-side (plan Global Constraints: Firebase names live in five app files and nowhere else).
+///
+/// The cost of that choice: a raw value the SDK RENUMBERED would leave this suite green and the
+/// app mapping wrong, so the numbers are only ever as fresh as the last person who checked them.
+/// The ten below, plus the `17000` the default-arm test names, were re-read against **12.19.1** at
+/// the Task 32 bump. The only raw-value edits in that whole span were two REMOVALS
+/// (`dynamicLinkNotActivated` 17068, `invalidDynamicLinkDomain` 17074 — neither ever in this table)
+/// and one addition (`passwordDoesNotMeetRequirements` 17211 — deliberately unmapped, CF-A-43).
+/// Re-read them on the next Firebase major.
 private enum FirebaseCode {
     static let invalidCredential = 17004      // AuthErrorCode.invalidCredential
     static let userDisabled = 17005           // AuthErrorCode.userDisabled

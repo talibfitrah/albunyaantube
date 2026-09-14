@@ -38,11 +38,20 @@ packages:
   # Phase 4 Task 1, resolved 2026-09-02 from floors `from: "11.0.0"` / `from: "8.0.0"`, then pinned
   # to what actually came back. `exactVersion` pins only these two TOP-LEVEL requirements.
   #
+  # Firebase moved 11.15.0 -> 12.19.1 at Task 32 (CF-A-21). 12.19.0 is the last PLANNED 12.x
+  # minor; .1 is a patch that re-cut the zip artifact naming and changed no SDK code. Its floors bind
+  # this project: 12.0.0 wants iOS 15 (we are on 18), 12.12.0 wants Xcode 26.2 + Swift 6.2.3, and
+  # from 12.15.0 the manifest is swift-tools 6.1, so the package will not RESOLVE on an Xcode older
+  # than 16.3. GoogleSignIn stays at 8.0.0 deliberately: its own floors (GoogleUtilities from
+  # 8.0.0, gtm-session-fetcher from 3.3.0) sit inside Firebase 12.19.1's ranges, so the two
+  # co-resolve untouched. 13.0.0+ is SPM/binary only -- CocoaPods is being retired, which costs
+  # this project nothing.
+  #
   # THE PINNED TRANSITIVE GRAPH LIVES IN ios/Packages/FitrahAPI/Package.resolved, which is TRACKED
   # (Stage 3 / I6). /ios/FitrahTube.xcodeproj/ and /ios/DerivedData/ are gitignored, and with
   # -derivedDataPath Xcode writes no Package.resolved into the workspace -- it mirrors the app's
-  # whole resolution (27 pins: FirebaseAuth's GoogleUtilities, GTMSessionFetcher, AppCheck,
-  # Promises, ... as well as this package's own four) into the ROOT LOCAL PACKAGE's resolved file,
+  # whole resolution (26 pins after Task 32: FirebaseAuth's GoogleUtilities, GTMSessionFetcher,
+  # AppCheck, Promises, ... as well as this package's own four) into the ROOT LOCAL PACKAGE's file,
   # which is that one. So that file, not this one, is what makes a fresh checkout resolve an
   # authentication dependency to the same revisions.
   #
@@ -55,7 +64,7 @@ packages:
   # does not fit inside test.sh's 300 s watchdog -- and commit the resulting Package.resolved.
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
-    exactVersion: "11.15.0"
+    exactVersion: "12.19.1"
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS
     exactVersion: "8.0.0"
