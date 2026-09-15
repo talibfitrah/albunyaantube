@@ -74,6 +74,15 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
         // P2b), so the verdict was recorded and then unreadable: no `.deleted`, no wipe. A GUEST
         // still reads nil here, which is the leak that guard exists to stop.
         if let uid = await currentUid() { signedFor.withLock { $0 = uid } }
+        // Task 33 / CF-A-45: published from a `defer`, so a THROWING retry cannot take the verdict
+        // with it. `refreshRefusal` CONSUMES as it reads — the box is cleared — and a refused forced
+        // mint re-sends the signed original (`BearerRetry`), which can throw on a dropped
+        // connection or a cancelled task. Publishing after the `try await` therefore spent the
+        // verdict and discarded it in the same breath. Not merely a delay: Firebase force-signs the
+        // user out INSIDE that refused mint, so `idToken` returns at its `currentUser` guard for the
+        // rest of the process and nothing records a second time — the ruling-C13 wipe would wait for
+        // the next LAUNCH's bare 401, on a device still holding the deleted account's library.
+        defer { if let event = refused.withLock({ $0 }) { onStatusEvent(event) } }
         let response = try await BearerRetry.send(
             signed: request,
             // The stricter half of the host rule: a middleware would scope against its `baseURL`
@@ -113,11 +122,11 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
             // replays byte-identically (pinned by `aRetriedRequestCarriesTheIdenticalBody`).
             send: { try await base.send($0) }
         )
-        postStatusEvent(for: request, response)
         // The forced refresh was refused with a terminal verdict, so the 401 above is not a stale
-        // token — the account is gone or blocked. Posted exactly once per request, and only for a
-        // request that was in bearer scope to begin with.
-        if let event = refused.withLock({ $0 }) { onStatusEvent(event) }
+        // token — the account is gone or blocked. The `defer` above posts it exactly once per
+        // request, and only for a request that was in bearer scope to begin with; it runs AFTER
+        // this line on the success path, preserving the original order (403 envelope, then refusal).
+        postStatusEvent(for: request, response)
         return response
     }
 

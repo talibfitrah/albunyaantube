@@ -248,6 +248,41 @@ struct AuthorizedTransportTests {
         #expect(await auth.refreshRefusal(signedFor: "fake-uid") == nil, "the recorded refusal was reported twice")
     }
 
+    /// Task 33 / CF-A-45: the verdict is CONSUMED inside the token closure — `refreshRefusal` clears
+    /// the box as it reads it — but it used to be PUBLISHED only after `BearerRetry.send` returned.
+    /// A refused forced mint re-sends the signed original (`BearerRetry:41`), and that re-send can
+    /// throw: a dropped connection, a cancelled task, a transport failure of any kind. The verdict
+    /// was then spent and discarded in the same breath, so the ruling-C13 wipe simply never fired
+    /// for that 401.
+    ///
+    /// It is not permanent loss on its own — the next 401 mints again and records again. But
+    /// Firebase force-signs the user out INSIDE the refused mint, so `idToken` returns at its
+    /// `currentUser` guard for the rest of the process and nothing ever records a second time. The
+    /// wipe then waits for the next launch's bare 401, on a device still holding the deleted
+    /// account's library.
+    ///
+    /// One scripted response, not two: the re-send finds the queue dry and `ScriptedTransport`
+    /// throws `exhausted` — which is exactly the shape of the failure this pins.
+    @Test func aVerdictSurvivesARetryThatThrows() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        auth.nextMintRefusal = .userNotFound
+        let base = ScriptedTransport([.json(401, "{}")])
+        let events = Events()
+        let authorized = AuthorizedTransport(
+            base: base, apiHost: Self.apiHost, tokens: auth,
+            onStatusEvent: { events.posted.append($0) },
+            refreshRefusal: { uid in await auth.refreshRefusal(signedFor: uid) })
+
+        await #expect(throws: ScriptedTransport.Failure.self) {
+            _ = try await authorized.send(request("/api/account/me"))
+        }
+
+        #expect(events.posted == [.deleted],
+                "the retry threw and took the already-consumed verdict with it — no wipe, ever")
+        #expect(await auth.refreshRefusal(signedFor: "fake-uid") == nil,
+                "the verdict was consumed by the token closure, so nothing can report it twice")
+    }
+
     /// Stage 9 round 9 / R9-P2: the wipe trigger was LOST — not delayed — for the commonest shape
     /// of the case it exists for, a deleted account whose cached ID token has already expired.
     ///
