@@ -123,7 +123,15 @@ struct DeleteAccountTests {
         #expect(fixture.session.state == .signedOut)
         // The terminal alert owns the screen from here, so the view model never reports success.
         #expect(fixture.model.state == .deleting)
-        #expect(fixture.status.consume()?.event == .deleted)
+        let completion = fixture.status.consume()
+        #expect(completion?.event == .deleted)
+        // Task 33 / cold review: `performDeletion`'s completion announcement is UNATTRIBUTED and
+        // must stay so — it posts after `dropSession()` has cleared `user`, and `handle` honours
+        // nil unconditionally, which is what lets the user's own deletion raise its terminal alert
+        // at all. (That same unconditional arm is CF-A-47's second shape: if a new account has
+        // signed in by the time `RootView` consumes this, it re-enters `handle` and starts a
+        // SECOND wipe. Pinned here as it stands, not as it should eventually be.)
+        #expect(completion?.uid == nil, "the deletion completion announcement acquired a uid")
     }
 
     /// Task 33 / CF-A-44: the verdict belongs to ONE account, and it is refused by every other.

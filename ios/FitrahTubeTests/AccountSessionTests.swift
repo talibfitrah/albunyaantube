@@ -325,7 +325,13 @@ struct AccountSessionTests {
 
         session.signOut()
         for _ in 0..<200 where status.pending == nil { await Task.yield() }
-        #expect(status.consume()?.event == .signedOut)
+        let signedOut = status.consume()
+        #expect(signedOut?.event == .signedOut)
+        // Task 33 / cold review: the session's own announcements must stay UNATTRIBUTED. The whole
+        // nil-is-safe argument in `handle(_:for:)` rests on it — nil is honoured unconditionally,
+        // so a self-post that ever acquired a uid would start being REFUSED once the account it
+        // named was gone, which is precisely when this announcement is sent. Nothing pinned it.
+        #expect(signedOut?.uid == nil, "the session attributed its own sign-out announcement")
 
         session.signOut()
         for _ in 0..<200 { await Task.yield() }
@@ -854,8 +860,12 @@ struct AccountSessionTests {
         // `AccountStatusCenter.post` hops to the main actor, so the event lands a turn later.
         for _ in 0..<500 where status.pending == nil { await Task.yield() }
 
-        #expect(status.consume()?.event == .signedOut,
+        let terminal = status.consume()
+        #expect(terminal?.event == .signedOut,
                 "the terminal announcement depended on who got to .signedOut first")
+        // Task 33 / cold review: unattributed, for the reason above — this one posts after
+        // `dropSession()` has already cleared `user`, so a uid could only ever be a stale one.
+        #expect(terminal?.uid == nil, "the age-ineligible teardown attributed its announcement")
     }
 
     // MARK: - Stage 4 / I1: the provider SDK's own session
