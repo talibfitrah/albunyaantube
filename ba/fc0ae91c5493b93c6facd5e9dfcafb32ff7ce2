@@ -1,0 +1,42 @@
+ios/FitrahTubeTests/AuthorizedTransportTests.swift
+  s_eca9a78768b070::t_6a79547c24da11 20-23,34,171,191,204,218,243,283,317,346,429
+  s_eca9a78768b070::t_97abad0cf1a290 250-255
+ios/FitrahTube/Features/Auth/AccountStatusCenter.swift
+  s_eca9a78768b070::t_401ebecad25bdd 28-43,53,57-67,71
+ios/FitrahTube/App/AppContainer.swift
+  s_eca9a78768b070::t_401ebecad25bdd 260
+ios/FitrahTube/App/RootView.swift
+  s_eca9a78768b070::t_4aa9d8781c4faf 83-89
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_eca9a78768b070::t_e512c59ccc0fa9 120-150
+  s_eca9a78768b070::t_3743d2fdbd7bab 117
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_eca9a78768b070::t_db60da494bb70a 563
+  s_eca9a78768b070::t_4aa9d8781c4faf 546-562,572
+ios/FitrahTubeTests/AccountSessionTests.swift
+  s_eca9a78768b070::t_3743d2fdbd7bab 328,343,857
+ios/FitrahTube/Features/Auth/AuthorizedTransport.swift
+  s_eca9a78768b070::t_401ebecad25bdd 14,24,85,129,144,157-159
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_eca9a78768b070::t_3743d2fdbd7bab 207-208,218
+ios/FitrahTubeTests/YouTubeSearchClientTests.swift
+  s_eca9a78768b070::t_6a79547c24da11 188
+ios/FitrahTubeTests/ProfileBootstrapViewModelTests.swift
+  s_eca9a78768b070::t_e951ec57ea1fb8 307,365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bafc0ae91c5493b93c6facd5e9dfcafb32ff7ce2",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-opus-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
