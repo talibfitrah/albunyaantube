@@ -327,10 +327,12 @@ struct AccountSessionTests {
         for _ in 0..<200 where status.pending == nil { await Task.yield() }
         let signedOut = status.consume()
         #expect(signedOut?.event == .signedOut)
-        // Task 33 / cold review: the session's own announcements must stay UNATTRIBUTED. The whole
-        // nil-is-safe argument in `handle(_:for:)` rests on it — nil is honoured unconditionally,
-        // so a self-post that ever acquired a uid would start being REFUSED once the account it
-        // named was gone, which is precisely when this announcement is sent. Nothing pinned it.
+        // Task 33 / cold review: the session's own announcements must stay UNATTRIBUTED, and
+        // nothing pinned it. Not because a uid would be refused the moment the session ends —
+        // `lastKnownUid` deliberately keeps the departed account admissible — but because the uid
+        // such a post could carry is whatever `user` happened to hold, and `handle` would then
+        // measure THAT against a session it no longer describes. Nil is the honest value for an
+        // announcement that is about the teardown itself rather than about an account.
         #expect(signedOut?.uid == nil, "the session attributed its own sign-out announcement")
 
         session.signOut()
