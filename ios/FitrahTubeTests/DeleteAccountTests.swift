@@ -27,9 +27,15 @@ struct DeleteAccountTests {
         private(set) var observations: [WipeObservation] = []
         var session: AccountSession?
         var auth: FakeAuthClient?
+        /// Task 33: the marker AS THE WIPE SAW IT. `performDeletion` clears it again the moment the
+        /// wipe reports success, so the value at wipe time is the only moment it is observable —
+        /// and it is the value that decides whether an INTERRUPTED wipe can ever be resumed.
+        var marker: (any DeletionMarking)?
+        private(set) var markedUids: [String?] = []
         var count: Int { observations.count }
 
         func record() {
+            markedUids.append(marker?.pendingUid)
             observations.append(WipeObservation(wasCancelled: Task.isCancelled,
                                                 authOperations: auth?.operations ?? [],
                                                 wasSignedOut: session?.state == .signedOut))
@@ -53,16 +59,19 @@ struct DeleteAccountTests {
     /// re-authenticates before it sends anything.
     private func makeFixture(delete response: HTTPResponse,
                              user: AuthUser = FakeAuthClient.defaultUser,
-                             google: FakeOAuthProvider = FakeOAuthProvider()) -> Fixture {
+                             google: FakeOAuthProvider = FakeOAuthProvider(),
+                             marker: any DeletionMarking = InMemoryDeletionMarker()) -> Fixture {
         let auth = FakeAuthClient(state: .signedOut, user: user)
         let transport = ScriptedTransport([.json(200, Self.meJSON), response])
         let status = AccountStatusCenter()
         let wipes = WipeSpy()
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [], status: status,
-                                     sleep: { _ in }, wipe: { [wipes] in wipes.record(); return nil })
+                                     sleep: { _ in }, wipe: { [wipes] in wipes.record(); return nil },
+                                     marker: marker)
         wipes.session = session
         wipes.auth = auth
+        wipes.marker = marker
         let model = DeleteAccountViewModel(account: account, session: session, auth: auth,
                                            google: google, apple: FakeOAuthProvider(isAvailable: false))
         model.password = "hunter2"
@@ -114,7 +123,123 @@ struct DeleteAccountTests {
         #expect(fixture.session.state == .signedOut)
         // The terminal alert owns the screen from here, so the view model never reports success.
         #expect(fixture.model.state == .deleting)
-        #expect(fixture.status.consume() == .deleted)
+        #expect(fixture.status.consume()?.event == .deleted)
+    }
+
+    /// Task 33 / CF-A-44: the verdict belongs to ONE account, and it is refused by every other.
+    ///
+    /// The record end has carried the uid since Cubic round 6 / P2b — `refreshRefusal(signedFor:)`
+    /// answers only the account whose bearer the asking request carried. The DELIVERY end carried
+    /// nothing: `AuthorizedTransport` posted a bare `.deleted`, and `handleDeletion()` stamps its
+    /// marker from `user?.uid ?? state.me?.uid` — whoever is signed in at that instant — and wipes
+    /// THAT account's scope. So a `.deleted` minted for A while A's request was in flight, arriving
+    /// after B completed a sign-in, erased B's library and wrote B's uid into A's marker. The
+    /// window is narrow and it is not reachable without a `GoogleService-Info.plist`, which is
+    /// exactly why it is worth closing now rather than under the pressure of shipping one.
+    ///
+    /// Both directions in one test: the stranger's verdict is refused, and the account's own is
+    /// still honoured immediately afterwards — a guard that refused everything would pass the first
+    /// half and silently disable the wipe altogether.
+    @Test func aVerdictMintedForAnotherAccountIsRefusedAndTheOwnersIsNotHere() async throws {
+        let fixture = makeFixture(delete: .json(204, ""))
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        let acted = fixture.session.handle(.deleted, for: "uid-b")
+        await yieldUntil(200) { fixture.wipes.count > 0 }
+
+        #expect(acted == false, "a verdict for an account that is not signed in was acted on")
+        #expect(fixture.wipes.count == 0, "the stranger's deletion wiped the signed-in account's library")
+        #expect(fixture.session.state.me != nil, "the stranger's deletion dropped the wrong session")
+        #expect(fixture.status.pending == nil, "the refused verdict still raised the terminal alert")
+
+        // The positive control, on the same session: this account's own verdict still wipes.
+        #expect(fixture.session.handle(.deleted, for: FakeAuthClient.defaultUser.uid))
+        await settle(fixture)
+        #expect(fixture.wipes.count == 1, "the guard refused the account its own deletion")
+        #expect(fixture.status.consume()?.event == .deleted)
+    }
+
+    /// Task 33, review C1 — the half the first cut of CF-A-44 got WRONG, and the more dangerous
+    /// half: a guard that refuses a legitimate verdict silently disables the wipe forever.
+    ///
+    /// On the bare-401 path the account is ALWAYS signed out by the time the verdict is delivered.
+    /// Firebase force-signs it out inside the very mint that produces the verdict
+    /// (`FirebaseAuthClient.idToken`'s trace of `signOutIfTokenIsInvalid` → `signOutByForce`), and
+    /// `BearerRetry` then re-sends the signed original — so `.signedOut` reaches `start()` a whole
+    /// network round trip before `handle` sees the verdict, and `user` (with `state.me`) is nil.
+    /// Checking `user` alone therefore refused exactly the deletions the wipe exists for, with no
+    /// recovery: nothing writes a marker, the refusal box is consume-once, and the next launch has
+    /// no Firebase user to sign a request with.
+    ///
+    /// `lastKnownUid` is what answers it — the account that just LEFT is precisely who a late
+    /// verdict can legitimately name, while an account that has been REPLACED is precisely who it
+    /// must not. Both directions are asserted: the departed owner's verdict wipes and marks, and
+    /// the stranger's still does not.
+    @Test func aVerdictForTheAccountFirebaseJustSignedOutStillWipesAndMarks() async throws {
+        let marker = InMemoryDeletionMarker()
+        let fixture = makeFixture(delete: .json(204, ""), marker: marker)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        // What Firebase does to itself inside the refused mint, before the verdict is delivered.
+        try fixture.auth.signOut()
+        await yieldUntil { fixture.session.state == .signedOut }
+        #expect(fixture.session.state.me == nil, "the precondition is that nobody is signed in")
+
+        #expect(fixture.session.handle(.deleted, for: FakeAuthClient.defaultUser.uid),
+                "the verdict for the account that was just signed out was refused")
+        await yieldUntil(500) { fixture.wipes.count > 0 }
+
+        #expect(fixture.wipes.count == 1, "the ruling-C13 wipe never ran for a deleted account")
+        // Read at WIPE time: a successful wipe clears the marker again on its way out, so this is
+        // the only moment the durable record of "whose deletion is owed" is observable — and it is
+        // what a launch after a crashed wipe would redeem.
+        #expect(fixture.wipes.markedUids == [FakeAuthClient.defaultUser.uid],
+                "the marker named the wrong account, or none, so an interrupted wipe was unresumable")
+
+        // And the stranger is still refused with nobody signed in — `lastKnownUid` admits ONE
+        // account, not every account that ever held this session.
+        #expect(fixture.session.handle(.deleted, for: "uid-b") == false)
+    }
+
+    /// Task 33, review I3 — every reviewer made the same point, and it was fair: the two new tests
+    /// pinned the transport END and the session END and nothing pinned the WIRE between them, so
+    /// changing only the publisher to `onStatusEvent(event, nil)` left both of them green while
+    /// wrong-account deletion stayed reachable.
+    ///
+    /// This drives the real `AuthorizedTransport` into the real `AccountStatusCenter` the session
+    /// was built with, and then does what `RootView` does with the result. It is one link short of
+    /// end to end — `RootView`'s `consume()` → `handle` → alert is SwiftUI and is not constructed
+    /// here — which is exactly the link CF-A-48 records as still unpinned.
+    @Test func aVerdictKeepsItsAccountAllTheWayFromTheTransportToTheWipe() async throws {
+        let marker = InMemoryDeletionMarker()
+        let fixture = makeFixture(delete: .json(204, ""), marker: marker)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        // A SECOND transport, over the same auth client and posting into the same centre the
+        // session holds — the production wiring, assembled by hand.
+        let base = ScriptedTransport([.json(401, "{}"), .json(401, "{}")])
+        let authorized = AuthorizedTransport(
+            base: base, apiHost: "api.fitrah.test", tokens: fixture.auth,
+            onStatusEvent: { [status = fixture.status] event, uid in status.post(event, for: uid) },
+            refreshRefusal: { [auth = fixture.auth] uid in await auth.refreshRefusal(signedFor: uid) },
+            currentUid: { [auth = fixture.auth] in await auth.currentUser()?.uid })
+        fixture.auth.nextMintRefusal = .userNotFound
+
+        _ = try? await authorized.send(
+            HTTPRequest(method: "GET", url: URL(string: "https://api.fitrah.test/api/account/me")!,
+                        headers: [:], body: nil))
+
+        await yieldUntil(500) { fixture.status.pending != nil }
+        let signal = try #require(fixture.status.consume(), "the transport posted nothing at all")
+        #expect(signal.event == .deleted)
+        #expect(signal.uid == FakeAuthClient.defaultUser.uid,
+                "the verdict lost its account between the transport and the centre")
+
+        // `RootView`'s two lines, by hand.
+        #expect(fixture.session.handle(signal.event, for: signal.uid))
+        await yieldUntil(500) { fixture.wipes.count > 0 }
+        #expect(fixture.wipes.markedUids == [FakeAuthClient.defaultUser.uid],
+                "the wipe ran for the wrong account, or marked nobody")
     }
 
     /// CF-G-5. The calling task is cancelled while the DELETE is in flight; the cleanup still runs,

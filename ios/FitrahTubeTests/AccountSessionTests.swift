@@ -325,7 +325,7 @@ struct AccountSessionTests {
 
         session.signOut()
         for _ in 0..<200 where status.pending == nil { await Task.yield() }
-        #expect(status.consume() == .signedOut)
+        #expect(status.consume()?.event == .signedOut)
 
         session.signOut()
         for _ in 0..<200 { await Task.yield() }
@@ -340,7 +340,7 @@ struct AccountSessionTests {
         await Task.detached { status.post(.blocked) }.value
         for _ in 0..<200 where status.pending == nil { await Task.yield() }
 
-        #expect(status.consume() == .blocked)
+        #expect(status.consume()?.event == .blocked)
         #expect(status.consume() == nil)
     }
 
@@ -854,7 +854,7 @@ struct AccountSessionTests {
         // `AccountStatusCenter.post` hops to the main actor, so the event lands a turn later.
         for _ in 0..<500 where status.pending == nil { await Task.yield() }
 
-        #expect(status.consume() == .signedOut,
+        #expect(status.consume()?.event == .signedOut,
                 "the terminal announcement depended on who got to .signedOut first")
     }
 

@@ -11,7 +11,7 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
     private let base: any HTTPTransport
     private let apiHost: String
     private let tokens: any AuthTokenProviding
-    private let onStatusEvent: @Sendable (AccountStatusEvent) -> Void
+    private let onStatusEvent: @Sendable (AccountStatusEvent, String?) -> Void
     /// Why the token source refused a forced refresh, as a lifecycle verdict (Stage 5 / M1).
     /// Default `nil` = "no local verdict", which is every existing caller and every non-Firebase
     /// token source.
@@ -21,7 +21,7 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
     private let currentUid: @Sendable () async -> String?
 
     init(base: any HTTPTransport, apiHost: String, tokens: any AuthTokenProviding,
-         onStatusEvent: @escaping @Sendable (AccountStatusEvent) -> Void,
+         onStatusEvent: @escaping @Sendable (AccountStatusEvent, String?) -> Void,
          refreshRefusal: @escaping @Sendable (_ signedFor: String?) async -> AuthErrorCode? = { _ in nil },
          currentUid: @escaping @Sendable () async -> String? = { nil }) {
         self.base = base
@@ -82,7 +82,7 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
         // user out INSIDE that refused mint, so `idToken` returns at its `currentUser` guard for the
         // rest of the process and nothing records a second time — the ruling-C13 wipe would wait for
         // the next LAUNCH's bare 401, on a device still holding the deleted account's library.
-        defer { if let event = refused.withLock({ $0 }) { onStatusEvent(event) } }
+        defer { if let event = refused.withLock({ $0 }) { onStatusEvent(event, signedFor.withLock { $0 }) } }
         let response = try await BearerRetry.send(
             signed: request,
             // The stricter half of the host rule: a middleware would scope against its `baseURL`
@@ -126,7 +126,7 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
         // token — the account is gone or blocked. The `defer` above posts it exactly once per
         // request, and only for a request that was in bearer scope to begin with; it runs AFTER
         // this line on the success path, preserving the original order (403 envelope, then refusal).
-        postStatusEvent(for: request, response)
+        postStatusEvent(for: request, response, signedFor: signedFor.withLock { $0 })
         return response
     }
 
@@ -141,7 +141,7 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
 
     /// The response is returned to the caller REGARDLESS — this observes, it never swallows, so
     /// `AccountClient` still sees the 403 and maps it to `.blocked`/`.deletedAccount`.
-    private func postStatusEvent(for request: HTTPRequest, _ response: HTTPResponse) {
+    private func postStatusEvent(for request: HTTPRequest, _ response: HTTPResponse, signedFor uid: String?) {
         guard response.status == 403 else { return }
         // Task 7 review I2: the path prefix is only half the rule. This transport is shared and
         // handed arbitrary URLs, so a foreign host answering the same envelope on an honoured path
@@ -154,7 +154,9 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
         // reads the same one into its own error type.
         guard let event = ApiErrorEnvelope.lifecycle(in: response.body.prefix(Self.maxPeekBytes))
         else { return }
-        onStatusEvent(event)
+        // Task 33 / CF-A-44: attributed to the account this request carried a bearer for, so a
+        // 403 answered for A cannot tear down B's session if B signed in while it was in flight.
+        onStatusEvent(event, uid)
     }
 }
 

@@ -185,7 +185,7 @@ struct YouTubeSearchClientTests {
     @Test func everyRequestCarriesTheDeviceIdAndTheBearerFromTheTransport() async throws {
         let base = ScriptedTransport([.json(200, Self.page([]))])
         let authorized = AuthorizedTransport(base: base, apiHost: Self.apiHost,
-                                             tokens: FixedToken(), onStatusEvent: { _ in })
+                                             tokens: FixedToken(), onStatusEvent: { _, _ in })
         let client = YouTubeSearchClient(transport: authorized, baseURL: Self.base,
                                          deviceId: DeviceId(value: "dev-123"))
 

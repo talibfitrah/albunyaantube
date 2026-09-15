@@ -17,6 +17,10 @@ struct AuthorizedTransportTests {
     /// `@unchecked Sendable` for the reason `RecordingTransport` is: one task, sequential awaits.
     private nonisolated final class Events: @unchecked Sendable {
         var posted: [AccountStatusEvent] = []
+        /// Task 33 / CF-A-44: the account each event was attributed to, recorded alongside rather
+        /// than folded into `posted` so every assertion written before the attribution existed
+        /// still reads the same.
+        var attributions: [String?] = []
     }
 
     private func transport(
@@ -27,7 +31,7 @@ struct AuthorizedTransportTests {
         let base = ScriptedTransport(responses)
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: ScriptedTokens(token: token),
-            onStatusEvent: { events.posted.append($0) })
+            onStatusEvent: { events.posted.append($0); events.attributions.append($1) })
         return (authorized, base, events)
     }
 
@@ -164,7 +168,7 @@ struct AuthorizedTransportTests {
         let tokens = VersionedTokens()
         let events = Events()
         let authorized = AuthorizedTransport(base: base, apiHost: Self.apiHost, tokens: tokens,
-                                             onStatusEvent: { events.posted.append($0) })
+                                             onStatusEvent: { events.posted.append($0); events.attributions.append($1) })
 
         let response = try await authorized.send(request("/api/account/me"))
 
@@ -184,7 +188,7 @@ struct AuthorizedTransportTests {
         let events = Events()
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
-            onStatusEvent: { events.posted.append($0) },
+            onStatusEvent: { events.posted.append($0); events.attributions.append($1) },
             refreshRefusal: { _ in .userNotFound })
 
         _ = try await authorized.send(request("/api/account/me"))
@@ -197,7 +201,7 @@ struct AuthorizedTransportTests {
         let events = Events()
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
-            onStatusEvent: { events.posted.append($0) },
+            onStatusEvent: { events.posted.append($0); events.attributions.append($1) },
             refreshRefusal: { _ in .userDisabled })
 
         _ = try await authorized.send(request("/api/account/me"))
@@ -211,7 +215,7 @@ struct AuthorizedTransportTests {
         let events = Events()
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
-            onStatusEvent: { events.posted.append($0) },
+            onStatusEvent: { events.posted.append($0); events.attributions.append($1) },
             refreshRefusal: { _ in .network })
 
         _ = try await authorized.send(request("/api/account/me"))
@@ -236,13 +240,19 @@ struct AuthorizedTransportTests {
         let events = Events()
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: auth,
-            onStatusEvent: { events.posted.append($0) },
+            onStatusEvent: { events.posted.append($0); events.attributions.append($1) },
             refreshRefusal: { uid in await auth.refreshRefusal(signedFor: uid) })
 
         _ = try await authorized.send(request("/api/account/me"))
 
         #expect(events.posted == [.deleted],
                 "the admin-side deletion had no working trigger on the bare-401 path")
+        // Task 33 / CF-A-44: the verdict leaves this transport ATTRIBUTED to the account whose
+        // bearer the request carried. Unattributed, `AccountSession` cannot tell a verdict for the
+        // account in front of it from one for an account that signed out while the request was in
+        // flight — and the second wipes the wrong library.
+        #expect(events.attributions == [FakeAuthClient.defaultUser.uid],
+                "the verdict was published with no account attached to it")
         #expect(auth.tokenRefreshes == [false, true],
                 "the verdict cost a second forced mint, or none at all")
         #expect(await auth.refreshRefusal(signedFor: "fake-uid") == nil, "the recorded refusal was reported twice")
@@ -270,7 +280,7 @@ struct AuthorizedTransportTests {
         let events = Events()
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: auth,
-            onStatusEvent: { events.posted.append($0) },
+            onStatusEvent: { events.posted.append($0); events.attributions.append($1) },
             refreshRefusal: { uid in await auth.refreshRefusal(signedFor: uid) })
 
         await #expect(throws: ScriptedTransport.Failure.self) {
@@ -304,7 +314,7 @@ struct AuthorizedTransportTests {
         let events = Events()
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: auth,
-            onStatusEvent: { events.posted.append($0) },
+            onStatusEvent: { events.posted.append($0); events.attributions.append($1) },
             refreshRefusal: { uid in await auth.refreshRefusal(signedFor: uid) },
             currentUid: { await auth.currentUser()?.uid })
 
@@ -333,7 +343,7 @@ struct AuthorizedTransportTests {
         let events = Events()
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: auth,
-            onStatusEvent: { events.posted.append($0) },
+            onStatusEvent: { events.posted.append($0); events.attributions.append($1) },
             refreshRefusal: { uid in await auth.refreshRefusal(signedFor: uid) },
             // Nobody is signed in any more — Firebase signed the dead account out itself.
             currentUid: { await auth.currentUser()?.uid })
@@ -416,7 +426,7 @@ struct AuthorizedTransportTests {
         let events = Events()
         let authorized = AuthorizedTransport(
             base: base, apiHost: Self.apiHost, tokens: RefusingTokens(),
-            onStatusEvent: { events.posted.append($0) },
+            onStatusEvent: { events.posted.append($0); events.attributions.append($1) },
             refreshRefusal: { _ in .userNotFound })
 
         _ = try await authorized.send(request("/api/account/me", host: "evil.test"))

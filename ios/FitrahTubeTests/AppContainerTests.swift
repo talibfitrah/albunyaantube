@@ -204,8 +204,8 @@ struct AppContainerTests {
         center.post(.signedOut)
         // `post` hops to the main actor; yields past all three hops, and there is no clock.
         for _ in 0..<10 { await Task.yield() }
-        #expect(center.pending == .deleted, "a device wipe was lost behind a reversible block")
-        #expect(center.consume() == .deleted)
+        #expect(center.pending?.event == .deleted, "a device wipe was lost behind a reversible block")
+        #expect(center.consume()?.event == .deleted)
         #expect(center.consume() == nil)
     }
 
@@ -215,7 +215,7 @@ struct AppContainerTests {
         center.post(.blocked)
         center.post(.deleted)
         for _ in 0..<10 { await Task.yield() }
-        #expect(center.consume() == .deleted)
+        #expect(center.consume()?.event == .deleted)
     }
 
     /// R5-1, fix round 1: stubbing the gate closed the deletion vector but not the constraint the

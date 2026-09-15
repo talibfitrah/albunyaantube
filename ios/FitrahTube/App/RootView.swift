@@ -80,9 +80,13 @@ struct RootView: View {
             // envelope here from whatever isolation the request ran on. `consume()` clears it, so a
             // re-render cannot route the user twice.
             .onChange(of: container.accountStatus.pending) { _, pending in
-                guard pending != nil, let event = container.accountStatus.consume() else { return }
-                container.session.handle(event)
-                if let terminal = AccountStatusAlert(event) { alert = terminal }
+                guard pending != nil, let signal = container.accountStatus.consume() else { return }
+                // Task 33 / CF-A-44: the ALERT is gated on the same answer as the action. A verdict
+                // for an account that is no longer signed in is refused by the session, and showing
+                // "your account has been deleted" to whoever IS signed in — while deliberately
+                // wiping nothing — would be the worse half of the bug rather than the fix.
+                guard container.session.handle(signal.event, for: signal.uid) else { return }
+                if let terminal = AccountStatusAlert(signal.event) { alert = terminal }
             }
             // R7-P1 #3: the terminal under-13 screen, presented OVER whatever the outcome
             // resolves to rather than routed to. The 422 tears the session down as it lands

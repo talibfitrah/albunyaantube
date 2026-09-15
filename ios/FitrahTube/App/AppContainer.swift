@@ -257,7 +257,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         if isFixture { return ScriptedTransport(Array(repeating: .json(200, fixtureAccountJSON), count: 4)) }
         #endif
         return AuthorizedTransport(base: URLSessionTransport(), apiHost: apiBaseURL.host() ?? "",
-                                   tokens: auth, onStatusEvent: { [accountStatus] in accountStatus.post($0) },
+                                   tokens: auth, onStatusEvent: { [accountStatus] event, uid in accountStatus.post(event, for: uid) },
                                    // Stage 5 / M1: the fallback verdict for this backend's bare 401
                                    // on a terminated account. Same `auth` object as `tokens`, so
                                    // there is still exactly ONE token source (ruling F12).

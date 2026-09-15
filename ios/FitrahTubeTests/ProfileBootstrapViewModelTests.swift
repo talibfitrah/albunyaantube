@@ -304,7 +304,7 @@ struct ProfileBootstrapViewModelTests {
 
         #expect(await auth.currentUser() == nil, "the user is still stranded on the screen")
         for _ in 0..<500 where fixture.status.pending == nil { await Task.yield() }
-        #expect(fixture.status.consume() == .signedOut)
+        #expect(fixture.status.consume()?.event == .signedOut)
     }
 
     /// Not a second sign-out control: the action is the recovery for a stranded form and does
@@ -362,7 +362,7 @@ struct ProfileBootstrapViewModelTests {
         #expect(await fixture.auth.currentUser() == nil)
         // `AccountStatusCenter.post` hops to the main actor, so the event lands a turn later.
         for _ in 0..<500 where fixture.status.pending == nil { await Task.yield() }
-        #expect(fixture.status.consume() == .signedOut, "the per-account holders were told nothing")
+        #expect(fixture.status.consume()?.event == .signedOut, "the per-account holders were told nothing")
 
         #expect(fixture.model.state.profileSaved == false)
         #expect(fixture.model.state.error == nil, "the terminal screen is the message; no inline error")

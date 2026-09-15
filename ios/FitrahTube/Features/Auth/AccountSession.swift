@@ -156,6 +156,7 @@ nonisolated enum AccountState: Sendable, Equatable {
                 state = .signedOut
             case .signedIn(let signedIn):
                 user = signedIn
+                lastKnownUid = signedIn.uid
                 // A new account on this device gets its own deletion latch: without this, a second
                 // account deleted in the same process would find the first one's task and wipe
                 // nothing (`handleDeletion`).
@@ -338,8 +339,13 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // The transport already posts these (`AuthorizedTransport`'s 403 envelope check),
                 // but a terminal account must drop its session even if that post is missed —
                 // "Something went wrong" over a dead account is the wrong end state, not a banner.
-                case .blocked: handle(.blocked)
-                case .deletedAccount: handle(.deleted)
+                // Task 33 / review C2: ATTRIBUTED, like the transport's post. These two bypass the
+                // centre entirely, so leaving them unattributed left the 403 path with a second
+                // door into the wipe that the attribution never reached — A's in-flight 403
+                // landing after B signed in still wiped B. `publishable()` has already established
+                // that this round belongs to the account below.
+                case .blocked: handle(.blocked, for: user?.uid ?? startedFor)
+                case .deletedAccount: handle(.deleted, for: user?.uid ?? startedFor)
                 // Fix round 1 / I1: BOUNDED. `BearerRetry` surfaces a bare 401 in THREE cases —
                 // the cross-account identity change (Task 7), `token(true)` returning nil (the
                 // ordinary expired/failed-refresh path), and a freshly refreshed token still being
@@ -543,15 +549,36 @@ nonisolated enum AccountState: Sendable, Equatable {
     func acknowledgeAgeIneligible() { isAgeIneligible = false }
 
     /// .blocked -> signOut; .deleted -> the device wipe; .signedOut -> signOut.
-    func handle(_ event: AccountStatusEvent) {
+    /// Task 33 / CF-A-44: a verdict is honoured only by the account it was minted FOR.
+    ///
+    /// `handleDeletion()` below stamps `marker.pendingUid` from whoever is signed in right now and
+    /// wipes that account's scope — so a `.deleted` recorded for A and delivered after B completed a
+    /// sign-in destroyed B's library and wrote B's uid into A's marker. The RECORD end has carried
+    /// the uid since Cubic round 6 / P2b; this is the delivery end, where it stopped.
+    ///
+    /// A nil `uid` is UNATTRIBUTED, not "any account" — it is honoured, exactly as before this
+    /// attribution existed. The session's own announcements and the splash advisory are the
+    /// intended nil sources; a 403 envelope answered to an UNSIGNED request is a third one that is
+    /// not (CF-A-47), so nil is a "no worse than before" arm rather than a proof of safety.
+    ///
+    /// - Returns: whether the verdict was acted on. `RootView` uses it to suppress the terminal
+    ///   ALERT too — telling B their account was deleted while deliberately not deleting anything
+    ///   would be worse than the silence.
+    @discardableResult
+    func handle(_ event: AccountStatusEvent, for uid: String? = nil) -> Bool {
+        guard uid == nil || uid == user?.uid || uid == lastKnownUid else { return false }
         switch event {
         case .blocked, .signedOut:
             // A block is REVERSIBLE, so the local library survives it exactly as an ordinary
             // sign-out does.
             signOut()
         case .deleted:
-            handleDeletion()
+            // The verdict's own uid, not `user`'s: on the bare-401 path the account is already
+            // signed out by now, so re-deriving the marker from `user` would write no marker at
+            // all and an interrupted wipe could never be resumed.
+            handleDeletion(for: uid)
         }
+        return true
     }
 
     /// The account is gone. BOTH paths land here — the admin-side 403 `ACCOUNT_DELETED` envelope
@@ -573,7 +600,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// objects on screen; and a Firebase failure must not be able to skip a device the server has
     /// already erased.
     @discardableResult
-    func handleDeletion(deletingFirebaseUser: Bool = false) -> Task<Void, Never> {
+    func handleDeletion(deletingFirebaseUser: Bool = false, for verdictUid: String? = nil) -> Task<Void, Never> {
         if let deletion {
             // Fix round 1 / I2: the latch must not SWALLOW a later `true`. The 403 envelope can
             // arrive before the user's own 204 (a concurrent `/me` against an account the server
@@ -602,7 +629,10 @@ nonisolated enum AccountState: Sendable, Equatable {
         // the wipe below still runs, it just cannot be resumed, which is the honest answer.
         // Stage 7 re-review 2 / m1: `!uid.isEmpty` too — the getter reports `""` as pending, so an
         // empty uid is the same marker that names nobody by a different route.
-        if let uid = user?.uid ?? state.me?.uid, !uid.isEmpty { marker.pendingUid = uid }
+        // `verdictUid` FIRST (Task 33, review C1): the account the verdict names outlives the
+        // session that held it, and on the bare-401 path both `user` and `state.me` are already nil
+        // by the time this runs.
+        if let uid = verdictUid ?? user?.uid ?? state.me?.uid, !uid.isEmpty { marker.pendingUid = uid }
         // No `@MainActor in` on the closure: `performDeletion` carries the isolation and the hop.
         let task = Task.detached {
             await self.performDeletion()
@@ -629,6 +659,19 @@ nonisolated enum AccountState: Sendable, Equatable {
         if wipeError == nil { marker.pendingUid = nil }
         status.post(.deleted)
     }
+
+    /// The last identity this session held, kept ACROSS the sign-out that ends it (Task 33, review
+    /// C1). `user` cannot answer "whose verdict is this" on the path that produces most verdicts:
+    /// Firebase force-signs the account out INSIDE the refused mint that mints the verdict
+    /// (`FirebaseAuthClient.idToken`'s trace), so `.signedOut` reaches `start()` a whole network
+    /// round trip before the verdict reaches `handle`, and `user` — and `state.me` with it — is
+    /// already nil. Checking `user` alone therefore REFUSED exactly the deletions the wipe exists
+    /// for, which is a worse bug than the one the attribution was added to fix.
+    ///
+    /// Overwritten by the next `.signedIn`, never cleared by `.signedOut`: "the account that just
+    /// left" is precisely who a late verdict can legitimately be about, while an account that has
+    /// been REPLACED is exactly who it must not be about.
+    private var lastKnownUid: String?
 
     /// The deletion latch. Non-nil from the first `handleDeletion()` until the next sign-in.
     private var deletion: Task<Void, Never>?
