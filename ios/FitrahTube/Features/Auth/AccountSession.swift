@@ -343,9 +343,11 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // centre entirely, so leaving them unattributed left the 403 path with a second
                 // door into the wipe that the attribution never reached — A's in-flight 403
                 // landing after B signed in still wiped B. `publishable()` has already established
-                // that this round belongs to the account below.
-                case .blocked: handle(.blocked, for: user?.uid ?? startedFor)
-                case .deletedAccount: handle(.deleted, for: user?.uid ?? startedFor)
+                // that this round belongs to `user`, and there is no suspension between that guard
+                // and here, so `user?.uid` IS the round's account — no `?? startedFor` fallback,
+                // which Cubic showed is unreachable and only suggests a recovery that cannot run.
+                case .blocked: handle(.blocked, for: user?.uid)
+                case .deletedAccount: handle(.deleted, for: user?.uid)
                 // Fix round 1 / I1: BOUNDED. `BearerRetry` surfaces a bare 401 in THREE cases —
                 // the cross-account identity change (Task 7), `token(true)` returning nil (the
                 // ordinary expired/failed-refresh path), and a freshly refreshed token still being

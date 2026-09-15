@@ -209,6 +209,32 @@ struct AppContainerTests {
         #expect(center.consume() == nil)
     }
 
+    /// Task 33 / Cubic round 1 P2: the TIE arm of the merge, which attribution made load-bearing and
+    /// which nothing exercised — both existing merge tests post unattributed events of DISTINCT
+    /// severities, so reverting the rule to `Swift.max` left the suite green.
+    ///
+    /// It matters because the two signals are no longer interchangeable. An unattributed signal is
+    /// honoured unconditionally; an attributed one can be refused by `AccountSession.handle`. So on
+    /// a tie the unattributed one must survive, or the user's own account deletion (which posts a
+    /// bare `.deleted` from `performDeletion`) can lose its slot to a stale attributed verdict that
+    /// is then refused — no wipe, no alert, and a confirmation screen with no exit.
+    @Test func anEqualSeverityTieKeepsTheSignalThatCanActuallyBeActedOn() async {
+        let center = AccountStatusCenter()
+        center.post(.deleted)                 // unattributed: always honoured
+        center.post(.deleted, for: "uid-a")   // attributed: refusable
+        for _ in 0..<10 { await Task.yield() }
+        #expect(center.consume()?.uid == nil,
+                "an attributed verdict evicted the unattributed one it tied with")
+
+        // And the other way round: an attributed signal held is replaced, because the newcomer is
+        // at least as actionable — that is the pre-existing last-writer rule, kept.
+        let other = AccountStatusCenter()
+        other.post(.deleted, for: "uid-a")
+        other.post(.deleted)
+        for _ in 0..<10 { await Task.yield() }
+        #expect(other.consume()?.uid == nil, "a stale attributed verdict kept the slot")
+    }
+
     /// The other order, for the same reason: whichever arrives second, `.deleted` is what routes.
     @Test func aLaterBlockedNeverOverwritesAPendingDeleted() async {
         let center = AccountStatusCenter()
