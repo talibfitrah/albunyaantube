@@ -1,0 +1,21 @@
+ios/FitrahTube/Features/Auth/AuthorizedTransport.swift
+  s_eca9a78768b070::t_538a12378511cc 77-85,126-129
+ios/FitrahTubeTests/AuthorizedTransportTests.swift
+  s_eca9a78768b070::t_5f55ddd4279824 251-285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d82bfd27c98113339120b99ea1ad3a8845fdf8cf",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-opus-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
