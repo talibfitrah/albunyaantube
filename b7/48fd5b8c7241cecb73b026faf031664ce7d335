@@ -1,0 +1,29 @@
+android/app/src/main/res/values-nl/strings.xml
+  s_e5a56681c4050b::t_8c425d269e0e41 522-529,531-540
+  s_e5a56681c4050b::t_241b9393faa278 530
+frontend/src/services/reportsService.ts
+  s_e5a56681c4050b::t_e2d3b5af68f109 85
+android/app/src/main/res/values-ar/strings.xml
+  s_e5a56681c4050b::t_8c425d269e0e41 585-603
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_e5a56681c4050b::t_8c425d269e0e41 13323-13324,13335-13336,13345-13346,13357-13358,13367-13368,13379-13380,13389-13390,13401-13402,13411-13412,13423-13424,13433-13434,13445-13446,13455-13456,13467-13468,13499-13500,13511-13512,13521-13522,13533-13534,13543-13544,13555-13556,13565-13566,13577-13578,13587-13588,13599-13600,13609-13610,13631-13632,13643-13644,13653-13654,13665-13666,13675-13676,13687-13688,13697-13698,13709-13710,13719-13720,13731-13732,13741-13742,13753-13754
+  s_e5a56681c4050b::t_241b9393faa278 13616,13622
+android/app/src/main/res/values/strings.xml
+  s_e5a56681c4050b::t_241b9393faa278 626
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b748fd5b8c7241cecb73b026faf031664ce7d335",
+  "prompts": {},
+  "sessions": {
+    "s_e5a56681c4050b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b4530028-b3c8-47cc-ac62-996b0b247485",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
