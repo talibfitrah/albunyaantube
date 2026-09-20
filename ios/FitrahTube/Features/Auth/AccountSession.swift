@@ -810,7 +810,10 @@ nonisolated enum AccountState: Sendable, Equatable {
         // is theirs — no sign-out, no `.deleted` — and the stores `LocalAccountWiper` re-scoped to
         // `""` go back to the account that is actually on screen.
         guard await !takenOver() else {
-            if let arrived = user?.uid { scope(to: arrived) }
+            // `arrived != owed` (Cubic): this guard can fire because FIREBASE holds the newcomer while
+            // `user` still names the deleted account, and re-scoping to THAT would point every store
+            // back at the account just wiped. `start()` scopes to the newcomer when it observes them.
+            if let arrived = user?.uid, arrived != owed { scope(to: arrived) }
             return
         }
         dropSession()

@@ -731,7 +731,11 @@ struct DeleteAccountTests {
         let cleanup = session.handleDeletion(deletingFirebaseUser: selfDelete, for: FakeAuthClient.defaultUser.uid)
         await yieldUntil { takeover.sync.isParked }
         try await replaceAWithB(takeover)
-        _ = takeover.status.consume()   // the sign-out's own announcement
+        // WAIT for the sign-out's own announcement before consuming it (Cubic): `post` hops through
+        // an unstructured main-actor Task, so consuming early lets it land AFTERWARDS and fail the
+        // final `pending == nil` assertion for no reason.
+        await yieldUntil { takeover.status.pending != nil }
+        _ = takeover.status.consume()
 
         takeover.sync.release()
         await cleanup.value
