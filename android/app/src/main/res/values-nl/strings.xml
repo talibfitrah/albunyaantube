@@ -519,6 +519,25 @@
     <string name="player_action_audio">Audio</string>
     <string name="player_action_report">Melden</string>
     <string name="report_content">Inhoud melden</string>
+    <string name="report_title">Inhoud melden</string>
+    <string name="report_subtitle">Selecteer alle redenen die van toepassing zijn</string>
+    <string name="report_reason_music">Muziek / Instrumenten</string>
+    <string name="report_reason_nudity">Naaktheid / Onzedelijkheid</string>
+    <string name="report_reason_bad_language">Grof taalgebruik</string>
+    <string name="report_reason_flirting">Flirten / Toespelingen</string>
+    <string name="report_reason_romance">Romantiek / Liefde</string>
+    <string name="report_reason_awrah">Onbedekte awrah</string>
+    <string name="report_reason_shirk">Shirk</string>
+    <string name="report_reason_bidah">Bid\'ah / Innovatie</string>
+    <string name="report_reason_violence">Geweld / Bloederige beelden</string>
+    <string name="report_reason_misinformation">Onjuiste informatie</string>
+    <string name="report_reason_other">Anders</string>
+    <string name="report_other_hint">Geef een toelichting…</string>
+    <string name="report_submit">Melding versturen</string>
+    <string name="report_success">Bedankt — je melding is verstuurd</string>
+    <string name="report_rate_limited">Je hebt onlangs te veel meldingen verstuurd. Probeer het later opnieuw.</string>
+    <string name="report_error">Melding versturen mislukt. Probeer het opnieuw.</string>
+    <string name="report_select_reason">Selecteer minstens één reden</string>
     <string name="player_favorite_toggle_error">Favorieten bijwerken mislukt. Probeer het opnieuw.</string>
 
     <!-- Share -->

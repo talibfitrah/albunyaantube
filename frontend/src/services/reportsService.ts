@@ -82,7 +82,7 @@ export const REASON_LABELS: Record<ReportReason, string> = {
   FLIRTING: 'Flirting / Innuendo',
   ROMANCE: 'Romance / Love Content',
   AWRAH: 'Awrah Exposure',
-  SHIRK: 'Shirk / Polytheism',
+  SHIRK: 'Shirk',
   BIDAH: "Bid'ah / Innovation",
   VIOLENCE: 'Violence / Gore',
   MISINFORMATION: 'Misinformation',

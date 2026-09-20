@@ -623,7 +623,7 @@
     <string name="report_reason_flirting">Flirting / Innuendo</string>
     <string name="report_reason_romance">Romance / Love Content</string>
     <string name="report_reason_awrah">Awrah Exposure</string>
-    <string name="report_reason_shirk">Shirk / Polytheism</string>
+    <string name="report_reason_shirk">Shirk</string>
     <string name="report_reason_bidah">Bid\'ah / Innovation</string>
     <string name="report_reason_violence">Violence / Gore</string>
     <string name="report_reason_misinformation">Misinformation</string>

@@ -13320,8 +13320,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Failed to submit report. Please try again."
+            "state": "translated",
+            "value": "تعذّر إرسال البلاغ. حاول مرة أخرى."
           }
         },
         "en": {
@@ -13332,8 +13332,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Failed to submit report. Please try again."
+            "state": "translated",
+            "value": "Melding versturen mislukt. Probeer het opnieuw."
           }
         }
       }
@@ -13342,8 +13342,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Please describe…"
+            "state": "translated",
+            "value": "يرجى التوضيح…"
           }
         },
         "en": {
@@ -13354,8 +13354,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Please describe…"
+            "state": "translated",
+            "value": "Geef een toelichting…"
           }
         }
       }
@@ -13364,8 +13364,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "You've sent too many reports recently. Please try again later."
+            "state": "translated",
+            "value": "أرسلت بلاغات كثيرة مؤخرًا. حاول مرة أخرى لاحقًا."
           }
         },
         "en": {
@@ -13376,8 +13376,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "You've sent too many reports recently. Please try again later."
+            "state": "translated",
+            "value": "Je hebt onlangs te veel meldingen verstuurd. Probeer het later opnieuw."
           }
         }
       }
@@ -13386,8 +13386,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Awrah Exposure"
+            "state": "translated",
+            "value": "كشف العورة"
           }
         },
         "en": {
@@ -13398,8 +13398,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Awrah Exposure"
+            "state": "translated",
+            "value": "Onbedekte awrah"
           }
         }
       }
@@ -13408,8 +13408,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Bad Language"
+            "state": "translated",
+            "value": "ألفاظ بذيئة"
           }
         },
         "en": {
@@ -13420,8 +13420,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Bad Language"
+            "state": "translated",
+            "value": "Grof taalgebruik"
           }
         }
       }
@@ -13430,8 +13430,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Bid'ah / Innovation"
+            "state": "translated",
+            "value": "بدعة"
           }
         },
         "en": {
@@ -13442,8 +13442,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Bid'ah / Innovation"
+            "state": "translated",
+            "value": "Bid'ah / Innovatie"
           }
         }
       }
@@ -13452,8 +13452,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Flirting / Innuendo"
+            "state": "translated",
+            "value": "مغازلة / إيحاءات"
           }
         },
         "en": {
@@ -13464,8 +13464,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Flirting / Innuendo"
+            "state": "translated",
+            "value": "Flirten / Toespelingen"
           }
         }
       }
@@ -13496,8 +13496,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Misinformation"
+            "state": "translated",
+            "value": "معلومات مضللة"
           }
         },
         "en": {
@@ -13508,8 +13508,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Misinformation"
+            "state": "translated",
+            "value": "Onjuiste informatie"
           }
         }
       }
@@ -13518,8 +13518,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Music / Instruments"
+            "state": "translated",
+            "value": "موسيقى / معازف"
           }
         },
         "en": {
@@ -13530,8 +13530,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Music / Instruments"
+            "state": "translated",
+            "value": "Muziek / Instrumenten"
           }
         }
       }
@@ -13540,8 +13540,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Nudity / Immodesty"
+            "state": "translated",
+            "value": "عُري / عدم احتشام"
           }
         },
         "en": {
@@ -13552,8 +13552,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Nudity / Immodesty"
+            "state": "translated",
+            "value": "Naaktheid / Onzedelijkheid"
           }
         }
       }
@@ -13562,8 +13562,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Other"
+            "state": "translated",
+            "value": "أخرى"
           }
         },
         "en": {
@@ -13574,8 +13574,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Other"
+            "state": "translated",
+            "value": "Anders"
           }
         }
       }
@@ -13584,8 +13584,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Romance / Love Content"
+            "state": "translated",
+            "value": "محتوى رومانسي / غرامي"
           }
         },
         "en": {
@@ -13596,8 +13596,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Romance / Love Content"
+            "state": "translated",
+            "value": "Romantiek / Liefde"
           }
         }
       }
@@ -13606,20 +13606,20 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Shirk / Polytheism"
+            "state": "translated",
+            "value": "شرك"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shirk / Polytheism"
+            "value": "Shirk"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Shirk / Polytheism"
+            "value": "Shirk"
           }
         }
       }
@@ -13628,8 +13628,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Violence / Gore"
+            "state": "translated",
+            "value": "عنف / مشاهد دموية"
           }
         },
         "en": {
@@ -13640,8 +13640,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Violence / Gore"
+            "state": "translated",
+            "value": "Geweld / Bloederige beelden"
           }
         }
       }
@@ -13650,8 +13650,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Please select at least one reason"
+            "state": "translated",
+            "value": "يرجى اختيار سبب واحد على الأقل"
           }
         },
         "en": {
@@ -13662,8 +13662,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Please select at least one reason"
+            "state": "translated",
+            "value": "Selecteer minstens één reden"
           }
         }
       }
@@ -13672,8 +13672,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Submit Report"
+            "state": "translated",
+            "value": "إرسال البلاغ"
           }
         },
         "en": {
@@ -13684,8 +13684,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Submit Report"
+            "state": "translated",
+            "value": "Melding versturen"
           }
         }
       }
@@ -13694,8 +13694,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Select all reasons that apply"
+            "state": "translated",
+            "value": "اختر جميع الأسباب المنطبقة"
           }
         },
         "en": {
@@ -13706,8 +13706,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Select all reasons that apply"
+            "state": "translated",
+            "value": "Selecteer alle redenen die van toepassing zijn"
           }
         }
       }
@@ -13716,8 +13716,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Thank you — your report has been submitted"
+            "state": "translated",
+            "value": "شكرًا لك — تم إرسال بلاغك"
           }
         },
         "en": {
@@ -13728,8 +13728,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Thank you — your report has been submitted"
+            "state": "translated",
+            "value": "Bedankt — je melding is verstuurd"
           }
         }
       }
@@ -13738,8 +13738,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Report Content"
+            "state": "translated",
+            "value": "الإبلاغ عن المحتوى"
           }
         },
         "en": {
@@ -13750,8 +13750,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Report Content"
+            "state": "translated",
+            "value": "Inhoud melden"
           }
         }
       }

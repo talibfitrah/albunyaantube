@@ -582,6 +582,25 @@
     <string name="player_action_audio">صوت</string>
     <string name="player_action_report">إبلاغ</string>
     <string name="report_content">إبلاغ عن المحتوى</string>
+    <string name="report_title">الإبلاغ عن المحتوى</string>
+    <string name="report_subtitle">اختر جميع الأسباب المنطبقة</string>
+    <string name="report_reason_music">موسيقى / معازف</string>
+    <string name="report_reason_nudity">عُري / عدم احتشام</string>
+    <string name="report_reason_bad_language">ألفاظ بذيئة</string>
+    <string name="report_reason_flirting">مغازلة / إيحاءات</string>
+    <string name="report_reason_romance">محتوى رومانسي / غرامي</string>
+    <string name="report_reason_awrah">كشف العورة</string>
+    <string name="report_reason_shirk">شرك</string>
+    <string name="report_reason_bidah">بدعة</string>
+    <string name="report_reason_violence">عنف / مشاهد دموية</string>
+    <string name="report_reason_misinformation">معلومات مضللة</string>
+    <string name="report_reason_other">أخرى</string>
+    <string name="report_other_hint">يرجى التوضيح…</string>
+    <string name="report_submit">إرسال البلاغ</string>
+    <string name="report_success">شكرًا لك — تم إرسال بلاغك</string>
+    <string name="report_rate_limited">أرسلت بلاغات كثيرة مؤخرًا. حاول مرة أخرى لاحقًا.</string>
+    <string name="report_error">تعذّر إرسال البلاغ. حاول مرة أخرى.</string>
+    <string name="report_select_reason">يرجى اختيار سبب واحد على الأقل</string>
     <string name="player_favorite_toggle_error">فشل تحديث المفضلة. يرجى المحاولة مرة أخرى.</string>
 
     <!-- Share -->
