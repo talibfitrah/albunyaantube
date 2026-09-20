@@ -366,6 +366,12 @@ nonisolated enum AccountState: Sendable, Equatable {
         // rendering account A's record while B's `/me` is in flight is the render `scope(to:)`
         // exists to prevent.
         if state.me == nil || state.me?.uid != user?.uid { state = .loading }
+        // CF-A-44, the `land()` window: a nil-started round is running for an account `start()` has
+        // not observed, so `user` and `lastKnownUid` are both nil and `handle` refused that
+        // account's own verdict. Firebase is the only live source of who this round is for. It only
+        // ever ADDS: a nil answer (a guest's Retry) must not forget the account that just left, and
+        // once `start()` has observed anybody (`user`, read AFTER the await) its write is the truth.
+        if startedFor == nil, let uid = await auth.currentUser()?.uid { lastKnownUid = uid }
         for attempt in 1...max(1, maxAttempts) {
             do {
                 let me = try await account.me()

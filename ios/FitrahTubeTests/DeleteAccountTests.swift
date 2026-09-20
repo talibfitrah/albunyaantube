@@ -209,6 +209,60 @@ struct DeleteAccountTests {
         #expect(fixture.session.handle(.deleted, for: "uid-b") == false)
     }
 
+    /// CF-A-44, the `land()` window — the same wrong direction as review C1, by another route.
+    ///
+    /// `SignInViewModel.land()` refreshes on a sign-in `start()` has not observed yet, and `user`
+    /// is nil there ON PURPOSE (`refreshIfSignedIn`'s doc). So is `lastKnownUid`, which only
+    /// `start()`'s `.signedIn` arm wrote — and `fetch`'s own `startedFor` is `user?.uid`, nil too.
+    /// A verdict the transport attributes to the account Firebase really holds was therefore
+    /// refused, on the app's primary sign-in path. The round itself is the only thing running in
+    /// that window, so it is what asks Firebase who it is running for.
+    ///
+    /// Both directions: the arriving account's verdict wipes and marks, and the stranger's is
+    /// still refused — the seed admits the ONE account Firebase holds, not "anyone while `user`
+    /// is nil".
+    @Test func aVerdictForTheAccountStartHasNotObservedYetStillWipesAndMarks() async throws {
+        let arriving = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true,
+                                providerIDs: ["password"])
+        let fixture = makeFixture(delete: .json(204, ""), user: arriving)
+        // NO `start()`: Firebase holds B and the session has not heard.
+        _ = try await fixture.auth.signIn(email: "b@fitrah.test", password: "p")
+        let round = Task { await fixture.session.refresh(maxAttempts: 1) }
+        await yieldUntil { fixture.transport.sent.count == 1 }
+        #expect(fixture.session.user == nil, "the precondition is the window start() has not closed")
+
+        #expect(fixture.session.handle(.deleted, for: "uid-stranger") == false,
+                "a verdict for an account Firebase does not hold was acted on")
+        #expect(fixture.wipes.count == 0)
+
+        #expect(fixture.session.handle(.deleted, for: arriving.uid),
+                "the verdict for the account that is signing in was refused")
+        await yieldUntil(500) { fixture.wipes.count > 0 }
+        #expect(fixture.wipes.count == 1, "the ruling-C13 wipe never ran for a deleted account")
+        #expect(fixture.wipes.markedUids == [arriving.uid])
+        await round.value
+    }
+
+    /// The other edge of the same seed: it only ever ADDS an identity. A round also starts with no
+    /// identity when nobody is signed in at all — the Retry cards in `MeTabRoot` and `SettingsView`
+    /// call `refresh()` unguarded — and Firebase answers nil there. Writing THAT over
+    /// `lastKnownUid` would forget the account that just left, which is review C1's defect again:
+    /// its late verdict refused, the wipe silently disabled.
+    @Test func aGuestRefreshDoesNotForgetTheAccountThatJustLeft() async throws {
+        let fixture = makeFixture(delete: .json(401, "{}"))
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        try fixture.auth.signOut()
+        await yieldUntil { fixture.session.state == .signedOut }
+
+        await fixture.session.refresh(maxAttempts: 1)
+        #expect(fixture.transport.sent.count == 2, "the precondition is that the guest round ran")
+
+        #expect(fixture.session.handle(.deleted, for: FakeAuthClient.defaultUser.uid),
+                "a guest refresh erased the account a late verdict can still legitimately name")
+        await yieldUntil(500) { fixture.wipes.count > 0 }
+        #expect(fixture.wipes.count == 1)
+    }
+
     /// Task 33, review I3 — every reviewer made the same point, and it was fair: the two new tests
     /// pinned the transport END and the session END and nothing pinned the WIRE between them, so
     /// changing only the publisher to `onStatusEvent(event, nil)` left both of them green while
