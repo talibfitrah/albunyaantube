@@ -1,0 +1,19 @@
+android/app/src/main/res/drawable/ic_launcher_background.xml
+  s_e5a56681c4050b::t_8c03c436ad19af 8-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa03a70e409e2f02807c72bb507bf8efcfb8bb14",
+  "prompts": {},
+  "sessions": {
+    "s_e5a56681c4050b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b4530028-b3c8-47cc-ac62-996b0b247485",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
