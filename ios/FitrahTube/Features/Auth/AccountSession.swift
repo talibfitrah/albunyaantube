@@ -7,12 +7,22 @@ import Observation
 /// the cleanup is not deferred, it is unreachable forever.
 @MainActor protocol DeletionMarking: AnyObject, Sendable {
     var pendingUid: String? { get set }
+
+    /// The last account that signed in on this device, kept DURABLY and never cleared by a
+    /// sign-out (Task 34 / CF-A-44). `pendingUid` alone cannot be redeemed safely, because the
+    /// question "may this wipe still run?" has two answers that look identical at launch: with
+    /// nobody signed in, the deleted account being gone (redeem) and somebody ELSE's library
+    /// sitting on the device (never redeem) both present as `currentUser == nil`. The in-memory
+    /// `lastKnownUid` cannot answer it either — it is nil at launch, which is exactly when the
+    /// redemption runs. This is the only record that outlives the process.
+    var lastSignedInUid: String? { get set }
 }
 
 /// The production marker: one `UserDefaults` key, written before the detached cleanup starts and
 /// cleared only once the wipe reported no error.
 @MainActor final class UserDefaultsDeletionMarker: DeletionMarking {
     nonisolated static let defaultsKey = "com.albunyaan.tube.deletionPending"
+    nonisolated static let lastSignedInKey = "com.albunyaan.tube.lastSignedInUid"
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults) { self.defaults = defaults }
@@ -24,12 +34,21 @@ import Observation
             else { defaults.removeObject(forKey: Self.defaultsKey) }
         }
     }
+
+    var lastSignedInUid: String? {
+        get { defaults.string(forKey: Self.lastSignedInKey) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Self.lastSignedInKey) }
+            else { defaults.removeObject(forKey: Self.lastSignedInKey) }
+        }
+    }
 }
 
 /// The default, so the seven suites that never delete need no store at all — and so no test can
 /// write a pending-deletion flag into `UserDefaults.standard`.
 @MainActor final class InMemoryDeletionMarker: DeletionMarking {
     var pendingUid: String?
+    var lastSignedInUid: String?
     init() {}
 }
 
@@ -157,6 +176,10 @@ nonisolated enum AccountState: Sendable, Equatable {
             case .signedIn(let signedIn):
                 user = signedIn
                 lastKnownUid = signedIn.uid
+                // Durable, and never cleared by the sign-out below (Task 34 / CF-A-44): this is
+                // what `resumePendingDeletion()` reads on the NEXT launch, when `lastKnownUid` is
+                // nil because the process is new.
+                marker.lastSignedInUid = signedIn.uid
                 // A new account on this device gets its own deletion latch: without this, a second
                 // account deleted in the same process would find the first one's task and wipe
                 // nothing (`handleDeletion`).
@@ -177,12 +200,29 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// racing it back onto the screen.
     func resumePendingDeletion() async {
         guard let pending = marker.pendingUid else { return }
+        let signedIn = await auth.currentUser()?.uid
         // Stage 7 fix 2 / M2: the marker carries a uid and NOTHING read it. A wipe that failed for
         // account A kept the marker, and a launch after account B had signed in on the same device
         // wiped B's library for A's deletion. The wipe owed to A cannot be performed any more —
         // every row on the device is B's now — so the marker is dropped rather than redeemed.
         // A nil current user is the ordinary case: the deleted account is signed out.
-        if let signedIn = await auth.currentUser()?.uid, signedIn != pending {
+        if let signedIn, signedIn != pending {
+            marker.pendingUid = nil
+            return
+        }
+        // Task 34 / CF-A-44: "nobody is signed in" is NOT permission to wipe. It is the ordinary
+        // shape of a deleted account — and it is also the shape of a LOCKED device holding a
+        // different account's stored session, and of any device whose last user simply signed out.
+        // Falling through here is what let a marker owed to A erase B's library, and Task 33 made
+        // it reachable more often by writing a marker on the bare-401 path where none was written
+        // before. The durable record of who last held this device is the only thing that can tell
+        // the two apart; when it names somebody else, the wipe owed to A cannot be performed any
+        // more and the marker is dropped, exactly as it is for a different SIGNED-IN account above.
+        //
+        // A nil `lastSignedInUid` falls through and redeems: that is a device with no evidence
+        // anyone else ever used it (a fresh install, or a marker written by a build that predates
+        // this key), which is the case the marker exists for.
+        if signedIn == nil, let lastHeld = marker.lastSignedInUid, lastHeld != pending {
             marker.pendingUid = nil
             return
         }

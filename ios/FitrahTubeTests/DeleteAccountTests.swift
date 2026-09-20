@@ -568,6 +568,62 @@ struct DeleteAccountTests {
         #expect(marker.pendingUid == nil, "the stale marker survived and will wipe on the next launch too")
     }
 
+    /// Task 34 / CF-A-44's second route, and the one Task 33 made MORE reachable rather than less.
+    ///
+    /// `resumePendingDeletion` treated "nobody is signed in" as permission to wipe, because that is
+    /// the ordinary shape of a deleted account. It is also the shape of a device whose last user
+    /// simply signed out, and of a LOCKED device holding a stored session — a locked launch reports
+    /// `currentUser == nil` while a user IS stored. So a marker owed to A, left behind by a wipe
+    /// that failed, erased whatever library B had accumulated since. The uid-matching guard above
+    /// only covers the case where B is signed in RIGHT NOW.
+    ///
+    /// Task 33 widened the input to this: passing the verdict's uid to `handleDeletion` means the
+    /// bare-401 path now writes a marker where both `user` and `state.me` were nil and none was
+    /// written before. Correct on its own terms, and precisely why this had to be closed next.
+    ///
+    /// The durable `lastSignedInUid` is what answers it. `lastKnownUid` cannot: it is in-memory and
+    /// nil at launch, which is exactly when this runs.
+    @Test func aPendingMarkerIsNotRedeemedAgainstTheLibraryOfWhoeverHeldTheDeviceSince() async throws {
+        let marker = InMemoryDeletionMarker()
+        marker.pendingUid = "uid-a"          // A's wipe failed and is still owed
+        marker.lastSignedInUid = "uid-b"     // …but B has used this device since, and signed out
+        let wipes = WipeSpy()
+        let auth = FakeAuthClient(state: .signedOut)
+        let transport = ScriptedTransport([.json(200, Self.meJSON)])
+        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: auth, account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
+
+        await session.resumePendingDeletion()
+
+        #expect(wipes.count == 0, "a wipe owed to A erased the library of whoever held the device since")
+        #expect(marker.pendingUid == nil,
+                "the unredeemable marker survived and will try again on every later launch")
+    }
+
+    /// The positive control, and it is not optional: a guard that refused every nil-current-user
+    /// redemption would pass the test above while making the durable marker useless — an
+    /// interrupted wipe would then be owed to the device forever, which is the exact failure the
+    /// marker was introduced to prevent. Same setup, one field different.
+    @Test func aPendingMarkerIsStillRedeemedForTheAccountThatLastHeldTheDevice() async throws {
+        let marker = InMemoryDeletionMarker()
+        marker.pendingUid = "uid-a"
+        marker.lastSignedInUid = "uid-a"     // nobody else has used this device
+        let wipes = WipeSpy()
+        let auth = FakeAuthClient(state: .signedOut)
+        let transport = ScriptedTransport([.json(200, Self.meJSON)])
+        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: auth, account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
+
+        await session.resumePendingDeletion()
+
+        #expect(wipes.count == 1, "the deleted account's own interrupted wipe was refused")
+        #expect(marker.pendingUid == nil)
+    }
+
     /// The other half of M2: `handleDeletion` used to store `""` when no uid was known, and the
     /// getter reports `""` as pending — a marker that matches nobody, on a device that would then
     /// wipe itself on the next launch whoever signs in. No uid, no marker; the wipe this call owes
