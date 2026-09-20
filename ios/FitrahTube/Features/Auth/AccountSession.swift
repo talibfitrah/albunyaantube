@@ -19,8 +19,9 @@ import Observation
 }
 
 /// The production marker: two `UserDefaults` keys. `pendingUid` is written before the detached
-/// cleanup starts and cleared only once the wipe reported no error; `lastSignedInUid` is written
-/// by every sign-in and cleared only by the redeemed deletion of that same account.
+/// cleanup starts and cleared only once the wipe reported no error. `lastSignedInUid` is written
+/// by `start()`'s `.signedIn` arm and by `fetch`'s `land()`-window seed, and cleared — only while
+/// it still names that account — by a redeemed deletion and by the age-ineligible teardown.
 @MainActor final class UserDefaultsDeletionMarker: DeletionMarking {
     nonisolated static let defaultsKey = "com.albunyaan.tube.deletionPending"
     nonisolated static let lastSignedInKey = "com.albunyaan.tube.lastSignedInUid"
@@ -210,43 +211,44 @@ nonisolated enum AccountState: Sendable, Equatable {
     func resumePendingDeletion() async {
         guard let pending = marker.pendingUid else { return }
         let signedIn = await auth.currentUser()?.uid
-        // Stage 7 fix 2 / M2 + Task 34 / CF-A-44: the DEVICE wipe below is redeemed only while the
-        // device still belongs to the account the marker names. Two shapes say it does not, and
-        // they are one question — who holds this device? — answered by the live session when there
-        // is one and by the durable record when there is not:
-        //   * somebody else is signed in right now (M2: a launch after B signed in wiped B's
-        //     library for A's deletion);
-        //   * nobody is signed in, and the last account that was is somebody else — a device whose
-        //     last user simply SIGNED OUT. "Nobody is signed in" is the ordinary shape of a deleted
-        //     account, so it was read as permission to wipe, and a marker owed to A erased what B
-        //     had accumulated since. Task 33 made that reachable more often by writing a marker on
-        //     the bare-401 path where none was written before. (UNVERIFIED, no probe: a locked
-        //     device holding a stored session may present the same way — but before first unlock
-        //     `UserDefaults` is likely unreadable too, so `pendingUid` reads nil above and this
-        //     line is never reached.)
+        // THE INVARIANT: the DEVICE wipe runs only on POSITIVE evidence that the pending account is
+        // the one holding this device — it is signed in right now, or nobody is and the durable
+        // record of the last holder names it. Everything else pays the debt BY UID, and "everything
+        // else" includes having no evidence at all.
         //
-        // Review I3: the debt is still PAYABLE there. Every per-user row carries its owner, so A's
-        // are deleted by uid and B's, the guest's and every device-wide step are left alone.
-        // `SyncManager.switchAccount(_:from:to:)` deletes the previous uid's rows too, on B's first
-        // bind — so merely DROPPING the marker strands A's rows only when that bind never runs or
-        // rolls back (B offline, B with no syncable uid). This is the DURABLE BACKSTOP for that
-        // case. A delete that reported an error keeps the marker, as the device wipe below does.
-        //
-        // A nil `lastSignedInUid` falls through and redeems: no evidence anyone else has held this
-        // device, i.e. a marker written by a build that predates the key. (Not a fresh install —
-        // an uninstall takes `UserDefaults` with it, so there is no marker to redeem.)
-        if let holder = signedIn ?? marker.lastSignedInUid, holder != pending {
-            if wipeRows(pending) == nil { redeemed(pending) }
+        // It used to be the other way round — the device wipe was the fall-through, and each fix
+        // added a condition in front of it — so every path that left the holder empty inherited
+        // permission to destroy everything, three rounds running:
+        //   * Stage 7 fix 2 / M2: somebody else signed in right now, and B's library went for A's
+        //     deletion;
+        //   * Task 34 / CF-A-44: nobody signed in — the ordinary shape of a deleted account, and
+        //     equally of a device whose last user simply SIGNED OUT — and a marker owed to A erased
+        //     what B had accumulated since. Task 33 made that more reachable by writing a marker on
+        //     the bare-401 path. (UNVERIFIED, no probe: a locked device holding a stored session
+        //     may present the same way — but before first unlock `UserDefaults` is likely
+        //     unreadable too, so `pendingUid` reads nil above and this is never reached.)
+        //   * Round 3 / item 1: nobody signed in and NO holder on record, because
+        //     `terminateAgeIneligible()` had forgotten an under-13 account in between.
+        if (signedIn ?? marker.lastSignedInUid) == pending {
+            if await wipe() == nil { redeemed(pending) }
             return
         }
-        if await wipe() == nil { redeemed(pending) }
+        // Review I3: the debt is still PAYABLE here. Every per-user row carries its owner, so A's
+        // are deleted by uid and everybody else's, the guest's and every device-wide step are left
+        // alone. `SyncManager.switchAccount(_:from:to:)` deletes the previous uid's rows too, on
+        // the next account's first bind — so merely DROPPING the marker strands A's rows only when
+        // that bind never runs or rolls back (B offline, B with no syncable uid). This is the
+        // DURABLE BACKSTOP for that case. A delete that reported an error keeps the marker, as the
+        // device wipe above does.
+        if wipeRows(pending) == nil { redeemed(pending) }
     }
 
     /// The debt is paid: the marker goes, and so does the deleted account's uid (review I2 — the
     /// wiper's own standard is that no record of that uid outlives the wipe, and this key sits
     /// outside its prefix sweep). ONLY while it still names that account: whoever signed in while
-    /// the wipe ran is the device's holder now, and forgetting THEM would let the next stale marker
-    /// fall through `resumePendingDeletion`'s nil arm and wipe their library.
+    /// the wipe ran is the device's holder now, and that record is the positive evidence THEIR own
+    /// interrupted deletion would need (`resumePendingDeletion`'s invariant) — forgetting them
+    /// would quietly downgrade it to a row-only delete.
     ///
     /// `uid` is the account the wipe RAN for, captured when the debt was recorded — never
     /// `marker.pendingUid` read at completion: a second account deleted while the first wipe was
@@ -400,9 +402,13 @@ nonisolated enum AccountState: Sendable, Equatable {
         // once `start()` has observed anybody (`user`, read AFTER the await) its write is the truth.
         if startedFor == nil, let uid = await auth.currentUser()?.uid, user == nil {
             lastKnownUid = uid
-            // Durable too: this account's verdict can write `pendingUid` and the process can die
-            // before `start()` drains its `.signedIn`, and the relaunch would then read the PREVIOUS
-            // account as the holder and downgrade this one's device wipe to a row-only delete.
+            // Durable too, for the one case the record is CONSULTED in: this account's verdict
+            // wrote `pendingUid`, the session was already gone (the bare-401 path force-signs out
+            // before the verdict arrives; `performDeletion` signs out itself) and the wipe failed
+            // or the process died — all before `start()` drained its `.signedIn`. The relaunch then
+            // finds nobody signed in and reads the holder from here; still naming the PREVIOUS
+            // account, it would downgrade this one's device wipe to a row-only delete. (While
+            // Firebase still holds the account, `signedIn == pending` and this is never read.)
             marker.lastSignedInUid = uid
         }
         for attempt in 1...max(1, maxAttempts) {
@@ -620,8 +626,11 @@ nonisolated enum AccountState: Sendable, Equatable {
         // BEFORE the awaits: the screen has to be up while the delete runs, or the drop below
         // renders a bare guest shell for as long as Firebase takes to answer.
         isAgeIneligible = true
-        // Round 2 / item 5: captured BEFORE the awaits — the delete clears `user`.
-        let leaving = user?.uid
+        // Round 2 / item 5: captured BEFORE the awaits — the delete clears `user`. Round 3 / item 3:
+        // `?? lastKnownUid`, because Firebase can force-sign the child out, and `start()` can drain
+        // that `.signedOut`, before the 422 is processed — `user` is nil by then and
+        // `lastKnownUid` is what survives that sign-out by design.
+        let leaving = user?.uid ?? lastKnownUid
         try? await auth.deleteUser()
         dropSession()
         // The account is deleted through Firebase, so its uid does not stay behind as the device's

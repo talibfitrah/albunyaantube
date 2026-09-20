@@ -146,7 +146,7 @@ struct LocalAccountWiperTests {
     /// since. The DEVICE wipe above can no longer run — it would take B's library. Dropping the
     /// marker instead left A's rows to `SyncManager.switchAccount`, which deletes the previous
     /// uid's rows on B's first bind — and strands them whenever that bind never runs or rolls back
-    /// (B offline, B with no syncable uid). Every one of the five models carries its owner, so the
+    /// (B offline, B with no syncable uid). Every per-user row carries its owner, so the
     /// redemption is the durable backstop for that case: it deletes A's rows and ONLY A's — not B's, not the guest's (`""`), and none of the
     /// device-wide steps (the search history and the device id are B's and the guest's too).
     ///
@@ -188,7 +188,8 @@ struct LocalAccountWiperTests {
         #expect(fixture.owners(SavedPlaylist.self, \.userId) == survivors)
         #expect(fixture.owners(SubscribedChannel.self, \.userId) == survivors)
         #expect(fixture.owners(SyncState.self, \.userId) == survivors)
-        #expect(fixture.owners(AccountBinding.self, \.userId) == survivors)
+        // Round 3 / item 2: the binding is NOT A's row to take — see the test below.
+        #expect(fixture.owners(AccountBinding.self, \.userId) == uids.sorted())
         #expect(deviceWipes.withLock { $0 } == 0, "a wipe owed to A erased the device of whoever held it since")
         #expect(fixture.searchHistory.entries == ["tafsir"], "the scoped delete ran a device-wide step")
         #expect(fixture.defaults.string(forKey: DeviceId.defaultsKey) == "dev-1")
@@ -198,6 +199,29 @@ struct LocalAccountWiperTests {
                 "the scoped delete took a key belonging to the account that holds the device")
         #expect(marker.pendingUid == nil, "the debt was paid and the marker still claims it")
         #expect(marker.lastSignedInUid == "uid-b", "paying A's debt forgot who holds the device now")
+    }
+
+    /// Round 3 / item 2. The binding is what makes the NEXT account's first bind a
+    /// `.switchAccount`, which tags the guest-era (`""`) rows to the PREVIOUS uid and deletes them.
+    /// With no binding `SyncDecisions.bind` answers `.merge`, which tags those same rows to the NEW
+    /// uid and pushes them — the guest-era library uploaded into B's server account, the transfer
+    /// `SyncManager.switchAccount`'s own comment exists to prevent. The device wipe may take the
+    /// binding because it takes every row, anonymous ones included; the scoped delete leaves the
+    /// anonymous rows behind, so the binding is what still protects them.
+    @Test func theScopedDeleteLeavesTheBindingSoTheNextAccountSwitchesRatherThanMerges() throws {
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        try seedRows(fixture, uids: ["uid-a", ""])
+        let context = ModelContext(fixture.container)
+        context.insert(AccountBinding(userId: "uid-a", initialMergeDone: true))
+        try context.save()
+
+        #expect(fixture.wiper.wipeRows(of: "uid-a") == nil)
+
+        #expect(fixture.owners(FavoriteVideo.self, \.userId) == [""], "the positive control: A's rows did go")
+        let binding = SyncStore.binding(fixture.container)
+        #expect(binding?.userId == "uid-a")
+        #expect(SyncDecisions.bind(binding: binding, uid: "uid-b") == .switchAccount(previousUid: "uid-a"),
+                "B's first bind would MERGE the guest-era rows into B's account")
     }
 
     /// `""` is not "nobody" here — it is the GUEST's scope, and `UserDefaultsDeletionMarker`'s

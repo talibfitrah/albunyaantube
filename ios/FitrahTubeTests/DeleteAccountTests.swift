@@ -277,12 +277,13 @@ struct DeleteAccountTests {
         let base = FakeAuthClient(state: .signedOut, user: replaced)
         let auth = ParkedCurrentUserAuth(base)
         let wipes = WipeSpy()
+        let marker = InMemoryDeletionMarker()
         let transport = ScriptedTransport([.json(200, Self.meJSON)])
         let session = AccountSession(auth: auth,
                                      account: AccountClient(transport: transport, baseURL: Self.base,
                                                             deviceId: DeviceId(value: "dev-1")),
                                      stores: [], status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return nil })
+                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
         // Firebase holds X; no `start()` yet, so the round below is nil-started and parks on X.
         _ = try await base.signIn(email: "x@fitrah.test", password: "p")
         auth.parkNextCurrentUser()
@@ -302,6 +303,11 @@ struct DeleteAccountTests {
 
         #expect(session.handle(.deleted, for: replaced.uid) == false,
                 "the stale seed re-admitted the account that was replaced")
+        // Round 3 / item 4: the DURABLE half sits behind the same re-check. Hoisted out of it, the
+        // seed would record the REPLACED account as the device's holder over B — in memory
+        // everything above still holds, and the next launch reads the wrong holder.
+        #expect(marker.lastSignedInUid == FakeAuthClient.defaultUser.uid,
+                "the stale seed durably recorded the replaced account as the device's holder")
         #expect(wipes.count == 0, "B's library was wiped for X's deletion")
         // The positive control: the account that IS signed in keeps its own verdict.
         #expect(session.handle(.deleted, for: FakeAuthClient.defaultUser.uid))
@@ -655,11 +661,19 @@ struct DeleteAccountTests {
     /// A cleanup interrupted by process death — or refused by a full store — is owed to this device
     /// forever otherwise: the server has revoked and deleted the Firebase user, so the next `/me`
     /// answers a bare 401 and nothing can reach `handleDeletion()` again.
-    @Test func aPendingMarkerMakesTheNextLaunchWipe() async throws {
+    ///
+    /// Round 3 / item 1: this used to set a marker and NOTHING else, and expect the device wipe —
+    /// which encoded the old rule, "wipe the device unless something forbids it". The rule is now
+    /// the inverse: the DEVICE wipe runs only on POSITIVE evidence that the pending account is the
+    /// one holding the device. So this is the positive control for both shapes of that evidence:
+    /// the account is still signed in (`true`), or nobody is and the durable record names it.
+    @Test(arguments: [false, true])
+    func aPendingMarkerMakesTheNextLaunchWipe(theAccountIsStillSignedIn: Bool) async throws {
         let marker = InMemoryDeletionMarker()
         marker.pendingUid = "fake-uid"
+        if !theAccountIsStillSignedIn { marker.lastSignedInUid = "fake-uid" }
         let wipes = WipeSpy()
-        let auth = FakeAuthClient(state: .signedOut)
+        let auth = FakeAuthClient(state: theAccountIsStillSignedIn ? .signedIn(FakeAuthClient.defaultUser) : .signedOut)
         let transport = ScriptedTransport([.json(200, Self.meJSON)])
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
@@ -877,6 +891,54 @@ struct DeleteAccountTests {
 
         #expect(marker.pendingUid == (someoneElseArrivedMidWipe ? "uid-b" : nil))
         #expect(marker.lastSignedInUid == (someoneElseArrivedMidWipe ? "uid-b" : nil))
+    }
+
+    /// Round 3 / item 1, the trace that made the inversion necessary. A's wipe failed (marker = A);
+    /// B used the device and signed out (rows kept, by design); an under-13 X signed in and was
+    /// torn down, which forgets X as the holder — so the relaunch finds a pending A, nobody signed
+    /// in and NO holder on record. "No holder" used to fall through to the DEVICE wipe, which took
+    /// B's retained library, the guest's and the downloads for A's debt. It is not evidence that A
+    /// holds the device, so A's debt is paid by uid like every other mismatch.
+    @Test func aDebtWithNoHolderOnRecordIsPaidByUidNeverByWipingTheDevice() async throws {
+        let marker = InMemoryDeletionMarker()
+        marker.pendingUid = "uid-a"
+        let child = AuthUser(uid: "uid-x", email: "x@fitrah.test", isEmailVerified: true, providerIDs: ["password"])
+        let first = makeFixture(delete: .json(204, ""), user: child, marker: marker)
+        let running = try await signedIn(first)
+        await first.session.terminateAgeIneligible()
+        running.cancel()
+        #expect(marker.lastSignedInUid == nil, "the precondition is that the teardown left no holder on record")
+
+        let wipes = WipeSpy()
+        let asked = Mutex<[String]>([])
+        let relaunched = AccountSession(
+            auth: FakeAuthClient(state: .signedOut),
+            account: AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
+            stores: [], status: AccountStatusCenter(), sleep: { _ in },
+            wipe: { [wipes] in wipes.record(); return nil },
+            wipeRows: { uid in asked.withLock { $0.append(uid) }; return nil }, marker: marker)
+        await relaunched.resumePendingDeletion()
+
+        #expect(wipes.count == 0, "a debt owed to A wiped a device A is not known to hold")
+        #expect(asked.withLock { $0 } == ["uid-a"])
+        #expect(marker.pendingUid == nil)
+    }
+
+    /// Round 3 / item 3: Firebase can force-sign the child out — and `start()` can drain that
+    /// `.signedOut` — BEFORE the 422 is processed, so `user` is already nil when the teardown runs
+    /// and there was nothing to compare the record against: the child's uid stayed on disk.
+    /// `lastKnownUid` survives exactly that sign-out, by design.
+    @Test func theAgeIneligibleTeardownForgetsTheChildEvenAfterFirebaseSignedThemOutFirst() async throws {
+        let marker = InMemoryDeletionMarker()
+        let fixture = makeFixture(delete: .json(204, ""), marker: marker)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        try fixture.auth.signOut()
+        await yieldUntil { fixture.session.user == nil }
+        #expect(marker.lastSignedInUid == FakeAuthClient.defaultUser.uid, "the precondition is a record still naming the child")
+
+        await fixture.session.terminateAgeIneligible()
+
+        #expect(marker.lastSignedInUid == nil, "the under-13 account's uid outlived its teardown")
     }
 
     /// Round 2 / item 5: the under-13 teardown deletes the account through Firebase and used to

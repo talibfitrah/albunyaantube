@@ -4,9 +4,11 @@ import InnerTubeKit
 import SwiftData
 
 /// Ruling C13's device wipe: everything this device still holds for an account that has gone away.
-/// Reached from exactly one place — `AccountSession.handleDeletion()` — so the admin-side 403
-/// `ACCOUNT_DELETED` envelope and the user's own successful `DELETE /api/account/me` share it, and
-/// neither can run it twice.
+/// `wipe()` is reached from two places, both in `AccountSession`: `handleDeletion()` — so the
+/// admin-side 403 `ACCOUNT_DELETED` envelope and the user's own successful `DELETE
+/// /api/account/me` share it, and its latch keeps either from running it twice — and
+/// `resumePendingDeletion()`, which redeems an interrupted one at launch and is also the only
+/// caller of the uid-scoped `wipeRows(of:)`.
 ///
 /// Two of the three Android defects the ruling names are refused here (the third, CF-G-5, is the
 /// caller's):
@@ -115,15 +117,24 @@ import SwiftData
     }
 
     /// The NARROW counterpart, for a wipe owed to an account that no longer holds this device
-    /// (`AccountSession.resumePendingDeletion`'s mismatch arm, review I3): that account's own rows
-    /// in the five per-user models, and nothing else. Every other step of `wipe()` above is
+    /// (`AccountSession.resumePendingDeletion`'s by-uid arm, review I3): that account's own rows
+    /// in FOUR per-user models, and nothing else. Every other step of `wipe()` above is
     /// device-wide — the search history, the defaults sweep, the caches, the device id and the
     /// offline library (`OfflineItem` carries no owner) now belong to whoever has used the device
     /// since — and `stores` are left alone because re-scoping them would un-scope that account.
     ///
+    /// NOT `AccountBinding` (round 3 / item 2). The binding is what makes the next account's first
+    /// bind a `.switchAccount`, which tags the guest-era (`""`) rows to the PREVIOUS uid and deletes
+    /// them; with no binding `SyncDecisions.bind` answers `.merge`, which tags them to the NEW uid
+    /// and pushes — the guest-era library uploaded into the next account. `wipe()` may take the
+    /// binding because it takes every row, anonymous ones included; this leaves them behind.
+    ///
     /// Returns the error it hit, so the caller keeps its marker and retries. UNLIKE `wipe()` it is
-    /// one `do` block and STOPS at the first throw rather than attempting every step: nothing is
-    /// saved until all five deletes went, and every step is a delete, so the retry is idempotent.
+    /// one `do` block and STOPS at the first throw rather than attempting every step. It is NOT
+    /// atomic: `delete(model:where:)` is a batch delete against the STORE — probed, it is visible
+    /// to a fresh context before `save()` and `rollback()` does not undo it — so a throw part-way
+    /// leaves the earlier models' rows already gone. Every step is a delete, so the retry the kept
+    /// marker buys is idempotent.
     func wipeRows(of uid: String) -> Error? {
         // `""` is the GUEST's scope, not "nobody": THIS arm never deletes the guest's rows for a
         // marker that names no account (a build before Stage 7 fix 2 / M2 could store one). It
@@ -138,7 +149,6 @@ import SwiftData
             try context.delete(model: SavedPlaylist.self, where: #Predicate { $0.userId == uid })
             try context.delete(model: SubscribedChannel.self, where: #Predicate { $0.userId == uid })
             try context.delete(model: SyncState.self, where: #Predicate { $0.userId == uid })
-            try context.delete(model: AccountBinding.self, where: #Predicate { $0.userId == uid })
             try context.save()
             return nil
         } catch {
