@@ -33,6 +33,10 @@ struct DeleteAccountTests {
         /// and it is the value that decides whether an INTERRUPTED wipe can ever be resumed.
         var marker: (any DeletionMarking)?
         private(set) var markedUids: [String?] = []
+        /// CF-A-53: the uids the SCOPED delete was asked for, and a hook run inside the device wipe
+        /// — set after construction, because what it drives is the session the wipe belongs to.
+        var scopedUids: [String] = []
+        var duringWipe: (() async -> Void)?
         var count: Int { observations.count }
 
         func record() {
@@ -139,13 +143,13 @@ struct DeleteAccountTests {
         #expect(fixture.model.state == .deleting)
         let completion = fixture.status.consume()
         #expect(completion?.event == .deleted)
-        // Task 33 / cold review: `performDeletion`'s completion announcement is UNATTRIBUTED and
-        // must stay so — it posts after `dropSession()` has cleared `user`, and `handle` honours
-        // nil unconditionally, which is what lets the user's own deletion raise its terminal alert
-        // at all. (That same unconditional arm is CF-A-47's second shape: if a new account has
-        // signed in by the time `RootView` consumes this, it re-enters `handle` and starts a
-        // SECOND wipe. Pinned here as it stands, not as it should eventually be.)
-        #expect(completion?.uid == nil, "the deletion completion announcement acquired a uid")
+        // CF-A-53 round 2 / I1: the completion announcement names the account it was FOR. It used to
+        // be pinned as unattributed, on the reasoning that it posts after `dropSession()` has
+        // cleared `user` and only an unconditional nil could raise the user's own terminal alert.
+        // That predates `lastKnownUid`, which survives the drop — so A's announcement is still
+        // honoured for A, and is REFUSED once somebody else holds the session. Unattributed, a
+        // `.deleted` consumed under B took a fresh latch for B: a full wipe of B (CF-A-47).
+        #expect(completion?.uid == FakeAuthClient.defaultUser.uid, "the completion announcement lost its account")
     }
 
     /// Task 33 / CF-A-44: the verdict belongs to ONE account, and it is refused by every other.
@@ -656,6 +660,235 @@ struct DeleteAccountTests {
         #expect(fixture.wipes.count == 0)
     }
 
+    // MARK: - CF-A-53: the detached cleanup re-checks who holds the device
+
+    private static let meBJSON = #"{"uid":"uid-b","email":"b@fitrah.test","status":"active","role":"user"}"#
+    private static let accountB = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true,
+                                           providerIDs: ["password"])
+
+    /// What the three takeover tests share: a session with a parkable sync and auth, one spy store,
+    /// and both wipes as spies. `/me` answers A, then B.
+    private struct Takeover {
+        let session: AccountSession
+        let base: FakeAuthClient
+        let auth: ParkedCurrentUserAuth
+        let sync: ParkedUnbindSync
+        let store: AccountSessionTests.SpyStore
+        let wipes: WipeSpy
+        let marker: InMemoryDeletionMarker
+        let status: AccountStatusCenter
+    }
+
+    private func makeTakeover(scopedDeleteFails: Bool = false) -> Takeover {
+        struct StoreFull: Error {}
+        let base = FakeAuthClient(state: .signedOut)
+        let auth = ParkedCurrentUserAuth(base)
+        let sync = ParkedUnbindSync()
+        let store = AccountSessionTests.SpyStore(requestCount: { 0 })
+        let wipes = WipeSpy()
+        let marker = InMemoryDeletionMarker()
+        let status = AccountStatusCenter()
+        let transport = ScriptedTransport([.json(200, Self.meJSON), .json(200, Self.meBJSON)])
+        let session = AccountSession(
+            auth: auth,
+            account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
+            stores: [store], status: status, sleep: { _ in },
+            wipe: { [wipes] in wipes.record(); await wipes.duringWipe?(); return nil },
+            wipeRows: { [wipes] uid in wipes.scopedUids.append(uid); return scopedDeleteFails ? StoreFull() : nil },
+            marker: marker, sync: sync)
+        return Takeover(session: session, base: base, auth: auth, sync: sync, store: store, wipes: wipes,
+                        marker: marker, status: status)
+    }
+
+    /// A leaves, B arrives and `start()` observes it — a sequence, never a race.
+    private func replaceAWithB(_ takeover: Takeover) async throws {
+        takeover.session.signOut()
+        takeover.base.user = Self.accountB
+        _ = try await takeover.base.signIn(email: "b@fitrah.test", password: "p")
+        await yieldUntil { takeover.session.state.me?.uid == Self.accountB.uid }
+    }
+
+    /// CF-A-53, the reviewer's trace. The launch path (`resumePendingDeletion`) asks who holds the
+    /// device three ways; this live path does the same irreversible work and asked nobody. A's
+    /// verdict is admitted and the cleanup parks behind a slow pull at `unbindSync`; the user taps
+    /// the terminal alert's OK (a sign-out); B signs in, which clears the latch and lets B bind and
+    /// pull; A's cleanup RESUMES — and wiped B's device, re-scoped B's stores to `""`, signed B
+    /// out, and on the self-delete latch (`selfDelete`) asked Firebase to delete B's CREDENTIAL.
+    ///
+    /// A's debt is still owed and still payable: by uid, which cannot touch B. `scopedDeleteFails`
+    /// is that delete reporting an error, which keeps the durable marker like every other wipe.
+    @Test(arguments: [(false, false), (true, false), (false, true)])
+    func aCleanupThatResumesAfterAnotherAccountTookOverPaysByUidAndLeavesThemAlone(
+        scopedDeleteFails: Bool, selfDelete: Bool
+    ) async throws {
+        let takeover = makeTakeover(scopedDeleteFails: scopedDeleteFails)
+        let session = takeover.session
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await takeover.base.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { session.state.me != nil }
+
+        takeover.sync.parkNextUnbind()
+        let cleanup = session.handleDeletion(deletingFirebaseUser: selfDelete, for: FakeAuthClient.defaultUser.uid)
+        await yieldUntil { takeover.sync.isParked }
+        try await replaceAWithB(takeover)
+        _ = takeover.status.consume()   // the sign-out's own announcement
+
+        takeover.sync.release()
+        await cleanup.value
+
+        #expect(takeover.wipes.count == 0, "A's cleanup wiped a device B had taken over")
+        #expect(takeover.wipes.scopedUids == [FakeAuthClient.defaultUser.uid], "A's debt was not paid by uid")
+        #expect(session.state.me?.uid == Self.accountB.uid, "A's cleanup signed B out")
+        #expect(await takeover.base.currentUser()?.uid == Self.accountB.uid)
+        #expect(takeover.base.operations.contains(.deleteUser) == false, "A's cleanup deleted B's Firebase credential")
+        #expect(takeover.store.currentUserId == Self.accountB.uid, "B's stores were re-scoped to the guest")
+        #expect(takeover.status.pending == nil, "an unattributed .deleted was posted under B — it re-enters handle and wipes B")
+        #expect(takeover.marker.pendingUid == (scopedDeleteFails ? FakeAuthClient.defaultUser.uid : nil))
+    }
+
+    /// …and the takeover that lands DURING the device wipe, which no check before it can see. The
+    /// wipe cannot be undone, but everything after it still belongs to whoever holds the device
+    /// now: no sign-out, no `.deleted`, and the stores the wiper re-scoped to `""` go back to B.
+    @Test func anAccountThatArrivesDuringTheWipeIsNotSignedOutByIt() async throws {
+        let takeover = makeTakeover()
+        takeover.wipes.duringWipe = {
+            try? await replaceAWithB(takeover)
+            takeover.store.currentUserId = ""   // `LocalAccountWiper.wipe()`'s own last word
+        }
+        let session = takeover.session
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await takeover.base.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { session.state.me != nil }
+
+        await session.handleDeletion(deletingFirebaseUser: true, for: FakeAuthClient.defaultUser.uid).value
+
+        #expect(takeover.wipes.count == 1, "the precondition is that the device wipe was already running")
+        #expect(takeover.base.operations.contains(.deleteUser) == false, "A's cleanup deleted B's Firebase credential")
+        #expect(session.state.me?.uid == Self.accountB.uid, "A's cleanup signed B out")
+        #expect(takeover.store.currentUserId == Self.accountB.uid, "B was left rendering the guest's scope")
+        #expect(takeover.status.pending?.event != .deleted, "an unattributed .deleted was posted under B")
+        #expect(takeover.marker.pendingUid == nil, "the device wipe succeeded and its marker survived")
+    }
+
+    /// …and the one that lands during the Firebase delete — the self-delete path's last await. A's
+    /// credential is gone by then, correctly; what must not follow is `dropSession()` under B.
+    @Test func anAccountThatArrivesDuringTheFirebaseDeleteIsNotSignedOutByIt() async throws {
+        let takeover = makeTakeover()
+        let session = takeover.session
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await takeover.base.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { session.state.me != nil }
+
+        takeover.auth.parkNextDeleteUser()
+        let cleanup = session.handleDeletion(deletingFirebaseUser: true)
+        await yieldUntil { takeover.auth.isParked }
+        #expect(takeover.base.operations == [.deleteUser], "the precondition is that A's own credential was deleted")
+        takeover.base.user = Self.accountB
+        _ = try await takeover.base.signIn(email: "b@fitrah.test", password: "p")
+        await yieldUntil { session.state.me?.uid == Self.accountB.uid }
+
+        takeover.auth.release()
+        await cleanup.value
+
+        #expect(session.state.me?.uid == Self.accountB.uid, "A's cleanup signed B out")
+        #expect(await takeover.base.currentUser()?.uid == Self.accountB.uid)
+        #expect(takeover.status.pending?.event != .deleted, "a .deleted was posted under B")
+        #expect(takeover.marker.pendingUid == nil, "the device wipe succeeded and its marker survived")
+    }
+
+    /// Round 2 / I2: the takeover the SESSION has not been told about. Firebase already holds B,
+    /// but `start()` has not drained it and no seed ran, so `user` and `lastKnownUid` still say A
+    /// — and `FirebaseAuthClient.deleteUser()` deletes whoever Firebase holds. Firebase is asked.
+    @Test func anAccountOnlyFirebaseKnowsAboutStillCountsAsATakeover() async throws {
+        let takeover = makeTakeover()
+        let session = takeover.session
+        let running = Task { await session.start() }
+        _ = try await takeover.base.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { session.state.me != nil }
+
+        takeover.sync.parkNextUnbind()
+        let cleanup = session.handleDeletion(deletingFirebaseUser: true)
+        await yieldUntil { takeover.sync.isParked }
+        running.cancel()   // the session hears nothing from here on
+        try takeover.base.signOut()
+        takeover.base.user = Self.accountB
+        _ = try await takeover.base.signIn(email: "b@fitrah.test", password: "p")
+        #expect(session.user?.uid == FakeAuthClient.defaultUser.uid, "the precondition is a session that still says A")
+
+        takeover.sync.release()
+        await cleanup.value
+
+        #expect(takeover.wipes.count == 0, "the device was wiped while Firebase held somebody else")
+        #expect(takeover.base.operations.contains(.deleteUser) == false, "B's Firebase credential was deleted")
+        #expect(await takeover.base.currentUser()?.uid == Self.accountB.uid)
+        #expect(takeover.wipes.scopedUids == [FakeAuthClient.defaultUser.uid])
+    }
+
+    /// Round 2 / I1: A's completion announcement, consumed after B became current. `post` hops
+    /// through a main-actor task, so B can be installed between the post and `RootView` reading it.
+    @Test func aCompletionAnnouncementConsumedUnderTheNextAccountIsRefused() async throws {
+        let takeover = makeTakeover()
+        let session = takeover.session
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await takeover.base.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { session.state.me != nil }
+        await session.handleDeletion(for: FakeAuthClient.defaultUser.uid).value
+        takeover.base.user = Self.accountB
+        _ = try await takeover.base.signIn(email: "b@fitrah.test", password: "p")
+        await yieldUntil { session.state.me?.uid == Self.accountB.uid }
+        await yieldUntil { takeover.status.pending?.event == .deleted }
+
+        let signal = try #require(takeover.status.consume())
+        var alert: AccountStatusAlert?
+        RootView.route(signal, session: session, alert: &alert)
+        await yieldExpectingNothing()
+
+        #expect(alert == nil, "B was told their account was deleted")
+        #expect(takeover.wipes.count == 1, "A's announcement took a fresh latch for B and wiped them")
+        #expect(session.state.me?.uid == Self.accountB.uid)
+    }
+
+    /// Round 2 / C1, the front door. The view model's DELETE runs in an unstructured task that
+    /// outlives the screen: A confirms, backs out and signs out; B signs in; A's 204 lands — and
+    /// `handleDeletion(deletingFirebaseUser: true)`, which named nobody, took a FRESH latch for
+    /// whoever was current. Every takeover check then agreed the device was B's own to wipe.
+    /// The 204 names the account it was asked for, and `handleDeletion` refuses a name that is not
+    /// this session's — paying that account's debt by uid instead.
+    @Test func aDeleteThatLandsAfterAnotherAccountSignedInNeverTouchesThem() async throws {
+        let parker = ParkedUnbindSync()   // reused as a plain gate: its `unbind()` is "park once"
+        let base = FakeAuthClient(state: .signedOut)
+        let wipes = WipeSpy()
+        let transport = ScriptedTransport([.json(200, Self.meJSON), .json(204, ""), .json(200, Self.meBJSON)],
+                                          park: { index in if index == 2 { await parker.unbind() } })
+        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: base, account: account, stores: [], status: AccountStatusCenter(),
+                                     sleep: { _ in }, wipe: { [wipes] in wipes.record(); return nil },
+                                     wipeRows: { [wipes] uid in wipes.scopedUids.append(uid); return nil })
+        let model = DeleteAccountViewModel(account: account, session: session, auth: base,
+                                           google: FakeOAuthProvider(), apple: FakeOAuthProvider(isAvailable: false))
+        model.password = "hunter2"
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await base.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { session.state.me != nil }
+
+        parker.parkNextUnbind()
+        let deleting = Task { await model.delete() }
+        await yieldUntil { parker.isParked }
+        session.signOut()
+        base.user = Self.accountB
+        _ = try await base.signIn(email: "b@fitrah.test", password: "p")
+        await yieldUntil { session.state.me?.uid == Self.accountB.uid }
+
+        parker.release()
+        await deleting.value
+        await yieldExpectingNothing(500)
+
+        #expect(wipes.scopedUids == [FakeAuthClient.defaultUser.uid], "A's debt was not paid by uid")
+        #expect(wipes.count == 0, "A's 204 wiped B's device")
+        #expect(base.operations.contains(.deleteUser) == false, "A's 204 deleted B's Firebase credential")
+        #expect(session.state.me?.uid == Self.accountB.uid, "A's 204 signed B out")
+    }
+
     // MARK: - Stage 5 / C1.2 + C2.2: the durable marker
 
     /// A cleanup interrupted by process death — or refused by a full store — is owed to this device
@@ -1048,6 +1281,9 @@ private nonisolated final class ParkedCurrentUserAuth: AuthClient {
     init(_ base: FakeAuthClient) { self.base = base }
 
     func parkNextCurrentUser() { gate.withLock { $0.armed = true } }
+    /// CF-A-53: `deleteUser()` runs, THEN parks — "A's credential is gone, and then B arrived".
+    func parkNextDeleteUser() { deleteGateArmed.withLock { $0 = true } }
+    private let deleteGateArmed = Mutex(false)
     var isParked: Bool { gate.withLock { $0.parked != nil } }
     func release() {
         gate.withLock { gate in
@@ -1081,7 +1317,47 @@ private nonisolated final class ParkedCurrentUserAuth: AuthClient {
     func reauthenticate(with credential: OAuthCredential) async throws(AuthErrorCode) { try await base.reauthenticate(with: credential) }
     func updatePassword(_ new: String) async throws(AuthErrorCode) { try await base.updatePassword(new) }
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { try await base.verifyBeforeUpdateEmail(new) }
-    func deleteUser() async throws(AuthErrorCode) { try await base.deleteUser() }
+    func deleteUser() async throws(AuthErrorCode) {
+        try await base.deleteUser()
+        let armed = deleteGateArmed.withLock { armed in
+            let was = armed
+            armed = false
+            return was
+        }
+        guard armed else { return }
+        await withCheckedContinuation { continuation in gate.withLock { $0.parked = continuation } }
+    }
     func signOut() throws(AuthErrorCode) { try base.signOut() }
     func refreshRefusal(signedFor uid: String?) async -> AuthErrorCode? { await base.refreshRefusal(signedFor: uid) }
+}
+
+/// A `SyncTriggering` whose ONE armed `unbind()` parks until released: `performDeletion`'s first
+/// await is `unbindSync()`, queued behind a pull in production, and that is where CF-A-53's trace
+/// suspends. Unarmed calls return at once, so a later drop's unbind cannot park unreleased.
+private nonisolated final class ParkedUnbindSync: SyncTriggering {
+    private let gate = Mutex<(armed: Bool, parked: CheckedContinuation<Void, Never>?)>((false, nil))
+
+    func parkNextUnbind() { gate.withLock { $0.armed = true } }
+    var isParked: Bool { gate.withLock { $0.parked != nil } }
+    func release() {
+        gate.withLock { gate in
+            let parked = gate.parked
+            gate.parked = nil
+            return parked
+        }?.resume()
+    }
+
+    func unbind() async {
+        let armed = gate.withLock { gate in
+            let armed = gate.armed
+            gate.armed = false
+            return armed
+        }
+        guard armed else { return }
+        await withCheckedContinuation { continuation in gate.withLock { $0.parked = continuation } }
+    }
+
+    func bind(uid: String) async {}
+    func pushDirty(uid: String) async {}
+    func syncNow(uid: String) async {}
 }

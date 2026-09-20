@@ -85,6 +85,12 @@ nonisolated enum DeleteAccountState: Equatable {
             return
         }
         state = .deleting
+        // CF-A-53 / C1: WHOSE deletion this is, read BEFORE the await. The DELETE runs in an
+        // unstructured task that outlives this screen, so by the time the 204 lands the user may
+        // have backed out and signed out and somebody else may be signed in — and a cleanup that
+        // names nobody takes its latch for whoever is current. `handleDeletion` refuses a name
+        // that is not this session's and pays that account's debt by uid instead.
+        let deleting = session.user?.uid ?? session.state.me?.uid
         do {
             try await account.deleteAccount()
         } catch {
@@ -92,7 +98,11 @@ nonisolated enum DeleteAccountState: Equatable {
             return
         }
         // Not awaited: the cleanup is deliberately detached from this call's task (CF-G-5).
-        session.handleDeletion(deletingFirebaseUser: true)
+        // With no uid to name there is no account whose Firebase credential may be deleted:
+        // `deleteUser()` deletes whoever Firebase holds. The device wipe still runs (it is owed),
+        // and a credential left behind answers the 403 envelope on its next `/me` — the same
+        // terminal path, which is what `performDeletion`'s own `try?` already relies on.
+        session.handleDeletion(deletingFirebaseUser: deleting != nil, for: deleting)
     }
 
     /// A password account re-types its password; a federated one runs its provider's own sheet and
