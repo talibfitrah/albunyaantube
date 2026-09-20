@@ -1,0 +1,19 @@
+ios/FitrahTubeTests/RootViewDestinationTests.swift
+  s_eca9a78768b070::t_4fdb9e6352465e 110-115,151-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9457b069116bb6da5a0c4ae868b92aa511f5dad",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
