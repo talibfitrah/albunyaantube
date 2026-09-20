@@ -302,7 +302,16 @@ struct AccountSessionTests {
         defer { running.cancel() }
 
         session.handle(.deleted)
-        for _ in 0..<500 where session.state != .signedOut { await Task.yield() }
+        // A DEADLINE, not a yield count (Task 34). The wipe is DETACHED, so it needs a
+        // cooperative-pool thread of its own, and 500 main-actor yields can all elapse before a
+        // saturated pool schedules it: this failed once on iPhone 17 inside the full parallel gate
+        // (`wipes → 0`, still `.loaded`) while passing 11 of 11 alone — CF-B-39's class. Condition
+        // first, clock only as the ceiling, so a wipe that never STARTS still fails here. Awaiting
+        // `handleDeletion().value` would be deterministic but WRONG: the latch makes that call
+        // start a deletion itself if `handle` had not, and the test would pass over the very
+        // regression it exists to catch.
+        let deadline = ContinuousClock.now + .seconds(10)
+        while session.state != .signedOut, ContinuousClock.now < deadline { await Task.yield() }
 
         #expect(wipes.withLock { $0 } == 1)
         #expect(session.state == .signedOut)
