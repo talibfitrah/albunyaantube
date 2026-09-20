@@ -1,0 +1,21 @@
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_eca9a78768b070::t_c56799b6e2fcf9 734-738
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_eca9a78768b070::t_c56799b6e2fcf9 813-816
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9e3b82585888c28674a19965f54a58c1cf1255d3",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
