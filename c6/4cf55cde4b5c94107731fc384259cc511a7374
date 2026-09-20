@@ -1,0 +1,19 @@
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_eca9a78768b070::t_75fcc1d1dc34a4 94,97-105,107-118,170,212,261,308,332,365,374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c64cf55cde4b5c94107731fc384259cc511a7374",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
