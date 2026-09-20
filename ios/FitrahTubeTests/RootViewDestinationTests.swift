@@ -90,4 +90,60 @@ struct RootViewDestinationTests {
         #expect(wipes.withLock { $0 } == 1, "a server-deleted account was signed out but not wiped")
         #expect(alert == AccountStatusAlert(.deleted))
     }
+
+    // MARK: - The mid-session signal (CF-A-48)
+
+    /// A session `start()` has driven to a loaded account — `user` is what `handle` attributes
+    /// against, and only the auth stream sets it. The wipe is the caller's, because a `Mutex` is
+    /// noncopyable and cannot ride out in the tuple.
+    @MainActor private func signedInSession(
+        wipe: @escaping @MainActor @Sendable () async -> Error?
+    ) async -> (session: AccountSession, running: Task<Void, Never>) {
+        let transport = ScriptedTransport([.json(200, #"{"uid":"fake-uid","status":"active","role":"user"}"#)])
+        let session = AccountSession(auth: FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser)),
+                                     account: AccountClient(transport: transport,
+                                                            baseURL: URL(string: "https://api.fitrah.test/")!,
+                                                            deviceId: DeviceId(value: "dev-1")),
+                                     stores: [], status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: wipe)
+        let running = Task { await session.start() }
+        var yields = 0
+        while session.state.me == nil, yields < 500 { yields += 1; await Task.yield() }
+        return (session, running)
+    }
+
+    /// Task 33 / CF-A-44's delivery end, at the ONE call site production has. A `.deleted` minted
+    /// for another account must reach `handle` WITH its uid: `handle(signal.event)` alone is the
+    /// unattributed arm, which is honoured unconditionally — so dropping the uid here wipes the
+    /// signed-in account's library for a stranger's deletion and tells them their account is gone.
+    @Test @MainActor func aSignalForAnotherAccountNeitherWipesNorRaisesTheAlert() async {
+        let wipes = Mutex(0)
+        let (session, running) = await signedInSession { wipes.withLock { $0 += 1 }; return nil }
+        defer { running.cancel() }
+        #expect(session.user?.uid == FakeAuthClient.defaultUser.uid)
+
+        var alert: AccountStatusAlert?
+        RootView.route(AccountStatusSignal(event: .deleted, uid: "uid-stranger"), session: session, alert: &alert)
+        for _ in 0..<500 where wipes.withLock({ $0 }) == 0 { await Task.yield() }
+
+        #expect(wipes.withLock { $0 } == 0, "a stranger's deletion wiped the signed-in account's library")
+        #expect(alert == nil, "the refused verdict still told the signed-in user their account was deleted")
+        #expect(session.state.me != nil, "the stranger's deletion dropped the wrong session")
+    }
+
+    /// The positive control: a route that refused everything would pass the test above and
+    /// silently disable the wipe. The signed-in account's own signal acts, and raises the alert.
+    @Test @MainActor func aSignalForTheSignedInAccountWipesAndRaisesTheAlert() async {
+        let wipes = Mutex(0)
+        let (session, running) = await signedInSession { wipes.withLock { $0 += 1 }; return nil }
+        defer { running.cancel() }
+
+        var alert: AccountStatusAlert?
+        RootView.route(AccountStatusSignal(event: .deleted, uid: FakeAuthClient.defaultUser.uid),
+                       session: session, alert: &alert)
+        for _ in 0..<500 where wipes.withLock({ $0 }) == 0 { await Task.yield() }
+
+        #expect(wipes.withLock { $0 } == 1, "the account's own deletion was refused")
+        #expect(alert == AccountStatusAlert(.deleted))
+    }
 }
