@@ -128,6 +128,36 @@ struct AppContainerTests {
         #expect(container.meFeed.weeks.isEmpty)
     }
 
+    /// Review I3, the WIRING. `AccountSession`'s `wipeRows` defaults to a no-op so its 20-odd test
+    /// call sites compile unchanged — which means a container that forgot to pass the real one
+    /// would "redeem" a marker owed to a departed account by deleting nothing and clearing it:
+    /// the stranding the scoped delete exists to end, with every session-level test green.
+    @Test func aMarkerOwedToADepartedAccountReachesTheRealScopedDelete() async throws {
+        let suite = "fitrahtube.scoped-delete-wiring-tests"
+        let defaults = UserDefaults(suiteName: suite) ?? .standard
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let container = AppContainer.fake(defaults: defaults)
+        for uid in ["uid-a", "uid-b"] {
+            container.favorites.currentUserId = uid
+            try container.favorites.importVideo(id: "xc7keR2piUM", title: "Lecture", channelName: "Alafasy",
+                                                thumbnailUrl: nil, durationSeconds: 600,
+                                                approvalStatus: "APPROVED", at: Date(timeIntervalSince1970: 0))
+        }
+        container.favorites.currentUserId = ""
+        let marker = UserDefaultsDeletionMarker(defaults: defaults)
+        marker.pendingUid = "uid-a"
+        marker.lastSignedInUid = "uid-b"
+
+        await container.session.resumePendingDeletion()
+
+        container.favorites.currentUserId = "uid-a"
+        #expect(container.favorites.items.isEmpty, "the departed account's rows were stranded on the device")
+        container.favorites.currentUserId = "uid-b"
+        #expect(container.favorites.items.count == 1, "the account that holds the device lost its library")
+        #expect(marker.pendingUid == nil)
+    }
+
     /// Fix round 1 / M3 + M5, one row for both halves of `approvals`' transport.
     ///
     /// M3: nothing pinned that this client got the SIGNED transport. `ApprovalsClient` deliberately

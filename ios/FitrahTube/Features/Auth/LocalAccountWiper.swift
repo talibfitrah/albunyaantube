@@ -113,4 +113,30 @@ import SwiftData
 
         return firstError
     }
+
+    /// The NARROW counterpart, for a wipe owed to an account that no longer holds this device
+    /// (`AccountSession.resumePendingDeletion`'s mismatch arm, review I3): that account's own rows
+    /// in the five per-user models, and nothing else. Every other step of `wipe()` above is
+    /// device-wide — the search history, the defaults sweep, the caches, the device id and the
+    /// offline library (`OfflineItem` carries no owner) now belong to whoever has used the device
+    /// since — and `stores` are left alone because re-scoping them would un-scope that account.
+    ///
+    /// Returns the first error, as `wipe()` does, so the caller keeps its marker and retries.
+    func wipeRows(of uid: String) -> Error? {
+        // `""` is the GUEST's scope, not "nobody": a marker that names no account (a build before
+        // Stage 7 fix 2 / M2 could store one) must not be redeemed against the guest's library.
+        guard !uid.isEmpty else { return nil }
+        let context = ModelContext(modelContainer)
+        do {
+            try context.delete(model: FavoriteVideo.self, where: #Predicate { $0.userId == uid })
+            try context.delete(model: SavedPlaylist.self, where: #Predicate { $0.userId == uid })
+            try context.delete(model: SubscribedChannel.self, where: #Predicate { $0.userId == uid })
+            try context.delete(model: SyncState.self, where: #Predicate { $0.userId == uid })
+            try context.delete(model: AccountBinding.self, where: #Predicate { $0.userId == uid })
+            try context.save()
+            return nil
+        } catch {
+            return error
+        }
+    }
 }

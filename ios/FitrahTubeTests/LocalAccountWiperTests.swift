@@ -34,6 +34,11 @@ struct LocalAccountWiperTests {
         func count<T: PersistentModel>(_ type: T.Type) -> Int {
             (try? ModelContext(container).fetchCount(FetchDescriptor<T>())) ?? -1
         }
+
+        /// WHOSE rows persisted, sorted — a count cannot tell "A's row went" from "B's row went".
+        func owners<T: PersistentModel>(_ type: T.Type, _ userId: KeyPath<T, String>) -> [String] {
+            ((try? ModelContext(container).fetch(FetchDescriptor<T>())) ?? []).map { $0[keyPath: userId] }.sorted()
+        }
     }
 
     /// Two accounts' worth of rows. The wipe is a DEVICE wipe, not a per-user one, so the second
@@ -133,6 +138,69 @@ struct LocalAccountWiperTests {
 
         #expect(fixture.count(SyncState.self) == 0)
         #expect(fixture.count(AccountBinding.self) == 0)
+    }
+
+    // MARK: - The uid-scoped delete (a marker owed to an account that no longer holds the device)
+
+    /// Review I3. A's wipe failed, so its marker and its rows both survived; B has used the device
+    /// since. The DEVICE wipe above can no longer run — it would take B's library — but dropping
+    /// the marker instead stranded A's rows on the device forever, with nothing left that could
+    /// reach them. They are not unreachable: every one of the five models carries its owner. So the
+    /// redemption deletes A's rows and ONLY A's — not B's, not the guest's (`""`), and none of the
+    /// device-wide steps (the search history and the device id are B's and the guest's too).
+    ///
+    /// Both mismatch shapes: B signed in right now, and B signed out with nobody signed in.
+    @Test(arguments: [false, true])
+    func aMarkerOwedToAnAccountThatNoLongerHoldsTheDeviceDeletesOnlyThatAccountsRows(holderIsSignedIn: Bool) async throws {
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        let uids = ["uid-a", "uid-b", ""]
+        try seedRows(fixture, uids: uids)
+        let context = ModelContext(fixture.container)
+        for uid in uids {
+            context.insert(SyncState(entityType: "favorites", userId: uid, lastCursor: 1_700_000))
+            context.insert(AccountBinding(userId: uid, initialMergeDone: true))
+        }
+        try context.save()
+        fixture.searchHistory.add("tafsir")
+        fixture.defaults.set("dev-1", forKey: DeviceId.defaultsKey)
+        let marker = InMemoryDeletionMarker()
+        marker.pendingUid = "uid-a"
+        marker.lastSignedInUid = "uid-b"
+        let holder = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true, providerIDs: ["password"])
+        let deviceWipes = Mutex(0)
+        let session = AccountSession(
+            auth: FakeAuthClient(state: holderIsSignedIn ? .signedIn(holder) : .signedOut),
+            account: AccountClient(transport: ScriptedTransport([]), baseURL: URL(string: "https://api.fitrah.test/")!,
+                                   deviceId: DeviceId(value: "dev-1")),
+            stores: [], status: AccountStatusCenter(), sleep: { _ in },
+            wipe: { deviceWipes.withLock { $0 += 1 }; return nil },
+            wipeRows: { [wiper = fixture.wiper] in wiper.wipeRows(of: $0) }, marker: marker)
+
+        await session.resumePendingDeletion()
+
+        let survivors = ["", "uid-b"]
+        #expect(fixture.owners(FavoriteVideo.self, \.userId) == survivors)
+        #expect(fixture.owners(SavedPlaylist.self, \.userId) == survivors)
+        #expect(fixture.owners(SubscribedChannel.self, \.userId) == survivors)
+        #expect(fixture.owners(SyncState.self, \.userId) == survivors)
+        #expect(fixture.owners(AccountBinding.self, \.userId) == survivors)
+        #expect(deviceWipes.withLock { $0 } == 0, "a wipe owed to A erased the device of whoever held it since")
+        #expect(fixture.searchHistory.entries == ["tafsir"], "the scoped delete ran a device-wide step")
+        #expect(fixture.defaults.string(forKey: DeviceId.defaultsKey) == "dev-1")
+        #expect(marker.pendingUid == nil, "the debt was paid and the marker still claims it")
+    }
+
+    /// `""` is not "nobody" here — it is the GUEST's scope, and `UserDefaultsDeletionMarker`'s
+    /// getter reports a stored `""` as pending (a build before Stage 7 fix 2 / M2 could write one).
+    /// Redeeming that by uid would erase the guest's library for a marker that names no account.
+    @Test func theScopedDeleteNeverTakesTheGuestsRows() throws {
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        try seedRows(fixture, uids: ["", "uid-b"])
+
+        let error = fixture.wiper.wipeRows(of: "")
+
+        #expect(error == nil)
+        #expect(fixture.owners(FavoriteVideo.self, \.userId) == ["", "uid-b"])
     }
 
     /// The rows are deleted through a context of the wiper's own, so every store still holds the

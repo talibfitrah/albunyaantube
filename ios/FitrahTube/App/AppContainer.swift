@@ -463,6 +463,15 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                                        }
                                                        return await makeWiper().wipe()
                                                    },
+                                                   // Review I3: the uid-scoped counterpart, same
+                                                   // shape and the same refusal to no-op silently.
+                                                   wipeRows: { [weak self] uid in
+                                                       guard let self else {
+                                                           assertionFailure("the container was released before the scoped delete ran")
+                                                           return CancellationError()
+                                                       }
+                                                       return makeWiper().wipeRows(of: uid)
+                                                   },
                                                    // Stage 5 / C1.2: the durable "a wipe is owed"
                                                    // flag, on the same suite every other key uses.
                                                    marker: UserDefaultsDeletionMarker(defaults: userDefaults),

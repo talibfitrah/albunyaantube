@@ -1,6 +1,7 @@
 import FitrahAPI
 import Foundation
 import InnerTubeKit
+import Synchronization
 import Testing
 @testable import FitrahTube
 
@@ -271,7 +272,8 @@ struct DeleteAccountTests {
     /// This drives the real `AuthorizedTransport` into the real `AccountStatusCenter` the session
     /// was built with, and then does what `RootView` does with the result. It is one link short of
     /// end to end — `RootView`'s `consume()` → `handle` → alert is SwiftUI and is not constructed
-    /// here — which is exactly the link CF-A-48 records as still unpinned.
+    /// here. That last link (CF-A-48) is pinned on its own since: it is `RootView.route`, and
+    /// `RootViewDestinationTests` drives it in both directions.
     @Test func aVerdictKeepsItsAccountAllTheWayFromTheTransportToTheWipe() async throws {
         let marker = InMemoryDeletionMarker()
         let fixture = makeFixture(delete: .json(204, ""), marker: marker)
@@ -602,9 +604,10 @@ struct DeleteAccountTests {
 
     /// Stage 7 fix 2 / M2. The marker carries a uid and nothing read it: a wipe that failed for
     /// account A left it set, and the next launch wiped the device even though account B had since
-    /// signed in on it. The marker is redeemed only for the account it names — a different signed-in
-    /// uid clears it instead, because a wipe owed to A can no longer be performed without destroying
-    /// B's library.
+    /// signed in on it. The DEVICE wipe is redeemed only for the account it names. Review I3: for a
+    /// different signed-in uid the debt is paid by uid instead (A's rows carry A's `userId`) — this
+    /// session's scoped delete is the no-op default, so what is pinned here is that the device
+    /// wipe does not run; `LocalAccountWiperTests` pins which rows go.
     @Test func aPendingMarkerForAnotherAccountIsClearedNotWiped() async throws {
         let marker = InMemoryDeletionMarker()
         marker.pendingUid = "someone-elses-uid"
@@ -626,10 +629,11 @@ struct DeleteAccountTests {
     ///
     /// `resumePendingDeletion` treated "nobody is signed in" as permission to wipe, because that is
     /// the ordinary shape of a deleted account. It is also the shape of a device whose last user
-    /// simply signed out, and of a LOCKED device holding a stored session — a locked launch reports
-    /// `currentUser == nil` while a user IS stored. So a marker owed to A, left behind by a wipe
-    /// that failed, erased whatever library B had accumulated since. The uid-matching guard above
-    /// only covers the case where B is signed in RIGHT NOW.
+    /// simply SIGNED OUT — the case this test exercises. So a marker owed to A, left behind by a
+    /// wipe that failed, erased whatever library B had accumulated since. The uid-matching guard
+    /// above only covers the case where B is signed in RIGHT NOW. (UNVERIFIED, no probe: a locked
+    /// device holding a stored session may present the same way, but `UserDefaults` is likely
+    /// unreadable before first unlock too, which would return before this guard is reached.)
     ///
     /// Task 33 widened the input to this: passing the verdict's uid to `handleDeletion` means the
     /// bare-401 path now writes a marker where both `user` and `state.me` were nil and none was
@@ -653,7 +657,8 @@ struct DeleteAccountTests {
 
         #expect(wipes.count == 0, "a wipe owed to A erased the library of whoever held the device since")
         #expect(marker.pendingUid == nil,
-                "the unredeemable marker survived and will try again on every later launch")
+                "the marker survived a scoped delete that succeeded, and will try again on every later launch")
+        #expect(marker.lastSignedInUid == "uid-b", "paying A's debt forgot who holds the device now")
     }
 
     /// The positive control, and it is not optional: a guard that refused every nil-current-user
@@ -676,6 +681,99 @@ struct DeleteAccountTests {
 
         #expect(wipes.count == 1, "the deleted account's own interrupted wipe was refused")
         #expect(marker.pendingUid == nil)
+        // Review I2: the wiper's own standard (its prefix sweep) is that no record of the deleted
+        // account's uid outlives the wipe, and this key is outside that sweep.
+        #expect(marker.lastSignedInUid == nil, "the deleted account's uid survived its own wipe")
+    }
+
+    /// Review I3's other half: the scoped delete is a wipe like any other, and one that reported an
+    /// error KEEPS the marker — dropping it there is the same stranding by another route. Both
+    /// mismatch shapes (B signed in now; B signed out), and the uid it was asked for is A's.
+    @Test(arguments: [false, true])
+    func aScopedDeleteThatFailsKeepsTheMarkerSoTheNextLaunchTriesAgain(holderIsSignedIn: Bool) async throws {
+        struct StoreFull: Error {}
+        let marker = InMemoryDeletionMarker()
+        marker.pendingUid = "uid-a"
+        marker.lastSignedInUid = "uid-b"
+        let wipes = WipeSpy()
+        let asked = Mutex<[String]>([])
+        let holder = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true, providerIDs: ["password"])
+        let auth = FakeAuthClient(state: holderIsSignedIn ? .signedIn(holder) : .signedOut)
+        let account = AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: auth, account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { [wipes] in wipes.record(); return nil },
+                                     wipeRows: { uid in asked.withLock { $0.append(uid) }; return StoreFull() },
+                                     marker: marker)
+
+        await session.resumePendingDeletion()
+
+        #expect(asked.withLock { $0 } == ["uid-a"], "the scoped delete was not asked for the account the marker names")
+        #expect(wipes.count == 0)
+        #expect(marker.pendingUid == "uid-a", "A's rows are still on disk and nothing will come back for them")
+    }
+
+    /// Review I1: the WRITE side. Every test above seeds `lastSignedInUid` by hand, so deleting the
+    /// one production line that writes it (`start()`'s `.signedIn` arm) restored the original bug —
+    /// a marker owed to A wiping the device B has used since — with the whole suite green. Two
+    /// sessions on ONE marker, which is what two launches are.
+    @Test func theAccountThatHeldTheDeviceIsRecordedBySigningInNotByTheTest() async throws {
+        let marker = InMemoryDeletionMarker()
+        let holder = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true, providerIDs: ["password"])
+        let first = makeFixture(delete: .json(204, ""), user: holder, marker: marker)
+        let running = try await signedIn(first)
+        try first.auth.signOut()
+        await yieldUntil { first.session.state == .signedOut }
+        running.cancel()
+
+        // The next launch: A's failed wipe is still owed, and nobody is signed in.
+        marker.pendingUid = "uid-a"
+        let second = makeFixture(delete: .json(204, ""), marker: marker)
+        await second.session.resumePendingDeletion()
+
+        #expect(second.wipes.count == 0, "a wipe owed to A erased the device B has used since")
+    }
+
+    /// …and the production conformer's half of it, which nothing touched: the key, the read from a
+    /// SECOND instance (what a relaunch is), and the clear. An isolated suite, never `.standard`.
+    @Test func theLastSignedInUidRoundTripsThroughUserDefaults() {
+        let suiteName = "DeleteAccountTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        UserDefaultsDeletionMarker(defaults: defaults).lastSignedInUid = "uid-b"
+        #expect(UserDefaultsDeletionMarker(defaults: defaults).lastSignedInUid == "uid-b")
+        #expect(defaults.string(forKey: UserDefaultsDeletionMarker.lastSignedInKey) == "uid-b")
+        #expect(UserDefaultsDeletionMarker(defaults: defaults).pendingUid == nil, "the two keys are one key")
+
+        UserDefaultsDeletionMarker(defaults: defaults).lastSignedInUid = nil
+        #expect(UserDefaultsDeletionMarker(defaults: defaults).lastSignedInUid == nil)
+        #expect(defaults.object(forKey: UserDefaultsDeletionMarker.lastSignedInKey) == nil)
+    }
+
+    /// Review I2, on the in-process path: a redeemed deletion forgets ITS OWN uid and nobody
+    /// else's. `true` is an account that signed in while the wipe was running — `start()` has
+    /// already written them as the device's holder, and erasing that would let the next stale
+    /// marker fall through the nil arm and wipe their library.
+    @Test(arguments: [false, true])
+    func aRedeemedDeletionForgetsItsOwnUidAndNobodyElses(someoneElseArrivedMidWipe: Bool) async throws {
+        let marker = InMemoryDeletionMarker()
+        let auth = FakeAuthClient(state: .signedOut)
+        let account = AccountClient(transport: ScriptedTransport([.json(200, Self.meJSON)]), baseURL: Self.base,
+                                    deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: auth, account: account, stores: [], status: AccountStatusCenter(),
+                                     sleep: { _ in },
+                                     wipe: { if someoneElseArrivedMidWipe { marker.lastSignedInUid = "uid-b" }; return nil },
+                                     marker: marker)
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { session.state.me != nil }
+        #expect(marker.lastSignedInUid == "fake-uid")
+
+        await session.handleDeletion(deletingFirebaseUser: false).value
+
+        #expect(marker.pendingUid == nil)
+        #expect(marker.lastSignedInUid == (someoneElseArrivedMidWipe ? "uid-b" : nil))
     }
 
     /// The other half of M2: `handleDeletion` used to store `""` when no uid was known, and the

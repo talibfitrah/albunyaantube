@@ -12,14 +12,15 @@ import Observation
     /// sign-out (Task 34 / CF-A-44). `pendingUid` alone cannot be redeemed safely, because the
     /// question "may this wipe still run?" has two answers that look identical at launch: with
     /// nobody signed in, the deleted account being gone (redeem) and somebody ELSE's library
-    /// sitting on the device (never redeem) both present as `currentUser == nil`. The in-memory
+    /// sitting on the device (never device-wide; by uid only) both present as `currentUser == nil`. The in-memory
     /// `lastKnownUid` cannot answer it either — it is nil at launch, which is exactly when the
-    /// redemption runs. This is the only record that outlives the process.
+    /// redemption runs. With `pendingUid` above, this is all that outlives the process.
     var lastSignedInUid: String? { get set }
 }
 
-/// The production marker: one `UserDefaults` key, written before the detached cleanup starts and
-/// cleared only once the wipe reported no error.
+/// The production marker: two `UserDefaults` keys. `pendingUid` is written before the detached
+/// cleanup starts and cleared only once the wipe reported no error; `lastSignedInUid` is written
+/// by every sign-in and cleared only by the redeemed deletion of that same account.
 @MainActor final class UserDefaultsDeletionMarker: DeletionMarking {
     nonisolated static let defaultsKey = "com.albunyaan.tube.deletionPending"
     nonisolated static let lastSignedInKey = "com.albunyaan.tube.lastSignedInUid"
@@ -77,6 +78,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// SwiftData deletes used to be `try?`-swallowed, so a full or corrupt store left every row on
     /// disk while the app announced the account erased.
     private let wipe: @MainActor @Sendable () async -> Error?
+    private let wipeRows: @MainActor @Sendable (String) -> Error?
     private let marker: any DeletionMarking
     /// The federated providers, asked to forget their OWN SDK sessions on every session drop
     /// (Stage 4 / I1). Empty is the honest default for a suite with no federated sign-in.
@@ -111,6 +113,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     init(auth: any AuthClient, account: AccountClient, stores: [any UserScoped],
          status: AccountStatusCenter, sleep: @escaping @Sendable (Duration) async -> Void,
          wipe: @escaping @MainActor @Sendable () async -> Error?,
+         wipeRows: @escaping @MainActor @Sendable (String) -> Error? = { _ in nil },
          marker: any DeletionMarking = InMemoryDeletionMarker(),
          providers: [any OAuthSignInProvider] = [],
          sync: (any SyncTriggering)? = nil) {
@@ -120,6 +123,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         self.status = status
         self.sleep = sleep
         self.wipe = wipe
+        self.wipeRows = wipeRows
         self.marker = marker
         self.providers = providers
         self.sync = sync
@@ -201,32 +205,45 @@ nonisolated enum AccountState: Sendable, Equatable {
     func resumePendingDeletion() async {
         guard let pending = marker.pendingUid else { return }
         let signedIn = await auth.currentUser()?.uid
-        // Stage 7 fix 2 / M2: the marker carries a uid and NOTHING read it. A wipe that failed for
-        // account A kept the marker, and a launch after account B had signed in on the same device
-        // wiped B's library for A's deletion. The wipe owed to A cannot be performed any more —
-        // every row on the device is B's now — so the marker is dropped rather than redeemed.
-        // A nil current user is the ordinary case: the deleted account is signed out.
-        if let signedIn, signedIn != pending {
-            marker.pendingUid = nil
-            return
-        }
-        // Task 34 / CF-A-44: "nobody is signed in" is NOT permission to wipe. It is the ordinary
-        // shape of a deleted account — and it is also the shape of a LOCKED device holding a
-        // different account's stored session, and of any device whose last user simply signed out.
-        // Falling through here is what let a marker owed to A erase B's library, and Task 33 made
-        // it reachable more often by writing a marker on the bare-401 path where none was written
-        // before. The durable record of who last held this device is the only thing that can tell
-        // the two apart; when it names somebody else, the wipe owed to A cannot be performed any
-        // more and the marker is dropped, exactly as it is for a different SIGNED-IN account above.
+        // Stage 7 fix 2 / M2 + Task 34 / CF-A-44: the DEVICE wipe below is redeemed only while the
+        // device still belongs to the account the marker names. Two shapes say it does not, and
+        // they are one question — who holds this device? — answered by the live session when there
+        // is one and by the durable record when there is not:
+        //   * somebody else is signed in right now (M2: a launch after B signed in wiped B's
+        //     library for A's deletion);
+        //   * nobody is signed in, and the last account that was is somebody else — a device whose
+        //     last user simply SIGNED OUT. "Nobody is signed in" is the ordinary shape of a deleted
+        //     account, so it was read as permission to wipe, and a marker owed to A erased what B
+        //     had accumulated since. Task 33 made that reachable more often by writing a marker on
+        //     the bare-401 path where none was written before. (UNVERIFIED, no probe: a locked
+        //     device holding a stored session may present the same way — but before first unlock
+        //     `UserDefaults` is likely unreadable too, so `pendingUid` reads nil above and this
+        //     line is never reached.)
         //
-        // A nil `lastSignedInUid` falls through and redeems: that is a device with no evidence
-        // anyone else ever used it (a fresh install, or a marker written by a build that predates
-        // this key), which is the case the marker exists for.
-        if signedIn == nil, let lastHeld = marker.lastSignedInUid, lastHeld != pending {
-            marker.pendingUid = nil
+        // Review I3: the debt is still PAYABLE there, and dropping the marker — what both arms used
+        // to do — stranded A's rows on the device forever, with nothing left that could reach them.
+        // Every per-user row carries its owner, so A's are deleted by uid and B's, the guest's and
+        // every device-wide step are left alone. A delete that reported an error keeps the marker,
+        // exactly as the device wipe below does.
+        //
+        // A nil `lastSignedInUid` falls through and redeems: no evidence anyone else has held this
+        // device, i.e. a marker written by a build that predates the key. (Not a fresh install —
+        // an uninstall takes `UserDefaults` with it, so there is no marker to redeem.)
+        if let holder = signedIn ?? marker.lastSignedInUid, holder != pending {
+            if wipeRows(pending) == nil { redeemed() }
             return
         }
-        if await wipe() == nil { marker.pendingUid = nil }
+        if await wipe() == nil { redeemed() }
+    }
+
+    /// The debt is paid: the marker goes, and so does the deleted account's uid (review I2 — the
+    /// wiper's own standard is that no record of that uid outlives the wipe, and this key sits
+    /// outside its prefix sweep). ONLY while it still names that account: whoever signed in while
+    /// the wipe ran is the device's holder now, and forgetting THEM would let the next stale marker
+    /// fall through `resumePendingDeletion`'s nil arm and wipe their library.
+    private func redeemed() {
+        if marker.lastSignedInUid == marker.pendingUid { marker.lastSignedInUid = nil }
+        marker.pendingUid = nil
     }
 
     /// Fix round 1 / I2: the refresh currently running, handed to a second caller instead of a
@@ -704,7 +721,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         dropSession()
         // Stage 5 / C2.2: a wipe that hit a full or corrupt store keeps the marker, so the next
         // launch tries again rather than leaving the rows on disk under an "account deleted" alert.
-        if wipeError == nil { marker.pendingUid = nil }
+        if wipeError == nil { redeemed() }
         status.post(.deleted)
     }
 
