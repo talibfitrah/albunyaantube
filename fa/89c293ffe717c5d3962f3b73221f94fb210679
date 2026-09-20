@@ -1,0 +1,35 @@
+ios/FitrahTube/Features/Auth/LocalAccountWiper.swift
+  s_eca9a78768b070::t_b17df94640b511 124-126,128-130,132-134
+ios/FitrahTubeTests/RootViewDestinationTests.swift
+  s_eca9a78768b070::t_b17df94640b511 115-118
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_eca9a78768b070::t_181d94f5dd839a 1011
+  s_eca9a78768b070::t_641754effb51f9 718-721,724-733
+  s_eca9a78768b070::t_63c4360ae991f4 228-234,240,254-298,304-307,358-360
+  s_eca9a78768b070::t_576c2d8baa7ce1 977-983,987-992
+  s_eca9a78768b070::t_ba25a6fabe8be0 665-668,676,679-681,685,690-697,699-700,711-715,734-742,744-747,749-751,755-756,802-810,812-814,838-841,850-856,865,869-885,964-976,984-986,993-1010
+  s_eca9a78768b070::t_6806f56a2200e6 1012
+ios/FitrahTubeTests/LocalAccountWiperTests.swift
+  s_eca9a78768b070::t_b17df94640b511 146-150
+  s_eca9a78768b070::t_ba25a6fabe8be0 167-170,195-198,200
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_eca9a78768b070::t_b17df94640b511 131-136,139
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_eca9a78768b070::t_dd90542f180242 81-85,121,228-233,239,242,250-256,401-407,623-624,627-629,721-725,727-728,734-736,751
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa89c293ffe717c5d3962f3b73221f94fb210679",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
