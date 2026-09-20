@@ -107,8 +107,12 @@ struct RootViewDestinationTests {
                                      stores: [], status: AccountStatusCenter(), sleep: { _ in },
                                      wipe: wipe)
         let running = Task { await session.start() }
-        var yields = 0
-        while session.state.me == nil, yields < 500 { yields += 1; await Task.yield() }
+        // A DEADLINE, not a yield count: 500 yields on an idle main actor is only ~20-100 ms, and
+        // that raced the cooperative pool's scheduling tail under the two-simulator gate
+        // (`DeleteAccountTests.yieldUntil(timeout:)` has the measurements). Condition first, the
+        // clock only as the ceiling.
+        let deadline = ContinuousClock.now + .seconds(10)
+        while session.state.me == nil, ContinuousClock.now < deadline { await Task.yield() }
         return (session, running)
     }
 
@@ -144,7 +148,11 @@ struct RootViewDestinationTests {
         var alert: AccountStatusAlert?
         RootView.route(AccountStatusSignal(event: .deleted, uid: FakeAuthClient.defaultUser.uid),
                        session: session, alert: &alert)
-        for _ in 0..<500 where wipes.withLock({ $0 }) == 0 { await Task.yield() }
+        // POSITIVE wait on a DETACHED wipe, so a deadline (see `signedInSession`). The stranger
+        // test above keeps its yield COUNT on purpose: it proves an absence, and spinning that to
+        // a multi-second deadline would slow it for nothing.
+        let deadline = ContinuousClock.now + .seconds(10)
+        while wipes.withLock({ $0 }) == 0, ContinuousClock.now < deadline { await Task.yield() }
 
         #expect(wipes.withLock { $0 } == 1, "the account's own deletion was refused")
         #expect(alert == AccountStatusAlert(.deleted))
