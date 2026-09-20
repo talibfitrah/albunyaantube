@@ -78,6 +78,11 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// SwiftData deletes used to be `try?`-swallowed, so a full or corrupt store left every row on
     /// disk while the app announced the account erased.
     private let wipe: @MainActor @Sendable () async -> Error?
+    /// The uid-scoped delete (`LocalAccountWiper.wipeRows(of:)`). Its DEFAULT REFUSES — it reports
+    /// an error, so the marker is kept — because a default that answered nil would "redeem" an
+    /// irreversible debt having deleted nothing, for any construction that forgot to pass one.
+    /// `CancellationError` for the reason `AppContainer`'s released-container arm uses it: the
+    /// work did not run.
     private let wipeRows: @MainActor @Sendable (String) -> Error?
     private let marker: any DeletionMarking
     /// The federated providers, asked to forget their OWN SDK sessions on every session drop
@@ -113,7 +118,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     init(auth: any AuthClient, account: AccountClient, stores: [any UserScoped],
          status: AccountStatusCenter, sleep: @escaping @Sendable (Duration) async -> Void,
          wipe: @escaping @MainActor @Sendable () async -> Error?,
-         wipeRows: @escaping @MainActor @Sendable (String) -> Error? = { _ in nil },
+         wipeRows: @escaping @MainActor @Sendable (String) -> Error? = { _ in CancellationError() },
          marker: any DeletionMarking = InMemoryDeletionMarker(),
          providers: [any OAuthSignInProvider] = [],
          sync: (any SyncTriggering)? = nil) {
@@ -220,20 +225,21 @@ nonisolated enum AccountState: Sendable, Equatable {
         //     `UserDefaults` is likely unreadable too, so `pendingUid` reads nil above and this
         //     line is never reached.)
         //
-        // Review I3: the debt is still PAYABLE there, and dropping the marker — what both arms used
-        // to do — stranded A's rows on the device forever, with nothing left that could reach them.
-        // Every per-user row carries its owner, so A's are deleted by uid and B's, the guest's and
-        // every device-wide step are left alone. A delete that reported an error keeps the marker,
-        // exactly as the device wipe below does.
+        // Review I3: the debt is still PAYABLE there. Every per-user row carries its owner, so A's
+        // are deleted by uid and B's, the guest's and every device-wide step are left alone.
+        // `SyncManager.switchAccount(_:from:to:)` deletes the previous uid's rows too, on B's first
+        // bind — so merely DROPPING the marker strands A's rows only when that bind never runs or
+        // rolls back (B offline, B with no syncable uid). This is the DURABLE BACKSTOP for that
+        // case. A delete that reported an error keeps the marker, as the device wipe below does.
         //
         // A nil `lastSignedInUid` falls through and redeems: no evidence anyone else has held this
         // device, i.e. a marker written by a build that predates the key. (Not a fresh install —
         // an uninstall takes `UserDefaults` with it, so there is no marker to redeem.)
         if let holder = signedIn ?? marker.lastSignedInUid, holder != pending {
-            if wipeRows(pending) == nil { redeemed() }
+            if wipeRows(pending) == nil { redeemed(pending) }
             return
         }
-        if await wipe() == nil { redeemed() }
+        if await wipe() == nil { redeemed(pending) }
     }
 
     /// The debt is paid: the marker goes, and so does the deleted account's uid (review I2 — the
@@ -241,9 +247,13 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// outside its prefix sweep). ONLY while it still names that account: whoever signed in while
     /// the wipe ran is the device's holder now, and forgetting THEM would let the next stale marker
     /// fall through `resumePendingDeletion`'s nil arm and wipe their library.
-    private func redeemed() {
-        if marker.lastSignedInUid == marker.pendingUid { marker.lastSignedInUid = nil }
-        marker.pendingUid = nil
+    ///
+    /// `uid` is the account the wipe RAN for, captured when the debt was recorded — never
+    /// `marker.pendingUid` read at completion: a second account deleted while the first wipe was
+    /// still running owns the marker by then, and the first completion used to clear ITS debt.
+    private func redeemed(_ uid: String) {
+        if marker.lastSignedInUid == uid { marker.lastSignedInUid = nil }
+        if marker.pendingUid == uid { marker.pendingUid = nil }
     }
 
     /// Fix round 1 / I2: the refresh currently running, handed to a second caller instead of a
@@ -388,7 +398,13 @@ nonisolated enum AccountState: Sendable, Equatable {
         // account's own verdict. Firebase is the only live source of who this round is for. It only
         // ever ADDS: a nil answer (a guest's Retry) must not forget the account that just left, and
         // once `start()` has observed anybody (`user`, read AFTER the await) its write is the truth.
-        if startedFor == nil, let uid = await auth.currentUser()?.uid { lastKnownUid = uid }
+        if startedFor == nil, let uid = await auth.currentUser()?.uid, user == nil {
+            lastKnownUid = uid
+            // Durable too: this account's verdict can write `pendingUid` and the process can die
+            // before `start()` drains its `.signedIn`, and the relaunch would then read the PREVIOUS
+            // account as the holder and downgrade this one's device wipe to a row-only delete.
+            marker.lastSignedInUid = uid
+        }
         for attempt in 1...max(1, maxAttempts) {
             do {
                 let me = try await account.me()
@@ -604,8 +620,13 @@ nonisolated enum AccountState: Sendable, Equatable {
         // BEFORE the awaits: the screen has to be up while the delete runs, or the drop below
         // renders a bare guest shell for as long as Firebase takes to answer.
         isAgeIneligible = true
+        // Round 2 / item 5: captured BEFORE the awaits — the delete clears `user`.
+        let leaving = user?.uid
         try? await auth.deleteUser()
         dropSession()
+        // The account is deleted through Firebase, so its uid does not stay behind as the device's
+        // holder. Only while the record still names it, for `redeemed(_:)`'s reason.
+        if let leaving, marker.lastSignedInUid == leaving { marker.lastSignedInUid = nil }
         status.post(.signedOut)
     }
 
@@ -697,16 +718,22 @@ nonisolated enum AccountState: Sendable, Equatable {
         // `verdictUid` FIRST (Task 33, review C1): the account the verdict names outlives the
         // session that held it, and on the bare-401 path both `user` and `state.me` are already nil
         // by the time this runs.
-        if let uid = verdictUid ?? user?.uid ?? state.me?.uid, !uid.isEmpty { marker.pendingUid = uid }
+        var owed: String?
+        if let uid = verdictUid ?? user?.uid ?? state.me?.uid, !uid.isEmpty {
+            marker.pendingUid = uid
+            owed = uid
+        }
         // No `@MainActor in` on the closure: `performDeletion` carries the isolation and the hop.
-        let task = Task.detached {
-            await self.performDeletion()
+        let task = Task.detached { [owed] in
+            await self.performDeletion(owed: owed)
         }
         deletion = task
         return task
     }
 
-    private func performDeletion() async {
+    /// `owed` is the uid this deletion wrote into the marker, or nil when it wrote none — and then
+    /// there is nothing of its own to clear.
+    private func performDeletion(owed: String?) async {
         // Stage 4 S9: quiesce sync BEFORE the wipe, or a pull already parked in the network
         // re-creates the rows the wipe is about to erase.
         await unbindSync()?.value
@@ -721,7 +748,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         dropSession()
         // Stage 5 / C2.2: a wipe that hit a full or corrupt store keeps the marker, so the next
         // launch tries again rather than leaving the rows on disk under an "account deleted" alert.
-        if wipeError == nil { redeemed() }
+        if wipeError == nil, let owed { redeemed(owed) }
         status.post(.deleted)
     }
 

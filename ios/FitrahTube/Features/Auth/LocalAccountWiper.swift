@@ -121,11 +121,17 @@ import SwiftData
     /// offline library (`OfflineItem` carries no owner) now belong to whoever has used the device
     /// since — and `stores` are left alone because re-scoping them would un-scope that account.
     ///
-    /// Returns the first error, as `wipe()` does, so the caller keeps its marker and retries.
+    /// Returns the error it hit, so the caller keeps its marker and retries. UNLIKE `wipe()` it is
+    /// one `do` block and STOPS at the first throw rather than attempting every step: nothing is
+    /// saved until all five deletes went, and every step is a delete, so the retry is idempotent.
     func wipeRows(of uid: String) -> Error? {
-        // `""` is the GUEST's scope, not "nobody": a marker that names no account (a build before
-        // Stage 7 fix 2 / M2 could store one) must not be redeemed against the guest's library.
+        // `""` is the GUEST's scope, not "nobody": THIS arm never deletes the guest's rows for a
+        // marker that names no account (a build before Stage 7 fix 2 / M2 could store one). It
+        // claims nothing about the device-wide arm, which such a marker can still reach.
         guard !uid.isEmpty else { return nil }
+        // The one `UserDefaults` key that NAMES this account (step 4b's third prefix, for this uid
+        // only — the sweep itself is device-wide). Independent of SwiftData, so it goes first.
+        defaults.removeObject(forKey: EmailVerificationViewModel.lastSentKey(uid: uid))
         let context = ModelContext(modelContainer)
         do {
             try context.delete(model: FavoriteVideo.self, where: #Predicate { $0.userId == uid })

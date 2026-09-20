@@ -128,13 +128,15 @@ struct AppContainerTests {
         #expect(container.meFeed.weeks.isEmpty)
     }
 
-    /// Review I3, the WIRING. `AccountSession`'s `wipeRows` defaults to a no-op so its 20-odd test
-    /// call sites compile unchanged — which means a container that forgot to pass the real one
-    /// would "redeem" a marker owed to a departed account by deleting nothing and clearing it:
-    /// the stranding the scoped delete exists to end, with every session-level test green.
+    /// Review I3, the WIRING. `AccountSession`'s `wipeRows` has a default so its 20-odd test call
+    /// sites compile unchanged, and that default REFUSES — so a container that forgot to pass the
+    /// real one keeps the marker forever and never deletes the departed account's rows.
+    ///
+    /// `try #require`, never `?? .standard`: this test writes a pending-deletion flag, and
+    /// `InMemoryDeletionMarker`'s doc is that no test may put one in the app's real domain.
     @Test func aMarkerOwedToADepartedAccountReachesTheRealScopedDelete() async throws {
         let suite = "fitrahtube.scoped-delete-wiring-tests"
-        let defaults = UserDefaults(suiteName: suite) ?? .standard
+        let defaults = try #require(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
         let container = AppContainer.fake(defaults: defaults)

@@ -225,12 +225,19 @@ struct DeleteAccountTests {
     @Test func aVerdictForTheAccountStartHasNotObservedYetStillWipesAndMarks() async throws {
         let arriving = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true,
                                 providerIDs: ["password"])
-        let fixture = makeFixture(delete: .json(204, ""), user: arriving)
+        // Round 2 / item 1: the DURABLE record is seeded with the in-memory one. B's verdict below
+        // writes `pendingUid = B`; if the process dies before `start()` drains `.signedIn(B)`, the
+        // relaunch reads the holder from here — and a holder still naming the PREVIOUS account
+        // downgrades B's own device wipe to a row-only delete.
+        let marker = InMemoryDeletionMarker()
+        marker.lastSignedInUid = "uid-previous"
+        let fixture = makeFixture(delete: .json(204, ""), user: arriving, marker: marker)
         // NO `start()`: Firebase holds B and the session has not heard.
         _ = try await fixture.auth.signIn(email: "b@fitrah.test", password: "p")
         let round = Task { await fixture.session.refresh(maxAttempts: 1) }
         await yieldUntil { fixture.transport.sent.count == 1 }
         #expect(fixture.session.user == nil, "the precondition is the window start() has not closed")
+        #expect(marker.lastSignedInUid == arriving.uid, "the durable holder still names the previous account")
 
         #expect(fixture.session.handle(.deleted, for: "uid-stranger") == false,
                 "a verdict for an account Firebase does not hold was acted on")
@@ -244,11 +251,60 @@ struct DeleteAccountTests {
         await round.value
     }
 
+    /// Round 2 / item 1, the seed's re-check. `currentUser()` answers X and the round suspends on
+    /// the hop; inside it X signs out, B signs in, and `start()` — which is authoritative — sets
+    /// `user = B` and the latch to B. A seed that resumed and wrote its stale X over that latch
+    /// made `handle` ADMIT a verdict for X, the REPLACED account, while B is signed in: B's
+    /// library wiped for X's deletion, which is the hole the attribution exists to close. `user`
+    /// is therefore read AFTER the await.
+    ///
+    /// `ParkedCurrentUserAuth` (below) is what makes the interleaving a sequence instead of a race.
+    @Test func aSeedThatResumesAfterTheAccountWasReplacedDoesNotReadmitTheOldOne() async throws {
+        let replaced = AuthUser(uid: "uid-x", email: "x@fitrah.test", isEmailVerified: true, providerIDs: ["password"])
+        let base = FakeAuthClient(state: .signedOut, user: replaced)
+        let auth = ParkedCurrentUserAuth(base)
+        let wipes = WipeSpy()
+        let transport = ScriptedTransport([.json(200, Self.meJSON)])
+        let session = AccountSession(auth: auth,
+                                     account: AccountClient(transport: transport, baseURL: Self.base,
+                                                            deviceId: DeviceId(value: "dev-1")),
+                                     stores: [], status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { [wipes] in wipes.record(); return nil })
+        // Firebase holds X; no `start()` yet, so the round below is nil-started and parks on X.
+        _ = try await base.signIn(email: "x@fitrah.test", password: "p")
+        auth.parkNextCurrentUser()
+        let round = Task { await session.refresh(maxAttempts: 1) }
+        await yieldUntil { auth.isParked }
+
+        // Inside the hop: X leaves, B arrives, and `start()` observes B.
+        try base.signOut()
+        base.user = FakeAuthClient.defaultUser
+        _ = try await base.signIn(email: "a@b.test", password: "p")
+        let running = Task { await session.start() }; defer { running.cancel() }
+        await yieldUntil { session.user?.uid == FakeAuthClient.defaultUser.uid }
+        #expect(session.user?.uid == FakeAuthClient.defaultUser.uid, "the precondition is that start() got there first")
+
+        auth.release()
+        await round.value
+
+        #expect(session.handle(.deleted, for: replaced.uid) == false,
+                "the stale seed re-admitted the account that was replaced")
+        #expect(wipes.count == 0, "B's library was wiped for X's deletion")
+        // The positive control: the account that IS signed in keeps its own verdict.
+        #expect(session.handle(.deleted, for: FakeAuthClient.defaultUser.uid))
+        await yieldUntil(500) { wipes.count > 0 }
+        #expect(wipes.count == 1)
+    }
+
     /// The other edge of the same seed: it only ever ADDS an identity. A round also starts with no
     /// identity when nobody is signed in at all — the Retry cards in `MeTabRoot` and `SettingsView`
     /// call `refresh()` unguarded — and Firebase answers nil there. Writing THAT over
     /// `lastKnownUid` would forget the account that just left, which is review C1's defect again:
     /// its late verdict refused, the wipe silently disabled.
+    ///
+    /// What this does NOT pin: it passes with the seed line deleted entirely. It catches only the
+    /// NAIVE unconditional seed (`lastKnownUid = await auth.currentUser()?.uid`); the seed's
+    /// presence is `aVerdictForTheAccountStartHasNotObservedYetStillWipesAndMarks`' job.
     @Test func aGuestRefreshDoesNotForgetTheAccountThatJustLeft() async throws {
         let fixture = makeFixture(delete: .json(401, "{}"))
         let running = try await signedIn(fixture); defer { running.cancel() }
@@ -299,8 +355,9 @@ struct DeleteAccountTests {
         #expect(signal.uid == FakeAuthClient.defaultUser.uid,
                 "the verdict lost its account between the transport and the centre")
 
-        // `RootView`'s two lines, by hand.
-        #expect(fixture.session.handle(signal.event, for: signal.uid))
+        var alert: AccountStatusAlert?
+        RootView.route(signal, session: fixture.session, alert: &alert)
+        #expect(alert == AccountStatusAlert(.deleted), "the account's own verdict was refused at the last link")
         await yieldUntil(500) { fixture.wipes.count > 0 }
         #expect(fixture.wipes.markedUids == [FakeAuthClient.defaultUser.uid],
                 "the wipe ran for the wrong account, or marked nobody")
@@ -605,9 +662,10 @@ struct DeleteAccountTests {
     /// Stage 7 fix 2 / M2. The marker carries a uid and nothing read it: a wipe that failed for
     /// account A left it set, and the next launch wiped the device even though account B had since
     /// signed in on it. The DEVICE wipe is redeemed only for the account it names. Review I3: for a
-    /// different signed-in uid the debt is paid by uid instead (A's rows carry A's `userId`) — this
-    /// session's scoped delete is the no-op default, so what is pinned here is that the device
-    /// wipe does not run; `LocalAccountWiperTests` pins which rows go.
+    /// different signed-in uid the debt is paid by uid instead (A's rows carry A's `userId`). The
+    /// scoped delete is a SPY here — the default refuses, so that a session built without one can
+    /// never "redeem" a debt by deleting nothing — and what is pinned is that it was asked for the
+    /// marker's account and the device wipe was not; `LocalAccountWiperTests` pins which rows go.
     @Test func aPendingMarkerForAnotherAccountIsClearedNotWiped() async throws {
         let marker = InMemoryDeletionMarker()
         marker.pendingUid = "someone-elses-uid"
@@ -615,56 +673,27 @@ struct DeleteAccountTests {
         let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
         let transport = ScriptedTransport([.json(200, Self.meJSON)])
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let asked = Mutex<[String]>([])
         let session = AccountSession(auth: auth, account: account, stores: [],
                                      status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
+                                     wipe: { [wipes] in wipes.record(); return nil },
+                                     wipeRows: { uid in asked.withLock { $0.append(uid) }; return nil },
+                                     marker: marker)
 
         await session.resumePendingDeletion()
 
+        #expect(asked.withLock { $0 } == ["someone-elses-uid"], "the departed account's rows were never asked for")
         #expect(wipes.count == 0, "another account's pending wipe erased this account's library")
         #expect(marker.pendingUid == nil, "the stale marker survived and will wipe on the next launch too")
     }
 
-    /// Task 34 / CF-A-44's second route, and the one Task 33 made MORE reachable rather than less.
-    ///
-    /// `resumePendingDeletion` treated "nobody is signed in" as permission to wipe, because that is
-    /// the ordinary shape of a deleted account. It is also the shape of a device whose last user
-    /// simply SIGNED OUT — the case this test exercises. So a marker owed to A, left behind by a
-    /// wipe that failed, erased whatever library B had accumulated since. The uid-matching guard
-    /// above only covers the case where B is signed in RIGHT NOW. (UNVERIFIED, no probe: a locked
-    /// device holding a stored session may present the same way, but `UserDefaults` is likely
-    /// unreadable before first unlock too, which would return before this guard is reached.)
-    ///
-    /// Task 33 widened the input to this: passing the verdict's uid to `handleDeletion` means the
-    /// bare-401 path now writes a marker where both `user` and `state.me` were nil and none was
-    /// written before. Correct on its own terms, and precisely why this had to be closed next.
-    ///
-    /// The durable `lastSignedInUid` is what answers it. `lastKnownUid` cannot: it is in-memory and
-    /// nil at launch, which is exactly when this runs.
-    @Test func aPendingMarkerIsNotRedeemedAgainstTheLibraryOfWhoeverHeldTheDeviceSince() async throws {
-        let marker = InMemoryDeletionMarker()
-        marker.pendingUid = "uid-a"          // A's wipe failed and is still owed
-        marker.lastSignedInUid = "uid-b"     // …but B has used this device since, and signed out
-        let wipes = WipeSpy()
-        let auth = FakeAuthClient(state: .signedOut)
-        let transport = ScriptedTransport([.json(200, Self.meJSON)])
-        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
-        let session = AccountSession(auth: auth, account: account, stores: [],
-                                     status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
-
-        await session.resumePendingDeletion()
-
-        #expect(wipes.count == 0, "a wipe owed to A erased the library of whoever held the device since")
-        #expect(marker.pendingUid == nil,
-                "the marker survived a scoped delete that succeeded, and will try again on every later launch")
-        #expect(marker.lastSignedInUid == "uid-b", "paying A's debt forgot who holds the device now")
-    }
-
-    /// The positive control, and it is not optional: a guard that refused every nil-current-user
-    /// redemption would pass the test above while making the durable marker useless — an
+    /// Task 34 / CF-A-44's positive control, and it is not optional. The refusing half — nobody
+    /// signed in, and the durable record names somebody ELSE, so the device wipe must not run — is
+    /// `LocalAccountWiperTests.aMarkerOwedToAnAccountThatNoLongerHoldsTheDeviceDeletesOnlyThat
+    /// AccountsRows` (its `false` case), against real rows. A guard that refused every
+    /// nil-current-user redemption would pass that while making the durable marker useless — an
     /// interrupted wipe would then be owed to the device forever, which is the exact failure the
-    /// marker was introduced to prevent. Same setup, one field different.
+    /// marker was introduced to prevent. Same marker, one field different.
     @Test func aPendingMarkerIsStillRedeemedForTheAccountThatLastHeldTheDevice() async throws {
         let marker = InMemoryDeletionMarker()
         marker.pendingUid = "uid-a"
@@ -684,6 +713,48 @@ struct DeleteAccountTests {
         // Review I2: the wiper's own standard (its prefix sweep) is that no record of the deleted
         // account's uid outlives the wipe, and this key is outside that sweep.
         #expect(marker.lastSignedInUid == nil, "the deleted account's uid survived its own wipe")
+    }
+
+    /// Round 2 / item 3: a session built WITHOUT a scoped delete must not fail open. The default
+    /// used to answer nil — "deleted, no error" having deleted nothing — so any construction that
+    /// forgot to pass one redeemed an irreversible debt. It refuses instead, and the marker stays.
+    @Test func aSessionBuiltWithoutAScopedDeleteKeepsTheMarkerRatherThanPretending() async throws {
+        let marker = InMemoryDeletionMarker()
+        marker.pendingUid = "uid-a"
+        marker.lastSignedInUid = "uid-b"
+        let account = AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: FakeAuthClient(state: .signedOut), account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil }, marker: marker)
+
+        await session.resumePendingDeletion()
+
+        #expect(marker.pendingUid == "uid-a", "a debt was marked paid by a delete that was never wired")
+    }
+
+    /// Round 2 / item 6: WHO holds the device is the live session first and the durable record only
+    /// when there is none — and nothing let the two disagree, so `lastSignedInUid ?? signedIn`
+    /// passed the suite. They disagree for real: B signed in under a build that predates the key,
+    /// so the record still names A, which is also the pending account. Read in the wrong order the
+    /// holder "is" A, the marker matches, and the DEVICE wipe runs against a live, signed-in B.
+    @Test func theLiveSessionOutranksTheDurableRecordOfWhoHoldsTheDevice() async throws {
+        let marker = InMemoryDeletionMarker()
+        marker.pendingUid = "uid-a"
+        marker.lastSignedInUid = "uid-a"
+        let wipes = WipeSpy()
+        let asked = Mutex<[String]>([])
+        let holder = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true, providerIDs: ["password"])
+        let account = AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: FakeAuthClient(state: .signedIn(holder)), account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { [wipes] in wipes.record(); return nil },
+                                     wipeRows: { uid in asked.withLock { $0.append(uid) }; return nil },
+                                     marker: marker)
+
+        await session.resumePendingDeletion()
+
+        #expect(wipes.count == 0, "the device-wide wipe ran against the account that is signed in right now")
+        #expect(asked.withLock { $0 } == ["uid-a"])
+        #expect(marker.pendingUid == nil)
     }
 
     /// Review I3's other half: the scoped delete is a wipe like any other, and one that reported an
@@ -728,10 +799,19 @@ struct DeleteAccountTests {
 
         // The next launch: A's failed wipe is still owed, and nobody is signed in.
         marker.pendingUid = "uid-a"
-        let second = makeFixture(delete: .json(204, ""), marker: marker)
-        await second.session.resumePendingDeletion()
+        let wipes = WipeSpy()
+        let asked = Mutex<[String]>([])
+        let second = AccountSession(
+            auth: FakeAuthClient(state: .signedOut),
+            account: AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
+            stores: [], status: AccountStatusCenter(), sleep: { _ in },
+            wipe: { [wipes] in wipes.record(); return nil },
+            wipeRows: { uid in asked.withLock { $0.append(uid) }; return nil }, marker: marker)
+        await second.resumePendingDeletion()
 
-        #expect(second.wipes.count == 0, "a wipe owed to A erased the device B has used since")
+        #expect(wipes.count == 0, "a wipe owed to A erased the device B has used since")
+        #expect(asked.withLock { $0 } == ["uid-a"], "A's debt was dropped instead of paid by uid")
+        #expect(marker.pendingUid == nil)
     }
 
     /// …and the production conformer's half of it, which nothing touched: the key, the read from a
@@ -755,6 +835,10 @@ struct DeleteAccountTests {
     /// else's. `true` is an account that signed in while the wipe was running — `start()` has
     /// already written them as the device's holder, and erasing that would let the next stale
     /// marker fall through the nil arm and wipe their library.
+    ///
+    /// Round 2 / item 2: …and was then deleted too, so the MARKER is theirs by the time this wipe
+    /// completes. The completion used to read `pendingUid` live, so the first account's wipe
+    /// cleared the second account's debt — and compared `lastSignedInUid` against it as well.
     @Test(arguments: [false, true])
     func aRedeemedDeletionForgetsItsOwnUidAndNobodyElses(someoneElseArrivedMidWipe: Bool) async throws {
         let marker = InMemoryDeletionMarker()
@@ -763,7 +847,13 @@ struct DeleteAccountTests {
                                     deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [], status: AccountStatusCenter(),
                                      sleep: { _ in },
-                                     wipe: { if someoneElseArrivedMidWipe { marker.lastSignedInUid = "uid-b" }; return nil },
+                                     wipe: {
+                                         if someoneElseArrivedMidWipe {
+                                             marker.lastSignedInUid = "uid-b"
+                                             marker.pendingUid = "uid-b"
+                                         }
+                                         return nil
+                                     },
                                      marker: marker)
         let running = Task { await session.start() }; defer { running.cancel() }
         _ = try await auth.signIn(email: "a@b.test", password: "p")
@@ -772,8 +862,25 @@ struct DeleteAccountTests {
 
         await session.handleDeletion(deletingFirebaseUser: false).value
 
-        #expect(marker.pendingUid == nil)
+        #expect(marker.pendingUid == (someoneElseArrivedMidWipe ? "uid-b" : nil))
         #expect(marker.lastSignedInUid == (someoneElseArrivedMidWipe ? "uid-b" : nil))
+    }
+
+    /// Round 2 / item 5: the under-13 teardown deletes the account through Firebase and used to
+    /// leave that child's uid in `UserDefaults`. Only while the record still names them: `true` is
+    /// somebody else having become the device's holder across the Firebase await.
+    @Test(arguments: [false, true])
+    func theAgeIneligibleTeardownForgetsThatAccountsUidAndNobodyElses(someoneElseHoldsTheDevice: Bool) async throws {
+        let marker = InMemoryDeletionMarker()
+        let fixture = makeFixture(delete: .json(204, ""), marker: marker)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        #expect(marker.lastSignedInUid == FakeAuthClient.defaultUser.uid)
+        if someoneElseHoldsTheDevice { marker.lastSignedInUid = "uid-b" }
+
+        await fixture.session.terminateAgeIneligible()
+
+        #expect(marker.lastSignedInUid == (someoneElseHoldsTheDevice ? "uid-b" : nil))
+        #expect(fixture.wipes.count == 0, "an age-ineligible teardown is not a device wipe")
     }
 
     /// The other half of M2: `handleDeletion` used to store `""` when no uid was known, and the
@@ -853,4 +960,53 @@ struct DeleteAccountTests {
         #expect(marker.pendingUid == "fake-uid",
                 "the app announced the account erased over rows that are still on disk")
     }
+}
+
+/// `FakeAuthClient` with ONE `currentUser()` call that answers and then parks until released — the
+/// interleaving `aSeedThatResumesAfterTheAccountWasReplacedDoesNotReadmitTheOldOne` needs is "the
+/// answer was read, then the account changed, then the caller resumed", and a real hop offers no
+/// handle on its middle. Everything else forwards, so the fake's state machine is the one in use.
+private nonisolated final class ParkedCurrentUserAuth: AuthClient {
+    private let base: FakeAuthClient
+    private let gate = Mutex<(armed: Bool, parked: CheckedContinuation<Void, Never>?)>((false, nil))
+
+    init(_ base: FakeAuthClient) { self.base = base }
+
+    func parkNextCurrentUser() { gate.withLock { $0.armed = true } }
+    var isParked: Bool { gate.withLock { $0.parked != nil } }
+    func release() {
+        gate.withLock { gate in
+            let parked = gate.parked
+            gate.parked = nil
+            return parked
+        }?.resume()
+    }
+
+    func currentUser() async -> AuthUser? {
+        let answer = await base.currentUser()
+        let armed = gate.withLock { gate in
+            let armed = gate.armed
+            gate.armed = false
+            return armed
+        }
+        guard armed else { return answer }
+        await withCheckedContinuation { continuation in gate.withLock { $0.parked = continuation } }
+        return answer
+    }
+
+    var state: AsyncStream<AuthState> { base.state }
+    func idToken(forceRefresh: Bool) async -> BearerToken? { await base.idToken(forceRefresh: forceRefresh) }
+    func signIn(email: String, password: String) async throws(AuthErrorCode) -> AuthUser { try await base.signIn(email: email, password: password) }
+    func signUp(email: String, password: String) async throws(AuthErrorCode) -> AuthUser { try await base.signUp(email: email, password: password) }
+    func signIn(with credential: OAuthCredential) async throws(AuthErrorCode) -> AuthUser { try await base.signIn(with: credential) }
+    func sendPasswordReset(email: String) async throws(AuthErrorCode) { try await base.sendPasswordReset(email: email) }
+    func sendVerificationEmail() async throws(AuthErrorCode) { try await base.sendVerificationEmail() }
+    func reload() async throws(AuthErrorCode) -> AuthUser { try await base.reload() }
+    func reauthenticate(password: String) async throws(AuthErrorCode) { try await base.reauthenticate(password: password) }
+    func reauthenticate(with credential: OAuthCredential) async throws(AuthErrorCode) { try await base.reauthenticate(with: credential) }
+    func updatePassword(_ new: String) async throws(AuthErrorCode) { try await base.updatePassword(new) }
+    func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { try await base.verifyBeforeUpdateEmail(new) }
+    func deleteUser() async throws(AuthErrorCode) { try await base.deleteUser() }
+    func signOut() throws(AuthErrorCode) { try base.signOut() }
+    func refreshRefusal(signedFor uid: String?) async -> AuthErrorCode? { await base.refreshRefusal(signedFor: uid) }
 }

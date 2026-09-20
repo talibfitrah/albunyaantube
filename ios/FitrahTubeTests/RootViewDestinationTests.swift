@@ -112,7 +112,10 @@ struct RootViewDestinationTests {
         return (session, running)
     }
 
-    /// Task 33 / CF-A-44's delivery end, at the ONE call site production has. A `.deleted` minted
+    /// Task 33 / CF-A-44's delivery end. What this pins is `RootView.route` — NOT the `.onChange`
+    /// closure that calls it: a SwiftUI closure cannot be constructed here, so reverting that
+    /// closure to `session.handle(signal.event)` would still pass. The closure is one line that
+    /// forwards to `route`, which is as far as a unit test reaches. A `.deleted` minted
     /// for another account must reach `handle` WITH its uid: `handle(signal.event)` alone is the
     /// unattributed arm, which is honoured unconditionally — so dropping the uid here wipes the
     /// signed-in account's library for a stranger's deletion and tells them their account is gone.
