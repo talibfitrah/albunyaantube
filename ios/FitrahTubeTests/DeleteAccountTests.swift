@@ -91,18 +91,31 @@ struct DeleteAccountTests {
     /// The cleanup is detached, so the caller's `await` returns before it has finished.
     private func settle(_ fixture: Fixture) async {
         await yieldUntil { fixture.session.state == .signedOut }
-        await yieldUntil(200) { fixture.status.pending != nil }
+        await yieldUntil { fixture.status.pending != nil }
     }
 
+    /// A POSITIVE wait — "until X becomes true" — and condition-first: it returns the moment `done`
+    /// holds. The ceiling is a wall-clock DEADLINE, never a yield count. Measured in the two-simulator
+    /// gate: the main actor is idle there (a turn costs ~0.08 ms), so N yields are just ~0.04–0.2 ms
+    /// x N of wall time — 500 of them is 20–100 ms — while the thing being waited for is a DETACHED
+    /// job that needs a cooperative-pool thread for every hop, and under two simulators that
+    /// thread's scheduling latency has a tail of several ms per hop. A count therefore raced the OS
+    /// scheduler and lost at random (`wipes.count → 0`, a different test each run). The deadline is
+    /// only ever spent when X never happens, which is the honest failure.
+    ///
     /// Fix round 1 / M7: a `while`, not `for … where` — `where` SKIPS an iteration rather than
-    /// ending the loop, so that shape always spends the whole bound (`AccountSession.awaitAccount`'s
-    /// own comment). The bound is the safety net; the condition is the exit.
-    private func yieldUntil(_ bound: Int = 500, _ done: () -> Bool) async {
-        var yields = 0
-        while !done(), yields < bound {
-            yields += 1
-            await Task.yield()
-        }
+    /// ending the loop (`AccountSession.awaitAccount`'s own comment).
+    private func yieldUntil(timeout: Duration = .seconds(10), _ done: () -> Bool) async {
+        let deadline = ContinuousClock.now + timeout
+        while !done(), ContinuousClock.now < deadline { await Task.yield() }
+    }
+
+    /// A NEGATIVE wait — "X must stay false" — which by construction always spends its whole budget,
+    /// so it is bounded by COUNT and stays cheap: a deadline here would make every refusing test
+    /// seconds slower to assert an absence. It gives stray work a chance to show itself and proves
+    /// nothing more; the refusal itself is asserted on `handle`'s return value, synchronously.
+    private func yieldExpectingNothing(_ yields: Int = 200) async {
+        for _ in 0..<yields { await Task.yield() }
     }
 
     // MARK: - The successful path
@@ -154,7 +167,7 @@ struct DeleteAccountTests {
         let running = try await signedIn(fixture); defer { running.cancel() }
 
         let acted = fixture.session.handle(.deleted, for: "uid-b")
-        await yieldUntil(200) { fixture.wipes.count > 0 }
+        await yieldExpectingNothing()
 
         #expect(acted == false, "a verdict for an account that is not signed in was acted on")
         #expect(fixture.wipes.count == 0, "the stranger's deletion wiped the signed-in account's library")
@@ -196,7 +209,7 @@ struct DeleteAccountTests {
 
         #expect(fixture.session.handle(.deleted, for: FakeAuthClient.defaultUser.uid),
                 "the verdict for the account that was just signed out was refused")
-        await yieldUntil(500) { fixture.wipes.count > 0 }
+        await yieldUntil { fixture.wipes.count > 0 }
 
         #expect(fixture.wipes.count == 1, "the ruling-C13 wipe never ran for a deleted account")
         // Read at WIPE time: a successful wipe clears the marker again on its way out, so this is
@@ -245,7 +258,7 @@ struct DeleteAccountTests {
 
         #expect(fixture.session.handle(.deleted, for: arriving.uid),
                 "the verdict for the account that is signing in was refused")
-        await yieldUntil(500) { fixture.wipes.count > 0 }
+        await yieldUntil { fixture.wipes.count > 0 }
         #expect(fixture.wipes.count == 1, "the ruling-C13 wipe never ran for a deleted account")
         #expect(fixture.wipes.markedUids == [arriving.uid])
         await round.value
@@ -292,7 +305,7 @@ struct DeleteAccountTests {
         #expect(wipes.count == 0, "B's library was wiped for X's deletion")
         // The positive control: the account that IS signed in keeps its own verdict.
         #expect(session.handle(.deleted, for: FakeAuthClient.defaultUser.uid))
-        await yieldUntil(500) { wipes.count > 0 }
+        await yieldUntil { wipes.count > 0 }
         #expect(wipes.count == 1)
     }
 
@@ -316,7 +329,7 @@ struct DeleteAccountTests {
 
         #expect(fixture.session.handle(.deleted, for: FakeAuthClient.defaultUser.uid),
                 "a guest refresh erased the account a late verdict can still legitimately name")
-        await yieldUntil(500) { fixture.wipes.count > 0 }
+        await yieldUntil { fixture.wipes.count > 0 }
         #expect(fixture.wipes.count == 1)
     }
 
@@ -349,7 +362,7 @@ struct DeleteAccountTests {
             HTTPRequest(method: "GET", url: URL(string: "https://api.fitrah.test/api/account/me")!,
                         headers: [:], body: nil))
 
-        await yieldUntil(500) { fixture.status.pending != nil }
+        await yieldUntil { fixture.status.pending != nil }
         let signal = try #require(fixture.status.consume(), "the transport posted nothing at all")
         #expect(signal.event == .deleted)
         #expect(signal.uid == FakeAuthClient.defaultUser.uid,
@@ -358,7 +371,7 @@ struct DeleteAccountTests {
         var alert: AccountStatusAlert?
         RootView.route(signal, session: fixture.session, alert: &alert)
         #expect(alert == AccountStatusAlert(.deleted), "the account's own verdict was refused at the last link")
-        await yieldUntil(500) { fixture.wipes.count > 0 }
+        await yieldUntil { fixture.wipes.count > 0 }
         #expect(fixture.wipes.markedUids == [FakeAuthClient.defaultUser.uid],
                 "the wipe ran for the wrong account, or marked nobody")
     }
