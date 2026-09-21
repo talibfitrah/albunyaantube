@@ -1,0 +1,62 @@
+ios/FitrahTube/App/AppContainer.swift
+  s_eca9a78768b070::t_a82d51f2be07ab 459,464
+ios/FitrahTubeTests/SyncTriggerTests.swift
+  s_eca9a78768b070::t_1e1a1ee000b3ae 81,222,290,317
+ios/FitrahTubeTests/LocalAccountWiperTests.swift
+  s_eca9a78768b070::t_1e1a1ee000b3ae 215
+  s_eca9a78768b070::t_9dfcba6012d22b 143-148,150-176
+  s_eca9a78768b070::t_d571b022e45f4e 99,118,137,149,285,303,328,359,375,397
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_eca9a78768b070::t_b1b4f4e302e1d4 163-200
+ios/FitrahTubeTests/SignInViewModelTests.swift
+  s_eca9a78768b070::t_1e1a1ee000b3ae 33
+ios/FitrahTubeTests/EmailVerificationViewModelTests.swift
+  s_eca9a78768b070::t_1e1a1ee000b3ae 57
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_eca9a78768b070::t_b1b4f4e302e1d4 686,695,823-860,865,870-874,881-882
+  s_eca9a78768b070::t_f932f4dc2a3f69 700
+  s_eca9a78768b070::t_159b5a15941213 40-43,701-708,789-822,861-864,866-869,875-880
+  s_eca9a78768b070::t_ff4f5b02525b4a 883,885-900
+  s_eca9a78768b070::t_1e1a1ee000b3ae 79,294,992,1041,1066,1094,1114,1136,1163,1195,1237,1278,1337,1354,1371,1388
+  s_eca9a78768b070::t_cd3f6e32024311 884
+ios/FitrahTube/Features/Auth/LocalAccountWiper.swift
+  s_eca9a78768b070::t_32deddd1e21e82 76
+  s_eca9a78768b070::t_13abaa0b6f85ee 77
+  s_eca9a78768b070::t_184f2e8372854b 7-11,54-58,60,71-75
+ios/FitrahTubeTests/AccountSessionTests.swift
+  s_eca9a78768b070::t_1e1a1ee000b3ae 35,58,277,300,331
+ios/FitrahTubeTests/MeViewModelTests.swift
+  s_eca9a78768b070::t_1e1a1ee000b3ae 38
+ios/FitrahTubeTests/ProfileBootstrapViewModelTests.swift
+  s_eca9a78768b070::t_1e1a1ee000b3ae 55
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_eca9a78768b070::t_13abaa0b6f85ee 777,823-826,828-830,833
+  s_eca9a78768b070::t_60d60a5f185e5c 239
+  s_eca9a78768b070::t_fc75b52d77ee09 81,121
+  s_eca9a78768b070::t_a82d51f2be07ab 720,778
+  s_eca9a78768b070::t_32deddd1e21e82 779
+  s_eca9a78768b070::t_4e9b34785690b9 233-238,240-245,716-719,768-776,780,784-785,806,810,827,831-832,845-847
+ios/FitrahTubeTests/ProfileViewModelTests.swift
+  s_eca9a78768b070::t_1e1a1ee000b3ae 64
+ios/FitrahTubeTests/RootViewDestinationTests.swift
+  s_eca9a78768b070::t_1e1a1ee000b3ae 81,100
+  s_eca9a78768b070::t_0743f97aab83d1 128,145
+ios/FitrahTubeTests/MeAwaitingTabsTests.swift
+  s_eca9a78768b070::t_1e1a1ee000b3ae 59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55d893f4fe70e46f3ee7568db44d943d537d0a67",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
