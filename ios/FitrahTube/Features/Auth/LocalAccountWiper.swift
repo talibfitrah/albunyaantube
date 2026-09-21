@@ -4,11 +4,11 @@ import InnerTubeKit
 import SwiftData
 
 /// Ruling C13's device wipe: everything this device still holds for an account that has gone away.
-/// `wipe()` is reached from two places, both in `AccountSession`: `handleDeletion()` — so the
-/// admin-side 403 `ACCOUNT_DELETED` envelope and the user's own successful `DELETE
-/// /api/account/me` share it, and its latch keeps either from running it twice — and
-/// `resumePendingDeletion()`, which redeems an interrupted one at launch and is also the only
-/// caller of the uid-scoped `wipeRows(of:)`.
+/// `wipe(unlessTakenOver:)` is reached from two places, both in `AccountSession`:
+/// `handleDeletion()` — so the admin-side 403 `ACCOUNT_DELETED` envelope and the user's own
+/// successful `DELETE /api/account/me` share it, and its latch keeps either from running it twice
+/// — and `resumePendingDeletion()`, which redeems an interrupted one at launch. Both fall back to
+/// the uid-scoped `wipeRows(of:)` whenever the device is not provably the departed account's.
 ///
 /// Two of the three Android defects the ruling names are refused here (the third, CF-G-5, is the
 /// caller's):
@@ -51,8 +51,13 @@ import SwiftData
     /// the caches, the device id) are independent of SwiftData and must still run — a store that
     /// refused its deletes is no reason to leave the deleted account's search suggestions and
     /// device id behind.
+    ///
+    /// The ONE early return: `takenOver` is asked after the offline teardown — the last await —
+    /// and when it answers true nothing below runs and a non-nil error is returned, so the caller
+    /// keeps its marker and pays by uid. No default, for `wipeRows`'s reason in `AccountSession`:
+    /// a call site that forgot the check would compile into a silent "never taken over".
     @discardableResult
-    func wipe() async -> Error? {
+    func wipe(unlessTakenOver takenOver: () -> Bool) async -> Error? {
         var firstError: Error?
         // 1-2. CF-G-4. A save still running while the rest of this executes is a race with the
         //      filesystem, so the work stops before its files go — and both steps route through the
@@ -62,6 +67,13 @@ import SwiftData
         // not report a failure, so a full or corrupt store left the saved library on disk while the
         // caller cleared its durable marker and announced the account erased.
         firstError = await offline.deleteAll(offlineStore.items.map(\.id))
+
+        // CF-A-55 (c): the LAST await is above and nothing below suspends, so the answer cannot go
+        // stale before the deletes — the caller's own check is two awaits old by now, and an
+        // account that signed in, bound and pulled inside them lost its rows, cursors and binding
+        // here. `CancellationError` as in `AppContainer`'s released-container arm: the work did
+        // not run. (The offline library above is already gone — `OfflineItem` has no owner, CF-A-50.)
+        if takenOver() { return firstError ?? CancellationError() }
 
         // 3. Every row, ALL userIds: this is a DEVICE wipe, not a per-user one. Android scopes its
         //    deletes to the signed-in uid, which leaves a previous account's library on a device

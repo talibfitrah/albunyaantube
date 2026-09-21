@@ -61,7 +61,7 @@ struct ProfileViewModelTests {
         let account = AccountClient(transport: transport, baseURL: Self.base,
                                     deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
-                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil })
+                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil })
         if me != nil { await session.refresh(maxAttempts: 1) }
         let model = ProfileViewModel(account: account, auth: auth, session: session,
                                      calendar: Self.calendar, today: { Self.today })

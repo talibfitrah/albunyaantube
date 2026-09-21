@@ -37,6 +37,10 @@ struct DeleteAccountTests {
         /// — set after construction, because what it drives is the session the wipe belongs to.
         var scopedUids: [String] = []
         var duringWipe: (() async -> Void)?
+        /// CF-A-55 (c): run inside the wipe's AWAITS, i.e. before its takeover check — `duringWipe`
+        /// above runs after the deletes. `deviceDeletes` counts the wipes that got past the check.
+        var beforeDeletes: (() async -> Void)?
+        var deviceDeletes = 0
         var count: Int { observations.count }
 
         func record() {
@@ -72,7 +76,7 @@ struct DeleteAccountTests {
         let wipes = WipeSpy()
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [], status: status,
-                                     sleep: { _ in }, wipe: { [wipes] in wipes.record(); return nil },
+                                     sleep: { _ in }, wipe: { [wipes] _ in wipes.record(); return nil },
                                      marker: marker)
         wipes.session = session
         wipes.auth = auth
@@ -287,7 +291,7 @@ struct DeleteAccountTests {
                                      account: AccountClient(transport: transport, baseURL: Self.base,
                                                             deviceId: DeviceId(value: "dev-1")),
                                      stores: [], status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
+                                     wipe: { [wipes] _ in wipes.record(); return nil }, marker: marker)
         // Firebase holds X; no `start()` yet, so the round below is nil-started and parks on X.
         _ = try await base.signIn(email: "x@fitrah.test", password: "p")
         auth.parkNextCurrentUser()
@@ -679,7 +683,7 @@ struct DeleteAccountTests {
         let status: AccountStatusCenter
     }
 
-    private func makeTakeover(scopedDeleteFails: Bool = false) -> Takeover {
+    private func makeTakeover(scopedDeleteFails: Bool = false, me: [String]? = nil) -> Takeover {
         struct StoreFull: Error {}
         let base = FakeAuthClient(state: .signedOut)
         let auth = ParkedCurrentUserAuth(base)
@@ -688,12 +692,20 @@ struct DeleteAccountTests {
         let wipes = WipeSpy()
         let marker = InMemoryDeletionMarker()
         let status = AccountStatusCenter()
-        let transport = ScriptedTransport([.json(200, Self.meJSON), .json(200, Self.meBJSON)])
+        let transport = ScriptedTransport((me ?? [Self.meJSON, Self.meBJSON]).map { .json(200, $0) })
         let session = AccountSession(
             auth: auth,
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [store], status: status, sleep: { _ in },
-            wipe: { [wipes] in wipes.record(); await wipes.duringWipe?(); return nil },
+            // `LocalAccountWiper.wipe(unlessTakenOver:)`'s shape: its awaits, the takeover check, then the deletes.
+            wipe: { [wipes] takenOver in
+                wipes.record()
+                await wipes.beforeDeletes?()
+                if takenOver() { return CancellationError() }
+                wipes.deviceDeletes += 1
+                await wipes.duringWipe?()
+                return nil
+            },
             wipeRows: { [wipes] uid in wipes.scopedUids.append(uid); return scopedDeleteFails ? StoreFull() : nil },
             marker: marker, sync: sync)
         return Takeover(session: session, base: base, auth: auth, sync: sync, store: store, wipes: wipes,
@@ -774,7 +786,118 @@ struct DeleteAccountTests {
         #expect(takeover.marker.pendingUid == nil, "the device wipe succeeded and its marker survived")
     }
 
-    /// …and the one that lands during the Firebase delete — the self-delete path's last await. A's
+    /// CF-A-55 (c): …and the one that lands inside the wiper's OWN awaits (the offline teardown),
+    /// past `performDeletion`'s last check and before the deletes. B has bound and pulled by then,
+    /// so the device-wide delete took B's rows, cursors and binding. The wiper is handed the check
+    /// and asks it with no await before its deletes; taken over, the debt is paid by uid exactly
+    /// as it is when the takeover precedes the wipe. `bLeftAgain`: B came AND went in that window,
+    /// so only `lastKnownUid` still says so — B's rows are kept by a sign-out and are still there.
+    @Test(arguments: [(false, false), (true, false), (false, true)])
+    func anAccountThatArrivesInsideTheWipersOwnAwaitsIsNeverDeviceWiped(
+        scopedDeleteFails: Bool, bLeftAgain: Bool
+    ) async throws {
+        let takeover = makeTakeover(scopedDeleteFails: scopedDeleteFails)
+        let session = takeover.session
+        takeover.wipes.beforeDeletes = {
+            try? await replaceAWithB(takeover)
+            if bLeftAgain { session.signOut() }
+        }
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await takeover.base.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { session.state.me != nil }
+
+        await session.handleDeletion(deletingFirebaseUser: true, for: FakeAuthClient.defaultUser.uid).value
+
+        #expect(takeover.wipes.count == 1, "the precondition is that the wipe was entered: nobody had arrived before it")
+        #expect(takeover.wipes.deviceDeletes == 0, "the device-wide deletes ran over an account that arrived during the wipe's awaits")
+        #expect(takeover.wipes.scopedUids == [FakeAuthClient.defaultUser.uid], "A's debt was not paid by uid")
+        #expect(takeover.marker.pendingUid == (scopedDeleteFails ? FakeAuthClient.defaultUser.uid : nil))
+        #expect(takeover.base.operations.contains(.deleteUser) == false, "A's cleanup deleted B's Firebase credential")
+        #expect(takeover.status.pending?.event != .deleted, "a .deleted was posted under B")
+        if !bLeftAgain {
+            #expect(session.state.me?.uid == Self.accountB.uid, "A's cleanup signed B out")
+            #expect(takeover.store.currentUserId == Self.accountB.uid, "B was left rendering the guest's scope")
+        }
+    }
+
+    /// Round 2 / P1: the LAUNCH wipe has the same two awaits and handed the wiper `false`.
+    /// `start()` runs from `RootView`'s `.task` with the UI live: the marker names A, A was the
+    /// last holder and nobody is signed in, so the device wipe is entered — and B signs in through
+    /// `SignInViewModel.land()` inside the offline teardown. The seed latches B, `/me` loads, the
+    /// latch is nil so sync BINDS and pulls; resumed blind, the wiper took B's rows, cursors and
+    /// binding. It only ever DOWNGRADES: taken over, A's debt is paid by uid.
+    /// `aCameBack` is the control: A signing back in is positive evidence, never a takeover.
+    @Test(arguments: [(false, false), (true, false), (false, true)])
+    func anAccountThatLandsInsideTheLaunchWipesOwnAwaitsIsNeverDeviceWiped(
+        scopedDeleteFails: Bool, aCameBack: Bool
+    ) async throws {
+        let uidA = FakeAuthClient.defaultUser.uid
+        let takeover = makeTakeover(scopedDeleteFails: scopedDeleteFails, me: [aCameBack ? Self.meJSON : Self.meBJSON])
+        takeover.marker.pendingUid = uidA
+        takeover.marker.lastSignedInUid = uidA
+        takeover.wipes.beforeDeletes = {
+            if !aCameBack { takeover.base.user = Self.accountB }
+            _ = try? await takeover.base.signIn(email: "x@b.test", password: "p")
+            await takeover.session.refresh()   // `SignInViewModel.land()`: `start()` is parked in this wipe
+        }
+
+        await takeover.session.resumePendingDeletion()
+
+        #expect(takeover.wipes.count == 1, "the precondition is that the launch wipe was entered")
+        #expect(takeover.session.state.me?.uid == (aCameBack ? uidA : Self.accountB.uid), "the precondition is a landed account")
+        #expect(takeover.wipes.deviceDeletes == (aCameBack ? 1 : 0))
+        #expect(takeover.wipes.scopedUids == (aCameBack ? [] : [uidA]))
+        #expect(takeover.marker.pendingUid == (scopedDeleteFails ? uidA : nil))
+        if !aCameBack { #expect(takeover.marker.lastSignedInUid == Self.accountB.uid, "paying A's debt forgot who holds the device now") }
+    }
+
+    /// CF-A-55 (a): the front door's refusal pays the named account's debt by uid, and it used to
+    /// return with nothing durable written — so a delete that failed, or a process killed inside
+    /// it, was never retried. Marker BEFORE the work, like every other debt here; redeemed on
+    /// success. Single-slot (CF-A-52): a debt already recorded for somebody else is never evicted,
+    /// and paying this one does not clear theirs.
+    @Test(arguments: [(nil, false), (nil, true), ("uid-other", false), ("uid-other", true)] as [(String?, Bool)])
+    func aRefusedDeletionRecordsItsDebtBeforeTheScopedDeleteRuns(alreadyOwed: String?, scopedDeleteFails: Bool) async throws {
+        struct StoreFull: Error {}
+        let marker = InMemoryDeletionMarker()
+        marker.pendingUid = alreadyOwed
+        let wipes = WipeSpy()
+        var markerDuringTheDelete: String??
+        let account = AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: FakeAuthClient(state: .signedOut), account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in },
+                                     wipe: { [wipes] _ in wipes.record(); return nil },
+                                     wipeRows: { [wipes] uid in
+                                         wipes.scopedUids.append(uid)
+                                         markerDuringTheDelete = marker.pendingUid
+                                         return scopedDeleteFails ? StoreFull() : nil
+                                     },
+                                     marker: marker)
+
+        await session.handleDeletion(for: "uid-gone").value
+
+        #expect(wipes.scopedUids == ["uid-gone"], "the precondition is the refusal arm's scoped delete")
+        #expect(wipes.count == 0)
+        #expect(markerDuringTheDelete == .some(alreadyOwed ?? "uid-gone"), "a kill inside the delete leaves no debt on record")
+        #expect(marker.pendingUid == (alreadyOwed ?? (scopedDeleteFails ? "uid-gone" : nil)))
+    }
+
+    /// …and never for an EMPTY uid (Stage 7 fix 2 / M2): the marker's getter reports `""` as
+    /// pending, and marker-before-work would otherwise leave one behind a kill inside the delete.
+    @Test func aRefusedDeletionThatNamesNobodyWritesNoMarker() async throws {
+        let marker = InMemoryDeletionMarker()
+        var markerDuringTheDelete: String??
+        let account = AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: FakeAuthClient(state: .signedOut), account: account, stores: [],
+                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil },
+                                     wipeRows: { _ in markerDuringTheDelete = marker.pendingUid; return nil },
+                                     marker: marker)
+
+        await session.handleDeletion(for: "").value
+
+        #expect(markerDuringTheDelete == .some(nil), "an empty uid was stored as a pending deletion")
+    }
+
     /// credential is gone by then, correctly; what must not follow is `dropSession()` under B.
     @Test func anAccountThatArrivesDuringTheFirebaseDeleteIsNotSignedOutByIt() async throws {
         let takeover = makeTakeover()
@@ -866,7 +989,7 @@ struct DeleteAccountTests {
                                           park: { index in if index == 2 { await parker.unbind() } })
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: base, account: account, stores: [], status: AccountStatusCenter(),
-                                     sleep: { _ in }, wipe: { [wipes] in wipes.record(); return nil },
+                                     sleep: { _ in }, wipe: { [wipes] _ in wipes.record(); return nil },
                                      wipeRows: { [wipes] uid in wipes.scopedUids.append(uid); return nil })
         let model = DeleteAccountViewModel(account: account, session: session, auth: base,
                                            google: FakeOAuthProvider(), apple: FakeOAuthProvider(isAvailable: false))
@@ -915,7 +1038,7 @@ struct DeleteAccountTests {
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
                                      status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
+                                     wipe: { [wipes] _ in wipes.record(); return nil }, marker: marker)
 
         await session.resumePendingDeletion()
 
@@ -940,7 +1063,7 @@ struct DeleteAccountTests {
         let asked = Mutex<[String]>([])
         let session = AccountSession(auth: auth, account: account, stores: [],
                                      status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return nil },
+                                     wipe: { [wipes] _ in wipes.record(); return nil },
                                      wipeRows: { uid in asked.withLock { $0.append(uid) }; return nil },
                                      marker: marker)
 
@@ -968,7 +1091,7 @@ struct DeleteAccountTests {
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
                                      status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
+                                     wipe: { [wipes] _ in wipes.record(); return nil }, marker: marker)
 
         await session.resumePendingDeletion()
 
@@ -988,7 +1111,7 @@ struct DeleteAccountTests {
         marker.lastSignedInUid = "uid-b"
         let account = AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: FakeAuthClient(state: .signedOut), account: account, stores: [],
-                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil }, marker: marker)
+                                     status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil }, marker: marker)
 
         await session.resumePendingDeletion()
 
@@ -1010,7 +1133,7 @@ struct DeleteAccountTests {
         let account = AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: FakeAuthClient(state: .signedIn(holder)), account: account, stores: [],
                                      status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return nil },
+                                     wipe: { [wipes] _ in wipes.record(); return nil },
                                      wipeRows: { uid in asked.withLock { $0.append(uid) }; return nil },
                                      marker: marker)
 
@@ -1037,7 +1160,7 @@ struct DeleteAccountTests {
         let account = AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
                                      status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return nil },
+                                     wipe: { [wipes] _ in wipes.record(); return nil },
                                      wipeRows: { uid in asked.withLock { $0.append(uid) }; return StoreFull() },
                                      marker: marker)
 
@@ -1069,7 +1192,7 @@ struct DeleteAccountTests {
             auth: FakeAuthClient(state: .signedOut),
             account: AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(), sleep: { _ in },
-            wipe: { [wipes] in wipes.record(); return nil },
+            wipe: { [wipes] _ in wipes.record(); return nil },
             wipeRows: { uid in asked.withLock { $0.append(uid) }; return nil }, marker: marker)
         await second.resumePendingDeletion()
 
@@ -1111,7 +1234,7 @@ struct DeleteAccountTests {
                                     deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [], status: AccountStatusCenter(),
                                      sleep: { _ in },
-                                     wipe: {
+                                     wipe: { _ in
                                          if someoneElseArrivedMidWipe {
                                              marker.lastSignedInUid = "uid-b"
                                              marker.pendingUid = "uid-b"
@@ -1152,7 +1275,7 @@ struct DeleteAccountTests {
             auth: FakeAuthClient(state: .signedOut),
             account: AccountClient(transport: ScriptedTransport([]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(), sleep: { _ in },
-            wipe: { [wipes] in wipes.record(); return nil },
+            wipe: { [wipes] _ in wipes.record(); return nil },
             wipeRows: { uid in asked.withLock { $0.append(uid) }; return nil }, marker: marker)
         await relaunched.resumePendingDeletion()
 
@@ -1211,7 +1334,7 @@ struct DeleteAccountTests {
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
                                      status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return StoreFull() }, marker: marker)
+                                     wipe: { [wipes] _ in wipes.record(); return StoreFull() }, marker: marker)
 
         await session.handleDeletion(deletingFirebaseUser: false).value
 
@@ -1228,7 +1351,7 @@ struct DeleteAccountTests {
             auth: FakeAuthClient(state: .signedOut),
             account: AccountClient(transport: emptyTransport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(), sleep: { _ in },
-            wipe: { [emptyWipes] in emptyWipes.record(); return StoreFull() }, marker: emptyMarker)
+            wipe: { [emptyWipes] _ in emptyWipes.record(); return StoreFull() }, marker: emptyMarker)
         await emptySession.refresh()
         #expect(emptySession.state.me?.uid == "", "the fixture could not carry an empty uid")
 
@@ -1245,7 +1368,7 @@ struct DeleteAccountTests {
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let session = AccountSession(auth: auth, account: account, stores: [],
                                      status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { [wipes] in wipes.record(); return nil }, marker: marker)
+                                     wipe: { [wipes] _ in wipes.record(); return nil }, marker: marker)
 
         await session.resumePendingDeletion()
 
@@ -1262,7 +1385,7 @@ struct DeleteAccountTests {
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
         let status = AccountStatusCenter()
         let session = AccountSession(auth: auth, account: account, stores: [], status: status,
-                                     sleep: { _ in }, wipe: { StoreFull() }, marker: marker)
+                                     sleep: { _ in }, wipe: { _ in StoreFull() }, marker: marker)
         let running = Task { await session.start() }; defer { running.cancel() }
         _ = try await auth.signIn(email: "a@b.test", password: "p")
         await yieldUntil { session.state.me != nil }

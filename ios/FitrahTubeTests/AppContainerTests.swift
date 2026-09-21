@@ -160,6 +160,44 @@ struct AppContainerTests {
         #expect(marker.pendingUid == nil)
     }
 
+    /// Task 36 round 2 / P2, the WIRING of the wiper's takeover check. Constructed, never raced:
+    /// the fixture's `/me` account lands through `refresh()` (the seed latches it), Firebase then
+    /// drops it behind the session's back, and the durable record is put back to the departed
+    /// account — so the launch wipe is ENTERED on positive evidence while the session has observed
+    /// somebody else. A container that handed the wiper anything but the session's own check
+    /// device-wipes the account it observed.
+    @Test func theWipersTakeoverCheckIsTheSessionsNotAConstant() async throws {
+        let suite = "fitrahtube.wiper-takeover-wiring-tests"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let auth = FakeAuthClient(state: .signedOut)
+        let container = AppContainer.fake(defaults: defaults, auth: auth)
+        let holder = FakeAuthClient.defaultUser.uid
+        for uid in ["uid-a", holder] {
+            container.favorites.currentUserId = uid
+            try container.favorites.importVideo(id: "xc7keR2piUM", title: "Lecture", channelName: "Alafasy",
+                                                thumbnailUrl: nil, durationSeconds: 600,
+                                                approvalStatus: "APPROVED", at: Date(timeIntervalSince1970: 0))
+        }
+        container.favorites.currentUserId = ""
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+        await container.session.refresh()
+        #expect(container.session.state.me?.uid == holder, "the precondition is an account the session has observed")
+        try auth.signOut()
+        let marker = UserDefaultsDeletionMarker(defaults: defaults)
+        marker.pendingUid = "uid-a"
+        marker.lastSignedInUid = "uid-a"
+
+        await container.session.resumePendingDeletion()
+
+        container.favorites.currentUserId = holder
+        #expect(container.favorites.items.count == 1, "the device wipe ran over an account the session had observed")
+        container.favorites.currentUserId = "uid-a"
+        #expect(container.favorites.items.isEmpty, "the departed account's debt was not paid by uid")
+        #expect(marker.pendingUid == nil)
+    }
+
     /// Fix round 1 / M3 + M5, one row for both halves of `approvals`' transport.
     ///
     /// M3: nothing pinned that this client got the SIGNED transport. `ApprovalsClient` deliberately

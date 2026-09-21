@@ -56,7 +56,7 @@ struct MeAwaitingTabsTests {
             account: AccountClient(transport: transport,
                                    baseURL: URL(string: "https://api.test/")!,
                                    deviceId: DeviceId(value: "d1")),
-            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil })
+            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil })
         guard signedIn else { return session }
         let running = Task { await session.start() }
         _ = try await auth.signIn(email: "a@b.test", password: "p")

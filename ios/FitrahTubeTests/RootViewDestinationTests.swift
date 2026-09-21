@@ -78,7 +78,7 @@ struct RootViewDestinationTests {
                                      account: AccountClient(transport: transport, baseURL: base,
                                                             deviceId: DeviceId(value: "dev-1")),
                                      stores: [], status: AccountStatusCenter(), sleep: { _ in },
-                                     wipe: { wipes.withLock { $0 += 1 }; return nil })
+                                     wipe: { _ in wipes.withLock { $0 += 1 }; return nil })
         await session.refresh()
         #expect(session.state.me != nil)
 
@@ -97,7 +97,7 @@ struct RootViewDestinationTests {
     /// against, and only the auth stream sets it. The wipe is the caller's, because a `Mutex` is
     /// noncopyable and cannot ride out in the tuple.
     @MainActor private func signedInSession(
-        wipe: @escaping @MainActor @Sendable () async -> Error?
+        wipe: @escaping @MainActor @Sendable (() -> Bool) async -> Error?
     ) async -> (session: AccountSession, running: Task<Void, Never>) {
         let transport = ScriptedTransport([.json(200, #"{"uid":"fake-uid","status":"active","role":"user"}"#)])
         let session = AccountSession(auth: FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser)),
@@ -125,7 +125,7 @@ struct RootViewDestinationTests {
     /// signed-in account's library for a stranger's deletion and tells them their account is gone.
     @Test @MainActor func aSignalForAnotherAccountNeitherWipesNorRaisesTheAlert() async {
         let wipes = Mutex(0)
-        let (session, running) = await signedInSession { wipes.withLock { $0 += 1 }; return nil }
+        let (session, running) = await signedInSession { _ in wipes.withLock { $0 += 1 }; return nil }
         defer { running.cancel() }
         #expect(session.user?.uid == FakeAuthClient.defaultUser.uid)
 
@@ -142,7 +142,7 @@ struct RootViewDestinationTests {
     /// silently disable the wipe. The signed-in account's own signal acts, and raises the alert.
     @Test @MainActor func aSignalForTheSignedInAccountWipesAndRaisesTheAlert() async {
         let wipes = Mutex(0)
-        let (session, running) = await signedInSession { wipes.withLock { $0 += 1 }; return nil }
+        let (session, running) = await signedInSession { _ in wipes.withLock { $0 += 1 }; return nil }
         defer { running.cancel() }
 
         var alert: AccountStatusAlert?

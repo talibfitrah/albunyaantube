@@ -30,7 +30,7 @@ struct SignInViewModelTests {
         let session = AccountSession(
             auth: auth,
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
-            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { nil })
+            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil })
         return (SignInViewModel(auth: auth, session: session, capabilities: capabilities), transport, session)
     }
 

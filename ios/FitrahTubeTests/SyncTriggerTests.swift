@@ -78,7 +78,7 @@ struct SyncTriggerTests {
 
     private func makeSession(auth: FakeAuthClient, transport: ScriptedTransport,
                              sync: RecordingSync,
-                             wipe: @escaping @MainActor @Sendable () async -> Error? = { nil },
+                             wipe: @escaping @MainActor @Sendable (() -> Bool) async -> Error? = { _ in nil },
                              providers: [any OAuthSignInProvider] = [])
         -> AccountSession {
         AccountSession(
@@ -219,7 +219,7 @@ struct SyncTriggerTests {
         let sync = RecordingSync()
         let unboundBeforeWipe = Mutex<Bool?>(nil)
         let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
-                                  sync: sync, wipe: {
+                                  sync: sync, wipe: { _ in
                                       let seen = await sync.calls.contains(.unbind)
                                       unboundBeforeWipe.withLock { $0 = seen }
                                       return nil
@@ -287,7 +287,7 @@ struct SyncTriggerTests {
         let spy = SyncableAtWipe()
         let auth = FakeAuthClient(state: .signedOut)
         let session = makeSession(auth: auth, transport: ScriptedTransport([.json(200, Self.meJSON)]),
-                                  sync: RecordingSync(), wipe: { spy.record(); return nil })
+                                  sync: RecordingSync(), wipe: { _ in spy.record(); return nil })
         spy.session = session
         let running = try await signIn(auth, session)
         defer { running.cancel() }
@@ -314,7 +314,7 @@ struct SyncTriggerTests {
             account: AccountClient(transport: ScriptedTransport([]), baseURL: Self.base,
                                    deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(),
-            sleep: { _ in await parking.parkOnce() }, wipe: { nil }, sync: RecordingSync())
+            sleep: { _ in await parking.parkOnce() }, wipe: { _ in nil }, sync: RecordingSync())
         let running = Task { await session.start() }
         defer { running.cancel() }
 

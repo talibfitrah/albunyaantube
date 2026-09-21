@@ -78,7 +78,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// Returns the FIRST error the wipe hit, or nil when everything went (Stage 5 / C2.2): the four
     /// SwiftData deletes used to be `try?`-swallowed, so a full or corrupt store left every row on
     /// disk while the app announced the account erased.
-    private let wipe: @MainActor @Sendable () async -> Error?
+    private let wipe: @MainActor @Sendable (() -> Bool) async -> Error?
     /// The uid-scoped delete (`LocalAccountWiper.wipeRows(of:)`). Its DEFAULT REFUSES — it reports
     /// an error, so the marker is kept — because a default that answered nil would "redeem" an
     /// irreversible debt having deleted nothing, for any construction that forgot to pass one.
@@ -118,7 +118,7 @@ nonisolated enum AccountState: Sendable, Equatable {
 
     init(auth: any AuthClient, account: AccountClient, stores: [any UserScoped],
          status: AccountStatusCenter, sleep: @escaping @Sendable (Duration) async -> Void,
-         wipe: @escaping @MainActor @Sendable () async -> Error?,
+         wipe: @escaping @MainActor @Sendable (() -> Bool) async -> Error?,
          wipeRows: @escaping @MainActor @Sendable (String) -> Error? = { _ in CancellationError() },
          marker: any DeletionMarking = InMemoryDeletionMarker(),
          providers: [any OAuthSignInProvider] = [],
@@ -230,8 +230,19 @@ nonisolated enum AccountState: Sendable, Equatable {
         //   * Round 3 / item 1: nobody signed in and NO holder on record, because
         //     `terminateAgeIneligible()` had forgotten an under-13 account in between.
         if (signedIn ?? marker.lastSignedInUid) == pending {
-            if await wipe() == nil { redeemed(pending) }
-            return
+            // Round 2 / P1: this runs from `RootView`'s `.task` with the UI live, so an account can
+            // land (`SignInViewModel.land()`), bind and pull inside the wipe's own awaits. It only
+            // ever DOWNGRADES: taken over, the wiper deletes nothing device-wide and the debt falls
+            // through to the by-uid arm below. The pending account signing back in is no takeover.
+            var takenOverInsideTheWipe = false
+            let wipeError = await wipe {
+                takenOverInsideTheWipe = observedTakeover(of: pending)
+                return takenOverInsideTheWipe
+            }
+            if !takenOverInsideTheWipe {
+                if wipeError == nil { redeemed(pending) }
+                return
+            }
         }
         // Review I3: the debt is still PAYABLE here. Every per-user row carries its owner, so A's
         // are deleted by uid and everybody else's, the guest's and every device-wide step are left
@@ -702,6 +713,11 @@ nonisolated enum AccountState: Sendable, Equatable {
         // to run: no latch, no device wipe, no Firebase delete. The named account's debt is paid
         // by uid, which cannot touch whoever holds the device. nil is unattributed, as in `handle`.
         if let verdictUid, verdictUid != user?.uid, verdictUid != lastKnownUid {
+            // CF-A-55 (a): a debt like any other, so durable BEFORE the work — this arm returns
+            // ahead of the marker write below, and a delete that failed or was killed part-way was
+            // never retried. Only into a FREE slot (the marker holds one uid, CF-A-52), never an
+            // empty uid (Stage 7 fix 2 / M2), and `redeemed` clears it only while it names this uid.
+            if marker.pendingUid == nil, !verdictUid.isEmpty { marker.pendingUid = verdictUid }
             if wipeRows(verdictUid) == nil { redeemed(verdictUid) }
             return Task {}
         }
@@ -749,14 +765,24 @@ nonisolated enum AccountState: Sendable, Equatable {
         return task
     }
 
+    /// The SYNCHRONOUS takeover check, which is all `LocalAccountWiper.wipe` can be handed
+    /// (CF-A-55 (c)): it is asked with no await before the deletes, and asking Firebase is an await.
+    /// `owed` signing back in is not a takeover. What this CANNOT see is an account Firebase holds
+    /// that neither `start()` nor the seed has observed yet. That account is still device-wiped —
+    /// but it has not BOUND (`bindSyncIfNeeded` needs `/me` to have landed, which is after the
+    /// seed or after `.signedIn`), so no pull of theirs is in flight to write a cursor over the
+    /// deleted pages, and their first bind finds no binding and no cursor: a full refill. Rows
+    /// they kept from an earlier session go as anyone's do (CF-A-49).
+    private func observedTakeover(of owed: String?) -> Bool {
+        guard let owed else { return user != nil }
+        return [user?.uid, lastKnownUid].contains { $0 != nil && $0 != owed }
+    }
+
     /// `owed` is the uid this deletion wrote into the marker, or nil when it wrote none — and then
     /// there is nothing of its own to clear.
     ///
-    /// **Who holds the device is re-asked after every `await` here (CF-A-53)** — which is NOT
-    /// every step: the check before `wipe()` is the last one before its destructive half, and
-    /// `LocalAccountWiper.wipe()` awaits (the offline teardown) before its synchronous deletes
-    /// with no check of its own. An account arriving inside that window is still wiped; what this
-    /// guarantees is that nothing AFTER the wipe is done to them.
+    /// **Who holds the device is re-asked after every `await` here (CF-A-53)**, and by the wiper
+    /// itself past its own awaits (`observedTakeover(of:)`).
     ///
     /// Nothing stops another account SIGNING IN while this is parked — behind a slow pull at
     /// `unbindSync`, inside the wipe, inside Firebase. The user can dismiss the terminal alert (a
@@ -777,11 +803,11 @@ nonisolated enum AccountState: Sendable, Equatable {
     private func performDeletion(owed: String?) async {
         func takenOver() async -> Bool {
             guard let owed else { return user != nil }
-            // Firebase too, and LAST so the session's own fields are read after the hop: an
+            // Firebase too, asked FIRST so the session's own fields are read after the hop: an
             // account Firebase already holds that neither `start()` nor the seed has observed is
             // invisible to `user`/`lastKnownUid`, and `deleteUser()` deletes whoever Firebase holds.
             let held = await auth.currentUser()?.uid
-            return [held, user?.uid, lastKnownUid].contains { $0 != nil && $0 != owed }
+            return (held != nil && held != owed) || observedTakeover(of: owed)
         }
         // Stage 4 S9: quiesce sync BEFORE the wipe, or a pull already parked in the network
         // re-creates the rows the wipe is about to erase.
@@ -794,7 +820,17 @@ nonisolated enum AccountState: Sendable, Equatable {
             if let owed, wipeRows(owed) == nil { redeemed(owed) }
             return
         }
-        let wipeError = await wipe()
+        // Taken over INSIDE the wipe's own awaits (CF-A-55 (c)): the wiper asked immediately
+        // before its deletes and ran none of them, so this is the arm above, one check later.
+        var takenOverInsideTheWipe = false
+        let wipeError = await wipe {
+            takenOverInsideTheWipe = observedTakeover(of: owed)
+            return takenOverInsideTheWipe
+        }
+        guard !takenOverInsideTheWipe else {
+            if let owed, wipeRows(owed) == nil { redeemed(owed) }
+            return
+        }
         // Stage 5 / C2.2: a wipe that hit a full or corrupt store keeps the marker, so the next
         // launch tries again rather than leaving the rows on disk under an "account deleted" alert.
         if wipeError == nil, let owed { redeemed(owed) }
@@ -806,8 +842,9 @@ nonisolated enum AccountState: Sendable, Equatable {
         // still deletes the credential, and always before `dropSession()`. CF-A-53: and never
         // once somebody else holds the device — `deleteUser()` deletes whoever Firebase holds.
         if deletingFirebase, await !takenOver() { try? await auth.deleteUser() }
-        // Taken over DURING the wipe or the Firebase delete: what is done is done, but the session
-        // is theirs — no sign-out, no `.deleted` — and the stores `LocalAccountWiper` re-scoped to
+        // Taken over AFTER the wiper's deletes — in the Firebase delete, or by an account only
+        // Firebase knew about when the wiper asked: what is done is done, but the session is
+        // theirs — no sign-out, no `.deleted` — and the stores `LocalAccountWiper` re-scoped to
         // `""` go back to the account that is actually on screen.
         guard await !takenOver() else {
             // `arrived != owed` (Cubic): this guard can fire because FIREBASE holds the newcomer while

@@ -96,7 +96,7 @@ struct LocalAccountWiperTests {
             favoritesAtDeleteAll.withLock { $0 = count }
         }
 
-        await fixture.wiper.wipe()
+        await fixture.wiper.wipe(unlessTakenOver: { false })
 
         #expect(await fixture.offline.calls == [Call(method: "cancelAll", id: ""),
                                                 Call(method: "deleteAll", id: saved.id)],
@@ -115,7 +115,7 @@ struct LocalAccountWiperTests {
         try seedRows(fixture)
         #expect(fixture.count(FavoriteVideo.self) == 2)
 
-        await fixture.wiper.wipe()
+        await fixture.wiper.wipe(unlessTakenOver: { false })
 
         #expect(fixture.count(FavoriteVideo.self) == 0)
         #expect(fixture.count(SavedPlaylist.self) == 0)
@@ -134,10 +134,44 @@ struct LocalAccountWiperTests {
         try context.save()
         #expect(fixture.count(SyncState.self) == 1)
 
-        await fixture.wiper.wipe()
+        await fixture.wiper.wipe(unlessTakenOver: { false })
 
         #expect(fixture.count(SyncState.self) == 0)
         #expect(fixture.count(AccountBinding.self) == 0)
+    }
+
+    // MARK: - CF-A-55 (c): a takeover inside the wipe's own awaits
+
+    /// The caller's last takeover check is BEFORE `wipe()`, and the offline teardown is two awaits
+    /// long: an account that signs in, binds and pulls inside it had its rows, its cursors and its
+    /// binding deleted. The flag is raised from INSIDE the wiper's last await, so a check placed
+    /// anywhere before that await reads false and this goes red — the position is the fact pinned.
+    @Test func anAccountThatArrivesDuringTheOfflineTeardownKeepsItsRowsCursorsAndBinding() async throws {
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        try seedRows(fixture)
+        let context = ModelContext(fixture.container)
+        context.insert(SyncState(entityType: "favorites", userId: "someone-else", lastCursor: 1_700_000))
+        context.insert(AccountBinding(userId: "someone-else", initialMergeDone: true))
+        try context.save()
+        fixture.searchHistory.add("tafsir")
+        fixture.defaults.set("dev-1", forKey: DeviceId.defaultsKey)
+        fixture.favorites.currentUserId = "someone-else"
+        let arrived = Mutex(false)
+        await fixture.offline.setOnDeleteAll { arrived.withLock { $0 = true } }
+
+        let error = await fixture.wiper.wipe(unlessTakenOver: { arrived.withLock { $0 } })
+
+        #expect(error != nil, "a wipe that deleted nothing reported success, so its caller clears the marker")
+        #expect(await fixture.offline.calls.map(\.method) == ["cancelAll", "deleteAll"],
+                "the offline library has no owner and is gone by the time the check can be asked (CF-A-50)")
+        #expect(fixture.count(FavoriteVideo.self) == 2)
+        #expect(fixture.count(SavedPlaylist.self) == 2)
+        #expect(fixture.count(SubscribedChannel.self) == 2)
+        #expect(fixture.count(SyncState.self) == 1, "the arrived account's cursors were deleted")
+        #expect(fixture.count(AccountBinding.self) == 1, "the arrived account's binding was deleted")
+        #expect(fixture.favorites.currentUserId == "someone-else", "the arrived account's stores were re-scoped to the guest")
+        #expect(fixture.searchHistory.entries == ["tafsir"])
+        #expect(fixture.defaults.string(forKey: DeviceId.defaultsKey) == "dev-1")
     }
 
     // MARK: - The uid-scoped delete (a marker owed to an account that no longer holds the device)
@@ -178,7 +212,7 @@ struct LocalAccountWiperTests {
             account: AccountClient(transport: ScriptedTransport([]), baseURL: URL(string: "https://api.fitrah.test/")!,
                                    deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(), sleep: { _ in },
-            wipe: { deviceWipes.withLock { $0 += 1 }; return nil },
+            wipe: { _ in deviceWipes.withLock { $0 += 1 }; return nil },
             wipeRows: { [wiper = fixture.wiper] in wiper.wipeRows(of: $0) }, marker: marker)
 
         await session.resumePendingDeletion()
@@ -248,7 +282,7 @@ struct LocalAccountWiperTests {
         fixture.subscriptions.currentUserId = "fake-uid"
         #expect(fixture.favorites.items.count == 1)
 
-        await fixture.wiper.wipe()
+        await fixture.wiper.wipe(unlessTakenOver: { false })
 
         #expect(fixture.favorites.items.isEmpty)
         #expect(fixture.playlists.items.isEmpty)
@@ -266,7 +300,7 @@ struct LocalAccountWiperTests {
         fixture.searchHistory.add("seerah")
         #expect(fixture.searchHistory.entries.count == 2)
 
-        await fixture.wiper.wipe()
+        await fixture.wiper.wipe(unlessTakenOver: { false })
 
         #expect(fixture.searchHistory.entries.isEmpty)
         #expect(fixture.defaults.stringArray(forKey: "search_history") == nil)
@@ -291,7 +325,7 @@ struct LocalAccountWiperTests {
         fixture.defaults.set(1.0, forKey: cooldownKey)
         fixture.defaults.set("dark", forKey: "settings_theme")
 
-        await fixture.wiper.wipe()
+        await fixture.wiper.wipe(unlessTakenOver: { false })
 
         #expect(fixture.defaults.data(forKey: feedKey) == nil, "the deleted account's cached feed survived")
         #expect(fixture.defaults.data(forKey: stateKey) == nil,
@@ -322,7 +356,7 @@ struct LocalAccountWiperTests {
         let before = transport.sent.first?.headers["X-Device-Id"]
         #expect(before?.isEmpty == false)
 
-        await fixture.wiper.wipe()
+        await fixture.wiper.wipe(unlessTakenOver: { false })
         _ = try await client.me()
 
         #expect(fixture.defaults.string(forKey: DeviceId.defaultsKey) != nil, "the next request re-minted")
@@ -338,7 +372,7 @@ struct LocalAccountWiperTests {
         let fixture = makeFixture(); defer { fixture.tearDown() }
         try seedRows(fixture)
 
-        let error = await fixture.wiper.wipe()
+        let error = await fixture.wiper.wipe(unlessTakenOver: { false })
 
         #expect(error == nil)
     }
@@ -360,7 +394,7 @@ struct LocalAccountWiperTests {
         try fixture.offlineStore.insert(makeOfflineItem("xc7keR2piUM"))
         await fixture.offline.setDeleteAllError(StoreFull())
 
-        let error = await fixture.wiper.wipe()
+        let error = await fixture.wiper.wipe(unlessTakenOver: { false })
 
         #expect(error is StoreFull,
                 "the deletion marker was cleared while the saved rows were still on disk")

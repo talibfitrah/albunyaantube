@@ -32,7 +32,7 @@ struct AccountSessionTests {
     }
 
     private func make(auth: FakeAuthClient, responses: [HTTPResponse], sleeps: SleepRecorder = SleepRecorder(),
-                      wipe: @escaping @MainActor @Sendable () async -> Error? = { nil })
+                      wipe: @escaping @MainActor @Sendable (() -> Bool) async -> Error? = { _ in nil })
         -> (session: AccountSession, stores: [SpyStore], transport: ScriptedTransport, status: AccountStatusCenter) {
         let transport = ScriptedTransport(responses)
         let stores = (0..<3).map { _ in SpyStore(requestCount: { transport.sent.count }) }
@@ -55,7 +55,7 @@ struct AccountSessionTests {
             auth: auth,
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [], status: status,
-            sleep: { await sleeps.record($0); await blockingSleep?() }, wipe: { nil },
+            sleep: { await sleeps.record($0); await blockingSleep?() }, wipe: { _ in nil },
             providers: providers)
     }
 
@@ -274,7 +274,7 @@ struct AccountSessionTests {
         let auth = FakeAuthClient(state: .signedOut)
         let wipes = Mutex<Int>(0)
         let (session, stores, transport, _) = make(auth: auth, responses: [.json(200, Self.meJSON)],
-                                                   wipe: { wipes.withLock { $0 += 1 }; return nil })
+                                                   wipe: { _ in wipes.withLock { $0 += 1 }; return nil })
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 
@@ -297,7 +297,7 @@ struct AccountSessionTests {
         let auth = FakeAuthClient(state: .signedOut)
         let wipes = Mutex<Int>(0)
         let (session, stores, _, _) = make(auth: auth, responses: [.json(200, Self.meJSON)],
-                                           wipe: { wipes.withLock { $0 += 1 }; return nil })
+                                           wipe: { _ in wipes.withLock { $0 += 1 }; return nil })
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 
@@ -328,7 +328,7 @@ struct AccountSessionTests {
         let auth = FakeAuthClient(state: .signedOut)
         let wipes = Mutex<Int>(0)
         let (session, _, _, status) = make(auth: auth, responses: [.json(200, Self.meJSON)],
-                                           wipe: { wipes.withLock { $0 += 1 }; return nil })
+                                           wipe: { _ in wipes.withLock { $0 += 1 }; return nil })
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 

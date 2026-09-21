@@ -456,12 +456,12 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                                    // C13's wipe into a silent no-op — the one
                                                    // failure here nothing downstream can observe
                                                    // (fix round 1 / M1).
-                                                   wipe: { [weak self] in
+                                                   wipe: { [weak self] takenOver in
                                                        guard let self else {
                                                            assertionFailure("the container was released before the device wipe ran")
                                                            return CancellationError()
                                                        }
-                                                       return await makeWiper().wipe()
+                                                       return await makeWiper().wipe(unlessTakenOver: takenOver)
                                                    },
                                                    // Review I3: the uid-scoped counterpart, same
                                                    // shape and the same refusal to no-op silently.
