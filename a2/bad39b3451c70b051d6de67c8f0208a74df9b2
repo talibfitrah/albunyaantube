@@ -1,0 +1,22 @@
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_eca9a78768b070::t_f98d10417aaf12 901
+docs/superpowers/plans/2026-09-02-ios-phase4-accounts.md
+  s_eca9a78768b070::t_34b67c3a5c81fb 1660-1663
+  s_eca9a78768b070::t_2bd93df25d7fbc 1775
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a2bad39b3451c70b051d6de67c8f0208a74df9b2",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
