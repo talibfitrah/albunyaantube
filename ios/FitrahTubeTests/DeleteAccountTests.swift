@@ -898,6 +898,7 @@ struct DeleteAccountTests {
         #expect(markerDuringTheDelete == .some(nil), "an empty uid was stored as a pending deletion")
     }
 
+    /// …and the one that lands during the Firebase delete — the self-delete path's last await. A's
     /// credential is gone by then, correctly; what must not follow is `dropSession()` under B.
     @Test func anAccountThatArrivesDuringTheFirebaseDeleteIsNotSignedOutByIt() async throws {
         let takeover = makeTakeover()
