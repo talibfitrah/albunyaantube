@@ -170,7 +170,7 @@ EXTRA_KEYS = {
     "share_app_promo": {
         "en": "Get FitrahTube for curated Islamic content!",
         "ar": "احصل على فطرة تيوب لمحتوى إسلامي منتقى!",
-        "nl": "Haal FitrahTube voor geselecteerde islamitische content!",
+        "nl": "Ontdek FitrahTube voor geselecteerde islamitische content!",
     },
     # report_reason_limit (Plan C task 3): the disabled-row hint once 10 reasons are selected.
     # iOS-only -- Android has no cap and eats the backend's 400 (ContentReportController.java:161

@@ -21,15 +21,15 @@
 | # | Fact | State at HEAD | Evidence |
 |---|---|---|---|
 | 1 | Associated-domains entitlement | **DONE** `a21d6b1a` | `ios/FitrahTube/FitrahTube.entitlements:29-32` carries `applinks:app.fitrahtube.com` beside `com.apple.developer.applesignin` |
-| 2 | Production AASA | **STILL 403** (deploy pending) | `curl https://app.fitrahtube.com/.well-known/apple-app-site-association` → 403 on 2026-09-22. The code is right: `WellKnownController.java:56-58` lists six paths incl. the `/api/` forms; `WellKnownControllerTest.java:67-69` pins them |
+| 2 | Production AASA | **LIVE, 200** since the 2026-09-22 14:16Z deploy (was 403) | `curl https://app.fitrahtube.com/.well-known/apple-app-site-association` → 403 on 2026-09-22. The code is right: `WellKnownController.java:56-58` lists six paths incl. the `/api/` forms; `WellKnownControllerTest.java:67-69` pins them |
 | 3 | Privacy manifest disk-space reason | **DONE** `a21d6b1a` | `PrivacyInfo.xcprivacy:146-153` declares `NSPrivacyAccessedAPICategoryDiskSpace` / `E174.1`; the API is read at `OfflineStorage.swift:56-57`; `FirebaseSeamTests.thePrivacyManifestRequiredReasonTableIsPinned` pins the whole table |
-| 4 | About links | **DONE** `a21d6b1a`, one open owner question | `AboutView.swift:65-74`: three legal links on `app.fitrahtube.com` (each 200 on 2026-09-22), website row removed, **GitHub row KEPT** at `github.com/talibfitrah/albunyaantube` (200). `SettingsRowsTests.everyAboutLinkIsOnFitrahtubeExceptTheSourceRepository` allows exactly that one off-domain URL. See Task 2 |
+| 4 | About links | **DONE** `a21d6b1a`; GitHub row REMOVED in `7dd85af5` (OQ-1 ruled) | `AboutView.swift:65-74`: three legal links on `app.fitrahtube.com` (each 200 on 2026-09-22), website row removed, **GitHub row KEPT** at `github.com/talibfitrah/albunyaantube` (200). `SettingsRowsTests.everyAboutLinkIsOnFitrahtubeExceptTheSourceRepository` allows exactly that one off-domain URL. See Task 2 |
 | 5 | Stale "NOT registered" comments | **DONE** `a21d6b1a` | `Debug.xcconfig:6-11`, `Release.xcconfig:4-9`, `FitrahTube.entitlements:8-13`, `SignInCapabilitiesTests.swift:21-27` all now say the owner's team has the capability since 2026-09-20 and the tracked default stays empty on purpose |
 | 6 | `Local.xcconfig` | **DONE** `a21d6b1a` (+`7abce4f2`) | `ios/scripts/write-local-xcconfig.sh` exists (61 lines); `ios/Config/Local.xcconfig` is present on this Mac and gitignored (`.gitignore:212`, `git check-ignore -v` confirms). Never read for this plan |
-| 7 | Remote config on `main`; `embed` rung | **OPEN** | raw.githubusercontent `…/main/ios-remote-config.json` → 404 (the file is on this branch only); `ios-remote-config.json:4` is `["visionosHLS", "androidItag18"]`; `"embed"` is a known strategy (`RemoteConfig.swift:89`); `RemoteConfigTests.swift:223` pins `count == 2` |
-| 8 | Update-required screen has no button | **OPEN** | `FitrahTubeApp.swift:482` carries the TODO; `EmptyStateView` already takes `action:` (`DesignSystem/StateViews.swift:11`) |
-| 9 | No ExportOptions / archive script / fastlane | **OPEN** | `ios/scripts/` = `convert-strings.py copy-firebase-plist.sh fetch-cast-sdk.sh generate-swift-dtos.sh screenshots.sh test.sh write-local-xcconfig.sh`; no `ios/ExportOptions.plist` |
-| 10 | Privacy policy names Sign in with Apple | **OPEN** | `LegalPagesController.java:204-206` names Google only; `LAST_UPDATED = "25 August 2026"` (`:38`) |
+| 7 | Remote config on `main`; `embed` rung | **`embed` PUBLISHED** `7dd85af5` (order pinned); `main` still lacks the file until the merge | raw.githubusercontent `…/main/ios-remote-config.json` → 404 (the file is on this branch only); `ios-remote-config.json:4` is `["visionosHLS", "androidItag18"]`; `"embed"` is a known strategy (`RemoteConfig.swift:89`); `RemoteConfigTests.swift:223` pins `count == 2` |
+| 8 | Update-required screen has no button | **DONE** `7dd85af5` (hidden until the App Store ID is set) | `FitrahTubeApp.swift:482` carries the TODO; `EmptyStateView` already takes `action:` (`DesignSystem/StateViews.swift:11`) |
+| 9 | No ExportOptions / archive script / fastlane | **DONE** `7dd85af5`; dry run produced a signed `.ipa` | `ios/scripts/` = `convert-strings.py copy-firebase-plist.sh fetch-cast-sdk.sh generate-swift-dtos.sh screenshots.sh test.sh write-local-xcconfig.sh`; no `ios/ExportOptions.plist` |
+| 10 | Privacy policy names Sign in with Apple | **DONE** `bd7a038a` (+ Cubic round-2 wording), not yet deployed | `LegalPagesController.java:204-206` names Google only; `LAST_UPDATED = "25 August 2026"` (`:38`) |
 | 11 | Verification mail 503 | **DONE** `f5a54084` | `AccountController.java:129-130` answers 503 `{"code":"MAIL_UNAVAILABLE"}`; iOS falls back to Firebase on 500 and 503 (`EmailVerificationViewModelTests.swift:173-182`). Effective on deploy |
 | 12 | Support page | **NONE** | `/support` 403, `/` 403, `fitrahtube.com` 404 (2026-09-22). `/terms` and `/privacy` publish `info@albunyaan.tv` (`LegalPagesController.java:35`). Support URL = `/terms` in the metadata file; a `/support` page is not planned until a reviewer objects |
 | 13 | Developer dialog ships in Release | TRUE, no action | `DeveloperDialog.swift:20-24` (version, API host, device id); only the Components Gallery is `#if DEBUG` (`:31-35`). Disclosed in the review notes (guideline 2.3.1) |
@@ -41,7 +41,7 @@
 
 ## Assumptions (state them; stop and ask if one is false)
 
-1. The App ID `com.albunyaan.tube` has Sign in with Apple enabled in the portal since 2026-09-20 (owner statement, recorded in `FitrahTube.entitlements:10-11`; not verifiable from the repo). **Associated Domains on the same App ID is NOT yet confirmed** — OWNER-ONLY item 3.
+1. The App ID `com.albunyaan.tube` has Sign in with Apple enabled in the portal since 2026-09-20 (owner statement, recorded in `FitrahTube.entitlements:10-11`; not verifiable from the repo). **Associated Domains on the same App ID is CONFIRMED** — the 2026-09-22 archive signed with that entitlement without a provisioning error (OWNER-ONLY item 3 is done).
 2. The bundled `GoogleService-Info.plist` exists (gitignored, `.gitignore:210`) and carries `CLIENT_ID` and `BUNDLE_ID`. Its values were not read; `write-local-xcconfig.sh` checks them at run time and prints no value.
 3. This Mac's Xcode is signed in to team `72PF8SBQR6` with a role that can create a cloud-managed distribution certificate. If `-allowProvisioningUpdates` cannot mint one, Task 8's archive still succeeds and only the export step moves to the owner section.
 4. Adding the embed rung to the **published** config before review is already decided (`ios-app-plan.md` §9 checklist). The **bundled** default stays two rungs — not re-decided here.
@@ -111,6 +111,8 @@ Two facts learned the hard way, now rules (Task 11): the gate's simulator build 
 
 ## Task 2: About screen links that resolve — DONE `a21d6b1a`, one OWNER question open
 
+**Record (2026-09-22, `7dd85af5`).** OQ-1 ruled by the coordinator after the owner did not answer: the GitHub row and its Links section are REMOVED; `everyAboutLinkIsOnFitrahtube` has no exception. The README was ALSO reworded (`bd7a038a`), so both options were taken. `about_github`/`about_links` stay in the catalog as Android-sourced keys (converter keeps them by design).
+
 What shipped (`AboutView.swift:65-74`): the three legal rows point at `https://app.fitrahtube.com/{privacy,terms,licenses}` (each 200 on 2026-09-22); the **website row is removed** (no site answers; Android hides it too); the **GitHub row is KEPT**, repointed from the dead `github.com/albunyaan/albunyaan-tube` (404) to `https://github.com/talibfitrah/albunyaantube` (200). `SettingsRowsTests.everyAboutLinkIsOnFitrahtubeExceptTheSourceRepository` pins the three legal URLs exactly and allows exactly one off-domain URL — that repository — with `https` required on all.
 
 The 2026-09-21 draft had proposed removing the GitHub row too. The implementer kept it (Android has the same row; the owner's 2026-09-21 directive was "only fitrahtube.com exists", read as being about *dead* hosts). This plan records reality and leaves the decision to the owner:
@@ -162,6 +164,8 @@ rm -rf "$T"
 ---
 
 ## Task 5: "Update" button on the update-required screen
+
+**Record (2026-09-22, `7dd85af5`).** Done as written; `EmptyStateView.action` had the plan's tuple shape. `FITRAH_APP_STORE_ID` stays `""` until OWNER-ONLY item 5. +1 `@Test`; the button is hidden for anything that is not all-ASCII digits (Arabic-Indic digits, whitespace → nil).
 
 **Goal:** Spec D3's blocking screen gains its one missing control (`FitrahTubeApp.swift:482` TODO). The numeric App Store ID does not exist until the owner creates the app record (OWNER-ONLY item 5), so the button is **hidden while the ID is empty** and the code ships now.
 
@@ -240,6 +244,8 @@ struct UpdateRequiredView: View {
 
 ## Task 6: Publish the embed rung
 
+**Record (2026-09-22, `7dd85af5`).** Done; the review turned the count pin into an ORDER pin (`embed` last — a count check passed with YouTube's player first). Post-approval decision recorded below.
+
 **Goal:** `ios-app-plan.md` §9 (reviewer-notes bullet): the embed rung is added to the **published** `resolverOrder` before submission, so a review network that blocks the native path still sees a working player.
 
 **Files:**
@@ -253,11 +259,13 @@ struct UpdateRequiredView: View {
 - [ ] **Step 3:** gate → PASS, +0 tests.
 - [ ] **Step 4:** commit — `[CHORE]: Publish embed rung in iOS remote config`.
 
-**Consequence to carry into the metadata:** with this rung live, YouTube's own player — and whatever it shows — can appear as the last fallback. The age-rating "Advertising" answer and the review notes in the metadata file already account for it. **Goes live only on the merge to `main`** (OWNER-ONLY item 7).
+**Consequence to carry into the metadata:** with this rung live, YouTube's own player — and whatever it shows — can appear as the last fallback. The age-rating "Advertising" answer and the review notes in the metadata file already account for it. **Goes live only on the merge to `main`** (OWNER-ONLY item 7). **Post-approval decision (review of Task 6, P2):** nothing scopes the rung to the review window — once `main` carries it, every user whose native rungs fail sees YouTube's own player as the last fallback. After App Review approves, either remove `embed` from `ios-remote-config.json` again (`[CHORE]`, one line + the order test) or decide to keep it; record which.
 
 ---
 
 ## Task 7: Backend — (a) AASA covers the `/api/…` share links — DONE `a21d6b1a`; (b) privacy policy names Sign in with Apple — OPEN
+
+**Record (2026-09-22).** (a) went LIVE at 14:16Z: the branch backend was deployed to production on the owner's instruction (jar swap, `backend-prod-deploy` memory / DEPLOYMENT_GUIDE "Updating"); AASA answers 200 through Cloudflare with all six paths. (b) `bd7a038a`: `/privacy` names Sign in with Apple; the Cubic round corrected the clause (the app requests only the email scope, see the round-2 record) and the scope sentence (Android AND iOS). Same commit: "ad-free" removed from the legal pages, Android `share_app_promo`, README and `releases-meta.json` — owner rule, all locales.
 
 **(a) DONE.** `WellKnownController.java:56-58` lists `/watch/*`, `/channel/*`, `/playlist/*` and the three `/api/` forms; the Javadoc (`:35-55`) records why (`ShareLinks.swift:14` emits `/api/…`; Apple's legacy `paths` `*` SPANS slashes; `DeepLinkParser` rejects deeper URLs). `WellKnownControllerTest.java:67-69` pins all six. Backend 997 tests / 0 failures at `a21d6b1a`. Live only after OWNER-ONLY item 1.
 
@@ -283,6 +291,8 @@ struct UpdateRequiredView: View {
 ---
 
 ## Task 8: `archive.sh` + `ExportOptions.plist`
+
+**Record (2026-09-22, `7dd85af5`).** Done. **Dry run succeeded end to end**: `** ARCHIVE SUCCEEDED **`, `preflight OK`, `** EXPORT SUCCEEDED **`, `FitrahTube.ipa` (9.2 MB) in `ios/DerivedData-Release/Archive/export/` — so assumption 3 holds (cloud-managed distribution signing works from this Mac) and the App ID ALREADY carries Associated Domains (OWNER-ONLY item 3 is done). Not uploaded (`UPLOAD` off). Review made the preflight fail closed and `BUILD_NUMBER` integer-only; `FITRAH_APP=<dir>` runs the preflight alone.
 
 **Goal:** One command from a clean checkout to an `.ipa` (or an upload), with a preflight that refuses a build carrying the placeholder Google scheme or missing an entitlement. No fastlane.
 

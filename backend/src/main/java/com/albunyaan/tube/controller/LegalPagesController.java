@@ -176,7 +176,7 @@ public class LegalPagesController {
                 <p class="lede">FitrahTube is a curated Islamic video app. This policy
                 describes what the FitrahTube app and its backend collect, why, who it is
                 shared with, how long it is kept, and how to have it deleted. It covers the
-                Android app (package <code>com.albunyaan.tube</code>) and the service at
+                Android and iOS apps (both <code>com.albunyaan.tube</code>) and the service at
                 <code>app.fitrahtube.com</code>.</p>
 
                 <h2>1. Who is responsible</h2>
@@ -206,8 +206,8 @@ public class LegalPagesController {
                       your Google password or your Google contacts.</li>
                   <li>If you use Sign in with Apple, Firebase gives us a user identifier and
                       the email address you choose to share &mdash; either your own or Apple's
-                      private relay address &mdash; and, the first time only, the name you
-                      choose to share. We do not receive your Apple ID password.</li>
+                      private relay address. We do not ask for your name and do not receive
+                      your Apple ID password.</li>
                 </ul>
 
                 <h3>2.2 Your library</h3>

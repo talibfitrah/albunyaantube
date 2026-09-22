@@ -17,6 +17,9 @@ import UIKit
     /// runtime entitlement API to ask. Stage 8 / S9 dropped the `FITRAH_APPLE_SIGNIN` (Team ID)
     /// conjunct from `appleSignInIsConfigured`, so it is no longer half of this decision.
     var isAvailable: Bool { SignInCapabilities.current().apple }
+    /// Email only: the app never reads `credential.fullName` (only the identity token reaches
+    /// Firebase, `FirebaseAuthClient`), and the privacy policy promises exactly this scope.
+    nonisolated static let requestedScopes: [ASAuthorization.Scope] = [.email]
 
     /// ONE flow at a time. `pending` is a single continuation slot, so a second `presentSignIn()`
     /// while one is in flight used to overwrite it and orphan the first — never resumed,
@@ -58,7 +61,7 @@ import UIKit
         let rawNonce = Self.randomNonce()
         do {
             let request = ASAuthorizationAppleIDProvider().createRequest()
-            request.requestedScopes = [.fullName, .email]
+            request.requestedScopes = Self.requestedScopes
             request.nonce = Self.sha256(rawNonce)
             let authorization = try await withCheckedThrowingContinuation { continuation in
                 pending = continuation

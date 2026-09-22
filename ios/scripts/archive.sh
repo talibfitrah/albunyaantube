@@ -2,7 +2,8 @@
 # Signed Release archive -> App Store export. NOT part of the gate (needs signing + network).
 #   BUILD_NUMBER=7 bash ios/scripts/archive.sh            # -> DerivedData-Release/Archive/export/*.ipa
 #   BUILD_NUMBER=7 UPLOAD=1 bash ios/scripts/archive.sh   # exports AND uploads to App Store Connect
-#   FITRAH_APP=/path/to/Some.app bash ios/scripts/archive.sh   # preflight only, against that app
+#   BUILD_NUMBER=7 FITRAH_APP=/path/to/Some.app bash ios/scripts/archive.sh   # preflight only,
+#                                            # against that app (its CFBundleVersion must be 7)
 # BUILD_NUMBER is REQUIRED and must be higher than every build already uploaded for this version.
 # Needs Xcode signed in to team 72PF8SBQR6 (Xcode > Settings > Accounts).
 # Preflight prints facts only, never values. Do not add `set -x`.

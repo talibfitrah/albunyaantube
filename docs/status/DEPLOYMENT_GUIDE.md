@@ -110,6 +110,7 @@ sudo chown albunyaan:albunyaan /opt/albunyaan/firebase-service-account.json
 
 The jar is built on your laptop and copied to the VPS as `/opt/albunyaan/backend.jar`.
 Follow "Updating the Application → Update backend" below (steps 1–3), then continue with 1.7.
+On a first install there is no existing jar, so skip the backup step; `/opt/albunyaan` must already exist and be writable by the service user.
 
 ### 1.7 Install the backend systemd service
 

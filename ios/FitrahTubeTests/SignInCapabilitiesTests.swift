@@ -207,4 +207,10 @@ import Testing
         let unavailable = FakeOAuthProvider(isAvailable: false)
         await #expect(throws: OAuthSignInFailure.failed(.googleSignInFailed)) { try await unavailable.presentSignIn() }
     }
+
+    /// Phase 6 review: the app never reads `credential.fullName` (only the identity token reaches
+    /// Firebase), so it must not ask Apple for the name -- the privacy policy says email only.
+    @Test func appleSignInAsksOnlyForTheEmailScope() {
+        #expect(AppleAuthProvider.requestedScopes == [.email])
+    }
 }
