@@ -1,0 +1,38 @@
+ios/scripts/archive.sh
+  s_eca9a78768b070::t_bba5602dd9c62b 47-53
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_eca9a78768b070::t_101756b777a203 189-193
+  s_eca9a78768b070::t_3b971a6901ccdb 419-421,424,431-437
+  s_eca9a78768b070::t_e403c0657a504d 23-24
+  s_eca9a78768b070::t_5db277d56e47e7 233-236
+  s_eca9a78768b070::t_22d610834878a5 438
+  s_eca9a78768b070::t_8299828c37c010 439-442
+docs/superpowers/plans/2026-09-22-ios-phase6-app-store-readiness.md
+  s_eca9a78768b070::t_6375de1bb3ac95 32
+  s_eca9a78768b070::t_9b798583e8b2c2 24
+  s_eca9a78768b070::t_947d80d0e07edf 26
+  s_eca9a78768b070::t_caf32b947ce0d0 30
+  s_eca9a78768b070::t_90b909776fb027 31
+  s_eca9a78768b070::t_6f66fc0941e936 29
+docs/status/DEPLOYMENT_GUIDE.md
+  s_eca9a78768b070::t_3d5500f0c57be2 112
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_eca9a78768b070::t_4dcc869d1d36bf 249-252,258
+  s_eca9a78768b070::t_9e7d0674a467c6 1203-1254
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3a42e7afc5c41b60b129d00f621a9d30d6d593d",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
