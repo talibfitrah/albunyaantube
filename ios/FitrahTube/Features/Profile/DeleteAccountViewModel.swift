@@ -90,7 +90,7 @@ nonisolated enum DeleteAccountState: Equatable {
         // have backed out and signed out and somebody else may be signed in — and a cleanup that
         // names nobody takes its latch for whoever is current. `handleDeletion` refuses a name
         // that is not this session's and pays that account's debt by uid instead.
-        let deleting = session.user?.uid ?? session.state.me?.uid
+        let deleting = session.currentUid
         do {
             try await account.deleteAccount()
         } catch {

@@ -53,7 +53,7 @@ struct LocalAccountWiperTests {
         let playlists = SwiftDataSavedPlaylistsStore(modelContainer: container)
         let subscriptions = SwiftDataSubscriptionsStore(modelContainer: container)
         let searchHistory = UserDefaultsSearchHistoryStore(defaults: defaults)
-        let wiper = LocalAccountWiper(offline: offline, offlineStore: offlineStore,
+        let wiper = LocalAccountWiper(offline: offline,
                                       stores: [favorites, playlists, subscriptions],
                                       modelContainer: container, searchHistory: searchHistory,
                                       defaults: defaults)
@@ -306,7 +306,7 @@ struct LocalAccountWiperTests {
         struct StoreFull: Error {}
         let fixture = makeFixture(); defer { fixture.tearDown() }
         try seedRows(fixture, uids: ["uid-a"])
-        let wiper = LocalAccountWiper(offline: fixture.offline, offlineStore: fixture.offlineStore,
+        let wiper = LocalAccountWiper(offline: fixture.offline,
                                       stores: [fixture.favorites], modelContainer: fixture.container,
                                       searchHistory: fixture.searchHistory, defaults: fixture.defaults,
                                       offlineIds: { _ in throw StoreFull() })
@@ -316,6 +316,29 @@ struct LocalAccountWiperTests {
         #expect(error is StoreFull, "a failed offline fetch was swallowed and the debt booked as paid")
         #expect(await fixture.offline.calls.isEmpty, "the manager was asked to delete with no ids to delete")
         #expect(fixture.owners(FavoriteVideo.self, \.userId) == ["uid-a"], "the rows went while the offline half was never read — a retry then finds nothing to do")
+    }
+
+    /// Cubic r2 (P2): the DEVICE-WIDE arm has the same hole. It took its ids from
+    /// `offlineStore.items`, which a failed fetch leaves EMPTY, so `deleteAll([])` succeeded, the
+    /// wipe returned nil and the marker was redeemed with the departed account's files on disk.
+    /// The same fail-closed id source as `wipeRows`, and the fetch error returns before ANY
+    /// deletion; the takeover check keeps its place after the last await.
+    @Test func aDeviceWipeWhoseOfflineFetchThrowsReportsItAndDeletesNothing() async throws {
+        struct StoreFull: Error {}
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        try seedRows(fixture)
+        fixture.searchHistory.add("tafsir")
+        let wiper = LocalAccountWiper(offline: fixture.offline,
+                                      stores: [fixture.favorites], modelContainer: fixture.container,
+                                      searchHistory: fixture.searchHistory, defaults: fixture.defaults,
+                                      offlineIds: { _ in throw StoreFull() })
+
+        let error = await wiper.wipe(unlessTakenOver: { false })
+
+        #expect(error is StoreFull, "a failed offline fetch was swallowed and the device wipe booked as paid")
+        #expect(await fixture.offline.calls.isEmpty, "the manager was asked to delete with no ids to delete")
+        #expect(fixture.count(FavoriteVideo.self) == 2, "rows went before the offline half was read")
+        #expect(fixture.searchHistory.entries == ["tafsir"], "a sweep ran before the offline half was read")
     }
 
     /// `""` is not "nobody" here — it is the GUEST's scope, and `UserDefaultsDeletionMarker`'s

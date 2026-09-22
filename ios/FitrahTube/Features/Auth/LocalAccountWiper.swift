@@ -22,30 +22,30 @@ import SwiftData
 /// spy manager and an in-memory container with no Firebase, no network and no files.
 @MainActor struct LocalAccountWiper {
     private let offline: any OfflineSaving
-    private let offlineStore: OfflineStore
     private let stores: [any UserScoped]
     private let modelContainer: ModelContainer
     private let searchHistory: any SearchHistoryStore
     private let defaults: UserDefaults
-    /// The ids of one account's `OfflineItem` rows, for `wipeRows(of:)` (CF-A-50). A parameter
-    /// only so a test can make it THROW: `ModelContext.fetch` is not injectable and the in-memory
-    /// container never fails, yet a swallowed fetch failure is exactly the bug the Task 41 review
-    /// found (debt booked as paid, files kept forever). Production takes the default.
-    private let offlineIds: (String) throws -> [String]
+    /// The ids of the `OfflineItem` rows a wipe must tear down: one account's for `wipeRows(of:)`
+    /// (CF-A-50), or ALL of them (`nil`) for the device-wide `wipe()`. A parameter only so a test
+    /// can make it THROW: `ModelContext.fetch` is not injectable and the in-memory container never
+    /// fails, yet a swallowed fetch failure is exactly the bug the Task 41 reviews found in BOTH
+    /// arms (an empty answer, `deleteAll([])` succeeds, the debt booked as paid, files kept
+    /// forever). Production takes the default.
+    private let offlineIds: (String?) throws -> [String]
 
-    init(offline: any OfflineSaving, offlineStore: OfflineStore, stores: [any UserScoped],
+    init(offline: any OfflineSaving, stores: [any UserScoped],
          modelContainer: ModelContainer, searchHistory: any SearchHistoryStore, defaults: UserDefaults,
-         offlineIds: ((String) throws -> [String])? = nil) {
+         offlineIds: ((String?) throws -> [String])? = nil) {
         self.offline = offline
-        self.offlineStore = offlineStore
         self.stores = stores
         self.modelContainer = modelContainer
         self.searchHistory = searchHistory
         self.defaults = defaults
         self.offlineIds = offlineIds ?? { uid in
-            try ModelContext(modelContainer)
-                .fetch(FetchDescriptor<OfflineItem>(predicate: #Predicate { $0.userId == uid }))
-                .map(\.id)
+            let all = FetchDescriptor<OfflineItem>()
+            let mine = uid.map { uid in FetchDescriptor<OfflineItem>(predicate: #Predicate { $0.userId == uid }) }
+            return try ModelContext(modelContainer).fetch(mine ?? all).map(\.id)
         }
     }
 
@@ -72,6 +72,13 @@ import SwiftData
     /// "never taken over".
     @discardableResult
     func wipe(unlessTakenOver takenOver: () -> Bool) async -> Error? {
+        // Cubic r2 (P2): the ids come from a fetch that is REPORTED when it throws, before any
+        // deletion — read from `offlineStore.items`, a failed fetch read as an empty library,
+        // `deleteAll([])` succeeded, this returned nil and the caller redeemed the marker with the
+        // departed account's files still on disk. Nothing has run yet, so the kept marker's retry
+        // finds the whole debt.
+        let offlineIds: [String]
+        do { offlineIds = try self.offlineIds(nil) } catch { return error }
         var firstError: Error?
         // 1-2. CF-G-4. A save still running while the rest of this executes is a race with the
         //      filesystem, so the work stops before its files go — and both steps route through the
@@ -80,7 +87,7 @@ import SwiftData
         // R7-P2: the offline rows are the FIRST thing this deletes and were the one step that could
         // not report a failure, so a full or corrupt store left the saved library on disk while the
         // caller cleared its durable marker and announced the account erased.
-        firstError = await offline.deleteAll(offlineStore.items.map(\.id))
+        firstError = await offline.deleteAll(offlineIds)
 
         // CF-A-55 (c): the LAST await is above and nothing below suspends, so the answer cannot go
         // stale before the deletes — the caller's own check is two awaits old by now, and an

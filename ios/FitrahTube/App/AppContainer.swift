@@ -487,7 +487,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// `session` must not construct `offlineManager` — that builds a background `URLSession`, which
     /// every test and preview that only wants an account would then pay for.
     private func makeWiper() -> LocalAccountWiper {
-        LocalAccountWiper(offline: offlineManager, offlineStore: offlineStore, stores: userScopedStores,
+        LocalAccountWiper(offline: offlineManager, stores: userScopedStores,
                           modelContainer: modelContainer, searchHistory: searchHistory, defaults: userDefaults)
     }
 
