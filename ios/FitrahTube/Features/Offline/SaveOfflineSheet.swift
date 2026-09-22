@@ -42,11 +42,11 @@ struct SaveOfflineSheet: View {
 
     private func save() {
         guard let quality = options.first(where: { $0.qualityLabel == selection }) else { return }
-        // CF-A-50: the owner is the account signed in NOW (`""` for a guest) — the Firebase
-        // identity, the same uid `wipeRows(of:)` is later asked to pay for.
+        // CF-A-50: the owner is the account signed in NOW (`""` for a guest) — `currentUid`, not
+        // `user` alone, so a save in the `land()` window is not stamped as the guest's.
         let metadata = OfflineMetadata(title: args.title ?? args.videoId, channelName: args.channelName,
                                        thumbnailUrl: args.thumbnailURL?.absoluteString,
-                                       userId: container.session.user?.uid ?? "")
+                                       userId: container.session.currentUid ?? "")
         let videoId = args.videoId
         Task { [container] in
             await container.offlineManager.save(videoId: videoId, quality: quality.qualityLabel,

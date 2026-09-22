@@ -59,6 +59,21 @@ struct AccountSessionTests {
             providers: providers)
     }
 
+    /// Task 41 review (P3): the uid a save is stamped with (`SaveOfflineSheet`) in the `land()`
+    /// window — `/me` has landed, `start()` has not observed the sign-in yet, so `user` is nil
+    /// and the loaded record is the second source (`DeleteAccountViewModel.swift:93` reads the
+    /// same pair). Read from `user` alone, a save made in that window was the GUEST's.
+    @Test func theCurrentUidFallsBackToTheLoadedRecordWhileUserIsStillNil() async throws {
+        let session = makeSession(auth: FakeAuthClient(state: .signedOut),
+                                  transport: ScriptedTransport([.json(200, Self.meJSON)]))
+        #expect(session.currentUid == nil, "a guest has no uid")
+
+        await session.refresh(maxAttempts: 1)
+
+        #expect(session.user == nil, "the precondition is the window start() has not closed")
+        #expect(session.currentUid == "fake-uid")
+    }
+
     /// Drives `start()` to a loaded account. Bounded `Task.yield()` loops, never a sleep.
     private func signedIn(_ auth: FakeAuthClient, _ session: AccountSession) async throws -> Task<Void, Never> {
         let running = Task { await session.start() }

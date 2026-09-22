@@ -21,7 +21,9 @@ import java.util.LinkedList;
 /**
  * Plan F (ADMIN-USER-01) — Microsoft Graph mail sender.
  * Feature-gated by mail.enabled. When disabled, all sends return false without sending.
- * Failures are logged + audited; the caller is never blocked.
+ * Sends are SYNCHRONOUS (CF-A-57): the caller waits for Graph's answer and gets a boolean --
+ * true only when a message was handed to Graph -- so it can answer 503 MAIL_UNAVAILABLE
+ * honestly instead of claiming a mail that never left. Failures are logged + audited.
  */
 @Service
 public class MailService {

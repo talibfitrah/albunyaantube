@@ -55,6 +55,8 @@ tags:
     description: YouTube Data API integration
   - name: Users
     description: Admin and moderator user management
+  - name: Account
+    description: The signed-in user's own account (both apps)
   - name: Audit
     description: Audit log viewing
   - name: Dashboard
@@ -1647,7 +1649,78 @@ paths:
             type: string
       responses:
         '200':
-          description: Reset email sent
+          description: Reset email sent (a message was handed to the mail provider)
+        '401':
+          description: Not authenticated
+        '403':
+          description: Requires ADMIN role
+        '503':
+          description: Mail unavailable - the mailer is disabled or the provider refused; nothing was sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [MAIL_UNAVAILABLE]
+                  message:
+                    type: string
+
+  # ============================================================================
+  # ACCOUNT (Authenticated user - the apps' own account)
+  # ============================================================================
+
+  /account/send-verification-email:
+    post:
+      summary: Send the signed-in user's email verification mail
+      description: |
+        Sends a Firebase email-verification link from the server's mailer. A 503 means nothing was
+        sent; the apps then fall back to Firebase's own mailer. The per-user cooldown is recorded on
+        every attempt, 200 or 503, so the next tap waits 60 s either way.
+      operationId: sendVerificationEmail
+      tags: [Account]
+      responses:
+        '200':
+          description: Verification email sent, or the address is already verified
+        '400':
+          description: The account has no email address
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [NO_EMAIL]
+                  message:
+                    type: string
+        '401':
+          description: Not authenticated
+        '429':
+          description: A mail was requested less than 60 s ago
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [RATE_LIMITED]
+                  message:
+                    type: string
+        '503':
+          description: Mail unavailable - the mailer is disabled or the provider refused; nothing was sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [MAIL_UNAVAILABLE]
+                  message:
+                    type: string
 
   # ============================================================================
   # AUDIT LOGS (Admin Only)
