@@ -10,10 +10,10 @@ import Testing
 /// 360p, audio-only). Every argument below is one some test actually changes.
 func makeOfflineItem(_ videoId: String, title: String = "Lecture", status: OfflineStatus = .queued,
                      audioOnly: Bool = true, resumeData: Data? = nil,
-                     createdAt: Date = Date(), completedAt: Date? = nil) -> OfflineItem {
+                     createdAt: Date = Date(), completedAt: Date? = nil, userId: String = "") -> OfflineItem {
     OfflineItem(videoId: videoId, title: title, channelName: nil, thumbnailUrl: nil,
                 qualityLabel: "360p", audioOnly: audioOnly, status: status.rawValue,
-                resumeData: resumeData, createdAt: createdAt, completedAt: completedAt)
+                resumeData: resumeData, createdAt: createdAt, completedAt: completedAt, userId: userId)
 }
 
 /// Records every engine call; a test drives completions by calling `manager.handle(_:)`

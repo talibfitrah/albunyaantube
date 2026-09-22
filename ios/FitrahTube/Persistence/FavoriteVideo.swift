@@ -16,7 +16,7 @@ import SwiftData
 /// favorite, subscription and saved playlist gone on upgrade.
 ///
 /// **The rule for the next column** (Part B tasks 23 and 28 both add some): never add a property
-/// to a type an older version still points at. Declare `FavoritesSchemaV6.<Entity>` with the new
+/// to a type an older version still points at. Declare `FavoritesSchemaV7.<Entity>` with the new
 /// column, alias every untouched entity forward, add the lightweight stage, and repoint the live
 /// typealiases at the bottom of this file. `SchemaV5MigrationTests`'
 /// `everyFrozenVersionKeepsItsHistoricalColumnSet` is what turns a retroactive edit red.
@@ -41,7 +41,7 @@ enum FavoritesSchemaV1: VersionedSchema {
     /// identical sequence persist correctly). Kept as `isRemoved` for that reason; the tombstone
     /// semantics are unchanged.
     ///
-    /// This shape has not changed since `2c611683`, so V2-V5 alias it rather than re-declaring it.
+    /// This shape has not changed since `2c611683`, so V2-V6 alias it rather than re-declaring it.
     @Model final class FavoriteVideo {
         /// Gate wave-2 W11: unique on the *pair*, not on `videoId` alone. SwiftData's unique
         /// attribute upserts on collision, so once phase 4 sets a real `currentUserId`, user B
@@ -133,21 +133,39 @@ enum FavoritesSchemaV5: VersionedSchema {
     }
 }
 
+/// Task 41 (CF-A-50): `OfflineItem` gains its owner column, so it is RE-DECLARED at V6
+/// (`Features/Offline/OfflineItem.swift`) and every other entity is aliased forward from the
+/// version that last declared it. One defaulted property, so the stage stays lightweight —
+/// `SchemaV5MigrationTests.aV5StoreOnDiskMigratesToV6GivingOfflineItemsTheGuestOwner` is the proof.
+enum FavoritesSchemaV6: VersionedSchema {
+    static let versionIdentifier = Schema.Version(6, 0, 0)
+    typealias FavoriteVideo = FavoritesSchemaV1.FavoriteVideo
+    typealias SavedPlaylist = FavoritesSchemaV5.SavedPlaylist
+    typealias SubscribedChannel = FavoritesSchemaV5.SubscribedChannel
+    typealias SyncState = FavoritesSchemaV5.SyncState
+    typealias AccountBinding = FavoritesSchemaV5.AccountBinding
+    static var models: [any PersistentModel.Type] {
+        [FavoriteVideo.self, SavedPlaylist.self, SubscribedChannel.self, OfflineItem.self,
+         SyncState.self, AccountBinding.self]
+    }
+}
+
 /// The LIVE entities: the app, its stores and the sync codec all spell these unqualified, and they
-/// always name the newest version's shapes. Repoint them (and only them) when a V6 lands.
-typealias FavoriteVideo = FavoritesSchemaV5.FavoriteVideo
-typealias SavedPlaylist = FavoritesSchemaV5.SavedPlaylist
-typealias SubscribedChannel = FavoritesSchemaV5.SubscribedChannel
-typealias OfflineItem = FavoritesSchemaV5.OfflineItem
-typealias SyncState = FavoritesSchemaV5.SyncState
-typealias AccountBinding = FavoritesSchemaV5.AccountBinding
+/// always name the newest version's shapes. Repoint them (and only them) when a V7 lands.
+typealias FavoriteVideo = FavoritesSchemaV6.FavoriteVideo
+typealias SavedPlaylist = FavoritesSchemaV6.SavedPlaylist
+typealias SubscribedChannel = FavoritesSchemaV6.SubscribedChannel
+typealias OfflineItem = FavoritesSchemaV6.OfflineItem
+typealias SyncState = FavoritesSchemaV6.SyncState
+typealias AccountBinding = FavoritesSchemaV6.AccountBinding
 
 enum FavoritesMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self, FavoritesSchemaV4.self, FavoritesSchemaV5.self] }
+    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self, FavoritesSchemaV4.self, FavoritesSchemaV5.self, FavoritesSchemaV6.self] }
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: FavoritesSchemaV1.self, toVersion: FavoritesSchemaV2.self),
          .lightweight(fromVersion: FavoritesSchemaV2.self, toVersion: FavoritesSchemaV3.self),
          .lightweight(fromVersion: FavoritesSchemaV3.self, toVersion: FavoritesSchemaV4.self),
-         .lightweight(fromVersion: FavoritesSchemaV4.self, toVersion: FavoritesSchemaV5.self)]
+         .lightweight(fromVersion: FavoritesSchemaV4.self, toVersion: FavoritesSchemaV5.self),
+         .lightweight(fromVersion: FavoritesSchemaV5.self, toVersion: FavoritesSchemaV6.self)]
     }
 }

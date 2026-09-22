@@ -6,6 +6,11 @@ nonisolated struct OfflineMetadata: Sendable {
     var title: String
     var channelName: String?
     var thumbnailUrl: String?
+    /// CF-A-50 (Task 41): the OWNER stamped on the row — the account signed in when the save was
+    /// made, `""` for the guest. Deletion only (`LocalAccountWiper.wipeRows(of:)`); the library
+    /// stays device-wide. A save made as a guest stays guest-owned after a later sign-in — it is
+    /// never paid by `wipeRows` for that account; only the device-wide `wipe()` removes it.
+    var userId: String = ""
 }
 
 /// The save API Task 5 (Save button), Task 6 (Saved screen rows) and Task 7 (sweep cadence) call.
@@ -174,7 +179,7 @@ actor OfflineManager: OfflineSaving {
         }
         let item = OfflineItem(videoId: videoId, title: metadata.title, channelName: metadata.channelName,
                                thumbnailUrl: metadata.thumbnailUrl, qualityLabel: quality, audioOnly: audioOnly,
-                               createdAt: now())
+                               createdAt: now(), userId: metadata.userId)
         await write { store in try store.insert(item) }
         await schedule()
     }

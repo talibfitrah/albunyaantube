@@ -235,6 +235,17 @@ struct OfflineManagerTests {
         #expect(rig.engine.starts.first?.url.absoluteString == "https://127.0.0.1:9/x.m3u8")
     }
 
+    /// CF-A-50 (Task 41): the save stamps its OWNER -- the account the sheet was opened under --
+    /// so `LocalAccountWiper.wipeRows(of:)` can later pay that account's offline debt by uid.
+    /// The library itself stays device-wide; the owner is for deletion only.
+    @Test func aSaveRecordsTheAccountItWasMadeUnderAsTheRowsOwner() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        var metadata = Self.metadata
+        metadata.userId = "uid-a"
+        await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true, metadata: metadata)
+        #expect(rig.persisted(videoId: Self.lectureVideoId)?.userId == "uid-a")
+    }
+
     /// Muxed save-walk (owner ruling 2026-09-01, replaces the old "HLS rung → NO_STREAM" pin):
     /// a VIDEO save demands the muxed itag 18 from the resolver (`requiresMuxed: true` — the
     /// resolver's ladder skips the HLS rung for it), and the `.progressive` answer reaches the

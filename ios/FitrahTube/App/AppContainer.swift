@@ -470,7 +470,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                                            assertionFailure("the container was released before the scoped delete ran")
                                                            return CancellationError()
                                                        }
-                                                       return makeWiper().wipeRows(of: uid)
+                                                       return await makeWiper().wipeRows(of: uid)
                                                    },
                                                    // Stage 5 / C1.2: the durable "a wipe is owed"
                                                    // flag, on the same suite every other key uses.
@@ -769,7 +769,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// `storeURL` exists so `AppContainerTests` can point the recovery path at a deliberately
     /// corrupt file; production always takes the default location.
     static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil) -> ModelContainer {
-        let schema = Schema(versionedSchema: FavoritesSchemaV5.self)
+        let schema = Schema(versionedSchema: FavoritesSchemaV6.self)
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         func build() throws -> ModelContainer {

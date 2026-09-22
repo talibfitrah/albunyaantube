@@ -8,9 +8,9 @@ nonisolated enum OfflineStatus: String, CaseIterable, Sendable {
     case queued, running, paused, completed, failed, cancelled
 }
 
-/// `OfflineItem` is declared inside the version that introduced it (`7471ea99`) and has not
-/// changed since, so V5 aliases it -- `OfflineItem` at file scope is this type
-/// (`FavoriteVideo.swift`, the frozen ladder).
+/// `OfflineItem` was declared inside the version that introduced it (`7471ea99`); V5 aliases that
+/// FROZEN shape. V6 (CF-A-50, Task 41) re-declares it below with an owner column, and
+/// `OfflineItem` at file scope is the V6 type (`FavoriteVideo.swift`, the frozen ladder).
 extension FavoritesSchemaV4 {
     /// One saved copy of one video (Phase 3 Task 3; spec §11 item shape + `resumeData`).
     ///
@@ -64,6 +64,63 @@ extension FavoritesSchemaV4 {
             self.resumeData = resumeData
             self.createdAt = createdAt
             self.completedAt = completedAt
+        }
+    }
+}
+
+/// CF-A-50 (Task 41): the V4 shape plus `userId`, the OWNER — the account signed in when the save
+/// was made, `""` for the guest (the `FavoriteVideo` convention). Ownership is for DELETION only:
+/// `LocalAccountWiper.wipeRows(of:)` pays a departed account's offline debt by uid, rows AND
+/// files. The Saved library stays device-wide (`OfflineStore.items`), and `#Unique` stays on
+/// `videoId` alone — one saved copy per video, whoever saved it. Rows written before V6 migrate
+/// with `userId == ""`: nothing recorded who saved them, so they are the guest's.
+extension FavoritesSchemaV6 {
+    @Model final class OfflineItem {
+        #Unique<OfflineItem>([\.videoId])
+
+        var id: String
+        var videoId: String
+        var title: String
+        var channelName: String?
+        var thumbnailUrl: String?
+        var qualityLabel: String
+        var audioOnly: Bool
+        var status: String
+        var bytesWritten: Int64
+        var totalBytes: Int64?
+        var errorCode: String?
+        var localPath: String?
+        var resumeData: Data?
+        var createdAt: Date
+        var completedAt: Date?
+        /// The PROPERTY initializer is the migration default: without it the V5 -> V6 stage is
+        /// refused (`NSCocoaErrorDomain 134110`, "missing attribute values on mandatory destination
+        /// attribute") and `makeModelContainer`'s recovery path rebuilds the store empty. The V5
+        /// columns (`SavedPlaylist.playlistUrl` …) carry theirs the same way.
+        var userId: String = ""
+
+        init(videoId: String, title: String, channelName: String?, thumbnailUrl: String?,
+             qualityLabel: String, audioOnly: Bool, id: String = UUID().uuidString,
+             status: String = OfflineStatus.queued.rawValue, bytesWritten: Int64 = 0,
+             totalBytes: Int64? = nil, errorCode: String? = nil, localPath: String? = nil,
+             resumeData: Data? = nil, createdAt: Date = Date(), completedAt: Date? = nil,
+             userId: String = "") {
+            self.videoId = videoId
+            self.title = title
+            self.channelName = channelName
+            self.thumbnailUrl = thumbnailUrl
+            self.qualityLabel = qualityLabel
+            self.audioOnly = audioOnly
+            self.id = id
+            self.status = status
+            self.bytesWritten = bytesWritten
+            self.totalBytes = totalBytes
+            self.errorCode = errorCode
+            self.localPath = localPath
+            self.resumeData = resumeData
+            self.createdAt = createdAt
+            self.completedAt = completedAt
+            self.userId = userId
         }
     }
 }

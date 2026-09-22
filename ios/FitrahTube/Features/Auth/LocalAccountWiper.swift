@@ -27,15 +27,26 @@ import SwiftData
     private let modelContainer: ModelContainer
     private let searchHistory: any SearchHistoryStore
     private let defaults: UserDefaults
+    /// The ids of one account's `OfflineItem` rows, for `wipeRows(of:)` (CF-A-50). A parameter
+    /// only so a test can make it THROW: `ModelContext.fetch` is not injectable and the in-memory
+    /// container never fails, yet a swallowed fetch failure is exactly the bug the Task 41 review
+    /// found (debt booked as paid, files kept forever). Production takes the default.
+    private let offlineIds: (String) throws -> [String]
 
     init(offline: any OfflineSaving, offlineStore: OfflineStore, stores: [any UserScoped],
-         modelContainer: ModelContainer, searchHistory: any SearchHistoryStore, defaults: UserDefaults) {
+         modelContainer: ModelContainer, searchHistory: any SearchHistoryStore, defaults: UserDefaults,
+         offlineIds: ((String) throws -> [String])? = nil) {
         self.offline = offline
         self.offlineStore = offlineStore
         self.stores = stores
         self.modelContainer = modelContainer
         self.searchHistory = searchHistory
         self.defaults = defaults
+        self.offlineIds = offlineIds ?? { uid in
+            try ModelContext(modelContainer)
+                .fetch(FetchDescriptor<OfflineItem>(predicate: #Predicate { $0.userId == uid }))
+                .map(\.id)
+        }
     }
 
     /// Ruling C13, in this ORDER.
@@ -78,7 +89,8 @@ import SwiftData
         // run — they touch no row, cursor, binding or store scope, and left behind they passed the
         // departed account's searches, feed caches (keyed by the channels it followed) and device
         // id to the newcomer permanently, since the by-uid debt the caller pays instead touches
-        // rows only. The newcomer's cost is seconds-old searches and a re-fetch.
+        // rows and that account's offline copies only. The newcomer's cost is seconds-old
+        // searches and a re-fetch.
         let takenOver = takenOver()
         if !takenOver {
             // 3. Every row, ALL userIds: this is a DEVICE wipe, not a per-user one. Android scopes
@@ -142,10 +154,11 @@ import SwiftData
 
     /// The NARROW counterpart, for a wipe owed to an account that no longer holds this device
     /// (`AccountSession.resumePendingDeletion`'s by-uid arm, review I3): that account's own rows
-    /// in FOUR per-user models, and nothing else. Every other step of `wipe()` above is
-    /// device-wide — the search history, the defaults sweep, the caches, the device id and the
-    /// offline library (`OfflineItem` carries no owner) now belong to whoever has used the device
-    /// since — and `stores` are left alone because re-scoping them would un-scope that account.
+    /// in FOUR per-user models plus its own offline copies (rows and files, CF-A-50), and nothing
+    /// else. Every other step of `wipe()` above is device-wide — the search history, the defaults
+    /// sweep, the caches, the device id and the guest's (`""`) or anyone else's offline copies now
+    /// belong to whoever has used the device since — and `stores` are left alone because
+    /// re-scoping them would un-scope that account.
     ///
     /// NOT `AccountBinding` (round 3 / item 2). The binding is what makes the next account's first
     /// bind a `.switchAccount`, which tags the guest-era (`""`) rows to the PREVIOUS uid and deletes
@@ -153,13 +166,18 @@ import SwiftData
     /// and pushes — the guest-era library uploaded into the next account. `wipe()` may take the
     /// binding because it takes every row, anonymous ones included; this leaves them behind.
     ///
-    /// Returns the error it hit, so the caller keeps its marker and retries. UNLIKE `wipe()` it is
-    /// one `do` block and STOPS at the first throw rather than attempting every step. It is NOT
-    /// atomic: `delete(model:where:)` is a batch delete against the STORE — probed, it is visible
-    /// to a fresh context before `save()` and `rollback()` does not undo it — so a throw part-way
-    /// leaves the earlier models' rows already gone. Every step is a delete, so the retry the kept
-    /// marker buys is idempotent.
-    func wipeRows(of uid: String) -> Error? {
+    /// Returns the error it hit, so the caller keeps its marker and retries. UNLIKE `wipe()` the
+    /// row block is one `do` and STOPS at the first throw rather than attempting every step. It is
+    /// NOT atomic: `delete(model:where:)` is a batch delete against the STORE — probed, it is
+    /// visible to a fresh context before `save()` and `rollback()` does not undo it — so a throw
+    /// part-way leaves the earlier models' rows already gone. Every step is a delete, so the retry
+    /// the kept marker buys is idempotent.
+    ///
+    /// CF-A-50 (Task 41): `async`, because this account's OFFLINE debt is paid here too — its
+    /// `OfflineItem` rows and their files, through the manager (the only thing that unlinks,
+    /// `wipe()` steps 1-2's rule), FIRST, mirroring `wipe()`'s order. Guest-owned (`""`) and other
+    /// accounts' copies stay. A manager error is reported like a row error: marker kept, retried.
+    func wipeRows(of uid: String) async -> Error? {
         // `""` is the GUEST's scope, not "nobody": THIS arm never deletes the guest's rows for a
         // marker that names no account (a build before Stage 7 fix 2 / M2 could store one). It
         // claims nothing about the device-wide arm, which such a marker can still reach.
@@ -167,6 +185,13 @@ import SwiftData
         // The one `UserDefaults` key that NAMES this account (step 4b's third prefix, for this uid
         // only — the sweep itself is device-wide). Independent of SwiftData, so it goes first.
         defaults.removeObject(forKey: EmailVerificationViewModel.lastSentKey(uid: uid))
+        // Task 41 review (MEDIUM): a fetch that throws is REPORTED, never swallowed — swallowed,
+        // the ids read as none, the rows below went, nil was returned and the marker redeemed,
+        // leaving this account's files on disk with nothing left to retry them. Nothing is
+        // deleted on that path, so the kept marker's retry finds the whole debt still owed.
+        let ids: [String]
+        do { ids = try offlineIds(uid) } catch { return error }
+        let offlineError = ids.isEmpty ? nil : await offline.deleteAll(ids)
         let context = ModelContext(modelContainer)
         do {
             try context.delete(model: FavoriteVideo.self, where: #Predicate { $0.userId == uid })
@@ -174,9 +199,9 @@ import SwiftData
             try context.delete(model: SubscribedChannel.self, where: #Predicate { $0.userId == uid })
             try context.delete(model: SyncState.self, where: #Predicate { $0.userId == uid })
             try context.save()
-            return nil
+            return offlineError
         } catch {
-            return error
+            return offlineError ?? error
         }
     }
 }

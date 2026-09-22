@@ -232,7 +232,7 @@ struct LocalAccountWiperTests {
                                    deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(), sleep: { _ in },
             wipe: { _ in deviceWipes.withLock { $0 += 1 }; return nil },
-            wipeRows: { [wiper = fixture.wiper] in wiper.wipeRows(of: $0) }, marker: marker)
+            wipeRows: { [wiper = fixture.wiper] in await wiper.wipeRows(of: $0) }, marker: marker)
 
         await session.resumePendingDeletion()
 
@@ -261,14 +261,14 @@ struct LocalAccountWiperTests {
     /// `SyncManager.switchAccount`'s own comment exists to prevent. The device wipe may take the
     /// binding because it takes every row, anonymous ones included; the scoped delete leaves the
     /// anonymous rows behind, so the binding is what still protects them.
-    @Test func theScopedDeleteLeavesTheBindingSoTheNextAccountSwitchesRatherThanMerges() throws {
+    @Test func theScopedDeleteLeavesTheBindingSoTheNextAccountSwitchesRatherThanMerges() async throws {
         let fixture = makeFixture(); defer { fixture.tearDown() }
         try seedRows(fixture, uids: ["uid-a", ""])
         let context = ModelContext(fixture.container)
         context.insert(AccountBinding(userId: "uid-a", initialMergeDone: true))
         try context.save()
 
-        #expect(fixture.wiper.wipeRows(of: "uid-a") == nil)
+        #expect(await fixture.wiper.wipeRows(of: "uid-a") == nil)
 
         #expect(fixture.owners(FavoriteVideo.self, \.userId) == [""], "the positive control: A's rows did go")
         let binding = SyncStore.binding(fixture.container)
@@ -277,14 +277,55 @@ struct LocalAccountWiperTests {
                 "B's first bind would MERGE the guest-era rows into B's account")
     }
 
+    /// CF-A-50 (Task 41): the scoped delete pays the departed account's OFFLINE debt too — its
+    /// rows AND files, through the manager (the only thing that unlinks) — and nobody else's.
+    /// Before the owner column, A's downloads outlived A and sat in the next user's Saved library
+    /// while the debt was booked as paid. Guest-owned (`""`) copies are not A's to take.
+    @Test func theScopedDeleteTakesTheDepartedAccountsOfflineRowsAndFilesAndNobodyElses() async throws {
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        try seedRows(fixture, uids: ["uid-a", "uid-b"])
+        let a = makeOfflineItem("xc7keR2piUM", userId: "uid-a")
+        let b = makeOfflineItem("video-b", userId: "uid-b")
+        let guest = makeOfflineItem("video-guest")
+        for item in [a, b, guest] { try fixture.offlineStore.insert(item) }
+
+        let error = await fixture.wiper.wipeRows(of: "uid-a")
+
+        #expect(error == nil)
+        #expect(await fixture.offline.calls == [Call(method: "deleteAll", id: a.id)],
+                "A's saved file was not torn down through the manager, or somebody else's was")
+        #expect(fixture.owners(FavoriteVideo.self, \.userId) == ["uid-b"], "the positive control: A's rows did go")
+    }
+
+    /// Task 41 review (MEDIUM): a fetch that THROWS must keep the debt. `try?`-swallowed, the ids
+    /// read as none, the rows then deleted fine, `wipeRows` answered nil and the marker was
+    /// redeemed — A's files on disk forever with nothing left to retry them. A throwing
+    /// `ModelContext.fetch` is not injectable (the in-memory container never throws), so the
+    /// provider is the seam: it throws, `wipeRows` reports it, and nothing is deleted.
+    @Test func aScopedDeleteWhoseOfflineFetchThrowsReportsItAndPaysNothing() async throws {
+        struct StoreFull: Error {}
+        let fixture = makeFixture(); defer { fixture.tearDown() }
+        try seedRows(fixture, uids: ["uid-a"])
+        let wiper = LocalAccountWiper(offline: fixture.offline, offlineStore: fixture.offlineStore,
+                                      stores: [fixture.favorites], modelContainer: fixture.container,
+                                      searchHistory: fixture.searchHistory, defaults: fixture.defaults,
+                                      offlineIds: { _ in throw StoreFull() })
+
+        let error = await wiper.wipeRows(of: "uid-a")
+
+        #expect(error is StoreFull, "a failed offline fetch was swallowed and the debt booked as paid")
+        #expect(await fixture.offline.calls.isEmpty, "the manager was asked to delete with no ids to delete")
+        #expect(fixture.owners(FavoriteVideo.self, \.userId) == ["uid-a"], "the rows went while the offline half was never read — a retry then finds nothing to do")
+    }
+
     /// `""` is not "nobody" here — it is the GUEST's scope, and `UserDefaultsDeletionMarker`'s
     /// getter reports a stored `""` as pending (a build before Stage 7 fix 2 / M2 could write one).
     /// Redeeming that by uid would erase the guest's library for a marker that names no account.
-    @Test func theScopedDeleteNeverTakesTheGuestsRows() throws {
+    @Test func theScopedDeleteNeverTakesTheGuestsRows() async throws {
         let fixture = makeFixture(); defer { fixture.tearDown() }
         try seedRows(fixture, uids: ["", "uid-b"])
 
-        let error = fixture.wiper.wipeRows(of: "")
+        let error = await fixture.wiper.wipeRows(of: "")
 
         #expect(error == nil)
         #expect(fixture.owners(FavoriteVideo.self, \.userId) == ["", "uid-b"])

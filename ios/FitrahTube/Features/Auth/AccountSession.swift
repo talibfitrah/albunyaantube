@@ -85,7 +85,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// irreversible debt having deleted nothing, for any construction that forgot to pass one.
     /// `CancellationError` for the reason `AppContainer`'s released-container arm uses it: the
     /// work did not run.
-    private let wipeRows: @MainActor @Sendable (String) -> Error?
+    private let wipeRows: @MainActor @Sendable (String) async -> Error?
     private let marker: any DeletionMarking
     /// The federated providers, asked to forget their OWN SDK sessions on every session drop
     /// (Stage 4 / I1). Empty is the honest default for a suite with no federated sign-in.
@@ -120,7 +120,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     init(auth: any AuthClient, account: AccountClient, stores: [any UserScoped],
          status: AccountStatusCenter, sleep: @escaping @Sendable (Duration) async -> Void,
          wipe: @escaping @MainActor @Sendable (() -> Bool) async -> Error?,
-         wipeRows: @escaping @MainActor @Sendable (String) -> Error? = { _ in CancellationError() },
+         wipeRows: @escaping @MainActor @Sendable (String) async -> Error? = { _ in CancellationError() },
          marker: any DeletionMarking = InMemoryDeletionMarker(),
          providers: [any OAuthSignInProvider] = [],
          sync: (any SyncTriggering)? = nil) {
@@ -258,7 +258,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         // that bind never runs or rolls back (B offline, B with no syncable uid). This is the
         // DURABLE BACKSTOP for that case. A delete that reported an error keeps the marker, as the
         // device wipe above does.
-        if wipeRows(pending) == nil { redeemed(pending) }
+        if await wipeRows(pending) == nil { redeemed(pending) }
     }
 
     /// The debt is paid: the marker goes, and so does the deleted account's uid (review I2 — the
@@ -735,8 +735,9 @@ nonisolated enum AccountState: Sendable, Equatable {
             // never retried. Only into a FREE slot (the marker holds one uid, CF-A-52), never an
             // empty uid (Stage 7 fix 2 / M2), and `redeemed` clears it only while it names this uid.
             if marker.pendingUid == nil, !verdictUid.isEmpty { marker.pendingUid = verdictUid }
-            if wipeRows(verdictUid) == nil { redeemed(verdictUid) }
-            return Task {}
+            // CF-A-50: the scoped delete is async now (it pays the offline debt through the
+            // manager), so the arm returns the task that pays it — the marker is already written.
+            return Task { if await wipeRows(verdictUid) == nil { redeemed(verdictUid) } }
         }
         if let deletion {
             // Fix round 1 / I2: the latch must not SWALLOW a later `true`. The 403 envelope can
@@ -834,7 +835,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         // `.deleted` either: it is unattributed, `handle` honours it, and posted under the new
         // account it would start a deletion FOR them (CF-A-47's shape).
         guard await !takenOver() else {
-            if let owed, wipeRows(owed) == nil { redeemed(owed) }
+            if let owed, await wipeRows(owed) == nil { redeemed(owed) }
             return
         }
         // Taken over INSIDE the wipe's own awaits (CF-A-55 (c)): the wiper asked immediately
@@ -845,7 +846,7 @@ nonisolated enum AccountState: Sendable, Equatable {
             return takenOverInsideTheWipe
         }
         guard !takenOverInsideTheWipe else {
-            if let owed, wipeRows(owed) == nil { redeemed(owed) }
+            if let owed, await wipeRows(owed) == nil { redeemed(owed) }
             return
         }
         // Stage 5 / C2.2: a wipe that hit a full or corrupt store keeps the marker, so the next

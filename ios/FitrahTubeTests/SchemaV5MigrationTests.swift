@@ -316,5 +316,46 @@ struct SchemaV5MigrationTests {
                                                   "SyncState": ["entityType", "lastCursor", "lastDocId",
                                                                 "lastSyncAt", "userId"],
                                                   "AccountBinding": ["boundAt", "initialMergeDone", "userId"]])
+        // CF-A-50 (Task 41): ONE new column, `userId` on `OfflineItem`; everything else aliased.
+        #expect(shape(FavoritesSchemaV6.self) == ["FavoriteVideo": favoriteVideo,
+                                                  "SavedPlaylist": savedPlaylistV5,
+                                                  "SubscribedChannel": subscribedChannelV5,
+                                                  "OfflineItem": (offlineItem + ["userId"]).sorted(),
+                                                  "SyncState": ["entityType", "lastCursor", "lastDocId",
+                                                                "lastSyncAt", "userId"],
+                                                  "AccountBinding": ["boundAt", "initialMergeDone", "userId"]])
+    }
+
+    /// CF-A-50 (Task 41): a V5 store's `OfflineItem` rows -- written through the FROZEN V5 type,
+    /// which has no owner column -- survive the V5 -> V6 lightweight stage and read back as the
+    /// GUEST's (`userId == ""`): the only honest default, since nothing recorded who saved them.
+    /// The on-disk stage is the proof that a defaulted column is a lightweight migration here.
+    @Test func aV5StoreOnDiskMigratesToV6GivingOfflineItemsTheGuestOwner() throws {
+        let url = Self.temporaryStoreURL()
+        defer { Self.remove(url) }
+        try Self.makeV5Store(at: url)
+
+        let context = ModelContext(AppContainer.makeModelContainer(inMemory: false, storeURL: url))
+        let items = try context.fetch(FetchDescriptor<OfflineItem>())
+        #expect(items.count == 1, "the row was lost, or the recovery path rebuilt the store")
+        let item = try #require(items.first)
+        #expect(item.videoId == "xc7keR2piUM")
+        #expect(item.userId == "")
+        let favorite = try #require(try context.fetch(FetchDescriptor<FavoriteVideo>()).first)
+        #expect(favorite.videoId == "xc7keR2piUM", "an untouched entity did not survive the stage")
+    }
+
+    /// A V5 store on disk written through the FROZEN V5 types (`FavoritesSchemaV5.OfflineItem` has
+    /// no owner column) -- the `makeV4Store` shape, so the V5 container is released before
+    /// `makeModelContainer` migrates the file.
+    private static func makeV5Store(at url: URL) throws {
+        let v5 = Schema(versionedSchema: FavoritesSchemaV5.self)
+        let container = try ModelContainer(for: v5, configurations: ModelConfiguration(schema: v5, url: url))
+        let context = ModelContext(container)
+        context.insert(FavoritesSchemaV5.OfflineItem(videoId: "xc7keR2piUM", title: "Lecture", channelName: nil,
+                                                     thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true))
+        context.insert(FavoritesSchemaV5.FavoriteVideo(videoId: "xc7keR2piUM", title: "F", channelName: "C",
+                                                       thumbnailUrl: nil, durationSeconds: 12))
+        try context.save()
     }
 }
