@@ -101,6 +101,44 @@ class AccountControllerTest {
 
     // ── Test 1: happy path ──────────────────────────────────────────────────
 
+    /** A mail the server never handed to Graph is a 503, not a 200: both apps run Firebase's own
+     *  mailer only on a non-2xx (see the controller). */
+    @Test
+    void sendVerificationEmailAnswers503WhenTheMailerDidNotSend() throws Exception {
+        signInUnverified("uid-unsent");
+        when(firebaseAuth.generateEmailVerificationLink(TEST_EMAIL)).thenReturn("https://verify/link");
+        when(mailService.sendEmailVerification(TEST_EMAIL, "https://verify/link")).thenReturn(false);
+
+        mockMvc.perform(post("/api/account/send-verification-email"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("MAIL_UNAVAILABLE"));
+
+        // The cooldown is recorded whether or not the mailer sent: the apps fall back to
+        // Firebase on the 503 and wait 60 s regardless, so a retry window here would only let
+        // one uid loop generateEmailVerificationLink (Firebase Admin quota) while mail is down.
+        when(mailService.sendEmailVerification(TEST_EMAIL, "https://verify/link")).thenReturn(true);
+        mockMvc.perform(post("/api/account/send-verification-email"))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void sendVerificationEmailAnswers200OnlyWhenTheMailerSent() throws Exception {
+        signInUnverified("uid-sent");
+        when(firebaseAuth.generateEmailVerificationLink(TEST_EMAIL)).thenReturn("https://verify/link");
+        when(mailService.sendEmailVerification(TEST_EMAIL, "https://verify/link")).thenReturn(true);
+
+        mockMvc.perform(post("/api/account/send-verification-email"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Verification email sent"));
+    }
+
+    /** One uid per test: the controller's verification cooldown map is on the shared bean. */
+    private void signInUnverified(String uid) {
+        FirebaseUserDetails principal = new FirebaseUserDetails(uid, TEST_EMAIL, "user", false);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()));
+    }
+
     @Test
     void postProfileHappyPath() throws Exception {
         User saved = activeUser();

@@ -94,8 +94,13 @@ public class MailService {
                       + ". Replies to this address are not monitored.\n"));
     }
 
-    public void sendEmailVerification(String to, String verificationLink) {
-        sendViaGraph(to, "email_verification",
+    /**
+     * @return whether the message was actually handed to Graph. {@code false} when mail is
+     *         disabled or Graph refused it -- the caller must not report "sent" then, because
+     *         the apps run their own Firebase mailer only on a non-2xx answer.
+     */
+    public boolean sendEmailVerification(String to, String verificationLink) {
+        return sendViaGraph(to, "email_verification",
                 buildMessage(to, "Verify your FitrahTube email",
                         "Assalamu alaykum,\n\n"
                       + "Please verify your email address to complete your FitrahTube account.\n"
@@ -106,10 +111,10 @@ public class MailService {
                       + ". Replies to this address are not monitored.\n"));
     }
 
-    private void sendViaGraph(String to, String type, Message msg) {
+    private boolean sendViaGraph(String to, String type, Message msg) {
         if (!enabled) {
             log.info("mail.disabled ({}) recipient={}", type, sanitiseRecipientForAudit(to));
-            return;
+            return false;
         }
         try {
             SendMailPostRequestBody body = new SendMailPostRequestBody();
@@ -118,8 +123,10 @@ public class MailService {
             graph.users().byUserId(fromAddress).sendMail().post(body);
             meters.counter("email.send.success", "type", type).increment();
             log.info("{}.sent", type);
+            return true;
         } catch (Exception e) {
             handleSendFailure(to, e, type);
+            return false;
         }
     }
 

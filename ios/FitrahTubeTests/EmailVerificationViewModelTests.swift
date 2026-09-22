@@ -170,12 +170,16 @@ struct EmailVerificationViewModelTests {
         #expect(auth.nextError == .unknown, "the Firebase fallback was asked after a 200")
     }
 
-    @Test func anUnsuccessfulBackendResponseFallsBackToFirebase() async {
+    /// 503 is the backend's `MAIL_UNAVAILABLE` (Task 38): its mailer is disabled or Graph refused,
+    /// so Firebase's own mail is the only one that can arrive. `AccountClient.failure` maps every
+    /// unlisted status to `.unknown(status:)`, which is `sendOnce`'s fall-through arm.
+    @Test(arguments: [500, 503])
+    func anUnsuccessfulBackendResponseFallsBackToFirebase(status: Int) async {
         let auth = FakeAuthClient(state: .signedIn(Self.unverified))
         // Only Firebase can produce `.throttled` at all, so reading it back is proof the fallback
         // ran — and in this order, after the backend.
         auth.nextError = .tooManyRequests
-        let fixture = make(auth: auth, responses: [.json(500, "{}")])
+        let fixture = make(auth: auth, responses: [.json(status, #"{"code":"MAIL_UNAVAILABLE"}"#)])
         defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
 
         await fixture.model.send()

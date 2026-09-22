@@ -116,8 +116,20 @@ public class AccountController {
         }
         try {
             String link = firebaseAuth.generateEmailVerificationLink(email);
-            mailService.sendEmailVerification(email, link);
+            // Cooldown BEFORE the outcome is known: both apps wait 60 s before the next tap and
+            // fall back to Firebase's own mailer on the 503 below, so a retry window here would
+            // only let one uid loop generateEmailVerificationLink (Firebase Admin quota) while
+            // mail is down.
             verificationCooldowns.put(uid, System.currentTimeMillis());
+            // A mailer that is disabled (mail.enabled=false) or refused by Graph reports false.
+            // That must be a non-2xx: both apps fall back to Firebase's own verification mail
+            // only on a failure, and a 200 here left the owner's first real account stuck on
+            // the verification screen with no email at all (2026-09-21).
+            if (!mailService.sendEmailVerification(email, link)) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(Map.of("code", "MAIL_UNAVAILABLE",
+                                     "message", "Verification email could not be sent"));
+            }
             return ResponseEntity.ok(Map.of("message", "Verification email sent"));
         } catch (FirebaseAuthException e) {
             logger.error("send-verification-email failed uid={}", uid, e);

@@ -39,8 +39,10 @@ class MailServiceTest {
         AuditLogService auditLog = mock(AuditLogService.class);
         MailService svc = createDisabledService(meters, auditLog);
 
-        svc.sendEmailVerification("user@example.com", "https://verify/link");
+        boolean sent = svc.sendEmailVerification("user@example.com", "https://verify/link");
 
+        // The caller must be able to tell "handed to Graph" from "silently skipped".
+        assertFalse(sent, "a disabled mailer reported the verification mail as sent");
         verifyNoInteractions(auditLog);
         assertEquals(0.0, meters.counter("email.send.success", "type", "email_verification").count());
     }
