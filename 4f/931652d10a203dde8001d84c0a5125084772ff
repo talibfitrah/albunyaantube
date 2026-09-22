@@ -1,0 +1,26 @@
+docs/superpowers/plans/2026-09-02-ios-phase4-accounts.md
+  s_eca9a78768b070::t_32a8df7c0a6928 1775
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_eca9a78768b070::t_a1c5039c1c4884 432-435
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_eca9a78768b070::t_5ff82f1f59691a 249-251,253-254,266-285
+  s_eca9a78768b070::t_3e9ff196458524 1189-1192
+ios/scripts/archive.sh
+  s_eca9a78768b070::t_85115304fd3597 50-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f931652d10a203dde8001d84c0a5125084772ff",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
