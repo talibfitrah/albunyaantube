@@ -1,0 +1,24 @@
+docs/superpowers/plans/2026-09-22-ios-phase6-app-store-readiness.md
+  s_eca9a78768b070::t_cb664f2750dc25 1-367,369-465,467-535
+  s_eca9a78768b070::t_b309e21e2fe573 368
+  s_eca9a78768b070::t_afc98d9910ae41 466
+docs/superpowers/plans/2026-09-22-ios-phase6-app-store-metadata.md
+  s_eca9a78768b070::t_539e3a8de6a238 1-391,411
+  s_eca9a78768b070::t_c775fd933bca4a 392-410,412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "605cfa21d6c9a57d3759aa5498ec5c924d26b03b",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
