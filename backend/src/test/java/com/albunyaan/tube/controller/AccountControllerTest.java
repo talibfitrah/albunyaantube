@@ -33,6 +33,7 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -106,6 +107,7 @@ class AccountControllerTest {
     @Test
     void sendVerificationEmailAnswers503WhenTheMailerDidNotSend() throws Exception {
         signInUnverified("uid-unsent");
+        when(mailService.isEnabled()).thenReturn(true);
         when(firebaseAuth.generateEmailVerificationLink(TEST_EMAIL)).thenReturn("https://verify/link");
         when(mailService.sendEmailVerification(TEST_EMAIL, "https://verify/link")).thenReturn(false);
 
@@ -124,12 +126,31 @@ class AccountControllerTest {
     @Test
     void sendVerificationEmailAnswers200OnlyWhenTheMailerSent() throws Exception {
         signInUnverified("uid-sent");
+        when(mailService.isEnabled()).thenReturn(true);
         when(firebaseAuth.generateEmailVerificationLink(TEST_EMAIL)).thenReturn("https://verify/link");
         when(mailService.sendEmailVerification(TEST_EMAIL, "https://verify/link")).thenReturn(true);
 
         mockMvc.perform(post("/api/account/send-verification-email"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("Verification email sent"));
+    }
+
+    /** CF-A-57 (Cubic P3): with mail off there is nothing to carry the link, so the Firebase
+     *  Admin call is skipped; the cooldown is still recorded so the server-side throttle is one
+     *  rule whatever the reason for the 503. */
+    @Test
+    void sendVerificationEmailAnswers503WithoutGeneratingALinkWhenMailIsDisabled() throws Exception {
+        signInUnverified("uid-mail-off");
+        when(mailService.isEnabled()).thenReturn(false);
+
+        mockMvc.perform(post("/api/account/send-verification-email"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("MAIL_UNAVAILABLE"));
+        verify(firebaseAuth, never()).generateEmailVerificationLink(any());
+        verify(mailService, never()).sendEmailVerification(any(), any());
+
+        mockMvc.perform(post("/api/account/send-verification-email"))
+                .andExpect(status().isTooManyRequests());
     }
 
     /** One uid per test: the controller's verification cooldown map is on the shared bean. */

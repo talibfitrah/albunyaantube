@@ -114,6 +114,15 @@ public class AccountController {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(Map.of("code", "RATE_LIMITED", "message", "Please wait before requesting another email"));
         }
+        // CF-A-57 (Cubic P3): with mail off nothing can carry the link, so do not spend a
+        // Firebase Admin call minting one. Still record the cooldown -- the apps treat any 503
+        // as "fall back to Firebase's mailer and wait 60 s", so the throttle stays one rule.
+        if (!mailService.isEnabled()) {
+            verificationCooldowns.put(uid, System.currentTimeMillis());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("code", "MAIL_UNAVAILABLE",
+                                 "message", "Verification email could not be sent"));
+        }
         try {
             String link = firebaseAuth.generateEmailVerificationLink(email);
             // Cooldown BEFORE the outcome is known: both apps wait 60 s before the next tap and

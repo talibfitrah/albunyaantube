@@ -14,14 +14,13 @@ import com.microsoft.graph.users.item.sendmail.SendMailPostRequestBody;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedList;
 
 /**
  * Plan F (ADMIN-USER-01) — Microsoft Graph mail sender.
- * Feature-gated by mail.enabled. When disabled, all sends are no-ops.
+ * Feature-gated by mail.enabled. When disabled, all sends return false without sending.
  * Failures are logged + audited; the caller is never blocked.
  */
 @Service
@@ -74,15 +73,22 @@ public class MailService {
         }
     }
 
+    /** Whether {@code mail.enabled=true}: lets callers skip work (Firebase link minting) that
+     *  no mail will ever carry. */
+    public boolean isEnabled() {
+        return enabled;
+    }
+
     /**
-     * Cubic R5 P1: routes to bounded {@code mailExecutor} instead of Spring's
-     * default {@code SimpleAsyncTaskExecutor}. The latter spawns an unbounded
-     * thread per send — a bulk-reset wave would create one HTTP-bound thread
-     * per recipient.
+     * CF-A-57: synchronous on purpose. Its only caller is the admin "reset password"
+     * endpoint (one recipient, no bulk path), and {@code @Async} cannot return whether
+     * Graph accepted the message -- so the admin was told "sent" with mail off.
+     *
+     * @return whether the message was actually handed to Graph; {@code false} when mail is
+     *         disabled or Graph refused it.
      */
-    @Async("mailExecutor")
-    public void sendPasswordResetEmail(String to, String resetLink) {
-        sendViaGraph(to, "password_reset",
+    public boolean sendPasswordResetEmail(String to, String resetLink) {
+        return sendViaGraph(to, "password_reset",
                 buildMessage(to, "Reset your FitrahTube password",
                         "Hi,\n\n"
                       + "We received a request to reset your FitrahTube password.\n"

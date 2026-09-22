@@ -1301,12 +1301,17 @@ public class AuthService {
     }
 
     /**
-     * Send password reset email
+     * Send password reset email.
+     *
+     * @return whether the mail was handed to the mailer (false: mail disabled or Graph refused)
      */
-    public void sendPasswordResetEmail(String email) throws FirebaseAuthException {
+    public boolean sendPasswordResetEmail(String email) throws FirebaseAuthException {
+        // CF-A-57: with mail off nothing carries the link -- do not mint a live reset token
+        // only to discard it.
+        if (!mailService.isEnabled()) return false;
         String link = firebaseAuth.generatePasswordResetLink(email);
         logger.info("Password reset link generated for: {}", email);
-        mailService.sendPasswordResetEmail(email, link);
+        return mailService.sendPasswordResetEmail(email, link);
     }
 
     /**

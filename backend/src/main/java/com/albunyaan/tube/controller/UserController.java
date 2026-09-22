@@ -294,7 +294,7 @@ public class UserController {
      */
     @PostMapping("/{uid}/reset-password")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> sendPasswordReset(
+    public ResponseEntity<?> sendPasswordReset(
             @PathVariable String uid,
             @AuthenticationPrincipal FirebaseUserDetails currentUser
     ) {
@@ -303,7 +303,13 @@ public class UserController {
             if (user == null) {
                 return ResponseEntity.notFound().build();
             }
-            authService.sendPasswordResetEmail(user.getEmail());
+            // CF-A-57: a mail the mailer never handed to Graph (mail.enabled=false, Graph
+            // refused) is a 503, not a 200 -- the admin was told "sent" while nothing went out.
+            if (!authService.sendPasswordResetEmail(user.getEmail())) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(Map.of("code", "MAIL_UNAVAILABLE",
+                                     "message", "Password reset email could not be sent"));
+            }
             try {
                 auditLogService.log("user_password_reset", "user", uid, currentUser);
             } catch (Exception auditEx) {

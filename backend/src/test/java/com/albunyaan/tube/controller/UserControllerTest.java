@@ -401,10 +401,10 @@ class UserControllerTest {
     void sendPasswordReset_shouldSendEmail_andLogAudit() throws Exception {
         // Arrange
         when(userRepository.findByUid("test-mod-uid")).thenReturn(Optional.of(testModerator));
-        doNothing().when(authService).sendPasswordResetEmail("mod@example.com");
+        when(authService.sendPasswordResetEmail("mod@example.com")).thenReturn(true);
 
         // Act
-        ResponseEntity<Void> response = userController.sendPasswordReset("test-mod-uid", adminUser);
+        ResponseEntity<?> response = userController.sendPasswordReset("test-mod-uid", adminUser);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -413,13 +413,29 @@ class UserControllerTest {
         verify(auditLogService).log(eq("user_password_reset"), eq("user"), eq("test-mod-uid"), eq(adminUser));
     }
 
+    /** CF-A-57: a reset mail the server never handed to Graph (mail off, Graph refused) must not
+     *  be reported to the admin as sent, and must not write a success audit. */
+    @Test
+    void sendPasswordReset_shouldReturn503_whenMailerDidNotSend() throws Exception {
+        when(userRepository.findByUid("test-mod-uid")).thenReturn(Optional.of(testModerator));
+        when(authService.sendPasswordResetEmail("mod@example.com")).thenReturn(false);
+
+        ResponseEntity<?> response = userController.sendPasswordReset("test-mod-uid", adminUser);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, String> body = (java.util.Map<String, String>) response.getBody();
+        assertEquals("MAIL_UNAVAILABLE", body.get("code"));
+        verify(auditLogService, never()).log(any(), any(), any(), any());
+    }
+
     @Test
     void sendPasswordReset_shouldReturn404_whenUserNotFound() throws Exception {
         // Arrange
         when(userRepository.findByUid("nonexistent")).thenReturn(Optional.empty());
 
         // Act
-        ResponseEntity<Void> response = userController.sendPasswordReset("nonexistent", adminUser);
+        ResponseEntity<?> response = userController.sendPasswordReset("nonexistent", adminUser);
 
         // Assert
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
@@ -436,7 +452,7 @@ class UserControllerTest {
                 .when(authService).sendPasswordResetEmail("mod@example.com");
 
         // Act
-        ResponseEntity<Void> response = userController.sendPasswordReset("test-mod-uid", adminUser);
+        ResponseEntity<?> response = userController.sendPasswordReset("test-mod-uid", adminUser);
 
         // Assert
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());

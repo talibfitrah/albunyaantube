@@ -677,19 +677,34 @@ class AuthServiceTest {
     void sendPasswordResetEmail_shouldGenerateResetLink() throws Exception {
         // Arrange
         String resetLink = "https://firebase.app/reset?token=abc123";
+        when(mailService.isEnabled()).thenReturn(true);
         when(firebaseAuth.generatePasswordResetLink("test@example.com")).thenReturn(resetLink);
+        when(mailService.sendPasswordResetEmail("test@example.com", resetLink)).thenReturn(true);
 
         // Act
-        authService.sendPasswordResetEmail("test@example.com");
+        boolean sent = authService.sendPasswordResetEmail("test@example.com");
 
         // Assert
+        assertTrue(sent);
         verify(firebaseAuth).generatePasswordResetLink("test@example.com");
+    }
+
+    /** CF-A-57: with mail off nothing can carry the link, so no live reset token is minted
+     *  and thrown away. */
+    @Test
+    void sendPasswordResetEmail_neverMintsALink_whenMailIsDisabled() throws Exception {
+        when(mailService.isEnabled()).thenReturn(false);
+
+        assertFalse(authService.sendPasswordResetEmail("test@example.com"));
+        verify(firebaseAuth, never()).generatePasswordResetLink(any());
+        verify(mailService, never()).sendPasswordResetEmail(any(), any());
     }
 
     @Test
     void sendPasswordResetEmail_shouldThrowException_whenFirebaseAuthFails() throws Exception {
         // Arrange
         FirebaseAuthException mockException = mock(FirebaseAuthException.class);
+        when(mailService.isEnabled()).thenReturn(true);
         when(firebaseAuth.generatePasswordResetLink("test@example.com")).thenThrow(mockException);
 
         // Act & Assert

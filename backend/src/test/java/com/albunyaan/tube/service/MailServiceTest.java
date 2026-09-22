@@ -26,8 +26,12 @@ class MailServiceTest {
         AuditLogService auditLog = mock(AuditLogService.class);
         MailService svc = createDisabledService(meters, auditLog);
 
-        svc.sendPasswordResetEmail("user@example.com", "https://reset/link");
+        boolean sent = svc.sendPasswordResetEmail("user@example.com", "https://reset/link");
 
+        // CF-A-57: the admin reset endpoint must be able to tell "handed to Graph" from
+        // "silently skipped" — a void here let it answer 200 with mail off.
+        assertFalse(sent, "a disabled mailer reported the reset mail as sent");
+        assertFalse(svc.isEnabled());
         verifyNoInteractions(auditLog);
         assertEquals(0.0, meters.counter("email.send.success", "type", "password_reset").count());
         assertEquals(0.0, meters.counter("email.send.failure", "type", "password_reset").count());
