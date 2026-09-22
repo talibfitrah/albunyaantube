@@ -1,0 +1,43 @@
+ios/scripts/archive.sh
+  s_eca9a78768b070::t_2f17701c0a2cd8 1-11,15-21,23,26-61
+  s_eca9a78768b070::t_e54ba128618905 12-14,22,24-25
+ios/project.yml
+  s_eca9a78768b070::t_ccaa9f60a5d9e5 175
+  s_eca9a78768b070::t_6f21580c0abd82 30-33
+ios/ExportOptions.plist
+  s_eca9a78768b070::t_ab68f36ef41baa 1-18
+ios/FitrahTubeTests/SettingsRowsTests.swift
+  s_eca9a78768b070::t_95273044b9975c 131
+  s_eca9a78768b070::t_84a1a3c79ff419 122-125,133-134
+ios/FitrahTube/App/FitrahTubeApp.swift
+  s_eca9a78768b070::t_36830e231096e4 482-484,486-489,494-497,503-509
+  s_eca9a78768b070::t_95695f0481cf85 510-512
+ios-remote-config.json
+  s_eca9a78768b070::t_dfa7904affe4e5 4
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/RemoteConfigTests.swift
+  s_eca9a78768b070::t_9715a5ee5b7645 223-225
+ios/scripts/convert-strings.py
+  s_eca9a78768b070::t_0536885b92d41b 533-537
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_eca9a78768b070::t_b1af6e3d8fc114 511-532
+ios/FitrahTubeTests/UpdateGateTests.swift
+  s_eca9a78768b070::t_4df0fd8a6dfccf 49-58
+ios/FitrahTube/Features/Settings/AboutView.swift
+  s_eca9a78768b070::t_faf515701dc19b 63-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7dd85af5bc97c44a46bafa903c0dd7e12b541d77",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
