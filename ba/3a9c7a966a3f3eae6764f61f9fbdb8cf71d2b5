@@ -1,0 +1,28 @@
+ios/FitrahTubeTests/LocalAccountWiperTests.swift
+  s_eca9a78768b070::t_6dad35430192ab 149-156,165-171,187-193
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_eca9a78768b070::t_25ad00b6ade021 11-13
+  s_eca9a78768b070::t_ecb66742abac37 241-242
+ios/FitrahTube/Features/Auth/LocalAccountWiper.swift
+  s_eca9a78768b070::t_03b203f73eca7d 77-106,118-121
+  s_eca9a78768b070::t_92faa2b3de733d 137-140
+  s_eca9a78768b070::t_bacc5dfb84fa83 55-61
+ios/scripts/archive.sh
+  s_eca9a78768b070::t_3507780cb7a0ff 50-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba3a9c7a966a3f3eae6764f61f9fbdb8cf71d2b5",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
