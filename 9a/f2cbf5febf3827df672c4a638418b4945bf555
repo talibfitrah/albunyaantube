@@ -1,0 +1,41 @@
+docs/status/DEPLOYMENT_GUIDE.md
+  s_eca9a78768b070::t_0103f103688710 113
+android/app/src/main/res/values-nl/strings.xml
+  s_eca9a78768b070::t_4d3fef8c9f5bfb 547
+ios/scripts/archive.sh
+  s_eca9a78768b070::t_b931eea21703e2 5-6
+backend/src/main/java/com/albunyaan/tube/controller/LegalPagesController.java
+  s_eca9a78768b070::t_66b7b93ba9c99d 209-210
+  s_eca9a78768b070::t_55e13199c68603 179
+ios/scripts/convert-strings.py
+  s_eca9a78768b070::t_ddaa30e38d3fd2 173
+ios/FitrahTube/Features/Auth/AppleAuthProvider.swift
+  s_eca9a78768b070::t_0b0ace69f4b366 20-22
+  s_eca9a78768b070::t_c92aa74e70d471 64
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_eca9a78768b070::t_ba4958a12f3325 15910
+backend/src/test/java/com/albunyaan/tube/controller/LegalPagesControllerTest.java
+  s_eca9a78768b070::t_b204e4cfeb77bf 111-112,114
+docs/superpowers/plans/2026-09-22-ios-phase6-app-store-readiness.md
+  s_eca9a78768b070::t_1dddda9179da5e 262
+  s_eca9a78768b070::t_a5bac4537a59a8 114-115,168-169,247-248,268-269,295
+  s_eca9a78768b070::t_dfec535b3d542e 24,26,29-32,44,296
+ios/FitrahTubeTests/SignInCapabilitiesTests.swift
+  s_eca9a78768b070::t_04868172fb31ad 210-215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9af2cbf5febf3827df672c4a638418b4945bf555",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
