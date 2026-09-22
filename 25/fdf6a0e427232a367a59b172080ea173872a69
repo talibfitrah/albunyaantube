@@ -1,0 +1,20 @@
+docs/superpowers/plans/2026-09-02-ios-phase4-accounts.md
+  s_eca9a78768b070::t_e3219fc2bb232c 1670-1673,1778
+  s_eca9a78768b070::t_9bdde7f95b506e 1784
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25fdf6a0e427232a367a59b172080ea173872a69",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
