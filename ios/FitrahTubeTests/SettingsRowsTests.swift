@@ -119,6 +119,24 @@ struct SettingsRowsTests {
     // MARK: - About version string (`about_version_format` = "Version %1$@ (%2$@)", both args
     // strings per the task brief)
 
+    /// Owner directive 2026-09-21: fitrahtube.com only (why: `AboutLinks`' comment). The one link
+    /// allowed off that domain is the public source repository. A dead privacy link is an App
+    /// Review rejection, so the three legal URLs are pinned exactly.
+    @Test func everyAboutLinkIsOnFitrahtubeExceptTheSourceRepository() {
+        #expect(AboutLinks.legal.map(\.url.absoluteString) == [
+            "https://app.fitrahtube.com/privacy",
+            "https://app.fitrahtube.com/terms",
+            "https://app.fitrahtube.com/licenses",
+        ])
+        for link in AboutLinks.links + AboutLinks.legal {
+            let host = link.url.host() ?? ""
+            let allowed = host == "fitrahtube.com" || host.hasSuffix(".fitrahtube.com")
+                || link.url.absoluteString == "https://github.com/talibfitrah/albunyaantube"
+            #expect(allowed, "\(link.titleKey) leaves the app's domain: \(link.url)")
+            #expect(link.url.scheme == "https")
+        }
+    }
+
     @Test func aboutVersionFormatsBothArgumentsAsStrings() {
         #expect(AboutVersionText.format(version: "1.0.0", build: "7") == "Version 1.0.0 (7)")
     }

@@ -33,18 +33,29 @@ public class WellKnownController {
     private static final String ANDROID_PACKAGE_NAME = "com.albunyaan.tube";
 
     /**
-     * Universal Link paths the iOS app's parser actually resolves, derived
-     * from {@code ios/FitrahTube/App/DeepLinkParser.swift:26-32}: the
-     * {@code https} branch there accepts a 2-segment path whose first
-     * segment is {@code watch|channel|playlist} (mapping "watch" to the
-     * video route) and explicitly rejects "shorts"
-     * ({@code segments[0] != "shorts"} guard) and anything not exactly 2
-     * segments. That branch also strips a leading "api" segment, so
-     * {@code /api/watch/*} etc. parse too -- left out of this list on
-     * purpose per this ticket's instruction to advertise the human-facing
-     * paths only, not the REST API surface.
+     * Universal Link paths, derived from what the iOS parser resolves
+     * ({@code ios/FitrahTube/App/DeepLinkParser.swift:26-32}): a 2-segment
+     * path whose first segment is {@code watch|channel|playlist}, with or
+     * without a leading {@code api} segment, which the parser strips;
+     * {@code shorts} and any other segment count are rejected there.
+     * <p>
+     * The {@code /api/} forms are listed because they are what BOTH apps'
+     * share sheets actually emit ({@code ios ShareLinks.swift:14},
+     * {@code android ShareLinks.kt}) -- every link already in the wild carries
+     * {@code /api/}, and an AASA that omitted them (as this one did until
+     * 2026-09-21, on an instruction to advertise "human-facing paths only")
+     * meant no shared link could ever open the app.
+     * <p>
+     * Apple's legacy {@code paths} {@code *} SPANS slashes (neither
+     * {@code paths} nor {@code components} has a single-segment wildcard), so
+     * these claim every URL under the six prefixes. {@code SecurityConfig}
+     * already permits {@code /api/{watch,channel,playlist}/**} unauthenticated,
+     * and {@code DeepLinkParser} rejects anything but exactly two segments, so
+     * a captured deeper URL opens the app to nothing rather than to a route.
      */
-    private static final List<String> AASA_PATHS = List.of("/watch/*", "/channel/*", "/playlist/*");
+    private static final List<String> AASA_PATHS = List.of(
+            "/watch/*", "/channel/*", "/playlist/*",
+            "/api/watch/*", "/api/channel/*", "/api/playlist/*");
 
     private final IosProperties iosProperties;
     private final AndroidProperties androidProperties;

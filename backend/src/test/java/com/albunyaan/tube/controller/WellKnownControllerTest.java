@@ -65,7 +65,8 @@ class WellKnownControllerTest {
                 .andExpect(jsonPath("$.applinks.apps").isEmpty())
                 .andExpect(jsonPath("$.applinks.details[0].appID").value("72PF8SBQR6.com.albunyaan.tube"))
                 .andExpect(jsonPath("$.applinks.details[0].paths",
-                        containsInAnyOrder("/watch/*", "/channel/*", "/playlist/*")))
+                        containsInAnyOrder("/watch/*", "/channel/*", "/playlist/*",
+                                "/api/watch/*", "/api/channel/*", "/api/playlist/*")))
                 .andExpect(header().string("Cache-Control", containsString("max-age=3600")))
                 .andExpect(header().string("Cache-Control", containsString("public")));
     }

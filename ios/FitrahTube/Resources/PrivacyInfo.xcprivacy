@@ -29,6 +29,8 @@
     only by this app, never shared with a data broker.
   - System boot time (35F9.1) — `ProcessInfo.systemUptime` in `TapGate` (About's 7-taps-in-3s
     developer gesture), used to measure elapsed time inside the app.
+  - Disk space (E174.1) — `volumeAvailableCapacityForImportantUsage` in `OfflineStorage`, read
+    before a save for offline starts so one that cannot fit is refused with a visible message.
 -->
 <plist version="1.0">
 <dict>
@@ -139,6 +141,14 @@
             <key>NSPrivacyAccessedAPITypeReasons</key>
             <array>
                 <string>35F9.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>E174.1</string>
             </array>
         </dict>
     </array>

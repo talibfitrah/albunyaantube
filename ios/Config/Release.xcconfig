@@ -2,12 +2,11 @@
 // Info.plist's FITRAH_APPLE_SIGNIN, whether the app offers Sign in with Apple at all.
 FITRAH_TEAM_ID = 72PF8SBQR6
 // Sign in with Apple's SECOND flag (Stage 5 / M6). FITRAH_TEAM_ID being non-empty only says a
-// Team ID signed this build; it does NOT say the App ID com.albunyaan.tube has the Sign in with
-// Apple capability enabled in the developer portal -- and it does not (see the header comment in
-// FitrahTube.entitlements). With one flag the Apple button rendered in every build and
-// performRequests() would fail on the first signed device build: ruling F11's "a button that
-// cannot possibly finish". EMPTY here on purpose. Set it in the untracked Local.xcconfig -- to
-// anything non-empty -- once the portal entry exists.
+// Team ID signed this build; this flag says the App ID com.albunyaan.tube has the Sign in with
+// Apple capability enabled in THAT team's developer portal. The owner's team has had it since
+// 2026-09-20, but the tracked default stays EMPTY so a fork signing with another team does not
+// render ruling F11's "button that cannot possibly finish". Set in the untracked Local.xcconfig
+// by ios/scripts/write-local-xcconfig.sh.
 FITRAH_APPLE_SIGNIN_REGISTERED =
 // Google Sign-In's OAuth callback scheme (the REVERSED_CLIENT_ID out of GoogleService-Info.plist).
 // That file is USER-BLOCKED and git-ignored, so Local.xcconfig supplies the real value the day it
@@ -17,7 +16,7 @@ FITRAH_APPLE_SIGNIN_REGISTERED =
 // server is configured to redirect to it, and GIDSignIn.handle() refuses any URL that is not its
 // own configured /oauth2callback. WHOEVER CUTS THE FIRST SIGNED BUILD must override it.
 GID_REVERSED_CLIENT_ID = com.googleusercontent.apps.fitrahtube-no-client-id
-// Local.xcconfig may set FITRAH_TEAM_ID and GID_REVERSED_CLIENT_ID only; API_BASE_URL is fixed for
-// Release.
+// Local.xcconfig may set FITRAH_TEAM_ID, GID_REVERSED_CLIENT_ID and FITRAH_APPLE_SIGNIN_REGISTERED;
+// API_BASE_URL is fixed for Release.
 #include? "Local.xcconfig"
 API_BASE_URL = https:/$()/app.fitrahtube.com/

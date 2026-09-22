@@ -48,15 +48,33 @@ nonisolated enum AboutVersionText {
     }
 }
 
-private struct AboutLink: Identifiable {
+struct AboutLink: Identifiable {
     let titleKey: String
     let url: URL
     var id: String { titleKey }
 }
 
-/// Android's `AboutFragment` (`favorites-settings-about.md:258-288`). URLs are Android's verbatim
-/// (RULING 34); links open via `Link`, SwiftUI's native equivalent of Android's `ACTION_VIEW`
-/// external-browser intent.
+/// Internal, not `private` on the view, so `SettingsRowsTests` can pin every host.
+///
+/// Android's ANDROID-ABOUT-URL-01 choices, mirrored (`AboutFragment.kt` `setupLinks`): every link
+/// used to point at `albunyaan.tube`, which has no DNS record. The legal pages are the backend's
+/// `LegalPagesController`, on the host the share links already use. There is NO website row: no
+/// public site exists (`fitrahtube.com` 404s, `app.fitrahtube.com/` 403s — probed 2026-09-21), and
+/// Android hides the row by owner decision for the same reason. The repository is the slug the git
+/// remote actually points at; the old one 404s.
+nonisolated enum AboutLinks {
+    static let links: [AboutLink] = [
+        AboutLink(titleKey: "about_github", url: URL(string: "https://github.com/talibfitrah/albunyaantube")!),
+    ]
+    static let legal: [AboutLink] = [
+        AboutLink(titleKey: "about_privacy_policy", url: URL(string: "https://app.fitrahtube.com/privacy")!),
+        AboutLink(titleKey: "about_terms_of_service", url: URL(string: "https://app.fitrahtube.com/terms")!),
+        AboutLink(titleKey: "about_open_source_licenses", url: URL(string: "https://app.fitrahtube.com/licenses")!),
+    ]
+}
+
+/// Android's `AboutFragment` (`favorites-settings-about.md:258-288`). Links open via `Link`,
+/// SwiftUI's native equivalent of Android's `ACTION_VIEW` external-browser intent.
 struct AboutView: View {
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
@@ -64,16 +82,6 @@ struct AboutView: View {
     @State private var tapGate = TapGate()
     @State private var stepsAwayMessage: BannerMessage?
     @State private var showDeveloperDialog = false
-
-    private let links: [AboutLink] = [
-        AboutLink(titleKey: "about_website", url: URL(string: "https://albunyaan.tube")!),
-        AboutLink(titleKey: "about_github", url: URL(string: "https://github.com/albunyaan/albunyaan-tube")!),
-    ]
-    private let legal: [AboutLink] = [
-        AboutLink(titleKey: "about_privacy_policy", url: URL(string: "https://albunyaan.tube/privacy")!),
-        AboutLink(titleKey: "about_terms_of_service", url: URL(string: "https://albunyaan.tube/terms")!),
-        AboutLink(titleKey: "about_open_source_licenses", url: URL(string: "https://albunyaan.tube/licenses")!),
-    ]
 
     var body: some View {
         Form {
@@ -84,10 +92,10 @@ struct AboutView: View {
             .listRowBackground(Color.clear)
 
             Section(String(localized: "about_links")) {
-                ForEach(links) { linkRow($0) }
+                ForEach(AboutLinks.links) { linkRow($0) }
             }
             Section(String(localized: "about_legal")) {
-                ForEach(legal) { linkRow($0) }
+                ForEach(AboutLinks.legal) { linkRow($0) }
             }
             // Phase 3 Task 8 (spec §10's "known ceiling, documented in the About -> Help text"):
             // a cast stream URL is bound to the phone's public IP, so the receiver can only fetch

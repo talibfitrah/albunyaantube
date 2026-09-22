@@ -1,3 +1,5 @@
+// The two sign-in keys below are written for you by ios/scripts/write-local-xcconfig.sh; copy and
+// edit this file by hand only for a different team.
 // Copy this file to Local.xcconfig (gitignored) and fill in your own Apple Developer Team ID
 // to sign+run on a physical device. Not needed for simulator builds.
 FITRAH_TEAM_ID = ABCDE12345

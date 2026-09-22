@@ -1,23 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Phase 4 Task 2. Sign in with Apple is a capability, and a capability is an entitlement — there is
-  no runtime API to read your own entitlements, so this file is only half the story: Info.plist's
-  FITRAH_APPLE_SIGNIN carries the build-time fact the UI reads (project.yml).
+  Two capabilities. There is no runtime API to read your own entitlements, and an unsigned
+  simulator build carries none (`CODE_SIGNING_ALLOWED[sdk=iphonesimulator*] = NO`, project.yml:26),
+  so NEITHER is exercised by the gate; both are proven on a signed device build only.
 
-  "Default" means a first-party Apple ID sign-in (the alternative, "Default WebCredentials", is for
-  sharing an account system with a website — FitrahTube has none).
+  1. Sign in with Apple (Phase 4 Task 2). "Default" means a first-party Apple ID sign-in (the
+     alternative, "Default WebCredentials", is for sharing an account system with a website —
+     FitrahTube has none). The owner registered the App ID `com.albunyaan.tube` with this
+     capability on 2026-09-20. The UI cannot read this file, so it reads the build-time flag
+     FITRAH_APPLE_SIGNIN_REGISTERED instead, set in the untracked Config/Local.xcconfig
+     (scripts/write-local-xcconfig.sh).
 
-  Never consumed by the gate: `CODE_SIGNING_ALLOWED[sdk=iphonesimulator*] = NO` (project.yml:26)
-  means there is no CodeSign step on either simulator build, Debug or Release. It matters the day a
-  device build is signed — which needs the App ID `com.albunyaan.tube` registered in the portal
-  with the capability enabled, and it is NOT registered today.
+  2. Associated Domains: Universal Links for the app's own share URLs,
+     https://app.fitrahtube.com/{watch,channel,playlist}/<id>, with or without a leading /api
+     (`DeepLinkParser` routes both; `.onOpenURL` in FitrahTubeApp delivers them). The backend's
+     AASA (`WellKnownController`) lists those six prefixes with Apple's `*`, which SPANS slashes;
+     a deeper URL is captured too and `DeepLinkParser` then opens the app to nothing. The App ID
+     needs this capability enabled in the portal as well, and links only fire once the AASA is
+     served on app.fitrahtube.com; until then they open in Safari.
 -->
 <plist version="1.0">
 <dict>
     <key>com.apple.developer.applesignin</key>
     <array>
         <string>Default</string>
+    </array>
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>applinks:app.fitrahtube.com</string>
     </array>
 </dict>
 </plist>

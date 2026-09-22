@@ -143,7 +143,7 @@ import Testing
         try await client.sendPasswordReset(email: "a@b.test")
     }
 
-    // MARK: - UnavailableAuthClient (no GoogleService-Info.plist — this machine, CI, every checkout)
+    // MARK: - UnavailableAuthClient (what the app builds with no GoogleService-Info.plist: CI, any checkout without the owner's file)
 
     @Test func theUnavailableClientYieldsSignedOutOnceAndFinishes() async {
         var seen: [AuthState] = []

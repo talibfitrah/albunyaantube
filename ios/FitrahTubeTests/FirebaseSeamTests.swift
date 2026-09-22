@@ -64,6 +64,32 @@ import Testing
             == "NSPrivacyCollectedDataTypeDeviceID" })
     }
 
+    /// The WHOLE required-reason table, so the next such API added without a declaration has an
+    /// obvious place to fail. Disk space, E174.1 (Apple: "check whether there is sufficient disk
+    /// space to write files… The app must behave differently based on disk space in a way that is
+    /// observable to users"): `OfflineStorage` reads `volumeAvailableCapacityForImportantUsage`
+    /// to refuse a save that cannot fit. Read from the BUILT bundle, like the test above.
+    @Test func thePrivacyManifestRequiredReasonTableIsPinned() throws {
+        let url = try #require(Bundle.main.url(forResource: "PrivacyInfo", withExtension: "xcprivacy"))
+        let manifest = try PropertyListSerialization.propertyList(
+            from: Data(contentsOf: url), format: nil) as? [String: Any]
+        let accessed = try #require(manifest?["NSPrivacyAccessedAPITypes"] as? [[String: Any]])
+        let pairs = accessed.compactMap { entry -> (String, [String])? in
+            guard let type = entry["NSPrivacyAccessedAPIType"] as? String,
+                  let codes = entry["NSPrivacyAccessedAPITypeReasons"] as? [String] else { return nil }
+            return (type, codes)
+        }
+        // A category declared twice must FAIL, not trap (`uniqueKeysWithValues:` would).
+        #expect(pairs.count == accessed.count, "an entry is missing its type or reasons")
+        let reasons = Dictionary(pairs, uniquingKeysWith: { first, _ in first })
+        #expect(reasons.count == pairs.count, "a category is declared more than once")
+        #expect(reasons == [
+            "NSPrivacyAccessedAPICategoryUserDefaults": ["CA92.1"],
+            "NSPrivacyAccessedAPICategorySystemBootTime": ["35F9.1"],
+            "NSPrivacyAccessedAPICategoryDiskSpace": ["E174.1"],
+        ])
+    }
+
     /// There is NO runtime API to read your own entitlements, and an unsigned simulator build
     /// carries none at all — so Sign in with Apple's availability is a BUILD-TIME fact, baked into
     /// Info.plist from `FITRAH_TEAM_ID`. Task 5's `SignInCapabilities.apple` reads exactly this key.

@@ -7,9 +7,9 @@ import Testing
 @Suite struct SignInCapabilitiesTests {
 
     /// Written against `FirebaseBootstrap.optionsFileExists` rather than a literal `false` (Task 2's
-    /// precedent): it is `false` on this machine, on CI and in every fresh checkout, and the day a
-    /// real `GoogleService-Info.plist` lands the SAME lines assert the configured behaviour with no
-    /// test edit.
+    /// precedent): it is `false` on CI and in every checkout without the owner's (git-ignored)
+    /// `GoogleService-Info.plist`, and `true` where `copy-firebase-plist.sh` has staged it -- the
+    /// SAME lines assert the configured behaviour either way, with no test edit.
     @Test func currentReportsNothingConfiguredWithNoOptionsFile() {
         let capabilities = SignInCapabilities.current()
         if !FirebaseBootstrap.optionsFileExists {
@@ -19,10 +19,10 @@ import Testing
     }
 
     /// Stage 5 / M6: Apple needs BOTH build flags. `FITRAH_TEAM_ID` is committed in both tracked
-    /// xcconfigs, so `FITRAH_APPLE_SIGNIN` alone was non-empty in every build while the App ID
-    /// `com.albunyaan.tube` has no Sign in with Apple capability registered (the entitlements file's
-    /// own header records the counter-fact) — the F11 trap exactly, a button that renders and then
-    /// fails `performRequests()` on the first signed device build. `FITRAH_APPLE_SIGNIN_REGISTERED`
+    /// xcconfigs, so `FITRAH_APPLE_SIGNIN` alone is non-empty in every build and says nothing about
+    /// whether the signing team's App ID has the Sign in with Apple capability — the F11 trap
+    /// exactly, a button that renders and then fails `performRequests()` on the first signed
+    /// device build. `FITRAH_APPLE_SIGNIN_REGISTERED`
     /// is EMPTY in both tracked xcconfigs, so a build that does not override it reports Apple as
     /// unconfigured.
     ///
@@ -150,12 +150,12 @@ import Testing
                 == (FirebaseBootstrap.optionsFileExists
                     && SignInCapabilities.googleCallbackSchemeMatches(clientID: FirebaseBootstrap.googleClientID,
                                                                       schemes: schemes)),
-                "the Google button rendered on a client id this bundle carries no callback scheme for: \(schemes)")
+                "the Google button and the callback-scheme check disagree (plist: \(FirebaseBootstrap.optionsFileExists), schemes in bundle: \(schemes.count))")
     }
 
-    /// Apple is hidden, and Stage 5 / M6 changed WHY: `FITRAH_APPLE_SIGNIN` still carries the Team
-    /// ID, but `FITRAH_APPLE_SIGNIN_REGISTERED` is empty in both tracked xcconfigs because the App
-    /// ID has no Sign in with Apple capability. Either half being false is the honest answer here;
+    /// Apple follows its flags, and Stage 5 / M6 changed WHICH: `FITRAH_APPLE_SIGNIN` still carries
+    /// the Team ID, but `FITRAH_APPLE_SIGNIN_REGISTERED` is empty in both tracked xcconfigs and set
+    /// only by an untracked `Local.xcconfig`. Either half being false is the honest answer here;
     /// the flag assertion itself lives in `appleNeedsTheRegisteredFlagAndNotJustATeamId`.
     @MainActor @Test func theAppleProviderIsUnavailableBecauseFirebaseIsNotConfigured() async {
         // R9-P3 #7: `as? String != ""` was satisfied by the key's total ABSENCE — `nil as? String`
@@ -177,10 +177,11 @@ import Testing
     /// second call.
     ///
     /// It is asserted through `isPresenting` rather than by racing two real calls because with no
-    /// `GoogleService-Info.plist` (this machine, CI, every fresh checkout) `presentSignIn()` returns
-    /// at its configure guard and NEVER reaches the flow — so an in-flight state is unreachable from
-    /// the outside here. Setting the latch is exactly the state a started flow leaves behind. The
-    /// second expectation is the load-bearing one: a refused re-entrant call must not run the
+    /// `GoogleService-Info.plist` (CI, every checkout without the owner's file) `presentSignIn()`
+    /// returns at its configure guard and NEVER reaches the flow, and with one it needs a live
+    /// Apple ID -- so an in-flight state is unreachable from the outside in the gate either way.
+    /// Setting the latch is exactly the state a started flow leaves behind. The second
+    /// expectation is the load-bearing one: a refused re-entrant call must not run the
     /// release path and clear the FIRST flow's latch, which is what makes the guard's placement
     /// (before the claim, so before the `defer`) part of the contract rather than an accident.
     @MainActor @Test func aSecondPresentSignInIsRefusedWithoutDisturbingTheFirstFlow() async {
