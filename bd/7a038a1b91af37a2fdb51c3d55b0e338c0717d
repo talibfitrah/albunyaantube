@@ -1,0 +1,43 @@
+backend/src/test/java/com/albunyaan/tube/controller/LegalPagesControllerTest.java
+  s_eca9a78768b070::t_bcad42cd606b17 111-112
+README.md
+  s_eca9a78768b070::t_5f21453353dc7c 54
+  s_eca9a78768b070::t_c232c7c20a5835 79
+  s_eca9a78768b070::t_1d634a2dbbcbfc 3
+android/app/src/main/res/values-ar/strings.xml
+  s_eca9a78768b070::t_060b4d6c312091 610
+backend/src/main/java/com/albunyaan/tube/controller/LegalPagesController.java
+  s_eca9a78768b070::t_edb47c1c1c122f 38
+  s_eca9a78768b070::t_63b363a8120a0b 388-389
+  s_eca9a78768b070::t_759837f014c04a 207-210
+  s_eca9a78768b070::t_3649fabce7ff9b 176
+android/app/src/main/res/values-nl/strings.xml
+  s_eca9a78768b070::t_87a58727f0df5c 547
+android/app/src/main/res/values/strings.xml
+  s_eca9a78768b070::t_4492112fdeded6 285
+docs/status/DEPLOYMENT_GUIDE.md
+  s_eca9a78768b070::t_b76ee47ccbe842 342,345-346
+  s_eca9a78768b070::t_fc10c8d02b3e9d 111-112
+  s_eca9a78768b070::t_a4bd372663aaa3 329-330,340,349,352-354,360,363-368,370,372-375,378-384
+  s_eca9a78768b070::t_5cb7f2236037d7 356-359,362
+  s_eca9a78768b070::t_6ef889f60b615a 385
+  s_eca9a78768b070::t_8979d9753eae83 341,355,386
+releases-meta.json
+  s_eca9a78768b070::t_6961eab60ab36b 78-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bd7a038a1b91af37a2fdb51c3d55b0e338c0717d",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
