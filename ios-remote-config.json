@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "minAppVersion": "1.0.0",
-  "resolverOrder": ["visionosHLS", "androidItag18"],
+  "resolverOrder": ["visionosHLS", "androidItag18", "embed"],
   "manifestCacheSeconds": 3600,
   "featuredCategoryId": "itirf9pGpAvoBT5VSkEc",
   "downloadsEnabled": true,

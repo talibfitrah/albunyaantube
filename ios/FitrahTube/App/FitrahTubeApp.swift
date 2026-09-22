@@ -479,15 +479,34 @@ struct FitrahTubeApp: App {
 /// Spec D3's blocking "update required" surface: full-screen, opaque, no dismiss and no bypass --
 /// it sits over everything and swallows every touch until a refreshed config (or an updated
 /// build) clears `updateRequired`.
-// TODO: add an "Update" button linking to the App Store listing once the app has a store id.
+///
+/// Phase 6 Task 5: the "Update" button opens the App Store listing, and exists only once
+/// `FITRAH_APP_STORE_ID` (project.yml, empty until the owner creates the app record) is numeric.
 struct UpdateRequiredView: View {
+    @Environment(\.openURL) private var openURL
+    private let storeURL = AppStoreLink.url(
+        appStoreID: Bundle.main.object(forInfoDictionaryKey: "FITRAH_APP_STORE_ID") as? String)
+
     var body: some View {
         EmptyStateView(
             systemImage: "arrow.down.circle.fill",
             title: String(localized: "app_update_required_title"),
-            message: String(localized: "app_update_required_message")
+            message: String(localized: "app_update_required_message"),
+            action: storeURL.map { url in
+                (title: String(localized: "app_update_required_button"), run: { openURL(url) })
+            }
         )
         .background(Color.background.ignoresSafeArea())
+    }
+}
+
+/// The App Store listing URL for a numeric Apple ID; nil for anything else -- the unset build
+/// setting arrives as "", and a stray non-digit would produce a link that 404s.
+nonisolated enum AppStoreLink {
+    static func url(appStoreID: String?) -> URL? {
+        guard let appStoreID, !appStoreID.isEmpty,
+              appStoreID.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return URL(string: "https://apps.apple.com/app/id\(appStoreID)")
     }
 }
 

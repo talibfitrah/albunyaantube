@@ -46,4 +46,14 @@ struct UpdateGateTests {
         #expect(FitrahTubeApp.isUpdateRequired(appVersion: "1.0.0", config: config(min: "2.0.0")))
         #expect(FitrahTubeApp.isUpdateRequired(appVersion: "1.0.0", config: config(min: "1.0.0")) == false)
     }
+
+    /// Phase 6 Task 5: the screen's "Update" button exists only once the owner has put the numeric
+    /// App Store ID into `project.yml` -- the tracked default arrives as "" and must render no button.
+    @Test func theUpdateButtonExistsOnlyForANumericAppStoreID() {
+        #expect(AppStoreLink.url(appStoreID: "1234567890")?.absoluteString == "https://apps.apple.com/app/id1234567890")
+        #expect(AppStoreLink.url(appStoreID: "") == nil)          // the tracked default today
+        #expect(AppStoreLink.url(appStoreID: nil) == nil)
+        #expect(AppStoreLink.url(appStoreID: "id123") == nil)
+        #expect(AppStoreLink.url(appStoreID: "12 3") == nil)
+    }
 }

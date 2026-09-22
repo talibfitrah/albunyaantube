@@ -530,6 +530,11 @@ EXTRA_KEYS = {
         "ar": "هذا الإصدار من فطرة تيوب لم يعد مدعومًا. يرجى التحديث للمتابعة.",
         "nl": "Deze versie van FitrahTube wordt niet meer ondersteund. Werk de app bij om door te gaan.",
     },
+    "app_update_required_button": {
+        "en": "Update",
+        "ar": "تحديث",
+        "nl": "Bijwerken",
+    },
     # Shorts chrome (B4 tasks 2-3). Both are iOS-only. Android's kebab content description is a
     # hard-coded "More options" literal in fragment_shorts_player.xml:44 (recorded as a defect in
     # playlist-detail-shorts.md 9.3, not a string resource we can port), and its scrub bar is an

@@ -508,6 +508,28 @@
       },
       "shouldTranslate": false
     },
+    "app_update_required_button": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تحديث"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bijwerken"
+          }
+        }
+      }
+    },
     "app_update_required_message": {
       "localizations": {
         "ar": {

@@ -60,12 +60,9 @@ struct AboutLink: Identifiable {
 /// used to point at `albunyaan.tube`, which has no DNS record. The legal pages are the backend's
 /// `LegalPagesController`, on the host the share links already use. There is NO website row: no
 /// public site exists (`fitrahtube.com` 404s, `app.fitrahtube.com/` 403s — probed 2026-09-21), and
-/// Android hides the row by owner decision for the same reason. The repository is the slug the git
-/// remote actually points at; the old one 404s.
+/// Android hides the row by owner decision for the same reason. No GitHub row either (Phase 6
+/// OQ-1 (a)): the app links only to fitrahtube.com.
 nonisolated enum AboutLinks {
-    static let links: [AboutLink] = [
-        AboutLink(titleKey: "about_github", url: URL(string: "https://github.com/talibfitrah/albunyaantube")!),
-    ]
     static let legal: [AboutLink] = [
         AboutLink(titleKey: "about_privacy_policy", url: URL(string: "https://app.fitrahtube.com/privacy")!),
         AboutLink(titleKey: "about_terms_of_service", url: URL(string: "https://app.fitrahtube.com/terms")!),
@@ -91,9 +88,6 @@ struct AboutView: View {
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
 
-            Section(String(localized: "about_links")) {
-                ForEach(AboutLinks.links) { linkRow($0) }
-            }
             Section(String(localized: "about_legal")) {
                 ForEach(AboutLinks.legal) { linkRow($0) }
             }

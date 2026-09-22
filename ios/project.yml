@@ -27,6 +27,10 @@ settings:
     DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
+    # Phase 6 Task 5: the numeric App Store ID (App Store Connect > App Information > Apple ID).
+    # Empty until the owner creates the app record; `UpdateRequiredView` hides its Update button
+    # while it is empty. Public and identical for Debug/Release, so it lives here, not in an xcconfig.
+    FITRAH_APP_STORE_ID: ""
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
 
@@ -168,6 +172,7 @@ targets:
         # this says the App ID actually has the capability registered. Empty in both tracked
         # xcconfigs, set once in the untracked Local.xcconfig. SignInCapabilities requires both.
         FITRAH_APPLE_SIGNIN_REGISTERED: $(FITRAH_APPLE_SIGNIN_REGISTERED)
+        FITRAH_APP_STORE_ID: $(FITRAH_APP_STORE_ID)
 
   FitrahTubeTests:
     type: bundle.unit-test
