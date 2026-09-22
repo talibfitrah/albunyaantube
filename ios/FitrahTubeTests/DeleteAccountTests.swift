@@ -246,17 +246,16 @@ struct DeleteAccountTests {
     @Test func aVerdictForTheAccountStartHasNotObservedYetStillWipesAndMarks() async throws {
         let arriving = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true,
                                 providerIDs: ["password"])
-        // Round 2 / item 1: the DURABLE record is seeded with the in-memory one. B's verdict below
-        // writes `pendingUid = B`; if the process dies before `start()` drains `.signedIn(B)`, the
-        // relaunch reads the holder from here — and a holder still naming the PREVIOUS account
-        // downgrades B's own device wipe to a row-only delete.
+        // Round 2 / item 1 → CF-A-51: the DURABLE record follows the in-memory seed, but only once
+        // B's `/me` has SUCCEEDED (the round below answers 200) — a holder still naming the
+        // PREVIOUS account would downgrade B's own device wipe to a row-only delete on a relaunch,
+        // and a B whose `/me` never succeeded is, by the ruling, not the holder.
         let marker = InMemoryDeletionMarker()
         marker.lastSignedInUid = "uid-previous"
         let fixture = makeFixture(delete: .json(204, ""), user: arriving, marker: marker)
         // NO `start()`: Firebase holds B and the session has not heard.
         _ = try await fixture.auth.signIn(email: "b@fitrah.test", password: "p")
-        let round = Task { await fixture.session.refresh(maxAttempts: 1) }
-        await yieldUntil { fixture.transport.sent.count == 1 }
+        await fixture.session.refresh(maxAttempts: 1)
         #expect(fixture.session.user == nil, "the precondition is the window start() has not closed")
         #expect(marker.lastSignedInUid == arriving.uid, "the durable holder still names the previous account")
 
@@ -269,7 +268,6 @@ struct DeleteAccountTests {
         await yieldUntil { fixture.wipes.count > 0 }
         #expect(fixture.wipes.count == 1, "the ruling-C13 wipe never ran for a deleted account")
         #expect(fixture.wipes.markedUids == [arriving.uid])
-        await round.value
     }
 
     /// Round 2 / item 1, the seed's re-check. `currentUser()` answers X and the round suspends on
@@ -1200,6 +1198,58 @@ struct DeleteAccountTests {
         #expect(wipes.count == 0, "a wipe owed to A erased the device B has used since")
         #expect(asked.withLock { $0 } == ["uid-a"], "A's debt was dropped instead of paid by uid")
         #expect(marker.pendingUid == nil)
+    }
+
+    /// CF-A-51: a session whose `/me` answers `me`, on a device whose durable holder is already
+    /// `uid-previous`. The three tests below are the write side's whole contract.
+    private func makeSessionAnswering(_ me: HTTPResponse, marker: InMemoryDeletionMarker)
+        -> (session: AccountSession, auth: FakeAuthClient, status: AccountStatusCenter) {
+        let auth = FakeAuthClient(state: .signedOut)
+        let status = AccountStatusCenter()
+        let account = AccountClient(transport: ScriptedTransport([me]), baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        let session = AccountSession(auth: auth, account: account, stores: [], status: status,
+                                     sleep: { _ in }, wipe: { _ in nil }, marker: marker)
+        return (session, auth, status)
+    }
+
+    /// CF-A-51: a Firebase sign-in is not proof that the account holds the device. Written at
+    /// sign-in, a blocked account became the holder, and the PREVIOUS holder's pending device wipe
+    /// was downgraded to a row-only delete — its search history, caches, offline files and device
+    /// id never swept. The record moves only on a `/me` that SUCCEEDED for that account.
+    @Test func aBlockedSignInDoesNotBecomeTheDevicesHolder() async throws {
+        let marker = InMemoryDeletionMarker()
+        marker.lastSignedInUid = "uid-previous"
+        let (session, auth, status) = makeSessionAnswering(.json(403, #"{"code":"ACCOUNT_BLOCKED"}"#), marker: marker)
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { status.pending != nil }   // the block's own sign-out announcement
+
+        #expect(session.state == .signedOut, "the precondition is that the block dropped the session")
+        #expect(marker.lastSignedInUid == "uid-previous", "a blocked sign-in was recorded as the device's holder")
+    }
+
+    /// …and a `/me` that FAILED for any other reason is no proof either.
+    @Test func aSignInWhoseMeFailsDoesNotBecomeTheDevicesHolder() async throws {
+        let marker = InMemoryDeletionMarker()
+        marker.lastSignedInUid = "uid-previous"
+        let (session, auth, _) = makeSessionAnswering(.json(500, "{}"), marker: marker)
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { if case .failed = session.state { true } else { false } }
+
+        #expect(marker.lastSignedInUid == "uid-previous", "a sign-in whose /me failed was recorded as the device's holder")
+    }
+
+    /// The positive control: the ONE writer. A `/me` that succeeded is the proof.
+    @Test func aSuccessfulMeMakesTheAccountTheDevicesHolder() async throws {
+        let marker = InMemoryDeletionMarker()
+        marker.lastSignedInUid = "uid-previous"
+        let (session, auth, _) = makeSessionAnswering(.json(200, Self.meJSON), marker: marker)
+        let running = Task { await session.start() }; defer { running.cancel() }
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+        await yieldUntil { session.state.me != nil }
+
+        #expect(marker.lastSignedInUid == FakeAuthClient.defaultUser.uid, "a successful /me did not record the account as the device's holder")
     }
 
     /// …and the production conformer's half of it, which nothing touched: the key, the read from a

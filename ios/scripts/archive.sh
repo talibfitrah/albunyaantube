@@ -44,6 +44,13 @@ bash scripts/write-local-xcconfig.sh
 [ -d Vendor/GoogleCast.xcframework ] || ./scripts/fetch-cast-sdk.sh
 xcodegen generate
 
+# Same trap test.sh documents: -onlyUsePackageVersionsFromResolvedFile on a -derivedDataPath whose
+# SourcePackages cache is EMPTY (a fresh checkout) blocks the package checkout instead of fetching
+# it, and xcodebuild fails with no obvious cause. One-time bootstrap for that directory
+# (~44 s, ~1.6 GB); never delete an existing SourcePackages.
+[ -d DerivedData-Release/SourcePackages ] || \
+    xcodebuild -resolvePackageDependencies -project FitrahTube.xcodeproj -derivedDataPath DerivedData-Release
+
 # Only the Archive subtree is recreated; DerivedData-Release/SourcePackages is never deleted.
 rm -rf "${OUT:?}"
 xcodebuild archive \

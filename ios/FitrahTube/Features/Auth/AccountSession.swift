@@ -20,8 +20,8 @@ import Observation
 
 /// The production marker: two `UserDefaults` keys. `pendingUid` is written before the detached
 /// cleanup starts and cleared only once the wipe reported no error. `lastSignedInUid` is written
-/// by `start()`'s `.signedIn` arm and by `fetch`'s `land()`-window seed, and cleared — only while
-/// it still names that account — by a redeemed deletion and by the age-ineligible teardown.
+/// by `fetch` once `/me` has SUCCEEDED for that account (CF-A-51), and cleared — only while it
+/// still names that account — by a redeemed deletion and by the age-ineligible teardown.
 @MainActor final class UserDefaultsDeletionMarker: DeletionMarking {
     nonisolated static let defaultsKey = "com.albunyaan.tube.deletionPending"
     nonisolated static let lastSignedInKey = "com.albunyaan.tube.lastSignedInUid"
@@ -186,10 +186,11 @@ nonisolated enum AccountState: Sendable, Equatable {
             case .signedIn(let signedIn):
                 user = signedIn
                 lastKnownUid = signedIn.uid
-                // Durable, and never cleared by the sign-out below (Task 34 / CF-A-44): this is
-                // what `resumePendingDeletion()` reads on the NEXT launch, when `lastKnownUid` is
-                // nil because the process is new.
-                marker.lastSignedInUid = signedIn.uid
+                // NOT `marker.lastSignedInUid` (CF-A-51): a Firebase sign-in is not proof that this
+                // account holds the device — it may be blocked or fail `/me` — and recording it
+                // here downgraded the previous holder's pending device wipe to a row-only delete.
+                // `fetch` writes the durable record once `/me` has succeeded (the one writer; the
+                // trade it makes is stated there).
                 // A new account on this device gets its own deletion latch: without this, a second
                 // account deleted in the same process would find the first one's task and wipe
                 // nothing (`handleDeletion`).
@@ -229,6 +230,10 @@ nonisolated enum AccountState: Sendable, Equatable {
         //     unreadable too, so `pendingUid` reads nil above and this is never reached.)
         //   * Round 3 / item 1: nobody signed in and NO holder on record, because
         //     `terminateAgeIneligible()` had forgotten an under-13 account in between.
+        // CF-A-51: the durable record is written only by a `/me` that SUCCEEDED (`fetch`). An
+        // account whose `/me` never succeeded on this device but that Firebase still holds across
+        // the relaunch is not orphaned by that: `signedIn` — Firebase's `currentUser` — is the
+        // first term here and counts as positive evidence on its own.
         if (signedIn ?? marker.lastSignedInUid) == pending {
             // Round 2 / P1: this runs from `RootView`'s `.task` with the UI live, so an account can
             // land (`SignInViewModel.land()`), bind and pull inside the wipe's own awaits. It only
@@ -411,22 +416,30 @@ nonisolated enum AccountState: Sendable, Equatable {
         // account's own verdict. Firebase is the only live source of who this round is for. It only
         // ever ADDS: a nil answer (a guest's Retry) must not forget the account that just left, and
         // once `start()` has observed anybody (`user`, read AFTER the await) its write is the truth.
+        // CF-A-51: the seed no longer writes the DURABLE record; `seeded` carries the identity to
+        // the one writer below, for the round `start()` has not observed when `/me` lands.
+        var seeded: String?
         if startedFor == nil, let uid = await auth.currentUser()?.uid, user == nil {
             lastKnownUid = uid
-            // Durable too, for the one case the record is CONSULTED in: this account's verdict
-            // wrote `pendingUid`, the session was already gone (the bare-401 path force-signs out
-            // before the verdict arrives; `performDeletion` signs out itself) and the wipe failed
-            // or the process died — all before `start()` drained its `.signedIn`. The relaunch then
-            // finds nobody signed in and reads the holder from here; still naming the PREVIOUS
-            // account, it would downgrade this one's device wipe to a row-only delete. (While
-            // Firebase still holds the account, `signedIn == pending` and this is never read.)
-            marker.lastSignedInUid = uid
+            seeded = uid
         }
         for attempt in 1...max(1, maxAttempts) {
             do {
                 let me = try await account.me()
                 guard publishable() else { return }
                 state = .loaded(me)
+                // THE ONE WRITER of the durable holder (CF-A-51): a `/me` that succeeded is the
+                // proof that this account holds the device. Written at sign-in, a blocked account
+                // or a failed `/me` became the "holder", and the previous account's pending
+                // DEVICE-WIDE wipe (`resumePendingDeletion`) was downgraded to a row-only delete.
+                // The marker only matters when Firebase holds NOBODY at launch, so the trade is:
+                // an account whose `/me` never succeeded here, which then signed OUT before a
+                // relaunch, is not a holder — rows it wrote in that failed window go with the
+                // previous account's device wipe. While it stays signed in, Firebase's own answer
+                // protects it. `user` is this round's identity (`publishable()` above); `seeded`
+                // is Firebase's answer for the nil-started `land()` round `start()` has not
+                // observed yet.
+                if let holder = user?.uid ?? seeded { marker.lastSignedInUid = holder }
                 bindSyncIfNeeded(to: me.uid)
                 return
             } catch {
