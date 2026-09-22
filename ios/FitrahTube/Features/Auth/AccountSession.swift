@@ -8,8 +8,9 @@ import Observation
 @MainActor protocol DeletionMarking: AnyObject, Sendable {
     var pendingUid: String? { get set }
 
-    /// The last account that signed in on this device, kept DURABLY and never cleared by a
-    /// sign-out (Task 34 / CF-A-44). `pendingUid` alone cannot be redeemed safely, because the
+    /// The last account whose `/me` SUCCEEDED on this device (CF-A-51 — a sign-in alone is not
+    /// proof), kept DURABLY and never cleared by a sign-out (Task 34 / CF-A-44). `pendingUid`
+    /// alone cannot be redeemed safely, because the
     /// question "may this wipe still run?" has two answers that look identical at launch: with
     /// nobody signed in, the deleted account being gone (redeem) and somebody ELSE's library
     /// sitting on the device (never device-wide; by uid only) both present as `currentUser == nil`. The in-memory
@@ -237,7 +238,8 @@ nonisolated enum AccountState: Sendable, Equatable {
         if (signedIn ?? marker.lastSignedInUid) == pending {
             // Round 2 / P1: this runs from `RootView`'s `.task` with the UI live, so an account can
             // land (`SignInViewModel.land()`), bind and pull inside the wipe's own awaits. It only
-            // ever DOWNGRADES: taken over, the wiper deletes nothing device-wide and the debt falls
+            // ever DOWNGRADES: taken over, the wiper deletes no rows (it still sweeps history, caches
+            // and the device id) and the debt falls
             // through to the by-uid arm below. The pending account signing back in is no takeover.
             var takenOverInsideTheWipe = false
             let wipeError = await wipe {

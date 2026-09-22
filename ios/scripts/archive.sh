@@ -47,8 +47,8 @@ xcodegen generate
 # Same trap test.sh documents: -onlyUsePackageVersionsFromResolvedFile on a -derivedDataPath whose
 # SourcePackages cache is EMPTY (a fresh checkout) blocks the package checkout instead of fetching
 # it, and xcodebuild fails with no obvious cause. One-time bootstrap for that directory
-# (~44 s, ~1.6 GB); never delete an existing SourcePackages. `workspace-state.json` is what SPM
-# writes LAST, so a cache killed mid-checkout (checkouts/ half-populated) is bootstrapped again.
+# (~44 s, ~1.6 GB); never delete an existing SourcePackages. `workspace-state.json` is present
+# once SPM has finished a resolve; absent on a fresh checkout.
 [ -f DerivedData-Release/SourcePackages/workspace-state.json ] || \
     xcodebuild -resolvePackageDependencies -project FitrahTube.xcodeproj -derivedDataPath DerivedData-Release
 

@@ -146,7 +146,14 @@ struct LocalAccountWiperTests {
     /// long: an account that signs in, binds and pulls inside it had its rows, its cursors and its
     /// binding deleted. The flag is raised from INSIDE the wiper's last await, so a check placed
     /// anywhere before that await reads false and this goes red — the position is the fact pinned.
-    @Test func anAccountThatArrivesDuringTheOfflineTeardownKeepsItsRowsCursorsAndBinding() async throws {
+    ///
+    /// CF-A-55 (g): the abort skips ONLY the row step. The device-wide sweeps still run — the
+    /// departed account's search history, the feed caches and per-channel state (their key names
+    /// enumerate what it followed) and the device id used to pass to the newcomer permanently,
+    /// because the debt the caller then pays (`wipeRows`) touches rows only. The newcomer's cost
+    /// is seconds-old searches and a re-fetch; its own per-uid resend cooldown is NOT taken —
+    /// that key names B, and A's own copy is `wipeRows`'s to remove.
+    @Test func anAccountThatArrivesDuringTheOfflineTeardownKeepsItsRowsCursorsAndBindingButTheDeviceIsStillSwept() async throws {
         let fixture = makeFixture(); defer { fixture.tearDown() }
         try seedRows(fixture)
         let context = ModelContext(fixture.container)
@@ -155,6 +162,13 @@ struct LocalAccountWiperTests {
         try context.save()
         fixture.searchHistory.add("tafsir")
         fixture.defaults.set("dev-1", forKey: DeviceId.defaultsKey)
+        let feedKey = AtomFeedFetcher.cacheKeyPrefix + "UCmMcOjsVehVlEOteyrhjI2Q"
+        let stateKey = MeFeedRepository.stateKey("UCmMcOjsVehVlEOteyrhjI2Q")
+        let arrivedCooldownKey = EmailVerificationViewModel.lastSentKey(uid: "someone-else")
+        fixture.defaults.set(Data(#"{"items":[]}"#.utf8), forKey: feedKey)
+        fixture.defaults.set(Data("{}".utf8), forKey: stateKey)
+        fixture.defaults.set(2.0, forKey: arrivedCooldownKey)
+        fixture.defaults.set("dark", forKey: "settings_theme")
         fixture.favorites.currentUserId = "someone-else"
         let arrived = Mutex(false)
         await fixture.offline.setOnDeleteAll { arrived.withLock { $0 = true } }
@@ -170,8 +184,13 @@ struct LocalAccountWiperTests {
         #expect(fixture.count(SyncState.self) == 1, "the arrived account's cursors were deleted")
         #expect(fixture.count(AccountBinding.self) == 1, "the arrived account's binding was deleted")
         #expect(fixture.favorites.currentUserId == "someone-else", "the arrived account's stores were re-scoped to the guest")
-        #expect(fixture.searchHistory.entries == ["tafsir"])
-        #expect(fixture.defaults.string(forKey: DeviceId.defaultsKey) == "dev-1")
+        // …and the sweeps still ran.
+        #expect(fixture.searchHistory.entries.isEmpty, "the departed account's searches passed to the newcomer")
+        #expect(fixture.defaults.data(forKey: feedKey) == nil, "the departed account's cached feed survived the abort")
+        #expect(fixture.defaults.data(forKey: stateKey) == nil, "a key naming a channel the departed account followed survived")
+        #expect(fixture.defaults.string(forKey: DeviceId.defaultsKey) == nil, "the departed account's device id passed to the newcomer")
+        #expect(fixture.defaults.double(forKey: arrivedCooldownKey) == 2.0, "the abort-time sweep took the newcomer's own resend cooldown")
+        #expect(fixture.defaults.string(forKey: "settings_theme") == "dark")
     }
 
     // MARK: - The uid-scoped delete (a marker owed to an account that no longer holds the device)

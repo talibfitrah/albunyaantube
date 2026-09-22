@@ -52,10 +52,13 @@ import SwiftData
     /// refused its deletes is no reason to leave the deleted account's search suggestions and
     /// device id behind.
     ///
-    /// The ONE early return: `takenOver` is asked after the offline teardown — the last await —
-    /// and when it answers true nothing below runs and a non-nil error is returned, so the caller
-    /// keeps its marker and pays by uid. No default, for `wipeRows`'s reason in `AccountSession`:
-    /// a call site that forgot the check would compile into a silent "never taken over".
+    /// The takeover contract: `takenOver` is asked ONCE, after the offline teardown — the last
+    /// await — with no suspension before the deletes. When it answers true, step 3 (rows,
+    /// cursors, binding, store re-scope) is skipped and the per-uid resend-cooldown prefix is
+    /// left out of the sweep; steps 4–6 still run device-wide; the return is non-nil so the
+    /// caller keeps its marker and pays by uid (CF-A-55 (c) + (g)). No default, for `wipeRows`'s
+    /// reason in `AccountSession`: a call site that forgot the check would compile into a silent
+    /// "never taken over".
     @discardableResult
     func wipe(unlessTakenOver takenOver: () -> Bool) async -> Error? {
         var firstError: Error?
@@ -71,33 +74,37 @@ import SwiftData
         // CF-A-55 (c): the LAST await is above and nothing below suspends, so the answer cannot go
         // stale before the deletes — the caller's own check is two awaits old by now, and an
         // account that signed in, bound and pulled inside them lost its rows, cursors and binding
-        // here. `CancellationError` as in `AppContainer`'s released-container arm: the work did
-        // not run. (The offline library above is already gone — `OfflineItem` has no owner, CF-A-50.)
-        if takenOver() { return firstError ?? CancellationError() }
-
-        // 3. Every row, ALL userIds: this is a DEVICE wipe, not a per-user one. Android scopes its
-        //    deletes to the signed-in uid, which leaves a previous account's library on a device
-        //    whose owner has just erased theirs. A batch delete through a context of our own, so it
-        //    does not depend on which store happens to be scoped to what.
-        let context = ModelContext(modelContainer)
-        func attempt(_ work: () throws -> Void) {
-            do { try work() } catch { firstError = firstError ?? error }
+        // here. CF-A-55 (g): a takeover skips ONLY step 3. The device-wide sweeps below (4-6) still
+        // run — they touch no row, cursor, binding or store scope, and left behind they passed the
+        // departed account's searches, feed caches (keyed by the channels it followed) and device
+        // id to the newcomer permanently, since the by-uid debt the caller pays instead touches
+        // rows only. The newcomer's cost is seconds-old searches and a re-fetch.
+        let takenOver = takenOver()
+        if !takenOver {
+            // 3. Every row, ALL userIds: this is a DEVICE wipe, not a per-user one. Android scopes
+            //    its deletes to the signed-in uid, which leaves a previous account's library on a
+            //    device whose owner has just erased theirs. A batch delete through a context of our
+            //    own, so it does not depend on which store happens to be scoped to what.
+            let context = ModelContext(modelContainer)
+            func attempt(_ work: () throws -> Void) {
+                do { try work() } catch { firstError = firstError ?? error }
+            }
+            attempt { try context.delete(model: FavoriteVideo.self) }
+            attempt { try context.delete(model: SavedPlaylist.self) }
+            attempt { try context.delete(model: SubscribedChannel.self) }
+            // Task 23: the sync bookkeeping is per-account state too. Left behind, the next person
+            // to sign in on this device inherits the deleted account's cursors — `bind` reads a
+            // binding for a uid that no longer exists and a `SyncState` whose `lastCursor` is
+            // already past every row the new account has, so their first pull returns nothing.
+            attempt { try context.delete(model: SyncState.self) }
+            attempt { try context.delete(model: AccountBinding.self) }
+            attempt { try context.save() }
+            // Those deletes went through a different context, so every store still holds the
+            // objects it last fetched — SwiftUI would keep rendering rows whose backing model no
+            // longer exists. Re-scoping to the anon sentinel is what makes each of them re-read
+            // (`UserScoped`), and it is the correct end state anyway: this device now has no account.
+            for store in stores { store.currentUserId = "" }
         }
-        attempt { try context.delete(model: FavoriteVideo.self) }
-        attempt { try context.delete(model: SavedPlaylist.self) }
-        attempt { try context.delete(model: SubscribedChannel.self) }
-        // Task 23: the sync bookkeeping is per-account state too. Left behind, the next person to
-        // sign in on this device inherits the deleted account's cursors — `bind` reads a binding
-        // for a uid that no longer exists and a `SyncState` whose `lastCursor` is already past
-        // every row the new account has, so their first pull returns nothing.
-        attempt { try context.delete(model: SyncState.self) }
-        attempt { try context.delete(model: AccountBinding.self) }
-        attempt { try context.save() }
-        // Those deletes went through a different context, so every store still holds the objects it
-        // last fetched — SwiftUI would keep rendering rows whose backing model no longer exists.
-        // Re-scoping to the anon sentinel is what makes each of them re-read (`UserScoped`), and it
-        // is the correct end state anyway: this device now has no account.
-        for store in stores { store.currentUserId = "" }
 
         // 4. CF-G-6.
         searchHistory.clear()
@@ -108,8 +115,10 @@ import SwiftData
         //     account with that uid was verified from this device. All three land in this same
         //     suite (`AppContainer` builds every `UserDefaultsKeyValueStore` on it), so ONE sweep
         //     covers them; the prefixes are the constants their own writers spell.
-        let prefixes = [AtomFeedFetcher.cacheKeyPrefix, MeFeedRepository.stateKeyPrefix,
-                        EmailVerificationViewModel.lastSentKeyPrefix]
+        //     CF-A-55 (g): NOT the third on a takeover — it is per-uid, so the newcomer's own
+        //     cooldown would go, and the departed account's copy is `wipeRows(of:)`'s to remove.
+        var prefixes = [AtomFeedFetcher.cacheKeyPrefix, MeFeedRepository.stateKeyPrefix]
+        if !takenOver { prefixes.append(EmailVerificationViewModel.lastSentKeyPrefix) }
         for key in defaults.dictionaryRepresentation().keys
         where prefixes.contains(where: key.hasPrefix) {
             defaults.removeObject(forKey: key)
@@ -125,7 +134,10 @@ import SwiftData
         //    (`LocalAccountDataWiper.kt:48-51`).
         defaults.removeObject(forKey: DeviceId.defaultsKey)
 
-        return firstError
+        // A takeover still returns non-nil (`CancellationError` as in `AppContainer`'s
+        // released-container arm: the row work did not run), so the caller keeps its marker and
+        // pays by uid — the contract is unchanged by (g).
+        return takenOver ? (firstError ?? CancellationError()) : firstError
     }
 
     /// The NARROW counterpart, for a wipe owed to an account that no longer holds this device
