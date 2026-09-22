@@ -1,0 +1,62 @@
+ios/FitrahTube/Features/Offline/OfflineManager.swift
+  s_eca9a78768b070::t_df745a184e9764 9-10,13
+  s_eca9a78768b070::t_291e21f156f248 11-12
+  s_eca9a78768b070::t_caf6fdd9f53178 182
+ios/FitrahTube/Features/Offline/SaveOfflineSheet.swift
+  s_eca9a78768b070::t_19ad4dcfc53cee 45-46,48-49
+ios/FitrahTubeTests/SchemaV5MigrationTests.swift
+  s_eca9a78768b070::t_54a70505e9ee13 336,339-341,344-359
+  s_eca9a78768b070::t_4daba81bdeb167 319-335,337-338,342-343
+ios/FitrahTubeTests/Support/OfflineTestDoubles.swift
+  s_eca9a78768b070::t_c77e02c1547c49 13,16
+ios/FitrahTube/Features/Auth/LocalAccountWiper.swift
+  s_eca9a78768b070::t_cacad160850939 30-34,37-38,45-49
+  s_eca9a78768b070::t_dfada921985704 188-194
+  s_eca9a78768b070::t_92f6dc8ee0f97d 169-180,202,204
+  s_eca9a78768b070::t_51c03edafbab1d 92-93
+  s_eca9a78768b070::t_3a842f4cd98719 157-161
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_eca9a78768b070::t_ec5d4fa846f277 261
+  s_eca9a78768b070::t_0ff3687dc7415c 838
+  s_eca9a78768b070::t_ff777688de6566 88
+  s_eca9a78768b070::t_c6c60e116bc1fe 738-740
+  s_eca9a78768b070::t_51be1e9bc7058e 123
+  s_eca9a78768b070::t_acd6b0350728c0 849
+ios/FitrahTubeTests/OfflineManagerTests.swift
+  s_eca9a78768b070::t_90595c7d88abfc 238-248
+ios/FitrahTube/App/AppContainer.swift
+  s_eca9a78768b070::t_37152491b8e3d6 473
+  s_eca9a78768b070::t_5f633fb5360575 772
+ios/FitrahTube/Features/Offline/OfflineItem.swift
+  s_eca9a78768b070::t_cebd9045b43e48 96-100
+  s_eca9a78768b070::t_8508d239ee273f 11-13
+  s_eca9a78768b070::t_3decef4b0fbf9d 71-95,101-123
+  s_eca9a78768b070::t_11a60c516cadff 124-126
+  s_eca9a78768b070::t_4b1930829f51e8 127
+ios/FitrahTube/Persistence/FavoriteVideo.swift
+  s_eca9a78768b070::t_cf7f8dff5a0803 44
+  s_eca9a78768b070::t_f5fa3404819b59 19
+  s_eca9a78768b070::t_19f90f8aac8fbf 136-152,154-160,163,168-169
+ios/FitrahTubeTests/LocalAccountWiperTests.swift
+  s_eca9a78768b070::t_24725a8048eea8 324,328
+  s_eca9a78768b070::t_0894c9e567e95e 264,271
+  s_eca9a78768b070::t_c245011287f7b8 235
+  s_eca9a78768b070::t_0ef23cc2a393e1 280-299
+  s_eca9a78768b070::t_69a3f1ae58d89d 300-320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be06e16c86f87c4b98907c43383a69366dee82f3",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
