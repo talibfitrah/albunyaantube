@@ -429,8 +429,10 @@ nonisolated enum AccountState: Sendable, Equatable {
                 guard publishable() else { return }
                 state = .loaded(me)
                 // THE ONE WRITER of the durable holder (CF-A-51): a `/me` that succeeded is the
-                // proof that this account holds the device. Written at sign-in, a blocked account
-                // or a failed `/me` became the "holder", and the previous account's pending
+                // proof that this account holds the device. Written at sign-in, a blocked account,
+                // a failed `/me`, or one whose `/me` answered `.deletedAccount`/`.blocked` — the
+                // deleted-account direction, the point of the change — became the "holder", and
+                // the previous account's pending
                 // DEVICE-WIDE wipe (`resumePendingDeletion`) was downgraded to a row-only delete.
                 // The marker only matters when Firebase holds NOBODY at launch, so the trade is:
                 // an account whose `/me` never succeeded here, which then signed OUT before a

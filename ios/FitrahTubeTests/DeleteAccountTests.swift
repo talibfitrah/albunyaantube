@@ -246,18 +246,13 @@ struct DeleteAccountTests {
     @Test func aVerdictForTheAccountStartHasNotObservedYetStillWipesAndMarks() async throws {
         let arriving = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true,
                                 providerIDs: ["password"])
-        // Round 2 / item 1 → CF-A-51: the DURABLE record follows the in-memory seed, but only once
-        // B's `/me` has SUCCEEDED (the round below answers 200) — a holder still naming the
-        // PREVIOUS account would downgrade B's own device wipe to a row-only delete on a relaunch,
-        // and a B whose `/me` never succeeded is, by the ruling, not the holder.
-        let marker = InMemoryDeletionMarker()
-        marker.lastSignedInUid = "uid-previous"
-        let fixture = makeFixture(delete: .json(204, ""), user: arriving, marker: marker)
-        // NO `start()`: Firebase holds B and the session has not heard.
+        let fixture = makeFixture(delete: .json(204, ""), user: arriving)
+        // NO `start()`: Firebase holds B and the session has not heard. The verdict lands while
+        // the round is IN FLIGHT — the request is out, `/me` has not answered.
         _ = try await fixture.auth.signIn(email: "b@fitrah.test", password: "p")
-        await fixture.session.refresh(maxAttempts: 1)
+        let round = Task { await fixture.session.refresh(maxAttempts: 1) }
+        await yieldUntil { fixture.transport.sent.count == 1 }
         #expect(fixture.session.user == nil, "the precondition is the window start() has not closed")
-        #expect(marker.lastSignedInUid == arriving.uid, "the durable holder still names the previous account")
 
         #expect(fixture.session.handle(.deleted, for: "uid-stranger") == false,
                 "a verdict for an account Firebase does not hold was acted on")
@@ -268,6 +263,26 @@ struct DeleteAccountTests {
         await yieldUntil { fixture.wipes.count > 0 }
         #expect(fixture.wipes.count == 1, "the ruling-C13 wipe never ran for a deleted account")
         #expect(fixture.wipes.markedUids == [arriving.uid])
+        await round.value
+    }
+
+    /// CF-A-51, the `land()` window's DURABLE half: the record follows the seed's identity, but
+    /// only once B's `/me` has SUCCEEDED — a holder still naming the PREVIOUS account would
+    /// downgrade B's own device wipe to a row-only delete on a relaunch, and a B whose `/me` never
+    /// succeeded is, by the ruling, not the holder. `start()` never runs here, so `user` is nil
+    /// throughout and the seed is the only identity the writer has.
+    @Test func theLandWindowRoundRecordsTheHolderOnceItsMeSucceeds() async throws {
+        let arriving = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true,
+                                providerIDs: ["password"])
+        let marker = InMemoryDeletionMarker()
+        marker.lastSignedInUid = "uid-previous"
+        let fixture = makeFixture(delete: .json(204, ""), user: arriving, marker: marker)
+        _ = try await fixture.auth.signIn(email: "b@fitrah.test", password: "p")
+        await fixture.session.refresh(maxAttempts: 1)
+
+        #expect(fixture.session.user == nil, "the precondition is the window start() has not closed")
+        #expect(fixture.session.state.me != nil, "the precondition is that /me succeeded")
+        #expect(marker.lastSignedInUid == arriving.uid, "the durable holder still names the previous account")
     }
 
     /// Round 2 / item 1, the seed's re-check. `currentUser()` answers X and the round suspends on
@@ -1171,10 +1186,10 @@ struct DeleteAccountTests {
     }
 
     /// Review I1: the WRITE side. Every test above seeds `lastSignedInUid` by hand, so deleting the
-    /// one production line that writes it (`start()`'s `.signedIn` arm) restored the original bug —
-    /// a marker owed to A wiping the device B has used since — with the whole suite green. Two
-    /// sessions on ONE marker, which is what two launches are.
-    @Test func theAccountThatHeldTheDeviceIsRecordedBySigningInNotByTheTest() async throws {
+    /// one production line that writes it (`fetch`'s write after `/me` succeeds, CF-A-51) restored
+    /// the original bug — a marker owed to A wiping the device B has used since — with the whole
+    /// suite green. Two sessions on ONE marker, which is what two launches are.
+    @Test func theAccountThatHeldTheDeviceIsRecordedByItsOwnMeNotByTheTest() async throws {
         let marker = InMemoryDeletionMarker()
         let holder = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true, providerIDs: ["password"])
         let first = makeFixture(delete: .json(204, ""), user: holder, marker: marker)
