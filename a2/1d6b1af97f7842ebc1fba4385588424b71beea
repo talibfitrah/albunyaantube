@@ -1,0 +1,58 @@
+backend/src/test/java/com/albunyaan/tube/controller/WellKnownControllerTest.java
+  s_eca9a78768b070::t_f6ed63d773ffbf 68-69
+ios/FitrahTube/Features/Settings/AboutView.swift
+  s_eca9a78768b070::t_05021bf73fef50 51,57,65-66,68-69,73-75,95,98
+  s_eca9a78768b070::t_58523c57448156 58-64,67,70-72
+  s_eca9a78768b070::t_3c74e942837b13 76-77
+ios/scripts/write-local-xcconfig.sh
+  s_eca9a78768b070::t_591d4ee8c416ff 1-13,15,17-18,21-34,41-43,46-50,53-61
+  s_eca9a78768b070::t_9b4d0d70572ac7 14,16,19-20,35-40,51-52
+  s_eca9a78768b070::t_3c74e942837b13 44-45
+ios/FitrahTubeTests/SettingsRowsTests.swift
+  s_eca9a78768b070::t_05021bf73fef50 125-139
+  s_eca9a78768b070::t_9b4d0d70572ac7 122-124
+.gitignore
+  s_eca9a78768b070::t_7ae560d326de4d 205
+ios/Config/Release.xcconfig
+  s_eca9a78768b070::t_de626c427debc4 5-9,19-20
+ios/FitrahTube/FitrahTube.entitlements
+  s_eca9a78768b070::t_9b4d0d70572ac7 17
+  s_eca9a78768b070::t_de626c427debc4 4-6,8-13,15-16,29-31
+  s_eca9a78768b070::t_3c74e942837b13 18-21
+  s_eca9a78768b070::t_01209bd106f19f 32
+ios/FitrahTubeTests/SignInCapabilitiesTests.swift
+  s_eca9a78768b070::t_de626c427debc4 22,156-158
+  s_eca9a78768b070::t_3c74e942837b13 23-25,182-184
+  s_eca9a78768b070::t_9b4d0d70572ac7 10-12,153,180-181
+ios/FitrahTubeTests/FirebaseSeamTests.swift
+  s_eca9a78768b070::t_9b4d0d70572ac7 72,77,81-85
+  s_eca9a78768b070::t_05021bf73fef50 67-71,73-76,78-80,86-92
+ios/FitrahTube/Resources/PrivacyInfo.xcprivacy
+  s_eca9a78768b070::t_58523c57448156 32-33,146-151
+  s_eca9a78768b070::t_74919dec903214 152-153
+backend/src/main/java/com/albunyaan/tube/controller/WellKnownController.java
+  s_eca9a78768b070::t_3f880c2b2f75a9 36-46,56-58
+  s_eca9a78768b070::t_3c74e942837b13 47-54
+ios/Config/Debug.xcconfig
+  s_eca9a78768b070::t_de626c427debc4 7-11
+ios/Config/Local.xcconfig.example
+  s_eca9a78768b070::t_de626c427debc4 1-2
+ios/FitrahTubeTests/AuthClientTests.swift
+  s_eca9a78768b070::t_9b4d0d70572ac7 146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a21d6b1af97f7842ebc1fba4385588424b71beea",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
