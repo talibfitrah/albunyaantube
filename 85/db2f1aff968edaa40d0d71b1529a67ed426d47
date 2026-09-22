@@ -1,0 +1,26 @@
+frontend/tests/UsersManagementView.spec.ts
+  s_eca9a78768b070::t_50c2b539f19175 196-213
+  s_eca9a78768b070::t_84b531ffe51ef8 18-19,21
+frontend/src/locales/messages.ts
+  s_eca9a78768b070::t_0a1e7a78239f3a 1621-1623
+  s_eca9a78768b070::t_8c3e7fbf96e99a 3017-3019
+  s_eca9a78768b070::t_b378c159ace728 3-6
+frontend/src/views/UsersManagementView.vue
+  s_eca9a78768b070::t_7000082b25f9c1 934-935
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85db2f1aff968edaa40d0d71b1529a67ed426d47",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
