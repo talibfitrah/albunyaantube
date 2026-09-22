@@ -1,5 +1,9 @@
 export const messages = {
   en: {
+    // Backend typed error codes, looked up by apiErrorToMessage() as apiErrors.<CODE>.
+    apiErrors: {
+      MAIL_UNAVAILABLE: 'The email could not be sent — mail is not configured on the server.'
+    },
     auth: {
       title: 'FitrahTube Admin',
       subtitle: 'Sign in with your administrator account to continue.',
@@ -1614,6 +1618,9 @@ export const messages = {
     }
   },
   ar: {
+    apiErrors: {
+      MAIL_UNAVAILABLE: 'تعذّر إرسال البريد الإلكتروني — البريد غير مُعدّ على الخادم.'
+    },
     auth: {
       title: 'إدارة فطرة تيوب',
       subtitle: 'سجّل الدخول باستخدام حساب المشرف للمتابعة.',
@@ -3007,6 +3014,9 @@ export const messages = {
     }
   },
   nl: {
+    apiErrors: {
+      MAIL_UNAVAILABLE: 'De e-mail kon niet worden verzonden — e-mail is niet ingesteld op de server.'
+    },
     auth: {
       title: 'FitrahTube Beheer',
       subtitle: 'Meld je aan met je beheerdersaccount om door te gaan.',

@@ -931,7 +931,8 @@ async function handleResetPassword(user: AdminUser) {
     await sendPasswordReset(user.id);
     actionMessage.value = t('users.toasts.passwordReset', { email: user.email });
   } catch (err) {
-    actionError.value = err instanceof Error ? err.message : t('users.errors.resetPassword');
+    // CF-A-57: 503 MAIL_UNAVAILABLE carries a typed code -> apiErrors.MAIL_UNAVAILABLE.
+    actionError.value = apiErrorToMessage(err, t, 'users.errors.resetPassword');
   } finally {
     resettingPasswordUserId.value = null;
   }

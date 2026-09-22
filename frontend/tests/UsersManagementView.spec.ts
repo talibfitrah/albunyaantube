@@ -15,8 +15,10 @@ import {
   bulkDelete,
   bulkRecover,
   bulkRevokeSessions,
-  forceLogout
+  forceLogout,
+  sendPasswordReset
 } from '@/services/adminUsers';
+import { ApiError } from '@/services/http';
 import type { AdminUser, AdminUsersPage } from '@/types/admin';
 
 vi.mock('@/services/adminUsers', () => ({
@@ -189,6 +191,24 @@ describe('UsersManagementView', () => {
       expect(updateUserRole).toHaveBeenCalledWith('user-1', 'MODERATOR');
       expect(updateUserStatus).toHaveBeenCalledWith('user-1', 'BLOCKED');
     });
+  });
+
+  /** CF-A-57: the backend answers 503 MAIL_UNAVAILABLE when no reset mail went out. The
+   *  admin must see the translated apiErrors.MAIL_UNAVAILABLE text, not the server's
+   *  English message verbatim. */
+  it('shows the translated MAIL_UNAVAILABLE message when reset-password answers 503', async () => {
+    (sendPasswordReset as unknown as vi.Mock).mockRejectedValue(
+      new ApiError('Password reset email could not be sent', 503, 'MAIL_UNAVAILABLE')
+    );
+    renderView();
+    await screen.findByText('admin@example.com');
+
+    const resetButtons = screen.getAllByRole('button', { name: /^reset password$/i });
+    await fireEvent.click(resetButtons[0]);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(messages.en.apiErrors.MAIL_UNAVAILABLE);
+    expect(alert).not.toHaveTextContent('Password reset email could not be sent');
   });
 
   it('deactivates an active user', async () => {
