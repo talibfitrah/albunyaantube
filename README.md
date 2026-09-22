@@ -1,6 +1,6 @@
 # FitrahTube
 
-Welcome to **FitrahTube**, an ad-free, admin-curated halal YouTube client delivering safe Islamic content to Muslim families and students of knowledge through native mobile apps and a web-based moderation dashboard.
+Welcome to **FitrahTube**, an admin-curated Islamic video library delivering safe Islamic content to Muslim families and students of knowledge through native mobile apps and a web-based moderation dashboard.
 
 **Vision**: Become the trusted global platform for halal YouTube content where every Muslim can confidently access safe Islamic content without compromising values or exposure to inappropriate material.
 
@@ -51,7 +51,7 @@ This repository contains the complete codebase (Android app, admin dashboard, ba
 **Mobile Experience (Android):**
 - Browse approved content by category, channel, playlist, video
 - Advanced video player: quality selection, audio-only mode, subtitles, PiP, Chromecast
-- Offline downloads with 30-day expiry and audio-only option
+- Save for offline with 30-day expiry and audio-only option
 - Search with persistent history (max 10 items)
 - Multi-language: English, Arabic (RTL), Dutch
 
@@ -76,7 +76,7 @@ Every document references related artifacts to ensure consistency:
 ### Android App
 - **Location**: `android/` directory
 - **Tech Stack**: Kotlin, Jetpack Compose, Material Design 3, ExoPlayer
-- **Features**: RTL support, offline-first architecture, background downloads, advanced video player
+- **Features**: RTL support, offline-first architecture, save for offline, advanced video player
 - **Documentation**: See [`docs/status/ANDROID_GUIDE.md`](docs/status/ANDROID_GUIDE.md) for configuration, testing, and troubleshooting
 - **Current Status**: Phase 5 complete - Production ready with signed AAB and RTL polish
 - **Build**: `cd android && ./gradlew assembleDebug` (outputs to `app/build/outputs/apk/debug/`)

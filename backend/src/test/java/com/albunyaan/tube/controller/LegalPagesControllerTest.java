@@ -108,6 +108,8 @@ class LegalPagesControllerTest {
                 .andExpect(content().string(containsString("Firebase")))
                 .andExpect(content().string(containsString("Retention")))
                 .andExpect(content().string(containsString("/delete-account")))
+                // The iOS app offers Sign in with Apple; the policy must name it.
+                .andExpect(content().string(containsString("Sign in with Apple")))
                 .andExpect(content().string(containsString(CONTACT)));
     }
 

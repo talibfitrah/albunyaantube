@@ -75,9 +75,9 @@
     "nl": "Edge-to-edge verfijning: de lege witte strook onder de onderste navigatiebalk is verwijderd."
   },
   "1.0.0-beta.28": {
-    "en": "More videos that still wouldn't play now play ad-free; the quality menu shows only working options; steadier playback.",
-    "ar": "مزيد من الفيديوهات التي لم تعمل أصبحت تعمل الآن بدون إعلانات؛ قائمة الجودة تعرض الخيارات العاملة فقط؛ تشغيل أكثر ثباتًا.",
-    "nl": "Meer video's die niet speelden spelen nu advertentievrij; het kwaliteitsmenu toont alleen werkende opties; stabieler afspelen."
+    "en": "More videos that still wouldn't play now play; the quality menu shows only working options; steadier playback.",
+    "ar": "مزيد من الفيديوهات التي لم تعمل أصبحت تعمل الآن؛ قائمة الجودة تعرض الخيارات العاملة فقط؛ تشغيل أكثر ثباتًا.",
+    "nl": "Meer video's die niet speelden spelen nu; het kwaliteitsmenu toont alleen werkende opties; stabieler afspelen."
   },
   "1.0.0-beta.27": {
     "en": "Fixes videos stuck on \"Resolving…\" that never played — now uses a YouTube stream source that isn't blocked. Works on older Android too.",

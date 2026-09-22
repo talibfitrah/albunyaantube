@@ -35,7 +35,7 @@ public class LegalPagesController {
     private static final String CONTACT = "info@albunyaan.tv";
 
     /** Bump whenever the substance of any page below changes. */
-    private static final String LAST_UPDATED = "25 August 2026";
+    private static final String LAST_UPDATED = "22 September 2026";
 
     // ── /delete-account ────────────────────────────────────────────────────
     //
@@ -173,7 +173,7 @@ public class LegalPagesController {
                 <h1>FitrahTube Privacy Policy</h1>
                 <p class="meta">Last updated: %2$s</p>
 
-                <p class="lede">FitrahTube is an ad-free, curated video app. This policy
+                <p class="lede">FitrahTube is a curated Islamic video app. This policy
                 describes what the FitrahTube app and its backend collect, why, who it is
                 shared with, how long it is kept, and how to have it deleted. It covers the
                 Android app (package <code>com.albunyaan.tube</code>) and the service at
@@ -204,6 +204,10 @@ public class LegalPagesController {
                   <li>If you sign in with Google, Firebase gives us your email address, a
                       user identifier and whether that address is verified. We do not receive
                       your Google password or your Google contacts.</li>
+                  <li>If you use Sign in with Apple, Firebase gives us a user identifier and
+                      the email address you choose to share &mdash; either your own or Apple's
+                      private relay address &mdash; and, the first time only, the name you
+                      choose to share. We do not receive your Apple ID password.</li>
                 </ul>
 
                 <h3>2.2 Your library</h3>
@@ -381,8 +385,8 @@ public class LegalPagesController {
                 <p class="meta">Last updated: %2$s</p>
 
                 <h2>1. What FitrahTube is</h2>
-                <p>FitrahTube is an ad-free client for viewing a curated selection of
-                publicly available YouTube content. Every channel, playlist and video in the
+                <p>FitrahTube is an app for viewing a curated selection of publicly
+                available YouTube content. Every channel, playlist and video in the
                 catalogue is reviewed and approved by a moderator before it appears.
                 FitrahTube is not affiliated with, endorsed by, or sponsored by YouTube or
                 Google.</p>
