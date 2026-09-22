@@ -1,0 +1,28 @@
+ios/FitrahTubeTests/AccountSessionTests.swift
+  s_eca9a78768b070::t_91d2371a6c91c6 62-76
+ios/FitrahTube/Features/Offline/SaveOfflineSheet.swift
+  s_eca9a78768b070::t_64057849c0853b 45-46,49
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_eca9a78768b070::t_964d4c879aacdf 107-114
+backend/src/main/java/com/albunyaan/tube/service/MailService.java
+  s_eca9a78768b070::t_71152e21013bdd 24-26
+docs/architecture/api-specification.yaml
+  s_eca9a78768b070::t_bd3205ee142ad3 1652-1723
+  s_eca9a78768b070::t_4fef697a4e7c51 58-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b39507e321f49b315da90ffbaf76bd2a73fe23a",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
