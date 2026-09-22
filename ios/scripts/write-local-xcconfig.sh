@@ -19,6 +19,7 @@ IOS="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="${FITRAH_PLIST:-$IOS/FitrahTube/Resources/GoogleService-Info.plist}"
 OUT="${FITRAH_OUT:-$IOS/Config/Local.xcconfig}"
 APPLE="${APPLE_SIGNIN_REGISTERED-1}"
+case "$APPLE" in 0|false|no|NO) APPLE="" ;; esac   # off is off, however it is spelled
 PB=/usr/libexec/PlistBuddy
 me="write-local-xcconfig.sh"
 
