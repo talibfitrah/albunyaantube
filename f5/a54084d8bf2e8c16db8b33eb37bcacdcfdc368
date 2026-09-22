@@ -1,0 +1,31 @@
+backend/src/main/java/com/albunyaan/tube/service/MailService.java
+  s_eca9a78768b070::t_5a54835ad231b3 97-103,114,117,126,129
+ios/FitrahTubeTests/EmailVerificationViewModelTests.swift
+  s_eca9a78768b070::t_9b4d0d70572ac7 173-177,182
+backend/src/test/java/com/albunyaan/tube/service/MailServiceTest.java
+  s_eca9a78768b070::t_3c74e942837b13 44
+  s_eca9a78768b070::t_f6ed63d773ffbf 42,45
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerTest.java
+  s_eca9a78768b070::t_3c74e942837b13 104-105,116-118,121
+  s_eca9a78768b070::t_f6ed63d773ffbf 106-107,109-115,119-120,122-125,127-134,138-141
+  s_eca9a78768b070::t_3f880c2b2f75a9 108,126,135-137
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_eca9a78768b070::t_3f880c2b2f75a9 124-125,128-132
+  s_eca9a78768b070::t_fcb65e45f97a38 119-122,126-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f5a54084d8bf2e8c16db8b33eb37bcacdcfdc368",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
