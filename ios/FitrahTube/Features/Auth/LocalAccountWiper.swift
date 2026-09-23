@@ -64,10 +64,12 @@ import SwiftData
     /// device id behind.
     ///
     /// The ONE exception is the offline id fetch, and it is the opposite arm rather than a hole in
-    /// this rule: a fetch that throws runs NOTHING at all — no deletes, no sweeps — and returns
+    /// this rule: a fetch that throws DELETES nothing — no rows, no files, no sweeps — and returns
     /// non-nil, so the caller keeps its marker and the WHOLE device wipe is retried at the next
-    /// launch. Skipping the sweeps there is safe precisely because none of this was paid: every
-    /// step is a delete, the debt is still recorded, and the retry finds all of it still owed.
+    /// launch. Only `cancelAll()` has run by then, which destroys nothing: a cancelled save is
+    /// exactly what the retry re-cancels. Skipping the sweeps there is safe precisely because none
+    /// of this was paid: every step below is a delete, the debt is still recorded, and the retry
+    /// finds all of it still owed.
     ///
     /// The takeover contract: `takenOver` is asked ONCE, after the offline teardown — the last
     /// await — with no suspension before the deletes. When it answers true, step 3 (rows,
