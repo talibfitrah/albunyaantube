@@ -325,8 +325,10 @@ struct LocalAccountWiperTests {
     /// deletion; the takeover check keeps its place after the last await.
     ///
     /// Cubic r3 (P2): and the snapshot is taken AFTER `cancelAll()`, so a row a still-running save
-    /// inserts inside that await cannot miss it. Cancelling first is free on this path: nothing is
-    /// deleted, the caller keeps its marker, and the next launch retries the whole debt.
+    /// inserts inside that await cannot miss it — narrowing the window, not closing it (CF-A-59).
+    /// Cancelling first is not free, it is just not a DELETE: it takes any unfinished save's
+    /// partial bytes, which no retry restores. What this pins is that the refusal stops there —
+    /// the caller keeps its marker and the next launch retries the whole debt.
     @Test func aDeviceWipeWhoseOfflineFetchThrowsReportsItAndDeletesNothing() async throws {
         struct StoreFull: Error {}
         let fixture = makeFixture(); defer { fixture.tearDown() }
