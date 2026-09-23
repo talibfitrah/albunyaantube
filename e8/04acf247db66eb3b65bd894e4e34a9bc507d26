@@ -1,0 +1,19 @@
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_eca9a78768b070::t_89c48a512cfddd 110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e804acf247db66eb3b65bd894e4e34a9bc507d26",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "claude-opus-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
