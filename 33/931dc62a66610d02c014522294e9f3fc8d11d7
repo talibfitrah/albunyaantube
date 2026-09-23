@@ -1,0 +1,19 @@
+ios/FitrahTubeTests/LocalAccountWiperTests.swift
+  s_eca9a78768b070::t_38e643293148a9 328-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "33931dc62a66610d02c014522294e9f3fc8d11d7",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
