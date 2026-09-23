@@ -92,13 +92,14 @@ nonisolated enum DeleteAccountState: Equatable {
         // that is not this session's and pays that account's debt by uid instead.
         //
         // CF-A-55 (d): and with no name at all there is nothing to delete. This screen requires an
-        // account, so nil means the session went during the re-authentication's own await — the
-        // provider sheet is seconds long and Firebase force-signs a revoked or disabled account out
-        // inside exactly that kind of suspension. Passed through, `handleDeletion(for: nil)` is
+        // account, so nil means the session went during the re-authentication's own await. Belt
+        // and braces, not a named path: a real force-sign-out usually fails `reauthenticate` first
+        // and returns above with `.failedReauth`. Passed through, `handleDeletion(for: nil)` is
         // UNATTRIBUTED: it takes a fresh latch (which then swallows the real verdict for the
         // account that did hold this device), device-wipes for nobody and posts a `.deleted` no
         // account can be matched to. The generic refusal already says WHAT happened, and nothing
-        // it cannot know.
+        // it cannot know. `.failedUnknown` is the honest end state; whether its banner is
+        // actually SEEN depends on whether the signed-out shell has already replaced this screen.
         guard let deleting = session.currentUid else {
             state = .failedUnknown
             return

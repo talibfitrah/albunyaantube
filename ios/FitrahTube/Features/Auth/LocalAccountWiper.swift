@@ -78,9 +78,9 @@ import SwiftData
     /// "never taken over".
     @discardableResult
     func wipe(unlessTakenOver takenOver: () -> Bool) async -> Error? {
-        // 1-2. CF-G-4. A save still running while the rest of this executes is a race with the
-        //      filesystem, so the work stops before its files go — and both steps route through the
-        //      manager, which owns every unlink this app performs.
+        // 1. CF-G-4. A save still running while the rest of this executes is a race with the
+        //    filesystem, so the work stops before its files go — and this and the delete below both
+        //    route through the manager, which owns every unlink this app performs.
         await offline.cancelAll()
         // Cubic r2 (P2): the ids come from a fetch that is REPORTED when it throws, before any
         // deletion — read from `offlineStore.items`, a failed fetch read as an empty library,
@@ -88,9 +88,12 @@ import SwiftData
         // departed account's files still on disk. Nothing is deleted on that path, so the kept
         // marker's retry finds the whole debt — the cancel above is harmless there, since a
         // cancelled save is exactly what the retry re-cancels.
-        // Cubic r3 (P2): and it is taken AFTER the cancel, not before. A save that completes inside
-        // `cancelAll()`'s own await inserts its row past a snapshot taken ahead of it, and that row
-        // — with its file — survived the wipe.
+        // Cubic r3 (P2): and it is taken AFTER the cancel, not before — a save that completes
+        // inside `cancelAll()`'s own await would otherwise insert its row past a snapshot taken
+        // ahead of it. NOT a closed race (CF-A-59): `OfflineManager.save` can still suspend before
+        // its insert, miss the cancel AND this snapshot, and insert while `deleteAll` below is
+        // awaiting — that row and its file then survive a wipe that reports success. Closing it
+        // needs a barrier in the one inserter, not a wider snapshot.
         let offlineIds: [String]
         do { offlineIds = try self.offlineIds(nil) } catch { return error }
         // R7-P2: the offline rows are the FIRST thing this deletes and were the one step that could
