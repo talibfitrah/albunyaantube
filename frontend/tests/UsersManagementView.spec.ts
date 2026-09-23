@@ -197,7 +197,8 @@ describe('UsersManagementView', () => {
    *  admin must see the translated apiErrors.MAIL_UNAVAILABLE text, not the server's
    *  English message verbatim. */
   it('shows the translated MAIL_UNAVAILABLE message when reset-password answers 503', async () => {
-    (sendPasswordReset as unknown as vi.Mock).mockRejectedValue(
+    // Once: vi.clearAllMocks() in beforeEach clears calls, not implementations.
+    (sendPasswordReset as unknown as vi.Mock).mockRejectedValueOnce(
       new ApiError('Password reset email could not be sent', 503, 'MAIL_UNAVAILABLE')
     );
     renderView();
