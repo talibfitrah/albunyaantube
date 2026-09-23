@@ -64,12 +64,15 @@ import SwiftData
     /// device id behind.
     ///
     /// The ONE exception is the offline id fetch, and it is the opposite arm rather than a hole in
-    /// this rule: a fetch that throws DELETES nothing — no rows, no files, no sweeps — and returns
-    /// non-nil, so the caller keeps its marker and the WHOLE device wipe is retried at the next
-    /// launch. Only `cancelAll()` has run by then, which destroys nothing: a cancelled save is
-    /// exactly what the retry re-cancels. Skipping the sweeps there is safe precisely because none
-    /// of this was paid: every step below is a delete, the debt is still recorded, and the retry
-    /// finds all of it still owed.
+    /// this rule: a fetch that throws stops there — no row, cursor, binding, cache, history or
+    /// device-id delete — and returns non-nil, so the caller keeps its marker and the WHOLE device
+    /// wipe is retried at the next launch, finding all of it still owed. It is NOT side-effect
+    /// free: `cancelAll()` has already run, and cancelling an unfinished save unlinks its partial
+    /// bytes and rolls its row back (`OfflineManager.cancelRow`, and a `.completed` racing the
+    /// engine loses its row too). Those saves are not resumed by the retry. That is the price of
+    /// stopping downloads before the filesystem work rather than after it (CF-G-4), and it is
+    /// bounded: only saves in flight at that moment, on a device whose owner has asked for
+    /// everything to go.
     ///
     /// The takeover contract: `takenOver` is asked ONCE, after the offline teardown — the last
     /// await — with no suspension before the deletes. When it answers true, step 3 (rows,
@@ -87,9 +90,9 @@ import SwiftData
         // Cubic r2 (P2): the ids come from a fetch that is REPORTED when it throws, before any
         // deletion — read from `offlineStore.items`, a failed fetch read as an empty library,
         // `deleteAll([])` succeeded, this returned nil and the caller redeemed the marker with the
-        // departed account's files still on disk. Nothing is deleted on that path, so the kept
-        // marker's retry finds the whole debt — the cancel above is harmless there, since a
-        // cancelled save is exactly what the retry re-cancels.
+        // departed account's files still on disk. Nothing is DELETED on that path, so the kept
+        // marker's retry finds the whole debt; the cancel above has already taken any unfinished
+        // save's partial bytes, which the retry does not restore (see the contract above).
         // Cubic r3 (P2): and it is taken AFTER the cancel, not before — a save that completes
         // inside `cancelAll()`'s own await would otherwise insert its row past a snapshot taken
         // ahead of it. NOT a closed race (CF-A-59): `OfflineManager.save` can still suspend before
