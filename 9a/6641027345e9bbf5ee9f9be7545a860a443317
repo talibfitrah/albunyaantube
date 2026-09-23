@@ -1,0 +1,19 @@
+ios/FitrahTube/Features/Auth/LocalAccountWiper.swift
+  s_eca9a78768b070::t_efc4c1aa1a4234 67,69-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a6641027345e9bbf5ee9f9be7545a860a443317",
+  "prompts": {},
+  "sessions": {
+    "s_eca9a78768b070": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1db715e0-38ad-4d76-823b-efca3ee55914",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
