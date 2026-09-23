@@ -107,7 +107,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// The uid anything the user does RIGHT NOW belongs to, or nil for a guest: `user` first, else
     /// the loaded record. The second source is the `land()` window — `/me` has landed but `start()`
     /// has not observed the sign-in yet, so `user` is still nil (`refreshIfSignedIn`'s doc).
-    /// `DeleteAccountViewModel.swift:93` reads the same pair; `SaveOfflineSheet` stamps a
+    /// `DeleteAccountViewModel.swift:102` reads the same pair; `SaveOfflineSheet` stamps a
     /// download's owner from it (CF-A-50) — read from `user` alone, a save in that window was
     /// the guest's.
     var currentUid: String? { user?.uid ?? state.me?.uid }

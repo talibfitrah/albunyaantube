@@ -63,6 +63,12 @@ import SwiftData
     /// refused its deletes is no reason to leave the deleted account's search suggestions and
     /// device id behind.
     ///
+    /// The ONE exception is the offline id fetch, and it is the opposite arm rather than a hole in
+    /// this rule: a fetch that throws runs NOTHING at all — no deletes, no sweeps — and returns
+    /// non-nil, so the caller keeps its marker and the WHOLE device wipe is retried at the next
+    /// launch. Skipping the sweeps there is safe precisely because none of this was paid: every
+    /// step is a delete, the debt is still recorded, and the retry finds all of it still owed.
+    ///
     /// The takeover contract: `takenOver` is asked ONCE, after the offline teardown — the last
     /// await — with no suspension before the deletes. When it answers true, step 3 (rows,
     /// cursors, binding, store re-scope) is skipped and the per-uid resend-cooldown prefix is
@@ -72,22 +78,25 @@ import SwiftData
     /// "never taken over".
     @discardableResult
     func wipe(unlessTakenOver takenOver: () -> Bool) async -> Error? {
-        // Cubic r2 (P2): the ids come from a fetch that is REPORTED when it throws, before any
-        // deletion — read from `offlineStore.items`, a failed fetch read as an empty library,
-        // `deleteAll([])` succeeded, this returned nil and the caller redeemed the marker with the
-        // departed account's files still on disk. Nothing has run yet, so the kept marker's retry
-        // finds the whole debt.
-        let offlineIds: [String]
-        do { offlineIds = try self.offlineIds(nil) } catch { return error }
-        var firstError: Error?
         // 1-2. CF-G-4. A save still running while the rest of this executes is a race with the
         //      filesystem, so the work stops before its files go — and both steps route through the
         //      manager, which owns every unlink this app performs.
         await offline.cancelAll()
+        // Cubic r2 (P2): the ids come from a fetch that is REPORTED when it throws, before any
+        // deletion — read from `offlineStore.items`, a failed fetch read as an empty library,
+        // `deleteAll([])` succeeded, this returned nil and the caller redeemed the marker with the
+        // departed account's files still on disk. Nothing is deleted on that path, so the kept
+        // marker's retry finds the whole debt — the cancel above is harmless there, since a
+        // cancelled save is exactly what the retry re-cancels.
+        // Cubic r3 (P2): and it is taken AFTER the cancel, not before. A save that completes inside
+        // `cancelAll()`'s own await inserts its row past a snapshot taken ahead of it, and that row
+        // — with its file — survived the wipe.
+        let offlineIds: [String]
+        do { offlineIds = try self.offlineIds(nil) } catch { return error }
         // R7-P2: the offline rows are the FIRST thing this deletes and were the one step that could
         // not report a failure, so a full or corrupt store left the saved library on disk while the
         // caller cleared its durable marker and announced the account erased.
-        firstError = await offline.deleteAll(offlineIds)
+        var firstError = await offline.deleteAll(offlineIds)
 
         // CF-A-55 (c): the LAST await is above and nothing below suspends, so the answer cannot go
         // stale before the deletes — the caller's own check is two awaits old by now, and an

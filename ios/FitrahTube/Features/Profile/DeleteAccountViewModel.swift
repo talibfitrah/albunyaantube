@@ -90,7 +90,19 @@ nonisolated enum DeleteAccountState: Equatable {
         // have backed out and signed out and somebody else may be signed in — and a cleanup that
         // names nobody takes its latch for whoever is current. `handleDeletion` refuses a name
         // that is not this session's and pays that account's debt by uid instead.
-        let deleting = session.currentUid
+        //
+        // CF-A-55 (d): and with no name at all there is nothing to delete. This screen requires an
+        // account, so nil means the session went during the re-authentication's own await — the
+        // provider sheet is seconds long and Firebase force-signs a revoked or disabled account out
+        // inside exactly that kind of suspension. Passed through, `handleDeletion(for: nil)` is
+        // UNATTRIBUTED: it takes a fresh latch (which then swallows the real verdict for the
+        // account that did hold this device), device-wipes for nobody and posts a `.deleted` no
+        // account can be matched to. The generic refusal already says WHAT happened, and nothing
+        // it cannot know.
+        guard let deleting = session.currentUid else {
+            state = .failedUnknown
+            return
+        }
         do {
             try await account.deleteAccount()
         } catch {
@@ -98,11 +110,11 @@ nonisolated enum DeleteAccountState: Equatable {
             return
         }
         // Not awaited: the cleanup is deliberately detached from this call's task (CF-G-5).
-        // With no uid to name there is no account whose Firebase credential may be deleted:
-        // `deleteUser()` deletes whoever Firebase holds. The device wipe still runs (it is owed),
-        // and a credential left behind answers the 403 envelope on its next `/me` — the same
-        // terminal path, which is what `performDeletion`'s own `try?` already relies on.
-        session.handleDeletion(deletingFirebaseUser: deleting != nil, for: deleting)
+        // `deletingFirebaseUser: true` unconditionally now: the guard above is what stands between
+        // this call and a nameless one, so the credential deleted here is always the credential of
+        // the account named in `deleting` — `handleDeletion` refuses the name outright once it is
+        // somebody else's, and `performDeletion` re-asks Firebase who it holds before deleting.
+        session.handleDeletion(deletingFirebaseUser: true, for: deleting)
     }
 
     /// A password account re-types its password; a federated one runs its provider's own sheet and

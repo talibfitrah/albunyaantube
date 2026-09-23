@@ -323,6 +323,10 @@ struct LocalAccountWiperTests {
     /// wipe returned nil and the marker was redeemed with the departed account's files on disk.
     /// The same fail-closed id source as `wipeRows`, and the fetch error returns before ANY
     /// deletion; the takeover check keeps its place after the last await.
+    ///
+    /// Cubic r3 (P2): and the snapshot is taken AFTER `cancelAll()`, so a row a still-running save
+    /// inserts inside that await cannot miss it. Cancelling first is free on this path: nothing is
+    /// deleted, the caller keeps its marker, and the next launch retries the whole debt.
     @Test func aDeviceWipeWhoseOfflineFetchThrowsReportsItAndDeletesNothing() async throws {
         struct StoreFull: Error {}
         let fixture = makeFixture(); defer { fixture.tearDown() }
@@ -336,7 +340,8 @@ struct LocalAccountWiperTests {
         let error = await wiper.wipe(unlessTakenOver: { false })
 
         #expect(error is StoreFull, "a failed offline fetch was swallowed and the device wipe booked as paid")
-        #expect(await fixture.offline.calls.isEmpty, "the manager was asked to delete with no ids to delete")
+        #expect(await fixture.offline.calls == [Call(method: "cancelAll", id: "")],
+                "the saves ran on past the fetch, or the manager was asked to delete with no ids to delete")
         #expect(fixture.count(FavoriteVideo.self) == 2, "rows went before the offline half was read")
         #expect(fixture.searchHistory.entries == ["tafsir"], "a sweep ran before the offline half was read")
     }

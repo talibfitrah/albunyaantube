@@ -677,6 +677,50 @@ struct DeleteAccountTests {
         #expect(fixture.wipes.count == 0)
     }
 
+    /// CF-A-55 (d): the confirm whose account is GONE by the time the DELETE would be sent.
+    /// `delete()` reads `session.currentUid` before the request and passed a nil straight through —
+    /// and `handleDeletion(for: nil)` is UNATTRIBUTED: it takes a fresh deletion latch, device-wipes
+    /// on behalf of nobody and posts a `.deleted` no account can be matched to. The window is the
+    /// provider sheet's own await (seconds of it), and Firebase force-signs a revoked or disabled
+    /// account out inside exactly that kind of suspension. No account, no delete: the screen says
+    /// WHAT happened with the copy it already has for a delete that did not go through.
+    ///
+    /// The second half is the latch. A nil-named latch is not just an extra wipe — it SWALLOWS the
+    /// real verdict for the account that held this device, which would then never wipe at all.
+    @Test func aConfirmWhoseAccountVanishedDuringTheReAuthenticationDeletesNothing() async throws {
+        let gate = Gate()
+        let googleUser = AuthUser(uid: "fake-uid", email: "student@fitrah.test",
+                                  isEmailVerified: true, providerIDs: ["google.com"])
+        let fixture = makeFixture(delete: .json(204, ""), user: googleUser,
+                                  google: FakeOAuthProvider(gate: gate))
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        let deleting = Task { await fixture.model.delete() }
+        await gate.waitUntilBlocked()
+        fixture.session.signOut()   // the sheet is still up; the session goes
+        await yieldUntil { fixture.status.pending != nil }
+        _ = fixture.status.consume()   // the sign-out's own announcement, not this delete's
+        #expect(fixture.session.currentUid == nil, "the precondition is a confirm with no account left to name")
+        await gate.release()
+        await deleting.value
+        await yieldExpectingNothing()
+
+        #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false,
+                "a DELETE went out for an account nobody could name")
+        #expect(fixture.wipes.count == 0, "an unattributed cleanup wiped the device")
+        #expect(fixture.status.pending == nil, "a .deleted was posted for nobody")
+        #expect(fixture.model.state == .failedUnknown)
+        #expect(DeleteAccountViewModel.messageKey(for: fixture.model.state)
+                == "profile_delete_account_error_unknown")
+
+        // The latch: the departed account's own verdict still reaches the wipe, which an
+        // unattributed latch taken above would have swallowed forever.
+        #expect(fixture.session.handle(.deleted, for: googleUser.uid),
+                "the refused confirm latched the deletion of an account it would not delete")
+        await yieldUntil { fixture.wipes.count > 0 }
+        #expect(fixture.wipes.count == 1)
+    }
+
     // MARK: - CF-A-53: the detached cleanup re-checks who holds the device
 
     private static let meBJSON = #"{"uid":"uid-b","email":"b@fitrah.test","status":"active","role":"user"}"#
