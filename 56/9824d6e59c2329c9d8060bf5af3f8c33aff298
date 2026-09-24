@@ -1,0 +1,88 @@
+ios/FitrahTubeTests/PlayerHostTests.swift
+  s_974be43fdb0416::t_42c6dacc5c7c9c 316
+  s_974be43fdb0416::t_8b4c5c9519dce3 311,313-315
+  s_974be43fdb0416::t_c0b19aaf4e0e4c 300-310,312,317-321
+ios/FitrahTube/Features/Auth/SignInViewModel.swift
+  s_974be43fdb0416::t_53e240c85b8995 241,243-244
+  s_974be43fdb0416::t_04ef7828cd5d5d 104,128,175-183
+  s_974be43fdb0416::t_ab320fa28df39c 184
+ios/FitrahTubeUITests/ScreenshotTests.swift
+  s_974be43fdb0416::t_48cd6395e34115 71-74
+  s_974be43fdb0416::t_46d169c4b68114 2747,2843-2849
+ios/FitrahTube/App/SplashRouter.swift
+  s_974be43fdb0416::t_5a7bab6da96a9d 3-4,10,27,29-30,34-35,46,49-53,58-62
+  s_974be43fdb0416::t_fc023e9f91a40d 11,13
+  s_974be43fdb0416::t_04ef7828cd5d5d 12,32-33
+  s_974be43fdb0416::t_8980ad3eb517fe 44
+ios/FitrahTubeTests/RootViewDestinationTests.swift
+  s_974be43fdb0416::t_382df2eb6b2616 1,125,130,133-135,141,144,166-168,204-216,218-221
+  s_974be43fdb0416::t_42c6dacc5c7c9c 36-38,170-203,217
+  s_974be43fdb0416::t_25aa735ff20915 145,147-165,169,222-223
+  s_974be43fdb0416::t_9fb1d778d38664 33-34
+  s_974be43fdb0416::t_295199aa3f09fa 35,101-124,126-129,131-132,136-140,142-143
+  s_974be43fdb0416::t_7eceef0c03e42b 146
+ios/FitrahTubeTests/AccountSessionTests.swift
+  s_974be43fdb0416::t_295199aa3f09fa 544-572
+  s_974be43fdb0416::t_25aa735ff20915 831-865
+ios/FitrahTubeTests/NowPlayingSnapshotTests.swift
+  s_974be43fdb0416::t_295199aa3f09fa 134-141
+ios/FitrahTubeTests/EmailVerificationViewModelTests.swift
+  s_974be43fdb0416::t_295199aa3f09fa 328
+ios/FitrahTube/App/RootView.swift
+  s_974be43fdb0416::t_b035a7673c8455 134
+  s_974be43fdb0416::t_8980ad3eb517fe 110,122,124-126
+  s_974be43fdb0416::t_04ef7828cd5d5d 117-120
+  s_974be43fdb0416::t_972e65fea1fd61 123
+  s_974be43fdb0416::t_88e826301c211e 65-72,128,135-141,143,213-219
+  s_974be43fdb0416::t_382df2eb6b2616 1,111-113,116,121,127,129-133,142,144-145
+  s_974be43fdb0416::t_ba8251275da864 92,104,183,210-212
+ios/FitrahTubeTests/SignInViewModelTests.swift
+  s_974be43fdb0416::t_42c6dacc5c7c9c 37-63
+  s_974be43fdb0416::t_295199aa3f09fa 325,371
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_974be43fdb0416::t_8980ad3eb517fe 302-305,325,327,356
+  s_974be43fdb0416::t_382df2eb6b2616 212-217,531-538
+  s_974be43fdb0416::t_04ef7828cd5d5d 197-200,425-427,429-434
+ios/FitrahTubeTests/SplashRouterTests.swift
+  s_974be43fdb0416::t_9fb1d778d38664 8-9,37-41,45,48-50,53-71,88,92,95,99,136,143,153-154
+  s_974be43fdb0416::t_295199aa3f09fa 13,21,33,44,77,84,91,98,110,117,126,135,142
+ios/FitrahTubeTests/SyncTriggerTests.swift
+  s_974be43fdb0416::t_01894efd7df36b 308,312-317,319,324,328
+ios/FitrahTube/Features/Auth/SignInScreen.swift
+  s_974be43fdb0416::t_53e240c85b8995 4-6,8-10
+  s_974be43fdb0416::t_39d48014f15f41 33-38
+  s_974be43fdb0416::t_4626d21f9f86ba 39
+ios/FitrahTube/Features/Auth/AccountStatusAlert.swift
+  s_974be43fdb0416::t_53e240c85b8995 3
+ios/FitrahTube/Features/Auth/EmailVerificationScreen.swift
+  s_974be43fdb0416::t_53e240c85b8995 142
+ios/FitrahTubeTests/CastSessionTests.swift
+  s_974be43fdb0416::t_98fc6340fd5540 24-33
+ios/FitrahTube/Features/Bootstrap/AgeIneligibleScreen.swift
+  s_974be43fdb0416::t_53e240c85b8995 58-59
+ios/FitrahTube/Features/Player/CastController.swift
+  s_974be43fdb0416::t_8980ad3eb517fe 146-151
+  s_974be43fdb0416::t_972e65fea1fd61 152
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_974be43fdb0416::t_aad1cdd1a73957 5,652-658,663-667,669-670
+  s_974be43fdb0416::t_ba8251275da864 722
+  s_974be43fdb0416::t_04ef7828cd5d5d 659-662,668
+docs/superpowers/specs/2026-08-23-ios-app-design.md
+  s_974be43fdb0416::t_44eb4ed6517ee1 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "569824d6e59c2329c9d8060bf5af3f8c33aff298",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
