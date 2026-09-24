@@ -1,0 +1,96 @@
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_974be43fdb0416::t_3d7e12dd3ae53a 65-71,241,244-245,267-269
+  s_974be43fdb0416::t_a3525c985bca83 14,53-56,78-79,89,140-141,163,206,225-227,270-273,276,285-286,301,315-316
+  s_974be43fdb0416::t_dc3b38f9ef778a 72
+  s_974be43fdb0416::t_ca8bab88f41edb 16,58-63,80-88,133-139,234-240,266,274,277-279,287-300,302-314,323
+  s_974be43fdb0416::t_65bb5d3a6b47c9 220-224,228-233
+  s_974be43fdb0416::t_119a80ab790140 64
+  s_974be43fdb0416::t_bf6de85d4ec26d 280-284
+  s_974be43fdb0416::t_e04a29c2166981 324-333,335
+  s_974be43fdb0416::t_b8634b6c999c93 57,142,246,275,317
+android/app/src/main/java/com/albunyaan/tube/player/PlaybackService.kt
+  s_974be43fdb0416::t_0d18e544cda875 993
+  s_974be43fdb0416::t_c7244b7dc2d261 143,282,673-677,679,972-992
+android/app/src/test/java/com/albunyaan/tube/ui/SplashRouterTest.kt
+  s_974be43fdb0416::t_c2a60e8af8cd58 92-112
+  s_974be43fdb0416::t_dc3b38f9ef778a 113-132
+android/app/src/test/java/com/albunyaan/tube/player/PlaybackServiceSignOutTest.kt
+  s_974be43fdb0416::t_0d18e544cda875 1-29
+android/app/src/main/java/com/albunyaan/tube/ui/SplashRouter.kt
+  s_974be43fdb0416::t_bf6de85d4ec26d 19,46-47
+  s_974be43fdb0416::t_3d7e12dd3ae53a 8,75-81
+  s_974be43fdb0416::t_e04a29c2166981 4,9,52-56
+  s_974be43fdb0416::t_c2a60e8af8cd58 74
+  s_974be43fdb0416::t_dc3b38f9ef778a 82
+  s_974be43fdb0416::t_6b8341db1c16c2 18,20-21,43-45,48,57-64
+  s_974be43fdb0416::t_3284df4d51bca7 66-73
+  s_974be43fdb0416::t_b18d8ecfcb3605 5,7,49-51,65
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_974be43fdb0416::t_e04a29c2166981 140-141
+  s_974be43fdb0416::t_989d0c115b5437 132-133,139,142-144,310-311,325
+android/app/src/main/java/com/albunyaan/tube/auth/LastKnownAccountStore.kt
+  s_974be43fdb0416::t_e04a29c2166981 52-58,60
+  s_974be43fdb0416::t_8f21b61dbc3233 8-51,59,61-72
+  s_974be43fdb0416::t_3521e7fb7b37d4 1-7,73
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepository.kt
+  s_974be43fdb0416::t_f323bd6f760586 84-96,99-100
+  s_974be43fdb0416::t_ca8bab88f41edb 82-83,97-98
+  s_974be43fdb0416::t_6b8341db1c16c2 46-58
+  s_974be43fdb0416::t_eabe8566b87ed7 59-60
+android/app/src/main/java/com/albunyaan/tube/auth/di/AccountModule.kt
+  s_974be43fdb0416::t_6b8341db1c16c2 6,42,51
+  s_974be43fdb0416::t_84dc6cc24ca5fb 52
+  s_974be43fdb0416::t_3d7e12dd3ae53a 9,43,53
+android/app/src/main/java/com/albunyaan/tube/ui/MainActivity.kt
+  s_974be43fdb0416::t_c7244b7dc2d261 166-167,177,179,182-183,193-194
+  s_974be43fdb0416::t_3d7e12dd3ae53a 172-176,178,180-181
+  s_974be43fdb0416::t_3284df4d51bca7 23,108,164-165,168-171,184-191
+  s_974be43fdb0416::t_b4770c29f29b01 192,195-196
+android/app/src/main/java/com/albunyaan/tube/util/ReconnectCallback.kt
+  s_974be43fdb0416::t_119a80ab790140 1-3,6
+  s_974be43fdb0416::t_e04a29c2166981 4-5,7-30
+android/app/src/main/java/com/albunyaan/tube/AlBunyaanApplication.kt
+  s_974be43fdb0416::t_e04a29c2166981 6,167-170,212-217
+android/app/src/test/java/com/albunyaan/tube/ui/SplashRouterOfflineTest.kt
+  s_974be43fdb0416::t_123d104cbdd389 42-55,105,108,115-120,122-133,167,169
+  s_974be43fdb0416::t_e44356d4a51434 1-12,25-41,56-67,69-104,106-107,109-114,121,134-144,173-183
+  s_974be43fdb0416::t_42fca664b7d411 16,149
+  s_974be43fdb0416::t_69eb20191f7c2e 13-15,17-23,68,145-148,150,152-166,168,170-172
+  s_974be43fdb0416::t_590ac9951c8b90 24,151
+android/app/src/test/java/com/albunyaan/tube/util/ReconnectCallbackTest.kt
+  s_974be43fdb0416::t_69eb20191f7c2e 1-59
+android/app/src/test/java/com/albunyaan/tube/auth/AccountRepositoryImplTest.kt
+  s_974be43fdb0416::t_dc3b38f9ef778a 493-496,519-555
+  s_974be43fdb0416::t_69eb20191f7c2e 10-11,334-355,370,372-374,376-383,398-401,403-405,409,436-449,452-454,457,462,465-492,497-518
+  s_974be43fdb0416::t_123d104cbdd389 356-369,371,375,384-397,402,406-408,410-434,459-461
+  s_974be43fdb0416::t_e44356d4a51434 199-333,463,556-557
+  s_974be43fdb0416::t_f323bd6f760586 435
+  s_974be43fdb0416::t_870cbbe697f04b 450-451,455-456,458,464
+android/app/src/test/java/com/albunyaan/tube/auth/LastKnownAccountStoreTest.kt
+  s_974be43fdb0416::t_e44356d4a51434 1-8,10,16-53
+  s_974be43fdb0416::t_fd55d2af899675 9,11-15
+android/app/src/test/java/com/albunyaan/tube/data/account/LocalAccountDataWiperTest.kt
+  s_974be43fdb0416::t_eb09e55cd46884 142
+  s_974be43fdb0416::t_fcf7145d6764c5 8-10,44,62-63,140-141,143-152
+  s_974be43fdb0416::t_fd55d2af899675 23,32-36
+  s_974be43fdb0416::t_1b54412e7abe60 153
+android/app/src/main/java/com/albunyaan/tube/data/account/LocalAccountDataWiper.kt
+  s_974be43fdb0416::t_a3525c985bca83 65-67
+  s_974be43fdb0416::t_4836501d46da67 5,28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a24aff30b72720a2d734da05cf735ca8ac92dcc5",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
