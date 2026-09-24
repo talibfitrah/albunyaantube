@@ -297,6 +297,28 @@ struct PlayerHostTests {
                 == PiPTeardownActions(detachBackground: false, releasePlayer: false, deferUntilPiPStops: false))
     }
 
+    // MARK: - Owner ruling 2026-09-24: nothing plays behind the sign-in wall
+
+    /// Sign-out unmounts the shell, and the dismantle above DEFERS the pause while a PiP window is
+    /// up — so without this, a PiP video kept playing over the sign-in root. Every player the
+    /// builder ever made is reachable here, whether or not its host or coordinator still exists.
+    @Test func stoppingAllPlaybackPausesAndEmptiesEveryBuiltPlayer() throws {
+        let url = URL(string: "https://127.0.0.1:9/stop.m3u8")!
+        let player = try #require(PlayerHostView.player(
+            for: .ready(Self.resolved(.hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []))),
+            replacing: nil))
+        #expect(player.rate > 0, "the builder autoplays a fresh player")
+        #expect(PlayerHostView.builtPlayers.contains(player), "the sign-out stop cannot reach an unregistered player")
+
+        // Its own table: the shared one holds the parallel tests' players too.
+        let table = NSHashTable<AVPlayer>.weakObjects()
+        table.add(player)
+        PlayerHostView.stopAllPlayback(table, clearNowPlaying: {})   // the lock screen is `NowPlayingSnapshotTests`' global
+
+        #expect(player.rate == 0)
+        #expect(player.currentItem == nil)
+    }
+
     // MARK: - Task 5: the delegate wiring
 
     @Test func pipStateFlipsOnWillStartNotDidStart() {

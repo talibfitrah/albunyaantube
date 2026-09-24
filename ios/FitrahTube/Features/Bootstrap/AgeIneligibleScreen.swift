@@ -55,8 +55,8 @@ struct AgeIneligibleScreen: View {
 
     private func acknowledge() {
         // Clearing the flag is what dismisses the cover; underneath it `RootView` is already
-        // rendering the guest shell. The pop clears whatever the guest had pushed before signing
-        // in, the same hygiene `RootView.dropToGuest()` applies on the other terminal path.
+        // rendering the sign-in root. The pop clears whatever was pushed before the teardown, the
+        // same hygiene `RootView.dropToSignIn()` applies on the other terminal path.
         container.session.acknowledgeAgeIneligible()
         Tab.allCases.forEach { router.popToRoot($0) }
     }

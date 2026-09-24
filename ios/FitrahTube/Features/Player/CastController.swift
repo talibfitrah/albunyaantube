@@ -143,6 +143,13 @@ import SwiftUI
         GCKCastContext.sharedInstance().sessionManager.add(self)
     }
 
+    /// Sign-in wall P2: sign-out ends the cast too — the TV is behind the same wall. Guarded on
+    /// `castAvailable` because `sharedInstance()` raises in a build that never created a context.
+    func endSession() {
+        guard castAvailable else { return }
+        GCKCastContext.sharedInstance().sessionManager.endSessionAndStopCasting(true)
+    }
+
     /// A FRESH mini controller per mount. `MainShellView` wraps one of these in a
     /// `UIViewControllerRepresentable` inside the SELECTED tab's stack, so a tab switch dismantles
     /// one wrapper and creates another in an order SwiftUI does not define -- and while a single

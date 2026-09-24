@@ -68,7 +68,10 @@ final class ScreenshotTests: XCTestCase {
         Screen(key: "categories", arguments: ["-fitrah-route", "categories"], anchor: .button("Quran")),
         Screen(key: "favorites", arguments: ["-fitrah-seed-favorites", "-fitrah-route", "favorites"],
                anchor: .button("Seeded Favorite 1")),
-        Screen(key: "settings", arguments: ["-fitrah-route", "settings"], anchor: .firstSwitch),
+        // Signed in now (owner ruling 2026-09-24, `launch`), so the Account section leads and, at
+        // `.accessibility3` on a phone, pushes the first switch out of the hierarchy — anchor on
+        // Sign out, which is on screen in every column.
+        Screen(key: "settings", arguments: ["-fitrah-route", "settings"], anchor: .buttonID("settings.signOut")),
         // `about_version_format` is the literal "Version %1$@ (%2$@)" in en, ar and nl alike
         // (untranslated by contract -- R7 fallback), so the word "Version" is a locale-independent
         // anchor that, unlike the version number itself, survives a MARKETING_VERSION bump. It is
@@ -2741,7 +2744,7 @@ final class ScreenshotTests: XCTestCase {
                anchor: .buttonID("bootstrap.submit")),
         // The non-dismissible terminal alert. `RootView`'s `.onChange(of: outcome, initial: true)`
         // raises it on the FIRST pass, i.e. while `showSplash` is still true — so the captured
-        // backdrop is the splash, not the guest shell `SplashRouter.outcome` also asks for. That is
+        // backdrop is the splash, not the sign-in root `SplashRouter.outcome` also asks for. That is
         // what a blocked account actually sees at launch, and the alert is the whole subject.
         Screen(key: "account-blocked", arguments: ["-fitrah-fake-auth", "blocked"], anchor: .alert),
         Screen(key: "profile", arguments: ["-fitrah-fake-auth", "active", "-fitrah-route", "profile"],
@@ -2837,6 +2840,13 @@ final class ScreenshotTests: XCTestCase {
             arguments += ["-onboarding_completed", "YES"]
         }
         arguments += locale.arguments + extraArguments + screen.arguments
+        // Owner ruling 2026-09-24: no content before sign-in, so a fixture launch that names no
+        // account gets the fixture's ACTIVE one (`AppContainer.FakeAuth`, DEBUG-only) — a screen
+        // that needs another status says so itself. Onboarding precedes the gate and is left alone;
+        // the live container has no fake account and hits the wall like a real signed-out user.
+        if fakeContainer, screen.key != "onboarding", !arguments.contains("-fitrah-fake-auth") {
+            arguments += ["-fitrah-fake-auth", "active"]
+        }
         app.launchArguments = arguments
         app.launch()
         return app

@@ -131,6 +131,14 @@ import Testing
         #expect(MPRemoteCommandCenter.shared().playCommand.isEnabled == false)
     }
 
+    /// Sign-in wall P3: during PiP the dismantle defers `detach()`, so the metadata of the video
+    /// being stopped would outlive the sign-out on the lock screen.
+    @Test func stoppingAllPlaybackClearsTheLockScreenMetadata() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: "T"]
+        PlayerHostView.stopAllPlayback(NSHashTable<AVPlayer>.weakObjects())
+        #expect(MPNowPlayingInfoCenter.default().nowPlayingInfo == nil)
+    }
+
     /// The item-replacement refresh (audio-only swap, a recovery `replaceCurrentItem`, a quality
     /// change): a non-playable state must retract the lock-screen surface, not leave the old
     /// video's metadata standing.

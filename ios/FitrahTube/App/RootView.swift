@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// Root of the app. `SplashView` gates entry (its own animation/work timeline, `splash-onboarding.md`
@@ -61,14 +62,14 @@ struct RootView: View {
             // per-user store, so it must outlive every screen, which is what makes the root the
             // only correct place for it.
             .task { await container.session.start() }
-            // Part B gate (Codex 11): an ORDINARY sign-out — Settings, the Me kebab, a Firebase
-            // force sign-out — pops the account screens off every tab, the way the terminal
-            // alert's `dropToGuest()` already pops everything. View-layer glue, like the foreground
-            // and connectivity hooks (CF-A-12); the decision itself is `Router.dropAccountRoutes`.
-            .onChange(of: container.session.user == nil) { _, signedOut in
-                guard signedOut else { return }
-                router.dropAccountRoutes()
-                container.endImportRun()
+            // EVERY arrival on the sign-in wall (owner ruling 2026-09-24) — a sign-out from Settings
+            // or the Me kebab, a Firebase force sign-out, a terminal verdict, account deletion, the
+            // under-13 teardown, AND the two that leave Firebase holding a user (a refused sign-out,
+            // a failed `/me`) — ends what the last session left running. Keyed on the DESTINATION,
+            // not `user == nil`, for exactly those two (patch round 3). View-layer glue, like the
+            // foreground and connectivity hooks (CF-A-12); the work is `didRoute(to:…)`.
+            .onChange(of: outcome.destination) { _, destination in
+                Self.didRoute(to: destination, router: router, container: container)
             }
             // `alert` is ADVISORY on the outcome (Task 8) — the caller is what acts on it, and this
             // is the caller. `initial: true` so a launch that already resolves to a blocked account
@@ -88,7 +89,7 @@ struct RootView: View {
             // (`AccountSession.terminateAgeIneligible`), because the server disabled the Firebase
             // account before answering and every later request would 401 into "your account has
             // been blocked" — so by the time this is up the destination underneath is already the
-            // guest shell, and a screen rendered BY the destination switch would be torn down by
+            // sign-in root, and a screen rendered BY the destination switch would be torn down by
             // the very drop that makes it correct. A cover has no back gesture and no tab bar,
             // which is what "terminal" means here; the flag is cleared by the screen's own OK.
             .fullScreenCover(isPresented: Binding(get: { container.session.isAgeIneligible },
@@ -100,23 +101,48 @@ struct RootView: View {
             .alert(alert.map { String(localized: String.LocalizationValue($0.titleKey)) } ?? "",
                    isPresented: Binding(get: { alert != nil }, set: { if !$0 { alert = nil } }),
                    presenting: alert) { _ in
-                Button(String(localized: "ok")) { dropToGuest() }
+                Button(String(localized: "ok")) { dropToSignIn() }
             } message: { terminal in
                 Text(String(localized: String.LocalizationValue(terminal.bodyKey)))
             }
     }
 
+    private var outcome: SplashOutcome {
+        Self.outcome(onboardingCompleted: container.settings.onboardingCompleted, session: container.session)
+    }
+
     /// The launch decision, recomputed whenever settings or the session change. `user` is the
     /// Firebase identity (spec §13 needs `hasPasswordProvider`/`isEmailVerified`, neither of which
-    /// is on the backend's account record); `status` is nil until `/me` answers, which the matrix
-    /// reads as "guest for now, the caller retries".
-    private var outcome: SplashOutcome {
-        let session = container.session
-        return SplashRouter.outcome(onboardingCompleted: container.settings.onboardingCompleted,
-                                    signedIn: session.user != nil,
-                                    hasPasswordProvider: session.user?.hasPasswordProvider ?? false,
-                                    isEmailVerified: session.user?.isEmailVerified ?? false,
-                                    status: session.state.me?.status)
+    /// is on the backend's account record); `status` is nil until `/me` answers. A loaded account
+    /// keeps its record through a failed refresh (`AccountSession.fetch`). With no record, only a
+    /// round positively in flight (`.loading`, which `start()` writes in the same turn it sets
+    /// `user`) holds the spinner; anything else — failed, a refused sign-out, a cancelled round —
+    /// is the wall, never a hold with nothing left to end it (patch round 3).
+    static func outcome(onboardingCompleted: Bool, session: AccountSession) -> SplashOutcome {
+        let user = session.user
+        return SplashRouter.outcome(onboardingCompleted: onboardingCompleted,
+                                    signedIn: user != nil,
+                                    hasPasswordProvider: user?.hasPasswordProvider ?? false,
+                                    isEmailVerified: user?.isEmailVerified ?? false,
+                                    status: session.state.me?.status,
+                                    awaitingStatus: session.state == .loading)
+    }
+
+    /// The sign-out glue, out of the `.onChange` so a test can run it: every tab back to root, every
+    /// player and the cast stopped, the import run ended. `players` is a parameter only so a test
+    /// can pass its own table instead of stopping the suite's parallel players.
+    static func didRoute(to destination: SplashDestination, router: Router, container: AppContainer,
+                         players: NSHashTable<AVPlayer> = PlayerHostView.builtPlayers,
+                         clearNowPlaying: (() -> Void)? = nil) {
+        // Every tab back to root (the next account does not land inside the previous one's player —
+        // only a deep link opened on the wall, which `Router.open` pushes after this, survives into
+        // the next session), every player stopped (a PiP window defers its own teardown past the
+        // shell's unmount, `PiPDismantlePolicy`), the cast on the TV ended, the import run ended.
+        guard destination == .signIn else { return }
+        Tab.allCases.forEach { router.popToRoot($0) }
+        PlayerHostView.stopAllPlayback(players, clearNowPlaying: clearNowPlaying)
+        container.castController.endSession()
+        container.endImportRun()
     }
 
     /// The two advisory legs of the outcome, extracted so `RootViewDestinationTests` can pin BOTH —
@@ -154,7 +180,7 @@ struct RootView: View {
         if let terminal = AccountStatusAlert(signal.event) { alert = terminal }
     }
 
-    private func dropToGuest() {
+    private func dropToSignIn() {
         alert = nil
         container.session.signOut()
         // Every tab, not just the selected one: a pushed profile/submissions screen on a background
@@ -181,6 +207,16 @@ struct RootView: View {
         case .main: MainShellView()
         case .profileBootstrap: ProfileBootstrapScreen()
         case .emailVerification: EmailVerificationScreen()
+        // A stack only for the title bar: nothing is ever pushed, so there is no back button, and
+        // `SignInScreen`'s own dismiss-on-land is a no-op at a root — the outcome re-routes instead.
+        case .signIn: NavigationStack { SignInScreen() }
+        // A plain spinner: the launch animation already played (`showSplash`), and replaying it
+        // after every sign-in cost ~2.75 s — and parked on a static logo with a deep link pending.
+        case .awaitingAccount:
+            ProgressView()
+                .accessibilityLabel(String(localized: "loading"))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.background.ignoresSafeArea())
         }
     }
 }

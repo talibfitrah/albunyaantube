@@ -541,6 +541,35 @@ struct AccountSessionTests {
         #expect(transport.sent.count == 3, "the dropped account's round asked again after the switch")
     }
 
+    /// Sign-in wall P1-b: A is signed in with a failed `/me` (the wall), and signs in as B. `land()`
+    /// starts its round while the session still names A, `start()`'s `.signedIn(B)` arm JOINS it,
+    /// and the answer is dropped as A's-round-under-B — which left `.loading` standing with nobody
+    /// left to re-drive `/me`: the splash hold forever. The follower must ask for its own record.
+    @Test func aFollowerOfAnotherAccountsRoundFetchesItsOwnRecord() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let gate = Gate()
+        let transport = ScriptedTransport([.json(500, "{}"), .json(200, Self.meBJSON), .json(200, Self.meBJSON)],
+                                          park: { index in if index == 2 { await gate.block() } })
+        let session = makeSession(auth: auth, transport: transport)
+        let running = Task { await session.start() }
+        defer { running.cancel() }
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+        for _ in 0..<500 where !{ if case .failed = session.state { true } else { false } }() { await Task.yield() }
+        #expect(session.user?.uid == "fake-uid")
+
+        auth.user = Self.accountB
+        let landing = Task { await session.refresh(maxAttempts: 1) }   // `land()`'s round, started for A
+        await gate.waitUntilBlocked()
+        _ = try await auth.signIn(email: "other@fitrah.test", password: "p")
+        for _ in 0..<500 where session.user?.uid != "uid-b" { await Task.yield() }
+        await gate.release()
+        await landing.value
+        let deadline = ContinuousClock.now + .seconds(10)
+        while session.state.me == nil, ContinuousClock.now < deadline { await Task.yield() }
+
+        #expect(session.state.me?.uid == "uid-b", "B's session was stranded at \(session.state)")
+    }
+
     // MARK: - Stage 9 round 3 / NB1 + NB3 + NB2
 
     /// NB1. The identity guard round 2 added compares `user?.uid` with the uid the round STARTED
@@ -797,6 +826,41 @@ struct AccountSessionTests {
         #expect(session.state == loaded,
                 "an offline foreground replaced the loaded account with an error banner")
         #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn)
+    }
+
+    /// Patch round 2: `.network`'s rule, widened. A loaded account whose refresh fails for any
+    /// NON-terminal reason (5xx, bare 401, decode) keeps its record — Android routes once, and
+    /// `.failed` for a loaded account would throw a signed-in user out to the sign-in wall.
+    @Test(arguments: [HTTPResponse.json(500, "{}"), .json(401, "{}"), .json(200, "not json")])
+    func aNonTerminalFailureOnALoadedAccountKeepsTheAccount(failure: HTTPResponse) async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let transport = ScriptedTransport([.json(200, Self.meJSON), failure, failure])
+        let session = makeSession(auth: auth, transport: transport)
+        let running = try await signedIn(auth, session)
+        defer { running.cancel() }
+        let loaded = session.state
+        #expect(loaded.me?.uid == "fake-uid")
+
+        await session.refreshIfSignedIn(maxAttempts: 1)
+
+        #expect(session.state == loaded, "a failed refresh replaced the loaded account")
+    }
+
+    /// Patch round 2 (Cubic): the launch/sign-in round is ONE attempt, as Android's splash
+    /// (`fetchMe(maxAttempts = 1)`): three attempts at a 20 s request timeout plus backoff held the
+    /// `.awaitingAccount` splash for about a minute on a stalled server.
+    @Test func theAuthTransitionRoundIsASingleAttempt() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let transport = ScriptedTransport([.failing(URLError(.timedOut)), .json(200, Self.meJSON)])
+        let session = makeSession(auth: auth, transport: transport)
+        let running = Task { await session.start() }
+        defer { running.cancel() }
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+        let deadline = ContinuousClock.now + .seconds(10)
+        while session.state == .loading || session.state == .signedOut, ContinuousClock.now < deadline { await Task.yield() }
+
+        #expect(transport.sent.count == 1)
+        #expect(session.state.me == nil, "a second attempt ran")
     }
 
     // MARK: - Stage 5 / C1.3: a refused sign-out is not a sign-out

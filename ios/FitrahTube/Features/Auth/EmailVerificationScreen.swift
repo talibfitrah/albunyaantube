@@ -139,7 +139,7 @@ struct EmailVerificationScreen: View {
 
     private func signOutButton(_ model: EmailVerificationViewModel) -> some View {
         // Spec §13's back affordance: it SIGNS OUT. `RootView` recomputes the outcome off the
-        // dropped session and renders the guest shell, so there is nothing to dismiss here.
+        // dropped session and renders the sign-in root, so there is nothing to dismiss here.
         Button {
             model.signOut()
         } label: {

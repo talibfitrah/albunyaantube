@@ -1,12 +1,13 @@
 import SwiftUI
 
 /// The first user-visible auth surface (spec §13): email/password with a sign-up toggle and
-/// forgot-password, then the capability-filtered provider buttons. Reached from the guest Me tab's
-/// sign-in card — never forced, never a gate in front of the catalog (D11 / RULING 31).
+/// forgot-password, then the capability-filtered provider buttons. Owner ruling 2026-09-24
+/// (overrides D11 / RULING 31): this is the forced gate in front of all content — `RootView`
+/// renders it as the root for every signed-out user, with no close and no guest escape.
 ///
-/// On success it dismisses: `RootView.destination(for:)` is the seam that renders where spec §13
-/// lands the account (`.emailVerification` / `.profileBootstrap` / the shell), recomputed from
-/// `AccountSession` the moment the auth stream carries the new identity.
+/// On success it dismisses (a no-op at the root): `RootView.destination(for:)` is the seam that
+/// renders where spec §13 lands the account (`.emailVerification` / `.profileBootstrap` / the
+/// shell), recomputed from `AccountSession` the moment the auth stream carries the new identity.
 struct SignInScreen: View {
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
@@ -28,6 +29,13 @@ struct SignInScreen: View {
                 viewModel = SignInViewModel(auth: container.auth, session: container.session,
                                             capabilities: container.capabilities)
             }
+        }
+        // Signed in but `/me` failed routes back here (Android toasts `splash_couldnt_connect`
+        // for the same row); without this the form just reappears with no reason given. Follows
+        // the session, not `.task`, so a failure while this screen is already up still says so.
+        .onChange(of: container.session.state, initial: true) { _, state in
+            guard container.session.user != nil, case .failed(_, let message) = state else { return }
+            banner = BannerMessage(text: message)
         }
         // Fix round 1 / I1: driven off `errorPresentation`, NOT `state.error`. Neither pre-network
         // gate clears the error first, so a second tap on the same malformed address was not a

@@ -101,6 +101,7 @@ import Observation
             return
         }
         beginLoading()
+        dropLiveAccount()
         do {
             let user: AuthUser
             if state.mode == .signIn {
@@ -124,6 +125,7 @@ import Observation
         // prerequisite between render and tap.
         guard provider.isAvailable else { return }
         beginLoading()
+        dropLiveAccount()
 
         let credential: OAuthCredential
         do {
@@ -169,6 +171,16 @@ import Observation
     }
 
     // MARK: -
+
+    /// Patch round 3: the wall can be up while Firebase still holds the previous account (a failed
+    /// `/me`, a refused sign-out). A sign-in on top of it swaps identity with no `.signedOut`, so
+    /// that account's provider SDK session and every per-account holder were never released. Drop
+    /// it HERE rather than in `start()`'s uid-change arm: by then the provider SDKs already hold
+    /// the NEW account (`GIDSignIn` is one shared session), and `tearDown()` would sign B out of
+    /// them. Before the provider sheet, "the previous account" is unambiguous.
+    private func dropLiveAccount() {
+        if session.user != nil { session.signOut() }
+    }
 
     private func beginLoading() {
         state.isLoading = true
@@ -226,10 +238,10 @@ import Observation
     /// at this instant: `start()`'s own refresh is driven by the auth stream and has not necessarily
     /// landed when `signIn` returns, and reading a still-`nil` status would route a pending-profile
     /// account to the shell. `maxAttempts: 1` — the splash's budget; a network failure leaves the
-    /// status nil, which the matrix reads as "guest for now, the caller retries".
+    /// status nil, which the matrix routes back to the sign-in root (`SignInScreen` says why).
     ///
-    /// `onboardingCompleted: true` is a fact, not an assumption: this screen is only reachable from
-    /// the Me tab, which lives behind the onboarding gate.
+    /// `onboardingCompleted: true` is a fact, not an assumption: this screen is only reachable
+    /// behind the onboarding gate.
     private func land(_ user: AuthUser) async {
         await session.refresh(maxAttempts: 1)
         state.isLoading = false

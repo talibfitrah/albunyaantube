@@ -1,3 +1,4 @@
+import AVFoundation
 import FitrahAPI
 import Foundation
 import InnerTubeKit
@@ -29,6 +30,12 @@ struct RootViewDestinationTests {
         #expect(leafTypeName(for: .main) == "MainShellView")
         #expect(leafTypeName(for: .profileBootstrap) == "ProfileBootstrapScreen")
         #expect(leafTypeName(for: .emailVerification) == "EmailVerificationScreen")
+        // Owner ruling 2026-09-24: the forced sign-in root (in a stack only for its title bar —
+        // nothing is pushed under it, so there is no back affordance) and the `/me` hold.
+        #expect(leafTypeName(for: .signIn) == "NavigationStack<NavigationPath, SignInScreen>")
+        // A plain spinner, not a replay of the ~2.75 s launch animation after every sign-in.
+        #expect(leafTypeName(for: .awaitingAccount) != "SplashView")
+        #expect(leafTypeName(for: .awaitingAccount).contains("ProgressView<"))
     }
 
     /// The terminal alert is blocked/deleted and nothing else: `.signedOut` is the user's own
@@ -89,6 +96,129 @@ struct RootViewDestinationTests {
 
         #expect(wipes.withLock { $0 } == 1, "a server-deleted account was signed out but not wiped")
         #expect(alert == AccountStatusAlert(.deleted))
+    }
+
+    // MARK: - Sign-in wall: what `RootView` feeds the router
+
+    /// A signed-in session whose ONE `/me` answer is scripted, driven by `start()`.
+    @MainActor private func session(_ responses: [HTTPResponse],
+                                    park: (@Sendable (Int) async -> Void)? = nil) async -> (AccountSession, Task<Void, Never>) {
+        let session = AccountSession(auth: FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser)),
+                                     account: AccountClient(transport: ScriptedTransport(responses, park: park),
+                                                            baseURL: URL(string: "https://api.fitrah.test/")!,
+                                                            deviceId: DeviceId(value: "dev-1")),
+                                     stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil })
+        let running = Task { await session.start() }
+        for _ in 0..<500 where session.user == nil { await Task.yield() }
+        return (session, running)
+    }
+
+    private static let active = #"{"uid":"fake-uid","status":"active","role":"user"}"#
+
+    /// `/me` in flight holds the splash; `/me` failed before anything was loaded is the wall. A
+    /// mapping that always said "awaiting" would park a failed launch on the splash forever.
+    @Test @MainActor func aStatusInFlightHoldsTheSplashAndAFailedOneIsTheWall() async {
+        let gate = Gate()
+        let (session, running) = await session([.json(500, "{}")], park: { _ in await gate.block() })
+        defer { running.cancel() }
+        await gate.waitUntilBlocked()
+        #expect(RootView.outcome(onboardingCompleted: true, session: session).destination
+                == .awaitingAccount)
+
+        await gate.release()
+        for _ in 0..<500 where session.state == .loading { await Task.yield() }
+        #expect(RootView.outcome(onboardingCompleted: true, session: session).destination == .signIn)
+    }
+
+    /// P1-a: Android routes once, at cold start. A later refresh that fails (5xx) for the account
+    /// already in the shell must not eject it to the wall — only a sign-out may.
+    @Test @MainActor func aFailedRefreshForALoadedAccountKeepsItInTheShell() async {
+        let (session, running) = await session([.json(200, Self.active), .json(500, "{}")])
+        defer { running.cancel() }
+        for _ in 0..<500 where session.state.me == nil { await Task.yield() }
+
+        await session.refreshIfSignedIn(maxAttempts: 1)
+        #expect(RootView.outcome(onboardingCompleted: true, session: session).destination == .main)
+
+        session.signOut()
+        #expect(RootView.outcome(onboardingCompleted: true, session: session).destination == .signIn)
+    }
+
+    /// Patch round 2: a verdict whose sign-out Firebase REFUSES leaves `user` set and writes
+    /// `.failed` (`dropSession`'s catch). A blocked account must land on the wall, not back in the
+    /// shell on a remembered status.
+    @Test @MainActor func aBlockedVerdictWhoseSignOutIsRefusedLandsOnTheWall() async {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let session = AccountSession(auth: auth,
+                                     account: AccountClient(transport: ScriptedTransport([.json(200, Self.active)]),
+                                                            baseURL: URL(string: "https://api.fitrah.test/")!,
+                                                            deviceId: DeviceId(value: "dev-1")),
+                                     stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil })
+        let running = Task { await session.start() }
+        defer { running.cancel() }
+        for _ in 0..<500 where session.state.me == nil { await Task.yield() }
+
+        auth.nextError = .unknown
+        var alert: AccountStatusAlert?
+        RootView.route(AccountStatusSignal(event: .blocked, uid: FakeAuthClient.defaultUser.uid),
+                       session: session, alert: &alert)
+        #expect(session.user != nil, "the fixture's sign-out was supposed to be refused")
+
+        #expect(RootView.outcome(onboardingCompleted: true, session: session).destination == .signIn)
+    }
+
+    /// Patch round 3: the wall is not only `user == nil` — a refused sign-out and a failed `/me`
+    /// both show it with a user still set. The cleanup is keyed on the DESTINATION: nothing for the
+    /// shell, everything for the wall.
+    @Test @MainActor func theCleanupRunsWhenTheWallIsShownAndOnlyThen() {
+        let router = Router()
+        router.paths[.home] = [.search]
+        RootView.didRoute(to: .main, router: router, container: .fake(),
+                          players: NSHashTable<AVPlayer>.weakObjects(), clearNowPlaying: {})
+        #expect(router.paths[.home] == [.search], "the shell's own stack was torn down")
+
+        var cleared = false
+        RootView.didRoute(to: .signIn, router: router, container: .fake(),
+                          players: NSHashTable<AVPlayer>.weakObjects(), clearNowPlaying: { cleared = true })
+        #expect(router.paths[.home]?.isEmpty == true)
+        #expect(cleared, "the lock screen kept the last video")
+    }
+
+    /// Patch round 3 (Cubic): "awaiting" is POSITIVELY in flight. A cancelled launch round used to
+    /// restore the `.signedOut` it found while `user` was already set — nothing in flight, no
+    /// record, not failed — and the splash held forever.
+    @Test @MainActor func aCancelledLaunchRoundDoesNotHoldTheSplashForever() async {
+        let gate = Gate()
+        let (session, running) = await session([.json(200, Self.active)], park: { _ in await gate.block() })
+        await gate.waitUntilBlocked()
+        running.cancel()
+        await gate.release()
+        for _ in 0..<500 where session.state == .loading { await Task.yield() }
+
+        #expect(session.user != nil)
+        #expect(RootView.outcome(onboardingCompleted: true, session: session).destination != .awaitingAccount,
+                "stuck on the splash at \(session.state)")
+    }
+
+    /// The `.onChange` glue itself, not a re-statement of it: tabs popped, the player
+    /// stopped, the cast asked to end (a no-op without a cast context).
+    @Test @MainActor func theSignOutGluePopsEveryTabAndStopsPlayback() throws {
+        let router = Router()
+        router.paths[.home] = [.search]
+        router.paths[.channels] = [.search]
+        let url = URL(string: "https://127.0.0.1:9/glue.m3u8")!
+        let player = try #require(PlayerHostView.player(
+            for: .ready(Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []),
+                                 client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)),
+            replacing: nil))
+        let table = NSHashTable<AVPlayer>.weakObjects()
+        table.add(player)
+
+        RootView.didRoute(to: .signIn, router: router, container: .fake(), players: table, clearNowPlaying: {})
+
+        #expect(Tab.allCases.allSatisfy { router.paths[$0]?.isEmpty ?? true })
+        #expect(player.rate == 0)
+        #expect(player.currentItem == nil)
     }
 
     // MARK: - The mid-session signal (CF-A-48)

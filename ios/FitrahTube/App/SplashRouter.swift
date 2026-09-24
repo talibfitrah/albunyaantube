@@ -1,11 +1,16 @@
 /// Where `RootView` sends the user once the splash decision is made. Phase 1 only knew about
 /// the onboarding flag; phase 4 adds the signed-in/account-status branches from
-/// `splash-onboarding.md:1.7` (guest routing per spec §6 -- iOS never forces sign-in).
+/// `splash-onboarding.md:1.7`. Owner ruling 2026-09-24 (overrides D11 / RULING 31): sign-in is
+/// forced before any content, as on Android — there is no guest shell.
 nonisolated enum SplashDestination: Equatable {
     case onboarding
     case main
     case profileBootstrap
     case emailVerification
+    /// The full-screen sign-in root: no tab bar, no dismiss, no way to content.
+    case signIn
+    /// Signed in, `/me` still in flight: a spinner (Android's splash awaits the same call).
+    case awaitingAccount
 }
 
 /// The whole launch decision: where to go, and the terminal event to surface. `alert` travels with
@@ -19,12 +24,15 @@ nonisolated struct SplashOutcome: Equatable {
 }
 
 nonisolated enum SplashRouter {
-    /// Spec §6 + §13 bullet 1, with the forced sign-in removed (D11 / RULING 31):
+    /// Spec §6 + §13 bullet 1, with sign-in forced (owner ruling 2026-09-24; Android `SplashRouter.kt`):
     ///   !onboardingCompleted                       -> onboarding
-    ///   signed out                                 -> main (guest)
-    ///   BLOCKED / DELETED                          -> main (guest) + terminal alert (which signs out)
+    ///   signed out                                 -> signIn
+    ///   BLOCKED / DELETED                          -> signIn + terminal alert (which signs out)
     ///   password provider AND !emailVerified       -> emailVerification   (§13, ahead of status)
-    ///   status == nil (network) / unknown wire     -> main (guest; the foreground refresh retries)
+    ///   status == nil, `/me` in flight             -> awaitingAccount (a spinner)
+    ///   status == nil, nothing in flight           -> signIn (no sign-out; the foreground refresh
+    ///                                                 or a fresh sign-in recovers)
+    ///   unknown wire value                         -> main (Stage 3 / I5; Android maps it to BLOCKED)
     ///   PENDING_PROFILE                            -> profileBootstrap
     ///   ACTIVE                                     -> main
     ///
@@ -33,20 +41,24 @@ nonisolated enum SplashRouter {
     /// the entire point of those rows.
     static func outcome(onboardingCompleted: Bool, signedIn: Bool,
                         hasPasswordProvider: Bool, isEmailVerified: Bool,
-                        status: AccountStatus?) -> SplashOutcome {
+                        status: AccountStatus?, awaitingStatus: Bool) -> SplashOutcome {
         guard onboardingCompleted else { return SplashOutcome(destination: .onboarding) }
-        guard signedIn else { return SplashOutcome(destination: .main) }
+        guard signedIn else { return SplashOutcome(destination: .signIn) }
 
         switch status {
-        case .blocked: return SplashOutcome(destination: .main, alert: .blocked)
-        case .deleted: return SplashOutcome(destination: .main, alert: .deleted)
-        // Stage 3 / I5: `.unknown` rides the `status == nil` row — signed in, guest shell, no
-        // sign-out and no alert. A status this build cannot name is a reason to keep asking, never
-        // a reason to terminate a session fleet-wide.
+        case .blocked: return SplashOutcome(destination: .signIn, alert: .blocked)
+        case .deleted: return SplashOutcome(destination: .signIn, alert: .deleted)
+        // Stage 3 / I5: `.unknown` is signed in with a record — main shell, no sign-out and no
+        // alert. A status this build cannot name is a reason to keep asking, never a reason to
+        // terminate (or wall off) a session fleet-wide.
         case nil, .unknown, .active, .pendingProfile: break
         }
 
         if hasPasswordProvider, !isEmailVerified { return SplashOutcome(destination: .emailVerification) }
-        return SplashOutcome(destination: status == .pendingProfile ? .profileBootstrap : .main)
+        switch status {
+        case nil: return SplashOutcome(destination: awaitingStatus ? .awaitingAccount : .signIn)
+        case .pendingProfile: return SplashOutcome(destination: .profileBootstrap)
+        default: return SplashOutcome(destination: .main)
+        }
     }
 }

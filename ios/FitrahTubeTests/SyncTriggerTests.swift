@@ -305,25 +305,27 @@ struct SyncTriggerTests {
     /// flow instead and accumulated one waiter per foreground; the iOS sign-in path binds the
     /// moment `/me` lands, so the run this would have waited for happens anyway.
     @MainActor @Test func aMeStillInFlightHasNoUidToSyncAndParksNoWaiter() async throws {
-        let parking = OneShotGate()
+        let gate = Gate()
         let auth = FakeAuthClient(state: .signedOut)
         let session = AccountSession(
             auth: auth,
-            // An exhausted queue is a `.network` failure, so the round enters its retry sleep --
-            // which is where it is held, with `state` standing at `.loading`.
-            account: AccountClient(transport: ScriptedTransport([]), baseURL: Self.base,
-                                   deviceId: DeviceId(value: "dev-1")),
+            // Held INSIDE the `/me` request, with `state` standing at `.loading`. (It used to be
+            // held in the retry sleep; the auth-transition round is one attempt now — sign-in wall
+            // patch round 2 — so there is no sleep on this path to hold.)
+            account: AccountClient(transport: ScriptedTransport([.json(200, Self.meJSON)],
+                                                                park: { _ in await gate.block() }),
+                                   baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(),
-            sleep: { _ in await parking.parkOnce() }, wipe: { _ in nil }, sync: RecordingSync())
+            sleep: { _ in }, wipe: { _ in nil }, sync: RecordingSync())
         let running = Task { await session.start() }
         defer { running.cancel() }
 
         _ = try await auth.signIn(email: "a@b.test", password: "p")
-        await parking.gate.waitUntilBlocked()
+        await gate.waitUntilBlocked()
 
         #expect(session.state == .loading)
         #expect(session.syncableUid == nil)
-        await parking.gate.release()
+        await gate.release()
     }
 
     /// The other terminal arm, which the deletion latch does not cover: the verdict is up and the

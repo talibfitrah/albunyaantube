@@ -34,6 +34,33 @@ struct SignInViewModelTests {
         return (SignInViewModel(auth: auth, session: session, capabilities: capabilities), transport, session)
     }
 
+    // MARK: - Patch round 3: a sign-in on top of a live account drops it first
+
+    /// The wall can be up while Firebase still holds A (a failed `/me`, a refused sign-out). Signing
+    /// in as B then swaps identity with no `.signedOut`: A's provider SDK session and every
+    /// per-account holder were never released. The sign-in drops A first.
+    @Test func aSignInOverALiveAccountDropsThatAccountFirst() async throws {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let google = FakeOAuthProvider()
+        let status = AccountStatusCenter()
+        let session = AccountSession(
+            auth: auth,
+            account: AccountClient(transport: ScriptedTransport([.json(500, "{}"), .json(200, Self.meJSON("active"))]),
+                                   baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
+            stores: [], status: status, sleep: { _ in }, wipe: { _ in nil }, providers: [google])
+        let running = Task { await session.start() }
+        defer { running.cancel() }
+        for _ in 0..<500 where session.user == nil { await Task.yield() }
+        let model = SignInViewModel(auth: auth, session: session, capabilities: Self.allCapabilities)
+        model.email = "other@fitrah.test"
+        model.password = "hunter2"
+
+        await model.submit()
+
+        #expect(google.signOutCount >= 1, "A's provider SDK session outlived the switch")
+        #expect(status.pending?.event == .signedOut, "per-account holders were never told A left")
+    }
+
     // MARK: - Pre-network gates
 
     @Test func aMalformedEmailIsRefusedBeforeAnyClientCall() async {
@@ -295,7 +322,7 @@ struct SignInViewModelTests {
                              verified: Bool, password: Bool = true) -> SplashDestination {
         SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
                              hasPasswordProvider: password, isEmailVerified: verified,
-                             status: session.state.me?.status).destination
+                             status: session.state.me?.status, awaitingStatus: false).destination
     }
 
     @Test func anUnverifiedPasswordUserLandsOnEmailVerification() async {
@@ -341,7 +368,7 @@ struct SignInViewModelTests {
         #expect(model.landed)
         let outcome = SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
                                            hasPasswordProvider: true, isEmailVerified: true,
-                                           status: session.state.me?.status)
+                                           status: session.state.me?.status, awaitingStatus: false)
         #expect(outcome.destination == .main)
         #expect(outcome.alert == nil)
     }

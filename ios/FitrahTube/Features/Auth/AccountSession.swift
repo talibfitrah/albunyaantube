@@ -194,6 +194,10 @@ nonisolated enum AccountState: Sendable, Equatable {
                 state = .signedOut
             case .signedIn(let signedIn):
                 user = signedIn
+                // Patch round 3: `.loading` in the SAME turn `user` is set, so `RootView` never
+                // sees a signed-in identity with no record and nothing in flight (its "awaiting"
+                // is positively `.loading`). The account already on screen is kept, as `fetch` does.
+                if state.me?.uid != signedIn.uid { state = .loading }
                 lastKnownUid = signedIn.uid
                 // NOT `marker.lastSignedInUid` (CF-A-51): a Firebase sign-in is not proof that this
                 // account holds the device — it may be blocked or fail `/me` — and recording it
@@ -205,7 +209,12 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // nothing (`handleDeletion`).
                 deletion = nil
                 scope(to: signedIn.uid)
-                await refresh()
+                // ONE attempt, as Android's splash (`fetchMe(maxAttempts = 1)`): `RootView` holds
+                // the splash on this round, and three attempts at a 20 s request timeout plus
+                // backoff held it for about a minute on a stalled server. A bare 401 cannot strand
+                // it — the retry arm only ever `continue`s inside the budget, so with one attempt
+                // it falls through to `.failed` (the wall), and `BearerRetry` has already re-minted.
+                await refresh(maxAttempts: 1)
             }
         }
     }
@@ -290,6 +299,10 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// `.loaded` account could be overwritten by the loser's `.failed` and `RootView` would then
     /// read `status == nil` and route a pending-profile account to the shell.
     private var inFlight: Task<Void, Never>?
+    /// Who `inFlight` was started for (`user?.uid` then). Sign-in wall P1-b: a follower that is a
+    /// DIFFERENT account joined a round whose answer `publishable()` will drop, and nothing restored
+    /// the `.loading` it wrote — so the follower asks again for itself once that round is done.
+    private var inFlightUid: String?
 
     /// `MAX_ATTEMPTS = 3`, linear backoff `1 s * attempt`; IOException retries, 4xx/5xx NEVER
     /// (`AccountRepositoryImpl.kt:111-147`). The splash calls it with `maxAttempts: 1`.
@@ -309,7 +322,9 @@ nonisolated enum AccountState: Sendable, Equatable {
         // A follower must NOT cancel the shared work — only the caller that started it does, which
         // is what keeps `start()`'s cancellation (Task 9 / M4) reaching the retry loop.
         if let inFlight {
+            let joinedFor = inFlightUid
             await inFlight.value
+            if let joinedFor, let uid = user?.uid, joinedFor != uid { await refresh(maxAttempts: maxAttempts) }
             return
         }
         // Declared ahead of the `Task` so the body can name the task that owns the slot. The
@@ -338,6 +353,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         }
         let task = round!
         inFlight = task
+        inFlightUid = user?.uid
         await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
@@ -406,9 +422,16 @@ nonisolated enum AccountState: Sendable, Equatable {
         // was the only guard left and the restore could write `previousState` over a value another
         // writer put there: `dropSession()` frees the slot mid-round, B signs in and publishes
         // `.loaded(B)`, and the straggler reverted the screen to `.signedOut`.
+        // Patch round 3: never restore a signed-in identity to "no record, nothing in flight" —
+        // `.signedOut` (or the `.loading` `start()` wrote) under a set `user` held `RootView`'s
+        // spinner forever. That restore is `.failed` instead: the wall, which a retry leaves.
         defer {
-            if Task.isCancelled, state == .loading, matchesIdentity(), state != previousState {
-                state = previousState
+            if Task.isCancelled, state == .loading, matchesIdentity() {
+                let stranded = user != nil && previousState.me == nil
+                    && (previousState == .signedOut || previousState == .loading)
+                let restored = stranded ? .failed(code: nil, message: String(localized: "auth_error_generic"))
+                                        : previousState
+                if state != restored { state = restored }
             }
         }
         // Stage 7 fix 2 / I1(a): the account ALREADY on screen stays on screen while its own
@@ -505,7 +528,14 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // loaded" IS "a record for this identity is loaded" by the time this case runs.
                 // `startedFor != nil` stays: it is what keeps a nil-started round (NB1's shape,
                 // where `matchesIdentity()` short-circuits and guarantees nothing) failing.
-                case .network where startedFor != nil && state.me != nil: return
+                //
+                // Sign-in wall patch round 2: EVERY non-terminal failure, not just `.network` — a
+                // 5xx, a bare 401 past its budget, an undecodable body. `RootView` routes on this
+                // record, and Android routes once: `.failed` over a loaded account threw a signed-in
+                // user out to the wall mid-video. Terminal verdicts are the `.blocked`/`.deleted`
+                // arms above (and the transport's 403 envelope); a REFUSED sign-out is
+                // `dropSession`'s own `.failed` write, which this does not touch.
+                case _ where startedFor != nil && state.me != nil: return
                 case .network: state = .failed(code: nil, message: String(localized: "auth_error_network"))
                 case .unknown(let status): state = .failed(code: status, message: String(localized: "auth_error_generic"))
                 default: state = .failed(code: nil, message: String(localized: "auth_error_generic"))

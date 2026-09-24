@@ -1,6 +1,6 @@
 /// The blocked/deleted terminal alert, as data: which two catalog keys a terminal event renders.
 /// Pure and `nonisolated` so the mapping is testable without a scene — the `.alert` itself lives on
-/// `RootView`, where the single button drops to guest and pops every tab to root.
+/// `RootView`, where the single button signs out to the sign-in root and pops every tab to root.
 ///
 /// `.signedOut` is not terminal and has no alert: it is the user's own sign-out, posted so
 /// per-account holders can release state (`AccountStatusCenter.swift`). Returning nil for it is

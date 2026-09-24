@@ -21,6 +21,16 @@ import Testing
 @Suite(.perTest)
 struct CastSessionTests {
 
+    // MARK: - Sign-in wall P2: sign-out ends the cast
+
+    /// A build (or fixture) whose `setUp()` never created a `GCKCastContext` has no session to end
+    /// — and `sharedInstance()` RAISES without one, so the sign-out stop must not reach it.
+    @Test func endingTheSessionWithNoCastContextIsANoOp() {
+        let cast = CastController()
+        cast.endSession()
+        #expect(cast.castAvailable == false)
+    }
+
     // MARK: - Important 1: one screen owns the session
 
     @Test func onlyTheFirstScreenToClaimOwnsTheCastSession() {

@@ -325,7 +325,7 @@ struct EmailVerificationViewModelTests {
         let outcome = SplashRouter.outcome(onboardingCompleted: true, signedIn: true,
                                            hasPasswordProvider: true,
                                            isEmailVerified: fixture.session.user?.isEmailVerified ?? false,
-                                           status: fixture.session.state.me?.status)
+                                           status: fixture.session.state.me?.status, awaitingStatus: false)
         #expect(outcome.destination == .main)
     }
 

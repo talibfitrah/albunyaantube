@@ -2,6 +2,7 @@ import AVFoundation
 import AVKit
 import Combine
 import InnerTubeKit
+import MediaPlayer
 import Network
 import SwiftUI
 
@@ -648,6 +649,25 @@ struct PlayerHostView: UIViewControllerRepresentable {
         }
     }
 
+    /// Every player `player(for:…)` ever built, weakly: the sign-out stop (`stopAllPlayback`) must
+    /// reach one whose host AND coordinator are gone while AVKit's PiP window still holds it.
+    static let builtPlayers = NSHashTable<AVPlayer>.weakObjects()
+
+    /// Owner ruling 2026-09-24: nothing plays behind the sign-in wall. Pause and empty, which ends
+    /// the audio and blanks a PiP window regardless of the deferred PiP teardown. `players` is a
+    /// parameter only so a test can stop ITS player without stopping the suite's parallel ones.
+    /// `clearNowPlaying` is injectable for the same reason: the lock screen is process-wide, and
+    /// `NowPlayingSnapshotTests` (serialized) owns it.
+    static func stopAllPlayback(_ players: NSHashTable<AVPlayer> = builtPlayers,
+                                clearNowPlaying: (() -> Void)? = nil) {
+        for player in players.allObjects {
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+        }
+        // The deferred teardown also skipped `detach()`, which is what clears the lock screen.
+        (clearNowPlaying ?? { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil })()
+    }
+
     // MARK: - Builder (static so `PlayerHostTests` can call it directly, no view hierarchy needed)
 
     /// Builds the `AVPlayer` for one `StreamState`, reusing `replacing` when it's already playing the
@@ -699,6 +719,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         let resumeTime = CMTime(seconds: resume, preferredTimescale: 600)
         guard let existing else {
             let player = AVPlayer(playerItem: item)
+            builtPlayers.add(player)
             // Task 8 (spec §10 AirPlay): explicit, not inherited from the default. AVKit's stock
             // transport already carries the route picker; this is what makes the picked route
             // actually play the video remotely. Written ONLY here, on a freshly built player, and
