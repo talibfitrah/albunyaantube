@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-09-22-ios-phase6-app-store-metadata.md
+  s_974be43fdb0416::t_876fd0e25bcfb9 65-66,77,87,90,140-141,152,162,165,215-216,227,237,240,264,273-274,276-278,284,302,396-397,402-403,408-410
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "adeb19fecaab7047039814111cd256c6c2826de6",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
