@@ -1,0 +1,101 @@
+ios/FitrahTubeTests/AuthClientTests.swift
+  s_974be43fdb0416::t_423095742cfd63 197
+  s_974be43fdb0416::t_9c77fc062ef925 148-162
+ios/FitrahTubeTests/ProfileBootstrapViewModelTests.swift
+  s_974be43fdb0416::t_15c8493b69a502 360-361
+  s_974be43fdb0416::t_ac721fc4ea59c3 353-355,358-359
+ios/FitrahTube/Features/Offline/OfflineManager.swift
+  s_974be43fdb0416::t_de89dba5a8923a 160-161
+  s_974be43fdb0416::t_3032233c8619d7 197-198
+  s_974be43fdb0416::t_83133db3e688f0 143-145,171,181-185,187-189,193-196
+ios/FitrahTube/Features/Auth/AccountStatusCenter.swift
+  s_974be43fdb0416::t_714bd0f9418a91 50-54,60,63-65,67-68
+  s_974be43fdb0416::t_cd0bcba49edd16 72-73
+  s_974be43fdb0416::t_fe369e4e6edb42 55,57-59,75
+ios/FitrahTube/Features/Profile/ProfileViewModel.swift
+  s_974be43fdb0416::t_b019b27051560a 153-154,186
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_974be43fdb0416::t_a12e852244e296 1093,1487,1518,1534
+  s_974be43fdb0416::t_be0f7a2914d325 1660,1663-1670,1672,1674-1675
+  s_974be43fdb0416::t_567b1da1fd5a82 715-718
+  s_974be43fdb0416::t_a48d596ce1632e 1620-1639
+  s_974be43fdb0416::t_ea439c356721d2 35,47,226,265,402,823,875,911,918-919,924,926,933,942-945,952,956,961,1471
+  s_974be43fdb0416::t_b019b27051560a 1044-1053,1056,1058,1061-1085
+  s_974be43fdb0416::t_0d75416ad72611 1143,1617-1619,1640-1659,1661-1662,1671,1673,1676-1753
+  s_974be43fdb0416::t_d48056be27a177 1803-1804
+  s_974be43fdb0416::t_7a690c8f7ae484 1018-1043,1054-1055,1057,1059-1060,1086-1092,1094-1097
+  s_974be43fdb0416::t_cd0bcba49edd16 1122-1142
+  s_974be43fdb0416::t_2ae1cb7ef29e83 847,897,987,1200,1213,1225,1241,1253,1266,1277,1285,1295,1311,1321,1338,1355,1368,1433,1459,1483,1503,1560,1579,1614
+  s_974be43fdb0416::t_da8a911dec6e9b 1144
+ios/FitrahTube/App/AppContainer.swift
+  s_974be43fdb0416::t_83133db3e688f0 583-585
+ios/FitrahTubeTests/AppContainerTests.swift
+  s_974be43fdb0416::t_a48d596ce1632e 131-149,343-347,350-351,355-359
+  s_974be43fdb0416::t_dbe716a7915475 327-342,348-349,352-354,360
+  s_974be43fdb0416::t_2ae1cb7ef29e83 170,179,208,217
+  s_974be43fdb0416::t_75db9279fb0d9e 361
+ios/FitrahTube/Features/Auth/AuthClient.swift
+  s_974be43fdb0416::t_d48056be27a177 165-169,216
+ios/FitrahTube/Features/Auth/FirebaseAuthClient.swift
+  s_974be43fdb0416::t_d48056be27a177 191-200
+ios/FitrahTubeTests/OfflineLaunchTests.swift
+  s_974be43fdb0416::t_444632aec6c39f 379-392
+  s_974be43fdb0416::t_f4e834f887c7bb 357-378
+  s_974be43fdb0416::t_567b1da1fd5a82 393-419
+ios/FitrahTube/App/RootView.swift
+  s_974be43fdb0416::t_714bd0f9418a91 185-186
+  s_974be43fdb0416::t_fe369e4e6edb42 84-85,184,187-188
+  s_974be43fdb0416::t_4751774efa88d5 189-190
+ios/FitrahTube/Features/Bootstrap/ProfileBootstrapViewModel.swift
+  s_974be43fdb0416::t_a12e852244e296 130-132,163
+ios/FitrahTube/Features/Profile/DeleteAccountViewModel.swift
+  s_974be43fdb0416::t_6b05ddd33b4e09 101-102,105-107
+ios/FitrahTube/Features/Auth/LocalAccountWiper.swift
+  s_974be43fdb0416::t_83133db3e688f0 102-103
+ios/FitrahTubeTests/OfflineManagerTests.swift
+  s_974be43fdb0416::t_f265dec94940c0 2754,2756-2758,2760-2764,2766-2768,2771-2772,2786
+  s_974be43fdb0416::t_de89dba5a8923a 30-31,200-201,2725-2731,2733-2738,2740-2742,2744,2746-2748,2751-2753,2755,2759,2765,2769-2770,2773-2775,2777-2785
+  s_974be43fdb0416::t_41dda20f0bc274 2732,2739,2743,2745,2749-2750,2776
+  s_974be43fdb0416::t_c19048511d11c7 2787
+ios/FitrahTubeTests/AccountSessionTests.swift
+  s_974be43fdb0416::t_a12e852244e296 922,946
+ios/FitrahTube/Features/Auth/SignInScreen.swift
+  s_974be43fdb0416::t_567b1da1fd5a82 37-38
+ios/FitrahTubeTests/LocalAccountWiperTests.swift
+  s_974be43fdb0416::t_2ae1cb7ef29e83 225,253
+  s_974be43fdb0416::t_f6a341bb26b43a 318
+  s_974be43fdb0416::t_83133db3e688f0 317
+ios/FitrahTube/Features/Auth/AccountSession.swift
+  s_974be43fdb0416::t_6b05ddd33b4e09 122-137,148-155
+  s_974be43fdb0416::t_714bd0f9418a91 808
+  s_974be43fdb0416::t_2ae1cb7ef29e83 9-12,36-43,45-46,62
+  s_974be43fdb0416::t_3b6cfb96d340cd 15,21,25-26,319,362,842
+  s_974be43fdb0416::t_e835264f160b27 138-146,296,367,802-805,814-817,822-827,993,1033
+  s_974be43fdb0416::t_444632aec6c39f 254,723-725
+  s_974be43fdb0416::t_a12e852244e296 813
+  s_974be43fdb0416::t_d48056be27a177 821,1034-1037
+  s_974be43fdb0416::t_76abc8c45f8b18 295,297-302,333,336,340,366,370-384,900-902,940-941,988,1011,1014,1023-1026
+  s_974be43fdb0416::t_a48d596ce1632e 147
+  s_974be43fdb0416::t_12bbde4e43584b 831
+  s_974be43fdb0416::t_b41e72d126e235 806
+ios/FitrahTube/App/FakeAuthClient.swift
+  s_974be43fdb0416::t_d48056be27a177 233-235
+ios/FitrahTubeTests/SyncTriggerTests.swift
+  s_974be43fdb0416::t_a12e852244e296 324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3b2a3e8336ec490981d0902d2eefbfeea965cb90",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
