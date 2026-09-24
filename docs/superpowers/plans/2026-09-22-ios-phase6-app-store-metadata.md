@@ -62,8 +62,8 @@ A CALMER WAY TO WATCH
 • Play on your TV with AirPlay or Chromecast
 • Designed for iPhone and iPad, with Dynamic Type and VoiceOver support
 
-NO ACCOUNT NEEDED
-Browse, search, watch and keep favourites on your device without signing in. An optional free account (email, Google, or Sign in with Apple) keeps your favourites, subscriptions and saved playlists in sync between your devices. You can delete your account at any time inside the app: Me → Profile → Delete account.
+FREE ACCOUNT
+Sign in with a free account (email, Google, or Sign in with Apple) to watch. Your account keeps your favourites, subscriptions and saved playlists in sync between your devices, and saved videos stay available offline. You can delete your account at any time inside the app: Me → Profile → Delete account.
 
 FREE
 FitrahTube is free. There are no in-app purchases and no subscriptions.
@@ -74,7 +74,7 @@ We do not track you across apps or websites, and the app contains no third-party
 HELP US KEEP THE LIBRARY CLEAN
 Every video has a Report option. Our team reads every report.
 ```
-Count: 1620/4000
+Count: 1605/4000
 
 #### What's New in This Version (1.0.0) — limit 4000
 ```text
@@ -84,10 +84,10 @@ Welcome to FitrahTube on iPhone and iPad.
 • Browse by category, search the library, and keep your favourites
 • Audio Only mode, Safe Mode, AirPlay and Chromecast
 • Save for offline, where the publisher allows it
-• Optional free account to sync between devices, with Sign in with Apple
+• Free account that syncs between devices, with Sign in with Apple
 • English, Arabic and Dutch
 ```
-Count: 407/4000
+Count: 401/4000
 
 ---
 
@@ -137,8 +137,8 @@ Count: 81/100
 • اعرض على التلفاز عبر AirPlay أو Chromecast
 • مصمَّم لأجهزة iPhone وiPad، ويدعم تكبير الخط وVoiceOver
 
-لا حاجة إلى حساب
-تصفّح وابحث وشاهد واحتفظ بمفضلتك على جهازك دون تسجيل الدخول. والحساب المجاني الاختياري (بالبريد الإلكتروني أو Google أو «تسجيل الدخول مع Apple») يزامن مفضلتك واشتراكاتك وقوائمك المحفوظة بين أجهزتك. ويمكنك حذف حسابك في أي وقت من داخل التطبيق: أنا ← الملف الشخصي ← حذف الحساب.
+حساب مجاني
+سجّل الدخول بحساب مجاني (بالبريد الإلكتروني أو Google أو «تسجيل الدخول مع Apple») للمشاهدة. ويزامن حسابك مفضلتك واشتراكاتك وقوائمك المحفوظة بين أجهزتك، وتبقى الفيديوهات المحفوظة متاحة دون اتصال. ويمكنك حذف حسابك في أي وقت من داخل التطبيق: أنا ← الملف الشخصي ← حذف الحساب.
 
 مجاني
 فطرة تيوب مجاني، بلا مشتريات داخل التطبيق وبلا اشتراكات.
@@ -149,7 +149,7 @@ Count: 81/100
 ساعدنا في إبقاء المكتبة نظيفة
 في كل مقطع خيار «إبلاغ»، وفريقنا يقرأ كل بلاغ.
 ```
-Count: 1424/4000
+Count: 1415/4000
 
 #### What's New in This Version (1.0.0) — limit 4000
 ```text
@@ -159,10 +159,10 @@ Count: 1424/4000
 • تصفّح حسب التصنيف، وابحث في المكتبة، واحتفظ بمفضلتك
 • وضع «صوت فقط»، و«الوضع الآمن»، وAirPlay وChromecast
 • «الحفظ دون اتصال» متى أذن الناشر بذلك
-• حساب مجاني اختياري للمزامنة بين الأجهزة، مع «تسجيل الدخول مع Apple»
+• حساب مجاني يزامن بين الأجهزة، مع «تسجيل الدخول مع Apple»
 • العربية والإنجليزية والهولندية
 ```
-Count: 377/4000
+Count: 366/4000
 
 **Needs a native-speaker pass before submission.** Terms taken verbatim from the app's own catalog so the listing matches the UI: الوضع الآمن · صوت فقط · الحفظ دون اتصال · أنا · الملف الشخصي · حذف الحساب · إبلاغ.
 
@@ -212,8 +212,8 @@ RUSTIGER KIJKEN
 • Kijk op je tv met AirPlay of Chromecast
 • Ontworpen voor iPhone en iPad, met ondersteuning voor Dynamic Type en VoiceOver
 
-GEEN ACCOUNT NODIG
-Bladeren, zoeken, kijken en favorieten op je toestel bewaren kan zonder in te loggen. Met een optioneel gratis account (e-mail, Google of Log in met Apple) blijven je favorieten, abonnementen en bewaarde afspeellijsten gelijk op al je apparaten. Je kunt je account op elk moment in de app verwijderen: Ik → Profiel → Account verwijderen.
+GRATIS ACCOUNT
+Log in met een gratis account (e-mail, Google of Log in met Apple) om te kijken. Je account houdt je favorieten, abonnementen en bewaarde afspeellijsten gelijk op al je apparaten, en bewaarde video's blijven offline beschikbaar. Je kunt je account op elk moment in de app verwijderen: Ik → Profiel → Account verwijderen.
 
 GRATIS
 FitrahTube is gratis. Er zijn geen in-app aankopen en geen abonnementen.
@@ -224,7 +224,7 @@ We volgen je niet over apps of websites heen, en de app bevat geen analysetools 
 HELP ONS DE BIBLIOTHEEK SCHOON TE HOUDEN
 Elke video heeft een optie Melden. Ons team leest elke melding.
 ```
-Count: 1733/4000
+Count: 1712/4000
 
 #### What's New in This Version (1.0.0) — limit 4000
 ```text
@@ -234,10 +234,10 @@ Welkom bij FitrahTube op iPhone en iPad.
 • Blader per categorie, doorzoek de bibliotheek en bewaar je favorieten
 • Alleen audio, Veilige modus, AirPlay en Chromecast
 • Offline opslaan, waar de maker dat toestaat
-• Optioneel gratis account om te synchroniseren tussen apparaten, met Log in met Apple
+• Gratis account dat synchroniseert tussen apparaten, met Log in met Apple
 • Nederlands, Engels en Arabisch
 ```
-Count: 458/4000
+Count: 446/4000
 
 UI terms taken from the app's catalog: Veilige modus · Alleen audio · Offline opslaan · Ik · Profiel · Account verwijderen · Melden.
 
@@ -261,7 +261,7 @@ Category: **Education** (primary), **Lifestyle** (secondary). Reasoning: the cat
 
 ## 5. App Review Information
 
-**Sign-in required:** Yes (for account features only). **User name / Password:** `<< OWNER ENTERS THE DEMO ACCOUNT HERE, IN APP STORE CONNECT ONLY — never in this file, chat or the repo >>`. The demo account must be: email + password, email already verified, profile completed with an adult date of birth.
+**Sign-in required:** Yes. Every screen with content is behind sign-in (owner ruling 2026-09-24), so the demo account is mandatory: without it the reviewer sees only the sign-in screen and rejects the build. **User name / Password:** `<< OWNER ENTERS THE DEMO ACCOUNT HERE, IN APP STORE CONNECT ONLY — never in this file, chat or the repo >>`. The demo account must be: email + password, email already verified, profile completed with an adult date of birth.
 
 **Contact:** owner's name, phone and e-mail (App Store Connect fields).
 
@@ -270,18 +270,18 @@ Category: **Education** (primary), **Lifestyle** (secondary). Reasoning: the cat
 WHAT THE APP IS
 FitrahTube is a free, curated Islamic video library. It has no feed algorithm and no user-to-user features. Every channel, playlist and video in the catalog is proposed and then approved by our own editorial team in a separate moderation dashboard before it becomes visible in the app. The videos themselves are the creators' public videos, hosted by YouTube; the app's catalog (what is listed, in which category) comes from our own server at app.fitrahtube.com.
 
-NO ACCOUNT NEEDED
-All five tabs work without signing in: Home, Channels, Me, Playlists, Videos, plus Search, Categories, the player, local favourites and Settings. To test quickly: open Home, tap any video.
+SIGN-IN REQUIRED, AND WHY
+The app opens on a sign-in screen. Please use the demo account provided above (email and password). Sign-in is required because the app is built around the account: favourites, subscriptions and saved playlists sync between devices, users can import their subscriptions, and moderators submit and review content. Options: email and password, Google, Sign in with Apple (guideline 4.8). To test quickly after signing in: open Home, tap any video.
 
-ACCOUNT (OPTIONAL) AND ACCOUNT DELETION
-Me tab → Sign in. Options: email and password, Google, Sign in with Apple (guideline 4.8). A demo account is provided in the sign-in fields above. After sign-up the app asks for a name, date of birth and phone number; the date of birth is used once to enforce a minimum age of 13 for accounts (younger users simply continue as guests with the full library).
-Account deletion is in the app: Me tab → "…" menu (top corner) → Profile → scroll to "Delete account" → confirm. It deletes the server profile and the sign-in, and returns the app to guest mode. The same can be requested on the web at https://app.fitrahtube.com/delete-account
+ACCOUNT CREATION AND ACCOUNT DELETION
+New users create an account from the same screen. After sign-up the app asks for a name, date of birth and phone number; the date of birth is used once to enforce a minimum age of 13 (younger users cannot create an account).
+Account deletion is in the app: Me tab → "…" menu (top corner) → Profile → scroll to "Delete account" → confirm. It deletes the server profile and the sign-in, and returns the app to the sign-in screen. The same can be requested on the web at https://app.fitrahtube.com/delete-account
 
 PLAYER — DESCRIBED PRECISELY
 Playback is native (AVPlayer) inside the app. If native playback is not possible for a video, the app falls back to YouTube's official embedded player inside a locked web view; in that case YouTube's own branding, and any advertising YouTube chooses to show, can appear. The web view cannot navigate anywhere else. The app sells nothing and shows no advertising of its own.
 
 FEATURES TO BE AWARE OF (guideline 2.3.1)
-• Save for offline: on videos where our team has recorded the publisher's permission, a "Save for offline" button stores the video inside the app's private container for playback in the app only. Files are not visible in the Files app, cannot be shared or exported, and are excluded from backup. The feature can be switched off remotely by us. Saved items are listed under Settings → Saved (and on the Me tab when signed in).
+• Save for offline: on videos where our team has recorded the publisher's permission, a "Save for offline" button stores the video inside the app's private container for playback in the app only. Files are not visible in the Files app, cannot be shared or exported, and are excluded from backup. The feature can be switched off remotely by us. Saved items are listed under Settings → Saved and on the Me tab, and stay available offline for a signed-in user.
 • Audio Only and background audio: lectures and recitation keep playing with the screen locked (this is the reason for the audio background mode).
 • AirPlay and Chromecast. Chromecast discovery is why the app asks for Local Network access, only after the first tap on the Cast button.
 • Safe Mode (Settings): turns off autoplay.
@@ -299,7 +299,7 @@ English, Arabic (right-to-left), Dutch. The app follows the iOS per-app language
 
 Thank you for reviewing FitrahTube. Contact: info@albunyaan.tv
 ```
-Count: 3758/4000
+Count: 3928/4000
 
 **Before pasting, check three statements against the build being submitted** (they are true of the code read on 2026-09-22, but each depends on an open task in the plan):
 1. "with a button to the App Store" — true only after plan Task 5 **and** the App Store ID is set. Otherwise delete that clause.
@@ -393,20 +393,20 @@ Run 2026-09-22 by script over this file (Python `len()` on each ```text block's 
 | English (U.S.) — primary language | Subtitle | 27 | 30 | OK |
 | English (U.S.) — primary language | Promotional text | 159 | 170 | OK |
 | English (U.S.) — primary language | Keywords | 99 | 100 | OK |
-| English (U.S.) — primary language | Description | 1620 | 4000 | OK |
-| English (U.S.) — primary language | What's New in This Version (1.0.0) | 407 | 4000 | OK |
+| English (U.S.) — primary language | Description | 1605 | 4000 | OK |
+| English (U.S.) — primary language | What's New in This Version (1.0.0) | 401 | 4000 | OK |
 | Arabic — العربية | App name | 25 | 30 | OK |
 | Arabic — العربية | Subtitle | 26 | 30 | OK |
 | Arabic — العربية | Promotional text | 150 | 170 | OK |
 | Arabic — العربية | Keywords | 81 | 100 | OK |
-| Arabic — العربية | Description | 1424 | 4000 | OK |
-| Arabic — العربية | What's New in This Version (1.0.0) | 377 | 4000 | OK |
+| Arabic — العربية | Description | 1415 | 4000 | OK |
+| Arabic — العربية | What's New in This Version (1.0.0) | 366 | 4000 | OK |
 | Dutch — Nederlands | App name | 25 | 30 | OK |
 | Dutch — Nederlands | Subtitle | 29 | 30 | OK |
 | Dutch — Nederlands | Promotional text | 157 | 170 | OK |
 | Dutch — Nederlands | Keywords | 97 | 100 | OK |
-| Dutch — Nederlands | Description | 1733 | 4000 | OK |
-| Dutch — Nederlands | What's New in This Version (1.0.0) | 458 | 4000 | OK |
-| App Review Information | Notes | 3758 | 4000 | OK |
+| Dutch — Nederlands | Description | 1712 | 4000 | OK |
+| Dutch — Nederlands | What's New in This Version (1.0.0) | 446 | 4000 | OK |
+| App Review Information | Notes | 3928 | 4000 | OK |
 
 **Banned-term scan** (case-insensitive, whole file): the stems named on the RULE line at the top — English, Arabic and Dutch, from `LocalizationTests.bannedStems` — plus the retired `albunyaan` host name and the 5.1.4(b) audience word in three languages. Result: **every banned stem occurs on exactly one line of this file — the RULE line itself — and nowhere else; the retired host name occurs nowhere (only `fitrahtube.com` URLs appear in this file); the audience word appears only on this document's own rule bullet and in the age-rating row that names Apple's field.** The `info@albunyaan.tv` contact address is not a URL and is what `/terms` and `/privacy` publish (`LegalPagesController.java:35`).
